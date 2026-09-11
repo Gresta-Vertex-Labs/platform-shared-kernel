@@ -1,0 +1,53 @@
+<Project>
+  <!--
+    SharedKernel.Linter.props — imported automatically by NuGet for any project with a
+    PackageReference to SharedKernel.Linter. build/$(PackageId).props at the package root is the
+    only location NuGet auto-imports for a PackageReference.
+
+    Run the format check in CI; stay out of the way on a developer workstation. A formatter that
+    fails a local build mid-thought trains people to bypass it. Failing the PR does the same job
+    without the interruption.
+
+    $(ContinuousIntegrationBuild) is the standard SDK signal, set by this repository's workflows
+    and by most CI providers. To enforce locally:
+
+      dotnet build -p:SharedKernelLinterEnforceFormatting=true
+
+    To opt out entirely, per project or repo-wide in Directory.Build.props:
+
+      <SharedKernelLinterEnforceFormatting>false</SharedKernelLinterEnforceFormatting>
+  -->
+  <PropertyGroup Condition="'$(SharedKernelLinterEnforceFormatting)' == ''">
+    <SharedKernelLinterEnforceFormatting>$(ContinuousIntegrationBuild)</SharedKernelLinterEnforceFormatting>
+  </PropertyGroup>
+  <!-- $(ContinuousIntegrationBuild) is itself unset outside CI, so normalise to an explicit
+       false rather than leaving the property empty for the comparisons below. -->
+  <PropertyGroup Condition="'$(SharedKernelLinterEnforceFormatting)' == ''">
+    <SharedKernelLinterEnforceFormatting>false</SharedKernelLinterEnforceFormatting>
+  </PropertyGroup>
+
+  <!--
+    Both CSharpier switches are set here, in .props, and both assignments are deliberate.
+
+    CSharpier_Bypass is the real on/off switch: CSharpier.MsBuild gates its work target on
+    Condition="'$(CSharpier_Bypass)' != 'true'". CSharpier_Check does NOT turn the formatter off
+    — it only selects the sub-command, "check" when true and an EMPTY command otherwise, and an
+    empty command makes CSharpier format in place. Leaving CSharpier_Check false therefore does
+    not mean "do not run", it means "rewrite the caller's source files during their build";
+    verified by observation, a plain `dotnet build` silently reformatted a consumer's .cs file.
+    So CSharpier_Check is pinned true unconditionally: a build of this platform's code never
+    edits it, it only ever reports.
+
+    Both must be set in .props, not .targets. CSharpier.MsBuild derives its command line in its
+    own .targets file, and every package's .props is imported before any package's .targets, so
+    an assignment made in .targets lands after the decision has already been baked. Setting
+    CSharpier_Check unconditionally also makes the order between our .props and CSharpier's own
+    irrelevant: theirs is guarded on the property being empty, so it can never overwrite ours.
+  -->
+  <PropertyGroup>
+    <CSharpier_Check>true</CSharpier_Check>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SharedKernelLinterEnforceFormatting)' != 'true'">
+    <CSharpier_Bypass>true</CSharpier_Bypass>
+  </PropertyGroup>
+</Project>

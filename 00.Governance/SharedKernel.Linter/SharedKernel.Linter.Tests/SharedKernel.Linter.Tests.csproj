@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      No ProjectReference to SharedKernel.Linter. That package produces no assembly, so there is
+      nothing to reference: its entire contract is the content and structure of the files it packs
+      and the MSBuild semantics of its props/targets. These tests therefore read those files from
+      disk and, where behaviour is what matters, evaluate them with a real MSBuild invocation.
+
+      Referencing the project would also drag CSharpier.MsBuild's build logic into this test
+      project and run the formatter over it on every build, which is a side effect a test project
+      should not carry.
+    -->
+  </ItemGroup>
+</Project>

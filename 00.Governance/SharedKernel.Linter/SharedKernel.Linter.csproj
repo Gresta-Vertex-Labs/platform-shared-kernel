@@ -1,23 +1,57 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- Ships no assembly: this package exists only to deliver MSBuild logic and one config file.
+         NU5128 is the "no lib/ref assemblies for the declared framework" warning, which is the
+         intended shape here. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
-    <!-- Content-only package ships no assembly, so a symbol package would be empty and fail NU5017. Overrides Directory.Build.props. -->
     <IncludeSymbols>false</IncludeSymbols>
-    <!-- Required: without it this content-only package packs nothing and fails NU5017. -->
-    <ContentTargetFolders>content</ContentTargetFolders>
-    <ContentTargetFolders>content</ContentTargetFolders>
     <NoWarn>NU5128</NoWarn>
+    <!-- The shipped config file is a dotfile; without this the SDK's default item excludes drop
+         it before it can be packed. -->
     <NoDefaultExcludes>true</NoDefaultExcludes>
     <IsPackable>true</IsPackable>
-    <!-- NuGet packaging metadata -->
-    <Description>Content-only NuGet package that distributes SharedKernel's .editorconfig, .csharpierrc.json, and MSBuild props/targets for CSharpier formatting enforcement. Reference with PrivateAssets="all". Ships no DLL.</Description>
-    <PackageTags>editorconfig;csharpier;linter;sharedkernel;governance;formatting</PackageTags>
+    <!-- Formatting toolchain: never flows into a consumer's production dependency graph. -->
     <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- NuGet packaging metadata -->
+    <Description>Formatting enforcement for the SharedKernel platform. Adds a CSharpier format check that fails CI on unformatted code and stays silent locally, a one-command local format, and the platform's shared .editorconfig for a one-time install into your repository. Ships no DLL.</Description>
+    <PackageTags>editorconfig;csharpier;linter;sharedkernel;governance;formatting;codestyle</PackageTags>
   </PropertyGroup>
+
   <ItemGroup>
-    <Content Include="content\.editorconfig" PackagePath="content/.editorconfig" />
-    <Content Include="content\.csharpierrc.json" PackagePath="content/.csharpierrc.json" />
-    <Content Include="content\build\SharedKernel.Linter.props" PackagePath="content/build/SharedKernel.Linter.props" />
-    <Content Include="content\build\SharedKernel.Linter.targets" PackagePath="content/build/SharedKernel.Linter.targets" />
+    <!--
+      PackagePath MUST be the package-root `build/` folder, named exactly after the package id:
+      NuGet auto-imports build/$(PackageId).props and build/$(PackageId).targets for a
+      PackageReference, and nothing else. An earlier revision packed these under `content/build/`
+      via ContentTargetFolders, the legacy packages.config convention that PackageReference
+      ignores outright — the package restored cleanly and imported nothing, so neither the format
+      check nor any property it defines ever reached a consumer.
+
+      `buildTransitive/` is deliberately NOT used: this is a development dependency a consuming
+      project opts into directly, and a formatting gate should never appear unannounced in
+      someone else's build because they referenced a library that referenced this.
+    -->
+    <None Include="build\SharedKernel.Linter.props" Pack="true" PackagePath="build\" />
+    <None Include="build\SharedKernel.Linter.targets" Pack="true" PackagePath="build\" />
+    <!--
+      The platform's shared style configuration — the single source of truth for both the IDE and
+      CSharpier, which reads indent_style, indent_size, end_of_line and max_line_length from it.
+      There is deliberately no .csharpierrc.json beside it: when that file exists CSharpier uses
+      it INSTEAD of .editorconfig rather than merging the two, so an edit to indent_size or
+      max_line_length in .editorconfig would silently do nothing (measured, not assumed).
+
+      Not under contentFiles: for PackageReference those are surfaced as links resolved from the
+      NuGet cache and are never written into the consuming project's source tree, and an
+      .editorconfig outside that tree has no effect — EditorConfig matches its sections relative
+      to the directory holding the file, so a config living in the package cache matches none of
+      the consumer's sources. Copying is the only mechanism that works, and it is explicit.
+    -->
+    <None Include="config\.editorconfig" Pack="true" PackagePath="build\config\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CSharpier's own MSBuild integration performs the cross-platform formatter resolution and
+         the check itself. SharedKernel.Linter's props/targets only decide WHEN it runs and in
+         which mode. This is the package's single dependency. -->
+    <PackageReference Include="CSharpier.MsBuild" />
   </ItemGroup>
 </Project>

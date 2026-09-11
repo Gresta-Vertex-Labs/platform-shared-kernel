@@ -1,0 +1,114 @@
+<Project>
+  <!--
+    SharedKernel.Linter.targets — imported automatically by NuGet for any project with a
+    PackageReference to SharedKernel.Linter.
+
+    The CSharpier switches are NOT set here; they live in SharedKernel.Linter.props, because
+    CSharpier.MsBuild derives its command line in its own .targets and every package's .props is
+    imported before any package's .targets. See that file for the full reasoning.
+
+    Two targets live here, both meant to be invoked by hand:
+      SharedKernelLinterFormat         — format this project's sources now
+      InstallSharedKernelLinterConfig  — copy the platform .editorconfig into your repository
+
+    Scope worth knowing before enabling the check: CSharpier 1.x formats XML as well as C#, so it
+    covers .csproj/.props/.targets alongside .cs. Adopting it on an existing codebase normally
+    means one large reformat commit first — run SharedKernelLinterFormat once, review the diff,
+    commit, and let CI keep it that way from there.
+  -->
+
+  <!--
+    Format this project's sources in place:
+
+      dotnet build -t:SharedKernelLinterFormat
+
+    This is the local counterpart to the CI check, and the reason a developer needs no global
+    tool install and no pinned tool manifest: the formatter binary already came with this
+    package's CSharpier.MsBuild dependency, at exactly the version CI will check against. A
+    locally-installed `csharpier` of a different version is the classic way to get a machine that
+    formats one way and a pipeline that demands another.
+
+    Implemented by re-entering CSharpier.MsBuild's own target with the two switches flipped,
+    rather than shelling out to a formatter path of our own: CSharpier resolves its binary per
+    SDK version and per platform, and duplicating that resolution here is how the previous
+    revision of this package ended up with a Windows-only path that could never have run on a
+    Linux CI runner.
+
+    TargetFramework is threaded through for the same reason CSharpier.MsBuild threads it: a
+    multi-targeted project would otherwise run the formatter once per framework.
+  -->
+  <Target Name="SharedKernelLinterFormat">
+    <PropertyGroup>
+      <_SkLinterFormatTfm>$(TargetFramework)</_SkLinterFormatTfm>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_SkLinterFormatTfm)' == '' AND '$(TargetFrameworks)' != ''">
+      <_SkLinterFormatTfm>$(TargetFrameworks.Split(';')[0])</_SkLinterFormatTfm>
+    </PropertyGroup>
+
+    <Message
+      Importance="high"
+      Text="SharedKernel.Linter: formatting $(MSBuildProjectDirectory) with the CSharpier version this package pins..."
+    />
+    <MSBuild
+      Projects="$(MSBuildProjectFullPath)"
+      Targets="CSharpierFormatInner"
+      Properties="CSharpier_Check=false;CSharpier_Bypass=false;TargetFramework=$(_SkLinterFormatTfm)"
+    />
+    <Message
+      Importance="high"
+      Text="SharedKernel.Linter: formatting complete. Review the diff before committing."
+    />
+  </Target>
+
+  <!--
+    Copies the platform's .editorconfig into the consuming repository.
+
+    Run it once, from the directory you want it in — normally your repository root, so the
+    settings apply to every project beneath it:
+
+      dotnet build -t:InstallSharedKernelLinterConfig
+
+    Then commit the file. It has to live in your own tree: EditorConfig matches its sections
+    relative to the directory holding the file, and CSharpier reads its formatting settings from
+    the same place, so the config has no effect while it sits in the NuGet cache. That is also
+    why this is an explicit copy rather than something the package can apply for you.
+
+    An existing file is never overwritten, so local edits are safe. Pass
+    -p:SharedKernelLinterOverwriteConfig=true to replace it when taking an updated version of the
+    platform configuration. Destination defaults to the project directory; override with
+    -p:SharedKernelLinterConfigDestination=<path> to install at a repository root instead.
+  -->
+  <Target Name="InstallSharedKernelLinterConfig">
+    <PropertyGroup>
+      <_SkLinterConfigSource>$(MSBuildThisFileDirectory)config</_SkLinterConfigSource>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(SharedKernelLinterConfigDestination)' == ''">
+      <SharedKernelLinterConfigDestination>$(MSBuildProjectDirectory)</SharedKernelLinterConfigDestination>
+    </PropertyGroup>
+
+    <Error
+      Condition="!Exists('$(_SkLinterConfigSource)')"
+      Text="SharedKernel.Linter: config source '$(_SkLinterConfigSource)' not found. The package looks incomplete — .editorconfig is expected under its build/config/ folder."
+    />
+
+    <ItemGroup>
+      <_SkLinterConfigFile Include="$(_SkLinterConfigSource)/.editorconfig" />
+    </ItemGroup>
+
+    <!--
+      Condition on absence rather than using SkipUnchangedFiles: a deliberately customised local
+      file counts as "changed", and copying over it is exactly the surprise this target must not
+      spring on anyone.
+    -->
+    <Copy
+      SourceFiles="@(_SkLinterConfigFile)"
+      DestinationFolder="$(SharedKernelLinterConfigDestination)"
+      Condition="'$(SharedKernelLinterOverwriteConfig)' == 'true' OR !Exists('$(SharedKernelLinterConfigDestination)/.editorconfig')"
+    />
+
+    <Message
+      Importance="high"
+      Text="SharedKernel.Linter: style configuration installed to $(SharedKernelLinterConfigDestination). Commit .editorconfig. An existing file was left untouched — pass -p:SharedKernelLinterOverwriteConfig=true to replace it."
+    />
+  </Target>
+</Project>

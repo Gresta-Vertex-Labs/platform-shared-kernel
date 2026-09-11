@@ -6,6 +6,7 @@
     <Project Path="00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.Tests/SharedKernel.ArchitectureTests.Tests.csproj" />
     <Project Path="00.Governance/SharedKernel.Benchmarks/SharedKernel.Benchmarks.csproj" />
     <Project Path="00.Governance/SharedKernel.Linter/SharedKernel.Linter.csproj" />
+    <Project Path="00.Governance/SharedKernel.Linter/SharedKernel.Linter.Tests/SharedKernel.Linter.Tests.csproj" />
   </Folder>
   <Folder Name="/01.Core/">
     <Project Path="01.Core/SharedKernel.Compression/SharedKernel.Compression.csproj" />

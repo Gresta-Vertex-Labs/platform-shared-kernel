@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <!-- Consumer-verify harness: proves the packed package is consumable. Never shipped.
@@ -10,4 +10,52 @@
   <ItemGroup>
     <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
   </ItemGroup>
+
+  <!--
+    The assertions below are the whole point of this harness, and they live in MSBuild rather than
+    in Program.cs because everything SharedKernel.Linter delivers is build-time: there is no
+    assembly to call into. An earlier revision of this harness only printed a line from Main, so
+    it passed for as long as the package merely RESTORED — and it did pass, while the package was
+    packing its props/targets under content/ where PackageReference never imports them. The
+    package imported nothing and enforced nothing, and nothing here noticed.
+
+    Each Error below corresponds to one way that failure can come back.
+  -->
+  <Target Name="VerifySharedKernelLinterWiring" AfterTargets="Build">
+    <!-- 1. build/SharedKernel.Linter.props was imported at all. -->
+    <Error
+      Condition="'$(SharedKernelLinterEnforceFormatting)' == ''"
+      Text="SharedKernel.Linter verification FAILED: SharedKernelLinterEnforceFormatting is unset, so build/SharedKernel.Linter.props was never imported. NuGet auto-imports build/$(PackageId).props from the PACKAGE ROOT only — check that the .csproj packs it to build/ and not content/build/."
+    />
+
+    <!-- 2. The report-only pin is in force. CSharpier_Check selects the sub-command, and an
+         empty command means "format", which rewrites the consumer's source files during their
+         build. This assertion is the guard against shipping that behaviour. -->
+    <Error
+      Condition="'$(CSharpier_Check)' != 'true'"
+      Text="SharedKernel.Linter verification FAILED: CSharpier_Check is '$(CSharpier_Check)', not 'true'. CSharpier would run in format mode and REWRITE consuming projects' source files during their build. The pin must be set in .props, before CSharpier.MsBuild's .targets derives its command line."
+    />
+
+    <!-- 3. build/SharedKernel.Linter.targets was imported, proven by invoking the target it
+         carries. If the file was not imported this fails with MSB4057 rather than passing
+         quietly. Destination is inside obj/ so the harness tree stays clean. -->
+    <MSBuild
+      Projects="$(MSBuildProjectFullPath)"
+      Targets="InstallSharedKernelLinterConfig"
+      Properties="SharedKernelLinterConfigDestination=$(MSBuildProjectDirectory)/$(IntermediateOutputPath)linter-verify;SharedKernelLinterOverwriteConfig=true"
+    />
+    <Error
+      Condition="!Exists('$(IntermediateOutputPath)linter-verify/.editorconfig')"
+      Text="SharedKernel.Linter verification FAILED: InstallSharedKernelLinterConfig ran but did not produce .editorconfig. The packed build/config/ folder is missing or empty."
+    />
+
+    <!-- The SharedKernelLinterFormat target is not invoked here: it would reformat this harness
+         as a side effect of verification. Its presence is asserted structurally by
+         SharedKernel.Linter.Tests instead. -->
+
+    <Message
+      Importance="high"
+      Text="SharedKernel.Linter verification passed: props and targets imported, CSharpier pinned to report-only (CSharpier_Check=true), enforcement=$(SharedKernelLinterEnforceFormatting), config install produced .editorconfig, format target present."
+    />
+  </Target>
 </Project>

@@ -93,6 +93,15 @@
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <!--
+      SharedKernel.Linter's formatting-enforcement dependency (MIT). CSharpier's own MSBuild
+      integration, used in place of a hand-rolled `dotnet tool install` + `Exec` target: it
+      resolves the formatter per-RID and per-TFM itself, so the check works on the Linux CI
+      runners as well as Windows workstations. This is the one third-party dependency
+      SharedKernel.Linter declares; it flows to consumers by design, since the whole point of
+      that package is to hand a consuming service a working format check.
+    -->
+    <PackageVersion Include="CSharpier.MsBuild" Version="1.3.0" />
+    <!--
       SharedKernel.Reporting.Spreadsheet (20.Reporting/WO-077, P-479): unconditional MIT, verified
       directly against the published nuspec on nuget.org before pinning (20.Reporting/CLAUDE.md's
       ratified licensing table). No incremental/streaming write path exists in this library — see

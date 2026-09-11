@@ -1,6 +1,0 @@
-{
-  "$schema": "https://raw.githubusercontent.com/belav/csharpier/main/Src/CSharpier/Schema/csharpierrc.schema.json",
-  "printWidth": 120,
-  "tabWidth": 4,
-  "useTabs": false
-}

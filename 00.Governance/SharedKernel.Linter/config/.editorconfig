@@ -1,0 +1,340 @@
+# Platform.SharedKernel — shared code style
+#
+# This is the single source of truth for formatting and style across every service that consumes
+# SharedKernel.Linter. It drives three things at once:
+#
+#   * your IDE, as you type;
+#   * the Roslyn code-style analyzers, via EnforceCodeStyleInBuild;
+#   * CSharpier, which reads indent_style, indent_size, end_of_line and max_line_length from here.
+#
+# There is deliberately NO .csharpierrc.json alongside it. When that file exists CSharpier uses it
+# INSTEAD of this one — not merged with it — so an edit to indent_size or max_line_length here
+# would silently do nothing. One file, no silent overrides.
+#
+# Division of authority: CSharpier decides layout (where lines break, how they wrap). The
+# csharp_new_line_* / csharp_space_* / csharp_indent_* keys below match what CSharpier produces and
+# exist so that typing in an IDE gives the same result before the formatter runs. Everything after
+# the Language conventions heading is style and naming, which CSharpier does not touch at all.
+#
+# root = true stops EditorConfig from walking further up the directory tree. Keep it: it is what
+# makes the platform style authoritative rather than merged with whatever sits above your repo.
+root = true
+
+# ---------------------------------------------------------------------------------------------
+# All files
+# ---------------------------------------------------------------------------------------------
+[*]
+indent_style = space
+indent_size = 4
+# utf-8, not utf-8-bom. CSharpier writes files without a byte-order mark and does not read the
+# charset key, so asking for a mark sets up a fight nobody wins: the IDE adds it on save, the
+# formatter strips it on the next run, and the file flips back and forth in diffs. Observed
+# directly while adopting the formatter on this package's own project files.
+charset = utf-8
+end_of_line = crlf
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# ---------------------------------------------------------------------------------------------
+# C# source
+# ---------------------------------------------------------------------------------------------
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+charset = utf-8
+end_of_line = crlf
+trim_trailing_whitespace = true
+insert_final_newline = true
+# Read by CSharpier as its print width, and shown as a guide by most IDEs. Keep the two in step:
+# this is the only place the wrap column is configured.
+max_line_length = 120
+
+# --- Using directives -------------------------------------------------------------------------
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+
+# --- Layout (matches CSharpier's output; affects IDE typing) -----------------------------------
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_indent_labels = flush_left
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents_when_block = true
+csharp_space_after_cast = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_binary_operators = before_and_after
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+csharp_space_between_method_call_name_and_opening_parenthesis = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_call_empty_parameter_list_parentheses = false
+csharp_preserve_single_line_statements = false
+csharp_preserve_single_line_blocks = true
+
+# ---------------------------------------------------------------------------------------------
+# Language conventions
+#
+# Severities are warnings, not errors. A consuming service escalates what it cares about — a
+# shared config that fails other people's builds on a style opinion gets deleted, not adopted.
+# To escalate everything at once, set <WarningsAsErrors> or per-rule severity in your own
+# .editorconfig, which layers on top of the copy you installed from this package.
+# ---------------------------------------------------------------------------------------------
+[*.cs]
+
+# --- Structure --------------------------------------------------------------------------------
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = true:warning
+csharp_style_prefer_top_level_statements = false:silent
+
+# --- this. qualification: never ---------------------------------------------------------------
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+
+# --- Language keywords over BCL type names ----------------------------------------------------
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
+
+# --- Modifiers --------------------------------------------------------------------------------
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async:warning
+dotnet_style_readonly_field = true:warning
+csharp_prefer_static_local_function = true:warning
+
+# --- var ---------------------------------------------------------------------------------------
+# Apparent and inferred types read fine as var; a built-in type spelled out is clearer than
+# var for an int or a string literal.
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+
+# --- Expression-bodied members ----------------------------------------------------------------
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_indexers = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+csharp_style_expression_bodied_lambdas = true:suggestion
+csharp_style_expression_bodied_local_functions = when_on_single_line:suggestion
+
+# --- Pattern matching and null handling -------------------------------------------------------
+csharp_style_pattern_matching_over_is_with_cast_check = true:warning
+csharp_style_pattern_matching_over_as_with_null_check = true:warning
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_prefer_not_pattern = true:warning
+csharp_style_prefer_extended_property_pattern = true:suggestion
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:warning
+dotnet_style_coalesce_expression = true:warning
+dotnet_style_null_propagation = true:warning
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
+
+# --- Expression-level preferences -------------------------------------------------------------
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_prefer_collection_expression = when_types_loosely_match:suggestion
+dotnet_style_explicit_tuple_names = true:warning
+dotnet_style_prefer_inferred_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
+dotnet_style_prefer_auto_properties = true:warning
+dotnet_style_prefer_conditional_expression_over_assignment = true:silent
+dotnet_style_prefer_conditional_expression_over_return = true:silent
+dotnet_style_prefer_compound_assignment = true:warning
+dotnet_style_prefer_simplified_interpolation = true:warning
+dotnet_style_prefer_simplified_boolean_expressions = true:warning
+csharp_prefer_simple_default_expression = true:warning
+csharp_style_deconstructed_variable_declaration = true:suggestion
+csharp_style_inlined_variable_declaration = true:suggestion
+csharp_style_prefer_index_operator = true:suggestion
+csharp_style_prefer_range_operator = true:suggestion
+csharp_style_prefer_tuple_swap = true:suggestion
+csharp_style_prefer_utf8_string_literals = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
+csharp_style_prefer_method_group_conversion = true:silent
+csharp_style_prefer_primary_constructors = false:suggestion
+
+# --- Unnecessary code -------------------------------------------------------------------------
+dotnet_code_quality_unused_parameters = non_public:suggestion
+dotnet_remove_unnecessary_suppression_exclusions = none
+csharp_style_unused_value_expression_statement_preference = discard_variable:silent
+csharp_style_unused_value_assignment_preference = discard_variable:warning
+dotnet_diagnostic.IDE0005.severity = warning
+
+# ---------------------------------------------------------------------------------------------
+# Naming
+#
+# Ordered most specific first: EditorConfig applies the first matching rule, so a broader rule
+# placed above a narrower one would shadow it.
+# ---------------------------------------------------------------------------------------------
+[*.cs]
+
+# --- Symbol groups ----------------------------------------------------------------------------
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+
+dotnet_naming_symbols.type_parameters.applicable_kinds = type_parameter
+dotnet_naming_symbols.type_parameters.applicable_accessibilities = *
+
+dotnet_naming_symbols.constants.applicable_kinds = field, local
+dotnet_naming_symbols.constants.applicable_accessibilities = *
+dotnet_naming_symbols.constants.required_modifiers = const
+
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.applicable_accessibilities = *
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private, private_protected
+
+dotnet_naming_symbols.parameters_and_locals.applicable_kinds = parameter, local
+dotnet_naming_symbols.parameters_and_locals.applicable_accessibilities = *
+
+dotnet_naming_symbols.local_functions.applicable_kinds = local_function
+dotnet_naming_symbols.local_functions.applicable_accessibilities = *
+
+dotnet_naming_symbols.types_and_members.applicable_kinds = namespace, class, struct, enum, delegate, event, method, property
+dotnet_naming_symbols.types_and_members.applicable_accessibilities = *
+
+# --- Styles -----------------------------------------------------------------------------------
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.camel_case.capitalization = camel_case
+
+dotnet_naming_style.i_prefixed.capitalization = pascal_case
+dotnet_naming_style.i_prefixed.required_prefix = I
+
+dotnet_naming_style.t_prefixed.capitalization = pascal_case
+dotnet_naming_style.t_prefixed.required_prefix = T
+
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+
+# --- Rules ------------------------------------------------------------------------------------
+dotnet_naming_rule.interfaces_are_i_prefixed.symbols = interfaces
+dotnet_naming_rule.interfaces_are_i_prefixed.style = i_prefixed
+dotnet_naming_rule.interfaces_are_i_prefixed.severity = warning
+
+dotnet_naming_rule.type_parameters_are_t_prefixed.symbols = type_parameters
+dotnet_naming_rule.type_parameters_are_t_prefixed.style = t_prefixed
+dotnet_naming_rule.type_parameters_are_t_prefixed.severity = warning
+
+# PascalCase, not SCREAMING_CASE: a const is part of the API surface like any other member.
+dotnet_naming_rule.constants_are_pascal_case.symbols = constants
+dotnet_naming_rule.constants_are_pascal_case.style = pascal_case
+dotnet_naming_rule.constants_are_pascal_case.severity = warning
+
+dotnet_naming_rule.static_readonly_fields_are_pascal_case.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_fields_are_pascal_case.style = pascal_case
+dotnet_naming_rule.static_readonly_fields_are_pascal_case.severity = warning
+
+dotnet_naming_rule.private_fields_are_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_are_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_rule.private_fields_are_underscore_camel_case.severity = warning
+
+dotnet_naming_rule.local_functions_are_pascal_case.symbols = local_functions
+dotnet_naming_rule.local_functions_are_pascal_case.style = pascal_case
+dotnet_naming_rule.local_functions_are_pascal_case.severity = suggestion
+
+dotnet_naming_rule.parameters_and_locals_are_camel_case.symbols = parameters_and_locals
+dotnet_naming_rule.parameters_and_locals_are_camel_case.style = camel_case
+dotnet_naming_rule.parameters_and_locals_are_camel_case.severity = warning
+
+dotnet_naming_rule.types_and_members_are_pascal_case.symbols = types_and_members
+dotnet_naming_rule.types_and_members_are_pascal_case.style = pascal_case
+dotnet_naming_rule.types_and_members_are_pascal_case.severity = warning
+
+# ---------------------------------------------------------------------------------------------
+# Nullable reference types
+#
+# The whole point of enabling nullable is to be told about it, so the null-state warnings are
+# raised from their default rather than left to blend into build output. Escalate to error in
+# your own config once a codebase is clean.
+# ---------------------------------------------------------------------------------------------
+[*.cs]
+dotnet_diagnostic.CS8600.severity = warning
+dotnet_diagnostic.CS8601.severity = warning
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8603.severity = warning
+dotnet_diagnostic.CS8604.severity = warning
+dotnet_diagnostic.CS8605.severity = warning
+dotnet_diagnostic.CS8607.severity = warning
+dotnet_diagnostic.CS8608.severity = warning
+dotnet_diagnostic.CS8609.severity = warning
+dotnet_diagnostic.CS8610.severity = warning
+dotnet_diagnostic.CS8613.severity = warning
+dotnet_diagnostic.CS8614.severity = warning
+dotnet_diagnostic.CS8618.severity = warning
+dotnet_diagnostic.CS8619.severity = warning
+dotnet_diagnostic.CS8620.severity = warning
+dotnet_diagnostic.CS8622.severity = warning
+dotnet_diagnostic.CS8625.severity = warning
+dotnet_diagnostic.CS8631.severity = warning
+dotnet_diagnostic.CS8634.severity = warning
+dotnet_diagnostic.CS8767.severity = warning
+
+# ---------------------------------------------------------------------------------------------
+# Test projects
+#
+# Underscores in test method names are how a test states its scenario; naming rules that are
+# right for production code get in the way here.
+# ---------------------------------------------------------------------------------------------
+[**/*{Tests,Test,SelfTests,ConsumerVerify}/**/*.cs]
+dotnet_naming_rule.types_and_members_are_pascal_case.severity = none
+dotnet_diagnostic.IDE1006.severity = none
+# Tests routinely assert on values the compiler cannot prove non-null.
+dotnet_diagnostic.CS8602.severity = suggestion
+dotnet_diagnostic.CS8625.severity = suggestion
+
+# ---------------------------------------------------------------------------------------------
+# Other file types
+# ---------------------------------------------------------------------------------------------
+[*.{json,json5,jsonc}]
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+
+[*.{xml,csproj,props,targets,slnx,nuspec,config,ruleset}]
+indent_size = 2
+end_of_line = crlf
+insert_final_newline = true
+
+[*.{yml,yaml}]
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+
+[*.md]
+# Two trailing spaces is a hard line break in Markdown; trimming them changes rendered output.
+trim_trailing_whitespace = false
+insert_final_newline = true
+
+[*.{sh,bash}]
+indent_size = 2
+# Shell scripts must be LF regardless of platform — CRLF breaks the shebang line.
+end_of_line = lf
+
+[*.{ps1,psm1,psd1}]
+indent_size = 4
+end_of_line = crlf
+
+[*.{cmd,bat}]
+end_of_line = crlf
+
+[Dockerfile*]
+indent_size = 2
+end_of_line = lf
+
+[Makefile]
+indent_style = tab
