@@ -14,21 +14,35 @@ name: Publish Single Package
 # OWN dependencies sits at an untagged prerelease emits a dependency on a version that was never
 # published) simply does not apply when a package has no SharedKernel dependencies to mis-resolve.
 #
-# THIS IS NOT A GENERAL ESCAPE FROM LOCKSTEP. Any package with a SharedKernel.* dependency
-# (ProjectReference in source, PackageReference once packed) MUST still go through the
-# tag-triggered release.yml path — dispatching this workflow against such a project would pack it
-# at an arbitrary out-of-band version while its dependencies stay pinned to whatever the last real
-# tag produced, silently reintroducing the exact cross-package version drift lockstep exists to
-# prevent. This is now enforced mechanically, not by discipline: the "Assert the packed package has
-# no SharedKernel.* dependencies" step below reads the packed .nuspec — the same file a consumer's
-# restore reads — and fails the run before the push if any SharedKernel.* dependency is declared.
+# THIS IS STILL NOT A GENERAL ESCAPE FROM LOCKSTEP, but the condition it enforces is now the real
+# one rather than a proxy for it. A package may be published through this path exactly when every
+# SharedKernel.* dependency in its packed .nuspec is ALREADY ON THE FEED at a version satisfying
+# the declared range. That is what makes publishing one package at a time, in dependency order,
+# safe — and it is checked mechanically by the "Assert every SharedKernel.* dependency already
+# exists on the feed" step below, which runs a real `dotnet restore` against those dependencies
+# and fails the run before the push if any of them cannot be resolved.
 #
-# Packages published through this path so far, both verified to declare zero SharedKernel.*
-# dependencies: SharedKernel.Analyzers (no <dependencies> element at all —
-# IncludeBuildOutput=false, DevelopmentDependency=true, SuppressDependenciesWhenPacking=true) and
-# SharedKernel.ArchitectureTests (three third-party dependencies — NetArchTest.Rules, Mono.Cecil,
+# WHAT THAT REPLACED, AND WHY. The earlier gate refused any package declaring a SharedKernel.*
+# dependency at all, on the reasoning that such a package would emit dependencies on versions
+# that were never published. The reasoning was sound but the rule was broader than the hazard:
+# it was correct while every package published this way had no SharedKernel dependencies
+# whatsoever (the three 00.Governance packages, then SharedKernel.Primitives), and it blocked
+# SharedKernel.Core/.Configuration/.FeatureManagement/.Compression outright even though
+# publishing them in dependency order is perfectly sound. The hazard itself is real and
+# unchanged: MinVer derives the version from commit HEIGHT, so a dependency is stamped at the
+# height of THIS build, not the height at which that dependency was published — publish
+# SharedKernel.Primitives at .886, commit twice, publish SharedKernel.Core, and Core declares
+# SharedKernel.Primitives >= 1.0.0-alpha.0.888, which nobody can restore.
+#
+# Packages published through this path so far: SharedKernel.Analyzers (no <dependencies> element
+# at all — IncludeBuildOutput=false, DevelopmentDependency=true,
+# SuppressDependenciesWhenPacking=true), SharedKernel.ArchitectureTests (three third-party
+# dependencies — NetArchTest.Rules, Mono.Cecil,
 # Microsoft.Extensions.DependencyInjection.Abstractions — and no SharedKernel.* dependency, since
-# its three rules that need SharedKernel anchor types take them from the caller).
+# its three rules that need SharedKernel anchor types take them from the caller), and
+# SharedKernel.Linter. All three went out at floating MinVer heights
+# (1.0.0-alpha.0.882/.884/.886), which was safe precisely because none of them declares a
+# SharedKernel.* dependency to mis-resolve.
 #
 # Standing hygiene identical to ci.yml/release.yml: permissions:{} at root widened per job, every
 # action pinned to a full 40-char SHA, fetch-depth: 0 (MinVer needs full tag history even for the
@@ -59,7 +73,7 @@ on:
   workflow_dispatch:
     inputs:
       project:
-        description: 'Path to the .csproj to pack and publish. Must declare zero SharedKernel.* dependencies (asserted from the packed .nuspec before any push).'
+        description: 'Path to the .csproj to pack and publish. Every SharedKernel.* dependency it declares must already be on the feed at a satisfying version (asserted by a real restore against the packed .nuspec, before any push) — so publish in dependency order, lowest layer first.'
         type: string
         default: '00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj'
       version:
@@ -218,33 +232,173 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Packed: $package_id @ $packed_version"
 
-      # The lockstep precondition this whole workflow rests on, enforced mechanically instead of
-      # by the human discipline the header describes. Out-of-band publishing is only safe for a
-      # package with ZERO SharedKernel.* dependencies; pack one that has them and it emits
-      # dependencies on versions that were never published, which is exactly the drift repo-wide
-      # MinVer lockstep exists to prevent. The packed .nuspec is the authoritative answer — it is
-      # what a consumer's restore actually reads — so read it rather than trusting the dispatcher
-      # to have checked. A package with SharedKernel.* dependencies must go through the
-      # tag-triggered release.yml path instead.
-      - name: Assert the packed package has no SharedKernel.* dependencies
+      # The lockstep precondition this whole workflow rests on, enforced mechanically instead of by
+      # the human discipline the header describes.
+      #
+      # WHAT THE REAL HAZARD IS. MinVer derives the version from commit HEIGHT, so with no v* tag
+      # reachable every pack produces 1.0.0-alpha.0.<height> and that number moves with every
+      # commit. Pack a package with a SharedKernel.* dependency and the dependency is stamped at
+      # the height of THIS build, not at the height its dependency was actually published at. Ship
+      # SharedKernel.Primitives at .886, commit twice, publish SharedKernel.Core, and Core declares
+      # a dependency on SharedKernel.Primitives >= 1.0.0-alpha.0.888 — a version that was never
+      # pushed. Nothing in the producing build notices; the failure lands on a consumer's restore.
+      #
+      # WHY THIS IS NOT THE OLDER "ZERO SharedKernel.* DEPENDENCIES" CHECK. That check blocked the
+      # hazard by blocking the entire class, which was right while every package published this way
+      # had no SharedKernel dependencies at all (the three 00.Governance packages, then
+      # SharedKernel.Primitives). It is too strict from SharedKernel.Core onward: publishing one
+      # package at a time in dependency order is genuinely safe, and the thing that makes it safe
+      # is not the ABSENCE of dependencies but whether each declared dependency is ALREADY ON THE
+      # FEED at a version that satisfies the declared range. So check that, rather than a proxy
+      # for it.
+      #
+      # HOW IT CHECKS. By running a real `dotnet restore` against a throwaway project that
+      # PackageReferences each SharedKernel.* dependency at exactly the version the packed .nuspec
+      # declares. NuGet's own resolver answers the question, rather than this workflow
+      # re-implementing feed-protocol and version-range semantics and getting an edge case wrong.
+      # The .nuspec is the authoritative input because it is the file a consumer's restore reads.
+      #
+      # THE VERSIONS ARE DELIBERATELY NOT PINNED WITH [brackets]. A .nuspec dependency version is a
+      # MINIMUM, not an equality, so a bare Version="X" reproduces consumer semantics exactly. An
+      # exact pin would fail a publish that is actually safe: if .891 was packed but only .895 ever
+      # reached the feed, every consumer resolves .895 and works, while `[.891]` would refuse.
+      - name: Assert every SharedKernel.* dependency already exists on the feed
+        env:
+          FEED_OWNER: ${{ github.repository_owner }}
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          mkdir -p /tmp/nuspec-check
-          unzip -o -q "$NUPKG_PATH" -d /tmp/nuspec-check
-          nuspec=$(find /tmp/nuspec-check -maxdepth 1 -name '*.nuspec' | head -1)
-          if [ -z "$nuspec" ]; then
-            echo "::error::No .nuspec found inside $NUPKG_PATH — cannot verify the dependency set."
+          set -euo pipefail
+
+          work="$RUNNER_TEMP/dependency-gate"
+          extracted="$work/extracted"
+          deps="$work/sharedkernel-deps.tsv"
+          probe="$work/probe"
+
+          # rm -rf before extracting, and a per-run directory rather than a fixed /tmp path, both
+          # matter. The previous version of this step unzipped into a /tmp directory it never
+          # cleaned and then took `find ... -name '*.nuspec' | head -1`, which silently reads an
+          # ARBITRARY nuspec as soon as that directory holds more than one — so the gate could
+          # validate the dependency set of a package other than the one being published, and
+          # report a pass for it. A fresh runner hides this (its /tmp is empty), but it made the
+          # step order-dependent and impossible to exercise locally; caught by doing exactly that.
+          rm -rf "$work"
+          mkdir -p "$extracted" "$probe"
+
+          unzip -o -q "$NUPKG_PATH" -d "$extracted"
+          nuspec_count=$(find "$extracted" -maxdepth 1 -name '*.nuspec' | wc -l)
+          if [ "$nuspec_count" -ne 1 ]; then
+            echo "::error::Expected exactly 1 .nuspec inside $NUPKG_PATH, found $nuspec_count. Refusing to guess which one describes the package being published."
+            find "$extracted" -maxdepth 1 -name '*.nuspec' -exec basename {} \; || true
             exit 1
           fi
-          echo "::group::declared dependencies"
+          nuspec=$(find "$extracted" -maxdepth 1 -name '*.nuspec')
+          echo "Reading dependency set from $(basename "$nuspec")."
+
+          echo "::group::All dependencies declared by $PACKAGE_ID"
           grep -oE '<dependency id="[^"]+" version="[^"]+"' "$nuspec" || echo "(none declared)"
           echo "::endgroup::"
-          if grep -qE '<dependency id="SharedKernel\.' "$nuspec"; then
-            echo "::error::$PACKAGE_ID declares SharedKernel.* package dependencies, so it cannot be published out of band by this workflow — its dependencies would point at versions that were never published. Use the tag-triggered release.yml path (git tag vX.Y.Z), which packs and publishes every package at one lockstep version."
-            grep -oE '<dependency id="SharedKernel\.[^"]+" version="[^"]+"' "$nuspec"
-            exit 1
+
+          # id<TAB>version, one line per SharedKernel.* dependency.
+          grep -oE '<dependency id="SharedKernel\.[^"]+" version="[^"]+"' "$nuspec" \
+            | sed -E 's/<dependency id="([^"]+)" version="([^"]+)"/\1\t\2/' \
+            > "$deps" || true
+
+          if [ ! -s "$deps" ]; then
+            echo "OK: $PACKAGE_ID declares no SharedKernel.* dependencies, so nothing it ships can point at an unpublished version. Safe to publish out of band."
+            exit 0
           fi
-          echo "OK: $PACKAGE_ID declares no SharedKernel.* dependencies — safe to publish out of band."
+
+          echo "$PACKAGE_ID declares these SharedKernel.* dependencies; each must already be on the feed:"
+          sed -E 's/^/  /; s/\t/ @ >= /' "$deps"
+
+          # $RUNNER_TEMP is OUTSIDE the repository tree, and that placement is load-bearing rather
+          # than tidiness. NuGet.Config discovery walks UP from the project directory, and this
+          # repo's own NuGet.Config maps every SharedKernel.* pattern to the local nupkgs/ folder.
+          # Probing from inside the repo would let a locally packed copy satisfy a dependency that
+          # does not exist on the real feed — a false GREEN, which is strictly worse than having no
+          # gate at all, because it converts a caught problem into a silent one. The <clear /> plus
+          # the explicit --configfile below are the second and third defenses against that; all
+          # three have to fail together for a local artifact to be mistaken for a published one.
+          cat > "$probe/NuGet.Config" <<'CONFIG'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="github" value="https://nuget.pkg.github.com/OWNER_PLACEHOLDER/index.json" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="github">
+                <package pattern="SharedKernel.*" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          CONFIG
+          sed -i "s|OWNER_PLACEHOLDER|$FEED_OWNER|" "$probe/NuGet.Config"
+
+          # GitHub Packages requires authentication for every read, including of a public package.
+          # Credentials are attached with `dotnet nuget update source` rather than written into the
+          # heredoc above so the token is never a literal in this file or echoed by a shell trace.
+          dotnet nuget update source github \
+            --username "$FEED_OWNER" \
+            --password "$NUGET_AUTH_TOKEN" \
+            --store-password-in-clear-text \
+            --configfile "$probe/NuGet.Config"
+
+          {
+            echo '<Project Sdk="Microsoft.NET.Sdk">'
+            echo '  <PropertyGroup>'
+            echo '    <TargetFramework>net10.0</TargetFramework>'
+            # Central Package Management would demand a Directory.Packages.props that does not
+            # exist out here, and these versions come from the .nuspec rather than from the repo.
+            echo '    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>'
+            echo '  </PropertyGroup>'
+            echo '  <ItemGroup>'
+            while IFS="$(printf '\t')" read -r dep_id dep_version; do
+              [ -n "$dep_id" ] || continue
+              echo "    <PackageReference Include=\"$dep_id\" Version=\"$dep_version\" />"
+            done < "$deps"
+            echo '  </ItemGroup>'
+            echo '</Project>'
+          } > "$probe/DependencyExistenceProbe.csproj"
+
+          echo "::group::probe project"
+          cat "$probe/DependencyExistenceProbe.csproj"
+          echo "::endgroup::"
+
+          # --packages is the THIRD isolation defense and the one that is easiest to leave out and
+          # hardest to notice missing. NuGet satisfies a PackageReference from the global packages
+          # folder (~/.nuget/packages) BEFORE it ever contacts a source, so without a private,
+          # empty packages directory this probe reports a pass whenever the dependency merely
+          # happens to sit in the runner's cache — which proves nothing about whether it was ever
+          # PUBLISHED. Measured, not theorised: with the global cache warm, a probe against a feed
+          # that did not contain the dependency at all still exited 0. Any warm cache does it,
+          # including a self-hosted or re-used runner, and the earlier restore/build/pack steps in
+          # this very job are themselves cache-warming operations.
+          if dotnet restore "$probe/DependencyExistenceProbe.csproj" \
+               --configfile "$probe/NuGet.Config" \
+               --packages "$probe/packages" > "$probe/restore.log" 2>&1; then
+            echo "::group::restore log"
+            cat "$probe/restore.log"
+            echo "::endgroup::"
+            echo "OK: every SharedKernel.* dependency $PACKAGE_ID declares resolves from the feed. Publishing it out of band cannot emit a dependency on a version that was never published."
+            exit 0
+          fi
+
+          echo "::error::$PACKAGE_ID declares one or more SharedKernel.* dependencies that do NOT resolve from GitHub Packages, so publishing it would ship a dependency on a version no consumer can restore. Publish the missing dependency FIRST (this workflow, one package at a time, in dependency order), then re-run this one. Reading the diagnostic printed below, each code measured by running this probe against a feed in that state: NU1101 means the dependency id is absent from the feed entirely — it has never been published. NU1102/NU1103 mean the id IS on the feed but no published version satisfies the declared minimum; that is the MinVer-height mismatch this gate exists for, where the dependency was published at an earlier commit height than the height this build stamped into the .nuspec. NU1100 means resolution was blocked rather than unsatisfied — typically the feed was unreachable or the credentials failed — which is an infrastructure problem, NOT evidence that the dependency is unpublished, so do not respond to it by republishing anything."
+          # NuGet emits one diagnostic per unresolvable package, so these lines name every missing
+          # dependency rather than only the first. NU1100 is matched alongside the others because
+          # it is what appears when the feed itself cannot be consulted; it is a different
+          # condition from the other three and the error text above says so rather than lumping
+          # them together.
+          if ! grep -E 'NU110[0123]' "$probe/restore.log"; then
+            echo "No NU1100/NU1101/NU1102/NU1103 diagnostic found — the restore failed for some other reason, so do not read this as a missing dependency. Full log:"
+            cat "$probe/restore.log"
+          fi
+          exit 1
 
       # Proves the packed artifact is genuinely consumable — not just that `dotnet pack` exited 0.
       # One step per package that has its own consumer-verify harness, each gated on PACKAGE_ID so
