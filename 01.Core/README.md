@@ -62,6 +62,31 @@ single-winner service:**
    claimed and silently never register this validator's cross-field checks — a real regression
    caught during SK.01.P518 implementation (two host-startup tests stopped throwing until fixed).
 
+3. **`SharedKernel.Configuration`'s own `AddValidatedOptions<TOptions, TValidator>`** registers
+   `TValidator` against `IValidateOptions<TOptions>` via `TryAddEnumerable` for exactly the reason
+   given in (2) — added by P-530, which found that this overload had been using `TryAddSingleton`
+   all along. That is the same defect (2) describes, at its source: a caller's validator was
+   silently dropped whenever any other validator for that options type already existed, and
+   measured, a cross-property rule never ran while configuration violating it started the host
+   cleanly. Exception (2) was written down when P-518 hit the shape downstream; the package that
+   causes it went unfixed until P-530. `SharedKernel.Cryptography.KeyVault.Azure`'s hand-rolled
+   `TryAddEnumerable` beside its own `AddValidatedOptions` call — the workaround (2) documents — is
+   now expressible directly as
+   `AddValidatedOptions<AzureKeyVaultCryptographyOptions, AzureKeyVaultCryptographyOptionsValidator>(configuration, validateDataAnnotations: true)`,
+   though it is correct as written and P-530 deliberately left it alone.
+
+   **One further wrinkle, worth knowing before applying `TryAddEnumerable` anywhere by reflex:** the
+   Data Annotations half of the same package canNOT use it. `TryAddEnumerable` de-duplicates on
+   *implementation type*, every named options instance shares the single implementation type
+   `DataAnnotationValidateOptions<TOptions>`, and that validator is itself **name-scoped** — it
+   returns `Skip` for any other name. Registering it through `TryAddEnumerable` would therefore
+   cover the first name registered and leave every other named instance of that type completely
+   unvalidated. `SharedKernel.Configuration` instead registers a pre-built immutable instance
+   behind a per-*name* duplicate check, which is only possible because an instance descriptor
+   exposes an inspectable `Name` where a factory descriptor does not. **`TryAddEnumerable` is not a
+   drop-in for `TryAddSingleton` when the service is keyed on something finer than its
+   implementation type.**
+
 **One documented, intentional behavior inversion — not a regression, an accepted side effect of
 domain-wide standardization:** `SharedKernel.Localization`'s `AddInMemoryLocalizationCatalog()` and
 `AddStringLocalizerCatalog<TResource>()` are mutually exclusive — both register the single-winner

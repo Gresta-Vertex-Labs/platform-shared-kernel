@@ -1,12 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- NuGet packaging metadata -->
-    <Description>Options-pattern validation helpers for the SharedKernel: AddValidatedOptions&lt;TOptions&gt; DI extension that binds, validates via DataAnnotations, and enforces startup-time validation (ValidateOnStart). Depends on SharedKernel.Primitives.</Description>
-    <PackageTags>shared-kernel;options;configuration;validation;dependency-injection;aot</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated, so the central default
+      never applies and the package would ship without its XML docs. Verified by inspecting the
+      packed .nupkg, which had no .xml entry until this line was added.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-  </ItemGroup>
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Options-pattern registration and validation for the SharedKernel. AddValidatedOptions&lt;TOptions&gt; binds a configuration section, validates it (Data Annotations, or a caller-supplied IValidateOptions&lt;TOptions&gt; such as an [OptionsValidator]-generated one), and enforces that validation at host startup via ValidateOnStart so a misconfigured service fails before it accepts traffic. ISectionBoundOptions lets an options type declare its own section path so no call site retypes it. Supports named options and composing Data Annotations with a custom validator. Zero SharedKernel dependencies; four first-party Microsoft.Extensions dependencies. NOT trim- or AOT-clean, by nature rather than by omission: configuration binding is reflective, so both AddValidatedOptions overloads carry RequiresUnreferencedCode and RequiresDynamicCode.</Description>
+    <PackageTags>shared-kernel;options;configuration;validation;dependency-injection;options-pattern</PackageTags>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />

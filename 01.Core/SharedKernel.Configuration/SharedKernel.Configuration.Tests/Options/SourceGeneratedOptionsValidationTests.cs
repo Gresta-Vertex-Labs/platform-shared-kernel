@@ -129,7 +129,7 @@ public sealed partial class SourceGeneratedOptionsValidationTests
         await Assert.ThrowsAnyAsync<OptionsValidationException>(() => host.StartAsync());
     }
 
-    // ---- TryAddSingleton semantics: calling the generated-validator overload twice never double-registers ----
+    // ---- TryAddEnumerable semantics: calling the generated-validator overload twice never double-registers ----
 
     [Fact]
     public void AddValidatedOptions_WithGeneratedValidator_CalledTwice_RegistersValidatorOnlyOnce()
