@@ -2102,7 +2102,7 @@ Taking the behaviour changes now was the whole point of the timing: nothing in `
 ---
 ### P-530 — Core: `SharedKernel.Configuration` Pre-Publish Hardening Pass (BEHAVIOUR CHANGES)
 
-**Status:** `◐` Dispatched — 12/13 tasks `●`; only the publish itself (`P-56`) remains `○`
+**Status:** `●` Complete — 13/13 tasks `●`; published to GitHub Packages as `1.0.0-alpha.0.906` (2026-09-14) after P-539
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 01.Core
 **Depends on:** None
@@ -2289,7 +2289,7 @@ Ten defects, all reproduced by executing the code. The severe one: every async r
 
 ### P-539 — Core: `SharedKernel.Configuration` First-Publish Bar (ADDITIVE API + ONE BEHAVIOUR CHANGE)
 
-**Status:** `●` Complete — 8/8 tasks `●`; publish is P-530's still-open task P-56
+**Status:** `●` Complete — 8/8 tasks `●`; the package was then published as `1.0.0-alpha.0.906` under P-530's task P-56
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 01.Core
 **Depends on:** P-530
