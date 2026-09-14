@@ -39,7 +39,6 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <!--
       T-43 (WO-056/P-365) gating proof only — never referenced by the production
       SharedKernel.ServiceDefaults.csproj. Grpc.AspNetCore (server + Grpc.Tools codegen +

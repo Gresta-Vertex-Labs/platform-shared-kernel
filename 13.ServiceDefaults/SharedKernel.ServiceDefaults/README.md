@@ -1,158 +1,121 @@
 # SharedKernel.ServiceDefaults
 
-Host composition layer for Platform.SharedKernel microservices. One call wires OpenTelemetry, health checks, and the platform's startup conventions; everything beyond that is opt-in.
+The composition base every Platform.SharedKernel microservice starts from: one call wires OpenTelemetry,
+the startup readiness gate, and the health-check endpoints.
 
-This is the composition root — the only package permitted to reference concrete providers from lower layers in order to assemble them.
+**It references no other SharedKernel package.** Dependency-specific readiness checks, mutual TLS, Azure
+Key Vault, and localization each live in their own `SharedKernel.ServiceDefaults.*` integration package,
+so a service restores only the integrations it actually uses.
 
-## Included
+## Rules
 
-### Entry point
+| Rule | Why |
+| --- | --- |
+| Call `builder.AddServiceDefaults()` first in `Program.cs` | It wires telemetry and the base health-check infrastructure every later call builds on. |
+| Chain readiness checks onto `builder.Services.AddHealthChecks()` | **Not** `AddSharedKernelHealthChecks()`: `AddServiceDefaults()` already calls it, and a second call registers the `"startup"` check twice — the application then throws `ArgumentException: Duplicate health checks were registered with the name(s): startup` at startup. |
+| Add an integration package only for a dependency the service really has | That is the point of the split: each package brings its dependency's client libraries with it. |
+| Keep `/health/ready` off public ingress, or pass `requireAuthorization: true` | Readiness output can disclose your dependency topology. See below. |
+| Never add a `ProjectReference` to this package | Every service restores whatever this package references. Two tests lock it — see "Why the base references nothing". |
 
-**`AddServiceDefaults()`** — OpenTelemetry (traces, metrics, logs with ambient TenantId/CorrelationId enrichment) plus base health-check wiring.
+## Which package do I add?
 
-**`MapDefaultHealthCheckEndpoints()`** — maps the liveness and readiness endpoints. Takes a `requireAuthorization` parameter; see the security note below.
+| Your service uses | Add | Gives you |
+| --- | --- | --- |
+| EF Core or a Dapper connection factory | `SharedKernel.ServiceDefaults.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
+| A cache through `ICacheService` | `SharedKernel.ServiceDefaults.Caching` | `AddCacheReadinessCheck()` |
+| Redis | `SharedKernel.ServiceDefaults.Caching.Redis` | `AddRedisHealthCheck(connectionString)` |
+| A message bus | `SharedKernel.ServiceDefaults.Messaging` | `AddMessagingReadinessCheck()` |
+| Object storage (S3, MinIO, OBS) | `SharedKernel.ServiceDefaults.Storage` | `AddStorageReadinessCheck(bucket)` |
+| A search index (Meilisearch, Elasticsearch) | `SharedKernel.ServiceDefaults.Search` | `AddSearchReadinessCheck(indexName)` |
+| A vector store | `SharedKernel.ServiceDefaults.AI` | `AddVectorStoreReadinessCheck(collectionName)` |
+| Temporal workflows | `SharedKernel.ServiceDefaults.Workflows.Temporal` | `AddWorkflowReadinessCheck()` |
+| Scheduled jobs | `SharedKernel.ServiceDefaults.Scheduling` | `AddSchedulerReadinessCheck()` |
+| Mutual TLS | `SharedKernel.ServiceDefaults.Security.Mtls` | `AddMtlsClientCertificate()`, `AddMtlsForwardedHeaderCertificate()` |
+| Key Vault **keys** as the encryption-key provider | `SharedKernel.ServiceDefaults.Cryptography.KeyVault` | `AddSharedKernelKeyVaultKeyProvider()`, `AddKeyVaultKeyProviderReadinessCheck()` |
+| Key Vault **secrets** as configuration | `SharedKernel.ServiceDefaults.Configuration.KeyVault` | `AddSharedKernelKeyVaultConfiguration(vaultUri)` |
+| Per-request culture resolution | `SharedKernel.ServiceDefaults.Localization` | `AddSharedKernelLocalization()` |
 
-### Readiness probes — opt in per dependency
+Each integration package's README covers its behaviour, tags, and failure status.
 
-Each wraps the probe primitive owned by that capability domain. `13.ServiceDefaults` supplies the `IHealthCheck` wiring; the domains supply the probes.
+## Quick start
 
-| Method | Probes |
-|---|---|
-| `AddDatabaseReadinessCheck<TContext>()` | EF Core connectivity |
-| `AddDapperDatabaseReadinessCheck()` | `IDbConnectionFactory` connectivity |
-| `AddCacheReadinessCheck()` / `AddRedisHealthCheck()` | Cache / Redis |
-| `AddMessagingReadinessCheck()` | Message bus, against the real configured bus |
-| `AddStorageReadinessCheck()` | Object storage |
-| `AddSearchReadinessCheck()` | Search index |
-| `AddVectorStoreReadinessCheck()` | Vector collection |
-| `AddWorkflowReadinessCheck()` | Temporal workflow service |
-| `AddSchedulerReadinessCheck()` | `19.Scheduling`'s hosted scheduling loop (in-process, zero I/O) |
-| `AddKeyVaultKeyProviderReadinessCheck()` | The registered `IEncryptionKeyProvider`'s backing KMS/HSM (e.g. Azure Key Vault); requires `AddSharedKernelKeyVaultKeyProvider()` to have been called first |
-
-### Telemetry activation — opt in per domain
-
-`WithApplicationTelemetry` · `WithCachingTelemetry` · `WithCommunicationTelemetry` · `WithIntegrationTelemetry` · `WithIntelligenceTelemetry` · `WithMessagingTelemetry` · `WithPersistenceTelemetry` · `WithSchedulingTelemetry` · `WithSearchTelemetry` · `WithWorkflowTelemetry`
-
-Each registers that domain's `ActivitySource` and/or `Meter` with the host providers.
-
-### Other opt-ins
-
-| Method | Purpose |
-|---|---|
-| `AddSharedKernelRateLimiting()` | BCL `Microsoft.AspNetCore.RateLimiting` with conservative defaults |
-| `AddSharedKernelKeyVaultConfiguration()` | Azure Key Vault as an `IConfiguration` **source** |
-| `AddSharedKernelKeyVaultKeyProvider()` | Azure Key Vault Keys as the `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` **key provider** — distinct from the row above; see below |
-| `AddMtlsClientCertificate()` | Kestrel client-certificate negotiation |
-| `AddMtlsForwardedHeaderCertificate()` | Forwarded mTLS certificate header, restricted to trusted networks |
-| `AddSharedKernelLocalization()` | Precedence-ordered request-culture resolution; see below |
-
-## Quick Start
+```xml
+<PackageReference Include="SharedKernel.ServiceDefaults" />
+<PackageReference Include="SharedKernel.ServiceDefaults.Messaging" />
+```
 
 ```csharp
+using SharedKernel.ServiceDefaults.Extensions;
+using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Telemetry;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults()
-       .WithPersistenceTelemetry()
        .WithMessagingTelemetry();
 
-builder.Services.AddSharedKernelHealthChecks()
-       .AddDatabaseReadinessCheck<AppDbContext>()
+builder.Services.AddHealthChecks()
        .AddMessagingReadinessCheck();
 
 var app = builder.Build();
 app.MapDefaultHealthCheckEndpoints();
+
+// Once start-up work such as migrations is done, open /health/ready:
+app.Services.GetRequiredService<StartupGate>().MarkReady();
+
 app.Run();
 ```
 
+## What is in this package
+
+| Member | Purpose |
+| --- | --- |
+| `AddServiceDefaults()` | OpenTelemetry traces, metrics, and logs — with ambient `TenantId`/`CorrelationId` log enrichment — plus the base health checks |
+| `MapDefaultHealthCheckEndpoints(requireAuthorization)` | Maps `/health/live` (`live`-tagged checks only) and `/health/ready` (`ready`-tagged checks only) |
+| `StartupGate` | Keeps `/health/ready` unhealthy until you call `MarkReady()` |
+| `HealthCheckNames`, `HealthCheckTags` | The shared names and tags every integration package uses |
+| `HealthCheckRegistrationLogging` | Logs a readiness check's registration (EventId `13002`) — use it in a check of your own |
+| `AddSharedKernelRateLimiting()` | ASP.NET Core rate limiting with conservative defaults |
+| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithWorkflowTelemetry()` | Registers a domain's `ActivitySource` and `Meter` with the host |
+
+Every `WithXTelemetry()` lives here rather than in an integration package because each wires its domain's
+instruments **by name** and references nothing — so none of them adds a dependency.
+
+## Migrating from before the split
+
+Before WO-084 this package contained every integration. The types have not moved namespace — only
+package — so migrating means adding a `PackageReference`, never editing source. If your build reports an
+unknown `AddXReadinessCheck`, `AddMtls…`, `AddSharedKernelKeyVault…`, or `AddSharedKernelLocalization`, add
+the package from the table above.
+
 ## Security note — health endpoints
 
-`MapDefaultHealthCheckEndpoints()` maps unauthenticated endpoints by default, because Kubernetes probes cannot present credentials. Readiness output can disclose dependency topology.
-
-Pass `requireAuthorization: true`, or keep these endpoints off your public ingress and restrict them with a `NetworkPolicy`. Do not expose readiness publicly on an internet-facing service.
-
-## Key Vault: two independent, easily-confused methods
-
-`AddSharedKernelKeyVaultConfiguration()` and `AddSharedKernelKeyVaultKeyProvider()` both talk to Azure Key Vault, but for entirely different reasons — a service may use either, both, or neither:
-
-```csharp
-// Wires Key Vault SECRETS as an additional IConfiguration source.
-builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"));
-
-// Registers Key Vault KEYS as the platform's IEncryptionKeyProvider/IEnvelopeEncryptionProvider
-// (e.g. for 06.Persistence's EncryptedValueConverter, 02.Caching's cache-value encryption).
-builder.AddSharedKernelKeyVaultKeyProvider();
-```
-
-`AddSharedKernelKeyVaultKeyProvider()` is a thin call-through to `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure` — configure `AzureKeyVaultCryptographyOptions` under the `SharedKernel:Cryptography:KeyVault:Azure` configuration section (see that package's own README for the full shape: `VaultUri`, `CurrentKeyId`, `KeyNames`). It is idempotent — calling it more than once registers the provider exactly once.
-
-By default (or when `cacheTtl` is left `null`), it also wraps `IEncryptionKeyProvider` — and *only* `IEncryptionKeyProvider` — in `01.Core`'s bounded-TTL `CachedEncryptionKeyProvider` (a 5-minute internal default). `IEnvelopeEncryptionProvider` and `IEncryptionKeyProviderProbe` always stay wired to the RAW, uncached provider — envelope wrap/unwrap is a real per-call vault operation, not a cacheable lookup, and a readiness probe must always observe live KMS state:
-
-```csharp
-// Default: IEncryptionKeyProvider is cache-wrapped with a 5-minute TTL.
-builder.AddSharedKernelKeyVaultKeyProvider();
-
-// A custom TTL.
-builder.AddSharedKernelKeyVaultKeyProvider(cacheTtl: TimeSpan.FromMinutes(10));
-
-// Explicit opt-out — IEncryptionKeyProvider resolves the raw, uncached provider, exactly as
-// before this parameter existed.
-builder.AddSharedKernelKeyVaultKeyProvider(cacheTtl: TimeSpan.Zero);
-```
-
-The cache-wrapped `CachedEncryptionKeyProvider` never unlocks a synchronous path — it never implements `01.Core`'s `ISynchronousEncryptionKeyProvider` marker, so the sync `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` members still throw `NotSupportedException` against it. The value here is strictly for async consumers.
-
-`CachedEncryptionKeyProvider` is also independently resolvable as its own concrete type, so a service using `06.Persistence`'s encryption builder can target either the cached or the raw variant explicitly:
-
-```csharp
-efCorePersistenceBuilder.WithExternalEncryptionKeyProvider<CachedEncryptionKeyProvider>();
-// — or —
-efCorePersistenceBuilder.WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>();
-```
-
-**This wiring is deliberately never automatic.** Calling `AddSharedKernelKeyVaultKeyProvider()` does NOT, by itself, make a service satisfy `06.Persistence`'s startup encryption-key-provider check — `06.Persistence` requires an explicit `.WithExternalEncryptionKeyProvider<TProvider>()` call on its own builder chain precisely to avoid an accidental ambient-registration-order collision between that package's `.WithEncryption()` and this method, both of which would otherwise silently share one unkeyed `IEncryptionKeyProvider` slot. If a service wants BOTH KMS-backed general-purpose crypto (via this method) AND KMS-backed persistence-layer column encryption, it must call `.WithExternalEncryptionKeyProvider<TProvider>()` itself.
-
-**CROSS-DOMAIN HAZARD.** `07.Messaging`'s payload-encryption serializer path is hard-synchronous, with no async overload — it can never work against a KMS-backed `IEncryptionKeyProvider`, cache-wrapped by this method or not. A SERVICE THAT ENABLES BOTH `AddSharedKernelKeyVaultKeyProvider()` AND `07.Messaging`'S `WithPayloadTransform()` AGAINST THE SAME AMBIENT `IEncryptionKeyProvider`/`ISymmetricEncryptionService` SLOT WILL BREAK UNCONDITIONALLY (`NotSupportedException` on every message) once `01.Core`'s synchronous-capability gate ships. Keep messaging payload encryption on an independently-configured, config-backed `IEncryptionKeyProvider` — never the ambient slot this method registers.
-
-Pair it with a readiness check so an unreachable vault shows up on `/health/ready`:
-
-```csharp
-builder.AddSharedKernelKeyVaultKeyProvider();
-
-builder.Services.AddSharedKernelHealthChecks()
-    .AddKeyVaultKeyProviderReadinessCheck();
-```
-
-`AddKeyVaultKeyProviderReadinessCheck()` resolves `01.Core`'s `IEncryptionKeyProviderProbe` (already registered as a byproduct of `AddSharedKernelKeyVaultKeyProvider()`) and reports `Unhealthy` — never `Degraded` — when the backing KMS/HSM is unreachable; no fail-safe/graceful-degradation layer sits in front of raw key-provider connectivity. Unlike `AddWorkflowReadinessCheck`/`AddSchedulerReadinessCheck`, this needed no new layering grant — `01.Core` is already inside this domain's `01`–`12` composition-root range.
-
-## Culture resolution (`AddSharedKernelLocalization`)
-
-Precedence-ordered request-culture resolution, composed on top of ASP.NET Core's own `RequestLocalizationMiddleware` — never a reimplementation. Resolves *precedence* only; it does not translate anything (pair it with `01.Core`'s `SharedKernel.Localization`/`ILocalizationCatalog` for that).
-
-```csharp
-builder.AddServiceDefaults();
-builder.Services.AddSharedKernelMultiTenancy();
-builder.Services.AddScoped<ITenantCatalog>(sp => /* see SharedKernel.MultiTenancy's README */);
-
-builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "preferred_culture");
-
-var app = builder.Build();
-app.UseAuthentication();
-app.UseMiddleware<TenantResolutionMiddleware>(); // populates the ambient tenant id
-app.UseRequestLocalization(); // the real BCL call — this package never wires it for you
-```
-
-Default resolution order — deliberately signed-signal-before-unsigned-header, mirroring the `SharedKernel.MultiTenancy` `StrategyOrder` security lesson:
-
-1. **`UserPreference`** — an authenticated user's own stored preference claim (`IUserContext.Claims[UserPreferenceClaimType]`). Skipped cleanly when `UserPreferenceClaimType` is left unconfigured.
-2. **`TenantDefault`** — the current tenant's `TenantDescriptor.DefaultCulture`, via an optionally-registered `ITenantCatalog`. Skipped cleanly (never throws) when no `ITenantCatalog` is registered.
-3. **`AcceptLanguageHeader`** — the real BCL `AcceptLanguageHeaderRequestCultureProvider`.
-
-A one-time startup warning fires when neither `UserPreferenceClaimType` nor an `ITenantCatalog` is configured — both dynamic steps are structurally dead, and you are almost certainly resolving culture from `Accept-Language` alone by accident rather than by design.
+`MapDefaultHealthCheckEndpoints()` maps unauthenticated endpoints by default, because Kubernetes probes
+cannot present credentials, and readiness output can disclose your dependency topology. Pass
+`requireAuthorization: true`, or keep these endpoints off public ingress and restrict them with a
+`NetworkPolicy`. Never expose readiness on an internet-facing service.
 
 ## Rate limiting and ProblemDetails
 
-`AddSharedKernelRateLimiting()` leaves `OnRejected` at the BCL bare-429 default and takes **no** reference to `14.Presentation`. A service that wants an RFC 9457 body attaches its own handler via the `configure` parameter and calls `14.Presentation`'s `RateLimitRejectionProblemDetails.Create(...)`. That keeps the two packages independently referenceable.
+`AddSharedKernelRateLimiting()` leaves `OnRejected` at the ASP.NET Core bare-429 default and takes **no**
+reference to `14.Presentation`. For an RFC 9457 body, attach your own handler through the `configure`
+parameter and call `14.Presentation`'s `RateLimitRejectionProblemDetails.Create(...)`. That keeps the two
+packages independently referenceable.
+
+## Why the base references nothing
+
+Before WO-084, a project referencing this package alone restored **25 SharedKernel projects and 73 NuGet
+packages** — MassTransit, Azure Service Bus, Microsoft.Identity.Web, EF Core, Temporalio, Quartz, and
+StackExchange.Redis among them. Two of its fourteen references were used by no code at all. Measured the
+same way afterwards: **1 project and 10 packages, all OpenTelemetry.**
+
+`SharedKernel.ServiceDefaults.Tests` locks that in two layers. One test reads the compiled assembly's
+references, catching integration code that creeps back in. The other reads this project file, catching a
+reference nothing uses — which leaves no trace in the assembly yet still lands in every consumer's restore.
 
 ## Package
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see the [13.ServiceDefaults README](../README.md) for the full host-composition layer, including `SharedKernel.MultiTenancy`.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). See the
+[13.ServiceDefaults README](../README.md) for the whole host-composition layer, including
+`SharedKernel.MultiTenancy`.

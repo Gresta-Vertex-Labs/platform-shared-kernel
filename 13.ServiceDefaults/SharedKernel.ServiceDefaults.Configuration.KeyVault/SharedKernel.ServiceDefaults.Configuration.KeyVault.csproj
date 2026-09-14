@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Azure Key Vault as an IConfiguration source for Platform.SharedKernel microservices: AddSharedKernelKeyVaultConfiguration adds a vault as a configuration provider, authenticating with DefaultAzureCredential unless a credential is supplied. Carries no SharedKernel dependency and no key-provider code; for Key Vault as an encryption-key provider add SharedKernel.ServiceDefaults.Cryptography.KeyVault. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <PackageTags>shared-kernel;service-defaults;azure-key-vault;configuration;secrets</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
+    <PackageReference Include="Azure.Identity" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Configuration.KeyVault.Tests" />
+  </ItemGroup>
+</Project>

@@ -31,12 +31,14 @@ public static class WorkflowTelemetryExtensions
     /// constants (both <c>"SharedKernel.Workflows"</c>). This method only registers the
     /// already-existing source/meter name with the host's <c>TracerProvider</c>/<c>MeterProvider</c>
     /// via <see cref="TracerProviderBuilder.AddSource(string[])"/> and
-    /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only. This is
-    /// deliberately distinct from <see cref="HealthChecks.WorkflowReadinessHealthCheckExtensions"/>'s
-    /// <see cref="HealthChecks.WorkflowReadinessHealthCheckExtensions.AddWorkflowReadinessCheck"/>,
-    /// which DOES require a <c>ProjectReference</c> (to reach <c>IWorkflowServiceProbe</c>, a real
-    /// type consumed by constructor injection, not just a string name) — this method needs no such
-    /// reference, since a string name is all telemetry wiring requires.
+    /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only, so it needs no
+    /// reference to <c>SharedKernel.Workflows.Temporal</c>, which is why it lives in this
+    /// dependency-free base. The workflow readiness check is different: it consumes
+    /// <c>IWorkflowServiceProbe</c> by constructor injection, a real type, so it lives in the separate
+    /// <c>SharedKernel.ServiceDefaults.Workflows.Temporal</c> package
+    /// (<c>WorkflowReadinessHealthCheckExtensions.AddWorkflowReadinessCheck</c>) — which carries
+    /// Temporalio with it, and is exactly the dependency a service without workflows must not
+    /// restore.
     /// </para>
     /// <para>
     /// Idempotent: calling this method more than once on the same <paramref name="builder"/>

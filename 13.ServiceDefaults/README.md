@@ -2,17 +2,46 @@
 
 Host composition layer for Platform.SharedKernel microservices.
 
-- **`SharedKernel.ServiceDefaults`** — `AddServiceDefaults()` composition entry point; OpenTelemetry (tracing/metrics/logging) wiring; health check composition with a hard liveness/readiness split; opt-in dependency-specific health check adapters (database, Redis, cache, messaging, object storage, search, vector store, workflow service); startup-probe gating. Carries the platform's one documented layering exception permitting a `ProjectReference` to `17.Workflows`'s `SharedKernel.Workflows.Temporal` — scoped **exclusively** to `IWorkflowServiceProbe`/`WorkflowServiceHealth` for `AddWorkflowReadinessCheck` (WO-047); no other `17.Workflows` type may be reached through it.
+- **`SharedKernel.ServiceDefaults`** — the composition base: `AddServiceDefaults()`; OpenTelemetry tracing, metrics, and logging; health-check composition with a hard liveness/readiness split; startup-probe gating; every `WithXTelemetry()`; rate limiting. **References no other SharedKernel package** (WO-084).
+- **`SharedKernel.ServiceDefaults.*`** — thirteen integration packages, one per dependency, each referencing the base plus the one package it integrates. Add only the ones your service needs:
+
+  | Package | Provides |
+  | --- | --- |
+  | `.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
+  | `.Caching` | `AddCacheReadinessCheck()` |
+  | `.Caching.Redis` | `AddRedisHealthCheck(connectionString)` |
+  | `.Messaging` | `AddMessagingReadinessCheck()` |
+  | `.Storage` | `AddStorageReadinessCheck(bucket)` |
+  | `.Search` | `AddSearchReadinessCheck(indexName)` |
+  | `.AI` | `AddVectorStoreReadinessCheck(collectionName)` |
+  | `.Workflows.Temporal` | `AddWorkflowReadinessCheck()` — holds the WO-047 `13→17` layering grant |
+  | `.Scheduling` | `AddSchedulerReadinessCheck()` — holds the P-466 `13→19` layering grant |
+  | `.Security.Mtls` | `AddMtlsClientCertificate()`, `AddMtlsForwardedHeaderCertificate()`, `MtlsForwardedHeaderMiddleware` |
+  | `.Cryptography.KeyVault` | `AddSharedKernelKeyVaultKeyProvider()`, `AddKeyVaultKeyProviderReadinessCheck()` |
+  | `.Configuration.KeyVault` | `AddSharedKernelKeyVaultConfiguration(vaultUri)` |
+  | `.Localization` | `AddSharedKernelLocalization()` |
+
 - **`SharedKernel.MultiTenancy`** — concrete `ITenantProvider` resolution strategies (HTTP header, JWT claim delegation, database tenant-directory lookup); `TenantResolutionMiddleware`; `AmbientTenantProvider`.
 
-Both packages are composition-only: they wire abstractions and concrete providers from layers `01`–`12` together. No business logic, no domain types, no new abstractions are defined here.
+Every package here is composition-only: it wires abstractions and concrete providers from other layers together. No business logic, no domain types, no new abstractions are defined here.
+
+> **Why the base references nothing (WO-084).** Before the split, a project referencing
+> `SharedKernel.ServiceDefaults` alone restored 25 SharedKernel projects and 73 NuGet packages —
+> MassTransit, Azure Service Bus, Microsoft.Identity.Web, EF Core, Temporalio, Quartz, StackExchange.Redis.
+> Measured the same way afterwards: 1 project and 10 packages, all OpenTelemetry. Moved types kept their
+> namespaces, so migrating a service means adding the integration `PackageReference`s it needs and
+> editing no source.
 
 ## Program.cs composition
+
+A full composition using most integrations. Every call below comes from `SharedKernel.ServiceDefaults`
+or `SharedKernel.MultiTenancy` except those marked `[pkg]`, which need the integration package named in the
+table above — so a service omitting, say, workflows omits both the call and the package.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Secrets-manager configuration — optional; call BEFORE AddServiceDefaults() so vault-backed values
+// [pkg .Configuration.KeyVault] Secrets-manager configuration — optional; call BEFORE AddServiceDefaults() so vault-backed values
 // are available to every subsequent registration. NEVER commit plaintext secrets to appsettings.json
 // — see "Secrets-manager configuration" below.
 builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"));
@@ -25,13 +54,13 @@ builder.AddSharedKernelRateLimiting();                 // optional — see "Rate
 
 // Opt-in dependency-specific health checks — only what this service actually uses:
 builder.Services.AddHealthChecks()
-    .AddDatabaseReadinessCheck<MyDbContext>()
-    .AddRedisHealthCheck(redisConnectionString)
-    .AddMessagingReadinessCheck()
-    .AddStorageReadinessCheck("my-bucket")
-    .AddSearchReadinessCheck("products-index")
-    .AddVectorStoreReadinessCheck("documents-collection")
-    .AddWorkflowReadinessCheck();
+    .AddDatabaseReadinessCheck<MyDbContext>()             // [pkg .Persistence]
+    .AddRedisHealthCheck(redisConnectionString)           // [pkg .Caching.Redis]
+    .AddMessagingReadinessCheck()                         // [pkg .Messaging]
+    .AddStorageReadinessCheck("my-bucket")                // [pkg .Storage]
+    .AddSearchReadinessCheck("products-index")            // [pkg .Search]
+    .AddVectorStoreReadinessCheck("documents-collection") // [pkg .AI]
+    .AddWorkflowReadinessCheck();                         // [pkg .Workflows.Temporal]
 
 builder.WithMessagingTelemetry();                      // optional — services using 07.Messaging
 builder.WithCachingTelemetry();                        // optional — services using 02.Caching
@@ -43,7 +72,7 @@ builder.WithPersistenceTelemetry();                    // optional — services 
 builder.WithCommunicationTelemetry();                  // optional — services making outbound gRPC and/or resilience-wrapped REST calls via 11.Communication
 builder.WithIntegrationTelemetry();                    // optional — services dispatching webhooks via 15.Integration (tracing only, no companion meter)
 
-// mTLS client-certificate composition — optional; pick the one matching this service's TLS-termination
+// [pkg .Security.Mtls] mTLS client-certificate composition — optional; pick the one matching this service's TLS-termination
 // topology (a host MAY register both if its topology genuinely varies by environment). Both require
 // 12.Security's IMtlsCertificateValidator to already be registered (typically AddMtlsAuthentication<TValidator>()).
 builder.AddMtlsClientCertificate(ClientCertificateMode.RequireCertificate);        // TLS terminates directly at Kestrel
@@ -64,7 +93,7 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseRateLimiter();                                  // required when AddSharedKernelRateLimiting() is used
 app.UseMiddleware<TenantResolutionMiddleware>();       // required when AddSharedKernelMultiTenancy() is used — must run after UseAuthentication()
-app.UseMiddleware<MtlsForwardedHeaderMiddleware>();    // required when AddMtlsForwardedHeaderCertificate() is used — registering the options alone leaves this absent from the pipeline (silent no-op, not a crash)
+app.UseMiddleware<MtlsForwardedHeaderMiddleware>();    // [pkg .Security.Mtls] required when AddMtlsForwardedHeaderCertificate() is used — registering the options alone leaves this absent from the pipeline (silent no-op, not a crash)
 
 // requireAuthorization: true adds .RequireAuthorization() to both endpoint mappings — DEFENSE IN DEPTH
 // ONLY, NEVER A SUBSTITUTE FOR NETWORK ISOLATION. See "Health endpoint exposure" below.
@@ -99,7 +128,7 @@ builder.AddMtlsForwardedHeaderCertificate(o =>
 });
 ```
 
-When `TrustedNetworks` is non-empty, `MtlsForwardedHeaderMiddleware` ignores — never decodes, validates, or sets `HttpContext.Connection.ClientCertificate` for — a forwarded header from a remote IP outside the allowlist, regardless of whether the certificate itself would otherwise validate. **Leaving `TrustedNetworks` unconfigured (the default, shown in the unconfigured example above) preserves the pre-P-394 unrestricted behavior** — any network path that reaches this host directly (a misconfigured `NetworkPolicy`, a multi-hop mesh topology, a debug port, a compromised sidecar) can forge the header identically to the real ingress. A one-time startup `Warning` log (`ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured`) states this whenever `TrustedNetworks` is left empty. Configuring `TrustedNetworks` is recommended in production for the same reason `KnownProxies`/`KnownNetworks` is recommended for ASP.NET Core's own `UseForwardedHeaders()`.
+When `TrustedNetworks` is non-empty, `MtlsForwardedHeaderMiddleware` ignores — never decodes, validates, or sets `HttpContext.Connection.ClientCertificate` for — a forwarded header from a remote IP outside the allowlist, regardless of whether the certificate itself would otherwise validate. **Leaving `TrustedNetworks` unconfigured (the default, shown in the unconfigured example above) preserves the pre-P-394 unrestricted behavior** — any network path that reaches this host directly (a misconfigured `NetworkPolicy`, a multi-hop mesh topology, a debug port, a compromised sidecar) can forge the header identically to the real ingress. A one-time startup `Warning` log (`MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured`, EventId `13003`, in `SharedKernel.ServiceDefaults.Security.Mtls`) states this whenever `TrustedNetworks` is left empty. Configuring `TrustedNetworks` is recommended in production for the same reason `KnownProxies`/`KnownNetworks` is recommended for ASP.NET Core's own `UseForwardedHeaders()`.
 
 ### Rate limiting
 

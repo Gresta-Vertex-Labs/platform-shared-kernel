@@ -31,9 +31,12 @@ public static class SchedulingTelemetryExtensions
     /// <c>"SharedKernel.Scheduling"</c>, confirmed directly against
     /// <c>SharedKernel.Scheduling/Diagnostics/SchedulingTelemetry.cs</c>), so omitting
     /// <c>WithMetrics(...)</c> here would be a real gap, not a documented scope decision — the same
-    /// six-sibling shape as <see cref="WithMessagingTelemetry"/>/<see cref="WithCachingTelemetry"/>/
-    /// <see cref="WithApplicationTelemetry"/>/<see cref="WithSearchTelemetry"/>/
-    /// <see cref="WithIntelligenceTelemetry"/>/<see cref="WithWorkflowTelemetry"/>.
+    /// six-sibling shape as <see cref="MessagingTelemetryExtensions.WithMessagingTelemetry"/>/
+    /// <see cref="CachingTelemetryExtensions.WithCachingTelemetry"/>/
+    /// <see cref="ApplicationTelemetryExtensions.WithApplicationTelemetry"/>/
+    /// <see cref="SearchTelemetryExtensions.WithSearchTelemetry"/>/
+    /// <see cref="IntelligenceTelemetryExtensions.WithIntelligenceTelemetry"/>/
+    /// <see cref="WorkflowTelemetryExtensions.WithWorkflowTelemetry"/>.
     /// </para>
     /// <para>
     /// <c>13.ServiceDefaults</c> does not create this source/meter pair — <c>19.Scheduling</c>'s
@@ -43,12 +46,12 @@ public static class SchedulingTelemetryExtensions
     /// <c>"SharedKernel.Scheduling"</c>). This method only registers the already-existing
     /// source/meter name with the host's <c>TracerProvider</c>/<c>MeterProvider</c> via
     /// <see cref="TracerProviderBuilder.AddSource(string[])"/> and
-    /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only, requiring
-    /// <b>zero <c>ProjectReference</c></b> to <c>SharedKernel.Scheduling</c> for this method
-    /// specifically, even though this domain's <c>.csproj</c> as a whole carries one for
-    /// <see cref="HealthChecks.SchedulerReadinessHealthCheckExtensions.AddSchedulerReadinessCheck"/>
-    /// (which DOES need it, to reach <c>ISchedulerServiceProbe</c>, a real type consumed by
-    /// constructor injection, not just a string name).
+    /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only, so it needs
+    /// <b>no reference</b> to <c>SharedKernel.Scheduling</c>, which is why it lives in this
+    /// dependency-free base. The scheduler readiness check is different: it consumes
+    /// <c>ISchedulerServiceProbe</c> by constructor injection, a real type, so it lives in the separate
+    /// <c>SharedKernel.ServiceDefaults.Scheduling</c> package
+    /// (<c>SchedulerReadinessHealthCheckExtensions.AddSchedulerReadinessCheck</c>).
     /// </para>
     /// <para>
     /// Idempotent: calling this method more than once on the same <paramref name="builder"/>

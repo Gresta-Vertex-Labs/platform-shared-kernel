@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Message-bus readiness health check for Platform.SharedKernel microservices: AddMessagingReadinessCheck, probing SharedKernel.Messaging.Abstractions IMessageBusProbe against the real, already-configured bus. Registered on /health/ready only. References the messaging abstraction only, never MassTransit. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <PackageTags>shared-kernel;service-defaults;health-checks;readiness;messaging</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Messaging.Tests" />
+  </ItemGroup>
+</Project>

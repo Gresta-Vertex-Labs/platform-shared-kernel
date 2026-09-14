@@ -14,7 +14,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
@@ -144,32 +143,6 @@ public sealed class HealthCheckEndpointTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.OK, liveResponse.StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, readyResponse.StatusCode);
-    }
-
-    [Fact]
-    public async Task HealthLive_NeverEvaluatesRealMessagingReadinessCheckRegistration()
-    {
-        // Uses the real opt-in extension method (not a synthetic AddCheck call) to prove the
-        // registered messaging check is excluded from the "/health/live" predicate by tag,
-        // independent of whether the underlying probe reports the bus as unhealthy.
-        var probe = Substitute.For<IMessageBusProbe>();
-        probe.ProbeAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new MessageBusHealth(false, "bus unreachable")));
-
-        var host = await StartHostAsync(checks =>
-        {
-            checks.Services.AddSingleton(probe);
-            checks.AddMessagingReadinessCheck();
-        });
-        host.Services.GetRequiredService<SharedKernel.ServiceDefaults.Probes.StartupGate>().MarkReady();
-
-        using var client = host.GetTestClient();
-        var liveResponse = await client.GetAsync("/health/live");
-
-        // The messaging check is not tagged "live", so /health/live evaluates an empty set and
-        // reports Healthy regardless of the (deliberately unhealthy, in this test) probe result
-        // that would otherwise fail the check on /health/ready.
-        Assert.Equal(HttpStatusCode.OK, liveResponse.StatusCode);
     }
 
     [Fact]
