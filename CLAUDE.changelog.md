@@ -110,3 +110,4 @@
 - [2026-09-11] P-529: Primitives pre-publish hardening; 6 defects fixed, SmartEnumJsonConverter added (agent)
 - [2026-09-11] P-530: Configuration pre-publish hardening; 6 defects fixed, ISectionBoundOptions added (agent)
 - [2026-09-14] WO-084: ServiceDefaults split into dependency-free base + 13 integration packages (agent)
+- [2026-09-14] P-538: SharedKernel.Core pre-publish hardening; 10 defects fixed, API locked by PublicApiAnalyzers (agent)

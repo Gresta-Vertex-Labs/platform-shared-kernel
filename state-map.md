@@ -2272,6 +2272,19 @@ Move every existing test beside the code it covers, then lock the base's isolati
 - [x] Closure re-measured with the identical probe method: a project referencing only the base restored **25 SharedKernel projects and 73 NuGet packages before, 1 and 10 after** — 63 packages removed, none added. All ten are OpenTelemetry; nothing in the graph resolves EF Core or a gRPC client
 - [x] All 14 packages pack with 0 failures, each shipping its XML documentation and README; each nuspec inspected — the base declares no `SharedKernel.*` dependency and seven OpenTelemetry packages, each integration declares the base plus only what it integrates, and no integration declares another
 
+### P-538 — Core: `SharedKernel.Core` Pre-First-Publish Hardening Pass (BREAKING API + BEHAVIOUR CHANGES)
+
+**Status:** `◐` Dispatched — 11/12 tasks `●`; only the publish itself (`P-60`) remains `○`
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 01.Core
+**Depends on:** P-529 (`SharedKernel.Primitives` must be on the feed first)
+
+#### What is needed
+A gold-standard audit of `SharedKernel.Core` before its first publish, following P-529 (Primitives) and P-530 (Configuration). Full task breakdown, per-defect evidence and the design constraints found live in [`01.Core/state-map.md`](01.Core/state-map.md) under `SK.01.P538`.
+
+#### Why this is needed
+Ten defects, all reproduced by executing the code. The severe one: every async railway overload used `ContinueWith(t => t.Result)`, so awaiting a chain over a cancelled task threw `AggregateException` instead of `OperationCanceledException`, undoing for railway code the cancellation guarantee P-510 gave `ResultTry`. The package had never reached a feed, so the user took the breaking window: guards folded into one namespace (`using SharedKernel.Guards;` alone did not compile `Guard.Against.*`), `NotPositive` and five BCL-duplicate helpers deleted, numeric guards generalized to `INumber<T>`, and the public API locked with `PublicApiAnalyzers` before anything ships.
+
 ---
 
 ### Closed phase index
