@@ -272,29 +272,46 @@ public class ServiceDefaultsWorkflowLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-pass-2 — Pass path: the real SharedKernel.ServiceDefaults assembly
+    // T-pass-2 — Pass path: the real assembly holding the WO-047 grant
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// The real, currently-shipped <c>SharedKernel.ServiceDefaults</c> assembly — whose
+    /// The real, shipped assembly that holds the WO-047 13-to-17 layering grant — since WO-084,
+    /// <c>SharedKernel.ServiceDefaults.Workflows.Temporal</c>, not the composition base — whose
     /// <c>WorkflowReadinessHealthCheck</c>/<c>WorkflowReadinessHealthCheckExtensions</c> consume
     /// only <c>IWorkflowServiceProbe</c>/<c>WorkflowServiceHealth</c> from
     /// <c>SharedKernel.Workflows.Temporal</c> — must pass
     /// <see cref="ServiceDefaultsWorkflowLayeringRules.OnlyReachesWorkflowProbeTypes"/> with zero
     /// violations.
     /// </summary>
+    /// <remarks>
+    /// Guarded against passing vacuously. The rule reports success for any assembly that never touches
+    /// <c>SharedKernel.Workflows.Temporal</c> — so pointed at the wrong assembly (the base, which after
+    /// WO-084 references no SharedKernel package at all) it would pass while inspecting nothing. The
+    /// test therefore first asserts it holds the integration assembly, and that the assembly genuinely
+    /// references the package the grant covers.
+    /// </remarks>
     [Fact]
     public void OnlyReachesWorkflowProbeTypes_RealServiceDefaultsAssembly_RulePasses()
     {
         var serviceDefaultsAssembly =
             typeof(SharedKernel.ServiceDefaults.HealthChecks.WorkflowReadinessHealthCheckExtensions).Assembly;
 
+        serviceDefaultsAssembly.GetName().Name.Should().Be(
+            "SharedKernel.ServiceDefaults.Workflows.Temporal",
+            because: "WO-084 moved the workflow readiness check, and with it the WO-047 grant, out of the base");
+        serviceDefaultsAssembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .Should().Contain(
+                "SharedKernel.Workflows.Temporal",
+                because: "a rule over an assembly that never reaches the granted package would pass vacuously");
+
         var result = ServiceDefaultsWorkflowLayeringRules
             .OnlyReachesWorkflowProbeTypes(serviceDefaultsAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "the real SharedKernel.ServiceDefaults assembly reaches into " +
+            because: "the real SharedKernel.ServiceDefaults.Workflows.Temporal assembly reaches into " +
                      "SharedKernel.Workflows.Temporal only through IWorkflowServiceProbe/" +
                      "WorkflowServiceHealth (WorkflowReadinessHealthCheck/Extensions), exactly " +
                      "the scope the WO-047/P-291 grant permits");

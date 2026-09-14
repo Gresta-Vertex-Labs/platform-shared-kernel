@@ -132,7 +132,7 @@ namespace SharedKernel.ArchitectureTests;
 /// <see cref="TypeReference.FullName"/>. <strong>Confirmed by direct Mono.Cecil inspection of the
 /// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c> IL that a
 /// plain single-method-body scan is insufficient</strong>: the call to
-/// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> lives inside the C#
+/// <c>MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> lives inside the C#
 /// <c>.PostConfigure&lt;ILoggerFactory&gt;((configuredOptions, loggerFactory) =&gt; { ... })</c>
 /// lambda argument, which the Roslyn compiler lowers to its own method
 /// (<c>&lt;AddMtlsForwardedHeaderCertificate&gt;b__0_0</c>) on a compiler-generated

@@ -271,29 +271,44 @@ public class ServiceDefaultsSchedulingLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-pass-2 — Pass path: the real SharedKernel.ServiceDefaults assembly
+    // T-pass-2 — Pass path: the real assembly holding the P-466 grant
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// The real, currently-shipped <c>SharedKernel.ServiceDefaults</c> assembly — whose
+    /// The real, shipped assembly that holds the P-466 13-to-19 layering grant — since WO-084,
+    /// <c>SharedKernel.ServiceDefaults.Scheduling</c>, not the composition base — whose
     /// <c>SchedulerReadinessHealthCheck</c>/<c>SchedulerReadinessHealthCheckExtensions</c> consume
     /// only <c>ISchedulerServiceProbe</c>/<c>SchedulerServiceHealth</c> from
     /// <c>SharedKernel.Scheduling</c> — must pass
     /// <see cref="ServiceDefaultsSchedulingLayeringRules.OnlyReachesSchedulerProbeTypes"/> with zero
     /// violations.
     /// </summary>
+    /// <remarks>
+    /// Guarded against passing vacuously, for the same reason as the workflow rule's real-assembly
+    /// test: pointed at an assembly that never reaches <c>SharedKernel.Scheduling</c>, the rule passes
+    /// while inspecting nothing.
+    /// </remarks>
     [Fact]
     public void OnlyReachesSchedulerProbeTypes_RealServiceDefaultsAssembly_RulePasses()
     {
         var serviceDefaultsAssembly =
             typeof(SharedKernel.ServiceDefaults.HealthChecks.SchedulerReadinessHealthCheckExtensions).Assembly;
 
+        serviceDefaultsAssembly.GetName().Name.Should().Be(
+            "SharedKernel.ServiceDefaults.Scheduling",
+            because: "WO-084 moved the scheduler readiness check, and with it the P-466 grant, out of the base");
+        serviceDefaultsAssembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .Should().Contain(
+                "SharedKernel.Scheduling",
+                because: "a rule over an assembly that never reaches the granted package would pass vacuously");
+
         var result = ServiceDefaultsSchedulingLayeringRules
             .OnlyReachesSchedulerProbeTypes(serviceDefaultsAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "the real SharedKernel.ServiceDefaults assembly reaches into " +
+            because: "the real SharedKernel.ServiceDefaults.Scheduling assembly reaches into " +
                      "SharedKernel.Scheduling only through ISchedulerServiceProbe/" +
                      "SchedulerServiceHealth (SchedulerReadinessHealthCheck/Extensions), exactly " +
                      "the scope the WO-073/P-466 grant permits");

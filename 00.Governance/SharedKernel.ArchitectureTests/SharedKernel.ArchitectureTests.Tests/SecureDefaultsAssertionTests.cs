@@ -903,7 +903,7 @@ public class SecureDefaultsAssertionTests
     /// T-318: Re-points <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the
     /// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c>
     /// registration method and confirms it still calls
-    /// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c>.
+    /// <c>MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured</c>.
     /// </summary>
     /// <remarks>
     /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c>
@@ -917,6 +917,13 @@ public class SecureDefaultsAssertionTests
     /// — that <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>'s lambda-closure
     /// scanning is exercised for real, not merely by a contrived fixture shaped to avoid needing
     /// it.
+    /// <para>
+    /// <b>WO-084:</b> mutual-TLS composition moved into <c>SharedKernel.ServiceDefaults.Security.Mtls</c>,
+    /// and its log events — EventIds unchanged — moved from <c>ServiceDefaultsLog</c> into that
+    /// package's <c>MtlsLog</c>. Run against the old name before being updated, this test failed with
+    /// its own "Could not resolve … has it been renamed or moved?" message, which is the behaviour the
+    /// explicit throw exists for.
+    /// </para>
     /// </remarks>
     [Fact]
     public void AssertMethodBodyInvokesMethod_RealMtlsForwardedHeaderExtensions_WarningCallSiteHolds()
@@ -924,16 +931,16 @@ public class SecureDefaultsAssertionTests
         var declaringType =
             typeof(SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderExtensions);
 
-        // ServiceDefaultsLog is `internal` to SharedKernel.ServiceDefaults — no
+        // MtlsLog is `internal` to SharedKernel.ServiceDefaults.Security.Mtls — no
         // InternalsVisibleTo grant exists (or should exist) to this governance test project, so
         // `typeof(...)` cannot name it directly. Assembly.GetType(string) resolves a Type object
         // by name regardless of accessibility — this helper only ever compares the resolved
         // Type's FullName against Mono.Cecil's TypeReference.FullName, never invokes a member
         // through it, so no accessibility violation occurs at runtime either.
         var calleeDeclaringType =
-            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog")
+            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Logging.MtlsLog")
             ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog via " +
+                "Could not resolve SharedKernel.ServiceDefaults.Logging.MtlsLog via " +
                 "Assembly.GetType — has it been renamed or moved?");
 
         var act = () =>
@@ -945,7 +952,7 @@ public class SecureDefaultsAssertionTests
 
         act.Should().NotThrow(
             because: "the real, shipped AddMtlsForwardedHeaderCertificate's PostConfigure lambda " +
-                     "still calls ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
+                     "still calls MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
                      "when TrustedNetworks is left unconfigured (WO-061, C-50/C-53)");
     }
 
@@ -1102,7 +1109,7 @@ public class SecureDefaultsAssertionTests
     /// <c>InternalsVisibleTo</c> grant exists (or should exist) to this governance test project, so
     /// <c>typeof(...)</c> cannot name it directly. <c>Assembly.GetType(string)</c> resolves a
     /// <see cref="Type"/> object by name regardless of accessibility, mirroring T-318's identical
-    /// technique for <c>ServiceDefaultsLog</c> — this helper only ever compares
+    /// technique for <c>MtlsLog</c> — this helper only ever compares
     /// <see cref="System.Reflection.MemberInfo.Name"/>/declaring-type
     /// <c>FullName</c>, never invokes a member through it. T-315/T-316's contrived fixtures already
     /// prove <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> correctly fires
