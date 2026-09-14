@@ -1,1237 +1,1461 @@
-# 00.Governance — Usage Guide
+# 00.Governance
 
-This document covers how to consume each package in the `00.Governance` capability domain:
-`SharedKernel.Analyzers`, `SharedKernel.ArchitectureTests`, `SharedKernel.Linter`, and
-`SharedKernel.Benchmarks`.
+**Automated guardrails for the Platform.SharedKernel ecosystem.** Compile-time analyzers, architecture tests and a formatting gate that turn the platform's conventions into checks that run on every build, every test run and every pull request.
 
----
+A shared kernel only stays coherent if every service follows the same rules: inject `IClock` instead of reading the system clock, never silently discard a `Result`, keep the domain free of persistence, never log personal data unmasked. Written down, rules like these get broken by accident, one reviewer blind spot at a time. The packages in this folder make each rule fail loudly at the point where it is broken, with a message that names the fix.
 
 ## Contents
 
-- [SharedKernel.Analyzers — Roslyn Diagnostics](#sharedkernelanalyzers--roslyn-diagnostics)
-  - [Referencing the Analyzer Package](#referencing-the-analyzer-package)
-  - [SK0001 — DirectDateTimeUsage](#sk0001-directdatetimeusage)
-  - [SK0002 — DirectMicrosoftFeatureManagerUsage](#sk0002-directmicrosoftfeaturemanagerusage)
-  - [SK0003 — RawExceptionThrow](#sk0003-rawexceptionthrow)
-  - [SK0004 — NullErrorReturn](#sk0004-nullerrorreturn)
-  - [SK0005 — StringOnlyExceptionConstructor](#sk0005-stringonlyexceptionconstructor)
-  - [SK0006 — GuardClauseThrow](#sk0006-guardclausethrow)
-  - [SK0007 — RedisChannelServiceMessagingSubstitute](#sk0007-redischannelservicemessagingsubstitute)
-  - [SK0008 — AggregateRootDispatchCoupling](#sk0008-aggregaterootdispatchcoupling)
-  - [SK0009 — DomainEventMissingVersionAttribute](#sk0009-domaineventmissingversionattribute)
-  - [SK0010 — SpecificationOrderingConflict](#sk0010-specificationorderingconflict)
-  - [SK0011 — GuidFormatCodeMisuse](#sk0011-guidformatcodemisuse)
-  - [SK0013 — RawHttpClientConstructorInjection](#sk0013-rawhttpclientconstructorinjection)
-  - [SK0014 — ClosedGenericResiliencePipelineRegistration](#sk0014-closedgenericresiliencepipelineregistration)
-  - [SK0015 — StreamPipelineBehaviorMisregistration](#sk0015-streampipelinebehaviormisregistration)
-  - [SK0016 — RequestTypeShortNameUsage](#sk0016-requesttypeshortnameusage)
-  - [SK0017 — CommandImplementsCacheableQuery](#sk0017-commandimplementscacheablequery)
-  - [SK0018 — QueryImplementsInvalidatesCache](#sk0018-queryimplementsinvalidatescache)
-  - [SK0019 — RetryableRequestWithoutIdempotency](#sk0019-retryablerequestwithoutidempotency)
-  - [SK0020 — DirectILoggerExtensionMethodUsage](#sk0020-directiloggerextensionmethodusage)
-  - [SK0021 — HandWrittenLoggerMessageDefineDelegate](#sk0021-handwrittenloggermessagedefinedelegate)
-  - [SK0022 — CrossCuttingMagicStringLiteral](#sk0022-crosscuttingmagicstringliteral)
-  - [SK0023 — NonSingletonAmazonS3ClientRegistration](#sk0023-nonsingletonamazons3clientregistration)
-  - [SK0024 — RawSearchFieldNameLiteral](#sk0024-rawsearchfieldnameliteral)
-  - [SK0025 — ObsoleteElasticsearchClientUsage](#sk0025-obsoleteelasticsearchclientusage)
-  - [SK0026 — RawIntelligenceProviderClientConstructorInjection](#sk0026-rawintelligenceproviderclientconstructorinjection)
-  - [SK0027 — RawIntelligenceIdentifierLiteral](#sk0027-rawintelligenceidentifierliteral)
-  - [SK0028 — NonDeterministicApiUsageInsideWorkflow](#sk0028-nondeterministicapiusageinsideworkflow)
-  - [SK0029 — RawTemporalClientConstructorInjection](#sk0029-rawtemporalclientconstructorinjection)
-  - [SK0030 — ResultOutcomeDiscarded](#sk0030-resultoutcomediscarded)
-  - [SK0031 — RawSecurityContextConstructorInjection](#sk0031-rawsecuritycontextconstructorinjection)
-  - [SK0032 — CorsWildcardOriginWithCredentials](#sk0032-corswildcardoriginwithcredentials)
-  - [SK0033 — ReflectionBasedObjectMapperUsage](#sk0033-reflectionbasedobjectmapperusage)
-  - [SK0034 — AmountCurrencyPairCoupling](#sk0034-amountcurrencypaircoupling)
-  - [SK0035 — UnmaskedClassifiedDataAtLoggingCallSite](#sk0035-unmaskedclassifieddataatloggingcallsite)
-  - [SK0036 — RawRpcExceptionConstruction](#sk0036-rawrpcexceptionconstruction)
-  - [SK0201 — TenantedDbContextOnModelCreatingGuard](#sk0201-tenanteddbcontextonmodelcreatingguard)
-  - [SK0202 — IgnoreQueryFiltersOutsideTenantedRepository](#sk0202-ignorequeryfiltersoutsidetenantedrepository)
-  - [SK0703 — MessageBusSingletonRegistration](#sk0703-messagebussingletonregistration)
-  - [SK0704 — HardcodedQueueUriInGetSendEndpoint](#sk0704-hardcodedqueueuriingetsendendpoint)
-  - [SK0705 — FaultConsumerDirectRegistration](#sk0705-faultconsumerdirectregistration)
-  - [SK0706 — DirectMassTransitSchedulerInjection](#sk0706-directmasstransitschedulerinjection)
-  - [SK0707 — SagaStateMustExtendSagaStateBase](#sk0707-sagastatemustextendsagastatebase)
-  - [SK0708 — BatchConsumerRegisteredViaAddConsumer](#sk0708-batchconsumerregisteredviaaddconsumer)
-- [SharedKernel.ArchitectureTests — Layering Rules](#sharedkernelarchitecturetests--layering-rules)
-  - [Referencing the Package](#referencing-the-package)
-  - [Using SharedKernelLayeringRules](#using-sharedkernellayeringrules)
-  - [Subclassing ArchitectureRuleBase](#subclassing-architecturerulebase)
-  - [GuardPurityRules — Guard Clause Purity Enforcement](#guardpurityrules--guard-clause-purity-enforcement)
-  - [CachingAbstractionRules — Caching Boundary Enforcement](#cachingabstractionrules--caching-boundary-enforcement)
-  - [DomainLayerPurityRules — Domain Layer Purity Enforcement](#domainlayerpurityrules--domain-layer-purity-enforcement)
-  - [DomainGoldStandardRules — Domain Convention Enforcement](#domaingoldstandardrules--domain-convention-enforcement)
-  - [ContractsPurityRules — Contracts Layer Purity Enforcement](#contractspurityrules--contracts-layer-purity-enforcement)
-  - [MessagingArchitectureRules — Messaging Boundary Enforcement](#messagingarchitecturerules--messaging-boundary-enforcement)
-  - [ExtendedMessagingArchitectureRules — Extended Messaging Misuse Enforcement](#extendedmessagingarchitecturerules--extended-messaging-misuse-enforcement)
-- [SharedKernel.Linter — EditorConfig and CSharpier](#sharedkernellinter--editorconfig-and-csharpier)
-  - [Applying the Linter Package](#applying-the-linter-package)
-  - [CI Enforcement](#ci-enforcement)
-  - [Skipping the CSharpier Check Locally](#skipping-the-csharpier-check-locally)
-- [SharedKernel.Benchmarks — Benchmark Configuration](#sharedkernelbenchmarks--benchmark-configuration)
+- [How it fits together](#how-it-fits-together)
+- [Packages](#packages)
+- [Quick start](#quick-start)
+- [Adopting governance in an existing service](#adopting-governance-in-an-existing-service)
+- [Configuring severity](#configuring-severity)
+- [Suppressing a diagnostic](#suppressing-a-diagnostic)
+- [Analyzer rules](#analyzer-rules)
+  - [Rule index](#analyzer-rule-index)
+- [Analyzer rule reference](#rule-reference)
+- [Architecture tests](#architecture-tests)
+- [Formatting (Linter)](#formatting-linter)
+- [Benchmarks](#benchmarks)
+- [How these packages are verified](#how-these-packages-are-verified)
 
 ---
 
-## SharedKernel.Analyzers — Roslyn Diagnostics
+## How it fits together
 
-`SharedKernel.Analyzers` is a Roslyn analyzer NuGet package. It ships no runtime DLL — only
-the analyzer assembly (targeting `netstandard2.0`) that the compiler host loads. Diagnostics
-appear at compile time in the IDE and in `dotnet build` output.
+Each package catches a different class of problem, at a different stage, so a violation is stopped as early as the check can see it.
 
-### Referencing the Analyzer Package
+```mermaid
+flowchart LR
+    edit["Write code"] --> build["Build"] --> test["Test"] --> ci["Pull request CI"]
 
-Add the reference to any project that should be checked:
-
-```xml
-<ItemGroup>
-  <PackageReference Include="SharedKernel.Analyzers" Version="1.0.0">
-    <!-- Analyzers are development dependencies — they are not transitively inherited -->
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-  </PackageReference>
-</ItemGroup>
+    build -.- analyzers["<b>SharedKernel.Analyzers</b><br/>Flags a violating line in the IDE<br/>and in every build"]
+    test -.- arch["<b>SharedKernel.ArchitectureTests</b><br/>Fails a test when an assembly breaks<br/>a layering, purity or IL rule"]
+    ci -.- linter["<b>SharedKernel.Linter</b><br/>Fails CI when a file is not formatted"]
 ```
 
-All 41 rules (SK0001–SK0010, SK0011–SK0036, SK0201–SK0202, SK0703–SK0705, SK0708) are enabled by
-default at `Warning` severity — including the `Security`-category rules (SK0032, SK0035) and the
-`Advisory`-category rule (SK0034); none of the 41 escalates to `Error` by default. To suppress a
-rule project-wide, add it to `<NoWarn>`:
+| | Analyzers | Architecture tests | Linter |
+|---|---|---|---|
+| **Checks** | Individual lines of code: an API call, a registration, a constructor parameter | Whole assemblies: what references what, what a method body does in IL | File formatting and code style |
+| **Runs** | IDE and every `dotnet build` | Your test suite (`dotnet test`) | CI builds only |
+| **Typical catch** | `DateTime.UtcNow` in a service, a discarded `Result` | The domain layer referencing EF Core | An unformatted file in a pull request |
+| **Ships to your consumers** | No, development dependency | No, development dependency | No, development dependency |
+
+None of these packages adds a runtime dependency to your service or to any package you publish.
+
+## Packages
+
+| Package | What it provides | Reference it from | Documentation |
+|---|---|---|---|
+| **SharedKernel.Analyzers** | 41 Roslyn analyzers for platform conventions, security and data privacy | Every production project | [Rule reference](#analyzer-rules) on this page · [package README](SharedKernel.Analyzers/README.md) |
+| **SharedKernel.ArchitectureTests** | 80+ ready-made NetArchTest rules and IL-level assertions | Your architecture test project | [Package README](SharedKernel.ArchitectureTests/README.md) |
+| **SharedKernel.Linter** | A CSharpier format gate for CI and the platform's shared `.editorconfig` | Every project, or once in `Directory.Build.props` | [Package README](SharedKernel.Linter/README.md) |
+| SharedKernel.Benchmarks | Standard BenchmarkDotNet configuration | Internal only, not published | [Benchmarks](#benchmarks) |
+
+All published packages share the repository-wide version, derived from a single git tag.
+
+## Quick start
+
+### 1. Add the package source
+
+SharedKernel packages are published to GitHub Packages. Add the feed once, in a `nuget.config` at your repository root:
 
 ```xml
-<PropertyGroup>
-  <!-- Suppress SK0001 for a project that legitimately manages time directly -->
-  <NoWarn>$(NoWarn);SK0001</NoWarn>
-</PropertyGroup>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="shared-kernel" value="https://nuget.pkg.github.com/Gresta-Vertex-Labs/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="shared-kernel">
+      <package pattern="SharedKernel.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
 ```
 
-To suppress a single occurrence inline, use a `#pragma` directive:
+GitHub Packages requires authentication even for reads: supply a personal access token with the `read:packages` scope through `dotnet nuget update source` locally, or `GITHUB_TOKEN` in GitHub Actions.
+
+### 2. Reference the packages
+
+Analyzers and the Linter belong on every project, so the simplest place for them is a `Directory.Build.props` at the repository root:
+
+```xml
+<Project>
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
+```
+
+The version comes from `Directory.Packages.props` if you use Central Package Management, or add `Version="..."` above if you do not. Analyzers are not inherited transitively, which is why they are referenced explicitly rather than arriving with another SharedKernel package.
+
+Architecture tests go in a test project, alongside the test runner of your choice:
+
+```bash
+dotnet add tests/MyService.ArchitectureTests package SharedKernel.ArchitectureTests
+```
+
+### 3. Build
+
+```bash
+dotnet build
+```
+
+The analyzers run immediately and report at **Warning**; nothing fails your build until you decide it should. See [Configuring severity](#configuring-severity) to make rules strict, and the [ArchitectureTests README](SharedKernel.ArchitectureTests/README.md) for your first rule.
+
+## Adopting governance in an existing service
+
+Turning every check on at once in a mature codebase produces noise, and noise gets suppressed. This order introduces each check where it is cheapest to act on:
+
+1. **Add the analyzers and read the warnings.** Most rules only fire on code that uses what they govern, so a service with no MassTransit bus never sees the messaging rules. Fix or explicitly suppress what appears.
+2. **Escalate the security rules to errors.** `SK0032` (CORS credentials with a wildcard origin) and `SK0035` (unmasked personal data in logs) have real security consequences. Make them non-negotiable first.
+3. **Add architecture tests one rule at a time.** For each rule you adopt, introduce a deliberate violation once and watch the test fail. A rule you have never seen fail may be passing because it inspected nothing.
+4. **Format once, then let CI hold the line.** Install the shared `.editorconfig`, run the formatter across the codebase as a single reviewable commit, and only then rely on the CI format check.
+
+## Configuring severity
+
+Every analyzer ships at **Warning**. Raise, lower or disable rules in `.editorconfig`, where the decision is versioned with your code:
+
+```ini
+[*.cs]
+# Fail the build on the rules you treat as non-negotiable
+dotnet_diagnostic.SK0030.severity = error
+
+# Adopt a whole category at once
+dotnet_analyzer_diagnostic.category-Security.severity = error
+
+# Switch off a rule that does not apply to this service
+dotnet_diagnostic.SK0024.severity = none
+
+[tests/**/*.cs]
+# Relax a rule for part of the tree only
+dotnet_diagnostic.SK0001.severity = none
+```
+
+| Category | Meaning |
+|---|---|
+| `Usage` | An API is being used in a way the platform does not support. |
+| `Design` | The shape of a type, a method or a DI registration is wrong. |
+| `Security` | A violation with a direct security consequence. The best candidates to raise to `error` first. |
+| `Advisory` | A nudge toward a better pattern, not a prohibition. Leave it at Warning. |
+
+## Suppressing a diagnostic
+
+When a rule is genuinely wrong for one call site, suppress it at that site **and record why**. An unexplained suppression cannot be told apart from an oversight.
 
 ```csharp
-#pragma warning disable SK0001
-var now = DateTime.UtcNow; // intentional — this class implements IClock
-#pragma warning restore SK0001
+#pragma warning disable SK0202 // Cross-tenant retention purge, approved in INF-4421
+var expired = await context.AuditLogs.IgnoreQueryFilters().Where(x => x.CreatedAt < cutoff).ToListAsync(ct);
+#pragma warning restore SK0202
 ```
 
+For a whole member or type, use `[SuppressMessage]` with a `Justification`:
+
+```csharp
+[SuppressMessage("Usage", "SK0001", Justification = "Measures wall-clock time deliberately.")]
+public TimeSpan MeasureLatency() { /* ... */ }
+```
+
+Prefer either over disabling a rule in `.editorconfig`. A per-site suppression records one decision; `severity = none` removes the rule for everyone.
+
 ---
+
+## Analyzer rules
+
+`SharedKernel.Analyzers` contains 41 rules. Every diagnostic's help link in the IDE opens that rule's section below.
+
+**Which rules will you actually see?** Most rules only apply to code that already uses the technology they govern. The rules that apply to almost any C# project are `SK0001` (clock access), `SK0003`–`SK0005` (exception and error shape), `SK0011` (GUID formatting), `SK0016` (type-name collisions), `SK0020`–`SK0021` (log authoring), `SK0022` (magic strings), `SK0030` (discarded results) and `SK0033` (reflection-based mappers).
+
+<a id="analyzer-rule-index"></a>
+### Rule index
+
+#### Core standards
+
+Primitives, domain modelling and error handling.
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0001](#sk0001-directdatetimeusage) | `DateTime` / `DateTimeOffset` `.Now` or `.UtcNow` read directly | Inject `IClock` |
+| [SK0002](#sk0002-directmicrosoftfeaturemanagerusage) | `Microsoft.FeatureManagement.IFeatureManager` referenced directly | Use `SharedKernel.FeatureManagement.Abstractions.IFeatureManager` |
+| [SK0003](#sk0003-rawexceptionthrow) | `throw new Exception(...)` or `ApplicationException` | Return a `Result` failure, or throw a typed SharedKernel exception |
+| [SK0004](#sk0004-nullerrorreturn) | `null` returned where an `Error` is expected | Return `Error.None` |
+| [SK0005](#sk0005-stringonlyexceptionconstructor) | A SharedKernel exception constructed from a message string only | Pass an `Error` |
+| [SK0006](#sk0006-guardclausethrow) | A `Guard.Against` clause that throws | Return `Error?`; throw only from `Guard.Throw` |
+| [SK0007](#sk0007-redischannelservicemessagingsubstitute) | Redis pub/sub injected where durable messaging is intended | Inject `IMessageBus` |
+| [SK0008](#sk0008-aggregaterootdispatchcoupling) | Event-dispatch code depending on the full aggregate root | Depend on `IHasDomainEvents` |
+| [SK0009](#sk0009-domaineventmissingversionattribute) | A domain event without a schema version | Add `[DomainEventVersion(n)]` |
+| [SK0010](#sk0010-specificationorderingconflict) | A specification applying two primary orderings | One primary ordering, then `ApplyThenBy` |
+| [SK0011](#sk0011-guidformatcodemisuse) | `Guid.ToString` with a non-canonical format | `ToString()` or `ToString("D")` |
+
+#### Application and communication
+
+The MediatR pipeline and outbound HTTP.
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0013](#sk0013-rawhttpclientconstructorinjection) | `HttpClient` injected into a constructor | A typed client via `AddRestClient<TClient>()` |
+| [SK0014](#sk0014-closedgenericresiliencepipelineregistration) | A closed-generic `ResiliencePipeline<T>` registration | The string-keyed, non-generic `ResiliencePipeline` |
+| [SK0015](#sk0015-streampipelinebehaviormisregistration) | A stream behavior registered as a request behavior | `AddStreamingBehaviors()` |
+| [SK0016](#sk0016-requesttypeshortnameusage) | `typeof(T).Name` used as a metric tag, log scope or cache key | `typeof(T).FullName ?? typeof(T).Name` |
+| [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
+| [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
+| [SK0019](#sk0019-retryablerequestwithoutidempotency) | A retryable request that is not idempotent | Also implement `IIdempotentRequest` |
+
+#### Logging
+
+How every production log statement is written.
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0020](#sk0020-directiloggerextensionmethodusage) | `logger.LogInformation(...)` and the other `ILogger` extension methods | A `[LoggerMessage]` source-generated method |
+| [SK0021](#sk0021-handwrittenloggermessagedefinedelegate) | A hand-written `LoggerMessage.Define` delegate | A `[LoggerMessage]` source-generated method |
+
+#### Cross-cutting, security and data privacy
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0022](#sk0022-crosscuttingmagicstringliteral) | A string literal as an HTTP header, OTel baggage/tag key, config section or claim type | A named constant, such as `WellKnownHeaders` |
+| [SK0023](#sk0023-nonsingletonamazons3clientregistration) | `IAmazonS3` registered as Scoped or Transient | Register it as a singleton |
+| [SK0024](#sk0024-rawsearchfieldnameliteral) | A string literal as a search field name | `nameof(...)` or a field-constants class |
+| [SK0025](#sk0025-obsoleteelasticsearchclientusage) | The deprecated NEST / `Elasticsearch.Net` client | `Elastic.Clients.Elasticsearch` |
+| [SK0026](#sk0026-rawintelligenceproviderclientconstructorinjection) | A raw Qdrant or Semantic Kernel client injected | The `SharedKernel.AI.Abstractions` contracts |
+| [SK0027](#sk0027-rawintelligenceidentifierliteral) | A string literal as a collection, field or embedding-model name | `nameof(...)` or a constant |
+| [SK0028](#sk0028-nondeterministicapiusageinsideworkflow) | A non-deterministic API inside a Temporal workflow | The deterministic `Workflow.*` equivalent |
+| [SK0029](#sk0029-rawtemporalclientconstructorinjection) | A raw Temporal client injected | `IWorkflowDispatcher` or `IWorkflowHandle` |
+| [SK0030](#sk0030-resultoutcomediscarded) | A `Result` returned and never inspected | Check, return or pass it, or discard with `_ =` |
+| [SK0031](#sk0031-rawsecuritycontextconstructorinjection) | `IHttpContextAccessor`, `HttpContext` or `ClaimsPrincipal` injected | `IUserContext` or `ITenantProvider` |
+| [SK0032](#sk0032-corswildcardoriginwithcredentials) | CORS credentials allowed with a wildcard origin | Name the allowed origins |
+| [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
+| [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
+| [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Mask it with the matching `PiiMasking` helper |
+| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ToGrpcResult()` |
+
+#### Persistence
+
+Multi-tenant EF Core safety.
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that drops the global tenant filter | Call `base.OnModelCreating` or `ApplyTenantFilters` |
+| [SK0202](#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` outside the permitted scope | Keep it inside the persistence layer or a `TenantedRepository` |
+
+#### Messaging
+
+MassTransit registration correctness.
+
+| Rule | Flags | Do this instead |
+|---|---|---|
+| [SK0703](#sk0703-messagebussingletonregistration) | `IMessageBus` or `IEventPublisher` registered as a singleton | Register them as scoped |
+| [SK0704](#sk0704-hardcodedqueueuriingetsendendpoint) | A hardcoded `queue:` or `exchange:` URI passed to `GetSendEndpoint` | `IMessageBus.SendAsync`, or `WithSendEndpointRoute<T>()` |
+| [SK0705](#sk0705-faultconsumerdirectregistration) | A fault consumer registered directly in DI | `AddFaultConsumer<TMessage, TConsumer>()` |
+| [SK0708](#sk0708-batchconsumerregisteredviaaddconsumer) | A batch consumer registered with `AddConsumer<T>()` | `AddBatchConsumer<T>()` |
+
+**About the gaps in the numbering.** `SK0012`, `SK0301`–`SK0304`, `SK0701`–`SK0702` and `SK0706`–`SK0707` exist, but as [architecture tests](#architecture-tests) rather than analyzers: they need to see a whole assembly, not a single line, so they run from your test suite instead of the compiler.
+
+---
+
+<a id="rule-reference"></a>
+## Analyzer rule reference
+
+One section per rule: why it matters, exactly what it flags and what it deliberately does not, an example, and the diagnostic text as it appears in your build.
 
 <a id="sk0001-directdatetimeusage"></a>
 ### SK0001 — DirectDateTimeUsage
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Inject `IClock` instead of reading the system clock directly.
 
-Direct access to `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, or
-`DateTimeOffset.Now` couples code to the system clock, making it impossible to control time
-in unit tests. `DateTimeOffset.Now` is also the worst offender of the four, since it reads
-the machine's local timezone on top of the current instant. All time-dependent code should
-obtain the current instant via `IClock` (from `SharedKernel.Primitives`), injected via DI.
+#### Why it matters
 
-The rule fires on both a bare receiver (`DateTime.UtcNow`) and the fully qualified `System.`
-receiver (`System.DateTime.UtcNow`) — the fully qualified form is not an escape hatch. It does
-**not** fire on `DateTime.Today`, which returns a date-only value with different testability
-characteristics than the four "current instant" accessors above, and is deliberately out of
-scope.
+Code that reads `DateTime.UtcNow` or `DateTimeOffset.UtcNow` directly cannot be tested deterministically. There is no seam to substitute a fixed or advancing instant, so expiry windows, schedules, and audit timestamps end up tested with sleeps, tolerances, or not at all.
 
-The rule is suppressed automatically for code inside the `SharedKernel.Primitives` namespace,
-where the clock interface itself is defined.
+`DateTime.Now` and `DateTimeOffset.Now` are worse: they also read the server's local time zone, so the same code behaves differently depending on where the process runs. `IClock` (namespace `SharedKernel.Primitives.Clocks`) gives every service one injectable source of the current UTC instant.
 
-#### Violating Example
+#### What it flags
+
+- Member access to `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, or `DateTimeOffset.Now`.
+- Both the bare form (`DateTime.UtcNow`) and the `System`-qualified form (`System.DateTime.UtcNow`).
+- The match is purely textual (no symbol resolution), so a type of your own named `DateTime` or `DateTimeOffset` with a `UtcNow` or `Now` member is also flagged.
+
+#### What it does not flag
+
+- Code inside a namespace whose name starts with `SharedKernel.Primitives`, where `IClock` itself is implemented.
+- `DateTime.Today`, which is deliberately out of scope.
+- Other receiver shapes: `global::System.DateTime.UtcNow`, a `using` alias for `DateTime`, or `using static System.DateTime;` followed by a bare `UtcNow`.
+- A member chain where `DateTime` is just a property name, such as `settings.DateTime.UtcNow`.
+- Generated code.
+
+#### Example
 
 ```csharp
-public class OrderService
+// Flagged: SK0001
+public sealed class OrderFactory
 {
-    public Order CreateOrder()
-    {
-        // SK0001: Direct access to 'DateTime.UtcNow' is not allowed
-        return new Order { CreatedAt = DateTime.UtcNow };
-    }
+    public Order Create() => new() { CreatedAt = DateTimeOffset.UtcNow };
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public class OrderService
+// Compliant
+public sealed class OrderFactory(IClock clock)
 {
-    private readonly IClock _clock;
-
-    public OrderService(IClock clock) => _clock = clock;
-
-    public Order CreateOrder() =>
-        new Order { CreatedAt = _clock.UtcNow };
+    public Order Create() => new() { CreatedAt = clock.UtcNow };
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0001 / restore SK0001`, or project-wide via
-`<NoWarn>$(NoWarn);SK0001</NoWarn>` in the `.csproj`.
+```text
+warning SK0001: Direct access to 'DateTimeOffset.UtcNow' is not allowed — inject IClock via DI instead
+```
+
+#### Suppressing
+
+The only legitimate direct clock read is inside an `IClock` implementation. SharedKernel's own implementation is exempt automatically. If you write your own adapter outside `SharedKernel.Primitives`, suppress at that single line:
+
+```csharp
+#pragma warning disable SK0001 // IClock adapter: the one place the real clock is read
+public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+#pragma warning restore SK0001
+```
 
 ---
 
 <a id="sk0002-directmicrosoftfeaturemanagerusage"></a>
 ### SK0002 — DirectMicrosoftFeatureManagerUsage
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Depend on SharedKernel's `IFeatureManager` abstraction, not on `Microsoft.FeatureManagement.IFeatureManager`.
 
-`Microsoft.FeatureManagement.IFeatureManager` is a concrete infrastructure interface tied to
-Microsoft's feature flag implementation. Depending on it directly in application or domain
-code locks the codebase to that implementation and prevents swapping feature flag providers.
-Use `SharedKernel.FeatureManagement.IFeatureManager` — the SharedKernel abstraction — instead.
+#### Why it matters
 
-#### Violating Example
+SharedKernel wraps the Microsoft feature-management library behind its own `IFeatureManager` (namespace `SharedKernel.FeatureManagement.Abstractions`). Services that inject the Microsoft interface directly take a hard dependency on that library's API. A breaking change or a provider swap then has to be fixed in every service instead of in one adapter.
+
+#### What it flags
+
+- A parameter declared as `Microsoft.FeatureManagement.IFeatureManager`. This covers method, constructor, primary constructor, and explicitly typed lambda parameters.
+- A field declared as that type.
+- A property declared as that type.
+- The comparison uses the fully qualified resolved type name. If the type cannot be resolved at all (for example, a missing package reference), any declaration whose simple type name is `IFeatureManager` is flagged instead.
+
+#### What it does not flag
+
+- `SharedKernel.FeatureManagement.Abstractions.IFeatureManager`.
+- Other Microsoft feature-management interfaces, such as `IFeatureManagerSnapshot` or `IVariantFeatureManager`.
+- The Microsoft interface used as a generic type argument (`Lazy<IFeatureManager>`, `GetRequiredService<IFeatureManager>()`), a local variable, or a method return type.
+
+#### Example
 
 ```csharp
+// Flagged: SK0002
 using Microsoft.FeatureManagement;
 
-public class FeatureService
+public sealed class CheckoutService(IFeatureManager features)
 {
-    // SK0002: Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly
-    private readonly IFeatureManager _featureManager;
-
-    public FeatureService(IFeatureManager featureManager)
-        => _featureManager = featureManager;
+    public Task<bool> IsExpressCheckoutEnabled() => features.IsEnabledAsync("ExpressCheckout");
 }
 ```
-
-#### Compliant Fix
 
 ```csharp
-using SharedKernel.FeatureManagement;
+// Compliant
+using SharedKernel.FeatureManagement.Abstractions;
 
-public class FeatureService
+public sealed class CheckoutService(IFeatureManager features)
 {
-    private readonly IFeatureManager _featureManager;
-
-    public FeatureService(IFeatureManager featureManager)
-        => _featureManager = featureManager;
+    public ValueTask<bool> IsExpressCheckoutEnabled(CancellationToken ct) =>
+        features.IsEnabledAsync("ExpressCheckout", ct);
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0002 / restore SK0002`, or project-wide via
-`<NoWarn>$(NoWarn);SK0002</NoWarn>`.
+```text
+warning SK0002: Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly — use 'SharedKernel.FeatureManagement.Abstractions.IFeatureManager' instead
+```
+
+#### Suppressing
+
+A custom adapter that implements SharedKernel's `IFeatureManager` on top of the Microsoft library has to reference the Microsoft interface. Suppress it there only:
+
+```csharp
+#pragma warning disable SK0002 // adapter: bridges Microsoft's manager to the SharedKernel abstraction
+public sealed class TenantFeatureManager(Microsoft.FeatureManagement.IFeatureManager inner)
+    : SharedKernel.FeatureManagement.Abstractions.IFeatureManager
+#pragma warning restore SK0002
+{
+    // ...
+}
+```
 
 ---
 
 <a id="sk0003-rawexceptionthrow"></a>
 ### SK0003 — RawExceptionThrow
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Do not throw `Exception` or `ApplicationException` directly. Return a `Result<T>` failure or throw a typed exception that carries an `Error`.
 
-`throw new Exception("message")` and `throw new ApplicationException("message")` are raw
-exception throws that carry no structured error information. SharedKernel uses the `Result<T>`
-pattern for expected failure paths and typed exceptions (e.g., `DomainException`,
-`NotFoundException`) carrying an `Error` payload for unexpected failures. Throwing raw base
-exceptions bypasses both mechanisms and makes error handling inconsistent.
+#### Why it matters
 
-The rule fires **only** when the concrete thrown type is exactly `System.Exception` or
-`System.ApplicationException` — not on subclasses. `throw new ArgumentException(...)` is
-not flagged.
+A raw `Exception` carries only free text. It has no error code and no error type, so the global exception handler cannot map it to a meaningful HTTP status or a stable problem-details code. Clients see a generic 500, and logs and dashboards cannot group the failure.
 
-#### Violating Example
+SharedKernel handles expected failures with `Result<T>.Failure(error)`, and unexpected ones with the typed `SharedKernelException` hierarchy (`DomainException`, `NotFoundException`, and others), both of which carry an `Error`.
 
-```csharp
-public void ProcessOrder(Order order)
-{
-    if (order is null)
-        // SK0003: Throwing 'Exception' directly is not allowed
-        throw new Exception("Order cannot be null");
-}
-```
+#### What it flags
 
-#### Compliant Fix — functional path
+- `throw new Exception(...)` and `throw new ApplicationException(...)` as a throw statement.
+- The same constructions in a throw expression, such as `value ?? throw new Exception(...)`.
+- Only these two exact types. The thrown type is resolved semantically, so `System.Exception` written in any form is matched.
+
+#### What it does not flag
+
+- Any subclass, including BCL types such as `ArgumentNullException` and `InvalidOperationException`, and SharedKernel's typed exceptions.
+- A construction where any constructor argument's type is named `Error`.
+- Throwing a variable or a factory result (`throw ex;`, `throw CreateException();`).
+- Target-typed construction (`throw new("...")`).
+
+#### Example
 
 ```csharp
-public Result<Order> ProcessOrder(Order? order)
-{
-    if (order is null)
-        return Result<Order>.Failure(Error.Validation("Order.Null", "Order cannot be null"));
-
-    return Result<Order>.Success(order);
-}
+// Flagged: SK0003
+public Order GetOrder(Guid id) =>
+    orders.Find(id) ?? throw new Exception($"Order {id} was not found");
 ```
-
-#### Compliant Fix — typed exception
 
 ```csharp
-public void ProcessOrder(Order order)
-{
-    if (order is null)
-        throw new DomainException(Error.Validation("Order.Null", "Order cannot be null"));
-}
+// Compliant: return a failure
+public Result<Order> FindOrder(Guid id) =>
+    orders.Find(id) is { } order
+        ? Result<Order>.Success(order)
+        : Result<Order>.Failure(Error.NotFound("Order.NotFound", $"Order {id} was not found"));
+
+// Compliant: throw a typed exception carrying an Error
+public Order GetOrder(Guid id) =>
+    orders.Find(id)
+    ?? throw new NotFoundException(Error.NotFound("Order.NotFound", $"Order {id} was not found"));
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0003 / restore SK0003`, or project-wide via
-`<NoWarn>$(NoWarn);SK0003</NoWarn>`.
+```text
+warning SK0003: Throwing 'Exception' directly is not allowed — use Result<T>.Failure(error) or a typed SharedKernel exception carrying an Error payload
+```
 
 ---
 
 <a id="sk0004-nullerrorreturn"></a>
 ### SK0004 — NullErrorReturn
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Return `Error.None` instead of `null` from a member that returns `Error`.
 
-`Error` is a value type designed to convey structured failure information. Returning `null`
-from a method declared to return `Error` or `Error?` is semantically incorrect: it signals
-"no error" via nullability rather than via `Error.None`, which is the canonical sentinel.
-Using `Error.None` keeps the intent explicit and avoids null-checks at call sites.
+#### Why it matters
 
-#### Violating Example
+`Error` has a dedicated "no error" value, `Error.None`. Returning `null` instead forces every caller to null-check before it can inspect the result, and it creates two different ways to say "nothing went wrong". Callers that check one and not the other end up treating success as failure, or the reverse.
+
+#### What it flags
+
+- A `return null;` statement inside a method, local function, or property accessor whose return type is `Error` or `Error?`.
+- The type is matched by simple name only, so any type named `Error` counts, regardless of namespace or whether it is a class, record, or struct.
+- The enclosing member is found by walking up the syntax tree, so a `return null;` inside a lambda is judged by the method that contains the lambda, not by the lambda's own return type.
+
+#### What it does not flag
+
+- `null` returned any other way: an expression body (`=> null`), a conditional (`isValid ? null : error`), `return default;`, or a cast such as `return (Error?)null;`.
+- Async members returning `Task<Error?>` or `ValueTask<Error?>`.
+- Indexers and operators.
+- `return null;` in members that return any other type.
+
+#### Example
 
 ```csharp
+// Flagged: SK0004
 public Error? ValidateAge(int age)
 {
     if (age < 0)
-        return Error.Validation("Age.Negative", "Age must be non-negative");
+        return Error.Validation("Age.Negative", "Age must be non-negative.");
 
-    // SK0004: Returning null for type 'Error' is not allowed
     return null;
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public Error? ValidateAge(int age)
+// Compliant
+public Error ValidateAge(int age)
 {
     if (age < 0)
-        return Error.Validation("Age.Negative", "Age must be non-negative");
+        return Error.Validation("Age.Negative", "Age must be non-negative.");
 
     return Error.None;
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0004 / restore SK0004`, or project-wide via
-`<NoWarn>$(NoWarn);SK0004</NoWarn>`.
+```text
+warning SK0004: Returning null for type 'Error' is not allowed — return 'Error.None' to indicate the absence of an error
+```
+
+#### Suppressing
+
+Guard clauses on the `Guard.Against` functional path are the one deliberate exception. By contract they return `null` when the guard passes, and must not use `Error.None`. A custom guard written with a block body is flagged, so suppress it there:
+
+```csharp
+public static Error? NotInFuture(this IGuardClause guard, DateTimeOffset value, DateTimeOffset now, string paramName)
+{
+    if (value > now)
+        return Error.Validation("Date.InFuture", $"'{paramName}' must not be in the future.");
+
+#pragma warning disable SK0004 // guard-clause contract: null means the guard passed
+    return null;
+#pragma warning restore SK0004
+}
+```
 
 ---
 
 <a id="sk0005-stringonlyexceptionconstructor"></a>
 ### SK0005 — StringOnlyExceptionConstructor
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Construct `SharedKernelException` subclasses with an `Error`, not a bare string literal.
 
-`SharedKernelException` subclasses (e.g., `DomainException`, `NotFoundException`) are designed
-to carry a structured `Error` payload that includes a code, message, and optional metadata.
-Constructing them with a plain string bypasses the Error system, producing exceptions that
-cannot be correlated with error codes or translated into `ProblemDetails` responses.
+#### Why it matters
 
-The rule fires when a type derived from `SharedKernelException` is constructed with exactly
-one argument that is a string literal.
+The `SharedKernelException` hierarchy exists so that an `Error`, with its code and type, travels with the throw. SharedKernel's built-in exceptions only accept an `Error`. A custom subclass that also offers a string-only constructor lets callers skip that, which produces an exception with no stable error code: it cannot be correlated in logs or translated into a specific problem-details response.
 
-#### Violating Example
+#### What it flags
 
-```csharp
-public void FindOrder(Guid id)
-{
-    // SK0005: 'NotFoundException' is constructed with a string-only argument
-    throw new NotFoundException($"Order {id} was not found");
-}
-```
+- An object creation with exactly one argument, where that argument is a string literal (regular, verbatim, or raw), and the constructed type derives, directly or indirectly, from a type named `SharedKernelException`.
+- Any such construction, whether or not it is thrown on the same line.
+- The base type is matched by simple name, so a `SharedKernelException` in any namespace counts.
 
-#### Compliant Fix
+#### What it does not flag
+
+- Interpolated strings (`$"Order {id} not found"`), constants, `nameof(...)`, concatenations, or any other non-literal single argument.
+- Constructors with two or more arguments, such as `new PaymentDeclinedException("Payment.Declined", "Card was declined")`.
+- Target-typed construction (`new("...")`).
+- Exceptions that do not derive from `SharedKernelException`, such as `ArgumentException`.
+
+#### Example
 
 ```csharp
-public void FindOrder(Guid id)
-{
-    throw new NotFoundException(
-        Error.NotFound("Order.NotFound", $"Order {id} was not found")
-    );
-}
+// Flagged: SK0005
+throw new PaymentDeclinedException("Card was declined");
 ```
 
-#### Suppression Instructions
+```csharp
+// Compliant
+throw new PaymentDeclinedException(
+    Error.BusinessRule("Payment.Declined", "Card was declined"));
+```
 
-Suppress inline with `#pragma warning disable SK0005 / restore SK0005`, or project-wide via
-`<NoWarn>$(NoWarn);SK0005</NoWarn>`.
+#### Diagnostic
+
+```text
+warning SK0005: 'PaymentDeclinedException' is constructed with a string-only argument — supply an Error payload instead (e.g., new PaymentDeclinedException(error))
+```
 
 ---
 
 <a id="sk0006-guardclausethrow"></a>
 ### SK0006 — GuardClauseThrow
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Guard clauses on the functional path must return `Error?`, never throw.
 
-The SharedKernel guard system follows a strict two-path contract:
+#### Why it matters
 
-- **Functional path** (`Guard.Against.*`) — extension methods on `IGuardClause` must be pure:
-  they return `Error?` (null on pass, non-null on violation) and must **never throw**. Throwing
-  on the functional path breaks railway-oriented composition and forces callers to wrap every
-  guard call in a try/catch.
+SharedKernel guards come in two forms. `Guard.Against.*` is the functional path: extension methods on `IGuardClause` (namespace `SharedKernel.Guards.Clauses`) that return `null` when the check passes and an `Error` when it fails. `Guard.Throw.*` is the imperative path, which throws `DomainException` on failure.
 
-- **Imperative path** (`Guard.Throw.*`) — the `Guard.Throw` nested companion class is the only
-  sanctioned location where throwing `DomainException` is permitted.
+Callers compose functional guards into `Result<T>` flows without try/catch. A custom guard that throws breaks that composition silently: the caller's failure branch never runs, and the exception escapes as an unhandled error instead of a validation result.
 
-SK0006 fires when any method that is part of the functional path (a method on a type
-implementing `IGuardClause`, or an extension method whose first `this` parameter is
-`IGuardClause`) contains a `throw` statement or throw expression. The `Guard.Throw` companion
-class is excluded: methods declared in a class named `Throw` nested inside a class named
-`Guard` are always exempt.
+#### What it flags
 
-#### Two-Path Contract
+A `throw` statement or `throw` expression inside a method, local function, accessor, constructor, finalizer, or operator, when either of these is true:
+
+- The nearest containing type implements `SharedKernel.Guards.Clauses.IGuardClause`.
+- The containing method is a static extension method whose `this` parameter is `IGuardClause` or a type that implements it.
+
+A throw inside a lambda is attributed to the method that contains the lambda.
+
+#### What it does not flag
+
+- Methods in a type named `Throw` nested inside a type named `Guard` (the imperative companion).
+- Throwing from any type that does not implement `IGuardClause` and is not an `IGuardClause` extension method, including your own wrappers that call a functional guard and throw its `Error`.
+- A throw inside a local function declared within an `IGuardClause` extension method. Only the enclosing method declaration is checked for the extension shape.
+
+#### Example
+
+```csharp
+// Flagged: SK0006
+public static class AgeGuardExtensions
+{
+    public static Error? NegativeAge(this IGuardClause guard, int age, string paramName)
+    {
+        if (age < 0)
+            throw new ArgumentOutOfRangeException(paramName, "Age cannot be negative.");
+
+        return null;
+    }
+}
+```
+
+```csharp
+// Compliant: functional guard returns the Error
+public static class AgeGuardExtensions
+{
+    public static Error? NegativeAge(this IGuardClause guard, int age, string paramName) =>
+        age < 0
+            ? Error.Validation("Age.Negative", $"'{paramName}' must be non-negative.")
+            : null;
+}
+
+// Compliant: an imperative wrapper outside the IGuardClause contract may throw
+public static class AgeGuard
+{
+    public static void ThrowIfNegative(int age, string paramName)
+    {
+        if (Guard.Against.NegativeAge(age, paramName) is { } error)
+            throw new DomainException(error);
+    }
+}
+```
+
+#### Diagnostic
 
 ```text
-Guard.Against.*    →  IGuardClause extension methods  →  return Error?   (pure — NO throw)
-Guard.Throw.*      →  Guard.Throw static nested class  →  throw DomainException  (imperative)
+warning SK0006: Method 'NegativeAge' on type 'AgeGuardExtensions' implements IGuardClause but contains a throw — use the functional path (return Error?) instead, or move throw behavior to the Guard.Throw companion class
 ```
-
-#### Exclusion List
-
-The following types are **never** flagged by SK0006:
-
-| Type                                                    | Reason                                               |
-|---------------------------------------------------------|------------------------------------------------------|
-| Any type named `Throw` nested inside a type named `Guard` | Legitimate imperative path — throwing is its purpose |
-
-#### Violating Example
-
-```csharp
-using SharedKernel.Guards.Clauses;
-
-namespace MyProject.Guards
-{
-    public static class AgeGuardExtensions
-    {
-        // SK0006: method on IGuardClause extension must not throw
-        public static Error? NegativeAge(this IGuardClause guard, int age, string paramName)
-        {
-            if (age < 0)
-                throw new ArgumentOutOfRangeException(paramName, "Age cannot be negative");
-
-            return null;
-        }
-    }
-}
-```
-
-#### SK0006 Compliant Fix — functional path
-
-```csharp
-using SharedKernel.Guards.Clauses;
-using SharedKernel.Primitives.Errors;
-
-namespace MyProject.Guards
-{
-    public static class AgeGuardExtensions
-    {
-        // Functional path: return Error? — null means no violation
-        public static Error? NegativeAge(this IGuardClause guard, int age, string paramName) =>
-            age < 0
-                ? Error.Validation($"{paramName}.Negative", $"'{paramName}' must be non-negative")
-                : null;
-    }
-}
-```
-
-#### SK0006 Compliant Fix — imperative path (for scenarios where throwing is desired)
-
-```csharp
-namespace MyProject.Guards
-{
-    public static partial class Guard
-    {
-        public static class Throw
-        {
-            // Imperative path: throwing inside Guard.Throw is permitted — SK0006 excludes this
-            public static void NegativeAge(int age, string paramName)
-            {
-                var error = Against.NegativeAge(age, paramName);
-                if (error is not null)
-                    throw new DomainException(error);
-            }
-        }
-    }
-}
-```
-
-#### Suppression Instructions
-
-Suppress inline with `#pragma warning disable SK0006 / restore SK0006`, or project-wide via
-`<NoWarn>$(NoWarn);SK0006</NoWarn>`.
-
-Note: Suppression should be rare. If your method legitimately needs to throw, move it to a
-`Guard.Throw`-equivalent companion class rather than suppressing the diagnostic.
 
 ---
 
 <a id="sk0007-redischannelservicemessagingsubstitute"></a>
 ### SK0007 — RedisChannelServiceMessagingSubstitute
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Use `IMessageBus` for commands and events, not Redis pub/sub.
 
-`IRedisChannelService` is a Redis pub/sub channel abstraction designed exclusively for
-**ephemeral, non-durable** signals — cache invalidation hints, presence notifications, and
-other fire-and-forget messages where loss is acceptable. It is **not a message bus**.
+#### Why it matters
 
-When `IRedisChannelService` is injected into a class whose name or enclosing namespace
-signals durable-messaging intent — anything containing `Command`, `Event`, `DomainEvent`,
-or `IntegrationEvent` — it is almost certainly a substitute for `IMessageBus`
-(`SharedKernel.Messaging.Abstractions`). This substitution produces silent message loss
-under Redis failure, broker restarts, or network partition, with no dead-letter queue, no
-retry, and no audit trail.
+`IRedisChannelService` (`SharedKernel.Caching.Abstractions`) wraps Redis pub/sub. Pub/sub is fire-and-forget: a message published while a subscriber is disconnected, restarting, or partitioned from Redis is simply gone. There is no retry, no dead-letter queue, and no outbox. That is fine for cache invalidation hints and presence signals, where a lost message costs a stale read.
 
-SK0007 fires on the injection site (constructor parameter, field, or property declaration)
-rather than on every use, so it is triggered once per structural coupling point.
+Commands, domain events, and integration events need guaranteed delivery. When a command handler or event publisher sends them over Redis pub/sub, the code works in development and loses messages silently in production. `IMessageBus` (`SharedKernel.Messaging.Abstractions`) provides durable, retried, outbox-backed delivery.
 
-#### Suppression Namespace
+#### What it flags
 
-The rule is automatically suppressed inside the `SharedKernel.Caching` and
-`SharedKernel.Caching.Redis` namespaces. These are the only locations where `IRedisChannelService`
-is defined and legitimately referenced at the structural level. Any additional exemption must
-be documented in `00.Governance/CLAUDE.md` under the `CachingAbstractionRules` exemption list
-before applying a suppress pragma.
+- A class whose own name, or any enclosing namespace name, contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent` (case-sensitive substring match).
+- Inside such a class, each of the following whose type is written as `IRedisChannelService` (or `IRedisChannelService?`):
+  - a parameter of an explicitly declared constructor,
+  - a field declaration,
+  - a property declaration.
+- Each matching declaration is reported separately, so a field plus the constructor parameter that assigns it produces two diagnostics.
 
-#### Violating Example
+#### What it does not flag
+
+- Any class inside a namespace that starts with `SharedKernel.Caching`, where the service is defined and implemented.
+- Records and structs. Only `class` declarations are inspected.
+- Primary constructor parameters, method parameters, and local variables.
+- A fully qualified type reference such as `SharedKernel.Caching.Abstractions.IRedisChannelService`. The match is on the simple type name as written.
+- The context check is a plain substring match, so it can also fire on unrelated names that happen to contain a term, such as `EventSourcingBackfillJob` or a `CommandLine` namespace.
+
+#### Example
 
 ```csharp
-namespace Application.Commands
-{
-    // SK0007: 'IRedisChannelService' is injected in a messaging-context class
-    public class PlaceOrderCommandHandler
-    {
-        private readonly IRedisChannelService _channel;
+// Flagged: SK0007 (twice: the field and the constructor parameter)
+namespace Ordering.Application.Commands;
 
-        public PlaceOrderCommandHandler(IRedisChannelService channel)
-            => _channel = channel;
-    }
+public sealed class PlaceOrderCommandHandler
+{
+    private readonly IRedisChannelService _channel;
+
+    public PlaceOrderCommandHandler(IRedisChannelService channel) => _channel = channel;
+
+    public ValueTask HandleAsync(PlaceOrder command, CancellationToken ct) =>
+        _channel.PublishAsync("orders", command.OrderId.ToString(), ct);
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-using SharedKernel.Messaging.Abstractions;
+// Compliant
+namespace Ordering.Application.Commands;
 
-namespace Application.Commands
+public sealed class PlaceOrderCommandHandler(IMessageBus bus)
 {
-    public class PlaceOrderCommandHandler
-    {
-        private readonly IMessageBus _bus;
-
-        public PlaceOrderCommandHandler(IMessageBus bus)
-            => _bus = bus;
-    }
+    public Task HandleAsync(PlaceOrder command, CancellationToken ct) =>
+        bus.PublishAsync(new OrderPlaced(command.OrderId), ct);
 }
 ```
 
-For cache invalidation signals that genuinely belong in a command handler, inject both
-`IMessageBus` (for the command/event) and `IRedisChannelService` (for the cache hint) — but
-give the Redis channel field a name that makes its ephemeral purpose clear (e.g.,
-`_cacheInvalidation`).
+#### Diagnostic
 
-#### Suppression Instructions
+```text
+warning SK0007: 'PlaceOrderCommandHandler' injects IRedisChannelService in a messaging-context class — inject IMessageBus (SharedKernel.Messaging.Abstractions) for durable command/event delivery instead
+```
 
-Suppress inline with `#pragma warning disable SK0007 / restore SK0007`, or project-wide via
-`<NoWarn>$(NoWarn);SK0007</NoWarn>`.
+#### Suppressing
 
-Before suppressing, confirm that the `IRedisChannelService` usage is genuinely for cache
-invalidation, not as a substitute for a durable bus. If in doubt, use `IMessageBus`.
+The rule looks only at names, so it also fires when a command handler legitimately uses Redis pub/sub for a cache invalidation hint alongside `IMessageBus`. Naming the field differently does not help. Confirm the Redis message is genuinely disposable, then suppress at the declaration:
+
+```csharp
+#pragma warning disable SK0007 // Cache invalidation hint only; the order itself goes through IMessageBus.
+private readonly IRedisChannelService _cacheInvalidation;
+#pragma warning restore SK0007
+```
 
 ---
 
 <a id="sk0008-aggregaterootdispatchcoupling"></a>
 ### SK0008 — AggregateRootDispatchCoupling
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Dispatch code should depend on `IHasDomainEvents`, not `IAggregateRoot<TId>`.
 
-Infrastructure dispatch code — interceptors, event publishers, outbox processors, and
-dispatchers — needs to raise domain events from aggregates. It does not need the full
-`IAggregateRoot<TId>` surface (entity identity, version, invariant checking). Injecting
-`IAggregateRoot<TId>` in dispatch-context classes creates an unnecessary coupling to the
-aggregate identity contract; if the `IAggregateRoot<TId>` interface changes (e.g., `TId`
-is renamed, the version contract is extended), all dispatch code breaks.
+#### Why it matters
 
-The `IHasDomainEvents` interface is the narrowest correct coupling: dispatch code only needs
-to dequeue and publish domain events, which is exactly what `IHasDomainEvents` exposes.
+Interceptors, publishers, outbox processors, and dispatchers only need to read an aggregate's pending domain events and clear them. `IHasDomainEvents` exposes exactly that: `DomainEvents` and `ClearDomainEvents()`.
 
-SK0008 fires when a constructor parameter is typed as `IAggregateRoot<>` (simple name check)
-inside a class whose name or any enclosing namespace contains `Interceptor`, `Publisher`,
-`Outbox`, or `Dispatcher`.
+`IAggregateRoot<TId>` extends `IHasDomainEvents` but also carries entity identity through `IEntity<TId>`. Taking the wider interface ties dispatch infrastructure to a specific identifier type, so one dispatcher cannot serve aggregates with different `TId`s, and any change to the aggregate identity contract ripples into code that never needed it.
 
-#### Violating Example
+#### What it flags
+
+- A parameter of an explicitly declared constructor whose type name contains `IAggregateRoot`. This covers `IAggregateRoot<TId>`, a non-generic `IAggregateRoot`, qualified and nullable forms, and any other type whose name contains that text.
+- Only when the constructor belongs to a class whose own name, or any enclosing namespace name, contains `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher` (case-sensitive substring match).
+
+#### What it does not flag
+
+- `IAggregateRoot<TId>` in classes whose name and namespaces contain none of the dispatch terms, such as a domain-layer factory.
+- Primary constructor parameters, fields, properties, and method parameters.
+- Constructors declared in records or structs.
+
+#### Example
 
 ```csharp
-namespace Infrastructure.Messaging
+// Flagged: SK0008
+namespace Ordering.Infrastructure.Messaging;
+
+public sealed class DomainEventPublisher
 {
-    // SK0008: Use 'IHasDomainEvents' instead of 'IAggregateRoot<TId>' in dispatch code
-    public class DomainEventPublisher
-    {
-        public DomainEventPublisher(IAggregateRoot<Guid> aggregate) { }
-    }
+    public DomainEventPublisher(IAggregateRoot<Guid> aggregate) { }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Infrastructure.Messaging
+// Compliant
+namespace Ordering.Infrastructure.Messaging;
+
+public sealed class DomainEventPublisher
 {
-    public class DomainEventPublisher
-    {
-        public DomainEventPublisher(IHasDomainEvents aggregate) { }
-    }
+    public DomainEventPublisher(IHasDomainEvents aggregate) { }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0008 / restore SK0008`, or project-wide via
-`<NoWarn>$(NoWarn);SK0008</NoWarn>`.
+```text
+warning SK0008: Constructor parameter 'aggregate' in dispatch-context class 'DomainEventPublisher' is typed as IAggregateRoot — inject IHasDomainEvents instead for narrower coupling
+```
 
 ---
 
 <a id="sk0009-domaineventmissingversionattribute"></a>
 ### SK0009 — DomainEventMissingVersionAttribute
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Declare a schema version on every concrete type that implements `IDomainEvent`.
 
-Domain events are part of the public, versioned schema of a bounded context. When a domain
-event property is added, removed, or renamed, every consumer that deserializes the old wire
-format is silently broken. `[DomainEventVersion]` encodes the current schema version
-on each concrete event type and forces the developer to acknowledge every breaking change
-(by incrementing the version number), creating a visible audit trail in the git history.
+#### Why it matters
 
-SK0009 fires on every non-abstract class or record that declares `IDomainEvent` in its
-base list but does not carry a `[DomainEventVersion]` attribute. Abstract base event
-classes are exempt because they do not represent wire-format contracts — only their concrete
-subclasses do.
+A domain event's shape is a contract with every handler and every stored or in-flight copy of it. Adding, removing, or renaming a property breaks consumers that still read the old shape, and nothing in the type itself says the shape changed.
 
-#### Violating Example
+`[DomainEventVersion(N)]` (`SharedKernel.Domain.Events`) records the schema version on the event type. Infrastructure reads it through `DomainEventVersionHelper.GetVersion(Type)` to route an event to the right deserializer or handler. Requiring the attribute makes every breaking change an explicit, reviewable version bump.
+
+#### What it flags
+
+- A non-abstract `class` or `record` whose own base list names `IDomainEvent` (simple or qualified name) and that carries no attribute named `DomainEventVersion` or `DomainEventVersionAttribute`.
+- Matching is by name only, so any interface called `IDomainEvent` and any attribute called `DomainEventVersion` count.
+- Each partial declaration is checked on its own: the part that lists `IDomainEvent` must carry the attribute.
+
+#### What it does not flag
+
+- Abstract classes and records.
+- Types that implement `IDomainEvent` only through a base type. A record deriving from SharedKernel's abstract `DomainEvent` base record, for example, is not checked.
+- Structs and record structs.
+- Types that do not list `IDomainEvent`, whether or not they carry the attribute.
+
+#### Example
 
 ```csharp
-// SK0009: 'OrderCreatedEvent' implements 'IDomainEvent' but is missing '[DomainEventVersion]'
-public record OrderCreatedEvent(Guid OrderId, DateTimeOffset CreatedAt) : IDomainEvent;
+// Flagged: SK0009
+public sealed record OrderPlaced(Guid Id, Guid OrderId, DateTimeOffset OccurredOn) : IDomainEvent;
 ```
 
-#### Compliant Fix
-
 ```csharp
+// Compliant
 [DomainEventVersion(1)]
-public record OrderCreatedEvent(Guid OrderId, DateTimeOffset CreatedAt) : IDomainEvent;
+public sealed record OrderPlaced(Guid Id, Guid OrderId, DateTimeOffset OccurredOn) : IDomainEvent;
 ```
 
-When a breaking property change is made (add, remove, or rename a property), increment the
-version:
+When you make a breaking change to the event's properties, increment the version:
 
 ```csharp
-[DomainEventVersion(2)]  // bumped: added 'CustomerId' property
-public record OrderCreatedEvent(
-    Guid OrderId,
-    Guid CustomerId,
-    DateTimeOffset CreatedAt) : IDomainEvent;
+[DomainEventVersion(2)] // Added CustomerId.
+public sealed record OrderPlaced(Guid Id, Guid OrderId, Guid CustomerId, DateTimeOffset OccurredOn)
+    : IDomainEvent;
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0009 / restore SK0009`, or project-wide via
-`<NoWarn>$(NoWarn);SK0009</NoWarn>`.
+```text
+warning SK0009: Type 'OrderPlaced' implements IDomainEvent but is missing the [DomainEventVersion] attribute — add [DomainEventVersion(N)] to declare the schema version
+```
 
 ---
 
 <a id="sk0010-specificationorderingconflict"></a>
 ### SK0010 — SpecificationOrderingConflict
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Set one primary sort direction per specification constructor.
 
-`Specification<T>` constructors may call `ApplyOrderBy(...)` and/or
-`ApplyOrderByDescending(...)` to set the primary sort direction. Calling both in the same
-constructor body creates an ordering conflict: the query engine will use whichever call
-is applied last, producing non-deterministic sort results that depend on source code order
-rather than explicit intent.
+#### Why it matters
 
-SK0010 fires on the constructor identifier when both `ApplyOrderBy` and
-`ApplyOrderByDescending` are called within the same constructor body. Calling only one is
-always clean.
+`Specification<T>` stores the ascending and descending primary sorts in two separate properties, `OrderBy` and `OrderByDescending`. When a constructor calls both `ApplyOrderBy` and `ApplyOrderByDescending`, both are set. The specification evaluators apply `OrderBy` and silently ignore `OrderByDescending`, whichever call came first in your code.
 
-#### Violating Example
+The result is a query that sorts in a different order than the specification appears to request, with no error. Secondary sorts belong in `ApplyThenBy(selector, descending)` or `ApplyThenByDescending(selector)`.
+
+#### What it flags
+
+- Any constructor whose body (block or expression-bodied) contains an invocation named `ApplyOrderBy` and an invocation named `ApplyOrderByDescending`, called directly or through member access such as `this.ApplyOrderBy(...)`.
+- Calls anywhere inside the constructor body count, including inside lambdas, local functions, and conditional branches.
+- The check is by method name only and is not restricted to `Specification<T>` subclasses.
+- The diagnostic is reported once, on the constructor name.
+
+#### What it does not flag
+
+- A constructor that calls only one of the two methods, or neither.
+- Conflicts spread across constructors (for example through `: this(...)` chaining) or across helper methods the constructor calls. Only calls written inside a single constructor body are seen.
+
+#### Example
 
 ```csharp
-public class ActiveOrdersSpec : Specification<Order>
+// Flagged: SK0010
+public sealed class ActiveOrdersSpec : Specification<Order>
 {
     public ActiveOrdersSpec()
     {
         AddCriteria(o => o.IsActive);
-        // SK0010: Constructor calls both 'ApplyOrderBy' and 'ApplyOrderByDescending'
         ApplyOrderBy(o => o.CreatedAt);
         ApplyOrderByDescending(o => o.Total);
     }
 }
 ```
 
-#### Compliant Fix
-
-Choose a single primary sort direction. Use `ThenBy` / `ThenByDescending` for secondary
-sorts if the specification supports it:
-
 ```csharp
-public class ActiveOrdersSpec : Specification<Order>
+// Compliant
+public sealed class ActiveOrdersSpec : Specification<Order>
 {
     public ActiveOrdersSpec()
     {
         AddCriteria(o => o.IsActive);
         ApplyOrderByDescending(o => o.Total);
+        ApplyThenBy(o => o.CreatedAt, descending: false);
     }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0010 / restore SK0010`, or project-wide via
-`<NoWarn>$(NoWarn);SK0010</NoWarn>`.
+```text
+warning SK0010: Constructor 'ActiveOrdersSpec' calls both ApplyOrderBy and ApplyOrderByDescending — use only one primary ordering direction and apply secondary sorting via ThenBy/ThenByDescending
+```
 
 ---
 
 <a id="sk0011-guidformatcodemisuse"></a>
 ### SK0011 — GuidFormatCodeMisuse
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Format GUIDs with `ToString()` or `ToString("D")`.
 
-The canonical GUID string format for audit column values (`CreatedBy`, `ModifiedBy`) is the
-lowercase hyphenated form produced by `ToString()` or `ToString("D")` — e.g.,
-`"d3e4f5a6-1b2c-3d4e-5f6a-7b8c9d0e1f2a"`. Calling `Guid.ToString(...)` with the format code
-`"N"` (no hyphens), `"B"` (braces), `"P"` (parentheses), or `"X"` (hex), case-insensitively,
-produces a representation that diverges from this canonical format, causing inconsistent
-values across services sharing the same audit schema.
+#### Why it matters
 
-SK0011 requires a semantic-model check on the receiver to confirm it is `System.Guid` before
-firing — a `"N"`/`"B"`/`"P"`/`"X"` format code on an unrelated type (e.g. a numeric format
-specifier on `int`/`double`) never triggers this rule.
+The platform's canonical GUID string is the lowercase, hyphenated form, such as `d3e4f5a6-1b2c-3d4e-5f6a-7b8c9d0e1f2a`. It is what audit columns like `CreatedBy` and `ModifiedBy` store, and what other services compare against.
 
-#### Violating Example
+The `"N"` (no hyphens), `"B"` (braces), `"P"` (parentheses), and `"X"` (hexadecimal struct) formats produce different strings for the same value. Once one service writes a compact or braced form, lookups, joins, and equality checks against canonical values quietly stop matching.
+
+#### What it flags
+
+- A call of the form `receiver.ToString("N")` where:
+  - the receiver's type is `System.Guid` (checked with the semantic model),
+  - there is exactly one argument,
+  - that argument is a string literal equal to `N`, `B`, `P`, or `X`, in either case.
+- This applies everywhere, not only in audit code.
+
+#### What it does not flag
+
+- `ToString()`, `ToString("D")`, and `ToString("G")`.
+- `ToString("N")` on non-GUID types, such as numeric format strings on `int` or `double`.
+- A format code supplied through a constant, variable, or interpolated string.
+- The two-argument `ToString(format, provider)` overload.
+- Null-conditional calls such as `id?.ToString("N")` on a `Guid?`.
+- Interpolation format specifiers such as `$"{id:N}"`, and `TryFormat`.
+
+#### Example
 
 ```csharp
-public class AuditStamper
-{
-    public string BuildActor(Guid userId) =>
-        // SK0011: Guid.ToString("N") produces a non-canonical format
-        userId.ToString("N");
-}
+// Flagged: SK0011
+public static string BuildActor(Guid userId) => userId.ToString("N");
 ```
-
-#### Compliant Fix
 
 ```csharp
-public class AuditStamper
-{
-    public string BuildActor(Guid userId) =>
-        userId.ToString(); // or userId.ToString("D") — both produce the canonical hyphenated form
-}
+// Compliant
+public static string BuildActor(Guid userId) => userId.ToString();
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0011 / restore SK0011` when a compact format is
-genuinely required (e.g., a URL segment). Document the rationale inline — there is no suppression
-namespace.
+```text
+warning SK0011: Guid.ToString("N") produces a non-canonical format — use ToString() or ToString("D") for the hyphenated lowercase format required by audit column values
+```
+
+#### Suppressing
+
+Some external formats genuinely need a compact GUID, such as a URL segment or a third-party identifier field. Suppress at that call site and say why:
+
+```csharp
+#pragma warning disable SK0011 // The payment provider's reference field rejects hyphens.
+var reference = paymentId.ToString("N");
+#pragma warning restore SK0011
+```
 
 ---
 
 <a id="sk0013-rawhttpclientconstructorinjection"></a>
 ### SK0013 — RawHttpClientConstructorInjection
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Use a typed client registered with `AddRestClient<TClient>()` instead of injecting `HttpClient`.
 
-Direct `HttpClient` injection bypasses connection pooling, DNS refresh cycles, and handler
-lifetime management — all production reliability concerns for .NET microservices. The correct
-pattern is a named typed client resolved via `IHttpClientFactory`, registered through
-`AddSharedKernelRestCommunication().AddRestClient<TClient>()`.
+#### Why it matters
 
-SK0013 fires on any constructor parameter whose type is exactly `HttpClient`, unless one of two
-exemptions applies: the enclosing type sits inside a namespace starting with
-`SharedKernel.Communication.Rest` (the typed-client package legitimately manages `HttpClient`
-internally), or the enclosing class derives from `DelegatingHandler` (handlers receive the inner
-`HttpClient` as part of the handler chain).
+An `HttpClient` that is not managed by `IHttpClientFactory` goes wrong in one of two ways. Creating one per use exhausts sockets under load. Keeping one alive forever pins its connections and never picks up DNS changes, which breaks after a Kubernetes service or load balancer moves.
 
-#### Violating Example
+It also skips the platform's HTTP pipeline. Typed clients registered through `AddSharedKernelRestCommunication().AddRestClient<TClient>()` get standard resilience (retry, circuit breaker, timeout) plus correlation-id and tenant-id propagation. A raw `HttpClient` gets none of these.
+
+#### What it flags
+
+- A parameter of an explicitly declared constructor whose type is written as `HttpClient` or a qualified name ending in `HttpClient`, such as `System.Net.Http.HttpClient`. The check is syntax-only, so any type named `HttpClient` matches.
+
+#### What it does not flag
+
+- Constructors inside a namespace that starts with `SharedKernel.Communication.Rest`.
+- Constructors of a class whose own base list names `DelegatingHandler`. Handlers are part of the factory pipeline rather than consumers of it. A class that derives from `DelegatingHandler` indirectly is not exempt.
+- Primary constructor parameters. This is the form a typed client normally uses to receive its factory-managed `HttpClient`.
+- `HttpClient?` parameters.
+- `IHttpClientFactory` parameters, fields, properties, and method parameters.
+
+#### Example
 
 ```csharp
-namespace Application.Payments
+// Flagged: SK0013
+public sealed class CheckoutService
 {
-    public class PaymentGatewayClient
-    {
-        // SK0013: raw HttpClient injection bypasses IHttpClientFactory pooling/DNS refresh
-        public PaymentGatewayClient(HttpClient httpClient) { }
-    }
+    private readonly HttpClient _http;
+
+    public CheckoutService(HttpClient http) => _http = http;
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Payments
+// Compliant
+services
+    .AddSharedKernelRestCommunication()
+    .AddRestClient<PaymentGatewayClient>("payment-gateway", options =>
+        options.BaseAddress = "https://payments.example.com");
+
+// The factory supplies a pipeline-configured HttpClient to the typed client.
+public sealed class PaymentGatewayClient(HttpClient http)
 {
-    public interface IPaymentGatewayClient
-    {
-        Task<Result> ChargeAsync(decimal amount, CancellationToken ct);
-    }
-
-    public class PaymentGatewayClient : IPaymentGatewayClient
-    {
-        // Registered via AddSharedKernelRestCommunication().AddRestClient<IPaymentGatewayClient>()
-        public PaymentGatewayClient(IPaymentGatewayClient inner) { }
-
-        public Task<Result> ChargeAsync(decimal amount, CancellationToken ct) => throw new NotImplementedException();
-    }
+    public Task<HttpResponseMessage> ChargeAsync(HttpContent body, CancellationToken ct) =>
+        http.PostAsync("/charges", body, ct);
 }
+
+// Everything else injects the typed client.
+public sealed class CheckoutService(PaymentGatewayClient gateway);
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0013 / restore SK0013` only when raw `HttpClient`
-injection is genuinely required (e.g., a unit-test helper). Document the rationale inline.
+```text
+warning SK0013: Constructor parameter 'http' is typed as HttpClient directly. Inject the named typed-client interface (TClient) via IHttpClientFactory-managed AddRestClient<TClient>() instead. Direct HttpClient injection bypasses connection pooling, DNS refresh cycles, and handler lifetime management.
+```
+
+#### Suppressing
+
+The rule cannot tell a factory-managed typed client from a hand-wired one. A typed client registered with `AddRestClient<TClient>()` that declares an explicit constructor taking `HttpClient` is flagged. Prefer a primary constructor; if the explicit constructor must stay, suppress it:
+
+```csharp
+#pragma warning disable SK0013 // Typed client; HttpClient is supplied by AddRestClient<PaymentGatewayClient>().
+public PaymentGatewayClient(HttpClient http, ILogger<PaymentGatewayClient> logger)
+#pragma warning restore SK0013
+```
 
 ---
 
 <a id="sk0014-closedgenericresiliencepipelineregistration"></a>
 ### SK0014 — ClosedGenericResiliencePipelineRegistration
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Use the non-generic, string-keyed `ResiliencePipeline` instead of `ResiliencePipeline<T>`.
 
-Polly v8 resilience pipelines are registered and resolved via the non-generic
-`Polly.ResiliencePipeline` type, keyed by a string policy name
-(`ResiliencePipelineProvider<string>` / `AddResiliencePipeline("policy-name", ...)`). The
-arity-1 generic form `ResiliencePipeline<TResponse>` silently falls back to a no-op pipeline
-whenever the resolved key does not exactly match the closed type used at the call site —
-defeating retry/circuit-breaker protection with no runtime warning.
+#### Why it matters
 
-SK0014 fires anywhere the arity-1 generic form is used — a DI registration type argument, a
-constructor/method parameter, a field type, or a local variable type. This is a syntax-only
-check; no suppression namespace exists, since a closed-generic `ResiliencePipeline<T>` has no
-legitimate call site on this platform.
+The platform registers Polly v8 resilience pipelines by string key and resolves them as the non-generic `Polly.ResiliencePipeline` from `ResiliencePipelineProvider<string>`. This is how `ResilienceBehavior` in `SharedKernel.Application.Behaviors` resolves its pipelines.
 
-#### Violating Example
+A closed-generic `ResiliencePipeline<TResponse>` ties resolution to the exact closed response type as well as the key. When the two do not line up, the call silently falls back to a no-op pipeline. Retry and circuit-breaker protection is lost, and nothing at runtime tells you.
+
+#### What it flags
+
+- Any generic name spelled `ResiliencePipeline` with exactly one type argument, wherever it appears in source: a DI registration type argument (`AddSingleton<ResiliencePipeline<T>>(...)`), a constructor or method parameter, a field, a property, a local variable type, or a `typeof(...)` expression.
+- The diagnostic is reported on the generic name itself, so a type used in both a field and a constructor parameter produces two diagnostics.
+
+#### What it does not flag
+
+- The non-generic `ResiliencePipeline`, and other Polly types such as `ResiliencePipelineProvider<string>` or `ResiliencePipelineBuilder<T>`.
+- A typed pipeline that never appears by name, for example `var pipeline = provider.GetPipeline<HttpResponseMessage>("key");`. The check is syntax-only, so an inferred type is a known false negative.
+- The check matches on the name alone and does not resolve the namespace. A type of your own called `ResiliencePipeline<T>` is flagged too.
+
+#### Example
 
 ```csharp
-public class PaymentGatewayClient
+// Flagged: SK0014
+public sealed class PaymentGatewayClient(ResiliencePipeline<HttpResponseMessage> pipeline)
 {
-    // SK0014: ResiliencePipeline<HttpResponseMessage> silently falls back to a no-op pipeline
-    private readonly ResiliencePipeline<HttpResponseMessage> _pipeline;
-
-    public PaymentGatewayClient(ResiliencePipeline<HttpResponseMessage> pipeline) =>
-        _pipeline = pipeline;
+    // ...
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public class PaymentGatewayClient
+// Compliant
+public sealed class PaymentGatewayClient(ResiliencePipelineProvider<string> provider)
 {
-    private readonly ResiliencePipeline _pipeline;
-
-    public PaymentGatewayClient(ResiliencePipelineProvider<string> provider) =>
-        _pipeline = provider.GetPipeline("payment-gateway");
+    private readonly ResiliencePipeline _pipeline = provider.GetPipeline("payment-gateway");
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0014 / restore SK0014` only when a third-party
-library API genuinely requires the closed-generic Polly type; document the rationale inline.
+```text
+warning SK0014: ResiliencePipeline<HttpResponseMessage> uses the arity-1 generic form. Register and resolve Polly v8 resilience pipelines via the non-generic, string-keyed Polly.ResiliencePipeline type instead — a closed-generic registration silently falls back to a no-op pipeline when the resolved key does not exactly match the closed type used at the call site.
+```
+
+#### Suppressing
+
+Suppress only where a third-party API you do not control requires the typed pipeline.
+
+```csharp
+#pragma warning disable SK0014 // Vendor SDK's RetryHandler constructor only accepts ResiliencePipeline<HttpResponseMessage>
+var handler = new VendorRetryHandler(typedPipeline);
+#pragma warning restore SK0014
+```
 
 ---
 
 <a id="sk0015-streampipelinebehaviormisregistration"></a>
 ### SK0015 — StreamPipelineBehaviorMisregistration
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Register streaming behaviors against `IStreamPipelineBehavior<,>`, not `IPipelineBehavior<,>`.
 
-MediatR dispatches `IStreamRequest<TResponse>` through `IStreamPipelineBehavior<,>`, never
-through `IPipelineBehavior<,>`. A streaming behavior registered against the wrong interface is
-silently never invoked — no exception, no warning, the behavior simply never runs.
+#### Why it matters
 
-SK0015 fires when a type-based DI registration call (`AddTransient`, `AddScoped`, or
-`AddSingleton`) registers `typeof(IPipelineBehavior<,>)` against an implementation type that
-itself implements `MediatR.IStreamPipelineBehavior<,>`. The rule is self-exempt inside a method
-named `AddStreamingBehaviors` — the canonical builder method is the single sanctioned
-registration call site.
+MediatR sends streaming requests (`IStreamRequest<TResponse>`, including `IStreamQuery<TResponse>`) through `IStreamPipelineBehavior<,>` only. A streaming behavior registered as `IPipelineBehavior<,>` is never invoked. There is no exception and no warning: your logging, metrics, or authorization step simply does not run for streams.
 
-#### Violating Example
+#### What it flags
 
-```csharp
-public static class ApplicationServiceCollectionExtensions
-{
-    public static IServiceCollection AddBehaviors(this IServiceCollection services)
-    {
-        // SK0015: StreamMetricsBehavior<,> implements IStreamPipelineBehavior<,> but is
-        // registered against IPipelineBehavior<,> — it will never be invoked
-        return services.AddTransient(
-            typeof(IPipelineBehavior<,>),
-            typeof(StreamMetricsBehavior<,>));
-    }
-}
-```
+- A call to `AddTransient`, `AddScoped`, or `AddSingleton` with exactly two arguments, both `typeof(...)` expressions, where:
+  - the first (service) type resolves to `MediatR.IPipelineBehavior<,>` (open or closed), and
+  - the second (implementation) type implements `MediatR.IStreamPipelineBehavior<,>`, directly or through a base type.
+- Interfaces are resolved with the semantic model, so the check does not depend on a `Stream*` naming convention.
 
-#### Compliant Fix
+#### What it does not flag
+
+- Any registration inside a method named `AddStreamingBehaviors`. The exemption matches the method name only, not the containing type.
+- Generic registration overloads such as `AddTransient<IPipelineBehavior<TReq, TRes>, TImpl>()`, `TryAdd*` calls, `ServiceDescriptor` construction, and MediatR's own `AddOpenBehavior(...)` configuration.
+- Implementation types that implement only `IPipelineBehavior<,>`.
+
+#### Example
 
 ```csharp
-public static class ApplicationBehaviorsBuilder
-{
-    public static ApplicationBehaviorsBuilder AddStreamingBehaviors(this ApplicationBehaviorsBuilder builder) =>
-        builder.Services.AddTransient(
-            typeof(IStreamPipelineBehavior<,>),
-            typeof(StreamMetricsBehavior<,>)) is var _
-            ? builder
-            : builder;
-}
+// Flagged: SK0015
+services.AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamAuditBehavior<,>));
 ```
 
-#### Suppression Instructions
+```csharp
+// Compliant: a custom streaming behavior registered against the streaming interface
+services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamAuditBehavior<,>));
 
-Suppress inline with `#pragma warning disable SK0015 / restore SK0015` only for a deliberate
-hybrid unary/streaming behavior type; document why the type intentionally implements both
-interfaces.
+// Compliant: the built-in streaming behaviors, registered by the builder
+services.AddSharedKernelApplicationBehaviors()
+    .AddStreamingBehaviors()
+    .Build();
+```
+
+#### Diagnostic
+
+```text
+warning SK0015: 'StreamAuditBehavior' implements IStreamPipelineBehavior<,> but is registered against IPipelineBehavior<,>. MediatR dispatches streaming requests through IStreamPipelineBehavior<,> only — this registration is silently never invoked. Call ApplicationBehaviorsBuilder.AddStreamingBehaviors() instead.
+```
+
+#### Suppressing
+
+A hybrid type that deliberately implements both interfaces is flagged when registered for its unary role. Suppress that registration and register the streaming role separately.
+
+```csharp
+#pragma warning disable SK0015 // AuditBehavior implements both interfaces; this line registers its unary role
+services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
+#pragma warning restore SK0015
+services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(AuditBehavior<,>));
+```
 
 ---
 
 <a id="sk0016-requesttypeshortnameusage"></a>
 ### SK0016 — RequestTypeShortNameUsage
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Use `typeof(T).FullName ?? typeof(T).Name` for request-type tags and keys.
 
-Two request types with the same short name in different namespaces or assemblies collide under
-`typeof(X).Name` alone. Any metric tag, log scope key, or cache key that must remain unique
-across assemblies must use `typeof(TRequest).FullName ?? typeof(TRequest).Name` instead.
+#### Why it matters
 
-Unlike most rules in this registry, SK0016 is scoped as a trigger-**IN** condition: it fires
-only on a standalone `typeof(X).Name` access found inside a file whose namespace starts with
-`SharedKernel.Application` (covering both `SharedKernel.Application` and
-`SharedKernel.Application.Behaviors`) — the collision risk this rule targets is intrinsic to
-MediatR request-type tag/key construction, which lives exclusively there. It does not fire on
-`typeof(X).Name` usage anywhere else on the platform.
+Two request types with the same short name in different namespaces, for example `Orders.CreateCommand` and `Invoices.CreateCommand`, both produce `CreateCommand` from `typeof(X).Name`. When that string becomes a metric tag, log scope value, resilience pipeline key, or cache key, the two requests share one series or one entry. Dashboards merge unrelated traffic, and a cache or pipeline configured for one request applies to the other.
 
-#### Violating Example
+#### What it flags
 
-```csharp
-namespace SharedKernel.Application.Behaviors
-{
-    public sealed class MetricsBehavior<TRequest, TResponse>
-    {
-        public string BuildTag() =>
-            // SK0016: typeof(TRequest).Name is not collision-safe across assemblies
-            typeof(TRequest).Name;
-    }
-}
-```
+- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Behaviors`, and their sub-namespaces.
+- `typeof(A).FullName ?? typeof(B).Name` where `A` and `B` are not written identically.
 
-#### Compliant Fix
+Unlike most rules, the namespace is a condition for firing, not an exemption. The rule targets the MediatR pipeline code that builds request-type tags and keys. Code in your own service namespaces is not checked.
+
+#### What it does not flag
+
+- `typeof(X).FullName ?? typeof(X).Name`, where both sides name the same type text.
+- `typeof(X).Name` in any namespace that does not start with `SharedKernel.Application`.
+- Indirect forms, such as `request.GetType().Name` or `var t = typeof(TRequest); t.Name`. The check is syntax-only.
+
+#### Example
 
 ```csharp
-namespace SharedKernel.Application.Behaviors
-{
-    public sealed class MetricsBehavior<TRequest, TResponse>
-    {
-        public string BuildTag() =>
-            typeof(TRequest).FullName ?? typeof(TRequest).Name;
-    }
-}
+namespace SharedKernel.Application.Behaviors.Metrics;
+
+// Flagged: SK0016
+var requestName = typeof(TRequest).Name;
 ```
 
-#### Suppression Instructions
+```csharp
+namespace SharedKernel.Application.Behaviors.Metrics;
 
-Suppress inline with `#pragma warning disable SK0016 / restore SK0016` when the short name is
-genuinely sufficient (e.g. a user-facing display string where collision risk is irrelevant);
-document the rationale inline.
+// Compliant
+var requestName = typeof(TRequest).FullName ?? typeof(TRequest).Name;
+```
+
+#### Diagnostic
+
+```text
+warning SK0016: typeof(TRequest).Name is not collision-safe across assemblies. Use typeof(TRequest).FullName ?? typeof(TRequest).Name for any metric tag, log scope key, or cache key that must remain unique.
+```
+
+#### Suppressing
+
+Suppress only when the short name is display text and never used as an identifier.
+
+```csharp
+#pragma warning disable SK0016 // Human-readable label in an exception message; not a tag or key
+throw new InvalidOperationException($"No handler registered for {typeof(TRequest).Name}.");
+#pragma warning restore SK0016
+```
 
 ---
 
 <a id="sk0017-commandimplementscacheablequery"></a>
 ### SK0017 — CommandImplementsCacheableQuery
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+A command must not implement `ICacheableQuery<TResponse>`.
 
-Caching is queries-only by design — a command must never be cacheable. SK0017 fires when a
-non-abstract class, record, or struct implements both `ICommandBase` and the open generic
-`ICacheableQuery<TResponse>`, whether directly or transitively (e.g. through
-`ICommand<TResponse> : ICommandBase`). This rule fires inside a **consuming** microservice's own
-compilation — the violation is a command/query type declaration, which never occurs inside
-`SharedKernel.Application.Behaviors` itself.
+#### Why it matters
 
-Abstract types are exempt, mirroring SK0009's exemption for abstract base event classes.
+`CachingBehavior` returns a cached response when the cache key is already present, without calling the handler. For a command, that means a repeated `CancelOrderCommand` reports success while the cancellation never runs. Caching is for queries only.
 
-#### Violating Example
+#### What it flags
+
+- A non-abstract class, record, or struct that implements both `ICommandBase` and `ICacheableQuery<TResponse>`.
+- Both interfaces are resolved through the full interface closure, so it catches `ICommandBase` inherited through `ICommand<TResponse>` or `ICommand`, and interfaces inherited from a base class.
+- Matching is by interface name, arity, and a containing namespace that starts with `SharedKernel.Application`.
+
+#### What it does not flag
+
+- Abstract types. A concrete type deriving from a flagged abstract base is still flagged.
+- Interface declarations and `record struct` declarations.
+- Look-alike interfaces with the same name declared outside `SharedKernel.Application*` namespaces.
+
+#### Example
 
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Application;
-    using SharedKernel.Application.Behaviors;
+using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Results;
 
-    // SK0017: implements both ICommandBase and ICacheableQuery<TResponse>
-    public sealed class CancelOrderCommand : ICommand<Result>, ICacheableQuery<Result>
-    {
-        public string CacheKey => "cancel-order";
-    }
+// Flagged: SK0017
+public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>, ICacheableQuery<Result<Guid>>
+{
+    public string CacheKey => $"orders:{OrderId}:cancel";
+    public CachePolicy CachePolicy => CachePolicy.Default;
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 
-    public sealed class CancelOrderCommand : ICommand<Result>
-    {
-    }
-}
+// Compliant
+public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>;
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0017 / restore SK0017` at the type declaration
-with an inline comment documenting the rationale; fires globally, no suppression namespace.
+```text
+warning SK0017: 'CancelOrderCommand' implements both ICommandBase and ICacheableQuery<TResponse>. Caching is queries-only by design — remove ICacheableQuery<TResponse> from the command type, or model the operation as a query instead.
+```
 
 ---
 
 <a id="sk0018-queryimplementsinvalidatescache"></a>
 ### SK0018 — QueryImplementsInvalidatesCache
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+A query must not implement `IInvalidatesCache`.
 
-Cache invalidation is commands-only by design — a pure query must never invalidate cache
-entries as a side effect. SK0018 is the structural converse of SK0017: it fires when a
-non-abstract class, record, or struct implements the open generic `IQuery<TResponse>`, does
-**not** also implement `ICommandBase`, and also implements `IInvalidatesCache`. A type
-implementing `ICommandBase` alongside both markers belongs to SK0017 instead — the two rules are
-mutually exclusive by this guard.
+#### Why it matters
 
-Abstract types are exempt, the same exemption already applied by SK0009/SK0017.
+A query should be free of side effects. A query that evicts cache entries makes a read change what other callers see, and repeated reads, retries, or dashboards polling it will keep clearing the cache. `CacheInvalidationBehavior` is also constrained to `ICommandBase`, so on a pure query the marker is misleading at best. Put invalidation on the command that changes the data.
 
-#### Violating Example
+#### What it flags
+
+- A non-abstract class, record, or struct that implements `IQuery<TResponse>` and `IInvalidatesCache`, and does not implement `ICommandBase`.
+- Interfaces are resolved through the full interface closure, including those inherited from a base class. Matching is by interface name, arity, and a containing namespace that starts with `SharedKernel.Application`.
+
+#### What it does not flag
+
+- Types that also implement `ICommandBase`. SK0017 does not cover that combination either unless the type also implements `ICacheableQuery<TResponse>`.
+- Types that implement `IInvalidatesCache` without `IQuery<TResponse>`.
+- Abstract types, interface declarations, and `record struct` declarations.
+
+#### Example
 
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Application;
-    using SharedKernel.Application.Behaviors;
+using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Messaging;
 
-    // SK0018: implements IQuery<TResponse> and IInvalidatesCache without ICommandBase
-    public sealed class GetOrderQuery : IQuery<OrderDto>, IInvalidatesCache
-    {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => new[] { "orders" };
-    }
+// Flagged: SK0018
+public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>, IInvalidatesCache
+{
+    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Application;
+using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Messaging;
 
-    public sealed class GetOrderQuery : IQuery<OrderDto>
-    {
-    }
+// Compliant: the query only reads; the command that changes the order invalidates
+public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
+
+public sealed record ShipOrderCommand(Guid OrderId) : ICommand<Guid>, IInvalidatesCache
+{
+    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0018 / restore SK0018` at the type declaration
-with an inline comment documenting the rationale; fires globally, no suppression namespace.
+```text
+warning SK0018: 'GetOrderQuery' implements IQuery<TResponse> and IInvalidatesCache without also implementing ICommandBase. Cache invalidation is commands-only by design — remove IInvalidatesCache from the query type, or model the operation as a command instead.
+```
 
 ---
 
 <a id="sk0019-retryablerequestwithoutidempotency"></a>
 ### SK0019 — RetryableRequestWithoutIdempotency
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+A request that implements `IRetryableRequest` must also implement `IIdempotentRequest`.
 
-A retried request that already partially committed on its first attempt is re-executed instead
-of returning the original outcome, unless `IdempotentCommandBehavior` can guard against it via
-`IIdempotentRequest`. SK0019 closes `05.Application/CLAUDE.md`'s own documented, previously
-not-mechanically-enforced gap: it fires when a non-abstract class, record, or struct implements
-`IRetryableRequest` without also implementing `IIdempotentRequest`.
+#### Why it matters
 
-Abstract types are exempt, the same exemption already applied by SK0009/SK0017/SK0018.
+`ResilienceBehavior` re-runs the handler when an attempt fails. If the first attempt already committed part of its work, for example charged a card and then timed out, the retry does it again. `IIdempotentRequest` supplies the key that `IdempotentCommandBehavior` uses to detect the duplicate and stop the second execution.
 
-#### Violating Example
+#### What it flags
 
-```csharp
-namespace Application.Payments
-{
-    using SharedKernel.Application.Behaviors;
+- A non-abstract class, record, or struct that implements `IRetryableRequest` without also implementing `IIdempotentRequest`.
+- Interfaces are resolved through the full interface closure, including those inherited from a base class. Matching is by interface name and a containing namespace that starts with `SharedKernel.Application`.
+- Queries are flagged as well as commands.
 
-    // SK0019: implements IRetryableRequest without also implementing IIdempotentRequest
-    public sealed class ChargeCardCommand : IRetryableRequest
-    {
-    }
-}
-```
+#### What it does not flag
 
-#### Compliant Fix
+- Abstract types, interface declarations, and `record struct` declarations.
+- The rule does not check that the guard will actually run. `IdempotentCommandBehavior` applies only to `ICommandBase` requests and only when `AddIdempotencyBehavior()` is enabled, so a non-command that implements both interfaces passes the rule but is not protected at runtime.
+
+#### Example
 
 ```csharp
-namespace Application.Payments
-{
-    using SharedKernel.Application.Behaviors;
+using SharedKernel.Application.Behaviors.Resilience;
+using SharedKernel.Application.Messaging;
 
-    public sealed class ChargeCardCommand : IRetryableRequest, IIdempotentRequest
-    {
-        public string IdempotencyKey { get; init; } = string.Empty;
-    }
-}
+// Flagged: SK0019
+public sealed record ChargeCardCommand(Guid PaymentId, decimal Amount) : ICommand<Guid>, IRetryableRequest;
 ```
 
-#### Suppression Instructions
+```csharp
+using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Behaviors.Resilience;
+using SharedKernel.Application.Messaging;
 
-Suppress inline with `#pragma warning disable SK0019 / restore SK0019` at the type declaration
-with an inline comment documenting the rationale (e.g., an idempotency-key store is provided
-out-of-band); fires globally, no suppression namespace.
+// Compliant
+public sealed record ChargeCardCommand(Guid PaymentId, decimal Amount, string IdempotencyKey)
+    : ICommand<Guid>, IRetryableRequest, IIdempotentRequest;
+```
+
+#### Diagnostic
+
+```text
+warning SK0019: 'ChargeCardCommand' implements IRetryableRequest without also implementing IIdempotentRequest. Implement IIdempotentRequest so IdempotentCommandBehavior can guard against the retry-after-partial-commit hazard, or remove IRetryableRequest if idempotency truly cannot be guaranteed.
+```
+
+#### Suppressing
+
+A read-only query is naturally safe to re-run and has no partial commit to guard against.
+
+```csharp
+#pragma warning disable SK0019 // Read-only query: retrying has no side effects
+public sealed record GetExchangeRateQuery(string From, string To) : IQuery<decimal>, IRetryableRequest;
+#pragma warning restore SK0019
+```
 
 ---
 
 <a id="sk0020-directiloggerextensionmethodusage"></a>
 ### SK0020 — DirectILoggerExtensionMethodUsage
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Author log statements with the `[LoggerMessage]` source generator instead of calling `ILogger` extension methods directly.
 
-The platform's logging standard (root `CLAUDE.md` "Logging Conventions", WO-041 P-249/P-250)
-requires every production log statement to go through the `[LoggerMessage]` source-generated
-partial-method pattern with an explicit `EventId`. SK0020 fires when a call resolves — by exact
-symbol resolution, not a syntax-only name match — to `Microsoft.Extensions.Logging.ILogger.Log`
-or a `Microsoft.Extensions.Logging.LoggerExtensions` method (`LogInformation`, `LogWarning`,
-etc.). A syntax-only simple-name check was rejected because `LogInformation`/`LogWarning`/etc.
-collide with unrelated logging frameworks (Serilog's own `ILogger`, NLog, custom wrappers) that
-may coexist in a consuming microservice's dependency tree.
+#### Why it matters
 
-SK0020 and SK0021 share one analyzer class (`LoggingAuthoringStyleAnalyzer`) and one
-`SharedKernel.Testing` suppression namespace — the in-memory `ILogger`/`ILoggerFactory` test
-double legitimately implements/exercises the `ILogger` surface directly. The analyzer also
-guards against generated code (`ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None)`)
-— without this guard, SK0020 would fire against every `[LoggerMessage]` method's own
-compiler-generated body, which internally calls `ILogger.Log` directly.
+Every production log statement on the platform uses a `[LoggerMessage]` partial method with an explicit `EventId` from the owning domain's reserved range. That keeps logs queryable and alertable by `EventId` across every service, and it avoids the per-call template parsing and argument boxing that `LogInformation(...)` and friends pay on every call.
 
-#### Violating Example
+A direct `_logger.LogWarning(...)` call has no stable `EventId`, so dashboards and alerts that key on one silently miss it.
+
+#### What it flags
+
+- An invocation written as a member access (`receiver.Method(...)`) whose method name starts with `Log` and resolves, through the semantic model, to either:
+  - a method declared on `Microsoft.Extensions.Logging.LoggerExtensions` (`LogTrace`, `LogDebug`, `LogInformation`, `LogWarning`, `LogError`, `LogCritical`, and the `Log` overloads), including calls through `ILogger<T>` and the static form `LoggerExtensions.LogWarning(logger, ...)`; or
+  - `Microsoft.Extensions.Logging.ILogger.Log` itself.
+
+#### What it does not flag
+
+- Methods with the same names on unrelated types (Serilog's `ILogger`, NLog, custom wrappers). Matching is by the exact declaring type, not by name.
+- Other `ILogger` members that do not start with `Log`, such as `BeginScope` and `IsEnabled`.
+- Compiler-generated code, including the bodies the `[LoggerMessage]` generator emits, which call `ILogger.Log` internally.
+- Code inside a namespace whose name starts with `SharedKernel.Testing`, where the in-memory logger test double exercises the `ILogger` surface directly.
+- Null-conditional calls such as `_logger?.LogInformation(...)`, which are not member-access invocations. This is a known gap.
+
+#### Example
 
 ```csharp
-public class OrderHandler
+// Flagged: SK0020
+public sealed class OrderHandler(ILogger<OrderHandler> logger)
 {
-    private readonly ILogger<OrderHandler> _logger;
-
-    public OrderHandler(ILogger<OrderHandler> logger) => _logger = logger;
-
-    public void Handle(string orderId) =>
-        // SK0020: direct ILogger extension-method call bypasses [LoggerMessage]
-        _logger.LogInformation("Order {OrderId} handled", orderId);
+    public void Handle(string orderId) => logger.LogInformation("Order {OrderId} handled", orderId);
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public static partial class Log
+// Compliant
+public sealed partial class OrderHandler(ILogger<OrderHandler> logger)
 {
+    public void Handle(string orderId) => LogOrderHandled(logger, orderId);
+
     [LoggerMessage(EventId = 5001, Level = LogLevel.Information, Message = "Order {OrderId} handled")]
-    public static partial void OrderHandled(this ILogger logger, string orderId);
-}
-
-public class OrderHandler
-{
-    private readonly ILogger<OrderHandler> _logger;
-
-    public OrderHandler(ILogger<OrderHandler> logger) => _logger = logger;
-
-    public void Handle(string orderId) => _logger.OrderHandled(orderId);
+    private static partial void LogOrderHandled(ILogger logger, string orderId);
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0020 / restore SK0020`, or the namespace
-exemption for `SharedKernel.Testing`. Document the rationale inline for any other suppression.
+```text
+warning SK0020: Call to 'LogInformation' resolves directly to Microsoft.Extensions.Logging.LoggerExtensions. Author this log statement via the [LoggerMessage] source-generated partial-method pattern with an explicit EventId inside the calling assembly's domain-reserved range instead of a direct ILogger call.
+```
 
 ---
 
 <a id="sk0021-handwrittenloggermessagedefinedelegate"></a>
 ### SK0021 — HandWrittenLoggerMessageDefineDelegate
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Replace hand-written `LoggerMessage.Define` delegates with `[LoggerMessage]` partial methods.
 
-Hand-written calls to `LoggerMessage.Define`/`LoggerMessage.DefineScope` bypass the
-`[LoggerMessage]` source generator entirely, producing the exact hand-rolled delegate shape the
-platform's logging standard prohibits. SK0021 is a syntax-only check: it fires on any
-`InvocationExpressionSyntax` whose expression is a `MemberAccessExpressionSyntax` with a
-qualifier identifier text of `"LoggerMessage"` and a member name starting with `"Define"`
-(covering `Define`/`DefineScope` across every generic arity).
+#### Why it matters
 
-SK0021 shares SK0020's `SharedKernel.Testing` suppression namespace and generated-code guard —
-see [SK0020](#sk0020-directiloggerextensionmethodusage).
+`LoggerMessage.Define` was the pre-generator way to get high-performance logging. It works, but it is verbose, and the template and the delegate's type arguments can drift apart without any compile-time check. The `[LoggerMessage]` source generator produces the same efficient code, validates the template against the method parameters, and keeps the `EventId` next to the message.
 
-#### Violating Example
+Allowing both styles means two shapes to review and two ways to get `EventId` assignment wrong.
+
+#### What it flags
+
+- Any invocation of the form `LoggerMessage.Define...(...)`: a member access whose qualifier's simple name is `LoggerMessage` and whose method name starts with `Define`. This covers `Define` and `DefineScope` at every generic arity, and the fully qualified `Microsoft.Extensions.Logging.LoggerMessage.Define(...)` form.
+
+#### What it does not flag
+
+- Compiler-generated code.
+- Code inside a namespace whose name starts with `SharedKernel.Testing`.
+- A call reached through `using static Microsoft.Extensions.Logging.LoggerMessage;` and written as a bare `Define(...)`, since there is no `LoggerMessage.` qualifier.
+
+The check is syntax-only, so a `Define*` call on an unrelated type that also happens to be named `LoggerMessage` is flagged as well.
+
+#### Example
 
 ```csharp
-public static class Log
+// Flagged: SK0021
+public static class OrderLog
 {
-    // SK0021: hand-written LoggerMessage.Define bypasses the source generator
     private static readonly Action<ILogger, string, Exception?> OrderHandledDelegate =
         LoggerMessage.Define<string>(LogLevel.Information, new EventId(5001), "Order {OrderId} handled");
 
@@ -1240,974 +1464,1014 @@ public static class Log
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public static partial class Log
+// Compliant
+public static partial class OrderLog
 {
     [LoggerMessage(EventId = 5001, Level = LogLevel.Information, Message = "Order {OrderId} handled")]
     public static partial void OrderHandled(this ILogger logger, string orderId);
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0021 / restore SK0021`, or the namespace
-exemption for `SharedKernel.Testing`. Document the rationale inline for any other suppression.
+```text
+warning SK0021: Hand-written call to 'LoggerMessage.Define' bypasses the [LoggerMessage] source generator. Replace the static delegate field and Define call with a [LoggerMessage]-attributed static partial method.
+```
 
 ---
 
 <a id="sk0022-crosscuttingmagicstringliteral"></a>
 ### SK0022 — CrossCuttingMagicStringLiteral
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Use a named constant, not a raw string literal, for header names, telemetry keys, configuration sections, and claim types.
 
-A raw string literal at a cross-cutting call site — an HTTP header name, an OpenTelemetry
-`Activity` baggage/tag key, an `IConfiguration` section name, or a claim-type comparison — is
-exactly the class of bug that produced a confirmed mismatch between `14.Presentation`'s
-`CorrelationIdMiddleware` and `13.ServiceDefaults`'s `BaggageLogRecordProcessor` (WO-041 DO-07).
-SK0022 flags the raw literal **syntax shape only**, never a resolved value or declaring-class
-identity — any expression that is not itself a string literal at the checked position (a
-`nameof(...)`, an identifier, a member access referencing a named constant) passes clean,
-regardless of which class declares it.
+#### Why it matters
 
-SK0022 covers four call-site shapes, each resolved by exact declaring type via the semantic
-model: an HTTP header indexer/`.Add`/`.TryAddWithoutValidation` call, `Activity.SetBaggage`/
-`.SetTag`, `IConfiguration.GetSection`, and a `ClaimsPrincipal`/`ClaimsIdentity`/`Claim.Type`
-comparison. Fires globally — a domain-local constants class already satisfies the rule anywhere
-it is referenced, so there is no legitimate "exempt namespace."
+Header names, OpenTelemetry baggage and tag keys, configuration section names, and claim types are contracts. Two components that must agree on them usually live in different packages or services. When each one retypes the literal, a single-character difference (`"correlation.id"` versus `"CorrelationId"`) compiles cleanly and fails silently at runtime: correlation IDs stop flowing into logs, tenant IDs go missing, or a claim check never matches.
 
-#### Violating Example
+A shared constant makes that mismatch structurally impossible. Use `WellKnownHeaders`, `WellKnownBaggageKeys`, or `WellKnownTagKeys` from `SharedKernel.Primitives.Propagation` for correlation and tenant identifiers shared across domains, and a small constants class in your own package for anything local to it.
+
+#### What it flags
+
+A string literal (`"..."`) at one of these positions. The rule looks at the type of the object the call is made on, so inherited members, extension methods and concrete implementations are all covered, and null-conditional calls (`x?.SetTag(...)`) are matched like ordinary ones:
+
+- **HTTP headers:** on any object that is or implements `Microsoft.AspNetCore.Http.IHeaderDictionary`, or is or derives from `System.Net.Http.Headers.HttpHeaders`: the key in an indexer, and the first argument of `Add`, `Append` or `TryAddWithoutValidation`.
+- **Activity:** the first argument of `System.Diagnostics.Activity.SetBaggage`, `SetTag`, `AddBaggage` or `AddTag`, including `Activity.Current?.SetTag(...)`.
+- **Configuration:** the first argument of `GetSection` or `GetRequiredSection` on any object that is or implements `Microsoft.Extensions.Configuration.IConfiguration`, including `ConfigurationManager` (`builder.Configuration` in a minimal-hosting `Program.cs`).
+- **Claims:** the first `string` parameter of `HasClaim`, `FindFirst`, or `FindAll` on `ClaimsPrincipal` or `ClaimsIdentity` (the claim type, not the value); either side of `claim.Type == "..."` or `claim.Type != "..."`; and the single argument of `claim.Type.Equals("...")`.
+
+#### What it does not flag
+
+- Any expression that is not itself a string literal: a `const` or `static readonly` field from any class, `nameof(...)`, an interpolated string, or a concatenation. The rule never checks which class declares the constant.
+- A literal first assigned to a local variable and then passed in. Only the call site is inspected.
+- The same method names on unrelated objects, such as `Add` on a `Dictionary<string, string>` or a `GetSection` method on your own type.
+- Other shapes that carry the same kind of string: `IConfiguration["Key"]`, `GetValue<T>("Key")`, `new Claim("type", value)`, `claim.Type.Equals("...", StringComparison.Ordinal)`, `string.Equals(claim.Type, "...")`, and `claim.Type is "..."`.
+
+#### Example
 
 ```csharp
-public class CorrelationHandler
+// Flagged: SK0022 (twice)
+public void Apply(HttpRequestMessage request, Activity activity, string correlationId)
 {
-    public void Apply(HttpRequestMessage request, string correlationId) =>
-        // SK0022: raw string literal at a cross-cutting HTTP header call site
-        request.Headers.Add("X-Correlation-Id", correlationId);
+    request.Headers.Add("X-Correlation-Id", correlationId);
+    activity.SetBaggage("correlation.id", correlationId);
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public static class WellKnownHeaders
-{
-    public const string CorrelationId = "X-Correlation-Id";
-}
+// Compliant
+using SharedKernel.Primitives.Propagation;
 
-public class CorrelationHandler
+public void Apply(HttpRequestMessage request, Activity activity, string correlationId)
 {
-    public void Apply(HttpRequestMessage request, string correlationId) =>
-        request.Headers.Add(WellKnownHeaders.CorrelationId, correlationId);
+    request.Headers.Add(WellKnownHeaders.CorrelationId, correlationId);
+    activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, correlationId);
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0022 / restore SK0022`; document the rationale
-inline. There is no suppression namespace.
+```text
+warning SK0022: Raw string literal at a cross-cutting call site. Declare a named constant instead: use SharedKernel.Primitives.Propagation.WellKnownHeaders/WellKnownBaggageKeys (01.Core) if this value is a platform-shared correlation/tenant identifier consumed across multiple domains, or a domain-local static readonly/const constants class (mirroring SecurityClaimTypes, WebhookSignatureHeaders, HubGroupNaming) if it is specific to this package.
+```
 
 ---
 
 <a id="sk0023-nonsingletonamazons3clientregistration"></a>
 ### SK0023 — NonSingletonAmazonS3ClientRegistration
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Register `IAmazonS3` as a singleton.
 
-`Amazon.S3.IAmazonS3` is thread-safe and connection/credential-pooled internally per the AWS
-SDK's own documented contract and `08.Storage/CLAUDE.md`'s explicit "Provider `IAmazonS3` clients
-are singletons" rule. Registering it as scoped or transient constructs a new client (and thus a
-new connection pool) per resolution — expensive under load and able to exhaust ephemeral ports.
+#### Why it matters
 
-SK0023 fires when `AddScoped` or `AddTransient` is called with a first type argument whose
-simple name is exactly `"IAmazonS3"` — a syntax-only check covering both the one-argument
-factory form and the two-argument implementation form. It is the structural inverse of
-[SK0703](#sk0703-messagebussingletonregistration), which flags `AddSingleton<IMessageBus>`
-because that type must be scoped. Fires globally — `IAmazonS3` must be a singleton wherever it
-is registered, not only inside `SharedKernel.Storage.S3`/`SharedKernel.Storage.Obs`.
+`AmazonS3Client` is thread-safe and holds its own HTTP connection pool and credential cache. Registering `IAmazonS3` as scoped or transient builds a new client for every scope or resolution, with a fresh connection pool each time. Under load this wastes CPU and memory, adds TLS handshakes to every request, and can exhaust ephemeral ports.
 
-#### Violating Example
+The SharedKernel S3 and OBS storage providers already register the client as a singleton. This rule catches a service that registers its own client with the wrong lifetime. It is the inverse of [SK0703](#sk0703-messagebussingletonregistration), which requires `IMessageBus` to be scoped.
 
-```csharp
-public static class StorageServiceCollectionExtensions
-{
-    public static IServiceCollection AddCustomS3Client(this IServiceCollection services) =>
-        // SK0023: IAmazonS3 must be Singleton, not Scoped
-        services.AddScoped<IAmazonS3>(sp => new AmazonS3Client());
-}
-```
+#### What it flags
 
-#### Compliant Fix
+- A generic call to a method named `AddScoped` or `AddTransient` whose first type argument has the simple name `IAmazonS3` (`IAmazonS3` or `Amazon.S3.IAmazonS3`). Both the factory form `AddScoped<IAmazonS3>(sp => ...)` and the two-type-argument form `AddTransient<IAmazonS3, AmazonS3Client>()` are covered.
+
+#### What it does not flag
+
+- `AddSingleton<IAmazonS3>(...)`.
+- Registrations that use a different method name or no generic type argument: `TryAddScoped`, `AddKeyedScoped`, `AddScoped(typeof(IAmazonS3), ...)`, `ServiceDescriptor.Scoped(...)`, and `AddAWSService<IAmazonS3>(ServiceLifetime.Scoped)`.
+- `IAmazonS3` referenced through a `using` alias with a different name.
+
+The check is syntax-only. It does not verify the receiver is an `IServiceCollection` or that `IAmazonS3` is the AWS type, so a same-named interface from another library is flagged too.
+
+#### Example
 
 ```csharp
-public static class StorageServiceCollectionExtensions
-{
-    public static IServiceCollection AddCustomS3Client(this IServiceCollection services) =>
-        services.AddSingleton<IAmazonS3>(sp => new AmazonS3Client());
-}
+// Flagged: SK0023
+services.AddScoped<IAmazonS3>(_ => new AmazonS3Client(RegionEndpoint.EUCentral1));
 ```
 
-#### Suppression Instructions
+```csharp
+// Compliant
+services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(RegionEndpoint.EUCentral1));
+```
 
-Suppress inline with `#pragma warning disable SK0023 / restore SK0023` only when a test fixture
-or a genuinely short-lived client is required. Document the reason inline.
+#### Diagnostic
+
+```text
+warning SK0023: IAmazonS3 must be registered as Singleton, not AddScoped. Use AddSingleton<IAmazonS3, ...>() instead.
+```
+
+#### Suppressing
+
+Suppress only where a short-lived client is genuinely required, such as a test fixture that swaps credentials per test.
+
+```csharp
+#pragma warning disable SK0023 // each test gets isolated MinIO credentials
+services.AddScoped<IAmazonS3>(sp => sp.GetRequiredService<MinioFixture>().CreateClient());
+#pragma warning restore SK0023
+```
 
 ---
 
 <a id="sk0024-rawsearchfieldnameliteral"></a>
 ### SK0024 — RawSearchFieldNameLiteral
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Reference search field names through `nameof(...)` or a field-constants class, not raw string literals.
 
-A typo'd field name passed as a raw string literal to `SharedKernel.Search.Abstractions` is a
-visible, pre-I/O rejection on Meilisearch (`SearchErrors.FieldNotFilterable`/`FieldNotSortable`/
-`FieldNotFacetable`) but a **silent zero-result** on ElasticSearch whenever the typo happens to
-also be a syntactically legal but nonexistent field reference at the ES query-DSL level. SK0024
-bans a raw string literal at the field-name parameter position of eleven recognized call-site
-shapes: six on `IQueryBuilder<TDocument>`/`SearchQueryBuilder<TDocument>` (`OrderBy`,
-`OrderByDescending`, `SearchingIn`, `Faceting`, `WithNumericFacetStats`, `Returning`) and five on
-`SearchFilter`'s static factories (`Eq`, `Ne`, `In`, `Between`, `Exists`).
+#### Why it matters
 
-Each shape is resolved to its exact declaring type via the semantic model — a syntax-only
-simple-name check on `OrderBy`/`Where`/`In`/`Exists` would collide catastrophically with LINQ's
-own `Enumerable`/`Queryable` extension methods of the same names. For the four `params string[]`
-shapes, every argument expression is checked individually, covering both the multi-argument call
-form and any array/collection-expression form. Fires globally, like SK0022.
+A misspelled field name behaves differently depending on the search engine. Meilisearch rejects it before any I/O with `SearchErrors.FieldNotFilterable`, `FieldNotSortable`, or `FieldNotFacetable`. Elasticsearch accepts a nonexistent field reference as valid query syntax and returns zero results, with no error.
 
-#### Violating Example
+The same typo can therefore pass every test against one provider and silently return empty pages in production against the other. A `nameof` expression or shared constant turns the typo into a compile error and survives property renames.
+
+#### What it flags
+
+A string literal passed as a field name to these `SharedKernel.Search.Abstractions` members, resolved to their exact declaring type:
+
+- `IQueryBuilder<TDocument>` and `SearchQueryBuilder<TDocument>`: the argument of `OrderBy` and `OrderByDescending`, and every argument of the `params string[]` methods `SearchingIn`, `Faceting`, `WithNumericFacetStats`, and `Returning`. Literals inside an array creation (`new[] { "a" }`, `new string[] { "a" }`) or a collection expression (`["a"]`) passed to these methods are flagged individually.
+- `SearchFilter` static factories `Eq`, `Ne`, `In`, `Between`, and `Exists`: the first argument, which is the field name.
+
+#### What it does not flag
+
+- `nameof(...)`, a `const` or `static readonly` field from any class, or any other non-literal expression.
+- The value arguments of `SearchFilter` factories, such as the `SearchValue` in `Eq(field, value)`.
+- LINQ's `OrderBy`, `Where`, and similar methods, or same-named methods on any other type.
+- A field name held in a local variable before the call.
+
+#### Example
 
 ```csharp
-public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
-    // SK0024: raw string literal in a search field-name position
-    query.OrderBy("title");
+// Flagged: SK0024 (twice)
+var request = SearchQuery.For<ProductDocument>()
+    .Where(SearchFilter.Eq("status", SearchValue.From("active")))
+    .OrderBy("title")
+    .Build();
 ```
 
-#### Compliant Fix
-
 ```csharp
-public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
-    query.OrderBy(nameof(ProductDocument.Title));
-```
-
-Or, for a field referenced from more than one call site, a domain-local field-constants class:
-
-```csharp
+// Compliant
 public static class ProductDocumentFields
 {
-    public const string Title = nameof(ProductDocument.Title);
+    public const string Status = "status";
+    public const string Title = "title";
 }
 
-public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
-    query.OrderBy(ProductDocumentFields.Title);
+var request = SearchQuery.For<ProductDocument>()
+    .Where(SearchFilter.Eq(ProductDocumentFields.Status, SearchValue.From("active")))
+    .OrderBy(ProductDocumentFields.Title)
+    .Build();
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0024 / restore SK0024`; document the rationale
-inline. There is no suppression namespace.
+```text
+warning SK0024: Raw string literal supplied as a search field name. Reference the field via nameof(TDocument.PropertyName) or a domain-local field-constants class member instead — never a raw string literal. A typo'd literal is a visible rejection on Meilisearch and a silent zero-result on ElasticSearch.
+```
 
 ---
 
 <a id="sk0025-obsoleteelasticsearchclientusage"></a>
 ### SK0025 — ObsoleteElasticsearchClientUsage
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Use `Elastic.Clients.Elasticsearch` instead of the deprecated `NEST` and `Elasticsearch.Net` clients.
 
-`NEST`/`Elasticsearch.Net` are feature-frozen since client 8.13, with their support window closed
-at end-2025. SK0025 fires on any symbol usage — a type reference, a generic-name reference, or
-the name in a `using` directive — whose resolved `ContainingAssembly.Name` is exactly `"NEST"` or
-`"Elasticsearch.Net"`. This single assembly-identity check generalizes to every type either
-deprecated package exposes, without enumerating them individually — a fully-qualified
-`Nest.ElasticClient` reference and a bare `ElasticClient` after `using Nest;` are both caught the
-same way.
+#### Why it matters
 
-A syntax-only simple-name check on `ElasticClient`/`ConnectionSettings` was rejected because
-those names are generic enough to plausibly collide with unrelated types. Types from the
-platform-sanctioned `Elastic.Clients.Elasticsearch` package resolve to a different
-`ContainingAssembly.Name` and never trip this rule. Fires globally, platform-wide — a consuming
-microservice adding NEST directly is exactly as unsafe as `SharedKernel.Search.ElasticSearch`
-itself getting it wrong.
+`NEST` and `Elasticsearch.Net` have been feature-frozen since client version 8.13, and their support window closed at the end of 2025. They receive no security fixes and no support for new Elasticsearch server features. The platform standardizes on `Elastic.Clients.Elasticsearch`, which `SharedKernel.Search.ElasticSearch` pins.
 
-#### Violating Example
+A service that pulls in NEST directly takes on an unsupported dependency, whether or not it also uses the SharedKernel search provider.
+
+#### What it flags
+
+- Any identifier or generic name in source that resolves to a type whose containing assembly is named exactly `NEST` or `Elasticsearch.Net`. This covers every type in both packages without listing them, for example `ElasticClient`, `ConnectionSettings`, `QueryContainer`, and `ElasticLowLevelClient`, whether written bare after `using Nest;`, fully qualified as `Nest.ElasticClient`, or inside a `using` alias.
+
+#### What it does not flag
+
+- Types from `Elastic.Clients.Elasticsearch`, which live in a different assembly.
+- Same-named types from other libraries. Matching is by assembly, not by name.
+- A `using Nest;` directive on its own, or the `Nest.` namespace part of a qualified name. The diagnostic is reported on the type reference that follows.
+- The `var` keyword, even when it infers a NEST type. The explicit type in the initializer is reported instead.
+- Method calls on a NEST client instance, and types that are only inferred (for example lambda parameters in NEST's fluent query API).
+- A NEST `PackageReference` with no type used in source.
+
+#### Example
 
 ```csharp
+// Flagged: SK0025 (on ElasticClient and ConnectionSettings)
 using Nest;
 
-public class ProductSearchClient
+public sealed class ProductSearchClient
 {
-    // SK0025: 'ElasticClient' resolves to the deprecated 'NEST' package
-    private readonly ElasticClient _client = new(new ConnectionSettings());
+    private readonly ElasticClient _client = new(new ConnectionSettings(new Uri("http://localhost:9200")));
 }
 ```
-
-#### Compliant Fix
 
 ```csharp
+// Compliant
 using Elastic.Clients.Elasticsearch;
 
-public class ProductSearchClient
+public sealed class ProductSearchClient
 {
-    private readonly ElasticsearchClient _client = new();
+    private readonly ElasticsearchClient _client = new(new Uri("http://localhost:9200"));
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0025 / restore SK0025`; document the rationale
-inline. There is no suppression namespace — this platform has no legitimate NEST call site.
+```text
+warning SK0025: 'ElasticClient' resolves to the deprecated 'NEST' package — feature-frozen since client 8.13, support window closed at end-2025. Use Elastic.Clients.Elasticsearch (the platform-sanctioned client, pinned in SharedKernel.Search.ElasticSearch) instead.
+```
 
 ---
 
 <a id="sk0026-rawintelligenceproviderclientconstructorinjection"></a>
 ### SK0026 — RawIntelligenceProviderClientConstructorInjection
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Inject the `SharedKernel.AI.Abstractions` contracts instead of a raw Qdrant or Semantic Kernel client.
 
-Injecting a raw vector-DB/model-SDK client bypasses the neutral `SharedKernel.AI.Abstractions`
-contracts (`IVectorCollection<TRecord>`, `IEmbeddingGenerator`, `ISemanticKernel`, and friends),
-losing tenant scoping and provider portability. SK0026 fires when a constructor parameter type
-resolves, via the semantic model, to exactly `Qdrant.Client.QdrantClient` or
-`Microsoft.SemanticKernel.Kernel`, unless the enclosing type sits inside that client's own
-owning provider package's namespace (`SharedKernel.AI.Qdrant` or `SharedKernel.AI.SemanticKernel`
-respectively — the exemption is per-client-type, not shared, so a `QdrantClient` parameter inside
-`SharedKernel.AI.SemanticKernel` still fires).
+#### Why it matters
 
-Exact semantic-model resolution — not a syntax-only simple-name check — is required because
-`Microsoft.SemanticKernel.Kernel`'s simple name `"Kernel"` is highly collision-prone (a
-convolution kernel, an OS-kernel abstraction, and similar unrelated types are all plausible).
+The neutral AI contracts (`IVectorCollection<TRecord>`, `IEmbeddingGenerator`, `ISemanticKernel`, `IVectorCollectionProvisioner`) enforce tenant scoping on every read and filtered write, and validate the collection's embedding model, dimension, and distance metric before any I/O. A raw `QdrantClient` or `Kernel` skips all of that. A query issued through it can return another tenant's vectors, and the calling code is now tied to one provider.
 
-#### Violating Example
+#### What it flags
+
+- A constructor parameter whose type resolves, through the semantic model, to exactly `Qdrant.Client.QdrantClient` or `Microsoft.SemanticKernel.Kernel`.
+- The exemption is per client type: a `QdrantClient` parameter is allowed only inside a namespace starting with `SharedKernel.AI.Qdrant`, and a `Kernel` parameter only inside a namespace starting with `SharedKernel.AI.SemanticKernel`. A `QdrantClient` injected inside `SharedKernel.AI.SemanticKernel` is still flagged.
+
+#### What it does not flag
+
+- Unrelated types that happen to be named `Kernel` or `QdrantClient` in another namespace. The match is on the full type name, not the simple name.
+- Parameters of a primary constructor (`class Foo(QdrantClient client)`). Only explicit constructor declarations are analyzed.
+- Raw clients obtained any other way: `IServiceProvider.GetRequiredService<QdrantClient>()`, method parameters, properties, or `new QdrantClient(...)`.
+
+#### Example
 
 ```csharp
-namespace Application.Recommendations
+namespace Catalog.Application.Recommendations;
+
+// Flagged: SK0026
+public sealed class RecommendationService
 {
-    // SK0026: raw QdrantClient injected outside SharedKernel.AI.Qdrant
-    public class RecommendationService
-    {
-        public RecommendationService(Qdrant.Client.QdrantClient client) { }
-    }
+    public RecommendationService(Qdrant.Client.QdrantClient client) { }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Recommendations
-{
-    using SharedKernel.AI.Abstractions;
+// Compliant
+namespace Catalog.Application.Recommendations;
 
-    public class RecommendationService
-    {
-        public RecommendationService(IVectorCollection<ProductEmbedding> collection) { }
-    }
+using SharedKernel.AI.Abstractions.Abstractions;
+
+public sealed class RecommendationService
+{
+    public RecommendationService(IVectorCollection<ProductChunk> collection) { }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0026 / restore SK0026` per constructor; document
-the rationale inline.
+```text
+warning SK0026: Constructor parameter 'client' is typed as the raw provider client 'Qdrant.Client.QdrantClient'. Inject the neutral SharedKernel.AI.Abstractions contracts instead (IVectorCollection<TRecord>, IEmbeddingGenerator, ISemanticKernel, IVectorCollectionProvisioner, IVectorProviderDescriptor, ICompletionProviderDescriptor). A raw-client escape hatch, if genuinely required, must follow the platform's three-gate pattern (opt-in builder call, startup Warning, governance architecture test) and its XML doc must state IN CAPITALS that it bypasses tenant scoping.
+```
 
 ---
 
 <a id="sk0027-rawintelligenceidentifierliteral"></a>
 ### SK0027 — RawIntelligenceIdentifierLiteral
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Reference vector collection names, field names, and embedding model ids through a named constant or `nameof(...)`, never a raw string literal.
 
-A typo'd collection name is a visible, pre-I/O `IntelligenceErrors.CollectionNotFound` rejection
-on both vector-DB providers — but a typo'd `embeddingModelId` is sharper: a
-`VectorCollectionDefinition.Create`/`VectorCollectionDefinitionBuilder.EmbeddingModel` call site
-and the record/query call sites that must independently supply the *same* `embeddingModelId`
-string have no shared compile-time link, so a copy-pasted, typo'd literal at both places passes
-the model-identity guard cleanly — silently embedding/querying the corpus under a phantom model
-identity with zero engine-detectable error on either provider.
+#### Why it matters
 
-SK0027 bans a raw string literal at the identifier-parameter position of eight recognized
-`SharedKernel.AI.Abstractions` call-site shapes: five on `VectorFilter`'s static factories (`Eq`,
-`Ne`, `In`, `Between`, `Exists`), three on `IVectorCollectionProvisioner`
-(`CollectionExistsAsync`, `DeleteCollectionAsync`, `ProbeAsync`), both string parameters of
-`VectorCollectionDefinition.Create`, and both single-string-parameter members of
-`VectorCollectionDefinitionBuilder` (`EmbeddingModel`, `Field`). Each shape requires exact
-semantic-model resolution to the declaring type. `VectorCollectionCutoverRequest`'s
-`StagingCollectionName`/`LiveCollectionName` object-initializer property assignments are
-explicitly out of scope — this rule detects only method-call arguments.
+A typo in a collection name fails visibly: both vector providers reject it before any I/O. A typo in an embedding model id does not. The collection definition and every record or query that must supply the same model id have no compile-time link. If the same misspelled literal is copy-pasted into both places, the model-identity check passes, and the corpus is embedded and queried under a model that does not exist. Neither Qdrant nor any other engine can detect that mismatch.
 
-#### Violating Example
+A single named constant makes the definition site and every use site share one value.
+
+#### What it flags
+
+A string literal at an identifier argument of these `SharedKernel.AI.Abstractions` members, each resolved to its exact declaring type:
+
+- `VectorFilter.Eq`, `Ne`, `In`, `Between`, `Exists`: the field name (first argument).
+- `IVectorCollectionProvisioner.CollectionExistsAsync`, `DeleteCollectionAsync`, `ProbeAsync`: the collection name (first argument).
+- `VectorCollectionDefinition.Create`: the collection name (first argument) and the embedding model id (second argument), checked independently. Two literals produce two diagnostics.
+- `VectorCollectionDefinitionBuilder.EmbeddingModel`: the model id (first argument).
+- `VectorCollectionDefinitionBuilder.Field`: the field name (first argument).
+
+#### What it does not flag
+
+- `nameof(...)` expressions, constant references, local variables, and interpolated strings. Only a plain string literal token triggers the rule.
+- The `VectorCollectionDefinitionBuilder` constructor (`new VectorCollectionDefinitionBuilder("...")`) and `VectorCollectionDefinitionBuilder.TenantField(...)`.
+- Object-initializer property assignments, such as `VectorCollectionCutoverRequest.StagingCollectionName` and `LiveCollectionName`. The rule inspects method-call arguments only.
+- Model ids supplied on records or queries through other members. Only the definition-side members above are covered.
+- Arguments are checked by position. A named argument passed out of declaration order is checked at the position it appears in.
+- Methods with the same names on unrelated types.
+
+#### Example
 
 ```csharp
-public VectorCollectionDefinition BuildDefinition() =>
-    // SK0027: raw string literals for both the collection name and the embedding model id
-    VectorCollectionDefinition.Create("product-chunks", "text-embedding-3-small");
+// Flagged: SK0027 (twice)
+Result<VectorCollectionDefinition> definition =
+    new VectorCollectionDefinitionBuilder(ProductChunkCollection.Name)
+        .EmbeddingModel("text-embedding-3-small", 1536)
+        .Field("category", VectorFieldKind.String, filterable: true)
+        .Build();
 ```
 
-#### Compliant Fix
-
 ```csharp
-public static class IntelligenceModelIds
+// Compliant
+public static class ProductChunkCollection
 {
-    public const string ProductEmbeddingV1 = "text-embedding-3-small";
+    public const string Name = "product-chunks";
+    public const string EmbeddingModelId = "text-embedding-3-small";
+    public const string CategoryField = "category";
 }
 
-public VectorCollectionDefinition BuildDefinition() =>
-    VectorCollectionDefinition.Create(
-        nameof(ProductChunkRecord),
-        IntelligenceModelIds.ProductEmbeddingV1);
+Result<VectorCollectionDefinition> definition =
+    new VectorCollectionDefinitionBuilder(ProductChunkCollection.Name)
+        .EmbeddingModel(ProductChunkCollection.EmbeddingModelId, 1536)
+        .Field(ProductChunkCollection.CategoryField, VectorFieldKind.String, filterable: true)
+        .Build();
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0027 / restore SK0027`; document the rationale
-inline. There is no suppression namespace.
+```text
+warning SK0027: Raw string literal supplied as a collection name, field name, or embedding model id. Reference the identifier via nameof(...) or a domain-local identifier-constants class member instead — never a raw string literal. A copy-pasted, typo'd embeddingModelId literal silently embeds/queries the corpus under a phantom model identity with zero engine-detectable error.
+```
 
 ---
 
 <a id="sk0028-nondeterministicapiusageinsideworkflow"></a>
 ### SK0028 — NonDeterministicApiUsageInsideWorkflow
 
-**Category:** Design  
-**Severity:** Warning
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Use Temporal's deterministic `Workflow.*` APIs inside workflow code, and move clock, random, environment, and file access into activities.
 
-Temporal workflow code is replay code — it must produce byte-identical commands on every replay.
-Every one of the seven shapes this rule forbids compiles cleanly and fails only on replay, in
-production, at an arbitrary time later, taking down every in-flight execution of that workflow
-type simultaneously. SK0028 is the first analyzer in this domain scoped by type
-**attribution/inheritance rather than namespace**: a type is in scope when it carries a
-`[Workflow]` attribute (`Temporalio.Workflows.WorkflowAttribute`) or has
-`SharedKernel.Workflows.Temporal.Authoring.WorkflowBase` anywhere in its base-type chain. A type
-carrying `ActivityBase`/`[Activity]` anywhere in its chain is unconditionally **excluded**,
-checked first — inside an activity, every one of these shapes is ordinary, correct code
-(`IClock`/`ILogger<T>` injection is in fact mandatory there).
+#### Why it matters
 
-The seven forbidden shapes: `DateTime.UtcNow`/`.Now`/`DateTimeOffset.UtcNow`/`.Now`;
-`Guid.NewGuid()`; `new Random()`; `Task.Run`/`.Delay` and `ConfigureAwait(false)`; any
-`System.Environment`/`System.IO.File` member access; a constructor parameter typed `IClock`; and
-a constructor parameter typed the open generic `ILogger<T>`.
+Temporal rebuilds workflow state by replaying the workflow's code against its recorded history. On every replay, the code must issue exactly the same commands in the same order. A workflow that reads the system clock, generates a random value or GUID, or schedules work on the .NET thread pool produces different results on replay. The code compiles, passes tests, and works on first execution. It fails later, in production, when a worker restarts or a deploy triggers replay, and it breaks every in-flight execution of that workflow type at once.
 
-#### Violating Example
+Activities are ordinary code and run once per attempt, so the same APIs are correct there.
+
+#### What it flags
+
+A type is in scope when it carries `[Workflow]` (`Temporalio.Workflows.WorkflowAttribute`) or derives, directly or indirectly, from `SharedKernel.Workflows.Temporal.Authoring.WorkflowBase`. Inside such a type, the rule flags:
+
+- `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, `DateTimeOffset.Now`. Suggests `Workflow.UtcNow`.
+- `Guid.NewGuid()`. Suggests `Workflow.NewGuid()`.
+- `new Random(...)`, in both explicit and target-typed `new()` forms, with or without a seed. Suggests `Workflow.Random`.
+- `Task.Run(...)` and `Task.Delay(...)`. Suggests `Workflow.DelayAsync(...)` for delays and the SDK's own task combinators otherwise.
+- `ConfigureAwait(false)`, written with a literal `false`, on a `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`.
+- Any property or method on `System.Environment` (for example `Environment.MachineName`, `Environment.GetEnvironmentVariable(...)`), and any method on `System.IO.File`.
+- A constructor parameter of type `ILogger<T>` (`Microsoft.Extensions.Logging`). Suggests `Workflow.Logger`, which `WorkflowBase` exposes as `Logger`.
+- A constructor parameter of type `IClock` (`SharedKernel.Primitives.Clocks.IClock`). Suggests `Workflow.UtcNow`.
+
+Each API is resolved to its exact declaring type, so a same-named member on your own types is not flagged. Code in lambdas and local functions inside the workflow type is in scope.
+
+#### What it does not flag
+
+- Any type deriving from `SharedKernel.Workflows.Temporal.Authoring.ActivityBase`, or carrying `Temporalio.Activities.ActivityAttribute` at the type level. This exclusion is checked first and wins even when the type is also workflow-attributed.
+- Helper classes called from a workflow, and nested types declared inside it. Analysis covers only the members of the in-scope type itself, not what it calls.
+- `ConfigureAwait(true)`, `ConfigureAwait` with a non-literal argument or `ConfigureAwaitOptions`, `Task.WhenAll`, `Task.Factory.StartNew`, `DateTime.Today`, `Random.Shared`, and non-generic `ILogger`.
+- `HttpClient` and other I/O. These are also forbidden in workflow code but are outside this rule's trigger set.
+- Parameters of a primary constructor. Only explicit constructor declarations are checked for `IClock` and `ILogger<T>`.
+
+#### Example
 
 ```csharp
-using SharedKernel.Workflows.Temporal.Authoring;
-
+// Flagged: SK0028
 [Workflow]
-public class OrderWorkflow : WorkflowBase
+public sealed class OrderWorkflow : WorkflowBase
 {
     [WorkflowRun]
     public async Task RunAsync(Guid orderId)
     {
-        // SK0028: DateTime.UtcNow is non-deterministic across replay
         var startedAt = DateTime.UtcNow;
+        await Workflow.ExecuteActivityAsync((ReserveStockActivity a) => a.RunAsync(orderId, startedAt), Options);
     }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-using SharedKernel.Workflows.Temporal.Authoring;
-using Temporalio.Workflows;
-
+// Compliant
 [Workflow]
-public class OrderWorkflow : WorkflowBase
+public sealed class OrderWorkflow : WorkflowBase
 {
     [WorkflowRun]
     public async Task RunAsync(Guid orderId)
     {
         var startedAt = Workflow.UtcNow;
+        await Workflow.ExecuteActivityAsync((ReserveStockActivity a) => a.RunAsync(orderId, startedAt), Options);
     }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0028 / restore SK0028`; no legitimate case is
-known inside a genuine `[Workflow]` type.
+```text
+warning SK0028: 'DateTime.UtcNow' is forbidden inside the [Workflow]-scoped type 'OrderWorkflow' — workflow code is replay code and must produce byte-identical commands on every replay. Use Workflow.UtcNow instead; if this API is genuinely required, move it into an activity (a type deriving ActivityBase).
+```
 
 ---
 
 <a id="sk0029-rawtemporalclientconstructorinjection"></a>
 ### SK0029 — RawTemporalClientConstructorInjection
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Inject `IWorkflowDispatcher` or `IWorkflowHandle` instead of a raw Temporal SDK client, worker, or handle.
 
-A raw Temporal SDK client bypasses tenant scoping and workflow-id composition. SK0029 fires when
-a constructor parameter type resolves, via the semantic model, to
-`Temporalio.Client.ITemporalClient`, `Temporalio.Client.TemporalClient`,
-`Temporalio.Worker.TemporalWorker`, or `Temporalio.Client.WorkflowHandle` (any generic arity),
-unless the enclosing type sits inside a namespace starting with `SharedKernel.Workflows.Temporal`
-— a single shared exemption prefix, since `17.Workflows` has exactly one owning package.
+#### Why it matters
 
-Inject `IWorkflowDispatcher` (to start/signal/query workflows) or `IWorkflowHandle` (to interact
-with an already-started execution) instead. If a genuine Visibility-API/schedule/namespace-
-administration/Nexus need remains unmet by either, the sanctioned path is the three-gate
-`ITemporalRawClientAccessor` escape hatch — never a raw constructor-injected `Temporalio.*` client
-type.
+`IWorkflowDispatcher` requires a tenant scope on every dispatch, composes workflow ids through `IWorkflowIdFactory`, and propagates correlation and tenant headers into the workflow. A raw `ITemporalClient` does none of this. A workflow started through it runs without tenant context, and its id can collide with or duplicate an execution the platform considers idempotent.
 
-#### Violating Example
+For needs the neutral surface does not cover (Visibility API queries, schedules, namespace administration, Nexus), use `ITemporalRawClientAccessor`. It is available only after an explicit opt-in at the composition root, logs a startup warning, and is tracked by an architecture test.
+
+#### What it flags
+
+- A constructor parameter whose type resolves to `Temporalio.Client.ITemporalClient`, `Temporalio.Client.TemporalClient`, or `Temporalio.Worker.TemporalWorker`.
+- A constructor parameter whose type is `Temporalio.Client.WorkflowHandle`, generic or not.
+- Types inside a namespace starting with `SharedKernel.Workflows.Temporal` are exempt.
+
+#### What it does not flag
+
+- Types with the same simple names in other namespaces. Matching is on the resolved type and namespace.
+- Parameters of a primary constructor. Only explicit constructor declarations are analyzed.
+- Raw clients resolved from `IServiceProvider`, passed as method parameters, or created with `TemporalClient.ConnectAsync(...)`.
+
+#### Example
 
 ```csharp
-namespace Application.Orders
+namespace Orders.Application;
+
+using Temporalio.Client;
+
+// Flagged: SK0029
+public sealed class OrderOrchestrationService
 {
-    // SK0029: raw ITemporalClient injected outside SharedKernel.Workflows.Temporal
-    public class OrderOrchestrationService
-    {
-        public OrderOrchestrationService(Temporalio.Client.ITemporalClient client) { }
-    }
+    public OrderOrchestrationService(ITemporalClient client) { }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Workflows.Temporal;
+// Compliant
+namespace Orders.Application;
 
-    public class OrderOrchestrationService
-    {
-        public OrderOrchestrationService(IWorkflowDispatcher dispatcher) { }
-    }
+using SharedKernel.Workflows.Temporal.Dispatch;
+
+public sealed class OrderOrchestrationService
+{
+    public OrderOrchestrationService(IWorkflowDispatcher dispatcher) { }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0029 / restore SK0029` per constructor; document
-the rationale inline — no legitimate use case outside `SharedKernel.Workflows.Temporal` itself is
-known.
+```text
+warning SK0029: Constructor parameter 'client' is typed as the raw Temporal type 'Temporalio.Client.ITemporalClient'. Inject IWorkflowDispatcher (to start/signal/query workflows) or IWorkflowHandle (to interact with an already-started execution) instead. If a genuine Visibility-API/schedule/namespace-administration/Nexus need remains unmet, use the three-gate ITemporalRawClientAccessor escape hatch instead of a raw constructor-injected client.
+```
 
 ---
 
 <a id="sk0030-resultoutcomediscarded"></a>
 ### SK0030 — ResultOutcomeDiscarded
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Do not call a `Result`-returning member as a bare statement. Check the outcome, return it, or discard it explicitly.
 
-`Result`/`Result<T>`'s entire value proposition is that callers must explicitly branch on outcome
-instead of exceptions silently unwinding the stack. That proposition is completely defeated the
-moment a caller invokes a `Result`-returning member as a bare statement and never inspects
-`.IsSuccess`/`.IsFailure` — it compiles cleanly, produces no compiler warning, and the failure
-path is simply gone, exactly as dangerous as a fire-and-forgotten `Task` (CS4014), one level
-further down the stack.
+#### Why it matters
 
-SK0030 fires when a bare expression statement wraps an invocation or an `await` expression whose
-resolved type implements `SharedKernel.Primitives.Results.IHasSuccessFlag`. Only the
-**outermost** expression of the statement is inspected — this is what makes "passed as an
-argument" (`Bar(Foo());`), "returned" (`return Foo();`), and "receiver of a further member-access
-chain" (`Foo().Match(...);`) all pass, while a fluent chain whose outermost call still resolves to
-an `IHasSuccessFlag`-implementing type still correctly fires. The rule never inspects
-`AssignmentExpressionSyntax`, which is what makes both `result = Foo();` and the explicit discard
-`_ = Foo();` pass for free.
+`Result` and `Result<T>` replace exceptions with a value the caller must inspect. When a call that returns a `Result` is written as a bare statement, the failure is dropped. The compiler gives no warning, the code keeps running as if the operation succeeded, and nothing in logs shows the failure. It is the `Result` equivalent of an unawaited `Task`.
 
-#### Violating Example
+#### What it flags
 
-```csharp
-public class OrderService
-{
-    public void CancelOrder(Guid orderId) =>
-        // SK0030: the Result outcome is produced and never checked
-        _repository.Delete(orderId);
-}
-```
+- A bare expression statement whose outermost expression is a method invocation or an `await`, and whose type is, or implements, `IHasSuccessFlag` in a namespace starting with `SharedKernel.Primitives` (in practice `Result` and `Result<T>`).
+- `await` is unwrapped: `await SaveAsync();` is flagged when `SaveAsync` returns `Task<Result>`, `Task<Result<T>>`, `ValueTask<Result>`, or `ValueTask<Result<T>>`.
+- A fluent chain whose final call still returns a `Result`, such as `order.Cancel(now).Map(x => x.Id);`. The last `Result` in the chain is the one being dropped.
 
-#### Compliant Fix
+#### What it does not flag
+
+- Assignments, including local declarations (`var result = Foo();`), re-assignments, field assignments, and the explicit discard `_ = Foo();`.
+- `return Foo();`, and `Foo()` passed as an argument (`Log(Foo());`).
+- A chain whose final call returns something other than a `Result`, such as `Foo().Match(onSuccess, onFailure);` returning `void`.
+- Conditional-access calls (`service?.Save();`) and object creation expressions. `Result` is produced through static factories, so the latter does not occur in practice.
+- `Task` or `Task<T>` results that are not awaited. That case is the compiler's CS4014.
+
+#### Example
 
 ```csharp
-public class OrderService
-{
-    public Result CancelOrder(Guid orderId) =>
-        _repository.Delete(orderId);
-}
+// Flagged: SK0030
+public void CancelOrder(Order order) =>
+    order.Cancel(clock.UtcNow);
 ```
-
-Or, when the outcome is genuinely irrelevant at this call site, make that explicit:
 
 ```csharp
-public class OrderService
-{
-    public void CancelOrder(Guid orderId) =>
-        _ = _repository.Delete(orderId);
-}
+// Compliant
+public Result CancelOrder(Order order) =>
+    order.Cancel(clock.UtcNow);
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0030 / restore SK0030`, or — preferred, since it
-requires no suppression comment at all — rewrite the bare statement as an explicit discard
-assignment (`_ = SomeMethodReturningResult();`).
+```text
+warning SK0030: This Result's outcome is never checked — a failure will pass silently. Assign it, branch on it, return it, pass it as an argument, or explicitly discard it with '_ = ...'.
+```
+
+#### Suppressing
+
+When the outcome is genuinely irrelevant at a call site, prefer an explicit discard over a pragma. It needs no suppression and documents the intent in code:
+
+```csharp
+// Best-effort cache warm-up; a failure here is harmless and retried on the next request.
+_ = cacheWarmer.Warm(tenantId);
+```
 
 ---
 
 <a id="sk0031-rawsecuritycontextconstructorinjection"></a>
 ### SK0031 — RawSecurityContextConstructorInjection
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Inject `IUserContext` or `ITenantProvider` instead of `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`.
 
-Application-layer and domain-adjacent code must never reach past the platform's identity/tenant
-abstraction into ASP.NET Core hosting internals. SK0031 fires when a constructor parameter type
-is exactly `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`, unless the enclosing type
-sits inside a namespace starting with `SharedKernel.Security.Oidc` or
-`SharedKernel.Security.ApiKey` — the two packages that legitimately construct
-`IUserContext`/`ITenantProvider` implementations from these raw ASP.NET Core types. This is a
-syntax-only check, mirroring [SK0013](#sk0013-rawhttpclientconstructorinjection)'s exact shape.
+#### Why it matters
 
-Inject `SharedKernel.Security.Abstractions.IUserContext` (for identity) or `ITenantProvider` (for
-tenant identity) instead.
+`IUserContext` and `ITenantProvider` apply the platform's claim mapping, identity kinds (user, service principal, system), and tenant resolution consistently. Code that reads `ClaimsPrincipal` or `HttpContext` directly re-implements that logic, usually with the wrong claim type names. It also breaks outside an HTTP request: in a message consumer, a scheduled job, or a Temporal activity, `IHttpContextAccessor.HttpContext` is `null`, while `IUserContext` can be bound to `SystemUserContext` there.
 
-#### Violating Example
+#### What it flags
+
+- A constructor parameter whose type name is exactly `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`, written as a simple name or a qualified name (`System.Security.Claims.ClaimsPrincipal`).
+- Types inside a namespace starting with `SharedKernel.Security.Oidc` or `SharedKernel.Security.ApiKey` are exempt. These packages build `IUserContext` and `ITenantProvider` implementations from the raw ASP.NET Core types.
+
+#### What it does not flag
+
+- The check is syntax-only and name-based, with no semantic resolution. A parameter written through a `using` alias (`using Principal = System.Security.Claims.ClaimsPrincipal;`), or as a nullable type (`ClaimsPrincipal?`), is not flagged. Conversely, a type of your own named `HttpContext` in any namespace is flagged.
+- Other `SharedKernel.Security.*` packages, such as `SharedKernel.Security.Mtls` and `SharedKernel.Security.Totp`, are not exempt.
+- Parameters of a primary constructor. Only explicit constructor declarations are analyzed.
+- Method parameters, such as `InvokeAsync(HttpContext context)` in middleware, and `HttpContext` accessed through properties.
+
+#### Example
 
 ```csharp
-namespace Application.Orders
+namespace Orders.Application;
+
+using Microsoft.AspNetCore.Http;
+
+// Flagged: SK0031
+public sealed class OrderService
 {
-    // SK0031: raw ClaimsPrincipal injected outside SharedKernel.Security.Oidc/.ApiKey
-    public class OrderService
-    {
-        public OrderService(System.Security.Claims.ClaimsPrincipal principal) { }
-    }
+    public OrderService(IHttpContextAccessor httpContextAccessor) { }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-namespace Application.Orders
-{
-    using SharedKernel.Security.Abstractions;
+// Compliant
+namespace Orders.Application;
 
-    public class OrderService
-    {
-        public OrderService(IUserContext userContext) { }
-    }
+using SharedKernel.Security.Abstractions.Abstractions;
+
+public sealed class OrderService
+{
+    public OrderService(IUserContext userContext, ITenantProvider tenantProvider) { }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0031 / restore SK0031` when a raw
-`HttpContext`-family type is genuinely required (e.g., a middleware component); document the
-rationale inline.
+```text
+warning SK0031: Constructor parameter 'httpContextAccessor' is typed as 'IHttpContextAccessor' directly. Inject SharedKernel.Security.Abstractions.IUserContext (for identity) or ITenantProvider (for tenant identity) instead of a raw HttpContext-family type. Application-layer and domain-adjacent code must never reach past the platform's identity/tenant abstraction into ASP.NET Core hosting internals.
+```
+
+#### Suppressing
+
+A service that ships its own authentication provider, building an `IUserContext` from the request outside the exempt namespaces, has a legitimate reason to take the raw type:
+
+```csharp
+#pragma warning disable SK0031 // Custom IUserContext implementation for the partner-gateway auth scheme.
+public PartnerGatewayUserContext(IHttpContextAccessor httpContextAccessor)
+#pragma warning restore SK0031
+```
 
 ---
 
 <a id="sk0032-corswildcardoriginwithcredentials"></a>
 ### SK0032 — CorsWildcardOriginWithCredentials
 
-**Category:** Security  
-**Severity:** Warning
+**Category:** Security · **Default severity:** Warning
 
-> SK0032 is one of two `Security`-category rules in this registry (alongside
-> [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite)). It ships at Warning severity like
-> every other rule here — the category label describes the class of risk, not an elevated
-> default severity. Escalate to Error per-project via `.editorconfig` if your service's policy
-> requires it (see [Referencing the Analyzer Package](#referencing-the-analyzer-package)).
+Never combine an allow-any-origin CORS policy with `AllowCredentials()`. List the trusted origins explicitly.
 
-#### Rationale
+#### Why it matters
 
-Combining a wildcard/always-allow origin policy with `AllowCredentials()` is the classic
-OWASP-catalogued CORS misconfiguration — most browsers already reject the combination at the
-wire level, but ASP.NET Core's own `CorsService` only rejects it at request-handling time, so a
-misconfigured policy fails silently per-request instead of failing fast at startup.
+A credentialed CORS policy tells the browser that another site may send requests carrying the user's cookies or auth headers and read the response. If every origin is trusted, any website the user visits can act as that user against your API.
 
-SK0032 fires when a `CorsPolicyBuilder`-typed receiver has both an `AllowCredentials()` call and,
-anywhere in the same method/lambda scope, either an `AllowAnyOrigin()` call or a
-`SetIsOriginAllowed(...)` call whose lambda argument is syntactically unconditional-true (an
-expression body that is exactly `true`, or a block body of exactly `return true;`). Detection
-covers both a single fluent chain and separate statements against the same local
-variable/parameter/field within one method or lambda body. A same-symbol tracking scope is
-bounded to a single method/lambda body — a builder reference passed to a separate helper method
-is not followed across that boundary, a documented, intentional scope limit.
+ASP.NET Core rejects `AllowAnyOrigin()` together with `AllowCredentials()`, but only when the policy is built or evaluated, typically on the first CORS request rather than at build time. `SetIsOriginAllowed(_ => true)` is worse: it is accepted and echoes back whatever origin the caller sends, which silently produces the insecure configuration.
 
-#### Violating Example
+#### What it flags
+
+- An `AllowCredentials()` call (no arguments) on a receiver whose type is `Microsoft.AspNetCore.Cors.Infrastructure.CorsPolicyBuilder`, when the same builder also has either:
+  - an `AllowAnyOrigin()` call, or
+  - a `SetIsOriginAllowed(...)` call whose single argument is a lambda that is syntactically always true: an expression body of exactly `true`, or a block body of exactly `return true;`.
+- Both call shapes are detected: one fluent chain (`policy.AllowAnyOrigin().AllowCredentials()`), and separate statements against the same local variable, parameter, or field inside one method, accessor, local function, or lambda body. When the builder is a tracked variable, the order of the calls does not matter.
+- The diagnostic is reported on the `AllowCredentials()` call.
+
+#### What it does not flag
+
+- Calls on any type other than `CorsPolicyBuilder`, even if the method names match.
+- `SetIsOriginAllowed` with a lambda that is always true only indirectly (a `const bool`, a helper method that returns `true`, a method group). No data-flow analysis is performed.
+- A builder passed to a separate helper method that calls `AllowCredentials()` or `AllowAnyOrigin()` there. Tracking stops at the method or lambda boundary.
+- A chain that starts from `new CorsPolicyBuilder()` rather than a variable: only the calls before `AllowCredentials()` in that same chain are checked.
+- Generated code.
+
+#### Example
 
 ```csharp
+// Flagged: SK0032
 services.AddCors(options =>
-    options.AddPolicy("default", policy =>
-        // SK0032: AllowAnyOrigin() combined with AllowCredentials() fails only at request time
-        policy.AllowAnyOrigin().AllowCredentials()));
+    options.AddPolicy("web", policy => policy.AllowAnyOrigin().AllowCredentials()));
 ```
 
-#### Compliant Fix
-
 ```csharp
+// Compliant
 services.AddCors(options =>
-    options.AddPolicy("default", policy =>
+    options.AddPolicy("web", policy =>
         policy.WithOrigins("https://app.example.com").AllowCredentials()));
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0032 / restore SK0032`; document the rationale
-inline. There is no suppression namespace.
+```text
+warning SK0032: CorsPolicyBuilder combines AllowCredentials() with AllowAnyOrigin() in the same scope — this is rejected only at request time by ASP.NET Core's CorsService, not at startup; replace AllowAnyOrigin() with an explicit origin allowlist
+```
 
 ---
 
 <a id="sk0033-reflectionbasedobjectmapperusage"></a>
 ### SK0033 — ReflectionBasedObjectMapperUsage
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Use a Mapperly `[Mapper]` partial class or hand-written mapping code instead of AutoMapper.
 
-AutoMapper's reflection-based mapping API has no legitimate call site anywhere on this platform —
-`Riok.Mapperly`'s compile-time source-generated `[Mapper]` partial class, or hand-written mapping
-code, is the sanctioned choice (root `CLAUDE.md` "What Goes Where"). SK0033 fires on any of three
-shapes, each resolved by exact `ContainingAssembly.Name == "AutoMapper"` match — never a
-syntax-only name match, since `Profile` in particular is a dangerously generic simple name: (1) a
-class declaration whose base type resolves to `AutoMapper.Profile`; (2) a
-method/local-function/lambda parameter typed `AutoMapper.IMapperConfigurationExpression`; or (3)
-an invocation resolving to `AddAutoMapper` declared in the real `AutoMapper` assembly.
+#### Why it matters
 
-Mapster is deliberately **not** enforced — its runtime and source-generated call syntax is
-identical, so there is no reliable discriminator between the two, and enforcing it would carry an
-uncontrolled false-positive rate against a legitimate Mapster source-generated consumer.
+AutoMapper builds its mappings at runtime through reflection. Mistakes such as a renamed property or a missing member surface as runtime exceptions or silently unmapped fields, not compile errors, and the reflection makes the code unfriendly to trimming and native AOT.
 
-#### Violating Example
+Mapperly generates plain mapping code at compile time. Mapping errors become build diagnostics, there is no runtime reflection, and the generated code can be read and debugged like any other method.
+
+#### What it flags
+
+Each shape is confirmed with the semantic model: the resolved type or method must come from the assembly named exactly `AutoMapper`, so unrelated types called `Profile` are never matched.
+
+- A class declaration whose base type is `AutoMapper.Profile`. Reported on the base type.
+- A method, local function, or lambda parameter with an explicit type of `AutoMapper.IMapperConfigurationExpression`. Reported on the parameter type.
+- An invocation of `AddAutoMapper` declared in the `AutoMapper` assembly. Reported on the invocation.
+
+#### What it does not flag
+
+- Lambda parameters with an inferred type, such as `new MapperConfiguration(cfg => cfg.CreateMap<Order, OrderDto>())`. Only explicitly typed parameters are checked.
+- Calls through `IMapper` (for example `mapper.Map<OrderDto>(order)`) and construction of `MapperConfiguration`.
+- A class that derives from `Profile` indirectly through an intermediate base class. Only the class that names `Profile` directly is flagged.
+- `AddAutoMapper` from a different assembly, such as the older `AutoMapper.Extensions.Microsoft.DependencyInjection` package.
+- Mapster. Its runtime API and its source-generated API use identical call syntax, so the analyzer cannot tell them apart without false positives.
+- Generated code.
+
+#### Example
 
 ```csharp
+// Flagged: SK0033
 using AutoMapper;
 
-public class CustomerProfile : Profile
+public sealed class CustomerProfile : Profile
 {
-    // SK0033: 'CustomerProfile' uses AutoMapper's reflection-based mapping API
     public CustomerProfile() => CreateMap<Customer, CustomerDto>();
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
+// Compliant
 using Riok.Mapperly.Abstractions;
 
 [Mapper]
 public partial class CustomerMapper
 {
-    public partial CustomerDto Map(Customer source);
+    public partial CustomerDto ToDto(Customer customer);
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0033 / restore SK0033`; document the rationale
-inline. There is no suppression namespace — AutoMapper has no legitimate call site on this
-platform.
+```text
+warning SK0033: 'CustomerProfile' uses AutoMapper's reflection-based mapping API via an AutoMapper.Profile base class. Replace with a Riok.Mapperly [Mapper] partial class (compile-time source-generated, zero runtime reflection, AOT-clean) or hand-written mapping code, colocated in whichever package/service owns the mapping direction.
+```
 
 ---
 
 <a id="sk0034-amountcurrencypaircoupling"></a>
 ### SK0034 — AmountCurrencyPairCoupling
 
-**Category:** Advisory  
-**Severity:** Warning
+**Category:** Advisory · **Default severity:** Warning
 
-> **SK0034 is the platform's only `Advisory`-category rule, and it has no escalation path to
-> Error — ever.** Every other Warning-severity rule in this registry is either already enforced
-> at Warning pending a future escalation to Error, or a permanent platform-wide prohibition
-> deliberately kept at Warning. SK0034's detection technique (same-type suffix co-occurrence)
-> cannot meet the near-zero false-positive bar every Error-severity rule on this platform
-> requires. It is a heuristic nudge toward a better pattern, not a prohibition of a bad one — do
-> not escalate this rule to Error severity in any future phase without a fresh design review.
+Consider `Money` instead of a raw `decimal` amount next to a `string` currency code.
 
-#### Rationale
+#### Why it matters
 
-A raw `decimal` amount paired with a `string` currency code on the same type can drift out of
-sync or silently mix currencies — the exact hazard `03.Domain`'s `Money` value object exists to
-close (ISO 4217 minor-unit-correct rounding, cross-currency-rejecting arithmetic). SK0034 fires
-when a class/record/struct declares, as **direct** (non-inherited) members, both a
-`decimal`/`decimal?`-typed member whose identifier ends with `Amount`, `Price`, `Total`, or
-`Balance`, and a `string`/`string?`-typed member whose identifier ends with `Currency` or
-`CurrencyCode`. This is a syntax-only check — no semantic model is needed, since both `decimal`
-and `string` are BCL keyword types.
+When an amount and its currency live in two unrelated fields, nothing stops code from adding a EUR amount to a USD amount, rounding a JPY value to two decimal places, or updating one field without the other. `SharedKernel.Domain`'s `Money` value object keeps the two together, rounds to the currency's ISO 4217 minor units, and rejects arithmetic across currencies.
 
-Only direct property/field declarations of a `class`/`struct`/`record`/`record struct` are
-scanned — never an `interface`, never an inherited member, and never a positional record's
-primary-constructor parameter list. A type literally named `Money` is self-exempt.
+This is the only rule in the `Advisory` category. It uses a naming heuristic, so it is a nudge rather than a prohibition. It is not intended to be escalated to Error.
 
-#### Violating Example
+#### What it flags
+
+- A `class`, `struct`, `record`, or `record struct` that declares, directly in its own body, both:
+  - a property or field typed `decimal` or `decimal?` whose name ends with `Amount`, `Price`, `Total`, or `Balance`, and
+  - a property or field typed `string` or `string?` whose name ends with `Currency` or `CurrencyCode`.
+- Suffix matching is case-sensitive (`SubTotal` matches, `Subtotal` does not). The check is syntax-only: types must be written with the `decimal` and `string` keywords.
+- The diagnostic is reported once per type, on the type name, and lists every matching member.
+
+#### What it does not flag
+
+- Interfaces.
+- Inherited members, and members of nested types (each nested type is checked on its own).
+- Positional record parameters, such as `record PaymentDto(decimal Amount, string Currency)`.
+- A pair split across two `partial` declarations of the same type.
+- Members written as `System.Decimal` or `System.String` instead of the keywords.
+- Any type named `Money`.
+- Generated code.
+
+#### Example
 
 ```csharp
-public class Payment
+// Flagged: SK0034
+public sealed class Payment
 {
-    // SK0034 (advisory): decimal amount + string currency code — consider Money instead
-    public decimal Amount { get; set; }
-
-    public string Currency { get; set; } = string.Empty;
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = string.Empty;
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-using SharedKernel.Domain.ValueObjects;
+// Compliant
+using SharedKernel.Domain.ValueObjects.Money;
 
-public class Payment
+public sealed class Payment
 {
-    public Money Amount { get; set; } = null!;
+    public required Money Amount { get; init; }
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0034 / restore SK0034`, or a `.editorconfig`
-severity override. A legitimate case exists whenever the pair is a deliberate wire-format/
-read-model choice (e.g. a `04.Contracts` DTO or a `06.Persistence` Dapper projection intentionally
-avoiding a rich domain type at a serialization boundary) — document the reason with a one-line
-comment naming it.
+```text
+warning SK0034: 'Payment' declares a decimal-shaped amount member (Amount) alongside a string-shaped currency-code member (Currency). Consider replacing this pair with SharedKernel.Domain.ValueObjects.Money, which enforces ISO 4217 minor-unit-correct rounding and rejects cross-currency arithmetic. This is an advisory nudge — suppress with a one-line comment naming the reason when this is a deliberate wire-format/read-model choice.
+```
+
+#### Suppressing
+
+A separate amount and currency code is legitimate on a wire contract or a flat read model, where a rich domain type does not belong. Name the reason:
+
+```csharp
+#pragma warning disable SK0034 // Wire contract: amount and ISO 4217 code are separate JSON fields
+public sealed record PaymentDto
+{
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = string.Empty;
+}
+#pragma warning restore SK0034
+```
 
 ---
 
 <a id="sk0035-unmaskedclassifieddataatloggingcallsite"></a>
 ### SK0035 — UnmaskedClassifiedDataAtLoggingCallSite
 
-**Category:** Security  
-**Severity:** Warning
+**Category:** Security · **Default severity:** Warning
 
-> SK0035 is one of two `Security`-category rules in this registry (alongside
-> [SK0032](#sk0032-corswildcardoriginwithcredentials)). It ships at Warning severity like every
-> other rule here — the category label describes the class of risk, not an elevated default
-> severity. Escalate to Error per-project via `.editorconfig` if your service's policy requires
-> it.
+Mask classified data with a `PiiMasking` helper before passing it to a `[LoggerMessage]` method.
 
-#### Rationale
+#### Why it matters
 
-Logging a classified value unmasked is a compliance/PII-leak hazard — the exact case
-`01.Core/SharedKernel.DataPrivacy`'s `PiiMasking.*` helpers exist to close. SK0035 fires when a
-call to a `[LoggerMessage]`-attributed logging method passes, as one of its message-template
-arguments, a member carrying `SharedKernel.DataPrivacy.Classification.DataClassificationAttribute`
-(with `Classification == Restricted`) or `SensitiveDataCategoryAttribute` (any category), without
-first routing it through a `SharedKernel.DataPrivacy.Masking.PiiMasking.*` helper. Two shapes are
-covered: a direct member reference, and whole-object destructuring (the argument's static type
-declares a classified member, covering an entire classified-bearing DTO/entity passed as a single
-argument).
+Logs are copied to aggregators, retained for months, and read by many more people than the production database. An email address, card number, or national ID written to a log is a data-protection incident that is hard to clean up.
 
-Only a direct member reference or a direct `PiiMasking.*` wrapper call is recognized — an
-intermediate local variable or a helper method that internally reads a classified member and
-returns it unmasked is not traced across that boundary, a documented, intentional scope limit.
+Types in `SharedKernel.DataPrivacy` mark sensitive members with `[DataClassification]` and `[SensitiveDataCategory]`. This rule checks that a marked value reaching a source-generated logging method goes through `PiiMasking.Email`, `.Phone`, `.Pan`, or `.Suppress` first.
 
-#### Violating Example
+#### What it flags
+
+The rule only runs in a project where `Microsoft.Extensions.Logging.LoggerMessageAttribute` and at least one of the classification attributes resolve. It inspects every call to a method carrying `[LoggerMessage]`, and each argument, which is flagged when either:
+
+- **Direct member:** the argument is a property or field that carries `[DataClassification(DataClassification.Restricted)]` or `[SensitiveDataCategory(...)]` with any category.
+- **Whole object:** the argument's static type declares a property or field carrying one of those attributes, for example passing an entire `Customer` instance.
+
+The diagnostic is reported on the argument.
+
+#### What it does not flag
+
+- An argument that is a direct call to any `SharedKernel.DataPrivacy.Masking.PiiMasking` method.
+- Members classified `Public`, `Internal`, or `Confidential`. Only `Restricted` triggers the rule for `[DataClassification]`.
+- Parameters typed `LogLevel` or `Exception` (including derived exception types).
+- A classified value copied into a local variable first, or returned from a helper method. Values are not traced through locals or calls. A local whose type declares a classified member is still caught by the whole-object check.
+- Classified members inherited from a base type of the argument's type.
+- Calls through `ILogger.LogInformation` and similar methods (see SK0020 for that rule).
+- Generated code.
+
+#### Example
 
 ```csharp
-using SharedKernel.DataPrivacy.Classification;
-
-public class Customer
+// Flagged: SK0035
+public sealed class Customer
 {
-    [DataClassification(DataClassification.Restricted)]
-    public string Ssn { get; set; } = string.Empty;
+    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
+    public string Email { get; init; } = string.Empty;
 }
 
-public static partial class Log
+public static partial class CustomerLog
 {
-    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "SSN {Ssn}")]
-    public static partial void CustomerSsn(this ILogger logger, string ssn);
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Welcome email sent to {Email}")]
+    public static partial void WelcomeEmailSent(this ILogger logger, string email);
 }
 
-public class CustomerService
-{
-    public void Handle(ILogger logger, Customer customer) =>
-        // SK0035: 'Customer.Ssn' carries DataClassification(Restricted) and reaches a
-        // [LoggerMessage] call site unmasked
-        Log.CustomerSsn(logger, customer.Ssn);
-}
+logger.WelcomeEmailSent(customer.Email);
 ```
 
-#### Compliant Fix
-
 ```csharp
+// Compliant
 using SharedKernel.DataPrivacy.Masking;
 
-public class CustomerService
-{
-    public void Handle(ILogger logger, Customer customer) =>
-        Log.CustomerSsn(logger, PiiMasking.Suppress(customer.Ssn));
-}
+logger.WelcomeEmailSent(PiiMasking.Email(customer.Email));
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0035 / restore SK0035`; document the rationale
-inline. There is no suppression namespace.
+```text
+warning SK0035: 'Customer.Email' carries SensitiveDataCategory and is passed directly to [LoggerMessage]-attributed parameter 'email'. Route it through the matching SharedKernel.DataPrivacy.PiiMasking.* helper (.Email/.Phone/.Pan/.Suppress) before passing it as a logging argument.
+```
 
 ---
 
 <a id="sk0036-rawrpcexceptionconstruction"></a>
 ### SK0036 — RawRpcExceptionConstruction
 
-**Category:** Usage  
-**Severity:** Warning
+**Category:** Usage · **Default severity:** Warning
 
-#### Rationale
+Return a `Result` and convert it with `ToGrpcResult()` instead of constructing `RpcException` or `Status` yourself.
 
-`SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()`/`.ToGrpcResult<T>()`
-is the single sanctioned path for mapping a `Result<T>` outcome to a gRPC error — a hand-built
-`RpcException`/`Status` bypasses `GrpcStatusCodeMap`'s `01.Core.ErrorType`-keyed mapping. SK0036
-fires on a `new RpcException(...)` or standalone `new Status(...)` construction whose constructed
-type resolves, by exact semantic-model match, to `Grpc.Core.RpcException`/`Grpc.Core.Status`,
-anywhere outside the `SharedKernel.Presentation.Grpc` namespace. Both shapes are checked
-independently, since a bare `Status` may be built for later use (e.g. assigned to a trailer)
-without being immediately wrapped in an `RpcException`.
+#### Why it matters
 
-Exact semantic-model resolution is required — `"Status"` is a dangerously generic simple name
-elsewhere on this platform (order status, application status, health-check status enums).
+`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place. A hand-built `RpcException` picks its own status code, so the same failure can reach clients as `NotFound` from one service and `Internal` from another. Clients then cannot rely on status codes for retries or error handling.
 
-#### Violating Example
+`GrpcResultExtensions.ToGrpcResult()` and `ToGrpcResult<T>()` throw an `RpcException` with the mapped status code and the error message on failure, and return the value on success.
+
+#### What it flags
+
+- `new RpcException(...)` where the type resolves to `Grpc.Core.RpcException`.
+- `new Status(...)` where the type resolves to `Grpc.Core.Status`, including a status built on its own for later use.
+- A nested `new RpcException(new Status(...))` produces two diagnostics, one per constructor.
+- The type is resolved with the semantic model, so unrelated types named `Status` (order status, health status) are never flagged.
+
+#### What it does not flag
+
+- Code inside a namespace declaration whose name starts with `SharedKernel.Presentation.Grpc`, where the sanctioned mapping and interceptors live. The match is a plain name prefix.
+- Target-typed construction, such as `Status status = new(StatusCode.NotFound, "...")`.
+- Static members such as `Status.DefaultSuccess`, and types derived from `RpcException`.
+- Generated code.
+
+#### Example
 
 ```csharp
+// Flagged: SK0036
 using Grpc.Core;
 
-namespace Services.Orders
-{
-    public class OrderGrpcService
-    {
-        public void Handle() =>
-            // SK0036: raw RpcException/Status construction outside SharedKernel.Presentation.Grpc
-            throw new RpcException(new Status(StatusCode.NotFound, "order not found"));
-    }
-}
+public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context) =>
+    throw new RpcException(new Status(StatusCode.NotFound, "Order not found."));
 ```
-
-#### Compliant Fix
 
 ```csharp
+// Compliant
 using SharedKernel.Presentation.Grpc.Results;
 
-namespace Services.Orders
+public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
 {
-    public class OrderGrpcService
-    {
-        public Result Handle() => Result.Failure(Error.NotFound("Order.NotFound", "order not found"));
-        // The caller maps it via result.ToGrpcResult() at the gRPC service-method boundary.
-    }
+    Result<OrderReply> result = await orders.GetAsync(request.OrderId, context.CancellationToken);
+    return result.ToGrpcResult();
 }
 ```
 
-#### Suppression Instructions
+#### Diagnostic
 
-Suppress inline with `#pragma warning disable SK0036 / restore SK0036`; document the rationale
-inline. There is no suppression namespace outside `SharedKernel.Presentation.Grpc` itself.
+```text
+warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
+warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
+```
 
 ---
 
 <a id="sk0201-tenanteddbcontextonmodelcreatingguard"></a>
 ### SK0201 — TenantedDbContextOnModelCreatingGuard
 
-**Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+An `OnModelCreating` override on a `TenantedDbContext` subclass must call `base.OnModelCreating(...)` or `ApplyTenantFilters(...)`.
 
-`TenantedDbContext.OnModelCreating` registers the global EF Core query filter that restricts
-all queries to the current tenant's rows. Any subclass that overrides `OnModelCreating` and
-omits `base.OnModelCreating(...)` silently removes this filter — all subsequent queries return
-rows across all tenant boundaries without any error, warning, or runtime exception. This is a
-silent data-leak class of bug.
+#### Why it matters
 
-SK0201 enforces that every `TenantedDbContext` override of `OnModelCreating` contains at least
-one of:
+`TenantedDbContext.OnModelCreating` installs the global EF Core query filter that limits every query to the current tenant's rows. A subclass that overrides the method and never calls the base implementation removes that filter. Nothing fails: queries still run, they just return every tenant's data.
 
-- `base.OnModelCreating(modelBuilder)` — the normal case
-- `ApplyTenantFilters(modelBuilder)` (simple name, or any explicit receiver) — for advanced
-  multi-context patterns where the base call must be deferred
+This is a silent cross-tenant data leak, and it is easy to introduce when adding entity configuration to a context.
 
-**Limitation:** The check is syntax-only within a single file. If the inheritance chain spans
-multiple files (e.g., `MyContext → IntermediateContext → TenantedDbContext` across three
-files), only the immediate `BaseList` is inspected. For such chains, document the ancestry in
-a comment near the override.
+#### What it flags
 
-#### Violating Example
+- A method named `OnModelCreating` with the `override` modifier, declared in a class whose base list names `TenantedDbContext` (simple-name match, so `TenantedDbContext`, a qualified `SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext`, or a generic form all count). A nested class inside such a class is checked too.
+- The diagnostic is reported on the method name when its body (block or expression body) contains neither of these invocations:
+  - `base.OnModelCreating(...)`
+  - `ApplyTenantFilters(...)`, called by simple name or through any receiver such as `this.ApplyTenantFilters(...)`
+
+#### What it does not flag
+
+- Indirect inheritance. Only the class's own base list is inspected, so `OrderDbContext : AppDbContextBase` is not checked even when `AppDbContextBase : TenantedDbContext` is declared in the same file.
+- Overrides without a body (`abstract` or `extern`).
+- Ordering and reachability. The rule only checks that a qualifying call exists somewhere in the body. A call inside an `if` that never runs, or an `ApplyTenantFilters` call placed before your entity configuration, still passes. `ApplyTenantFilters` only covers the `IHasTenant` entity types already in the model when it runs, so call it after your own configuration.
+
+#### Example
 
 ```csharp
-public class OrderDbContext : TenantedDbContext
+// Flagged: SK0201
+public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not
-        // call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query
-        // filter will be silently removed
-        modelBuilder.Entity<Order>().ToTable("Orders");
+        modelBuilder.Entity<Order>().ToTable("orders");
     }
 }
 ```
 
-#### Compliant Fix
-
 ```csharp
-public class OrderDbContext : TenantedDbContext
+// Compliant: the base call applies assembly configurations, then the tenant filter
+public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(modelBuilder); // ← registers the global tenant filter
-        modelBuilder.Entity<Order>().ToTable("Orders");
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.HasDefaultSchema("ordering");
     }
 }
 ```
 
-Or when the filter must be applied explicitly:
-
 ```csharp
+// Compliant: explicit filter registration after custom configuration
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
-    ApplyTenantFilters(modelBuilder); // ← explicit filter registration
-    modelBuilder.Entity<Order>().ToTable("Orders");
+    modelBuilder.ApplyConfiguration(new OrderConfiguration());
+    ApplyTenantFilters(modelBuilder);
 }
 ```
 
-#### CI Configuration
+#### Diagnostic
 
-To escalate to an error in CI:
-
-```xml
-<PropertyGroup>
-  <WarningsAsErrors>$(WarningsAsErrors);SK0201</WarningsAsErrors>
-</PropertyGroup>
+```text
+warning SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query filter will be silently removed
 ```
 
-Or via `.editorconfig`:
+#### Suppressing
 
-```
-[*.cs]
-dotnet_diagnostic.SK0201.severity = error
-```
-
-#### Suppression Instructions
-
-Suppress per-site with `#pragma warning disable SK0201` when the tenant filter is intentionally
-omitted or applied via a mechanism not detectable at syntax level. Always add an inline comment
-explaining the rationale:
+Suppress only when the tenant filter is installed by a mechanism the syntax check cannot see, and name that mechanism in the justification:
 
 ```csharp
-#pragma warning disable SK0201 // Tenant filter applied via custom OnModelFinalized — see TenantBootstrap.cs
+#pragma warning disable SK0201 // Tenant filter installed by TenantFilterConvention, registered in ConfigureConventions
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
-    // ... custom wiring that defers filter registration
+    modelBuilder.ApplyConfigurationsFromAssembly(typeof(OrderDbContext).Assembly);
 }
 #pragma warning restore SK0201
 ```
@@ -2217,95 +2481,65 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 <a id="sk0202-ignorequeryfiltersoutsidetenantedrepository"></a>
 ### SK0202 — IgnoreQueryFiltersOutsideTenantedRepository
 
-**Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
+**Category:** Design · **Default severity:** Warning
 
-#### Rationale
+Keep `IgnoreQueryFilters()` inside the platform persistence layer or a `TenantedRepository` class.
 
-`IgnoreQueryFilters()` bypasses **all** EF Core global query filters registered on a
-`DbContext`, including the tenant isolation filter applied by `TenantedDbContext`. Calling it
-from application-layer services, MediatR handlers, or arbitrary repositories silently returns
-rows across all tenant boundaries without any audit trail or intentional decision record.
+#### Why it matters
 
-The only sanctioned call sites are:
+`IgnoreQueryFilters()` removes every global query filter on the query, including the tenant filter installed by `TenantedDbContext` and the soft-delete filter. Called from an application service or handler, it returns other tenants' rows, and deleted rows, with no error and no record that the bypass was intended.
 
-1. **Inside `SharedKernel.Persistence.EfCore*` namespaces** — the persistence implementation
-   layer may use `IgnoreQueryFilters()` deliberately (e.g., soft-delete cleanup jobs,
-   cross-tenant admin APIs that are purpose-built within the platform).
-2. **Inside a class named `TenantedRepository` (exact match)** — the designated cross-tenant
-   repository base class is the single sanctioned call site outside the platform namespace.
+`TenantedRepository<TAggregate, TId>` already offers named, reviewed cross-tenant reads (`GetByIdForTenantAsync`, `GetByIdForTenantIncludingDeletedAsync`) that re-apply the conditions a caller still needs.
 
-#### Violating Example
+#### What it flags
+
+- Any invocation named `IgnoreQueryFilters` with zero arguments, called as an extension (`query.IgnoreQueryFilters()`) or by simple name.
+
+#### What it does not flag
+
+- Calls inside a namespace whose name starts with `SharedKernel.Persistence.EfCore` (block or file-scoped). This is a plain string prefix check.
+- Calls whose innermost containing class is named exactly `TenantedRepository` (a generic `TenantedRepository<TAggregate, TId>` matches too). The match is on the declaring class only: a subclass such as `OrderRepository : TenantedRepository<Order, OrderId>` is not exempt, and neither is a class named `TenantedRepositoryBase`.
+- Overloads that take arguments, such as EF Core's named-filter form `IgnoreQueryFilters(["SoftDelete"])`.
+- The check is name-based: it does not confirm the method is EF Core's.
+
+#### Example
 
 ```csharp
-namespace Application.Repositories
-{
-    public class OrderQueryService
-    {
-        private readonly IQueryable<Order> _query;
+// Flagged: SK0202
+namespace Ordering.Application;
 
-        public IQueryable<Order> GetAllOrdersAcrossTenants()
-        {
-            // SK0202: 'IgnoreQueryFilters()' must only be called inside the
-            // 'SharedKernel.Persistence.EfCore' namespace or from 'TenantedRepository'
-            return _query.IgnoreQueryFilters();
-        }
-    }
+public sealed class OrderLookup(OrderingDbContext db)
+{
+    public Task<Order?> FindAsync(OrderId id, Guid tenantId, CancellationToken ct) =>
+        db.Orders.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Id == id && o.TenantId == tenantId, ct);
 }
 ```
 
-#### Compliant Fix — use TenantedRepository
-
 ```csharp
-// In SharedKernel.Persistence.EfCore (or a class named TenantedRepository):
-public abstract class TenantedRepository
-{
-    protected IQueryable<T> CrossTenantQuery<T>(IQueryable<T> source)
-        => source.IgnoreQueryFilters(); // ← exempt: inside TenantedRepository
-}
+// Compliant: use the repository's explicit tenant-scoped read
+namespace Ordering.Application;
 
-// In application layer — call the named method, never IgnoreQueryFilters() directly:
-public class AdminOrderService : TenantedRepository
+public sealed class OrderLookup(OrderRepository orders)
 {
-    public IReadOnlyList<Order> GetAllOrders()
-        => CrossTenantQuery(_orders).ToList();
+    public Task<Order?> FindAsync(OrderId id, Guid tenantId, CancellationToken ct) =>
+        orders.GetByIdForTenantAsync(id, tenantId, ct);
 }
 ```
 
-#### Exemption List
+#### Diagnostic
 
-| Exemption | Scope | Rationale |
-|-----------|-------|-----------|
-| Namespace prefix `SharedKernel.Persistence.EfCore` | All sub-namespaces | Platform persistence layer — deliberate cross-tenant operations are permitted here |
-| Class name `TenantedRepository` (exact) | Single designated base class | Provides controlled cross-tenant query access with a named, auditable surface |
-
-To add a new exemption, document it in `00.Governance/CLAUDE.md` under the SK0202 rule entry
-**before** applying a `#pragma warning disable SK0202` suppression.
-
-#### CI Configuration
-
-To escalate to an error in CI:
-
-```xml
-<PropertyGroup>
-  <WarningsAsErrors>$(WarningsAsErrors);SK0202</WarningsAsErrors>
-</PropertyGroup>
+```text
+warning SK0202: 'IgnoreQueryFilters()' must only be called inside the 'SharedKernel.Persistence.EfCore' namespace or from a class named 'TenantedRepository' — unrestricted use silently bypasses the global tenant query filter
 ```
 
-Or via `.editorconfig`:
+#### Suppressing
 
-```
-[*.cs]
-dotnet_diagnostic.SK0202.severity = error
-```
-
-#### Suppression Instructions
-
-Suppress per-site with `#pragma warning disable SK0202`. Always document the business reason
-and who approved the cross-tenant access:
+A deliberate cross-tenant operation, such as a retention purge job, may justify a suppression. Record who approved the access and why:
 
 ```csharp
-#pragma warning disable SK0202 // Cross-tenant purge — approved by infra-team, ticket INF-4421
-var deletedCount = await _context.Set<AuditLog>()
+#pragma warning disable SK0202 // Cross-tenant retention purge, approved by platform security (INF-4421)
+var deleted = await db.Set<AuditLog>()
     .IgnoreQueryFilters()
     .Where(x => x.CreatedAt < cutoff)
     .ExecuteDeleteAsync(ct);
@@ -2317,46 +2551,53 @@ var deletedCount = await _context.Set<AuditLog>()
 <a id="sk0703-messagebussingletonregistration"></a>
 ### SK0703 — MessageBusSingletonRegistration
 
-**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+**Category:** Usage · **Default severity:** Warning
 
-SK0703 fires when `AddSingleton` is invoked with a type argument whose simple name starts with
-`"IMessageBus"` or `"IEventPublisher"`.
+Do not register `IMessageBus` or `IEventPublisher` as a singleton.
 
-**Rationale:** MassTransit's consume pipeline creates a new scope for each consumed message.
-Registering `IMessageBus` or `IEventPublisher` as a singleton causes scope pollution and race
-conditions under concurrent load — the singleton instance is shared across all consume scopes
-and loses per-scope state (outbox entries, correlation IDs, etc.). The correct lifetime is
-`Scoped`, which aligns with the MassTransit per-consume-scope model.
+#### Why it matters
 
-**Offending pattern:**
+`MessagingBusBuilder` registers `IMessageBus` and `IEventPublisher` as scoped. Their implementations depend on scoped services: MassTransit's publish and send endpoint providers (which, inside a consumer, are bound to the current consume context and outbox) and the platform's scoped header propagators and send-endpoint resolver.
+
+A singleton registration overrides that. The single instance captures whichever scope resolved it first and is then shared by every request and every concurrently consumed message, so correlation, tenant headers and outbox participation leak between unrelated operations, or fail once the captured scope is disposed.
+
+#### What it flags
+
+- A generic `AddSingleton<...>` call (by simple name or through a receiver such as `services.AddSingleton<...>`) where any type argument's simple name is exactly `IMessageBus` or `IEventPublisher`. Qualified names are matched on their last segment. Both `AddSingleton<IMessageBus, TImpl>()` and `AddSingleton<IMessageBus>(factory)` are covered.
+
+#### What it does not flag
+
+- Non-generic registrations such as `AddSingleton(typeof(IMessageBus), ...)`, and `TryAddSingleton<...>`.
+- Contracts that only share the prefix, such as `IMessageBusProbe`. It is correctly a singleton, and `MessagingBusBuilder` registers it that way itself.
+- The match is on the simple name, not the resolved type, so an unrelated interface of your own named exactly `IMessageBus` is also flagged.
+
+#### Example
 
 ```csharp
-// SK0703: Singleton registration causes scope pollution under concurrent message processing
+// Flagged: SK0703
 services.AddSingleton<IMessageBus, MassTransitMessageBus>();
-services.AddSingleton<IEventPublisher, MassTransitEventPublisher>();
 ```
 
-**Compliant pattern:**
-
 ```csharp
-// Correct: Scoped lifetime aligns with MassTransit's per-consume-scope model
-services.AddScoped<IMessageBus, MassTransitMessageBus>();
-services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+// Compliant: Build() registers both as scoped
+services.AddSharedKernelMessaging(o => o.ServiceName = "ordering")
+    .Build();
 ```
 
-**Suppression:** Per-call-site only — use `#pragma warning disable SK0703` exclusively when
-the DI container semantics are provably equivalent to scoped behaviour. Always document the
-reason inline:
+#### Diagnostic
+
+```text
+warning SK0703: IMessageBus and IEventPublisher must be registered as Scoped, not Singleton. Use AddScoped<IMessageBus, ...>() instead.
+```
+
+#### Suppressing
+
+A stateless stub with no scoped dependencies, for example in a test host, is safe as a singleton:
 
 ```csharp
-#pragma warning disable SK0703 // Test harness uses a no-op singleton stub — not a real MassTransit bus
+#pragma warning disable SK0703 // Stateless no-op stub for the integration-test host, no scoped dependencies
 services.AddSingleton<IMessageBus, NullMessageBus>();
 #pragma warning restore SK0703
-```
-
-**CI configuration:**
-```xml
-<WarningsAsErrors>$(WarningsAsErrors);SK0703</WarningsAsErrors>
 ```
 
 ---
@@ -2364,53 +2605,49 @@ services.AddSingleton<IMessageBus, NullMessageBus>();
 <a id="sk0704-hardcodedqueueuriingetsendendpoint"></a>
 ### SK0704 — HardcodedQueueUriInGetSendEndpoint
 
-**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+**Category:** Usage · **Default severity:** Warning
 
-SK0704 fires when `GetSendEndpoint` is called with a `new Uri(...)` argument whose string
-literal value starts with `"queue:"` or `"exchange:"` (case-insensitive).
+Do not pass a literal `queue:` or `exchange:` URI to `GetSendEndpoint`.
 
-**Rationale:** Hardcoded queue or exchange URI strings tie producers to a specific broker
-topology. When the queue name, exchange name, or transport changes (e.g., RabbitMQ →
-Azure Service Bus, or a queue rename during a rolling deployment), every call site must be
-updated manually. Convention-based endpoint resolution via
-`IEndpointNameFormatter.GetDestinationAddress<TMessage>()` centralises the naming concern
-and survives broker configuration changes automatically.
+#### Why it matters
 
-**Offending pattern:**
-```csharp
-// SK0704: hardcoded "queue:" URI ties producer to RabbitMQ topology
-var endpoint = await provider.GetSendEndpoint(new Uri("queue:order-commands"));
+A literal address such as `new Uri("queue:order-commands")` fixes the destination at the call site. When the receiving service renames its queue, its naming convention changes, or the transport changes, every producer holding a copy of that string keeps sending to the old address. Messages then pile up in an orphaned queue or fail to route, and nothing points back to the stale literal.
 
-// SK0704: hardcoded "exchange:" URI also flagged
-var endpoint = await provider.GetSendEndpoint(new Uri("exchange:order-events"));
-```
+`IMessageBus.SendAsync` resolves the destination by convention from the message type, and `MessagingBusBuilder.WithSendEndpointRoute<T>(queueName)` keeps any override in one registration.
 
-**Compliant pattern:**
-```csharp
-// Convention-based resolution — survives broker changes and rename refactors
-var address = _formatter.GetDestinationAddress<OrderCommand>();
-var endpoint = await provider.GetSendEndpoint(address);
-```
+#### What it flags
 
-**Non-literal form (not flagged):**
-```csharp
-// No diagnostic: the argument is a variable, not a string literal
-var endpoint = await provider.GetSendEndpoint(new Uri(configuredAddress));
-```
+- A call named `GetSendEndpoint` where any argument is:
+  - `new Uri("...")` (or a qualified `new System.Uri("...")`), or
+  - a target-typed `new("...")`,
+- whose first constructor argument is a string literal starting with `queue:` or `exchange:`, compared case-insensitively.
 
-**Suppression:** Per-call-site only — use `#pragma warning disable SK0704` when a fixed,
-environment-invariant queue address is genuinely required (e.g., a dead-letter queue URI in
-an isolated test fixture). Always document the rationale inline:
+#### What it does not flag
+
+- Non-literal addresses: variables, constants, fields and interpolated strings such as `new Uri($"queue:{name}")`.
+- Other schemes, including full broker URIs like `rabbitmq://host/order-commands` and `https://` addresses.
+- Literal URIs built outside the `GetSendEndpoint` argument list and passed in through a variable.
+
+#### Example
 
 ```csharp
-#pragma warning disable SK0704 // Dead-letter queue — fixed broker-internal address, not service-configurable
-var dlq = await provider.GetSendEndpoint(new Uri("queue:dead-letter"));
-#pragma warning restore SK0704
+// Flagged: SK0704
+var endpoint = await sendEndpointProvider.GetSendEndpoint(new Uri("queue:order-commands"));
+await endpoint.Send(new SubmitOrder(orderId), ct);
 ```
 
-**CI configuration:**
-```xml
-<WarningsAsErrors>$(WarningsAsErrors);SK0704</WarningsAsErrors>
+```csharp
+// Compliant: convention-based routing through the platform bus
+await messageBus.SendAsync(new SubmitOrder(orderId), ct);
+
+// Optional, at the composition root, when the target queue does not follow the convention
+messaging.WithSendEndpointRoute<SubmitOrder>("fulfilment-service-submit-order");
+```
+
+#### Diagnostic
+
+```text
+warning SK0704: Do not pass a hardcoded queue or exchange URI string to GetSendEndpoint. Use convention-based endpoint resolution via IEndpointNameFormatter.
 ```
 
 ---
@@ -2418,1248 +2655,177 @@ var dlq = await provider.GetSendEndpoint(new Uri("queue:dead-letter"));
 <a id="sk0705-faultconsumerdirectregistration"></a>
 ### SK0705 — FaultConsumerDirectRegistration
 
-**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+**Category:** Usage · **Default severity:** Warning
 
-SK0705 fires when `AddScoped` or `AddSingleton` is invoked with a type argument that is a
-generic `IFaultConsumer<TMessage>` reference — covering both
-`AddScoped<IFaultConsumer<TMessage>, TImpl>()` and `AddSingleton<IFaultConsumer<TMessage>>()`.
+Register fault consumers with `MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()`, not directly in DI.
 
-**Rationale:** Fault consumers must be wired through
-`MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()`, which registers the
-MassTransit `Fault<T>` adapter that translates a raw MassTransit fault context into the
-platform `IFaultConsumer<T>` abstraction. Direct DI registration via `AddScoped` or
-`AddSingleton` bypasses this adapter chain entirely — no MassTransit consumer subscribes to
-`Fault<T>` on the registered type's behalf, so the fault consumer is never invoked.
+#### Why it matters
 
-**Offending pattern:**
+An `IFaultConsumer<TMessage>` is only invoked because `AddFaultConsumer` registers an internal MassTransit consumer for `Fault<TMessage>` that translates each fault and calls your `HandleAsync`. Registering the implementation with `AddScoped` or `AddSingleton` puts it in the container, but nothing subscribes to `Fault<TMessage>` on its behalf.
+
+The code compiles and the service starts, yet dead-lettered messages are never handled: compensation and alerting you believe are in place simply do not run.
+
+#### What it flags
+
+- A generic `AddScoped<...>` or `AddSingleton<...>` call where any type argument is written as `IFaultConsumer<...>`, for example `AddScoped<IFaultConsumer<OrderPlaced>, OrderFaultConsumer>()` or `AddSingleton<IFaultConsumer<OrderPlaced>>()`.
+
+#### What it does not flag
+
+- `AddTransient<...>`, `TryAddScoped<...>`/`TryAddSingleton<...>`, and non-generic `typeof(...)` registrations.
+- A namespace-qualified type argument such as `SharedKernel.Messaging.Abstractions.Faults.IFaultConsumer<OrderPlaced>`.
+- Registering the concrete class alone, such as `AddScoped<OrderFaultConsumer>()`.
+
+#### Example
+
 ```csharp
-// SK0705: bypasses the Fault<T> adapter chain — OrderFaultConsumer is never invoked
+// Flagged: SK0705
 services.AddScoped<IFaultConsumer<OrderPlaced>, OrderFaultConsumer>();
-services.AddSingleton<IFaultConsumer<OrderPlaced>>();
 ```
-
-**Compliant pattern:**
-```csharp
-// Correct: wires the MassTransit Fault<T> adapter to the platform abstraction
-builder.AddFaultConsumer<OrderPlaced, OrderFaultConsumer>();
-```
-
-**Suppression:** Per-call-site only — use `#pragma warning disable SK0705` only when
-explicitly bypassing the builder is intentional. Document the rationale inline:
 
 ```csharp
-#pragma warning disable SK0705 // Test double registered for unit-test DI container only
-services.AddScoped<IFaultConsumer<OrderPlaced>, FakeFaultConsumer>();
-#pragma warning restore SK0705
+// Compliant
+services.AddSharedKernelMessaging(o => o.ServiceName = "ordering")
+    .AddFaultConsumer<OrderPlaced, OrderFaultConsumer>()
+    .Build();
 ```
 
-**CI configuration:**
-```xml
-<WarningsAsErrors>$(WarningsAsErrors);SK0705</WarningsAsErrors>
+#### Diagnostic
+
+```text
+warning SK0705: IFaultConsumer<TMessage> must not be registered directly via AddScoped. Use MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>() to wire the Fault<T> adapter chain.
 ```
-
----
-
-<a id="sk0706-directmasstransitschedulerinjection"></a>
-### SK0706 — DirectMassTransitSchedulerInjection
-
-**Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
-
-SK0706 is implemented as a NetArchTest `ICustomRule`
-(`NoDirectSchedulerInjectionOutsideMessagingPredicate`), not a per-call-site Roslyn analyzer
-— it is enforced at the assembly level via
-`ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection`. It fires when a
-constructor parameter is typed `MassTransit.IMessageScheduler` (`ParameterType.Name ==
-"IMessageScheduler"` AND `ParameterType.Namespace.StartsWith("MassTransit")`) in a type
-whose namespace does **not** start with `SharedKernel.Messaging`.
-
-**Rationale:** `MassTransit.IMessageScheduler` is an implementation detail of the
-MassTransit transport. Injecting it directly in application handlers, domain services, or
-controllers couples that code to a specific scheduler implementation, making transport
-swaps impossible and creating an invisible MassTransit dependency in layers that should be
-transport-agnostic. `SharedKernel.Messaging.Abstractions.IMessageScheduler` is the only
-permitted scheduler injection point outside `SharedKernel.Messaging.*`.
-
-**Exemption list:**
-
-- Types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Messaging"` —
-  the messaging adapter layer (`SharedKernel.Messaging.Abstractions` and
-  `SharedKernel.Messaging.MassTransit`) may reference `MassTransit.IMessageScheduler`
-  freely for internal adapter wiring. Any additional exemption must be documented here
-  before it is applied in code.
-
-**Offending pattern:**
-```csharp
-using MassTransit;
-
-// SK0706: injects the MassTransit transport scheduler directly
-public class ScheduleReminderHandler(IMessageScheduler scheduler)
-{
-}
-```
-
-**Compliant pattern:**
-```csharp
-using SharedKernel.Messaging.Abstractions;
-
-// Correct: injects the platform scheduler abstraction — transport-independent
-public class ScheduleReminderHandler(IMessageScheduler scheduler)
-{
-}
-```
-
-**Failure message:** `"{offendingType} injects MassTransit.IMessageScheduler directly. Use
-SharedKernel.Messaging.Abstractions.IMessageScheduler to preserve transport independence."`
-
----
-
-<a id="sk0707-sagastatemustextendsagastatebase"></a>
-### SK0707 — SagaStateMustExtendSagaStateBase
-
-**Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
-
-SK0707 is implemented as a NetArchTest `ICustomRule`
-(`SagaStateMustExtendSagaStateBasePredicate`), enforced at the assembly level via
-`ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase`. It fires when a
-type whose `TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name ==
-"ISaga"` does not have `SagaStateBase` anywhere in its `BaseType` inheritance chain.
-
-**Rationale:** `SagaStateBase` (from `SharedKernel.Messaging.MassTransit`) provides the
-platform-standard `CorrelationId`, `Version` (optimistic concurrency counter), `CreatedAt`,
-and `ModifiedAt` audit fields required for correct saga state persistence and
-version-conflict resolution. A saga state class that implements `ISaga` without extending
-`SagaStateBase` is missing these fields, causing saga persistence to fail
-version-conflict detection and breaking the platform observability pipeline.
-
-**Exemption list:** None — every `ISaga` implementor must extend `SagaStateBase`.
-`SagaStateBase` itself is self-exempt (it implements `ISaga` but cannot extend itself).
-
-**Fail-open limitation:** if `BaseType.Resolve()` returns `null` at any step in the
-inheritance chain walk (the base type lives in an assembly that was not loaded), the
-predicate treats the type as possibly-compliant (`true`) to avoid false positives in
-assembly-isolation test setups. This is a documented limitation, not an exemption — if a
-saga state type's non-loadable base is itself a `SagaStateBase` descendant, this rule will
-not catch a missing `SagaStateBase` further up an unresolved chain.
-
-**Offending pattern:**
-```csharp
-// SK0707: implements ISaga but does not extend SagaStateBase — no Version/audit fields
-public class OrderSagaState : ISaga
-{
-    public Guid CorrelationId { get; set; }
-}
-```
-
-**Compliant pattern:**
-```csharp
-// Correct: extends SagaStateBase — carries CorrelationId, Version, CreatedAt, ModifiedAt
-public class OrderSagaState : SagaStateBase
-{
-}
-```
-
-**Failure message:** `"{offendingType} implements ISaga but does not extend
-SagaStateBase. All saga state classes must extend SagaStateBase to carry correlation ID,
-version, and audit fields."`
 
 ---
 
 <a id="sk0708-batchconsumerregisteredviaaddconsumer"></a>
 ### SK0708 — BatchConsumerRegisteredViaAddConsumer
 
-**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+**Category:** Usage · **Default severity:** Warning
 
-SK0708 fires when `AddConsumer<T>()` is called with a single type argument whose identifier
-text contains `"BatchConsumer"` as a substring (case-sensitive).
+Register batch consumers with `MessagingBusBuilder.AddBatchConsumer<T>()`, not `AddConsumer<T>()`.
 
-**Rationale:** `AddConsumer<T>()` registers a consumer that processes messages one at a
-time and ignores any `MessageLimit` / `TimeLimit` batch configuration.
-`MessagingBusBuilder.AddBatchConsumer<T>()` is the correct registration method — it applies
-the configured batch window so the consumer receives a `Batch<T>` of messages.
+#### Why it matters
 
-**Naming-convention limitation:** SK0708 is a **naming-convention-guided heuristic** — it
-fires only when the type argument's identifier text contains `"BatchConsumer"`. Batch
-consumer implementation classes **must** contain `"BatchConsumer"` in their class name
-(e.g., `OrderBatchConsumer`, `InvoiceLineBatchConsumer`) for this rule to provide coverage.
-A class named `OrderProcessor` that is, in fact, a batch consumer will **not** be detected
-— this is a documented false-negative limitation, not a bug. Recommend the naming
-convention `{Purpose}BatchConsumer` as an enforcement aid.
+`AddBatchConsumer<T>(configure)` applies the platform's `BatchOptions` (`MessageLimit`, `TimeLimit`, `ConcurrencyLimit`) to the consumer's endpoint. Registering a `BatchConsumerBase<TMessage>` subclass through `AddConsumer<T>()` skips that step, so the batch size and time window you configured are never applied.
 
-**Offending pattern:**
-```csharp
-// SK0708: OrderBatchConsumer registered one-at-a-time — MessageLimit/TimeLimit ignored
-builder.AddConsumer<OrderBatchConsumer>();
-```
+The consumer still runs, which makes the mistake easy to miss until throughput or latency in production does not match the configuration.
 
-**Compliant pattern:**
-```csharp
-// Correct: applies the configured batch window
-builder.AddBatchConsumer<OrderBatchConsumer>();
-```
+#### What it flags
 
-**Pass-through (not flagged):**
-```csharp
-// OrderCommandConsumer's name does not contain "BatchConsumer" — SK0708 does not apply
-builder.AddConsumer<OrderCommandConsumer>();
-```
+- A generic call named `AddConsumer` with exactly one type argument whose simple name contains `BatchConsumer` (case-sensitive substring, last segment of a qualified name). Arguments to the call, such as a configure lambda, do not affect the check.
 
-**Suppression:** Per-call-site only — use `#pragma warning disable SK0708` when a batch
-consumer class genuinely must be registered individually (e.g., a test fixture that
-processes one message at a time by design):
+#### What it does not flag
+
+- Batch consumers whose class name does not contain `BatchConsumer`. The rule is a naming heuristic, so name batch consumers `{Purpose}BatchConsumer` to stay covered.
+- The two-type-argument form `AddConsumer<TConsumer, TDefinition>()`.
+- The check does not know which `AddConsumer` is being called, so MassTransit's own `x.AddConsumer<OrderBatchConsumer>(c => c.Options<BatchOptions>(...))` inside `AddMassTransit` is flagged as well.
+
+#### Example
 
 ```csharp
-#pragma warning disable SK0708 // Test fixture intentionally processes one message at a time
-builder.AddConsumer<OrderBatchConsumer>();
-#pragma warning restore SK0708
+// Flagged: SK0708
+messaging.AddConsumer<OrderBatchConsumer>();
 ```
 
-**CI configuration:**
-```xml
-<WarningsAsErrors>$(WarningsAsErrors);SK0708</WarningsAsErrors>
+```csharp
+// Compliant
+messaging.AddBatchConsumer<OrderBatchConsumer>(o =>
+{
+    o.MessageLimit = 100;
+    o.TimeLimit = TimeSpan.FromSeconds(5);
+});
+```
+
+#### Diagnostic
+
+```text
+warning SK0708: 'OrderBatchConsumer' appears to be a batch consumer (name contains 'BatchConsumer') but is registered via AddConsumer<T>(). Use MessagingBusBuilder.AddBatchConsumer<T>() to apply MessageLimit and TimeLimit batch configuration.
 ```
 
 ---
 
-## SharedKernel.ArchitectureTests — Layering Rules
+## Architecture tests
 
-`SharedKernel.ArchitectureTests` is a test-only package providing NetArchTest-based base
-classes and pre-built layering rule predicates for the SharedKernel architecture.
-
-### Referencing the Package
-
-Add the reference to your architecture test project with `PrivateAssets="all"` to ensure
-it never leaks into production dependency graphs:
-
-```xml
-<ItemGroup>
-  <PackageReference Include="SharedKernel.ArchitectureTests" Version="1.0.0"
-                    PrivateAssets="all" />
-  <PackageReference Include="FluentAssertions" Version="6.*" />
-  <PackageReference Include="xunit" Version="2.*" />
-</ItemGroup>
-```
-
-### Using SharedKernelLayeringRules
-
-`SharedKernelLayeringRules` is a static class of pre-built NetArchTest predicates. Each
-factory method corresponds 1:1 to a constraint in the root `CLAUDE.md` layering table and
-returns a `ConditionList` ready for assertion.
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using Xunit;
-
-public class LayeringTests
-{
-    private static readonly Assembly DomainAssembly =
-        typeof(SomeEntity).Assembly; // replace with a type from your Domain assembly
-
-    [Fact]
-    public void Domain_MustNot_ReferencePersistence()
-    {
-        var result = SharedKernelLayeringRules
-            .DomainNeverReferencesPersistence(DomainAssembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "Domain must not depend on Persistence");
-    }
-
-    [Fact]
-    public void Domain_MustNot_ReferenceMessaging()
-    {
-        var result = SharedKernelLayeringRules
-            .DomainNeverReferencesMessaging(DomainAssembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "Domain must not depend on Messaging");
-    }
-
-    [Fact]
-    public void Application_MustNot_ReferenceConcreteInfrastructure()
-    {
-        var applicationAssembly = typeof(SomeHandler).Assembly;
-        var result = SharedKernelLayeringRules
-            .ApplicationNeverReferencesConcreteInfrastructure(applicationAssembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "Application must depend only on abstractions, not concrete providers");
-    }
-}
-```
-
-Available rule factories:
-
-| Method | Layering Constraint |
-|--------|-------------------|
-| `CoreReferencesNothing(assembly)` | 01.Core must not depend on any other SharedKernel domain |
-| `CachingReferencesOnlyCore(assembly)` | 02.Caching must not reference Domain, Contracts, or infrastructure layers |
-| `DomainReferencesOnlyCore(assembly)` | 03.Domain must not reference Caching, Contracts, or infrastructure |
-| `ContractsReferencesOnlyCoreAndDomain(assembly)` | 04.Contracts must not reference infrastructure layers |
-| `DomainNeverReferencesPersistence(assembly)` | **Hard rule**: Domain must never depend on Persistence |
-| `DomainNeverReferencesMessaging(assembly)` | **Hard rule**: Domain must never depend on Messaging |
-| `ApplicationNeverReferencesConcreteInfrastructure(assembly)` | **Hard rule**: Application must only depend on abstractions |
-| `TestingNeverReferencedByProduction(assembly)` | **Hard rule**: Testing packages must never appear in production code |
-
-### Subclassing ArchitectureRuleBase
-
-For custom rules, subclass `ArchitectureRuleBase` in your test project:
+`SharedKernel.ArchitectureTests` catches what no single line of code reveals: which assembly references which, whether a layer stays pure, and what a method body actually does once compiled. It ships more than 80 ready-made rules across 38 rule classes, built on [NetArchTest](https://github.com/BenMorris/NetArchTest) and Mono.Cecil, that you assert from your own test suite with any test runner.
 
 ```csharp
 using System.Reflection;
 using SharedKernel.ArchitectureTests.Helpers;
-using Xunit;
-
-public class MyDomainArchitectureTests : ArchitectureRuleBase
-{
-    private static readonly Assembly DomainAssembly = typeof(SomeEntity).Assembly;
-
-    [Fact]
-    public void Domain_MustNot_ReferenceStorage()
-    {
-        // Use the ShouldNotReference helper for custom namespace checks
-        var conditionList = ShouldNotReference(DomainAssembly, "SharedKernel.Storage");
-        AssertRule(conditionList);
-    }
-}
-```
-
-`ArchitectureRuleBase` provides:
-- `GetAssemblyTypes(assembly)` — opens the NetArchTest fluent predicate scope for an assembly.
-- `ShouldNotReference(assembly, forbiddenNamespace)` — builds a `ConditionList` asserting no
-  type in the assembly has a dependency on the forbidden namespace.
-- `AssertRule(conditionList)` — calls `.GetResult()` on the condition list and asserts
-  `IsSuccessful` via FluentAssertions, printing failing type names on failure.
-
----
-
-### GuardPurityRules — Guard Clause Purity Enforcement
-
-`GuardPurityRules` is a static class that enforces the two-path guard clause contract at
-assembly level. Its single factory method inspects the `SharedKernel.Guards` assembly for
-throw opcodes in `IGuardClause` extension methods.
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Guards; // must be referenced to supply typeof(IGuardClause)
-using Xunit;
-
-public class GuardPurityTests
-{
-    [Fact]
-    public void GuardAgainst_Methods_MustNot_Throw()
-    {
-        var guardsAssembly = typeof(IGuardClause).Assembly;
-        var result = GuardPurityRules
-            .GuardAgainstMethodsMustNotThrow(guardsAssembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "IGuardClause extension methods must never throw — use the Guard.Throw path");
-    }
-}
-```
-
-The `Guard.Throw` companion class (full CLR name `Guard+Throw`) is explicitly excluded from
-the check — methods in that class are the sanctioned throw location.
-
----
-
-### CachingAbstractionRules — Caching Boundary Enforcement
-
-`CachingAbstractionRules` asserts that only explicitly permitted assemblies may take a
-direct binary reference to concrete caching packages (`SharedKernel.Caching` or
-`SharedKernel.Caching.Redis`). All other assemblies must use `SharedKernel.Caching.Abstractions`.
-
-#### Exemption List
-
-The following assemblies are **always exempt** from this rule:
-
-| Assembly | Reason |
-|----------|--------|
-| `SharedKernel.Caching` | The package itself — it is the abstraction + default implementation |
-| `SharedKernel.Caching.Redis` | The concrete Redis L2 provider — legitimately references itself |
-| `SharedKernel.ServiceDefaults` | The composition root — the only place providers are wired to abstractions |
-
-Any additional exemption requires prior documentation in `00.Governance/CLAUDE.md` under
-the `CachingAbstractionRules` exemption list. Adding an ad-hoc exemption in test code
-without CLAUDE.md documentation is a governance violation.
-
-#### Usage
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
 using SharedKernel.ArchitectureTests.Rules;
 using Xunit;
 
-public class CachingBoundaryTests
+public sealed class ArchitectureTests : ArchitectureRuleBase
 {
-    // Pass the assemblies under test — do NOT pass exempt assemblies here.
-    private static readonly Assembly[] ProductionAssemblies =
-    [
-        typeof(SomeApplicationHandler).Assembly,
-        typeof(SomeDomainService).Assembly,
-    ];
+    private static readonly Assembly Domain = typeof(Order).Assembly;
 
     [Fact]
-    public void Production_Assemblies_MustNot_Reference_ConcreteCaching()
-    {
-        var result = CachingAbstractionRules
-            .OnlyAllowedAssembliesMayReferenceConcreteCaching(ProductionAssemblies)
-            .GetResult();
+    public void Domain_does_not_read_the_system_clock() =>
+        AssertRule(DomainLayerPurityRules.DomainAssembliesNeverCallSystemClock(Domain));
 
-        result.IsSuccessful.Should().BeTrue(
-            because: "Only exempt assemblies may reference concrete caching packages");
-    }
+    [Fact]
+    public void Domain_does_not_reference_persistence() =>
+        AssertRule(SharedKernelLayeringRules.DomainNeverReferencesPersistence(Domain));
 }
 ```
 
-The rule uses `.Should().NotHaveDependencyOn("SharedKernel.Caching")` — NetArchTest matches
-this as a substring of referenced assembly names, so it catches both `SharedKernel.Caching`
-(the main package) and `SharedKernel.Caching.Redis` with a single call.
+A violation fails the test and names every offending type. Every rule is also an ordinary unevaluated `ConditionList`, so you can skip the base class and assert on `GetResult()` with your own assertion library.
 
-#### Adding a Documented Exemption
+| Rule family | What it protects |
+|---|---|
+| Layering | Dependencies flow downward only: the domain never reaches persistence or messaging, the application layer depends on abstractions |
+| Domain and contracts purity | No infrastructure, clock access or event handlers in the domain; contracts stay behaviour-free DTOs |
+| Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, transactions go through the abstraction |
+| Provider topology | Abstractions stay free of vendor SDKs, and sibling provider packages (S3 and OBS, Meilisearch and ElasticSearch) never reference each other |
+| Security and cryptography | No per-request identity captured in a singleton, no raw cipher outside the cryptography package |
+| Host composition and health checks | Dependency checks gate readiness rather than liveness, and upward layering exceptions stay confined to their readiness probes |
+| IL assertions | Logging `EventId` values are unique and in range, secure option defaults stay secure, registrations happen in the required order |
 
-If a non-standard composition root legitimately needs to reference concrete caching:
+> [!IMPORTANT]
+> Some rule classes police this platform's own package boundaries and name `SharedKernel.*` packages internally. Pointed at a service that references none of those packages, they pass without inspecting anything. The package README lists which rules are **portable** to your own assemblies and which are **platform** rules. Whichever you adopt, make each rule fail once on purpose before you trust it.
 
-1. Open `00.Governance/CLAUDE.md` and add the assembly to the `CachingAbstractionRules`
-   exemption list with a documented rationale.
-2. In your architecture test, exclude that assembly from the `ProductionAssemblies` array
-   passed to `OnlyAllowedAssembliesMayReferenceConcreteCaching`.
-3. Do not suppress the test or widen the exemption without updating CLAUDE.md.
+**Full rule catalog, anchor types and custom-rule authoring:** [SharedKernel.ArchitectureTests README](SharedKernel.ArchitectureTests/README.md)
 
 ---
 
-### DomainLayerPurityRules — Domain Layer Purity Enforcement
+## Formatting (Linter)
 
-`DomainLayerPurityRules` provides four predicates that collectively protect `03.Domain` from
-infrastructure contamination. Each predicate targets a distinct class of violation.
+`SharedKernel.Linter` makes formatting mechanical. It contains no DLL and no analyzers; it adds three things to a project:
 
-Cross-reference: the root `CLAUDE.md` layering rules state that `03.Domain` must never
-reference `06.Persistence`, `07.Messaging`, or any infrastructure layer. These predicates
-encode those hard rules as build-time checks.
+| Capability | How you use it |
+|---|---|
+| A **format check** that fails CI on unformatted code and stays silent on local builds | Automatic once referenced; active when `ContinuousIntegrationBuild=true` |
+| A **one-command format** using the exact CSharpier version CI checks against, with no global tool to install | `dotnet build -t:SharedKernelLinterFormat` |
+| The platform's shared **`.editorconfig`**: naming, language style and nullable diagnostics | `dotnet build -t:InstallSharedKernelLinterConfig -p:SharedKernelLinterConfigDestination=.`, then commit the file |
 
-#### Rule 1 — DomainAssembliesNeverReferenceInfrastructure
+To reproduce a CI formatting failure locally, build with `-p:SharedKernelLinterEnforceFormatting=true`. The installer never overwrites an existing `.editorconfig` unless you pass `-p:SharedKernelLinterOverwriteConfig=true`.
 
-Asserts that no type in the domain assembly has a binary reference to any of the forbidden
-infrastructure libraries: EntityFramework, MassTransit, Redis (StackExchange.Redis), or
-RabbitMQ.
+CSharpier also formats `.csproj`, `.props` and `.targets` files, so expect a large first pass on a codebase that has never been formatted. Run the format target once as its own commit before relying on the CI check.
 
-**Rationale:** A single EF Core attribute added for "convenience" propagates a hard
-dependency on a specific ORM to every service that references the domain. Domain models
-must be persistence-ignorant.
-
-**Offending pattern:**
-```csharp
-using Microsoft.EntityFrameworkCore; // in a domain entity file
-
-[Owned]  // EF Core attribute — creates a binary reference to EntityFrameworkCore
-public class Address : ValueObject { ... }
-```
-
-**Compliant pattern:**
-```csharp
-public class Address : ValueObject { ... }
-// EF Core mapping belongs in a separate configuration class in 06.Persistence
-```
-
-#### Rule 2 — DomainAssembliesNeverContainEventHandlers
-
-Asserts that no type in the domain assembly implements `IDomainEventHandler<TEvent>`.
-
-**Rationale:** Domain event handlers orchestrate responses to domain events — they belong in
-`05.Application` (orchestration) or `07.Messaging` (integration). Placing handlers inside
-the domain creates a circular coupling between the event definition and its handling,
-preventing independent evolution.
-
-**Offending pattern:**
-```csharp
-// In 03.Domain:
-public class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
-{
-    public Task Handle(OrderCreatedEvent @event, CancellationToken ct) { ... }
-}
-```
-
-**Compliant pattern:**
-```csharp
-// In 05.Application:
-public class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
-{
-    public Task Handle(OrderCreatedEvent @event, CancellationToken ct) { ... }
-}
-```
-
-#### Rule 3 — DomainAssembliesNeverCallSystemClock
-
-Asserts that no method in the domain assembly calls `DateTime.UtcNow`, `DateTime.Now`,
-`DateTimeOffset.UtcNow`, or `DateTimeOffset.Now` directly (detected via IL inspection).
-
-**Rationale:** Direct system-clock calls make domain methods non-deterministic: tests cannot
-control time without monkey-patching the system clock. `IClock.UtcNow` (from
-`SharedKernel.Primitives`) is the only permitted time source — inject it via DI so tests
-can substitute a fixed instant.
-
-Companion rule: SK0001 catches these at individual call-site level during development;
-this architecture rule provides the assembly-level gating enforcement that SK0001 cannot.
-
-**Offending pattern:**
-```csharp
-public class Order : AggregateRoot<Guid>
-{
-    public bool IsExpired() => ExpiresAt < DateTime.UtcNow; // direct clock call
-}
-```
-
-**Compliant pattern:**
-```csharp
-public class Order : AggregateRoot<Guid>
-{
-    public bool IsExpired(IClock clock) => ExpiresAt < clock.UtcNow;
-}
-```
-
-#### Rule 4 — DomainServicesHaveNoInfrastructureConstructorParameters
-
-Asserts that no type implementing `IDomainService` has constructor parameters whose type
-namespace starts with `Microsoft.EntityFrameworkCore`, `MassTransit`, `StackExchange.Redis`,
-or `RabbitMQ.Client`.
-
-**Rationale:** Domain services that accept infrastructure types as constructor parameters
-cannot be tested without the full infrastructure stack. They also couple the domain layer
-to a specific technology choice, making provider swaps risky. Domain services must accept
-only `IClock`, other domain interfaces, and `01.Core` primitives.
-
-**Offending pattern:**
-```csharp
-public class PricingService : DomainService
-{
-    // IDomainService with EF Core repository in constructor — violates purity
-    public PricingService(IRepository<Product> repo, IClock clock) { }
-}
-```
-
-**Compliant pattern:**
-```csharp
-public class PricingService : DomainService
-{
-    // Domain repository interface (in 03.Domain or 01.Core), not EF Core
-    public PricingService(IProductRepository repo, IClock clock) { }
-}
-```
-
-#### Usage
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Domain; // reference needed for typeof(IDomainService)
-using Xunit;
-
-public class DomainPurityTests
-{
-    private static readonly Assembly DomainAssembly = typeof(Order).Assembly;
-
-    [Fact]
-    public void Domain_MustNot_ReferenceInfrastructure()
-    {
-        var result = DomainLayerPurityRules
-            .DomainAssembliesNeverReferenceInfrastructure(DomainAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Domain_MustNot_ContainEventHandlers()
-    {
-        var result = DomainLayerPurityRules
-            .DomainAssembliesNeverContainEventHandlers(DomainAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Domain_MustNot_CallSystemClock()
-    {
-        var result = DomainLayerPurityRules
-            .DomainAssembliesNeverCallSystemClock(DomainAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void DomainServices_MustNot_HaveInfrastructureConstructorParameters()
-    {
-        var result = DomainLayerPurityRules
-            .DomainServicesHaveNoInfrastructureConstructorParameters(DomainAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-}
-```
+**Configuration details, the single-config-file design and adoption guidance:** [SharedKernel.Linter README](SharedKernel.Linter/README.md)
 
 ---
 
-### DomainGoldStandardRules — Domain Convention Enforcement
+## Benchmarks
 
-`DomainGoldStandardRules` enforces the WO-011 domain conventions at assembly level. Rule 1
-is a NetArchTest predicate; Rules 2–4 are Roslyn analyzers (SK0008–SK0010) documented in the
-Analyzers section above.
-
-#### Rule 1 — DomainServicesMustExtendAbstractBase
-
-Asserts that every non-abstract type implementing `IDomainService` also inherits from the
-`DomainService` abstract base class.
-
-**Rationale:** `DomainService` provides `CheckRule(IBusinessRule)` access and acts as the
-DI anchor for all domain services. Directly implementing `IDomainService` without inheriting
-`DomainService` bypasses `CheckRule`, forcing consumers to duplicate business-rule validation
-logic across services.
-
-**Offending pattern:**
-```csharp
-// Directly implements IDomainService — bypasses DomainService.CheckRule
-public class PricingService : IDomainService
-{
-    public decimal CalculatePrice(Order order) { ... }
-}
-```
-
-**Compliant pattern:**
-```csharp
-// Inherits DomainService — gets CheckRule and the standard DI anchor
-public class PricingService : DomainService
-{
-    public decimal CalculatePrice(Order order)
-    {
-        CheckRule(new PricingEligibilityRule(order));
-        ...
-    }
-}
-```
-
-**Usage:**
-```csharp
-[Fact]
-public void DomainServices_Must_ExtendAbstractBase()
-{
-    var result = DomainGoldStandardRules
-        .DomainServicesMustExtendAbstractBase(typeof(IDomainService).Assembly)
-        .GetResult();
-
-    result.IsSuccessful.Should().BeTrue(
-        because: $"Failing types: {string.Join(", ", result.FailingTypeNames ?? [])}");
-}
-```
-
-The `DomainService` abstract base itself is excluded via `.AreNotAbstract()` in the
-NetArchTest predicate chain — it passes cleanly without appearing as a violation.
-
----
-
-### ContractsPurityRules — Contracts Layer Purity Enforcement
-
-`ContractsPurityRules` provides four predicates that protect `04.Contracts` from domain
-logic leakage, domain type exposure, `Result<T>` misuse, and non-sealed integration events.
-A fifth rule is a documented guideline (not enforced by NetArchTest).
-
-#### Rule 1 — ContractsAssembliesHaveNoNonTrivialMethods
-
-Asserts that no type in the contracts assembly contains a non-trivial method — defined as
-any method that is not a constructor, property getter/setter, static operator (`op_` prefix),
-or one of `ToString`/`Equals`/`GetHashCode`.
-
-**Rationale:** DTOs and event payloads carry state, not behaviour. Any non-trivial method
-in `04.Contracts` signals domain logic leakage into the contracts layer, creating an
-invisible coupling between the wire format and domain rules.
-
-**Offending pattern:**
-```csharp
-public class OrderDto
-{
-    public Guid Id { get; set; }
-    public DateTimeOffset Deadline { get; set; }
-
-    // Non-trivial method — domain logic in a DTO
-    public bool IsExpired() => Deadline < DateTime.UtcNow;
-}
-```
-
-**Compliant pattern:**
-```csharp
-public record OrderDto(Guid Id, DateTimeOffset Deadline);
-// Expiry logic belongs in the domain or application layer, not the DTO
-```
-
-#### Rule 2 — ContractsAssembliesHaveNoDomainTypeOnPublicSurface
-
-Asserts no public type in the contracts assembly has a binary reference to the
-`SharedKernel.Domain` assembly.
-
-**Rationale:** Exposing `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, or
-`Specification<T>` on a contracts public surface ties the wire format to the domain model,
-breaking polyglot consumers that do not reference `SharedKernel.Domain`.
-
-**Exemption:** `EventEnvelope<TEvent> where TEvent : IDomainEvent` — the generic constraint
-references `IDomainEvent`. If NetArchTest's dependency scanner picks this up as a domain
-reference, the `EventEnvelope` type is explicitly excluded from the scan. This exemption is
-documented in the architecture test fixture.
-
-**Offending pattern:**
-```csharp
-public class OrderSummaryDto
-{
-    // Domain type on a contracts public surface — breaks polyglot consumers
-    public Order DomainOrder { get; set; }
-}
-```
-
-**Compliant pattern:**
-```csharp
-public record OrderSummaryDto(Guid OrderId, string Status, DateTimeOffset CreatedAt);
-```
-
-#### Rule 3 — ContractsAssembliesHaveNoResultTypeOnPublicSurface
-
-Asserts no public type in the contracts assembly has a binary reference to
-`SharedKernel.Primitives` (where `Result<T>` and `Result` live).
-
-**Rationale:** `Result<T>` is an intra-service discriminated union. `Envelope<T>` is the
-cross-service HTTP wrapper. Exposing `Result<T>` in a serialized response payload causes
-deserialization failures in any JSON client that does not share `SharedKernel.Primitives`,
-breaking the polyglot contract model.
-
-**Offending pattern:**
-```csharp
-public class CreateOrderResponse
-{
-    // Result<T> on a cross-service DTO — breaks polyglot deserialization
-    public Result<Guid> OrderId { get; set; }
-}
-```
-
-**Compliant pattern:**
-```csharp
-public record CreateOrderResponse(Guid OrderId);
-// Use Envelope<T> for HTTP wrapping — not Result<T>
-```
-
-#### Rule 4 — IntegrationEventImplementationsMustBeSealed
-
-Asserts every non-abstract type implementing `IIntegrationEvent` is sealed (or a record,
-which is sealed in IL).
-
-**Rationale:** Non-sealed integration events are an inheritance trap. A sub-event changes
-the wire format without incrementing `[DomainEventVersion]`, causing silent schema drift
-that breaks consumers relying on exact type discrimination.
-
-**Offending pattern:**
-```csharp
-// Non-sealed — a subtype could silently extend the wire format
-public class OrderCreatedEvent : IIntegrationEvent
-{
-    public Guid OrderId { get; init; }
-}
-```
-
-**Compliant pattern:**
-```csharp
-public sealed record OrderCreatedEvent(Guid OrderId) : IIntegrationEvent;
-```
-
-#### Rule 5 — Microservices Must Not Reference SharedKernel.Domain Directly (Guideline)
-
-This is a **documentation-only guideline** — it is not enforced by a NetArchTest predicate
-at the mono-repo level.
-
-Microservices that are not DDD-domain services must not take a `<PackageReference>` on
-`SharedKernel.Domain`. Cross-service DTO types live in `SharedKernel.Contracts`; domain
-types (`Entity`, `ValueObject`, `AggregateRoot`) are internal to the service that owns the
-domain. Referencing `SharedKernel.Domain` from a CRUD microservice or a reporting service
-creates an invisible coupling to the domain model that breaks silently when the domain
-evolves.
-
-**Architectural rationale:** The contracts package is the stable public surface between
-services. `SharedKernel.Domain` is an internal building block for services that
-implement domain logic. Consuming it from non-domain services collapses the contracts/domain
-separation and forces every downstream service to rebuild when the domain model changes.
-
-#### Usage
+`SharedKernel.Benchmarks` is internal tooling for the SharedKernel packages themselves and is not published. It provides one BenchmarkDotNet configuration so results stay comparable across packages and CI runs:
 
 ```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Contracts; // reference needed to supply the contracts assembly
-using Xunit;
-
-public class ContractsPurityTests
-{
-    private static readonly Assembly ContractsAssembly = typeof(PagedList<>).Assembly;
-
-    [Fact]
-    public void Contracts_MustNot_HaveNonTrivialMethods()
-    {
-        var result = ContractsPurityRules
-            .ContractsAssembliesHaveNoNonTrivialMethods(ContractsAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Contracts_MustNot_ExposeDomainTypesOnPublicSurface()
-    {
-        var result = ContractsPurityRules
-            .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(ContractsAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Contracts_MustNot_ExposeResultTypeOnPublicSurface()
-    {
-        var result = ContractsPurityRules
-            .ContractsAssembliesHaveNoResultTypeOnPublicSurface(ContractsAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-
-    [Fact]
-    public void IntegrationEvents_Must_BeSealed()
-    {
-        var result = ContractsPurityRules
-            .IntegrationEventImplementationsMustBeSealed(ContractsAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue();
-    }
-}
-```
-
-### PersistenceLayerProtectionRules — EF Core Persistence Layer Contract Enforcement
-
-`PersistenceLayerProtectionRules` provides three predicates that protect the EF Core
-persistence layer contract established in WO-013. They enforce the three hard constraints
-that keep the interceptor chain intact, the query surface clean, and the domain layer
-ignorant of persistence infrastructure.
-
-#### Rule 1 — OnlyEfUnitOfWorkMayCallSaveChanges
-
-Asserts that no type **outside** the `SharedKernel.Persistence.EfCore` namespace calls
-`DbContext.SaveChanges` or `DbContext.SaveChangesAsync` directly. The check is implemented
-by `NoDirectSaveChangesPredicate` (a Mono.Cecil `ICustomRule` that walks
-`MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand is a
-`MethodReference` on `DbContext` named `SaveChanges` or `SaveChangesAsync`). Types whose
-`TypeDefinition.Namespace` starts with `"SharedKernel.Persistence.EfCore"` are exempted
-unconditionally inside the predicate — `EfUnitOfWork` is the sole legitimate commit site.
-
-**Rationale:** Calling `SaveChangesAsync` directly bypasses the full EF Core interceptor
-chain — `AuditInterceptor` (created/modified audit fields), `SoftDeleteInterceptor`
-(converts hard deletes to soft deletes), `OutboxInterceptor` (publishes domain events to
-the outbox), and `ConcurrencyInterceptor` (optimistic concurrency token enforcement). Only
-`EfUnitOfWork.CommitAsync()` is the correct commit path; all application handlers must
-inject `IUnitOfWork` and call `CommitAsync()`. This is a hard rule from the root
-`CLAUDE.md` layering table.
-
-**Cross-reference:** Root `CLAUDE.md` — "05.Application must never reference a concrete
-infrastructure package — only abstractions." Direct `DbContext.SaveChangesAsync` in
-application code is equivalent to referencing a concrete infrastructure API.
-
-**Offending pattern:**
-```csharp
-// Application layer directly committing — bypasses all EF Core interceptors
-public class CreateOrderHandler : IRequestHandler<CreateOrderCommand>
-{
-    private readonly AppDbContext _dbContext;
-
-    public async Task Handle(CreateOrderCommand cmd, CancellationToken ct)
-    {
-        _dbContext.Orders.Add(new Order(cmd.Id));
-        await _dbContext.SaveChangesAsync(ct); // SK violation: bypasses interceptors
-    }
-}
-```
-
-**Compliant pattern:**
-```csharp
-public class CreateOrderHandler : IRequestHandler<CreateOrderCommand>
-{
-    private readonly IRepository<Order, Guid> _repository;
-    private readonly IUnitOfWork _unitOfWork;
-
-    public async Task Handle(CreateOrderCommand cmd, CancellationToken ct)
-    {
-        await _repository.AddAsync(new Order(cmd.Id), ct);
-        await _unitOfWork.CommitAsync(ct); // correct: runs the full interceptor chain
-    }
-}
-```
-
-#### Rule 2 — RepositoriesMustNotExposeIQueryable
-
-Asserts that no type implementing an `IRepository`-prefixed interface has a method
-returning `IQueryable` or `IQueryable<T>`. The check is implemented by
-`NoIQueryableReturnPredicate` (a Mono.Cecil `ICustomRule`) that scopes to types whose
-`TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name` starting with
-`"IRepository"`, then inspects all non-constructor, non-getter methods for an
-`IQueryable` return type.
-
-**Rationale:** `IQueryable<T>` leaks EF Core expression-tree execution semantics into the
-application layer. Handler code that receives an `IQueryable<Order>` is implicitly coupled
-to EF Core's LINQ provider — swapping the persistence technology (e.g., to Dapper) breaks
-every handler that consumed the queryable. The query surface belongs exclusively on
-`IReadRepository<T,TId>` via `Specification<T>`; the write-side `IRepository<T,TId>` is
-scoped to mutation operations only.
-
-**Cross-reference:** Root `CLAUDE.md` layering rules: `06.Persistence` may reference
-`01–05` but application handlers in `05.Application` must not be coupled to EF Core
-execution semantics.
-
-**Offending pattern:**
-```csharp
-public class OrderRepository : IRepository<Order, Guid>
-{
-    // Exposes EF Core execution semantics to callers — coupling violation
-    public IQueryable<Order> GetAll() => _dbContext.Orders.AsQueryable();
-}
-```
-
-**Compliant pattern:**
-```csharp
-public class OrderRepository : IRepository<Order, Guid>
-{
-    // Query surface exposed via Specification<T> only
-    public Task<IReadOnlyList<Order>> FindAsync(
-        ISpecification<Order> spec,
-        CancellationToken ct = default) { ... }
-}
-```
-
-#### Rule 3 — DomainAssembliesNeverReferencePersistenceStack
-
-Asserts that no type in the supplied domain assembly has a binary dependency on any of the
-persistence-stack assembly name substrings: `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`,
-`"SharedKernel.Persistence"`. The check uses iterative
-`.Should().NotHaveDependencyOn(term)` calls — one per forbidden term — consistent with the
-pattern in `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`. This rule
-is **additive**, not replacing, that rule: it adds Npgsql and the in-repo persistence
-packages as a WO-013-scoped gate.
-
-**Rationale:** Any EF Core, Npgsql, or `SharedKernel.Persistence.*` reference inside
-`03.Domain` destroys DDD isolation. Domain entities annotated with EF Core attributes
-(e.g., `[Key]`, `[Column]`) cannot be tested without a running database context, making
-unit tests expensive or impossible. Npgsql references in domain code tie the bounded
-context to a specific database engine. This is a hard rule from the root `CLAUDE.md`
-layering table: `03.Domain` must never reference `06.Persistence` or any infrastructure
-layer.
-
-**Cross-reference:** Root `CLAUDE.md` — "Hard rules: `03.Domain` must never reference
-`06.Persistence`, `07.Messaging`, or any infrastructure layer."
-
-**Offending pattern:**
-```csharp
-// Domain entity polluted with EF Core infrastructure annotations
-using Microsoft.EntityFrameworkCore; // EF Core reference in 03.Domain — violation
-
-[Index(nameof(TenantId), nameof(Email))] // EF Core attribute on a domain type
-public class User : Entity<UserId>
-{
-    [Key] // EF Core attribute — persistence concern in domain layer
-    public UserId Id { get; private set; }
-}
-```
-
-**Compliant pattern:**
-
-```csharp
-// Domain entity — zero infrastructure annotations
-public class User : Entity<UserId>
-{
-    public UserId Id { get; private set; }
-    public Email Email { get; private set; }
-    public TenantId TenantId { get; private set; }
-}
-
-// EF Core mapping lives exclusively in 06.Persistence
-// IEntityTypeConfiguration<User> in SharedKernel.Persistence.EfCore
-public class UserConfiguration : IEntityTypeConfiguration<User>
-{
-    public void Configure(EntityTypeBuilder<User> builder)
-    {
-        builder.HasKey(u => u.Id);
-        builder.HasIndex(u => new { u.TenantId, u.Email });
-    }
-}
-```
-
-#### Usage Example
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Domain; // reference needed to supply the domain assembly
-using SharedKernel.Persistence.EfCore; // reference needed for the persistence assembly
-using Xunit;
-
-public class PersistenceLayerProtectionTests
-{
-    private static readonly Assembly DomainAssembly = typeof(Order).Assembly;
-    private static readonly Assembly ApplicationAssembly = typeof(CreateOrderHandler).Assembly;
-
-    [Fact]
-    public void OnlyEfUnitOfWork_MayCall_SaveChanges()
-    {
-        var result = PersistenceLayerProtectionRules
-            .OnlyEfUnitOfWorkMayCallSaveChanges(ApplicationAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue(
-            because: "only EfUnitOfWork.CommitAsync() is the permitted commit path");
-    }
-
-    [Fact]
-    public void Repositories_MustNot_ExposeIQueryable()
-    {
-        var result = PersistenceLayerProtectionRules
-            .RepositoriesMustNotExposeIQueryable(typeof(EfRepository<,>).Assembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue(
-            because: "IQueryable leaks EF Core execution semantics into the application layer");
-    }
-
-    [Fact]
-    public void Domain_MustNot_ReferencePersistenceStack()
-    {
-        var result = PersistenceLayerProtectionRules
-            .DomainAssembliesNeverReferencePersistenceStack(DomainAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue(
-            because: "03.Domain must be persistence-ignorant per the root layering hard rules");
-    }
-}
-```
-
----
-
-### ExtendedMessagingArchitectureRules — Extended Messaging Misuse Enforcement
-
-`ExtendedMessagingArchitectureRules` provides two predicates (added in WO-021 P-133) that
-close gaps left by per-call-site analyzers: a transport-coupling check that only static
-type analysis can catch reliably, and a structural saga-state contract that cannot be
-expressed as a single-statement diagnostic.
-
-#### Rule 1 — NoDirectMassTransitSchedulerInjection (SK0706)
-
-Asserts that no constructor parameter across the supplied assemblies is typed
-`MassTransit.IMessageScheduler`. The check is implemented by
-`NoDirectSchedulerInjectionOutsideMessagingPredicate` (a Mono.Cecil `ICustomRule` that
-inspects every `MethodDefinition` named `.ctor` and checks each
-`ParameterDefinition.ParameterType` for `Name == "IMessageScheduler"` AND
-`Namespace.StartsWith("MassTransit")`). Types whose `TypeDefinition.Namespace` starts with
-`"SharedKernel.Messaging"` are exempted unconditionally — the messaging adapter layer is
-the only place permitted to reference the MassTransit transport scheduler directly.
-
-**Rationale:** `MassTransit.IMessageScheduler` is an implementation detail of the
-MassTransit transport. Injecting it directly in application handlers, domain services, or
-controllers couples that code to a specific scheduler implementation, making transport
-swaps impossible and creating an invisible MassTransit dependency in layers that should be
-transport-agnostic.
-
-**Cross-reference:** Root `CLAUDE.md` — "07.Messaging may reference 01-04 (not
-06.Persistence directly)" and the `SharedKernel.Messaging.Abstractions` /
-`SharedKernel.Messaging.MassTransit` abstraction split: microservices depend on the
-abstraction package, never on the concrete MassTransit transport types.
-
-**Offending pattern:**
-```csharp
-using MassTransit;
-
-// Violation: application handler injects MassTransit.IMessageScheduler directly
-public class ScheduleReminderHandler(IMessageScheduler scheduler)
-{
-}
-```
-
-**Compliant pattern:**
-```csharp
-using SharedKernel.Messaging.Abstractions;
-
-// Correct: injects the platform scheduler abstraction — transport-independent
-public class ScheduleReminderHandler(IMessageScheduler scheduler)
-{
-}
-```
-
-#### Rule 2 — SagaStatesMustExtendSagaStateBase (SK0707)
-
-Asserts that every type implementing `ISaga` (`TypeDefinition.Interfaces` contains an
-entry with `InterfaceType.Name == "ISaga"`) has `SagaStateBase` somewhere in its
-`BaseType` inheritance chain. The check is implemented by
-`SagaStateMustExtendSagaStateBasePredicate` (a Mono.Cecil `ICustomRule` that walks the
-`BaseType` chain via iterative `TypeReference.Resolve()` calls until it finds
-`SagaStateBase`, reaches `Object`, or encounters an unresolved reference). `SagaStateBase`
-itself is self-exempt — it implements `ISaga` directly and cannot extend itself.
-Unresolved base types in the chain are treated fail-open (possibly-compliant) to avoid
-false positives when an assembly's transitive dependencies are not loaded into the test
-context.
-
-**Rationale:** `SagaStateBase` (from `SharedKernel.Messaging.MassTransit`) provides the
-platform-standard `CorrelationId`, `Version` (optimistic concurrency counter), `CreatedAt`,
-and `ModifiedAt` audit fields required for correct saga state persistence and
-version-conflict resolution. A saga state class that implements `ISaga` without extending
-`SagaStateBase` is missing these fields, breaking version-conflict detection and the
-platform observability pipeline for that saga.
-
-**Cross-reference:** Root `CLAUDE.md` "What Goes Where" — saga state persistence relies on
-the same audit/concurrency conventions as `TenantedAuditableAggregateRoot<TId>` in
-`03.Domain`; `SagaStateBase` is the `07.Messaging` equivalent for saga state classes.
-
-**Offending pattern:**
-```csharp
-using SharedKernel.Messaging.MassTransit;
-
-// Violation: implements ISaga but does not extend SagaStateBase — no Version/audit fields
-public class OrderSagaState : ISaga
-{
-    public Guid CorrelationId { get; set; }
-}
-```
-
-**Compliant pattern:**
-```csharp
-using SharedKernel.Messaging.MassTransit;
-
-// Correct: extends SagaStateBase — carries CorrelationId, Version, CreatedAt, ModifiedAt
-public class OrderSagaState : SagaStateBase
-{
-}
-```
-
-#### Usage Example
-
-```csharp
-using System.Reflection;
-using FluentAssertions;
-using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Messaging.MassTransit; // reference needed to supply the messaging assembly
-using Xunit;
-
-public class ExtendedMessagingArchitectureTests
-{
-    private static readonly Assembly ApplicationAssembly = typeof(ScheduleReminderHandler).Assembly;
-    private static readonly Assembly MessagingAssembly = typeof(SagaStateBase).Assembly;
-
-    [Fact]
-    public void Application_MustNot_InjectMassTransitSchedulerDirectly()
-    {
-        var result = ExtendedMessagingArchitectureRules
-            .NoDirectMassTransitSchedulerInjection(ApplicationAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue(
-            because: "use SharedKernel.Messaging.Abstractions.IMessageScheduler instead of " +
-                     "MassTransit.IMessageScheduler to preserve transport independence");
-    }
-
-    [Fact]
-    public void SagaStates_MustExtend_SagaStateBase()
-    {
-        var result = ExtendedMessagingArchitectureRules
-            .SagaStatesMustExtendSagaStateBase(MessagingAssembly)
-            .GetResult();
-        result.IsSuccessful.Should().BeTrue(
-            because: "every ISaga implementor must extend SagaStateBase to carry " +
-                     "correlation ID, version, and audit fields");
-    }
-}
-```
-
----
-
-## SharedKernel.Linter — EditorConfig and CSharpier
-
-`SharedKernel.Linter` is a content-only NuGet package that distributes:
-- `.editorconfig` — indent style, charset, line endings, C# language preferences.
-- `.csharpierrc.json` — CSharpier print width (120), tab width (4), no tabs.
-- `SharedKernel.Linter.props` — MSBuild props wiring `<CSharpierVersion>` and
-  `<AdditionalFiles>` for the distributed `.editorconfig`.
-- `SharedKernel.Linter.targets` — MSBuild target `CSharpierCheck` that runs
-  `dotnet csharpier --check` in CI.
-
-### Applying the Linter Package
-
-```xml
-<ItemGroup>
-  <!-- PrivateAssets="all" prevents this from leaking as a transitive dependency -->
-  <PackageReference Include="SharedKernel.Linter" Version="1.0.0"
-                    PrivateAssets="all" />
-</ItemGroup>
-```
-
-On `dotnet restore`, the `.editorconfig` and `.csharpierrc.json` are copied into the
-consuming project directory. The `.props` and `.targets` files are auto-imported by MSBuild.
-
-### CI Enforcement
-
-The `CSharpierCheck` target only activates when `$(ContinuousIntegrationBuild)` is `true`.
-Most CI providers set this automatically (GitHub Actions, Azure DevOps). If your CI does not
-set it, add it to the build invocation:
-
-```bash
-dotnet build -p:ContinuousIntegrationBuild=true
-```
-
-The target installs the pinned CSharpier version into the project's intermediate output
-folder and runs `dotnet-csharpier --check` against the project directory. The build fails
-if any file would be reformatted.
-
-### Skipping the CSharpier Check Locally
-
-The check is guarded by `$(ContinuousIntegrationBuild)` and does not run on local builds.
-To force-skip it even in CI (e.g., during an emergency fix), set:
-
-```bash
-dotnet build -p:ContinuousIntegrationBuild=true -p:SkipCSharpierCheck=true
-```
-
----
-
-## SharedKernel.Benchmarks — Benchmark Configuration
-
-`SharedKernel.Benchmarks` is a dev-only project (not published to the production NuGet feed).
-It provides `SharedKernelBenchmarkConfig` and `[SharedKernelBenchmark]` for consistent
-benchmark configuration across all SharedKernel micro-benchmarks.
-
-**Important:** Never run benchmarks via `dotnet test`. Always use `BenchmarkRunner.Run<T>()`
-in a dedicated console application or benchmark runner entry point.
-
-```csharp
-using BenchmarkDotNet.Running;
-using SharedKernel.Benchmarks.Configurations;
-
-// Apply the attribute to the benchmark class:
 [SharedKernelBenchmark]
 public class ResultBenchmarks
 {
     [Benchmark]
     public Result<int> Success() => Result<int>.Success(42);
-
-    [Benchmark]
-    public Result<int> Failure() => Result<int>.Failure(Error.Failure("E", "msg"));
 }
-
-// In Program.cs:
-BenchmarkRunner.Run<ResultBenchmarks>();
 ```
 
-`SharedKernelBenchmarkConfig` configures:
-- A short-run job (1 warmup, 3 iterations) — fast enough for CI gates.
-- `MemoryDiagnoser` — tracks Gen0/Gen1/Gen2 GC collections and allocated bytes.
-- `MarkdownExporter.GitHub` — deterministic Markdown output for CI artifact comparison.
-- HardwareCounters explicitly disabled — unstable in CI containers.
+`[SharedKernelBenchmark]` applies `SharedKernelBenchmarkConfig`: a short run (1 warmup, 3 iterations), allocation tracking with `MemoryDiagnoser`, GitHub-flavoured Markdown output, and the columns that vary between CI machines hidden. Run benchmarks from the console entry point with `BenchmarkRunner.Run<T>()`, never through `dotnet test`.
+
+---
+
+## How these packages are verified
+
+Governance tooling that silently stops working is worse than none, because a green build then means nothing. Each package is therefore tested both from source and as the package a consumer would actually restore:
+
+- **Rule tests.** Every analyzer and architecture rule has tests proving it flags the violation and stays quiet on compliant code.
+- **Packed-package consumers.** On every CI run, the packages are packed and consumed by three standalone projects in [`_verification/`](_verification). The analyzer consumer's build must report `SK0001`, or CI fails: an analyzer that loads but enforces nothing cannot pass as green.
+- **Working help links.** A test fails the build if any analyzer's IDE help link points to a section missing from this page.
