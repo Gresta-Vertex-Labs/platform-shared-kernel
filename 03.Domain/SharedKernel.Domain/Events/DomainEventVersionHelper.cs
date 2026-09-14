@@ -9,8 +9,9 @@ namespace SharedKernel.Domain.Events;
 /// <remarks>
 /// Use this helper in infrastructure code (messaging, outbox) to determine which
 /// deserializer or handler registration to invoke for a given domain event type.
-/// Version 1 is implicit and does not require a <see cref="DomainEventVersionAttribute"/>
-/// declaration.
+/// A type without a <see cref="DomainEventVersionAttribute"/> reads as version <c>1</c>. That is a
+/// runtime fallback only: every concrete event should declare its version explicitly, which
+/// analyzer <c>SK0009</c> enforces.
 /// </remarks>
 public static class DomainEventVersionHelper
 {

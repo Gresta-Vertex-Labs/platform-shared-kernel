@@ -1,15 +1,21 @@
 namespace SharedKernel.Domain.Events;
 
 /// <summary>
-/// Declares the schema version of a domain event class.
-/// Apply this attribute to concrete domain event classes when their schema changes in a
-/// backward-incompatible way to enable infrastructure routing to the correct deserializer.
+/// Declares the schema version of a domain event class, so infrastructure can route each event to
+/// the correct deserializer or handler.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Version 1 is implicit — no attribute is required for the initial event schema.
-/// Apply <c>[DomainEventVersion(2)]</c> (or higher) only when a backward-incompatible
-/// change is introduced.
+/// Declare it on every concrete domain event, starting with <c>[DomainEventVersion(1)]</c> for the
+/// initial schema, and increment it when a backward-incompatible change is introduced. The platform
+/// enforces this: analyzer <c>SK0009</c> (<c>SharedKernel.Analyzers</c>) flags an event type without
+/// it. An explicit version makes the first breaking change a visible, reviewable edit of an existing
+/// number rather than the easy-to-forget addition of an attribute nobody had to write before.
+/// </para>
+/// <para>
+/// <see cref="DomainEventVersionHelper.GetVersion(Type)"/> still returns <c>1</c> for a type without
+/// the attribute. That is a runtime fallback for events declared outside the analyzer's reach, not a
+/// licence to omit the declaration.
 /// </para>
 /// <para>
 /// Infrastructure (messaging, outbox) reads the version via
@@ -24,6 +30,13 @@ namespace SharedKernel.Domain.Events;
 /// </remarks>
 /// <example>
 /// <code>
+/// [DomainEventVersion(1)]
+/// public sealed record OrderPlacedEvent : DomainEvent
+/// {
+///     public required Guid OrderId { get; init; }
+///     public required decimal Total { get; init; }
+/// }
+///
 /// [DomainEventVersion(2)]
 /// public sealed record OrderPlacedEventV2 : DomainEvent
 /// {

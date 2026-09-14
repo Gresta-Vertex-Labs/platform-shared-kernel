@@ -122,9 +122,11 @@ DomainEventVersionHelper  (static class)
         lifetime. Unlike StronglyTypedIdJsonConverterFactory (already cached by JsonSerializerOptions),
         this helper is called directly by infrastructure (messaging/outbox) on a potential per-message
         hot path with no caller-side cache of its own.
-    NOTE: Versioning workflow — declare [DomainEventVersion(2)] when a domain event schema changes
+    NOTE: Versioning workflow — declare [DomainEventVersion(1)] on every concrete event from its first
+          schema (enforced by 00.Governance analyzer SK0009), and increment it when the schema changes
           in a backward-incompatible way. Consumers read the version via GetVersion() to route to the
-          correct deserializer. Version 1 is implicit and requires no attribute.
+          correct deserializer. GetVersion() returning 1 for an undeclared type is a runtime fallback
+          only, not permission to omit the attribute.
 ```
 
 #### Audit and cross-cutting marker interfaces (`Abstractions/`)
