@@ -2287,6 +2287,21 @@ Ten defects, all reproduced by executing the code. The severe one: every async r
 
 ---
 
+### P-539 — Core: `SharedKernel.Configuration` First-Publish Bar (ADDITIVE API + ONE BEHAVIOUR CHANGE)
+
+**Status:** `●` Complete — 8/8 tasks `●`; publish is P-530's still-open task P-56
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 01.Core
+**Depends on:** P-530
+
+#### What is needed
+Bring `SharedKernel.Configuration` up to the bar P-538 set for `SharedKernel.Core` before its first publish: tracked public API, a complete exception contract, and a consumer-grade README. Full task breakdown and measurements live in [`01.Core/state-map.md`](01.Core/state-map.md) under `SK.01.P539`.
+
+#### Why this is needed
+Measured in a real host: a misspelled section path or key started the service silently on defaults with no way to opt out; an empty `ISectionBoundOptions.SectionName` did the same, and a null one threw `ArgumentNullException` for a parameter the caller never passed; nested `[Required]` attributes never ran and nothing said so. The user ruled: add opt-in `OptionsStrictness.RequireSection`/`.RejectUnknownKeys` (off by default, since each rejects configuration that is sometimes legitimate), keep the `IServiceCollection` return type, publish in the same session. `01.Core/README.md` also still carried two claims P-530 had disproved (`TryAddSingleton`, "AOT-clean").
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
