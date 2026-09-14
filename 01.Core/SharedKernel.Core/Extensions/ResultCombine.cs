@@ -4,50 +4,52 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Core.Extensions;
 
 /// <summary>
-/// Folds a batch of independent <see cref="Result"/> / <see cref="Result{T}"/> outcomes into a single
-/// aggregate <see cref="ValidationResult"/> / <see cref="ValidationResult{T}"/> — the "produce" side of
-/// the multi-error shape <see cref="ValidationResult"/> already models.
+/// Combines several independent results into one <see cref="ValidationResult"/> or
+/// <see cref="ValidationResult{T}"/> that reports every failure, not just the first.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every overload evaluates every input — there is no short-circuit on the first failure. When every
-/// input succeeds, the aggregate is a successful <see cref="ValidationResult"/> /
-/// <see cref="ValidationResult{T}"/>. When one or more inputs fail, the aggregate is a failed
-/// <see cref="ValidationResult"/> / <see cref="ValidationResult{T}"/> carrying every failing
-/// <see cref="Error"/> — not just the first — in input order.
+/// Use it when several checks are independent and the caller should see all of them at once, such as validating
+/// each field of a form. Every input is evaluated; there is no short-circuit. To stop at the first failure
+/// instead, chain the results with <c>Bind</c>.
 /// </para>
 /// <para>
-/// Use this instead of manually appending to a <c>List&lt;Error&gt;</c> across several independent
-/// <see cref="Result"/>/<see cref="Result{T}"/>-returning checks (e.g., validating several independent
-/// fields of a command, each via its own small check that returns a <see cref="Result"/>).
+/// For guard clauses, <c>Guard.Collect</c> does the same without wrapping each guard in a result.
 /// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// ValidationResult&lt;IReadOnlyList&lt;LineItem&gt;&gt; lines = ResultCombine.Combine(
+///     request.Lines.Select(line =&gt; LineItem.Create(line.Sku, line.Quantity)));
+///
+/// if (!lines.IsValid)
+///     return lines.Errors;   // one error per invalid line, in input order
+///
+/// Order order = Order.Create(lines.Value);
+/// </code>
+/// </example>
 public static class ResultCombine
 {
-    /// <summary>
-    /// Combines a batch of non-generic <see cref="Result"/> outcomes into a single
-    /// <see cref="ValidationResult"/>. Every input is evaluated; no short-circuit on the first failure.
-    /// </summary>
+    /// <summary>Combines non-generic results, keeping every failure.</summary>
     /// <param name="results">The results to combine.</param>
     /// <returns>
-    /// <see cref="ValidationResult.Success()"/> if every input succeeded; otherwise
-    /// <see cref="ValidationResult.Failure(IReadOnlyList{Error})"/> carrying every failing
-    /// <see cref="Error"/>, in input order.
+    /// A successful <see cref="ValidationResult"/> when every input succeeded; otherwise a failed one carrying
+    /// every failing <see cref="Error"/>, in input order.
     /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">An input is an uninitialized <c>default(Result)</c>.</exception>
     public static ValidationResult Combine(params Result[] results)
         => Combine((IEnumerable<Result>)results);
 
-    /// <summary>
-    /// Combines a batch of non-generic <see cref="Result"/> outcomes into a single
-    /// <see cref="ValidationResult"/>. Every input is evaluated; no short-circuit on the first failure.
-    /// </summary>
+    /// <summary>Combines non-generic results, keeping every failure.</summary>
+    /// <remarks>The sequence is enumerated once.</remarks>
     /// <param name="results">The results to combine.</param>
     /// <returns>
-    /// <see cref="ValidationResult.Success()"/> if every input succeeded; otherwise
-    /// <see cref="ValidationResult.Failure(IReadOnlyList{Error})"/> carrying every failing
-    /// <see cref="Error"/>, in input order.
+    /// A successful <see cref="ValidationResult"/> when every input succeeded; otherwise a failed one carrying
+    /// every failing <see cref="Error"/>, in input order.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="results"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">An input is an uninitialized <c>default(Result)</c>.</exception>
     public static ValidationResult Combine(IEnumerable<Result> results)
     {
         ArgumentNullException.ThrowIfNull(results);
@@ -56,10 +58,7 @@ public static class ResultCombine
         foreach (var result in results)
         {
             if (result.IsFailure)
-            {
-                errors ??= [];
-                errors.Add(result.Error);
-            }
+                (errors ??= []).Add(result.Error);
         }
 
         return errors is null
@@ -67,34 +66,28 @@ public static class ResultCombine
             : ValidationResult.Failure(errors);
     }
 
-    /// <summary>
-    /// Combines a batch of <see cref="Result{T}"/> outcomes into a single value-collecting
-    /// <see cref="ValidationResult{T}"/>. Every input is evaluated; no short-circuit on the first failure.
-    /// </summary>
-    /// <typeparam name="T">The success value type common to every input.</typeparam>
+    /// <summary>Combines results that carry values, keeping every failure or, when all succeed, every value.</summary>
+    /// <typeparam name="T">The success type shared by every input.</typeparam>
     /// <param name="results">The results to combine.</param>
     /// <returns>
-    /// <see cref="ValidationResult{T}.Success(T)"/> carrying every success value in input order (as
-    /// <see cref="IReadOnlyList{T}"/>) if every input succeeded; otherwise
-    /// <see cref="ValidationResult{T}.Failure(IReadOnlyList{Error})"/> carrying every failing
-    /// <see cref="Error"/>, in input order.
+    /// A successful <see cref="ValidationResult{T}"/> carrying every value in input order when every input
+    /// succeeded; otherwise a failed one carrying every failing <see cref="Error"/>, in input order.
     /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="results"/> contains a <see langword="null"/> result.</exception>
     public static ValidationResult<IReadOnlyList<T>> Combine<T>(params Result<T>[] results)
         => Combine((IEnumerable<Result<T>>)results);
 
-    /// <summary>
-    /// Combines a batch of <see cref="Result{T}"/> outcomes into a single value-collecting
-    /// <see cref="ValidationResult{T}"/>. Every input is evaluated; no short-circuit on the first failure.
-    /// </summary>
-    /// <typeparam name="T">The success value type common to every input.</typeparam>
+    /// <summary>Combines results that carry values, keeping every failure or, when all succeed, every value.</summary>
+    /// <remarks>The sequence is enumerated once.</remarks>
+    /// <typeparam name="T">The success type shared by every input.</typeparam>
     /// <param name="results">The results to combine.</param>
     /// <returns>
-    /// <see cref="ValidationResult{T}.Success(T)"/> carrying every success value in input order (as
-    /// <see cref="IReadOnlyList{T}"/>) if every input succeeded; otherwise
-    /// <see cref="ValidationResult{T}.Failure(IReadOnlyList{Error})"/> carrying every failing
-    /// <see cref="Error"/>, in input order.
+    /// A successful <see cref="ValidationResult{T}"/> carrying every value in input order when every input
+    /// succeeded; otherwise a failed one carrying every failing <see cref="Error"/>, in input order.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="results"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="results"/> contains a <see langword="null"/> result.</exception>
     public static ValidationResult<IReadOnlyList<T>> Combine<T>(IEnumerable<Result<T>> results)
     {
         ArgumentNullException.ThrowIfNull(results);
@@ -104,15 +97,13 @@ public static class ResultCombine
 
         foreach (var result in results)
         {
+            if (result is null)
+                throw new ArgumentException("The results must not contain a null result.", nameof(results));
+
             if (result.IsSuccess)
-            {
                 values.Add(result.Value);
-            }
             else
-            {
-                errors ??= [];
-                errors.Add(result.Error);
-            }
+                (errors ??= []).Add(result.Error);
         }
 
         return errors is null

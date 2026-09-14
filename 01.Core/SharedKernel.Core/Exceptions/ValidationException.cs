@@ -4,27 +4,45 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Core.Exceptions;
 
 /// <summary>
-/// Thrown when one or more input validation rules fail. Carries every failing <see cref="Error"/>.
+/// Thrown when input fails one or more validation rules. Carries every failing <see cref="Error"/>, not just
+/// the first.
 /// </summary>
 /// <remarks>
-/// Prefer returning a failed <see cref="Result{T}"/> or <see cref="ValidationResult"/>. Throw this only at
-/// an exception boundary, such as a pipeline behavior serving callers that do not consume results. A
-/// presentation layer renders <see cref="Errors"/> as per-field validation details (HTTP 400).
+/// <para>
+/// Prefer returning a failed <see cref="Result{T}"/> or <see cref="ValidationResult"/>. Throw this at an
+/// exception boundary, such as a pipeline behavior serving callers that do not consume results.
+/// </para>
+/// <para>
+/// <see cref="SharedKernelException.Error"/> is the first error, and <see cref="Exception.Message"/> is its
+/// message when there is one error, or all messages joined with <c>"; "</c> when there are several. A
+/// presentation layer typically renders <see cref="Errors"/> as per-field details in an HTTP 400 response.
+/// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// ValidationResult validation = Guard.Collect(
+///     Guard.Against.NullOrWhiteSpace(command.Name),
+///     Guard.Against.Email(command.Email));
+///
+/// if (!validation.IsValid)
+///     throw new ValidationException(validation.Errors);
+/// </code>
+/// </example>
 public sealed class ValidationException : SharedKernelException
 {
-    /// <summary>Initialises a new <see cref="ValidationException"/> from a single validation error.</summary>
+    /// <summary>Initialises a new <see cref="ValidationException"/> for a single failing rule.</summary>
     /// <param name="error">The validation error.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
     public ValidationException(Error error)
         : this(new[] { error ?? throw new ArgumentNullException(nameof(error)) })
     {
     }
 
-    /// <summary>Initialises a new <see cref="ValidationException"/> from a collection of validation errors.</summary>
-    /// <param name="errors">Every validation error found. Must contain at least one entry and no <see langword="null"/> entries.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="errors"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="errors"/> is empty or contains a <see langword="null"/> entry.</exception>
+    /// <summary>Initialises a new <see cref="ValidationException"/> for several failing rules.</summary>
+    /// <remarks>The errors are copied, so changing the supplied list afterwards does not change the exception.</remarks>
+    /// <param name="errors">Every validation error, in the order to report them.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="errors"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="errors"/> is empty or contains a <see langword="null"/> entry.</exception>
     public ValidationException(IReadOnlyList<Error> errors)
         : this(Snapshot(errors))
     {
@@ -36,10 +54,9 @@ public sealed class ValidationException : SharedKernelException
         Errors = errors;
     }
 
-    /// <summary>Gets every validation error that caused this exception, in the order supplied.</summary>
+    /// <summary>Gets every validation error, in the order supplied. Never empty.</summary>
     public IReadOnlyList<Error> Errors { get; }
 
-    // Copied so a caller mutating its own list afterwards cannot change this exception.
     private static Error[] Snapshot(IReadOnlyList<Error> errors)
     {
         ArgumentNullException.ThrowIfNull(errors);

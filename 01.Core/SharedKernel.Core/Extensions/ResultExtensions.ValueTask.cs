@@ -1,3 +1,4 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -14,6 +15,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">The projection applied to the success value.</param>
+    /// <returns>A task whose result is a success carrying the produced value, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Map<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, TOut> map)
@@ -33,6 +37,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">The asynchronous projection applied to the success value.</param>
+    /// <returns>A task whose result is a success carrying the produced value, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Map<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask<TOut>> map)
@@ -53,6 +60,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">The projection applied to the error.</param>
+    /// <returns>A task whose result is a failure carrying the transformed error, or the source result when it succeeded.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> MapError<T>(
         this ValueTask<Result<T>> resultTask,
         Func<Error, Error> map)
@@ -72,6 +82,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The operation to run on the success value.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Bind<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, Result<TOut>> bind)
@@ -91,6 +104,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The asynchronous operation to run on the success value.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Bind<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask<Result<TOut>>> bind)
@@ -109,6 +125,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The operation to run on the success value.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Bind<T>(
         this ValueTask<Result<T>> resultTask,
         Func<T, Result> bind)
@@ -127,6 +146,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The asynchronous operation to run on the success value.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Bind<T>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask<Result>> bind)
@@ -147,6 +169,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="onSuccess">Applied to the success value.</param>
     /// <param name="onFailure">Applied to the error.</param>
+    /// <returns>A task whose result is the output of whichever function ran.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="onSuccess"/> or <paramref name="onFailure"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<TOut> Match<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, TOut> onSuccess,
@@ -169,6 +194,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="onSuccess">Applied to the success value.</param>
     /// <param name="onFailure">Applied to the error.</param>
+    /// <returns>A task whose result is the output of whichever function ran.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="onSuccess"/> or <paramref name="onFailure"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<TOut> Match<T, TOut>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask<TOut>> onSuccess,
@@ -189,6 +217,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The side effect to run on success.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> Tap<T>(
         this ValueTask<Result<T>> resultTask,
         Action<T> action)
@@ -207,6 +238,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The asynchronous side effect to run on success.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> Tap<T>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask> action)
@@ -228,6 +262,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The side effect to run on failure.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> TapError<T>(
         this ValueTask<Result<T>> resultTask,
         Action<Error> action)
@@ -246,6 +283,9 @@ public static partial class ResultExtensions
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The asynchronous side effect to run on failure.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> TapError<T>(
         this ValueTask<Result<T>> resultTask,
         Func<Error, ValueTask> action)
@@ -268,6 +308,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="predicate">The condition the success value must satisfy.</param>
     /// <param name="error">The error to return when the condition is not satisfied.</param>
+    /// <returns>A task whose result is the source result when it failed or the condition holds; otherwise a failure carrying <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="predicate"/> or <paramref name="error"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> Ensure<T>(
         this ValueTask<Result<T>> resultTask,
         Func<T, bool> predicate,
@@ -289,6 +332,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="predicate">The asynchronous condition the success value must satisfy.</param>
     /// <param name="error">The error to return when the condition is not satisfied.</param>
+    /// <returns>A task whose result is the source result when it failed or the condition holds; otherwise a failure carrying <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="predicate"/> or <paramref name="error"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<T>> Ensure<T>(
         this ValueTask<Result<T>> resultTask,
         Func<T, ValueTask<bool>> predicate,
@@ -311,6 +357,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then returns the success value, or throws the exception that matches the error.</summary>
     /// <typeparam name="T">The success type of the source result.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
+    /// <returns>A task whose result is the success value.</returns>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
+    /// <exception cref="SharedKernelException">Awaiting the returned task throws it when the result failed. The subclass matches the error's <see cref="Error.Type"/>.</exception>
     public static ValueTask<T> GetValueOrThrow<T>(
         this ValueTask<Result<T>> resultTask)
     {
@@ -327,6 +376,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">Produces the success value.</param>
+    /// <returns>A task whose result is a success carrying the produced value, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Map<TOut>(
         this ValueTask<Result> resultTask,
         Func<TOut> map)
@@ -345,6 +397,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">Produces the success value asynchronously.</param>
+    /// <returns>A task whose result is a success carrying the produced value, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Map<TOut>(
         this ValueTask<Result> resultTask,
         Func<ValueTask<TOut>> map)
@@ -362,6 +417,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then projects the error of a failed result through <paramref name="map"/>.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="map">The projection applied to the error.</param>
+    /// <returns>A task whose result is a failure carrying the transformed error, or the source result when it succeeded.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="map"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> MapError(
         this ValueTask<Result> resultTask,
         Func<Error, Error> map)
@@ -379,6 +437,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then chains a result-returning operation after a success.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The operation to run on success.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Bind(
         this ValueTask<Result> resultTask,
         Func<Result> bind)
@@ -396,6 +457,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then chains an asynchronous result-returning operation after a success.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The asynchronous operation to run on success.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Bind(
         this ValueTask<Result> resultTask,
         Func<ValueTask<Result>> bind)
@@ -414,6 +478,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The operation to run on success.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Bind<TOut>(
         this ValueTask<Result> resultTask,
         Func<Result<TOut>> bind)
@@ -432,6 +499,9 @@ public static partial class ResultExtensions
     /// <typeparam name="TOut">The output type.</typeparam>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="bind">The asynchronous operation to run on success.</param>
+    /// <returns>A task whose result is the next step's result, or a failure carrying the original error.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result<TOut>> Bind<TOut>(
         this ValueTask<Result> resultTask,
         Func<ValueTask<Result<TOut>>> bind)
@@ -451,6 +521,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="onSuccess">Produces the value on success.</param>
     /// <param name="onFailure">Applied to the error.</param>
+    /// <returns>A task whose result is the output of whichever function ran.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="onSuccess"/> or <paramref name="onFailure"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<TOut> Match<TOut>(
         this ValueTask<Result> resultTask,
         Func<TOut> onSuccess,
@@ -472,6 +545,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="onSuccess">Produces the value on success.</param>
     /// <param name="onFailure">Applied to the error.</param>
+    /// <returns>A task whose result is the output of whichever function ran.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="onSuccess"/> or <paramref name="onFailure"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<TOut> Match<TOut>(
         this ValueTask<Result> resultTask,
         Func<ValueTask<TOut>> onSuccess,
@@ -491,6 +567,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then runs <paramref name="action"/> on success and returns the result unchanged.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The side effect to run on success.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Tap(
         this ValueTask<Result> resultTask,
         Action action)
@@ -508,6 +587,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then runs the asynchronous <paramref name="action"/> on success and returns the result unchanged.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The asynchronous side effect to run on success.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Tap(
         this ValueTask<Result> resultTask,
         Func<ValueTask> action)
@@ -528,6 +610,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then runs <paramref name="action"/> on the error of a failed result and returns the result unchanged.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The side effect to run on failure.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> TapError(
         this ValueTask<Result> resultTask,
         Action<Error> action)
@@ -545,6 +630,9 @@ public static partial class ResultExtensions
     /// <summary>Awaits the result, then runs the asynchronous <paramref name="action"/> on the error of a failed result and returns the result unchanged.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="action">The asynchronous side effect to run on failure.</param>
+    /// <returns>A task whose result is the source result, unchanged.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> TapError(
         this ValueTask<Result> resultTask,
         Func<Error, ValueTask> action)
@@ -566,6 +654,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="predicate">The condition that must hold.</param>
     /// <param name="error">The error to return when the condition does not hold.</param>
+    /// <returns>A task whose result is the source result when it failed or the condition holds; otherwise a failure carrying <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="predicate"/> or <paramref name="error"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Ensure(
         this ValueTask<Result> resultTask,
         Func<bool> predicate,
@@ -586,6 +677,9 @@ public static partial class ResultExtensions
     /// <param name="resultTask">The asynchronous source result.</param>
     /// <param name="predicate">The asynchronous condition that must hold.</param>
     /// <param name="error">The error to return when the condition does not hold.</param>
+    /// <returns>A task whose result is the source result when it failed or the condition holds; otherwise a failure carrying <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="predicate"/> or <paramref name="error"/> is <see langword="null"/>. Thrown synchronously, before anything runs.</exception>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
     public static ValueTask<Result> Ensure(
         this ValueTask<Result> resultTask,
         Func<ValueTask<bool>> predicate,
@@ -607,6 +701,9 @@ public static partial class ResultExtensions
 
     /// <summary>Awaits the result, then throws the exception that matches the error when the result is a failure.</summary>
     /// <param name="resultTask">The asynchronous source result.</param>
+    /// <returns>A task that completes when the result succeeded.</returns>
+    /// <exception cref="OperationCanceledException">Awaiting the returned task throws it when <paramref name="resultTask"/> was cancelled. A faulted source rethrows its own exception.</exception>
+    /// <exception cref="SharedKernelException">Awaiting the returned task throws it when the result failed. The subclass matches the error's <see cref="Error.Type"/>.</exception>
     public static ValueTask ThrowIfFailure(
         this ValueTask<Result> resultTask)
     {

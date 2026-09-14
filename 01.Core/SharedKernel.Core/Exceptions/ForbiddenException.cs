@@ -6,22 +6,27 @@ namespace SharedKernel.Core.Exceptions;
 /// Thrown when an authenticated caller is not permitted to perform the requested operation.
 /// </summary>
 /// <remarks>
-/// Pair it with an <see cref="ErrorType.Forbidden"/> error (HTTP 403). When the caller is not authenticated at all, use <see cref="UnauthorizedException"/> instead. The HTTP status is still decided by <see cref="Error.Type"/>; see <see cref="SharedKernelException"/>.
+/// Pair it with an <see cref="ErrorType.Forbidden"/> error (HTTP 403). Use <see cref="UnauthorizedException"/> only when the caller is not authenticated at all; mixing the two makes an authorization failure look like a missing credential.
 /// </remarks>
+/// <example>
+/// <code>
+/// throw new ForbiddenException(Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission, "Only the account owner can close the account."));
+/// </code>
+/// </example>
 public sealed class ForbiddenException : SharedKernelException
 {
     /// <summary>Initialises a new <see cref="ForbiddenException"/> carrying <paramref name="error"/>.</summary>
-    /// <param name="error">The error describing the failure.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
+    /// <param name="error">The error describing the failure. Its message becomes the exception message.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
     public ForbiddenException(Error error)
         : base(error)
     {
     }
 
-    /// <summary>Initialises a new <see cref="ForbiddenException"/> carrying <paramref name="error"/> and wrapping <paramref name="innerException"/>.</summary>
-    /// <param name="error">The error describing the failure.</param>
-    /// <param name="innerException">The exception that caused this exception.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
+    /// <summary>Initialises a new <see cref="ForbiddenException"/> carrying <paramref name="error"/> and the exception that caused it.</summary>
+    /// <param name="error">The error describing the failure. Its message becomes the exception message.</param>
+    /// <param name="innerException">The exception that caused this one.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
     public ForbiddenException(Error error, Exception innerException)
         : base(error, innerException)
     {

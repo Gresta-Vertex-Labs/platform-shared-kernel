@@ -13,19 +13,33 @@ namespace SharedKernel.Core.Extensions;
 /// letter (<c>HTMLParser</c> becomes <c>HTML</c> + <c>Parser</c>). Separators at either end are dropped.
 /// </para>
 /// <para>
-/// Letters are changed with invariant-culture rules, so the result is the same on every server.
+/// Letters are changed with invariant-culture rules, so the result is the same on every server (a Turkish
+/// culture does not turn <c>I</c> into a dotless <c>ı</c>).
+/// </para>
+/// <list type="table">
+///   <listheader><term>Input</term><description>snake / kebab / camel / Pascal</description></listheader>
+///   <item><term><c>OrderLineItem</c></term><description><c>order_line_item</c> / <c>order-line-item</c> / <c>orderLineItem</c> / <c>OrderLineItem</c></description></item>
+///   <item><term><c>HTMLParser</c></term><description><c>html_parser</c> / <c>html-parser</c> / <c>htmlParser</c> / <c>HtmlParser</c></description></item>
+///   <item><term><c>user-id</c></term><description><c>user_id</c> / <c>user-id</c> / <c>userId</c> / <c>UserId</c></description></item>
+///   <item><term><c>Order2Line</c></term><description><c>order2_line</c> / <c>order2-line</c> / <c>order2Line</c> / <c>Order2Line</c></description></item>
+/// </list>
+/// <para>
+/// Acronyms are not preserved: <c>HTMLParser</c> converts to <c>HtmlParser</c> in Pascal case. These methods are
+/// meant for identifiers such as column, key, or route names, not for arbitrary prose.
 /// </para>
 /// </remarks>
 public static class StringExtensions
 {
     /// <summary>Converts an identifier to <c>snake_case</c>: <c>HTMLParser</c> becomes <c>html_parser</c>.</summary>
     /// <param name="value">The identifier to convert.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <returns>The words of <paramref name="value"/> in lower case, joined by underscores; empty when it has no words.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
     public static string ToSnakeCase(this string value) => JoinLower(value, '_');
 
     /// <summary>Converts an identifier to <c>kebab-case</c>: <c>HTMLParser</c> becomes <c>html-parser</c>.</summary>
     /// <param name="value">The identifier to convert.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <returns>The words of <paramref name="value"/> in lower case, joined by hyphens; empty when it has no words.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
     public static string ToKebabCase(this string value) => JoinLower(value, '-');
 
     /// <summary>
@@ -33,7 +47,8 @@ public static class StringExtensions
     /// <c>HtmlParser</c>.
     /// </summary>
     /// <param name="value">The identifier to convert.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <returns>The words of <paramref name="value"/>, each capitalized, joined without separators; empty when it has no words.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
     public static string ToPascalCase(this string value) => JoinCapitalized(value, lowerFirstWord: false);
 
     /// <summary>
@@ -41,7 +56,8 @@ public static class StringExtensions
     /// <c>htmlParser</c>.
     /// </summary>
     /// <param name="value">The identifier to convert.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <returns>The words of <paramref name="value"/> joined without separators, the first in lower case and the rest capitalized; empty when it has no words.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
     public static string ToCamelCase(this string value) => JoinCapitalized(value, lowerFirstWord: true);
 
     private static string JoinLower(string value, char separator)

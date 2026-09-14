@@ -11,27 +11,49 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Guards;
 
 /// <summary>
-/// The functional guard path: extension methods on <see cref="IGuardClause"/>, reached through
-/// <see cref="Guard.Against"/>.
+/// The functional guard clauses: checks that return an <see cref="Error"/> describing a violation instead
+/// of throwing. Reach them through <see cref="Guard.Against"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every guard returns <see langword="null"/> when it passes and a non-null
-/// <see cref="ErrorType.Validation"/> <see cref="Error"/> when it is violated. A guard never throws, and a
-/// <see langword="null"/> input is reported as a violation rather than an exception, so a guard is safe to
-/// call on unvalidated input. Chain several with <c>??</c> to stop at the first failure, or pass them to
-/// <see cref="Guard.Collect(ReadOnlySpan{Error})"/> to report every failure.
+/// <b>Contract.</b> Every guard returns <see langword="null"/> when the value is valid and a non-null
+/// <see cref="ErrorType.Validation"/> error when it is not. A guard never throws because of the value it
+/// checks: a <see langword="null"/> value is reported as a violation with code
+/// <see cref="ErrorCodes.Validation.Required"/>. The only exceptions are
+/// <see cref="ArgumentNullException"/> and <see cref="ArgumentException"/> for mistakes in the guard's own
+/// arguments, such as a <see langword="null"/> or malformed regular-expression pattern.
 /// </para>
 /// <para>
-/// The <c>paramName</c> parameter is filled in by the compiler from the argument expression, as
-/// <see cref="ArgumentNullException.ThrowIfNull(object, string)"/> does. Pass it explicitly only to
-/// override that name.
+/// <b>Parameter names.</b> The trailing <c>paramName</c> parameter is filled in by the compiler with the
+/// source text of the checked argument (<see cref="CallerArgumentExpressionAttribute"/>), so
+/// <c>Guard.Against.Null(request.Email)</c> reports <c>'request.Email'</c>. Pass a name explicitly only to
+/// override it.
 /// </para>
 /// <para>
-/// Messages are formatted with <see cref="CultureInfo.InvariantCulture"/>, so they do not change with the
-/// server's culture. Translate them through <c>Error.Code</c> rather than by parsing the text.
+/// <b>Messages and codes.</b> Messages are formatted with <see cref="CultureInfo.InvariantCulture"/>, so
+/// they are identical on every server. Branch and translate on <see cref="Error.Code"/>, never on the text.
+/// </para>
+/// <para>
+/// <b>Composition.</b> Chain guards with <c>??</c> to stop at the first violation, pass several to
+/// <see cref="Guard.Collect(ReadOnlySpan{Error})"/> to report all of them, and convert the outcome with
+/// <see cref="GuardErrorExtensions"/>. Every guard here has a throwing twin on <see cref="Guard.Throw"/>.
+/// </para>
+/// <para>
+/// <b>Extending.</b> Add a guard by writing an extension method on <see cref="IGuardClause"/> that follows
+/// the same contract. Analyzer <c>SK0006</c> reports a <see langword="throw"/> inside guard code.
 /// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// using SharedKernel.Guards;
+///
+/// public static Result&lt;Email&gt; Create(string? value) =&gt;
+///     (Guard.Against.NullOrWhiteSpace(value)
+///      ?? Guard.Against.LongerThan(value, 254)
+///      ?? Guard.Against.Email(value))
+///     .ToResult(() =&gt; new Email(value!));
+/// </code>
+/// </example>
 public static partial class GuardClauseExtensions
 {
     private const string DefaultParamName = "value";
@@ -47,11 +69,15 @@ public static partial class GuardClauseExtensions
 
     // ── Null / empty ──────────────────────────────────────────────────────────
 
-    /// <summary>Returns an error if <paramref name="value"/> is <see langword="null"/>.</summary>
+    /// <summary>Checks that a reference-type value is not <see langword="null"/>.</summary>
     /// <typeparam name="T">The reference type being checked.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is not <see langword="null"/>; otherwise an error
+    /// with code <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? Null<T>(
         this IGuardClause guard,
         T? value,
@@ -59,11 +85,15 @@ public static partial class GuardClauseExtensions
         where T : class
         => value is null ? Required(GuardDescriptions.Null, paramName) : null;
 
-    /// <summary>Returns an error if the nullable value type <paramref name="value"/> has no value.</summary>
+    /// <summary>Checks that a nullable value type has a value.</summary>
     /// <typeparam name="T">The underlying value type.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> has a value; otherwise an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? Null<T>(
         this IGuardClause guard,
         T? value,
@@ -71,22 +101,29 @@ public static partial class GuardClauseExtensions
         where T : struct
         => value.HasValue ? null : Required(GuardDescriptions.Null, paramName);
 
-    /// <summary>Returns an error if <paramref name="value"/> is <see langword="null"/> or empty.</summary>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <summary>Checks that a string is neither <see langword="null"/> nor empty.</summary>
+    /// <remarks>A string containing only whitespace passes; use <see cref="NullOrWhiteSpace"/> to reject it.</remarks>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The string to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> has at least one character; otherwise an error
+    /// with code <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? NullOrEmpty(
         this IGuardClause guard,
         string? value,
         [CallerArgumentExpression(nameof(value))] string? paramName = null)
         => string.IsNullOrEmpty(value) ? Required(GuardDescriptions.NullOrEmpty, paramName) : null;
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is <see langword="null"/>, empty, or only whitespace.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <summary>Checks that a string contains at least one non-whitespace character.</summary>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The string to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> contains a non-whitespace character; otherwise an
+    /// error with code <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? NullOrWhiteSpace(
         this IGuardClause guard,
         string? value,
@@ -95,14 +132,19 @@ public static partial class GuardClauseExtensions
 
     // ── String length ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> has fewer than <paramref name="minLength"/> characters.
-    /// A <see langword="null"/> value is a violation.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a string has at least <paramref name="minLength"/> characters.</summary>
+    /// <remarks>
+    /// Length is <see cref="string.Length"/>, which counts UTF-16 code units, not user-perceived characters.
+    /// </remarks>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The string to check.</param>
     /// <param name="minLength">The minimum permitted length, inclusive.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is at least <paramref name="minLength"/> long; an
+    /// error with code <see cref="ErrorCodes.Validation.MinLength"/> when it is shorter; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? ShorterThan(
         this IGuardClause guard,
         string? value,
@@ -117,14 +159,20 @@ public static partial class GuardClauseExtensions
             : null;
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> has more than <paramref name="maxLength"/> characters.
-    /// A <see langword="null"/> value is a violation; check optional values for <see langword="null"/> first.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a string has at most <paramref name="maxLength"/> characters.</summary>
+    /// <remarks>
+    /// A <see langword="null"/> value is a violation, so check an optional value for <see langword="null"/>
+    /// first. Length is <see cref="string.Length"/>, which counts UTF-16 code units.
+    /// </remarks>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The string to check.</param>
     /// <param name="maxLength">The maximum permitted length, inclusive.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is at most <paramref name="maxLength"/> long; an
+    /// error with code <see cref="ErrorCodes.Validation.MaxLength"/> when it is longer; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? LongerThan(
         this IGuardClause guard,
         string? value,
@@ -141,14 +189,20 @@ public static partial class GuardClauseExtensions
 
     // ── Numeric ───────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is less than zero. Works for every numeric type.
-    /// </summary>
-    /// <remarks>A floating-point <c>NaN</c> is a violation.</remarks>
-    /// <typeparam name="T">Any numeric type, such as <see cref="int"/>, <see cref="decimal"/>, or <see cref="double"/>.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <summary>Checks that a number is zero or greater.</summary>
+    /// <remarks>
+    /// Works for every numeric type through generic math: <see cref="int"/>, <see cref="long"/>,
+    /// <see cref="decimal"/>, <see cref="double"/>, <see cref="float"/>, <see cref="short"/>, and so on. A
+    /// floating-point <c>NaN</c> is a violation.
+    /// </remarks>
+    /// <typeparam name="T">The numeric type.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The number to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is zero or greater; otherwise an error with code
+    /// <see cref="ErrorCodes.Validation.OutOfRange"/>.
+    /// </returns>
     public static Error? Negative<T>(
         this IGuardClause guard,
         T value,
@@ -156,14 +210,18 @@ public static partial class GuardClauseExtensions
         where T : INumber<T>
         => value >= T.Zero ? null : OutOfRange(GuardDescriptions.Negative, paramName);
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is zero or less. Works for every numeric type.
-    /// </summary>
-    /// <remarks>A floating-point <c>NaN</c> is a violation.</remarks>
-    /// <typeparam name="T">Any numeric type, such as <see cref="int"/>, <see cref="decimal"/>, or <see cref="double"/>.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <summary>Checks that a number is greater than zero.</summary>
+    /// <remarks>
+    /// Works for every numeric type through generic math. A floating-point <c>NaN</c> is a violation.
+    /// </remarks>
+    /// <typeparam name="T">The numeric type.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The number to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is greater than zero; otherwise an error with code
+    /// <see cref="ErrorCodes.Validation.OutOfRange"/>.
+    /// </returns>
     public static Error? NegativeOrZero<T>(
         this IGuardClause guard,
         T value,
@@ -173,19 +231,23 @@ public static partial class GuardClauseExtensions
 
     // ── Comparison ────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is outside the inclusive range
-    /// [<paramref name="min"/>, <paramref name="max"/>]. A <see langword="null"/> value is a violation.
-    /// </summary>
+    /// <summary>Checks that a value lies within the inclusive range [<paramref name="min"/>, <paramref name="max"/>].</summary>
     /// <remarks>
-    /// For floating-point types <c>NaN</c> compares below every number, so it is a violation.
+    /// Comparison uses <see cref="IComparable{T}.CompareTo(T)"/>. For floating-point types <c>NaN</c> compares
+    /// below every number, so it is a violation. When <paramref name="min"/> is greater than
+    /// <paramref name="max"/> no value can pass.
     /// </remarks>
-    /// <typeparam name="T">Any type that implements <see cref="IComparable{T}"/>.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <typeparam name="T">A type that implements <see cref="IComparable{T}"/>, such as a number, <see cref="DateTimeOffset"/>, or <see cref="string"/>.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="min">The inclusive lower bound.</param>
-    /// <param name="max">The inclusive upper bound.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="min">The smallest permitted value, inclusive.</param>
+    /// <param name="max">The largest permitted value, inclusive.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is within the range; an error with code
+    /// <see cref="ErrorCodes.Validation.OutOfRange"/> when it is outside; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? OutOfRange<T>(
         this IGuardClause guard,
         T value,
@@ -204,15 +266,17 @@ public static partial class GuardClauseExtensions
             : null;
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is less than <paramref name="min"/>. A
-    /// <see langword="null"/> value is a violation.
-    /// </summary>
-    /// <typeparam name="T">Any type that implements <see cref="IComparable{T}"/>.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a value is not less than <paramref name="min"/>.</summary>
+    /// <typeparam name="T">A type that implements <see cref="IComparable{T}"/>.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
     /// <param name="min">The smallest permitted value, inclusive.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is greater than or equal to <paramref name="min"/>;
+    /// an error with code <see cref="ErrorCodes.Validation.OutOfRange"/> when it is less; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? LessThan<T>(
         this IGuardClause guard,
         T value,
@@ -228,15 +292,17 @@ public static partial class GuardClauseExtensions
             : null;
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is greater than <paramref name="max"/>. A
-    /// <see langword="null"/> value is a violation.
-    /// </summary>
-    /// <typeparam name="T">Any type that implements <see cref="IComparable{T}"/>.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a value is not greater than <paramref name="max"/>.</summary>
+    /// <typeparam name="T">A type that implements <see cref="IComparable{T}"/>.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
     /// <param name="max">The largest permitted value, inclusive.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is less than or equal to <paramref name="max"/>; an
+    /// error with code <see cref="ErrorCodes.Validation.OutOfRange"/> when it is greater; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? GreaterThan<T>(
         this IGuardClause guard,
         T value,
@@ -254,23 +320,33 @@ public static partial class GuardClauseExtensions
 
     // ── Value ─────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> equals the default value for <typeparamref name="T"/>.
-    /// </summary>
-    /// <typeparam name="T">The type of the value being checked.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a value is not the default value of its type.</summary>
+    /// <remarks>
+    /// Uses <see cref="EqualityComparer{T}.Default"/>, so it catches <c>0</c>, <see cref="Guid.Empty"/>,
+    /// <c>default(DateTime)</c>, an all-default struct, and <see langword="null"/>.
+    /// </remarks>
+    /// <typeparam name="T">The type of the value.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> differs from <c>default(T)</c>; otherwise an error
+    /// with code <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? Default<T>(
         this IGuardClause guard,
         T value,
         [CallerArgumentExpression(nameof(value))] string? paramName = null)
         => EqualityComparer<T>.Default.Equals(value, default!) ? Required(GuardDescriptions.Default, paramName) : null;
 
-    /// <summary>Returns an error if <paramref name="value"/> is <see cref="Guid.Empty"/>.</summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a GUID is not <see cref="Guid.Empty"/>.</summary>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The GUID to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is not <see cref="Guid.Empty"/>; otherwise an error
+    /// with code <see cref="ErrorCodes.Validation.Required"/>.
+    /// </returns>
     public static Error? InvalidGuid(
         this IGuardClause guard,
         Guid value,
@@ -278,17 +354,21 @@ public static partial class GuardClauseExtensions
         => value == Guid.Empty ? Required(GuardDescriptions.InvalidGuid, paramName) : null;
 
     /// <summary>
-    /// Returns an error if <paramref name="value"/> is not one of the named members of
-    /// <typeparamref name="TEnum"/>, as happens when an out-of-range integer is cast to an enum.
+    /// Checks that an enum value is one of the type's named members, catching an out-of-range integer cast
+    /// such as <c>(OrderStatus)99</c>.
     /// </summary>
     /// <remarks>
-    /// The check is <see cref="Enum.IsDefined{TEnum}(TEnum)"/>, so for a <see cref="FlagsAttribute"/> enum a
-    /// combination of flags is only accepted when that combination is itself a named member.
+    /// The check is <see cref="Enum.IsDefined{TEnum}(TEnum)"/>. For a <see cref="FlagsAttribute"/> enum, a
+    /// combination of flags passes only when that exact combination is itself a named member.
     /// </remarks>
     /// <typeparam name="TEnum">The enum type.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The enum value to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> is a named member of <typeparamref name="TEnum"/>;
+    /// otherwise an error with code <see cref="ErrorCodes.Validation.OutOfRange"/>.
+    /// </returns>
     public static Error? InvalidEnumValue<TEnum>(
         this IGuardClause guard,
         TEnum value,
@@ -300,26 +380,37 @@ public static partial class GuardClauseExtensions
                 ErrorCodes.Validation.OutOfRange,
                 Describe(GuardDescriptions.InvalidEnumValue, paramName, typeof(TEnum).Name));
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is not UTC, that is, if its
-    /// <see cref="DateTimeOffset.Offset"/> is not zero.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a <see cref="DateTimeOffset"/> is expressed in UTC.</summary>
+    /// <remarks>
+    /// The check is on the representation, not the instant: <c>2026-01-01T03:00+03:00</c> is the same moment
+    /// as <c>2026-01-01T00:00Z</c> but is rejected. Convert with <see cref="DateTimeOffset.ToUniversalTime"/>
+    /// when you only need the instant.
+    /// </remarks>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <see cref="DateTimeOffset.Offset"/> is zero; otherwise an error with code
+    /// <see cref="ErrorCodes.Validation.InvalidFormat"/>.
+    /// </returns>
     public static Error? NotUtc(
         this IGuardClause guard,
         DateTimeOffset value,
         [CallerArgumentExpression(nameof(value))] string? paramName = null)
         => value.Offset == TimeSpan.Zero ? null : InvalidFormat(GuardDescriptions.NotUtc, paramName);
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is not UTC, that is, if its <see cref="DateTime.Kind"/>
-    /// is not <see cref="DateTimeKind.Utc"/>. <see cref="DateTimeKind.Unspecified"/> is a violation.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a <see cref="DateTime"/> is of kind <see cref="DateTimeKind.Utc"/>.</summary>
+    /// <remarks>
+    /// <see cref="DateTimeKind.Unspecified"/> is a violation: a value parsed or loaded without a kind carries
+    /// no guarantee that it is UTC.
+    /// </remarks>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The value to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Utc"/>; otherwise an
+    /// error with code <see cref="ErrorCodes.Validation.InvalidFormat"/>.
+    /// </returns>
     public static Error? NotUtc(
         this IGuardClause guard,
         DateTime value,
@@ -328,51 +419,65 @@ public static partial class GuardClauseExtensions
 
     // ── Format / Email ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> does not match <paramref name="pattern"/>. A
-    /// <see langword="null"/> value is a violation.
-    /// </summary>
+    /// <summary>Checks that a string matches a regular expression.</summary>
     /// <remarks>
     /// <para>
-    /// Each distinct pattern is compiled once and cached, with a 250 ms match timeout against ReDoS. The
-    /// cache holds at most 256 patterns and evicts the oldest first. For a fixed pattern, prefer a
-    /// <see cref="GeneratedRegexAttribute"/> field of your own and <see cref="True"/>.
+    /// The pattern is matched with <see cref="Regex.IsMatch(string)"/>, so anchor it (<c>^…$</c>) to require
+    /// a whole-string match. Each distinct pattern is compiled once and cached; the cache holds at most 256
+    /// patterns and evicts the oldest first.
     /// </para>
     /// <para>
-    /// The pattern is not included in the error message, because the message can reach an HTTP response.
-    /// A pattern that is not a valid regular expression is a programming error and throws
-    /// <see cref="ArgumentException"/>.
+    /// Matching stops after 250 ms. A value that hits the limit is reported as not matching rather than
+    /// throwing <see cref="RegexMatchTimeoutException"/>, so a pathological input cannot turn validation into
+    /// an unhandled exception.
+    /// </para>
+    /// <para>
+    /// The pattern is not included in the message, because the message can reach an HTTP response. For a
+    /// fixed pattern, a <see cref="GeneratedRegexAttribute"/> method of your own passed to
+    /// <see cref="True"/> avoids the cache and the runtime compilation.
     /// </para>
     /// </remarks>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The string to validate.</param>
-    /// <param name="pattern">The regular expression the whole value must match.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The string to check.</param>
+    /// <param name="pattern">The regular expression to match.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> matches; an error with code
+    /// <see cref="ErrorCodes.Validation.InvalidFormat"/> when it does not or when matching times out; an error
+    /// with code <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pattern"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="pattern"/> is not a valid regular expression.</exception>
     public static Error? InvalidFormat(
         this IGuardClause guard,
         string? value,
         [StringSyntax(StringSyntaxAttribute.Regex)] string pattern,
         [CallerArgumentExpression(nameof(value))] string? paramName = null)
     {
+        ArgumentNullException.ThrowIfNull(pattern);
+
         if (value is null)
             return Required(GuardDescriptions.Null, paramName);
 
-        return GetOrCacheCompiledRegex(pattern).IsMatch(value)
+        return IsMatch(GetOrCacheCompiledRegex(pattern), value)
             ? null
             : InvalidFormat(GuardDescriptions.InvalidFormat, paramName);
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> is not a plausible email address. A
-    /// <see langword="null"/>, empty, or whitespace value is a violation.
-    /// </summary>
+    /// <summary>Checks that a string is a plausible email address.</summary>
     /// <remarks>
-    /// The check is deliberately loose (<c>local@domain.tld</c>, no whitespace, a single <c>@</c>). The only
-    /// real proof that an address works is delivering a message to it.
+    /// The check is deliberately loose: one <c>@</c>, no whitespace, and a dot in the domain
+    /// (<c>local@domain.tld</c>). It rejects obvious typos without rejecting valid but unusual addresses. The
+    /// only real proof that an address works is delivering a message to it.
     /// </remarks>
-    /// <param name="guard">The guard clause entry point.</param>
-    /// <param name="value">The string to validate.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
+    /// <param name="value">The string to check.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="value"/> looks like an email address; an error with code
+    /// <see cref="ErrorCodes.Validation.InvalidFormat"/> when it does not; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>, empty, or whitespace.
+    /// </returns>
     public static Error? Email(
         this IGuardClause guard,
         string? value,
@@ -381,19 +486,24 @@ public static partial class GuardClauseExtensions
         if (string.IsNullOrWhiteSpace(value))
             return Required(GuardDescriptions.NullOrWhiteSpace, paramName);
 
-        return EmailRegex().IsMatch(value) ? null : InvalidFormat(GuardDescriptions.Email, paramName);
+        return IsMatch(EmailRegex(), value) ? null : InvalidFormat(GuardDescriptions.Email, paramName);
     }
 
     // ── Collections ───────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="source"/> is <see langword="null"/> or contains no elements.
-    /// </summary>
-    /// <remarks>Reads at most one element.</remarks>
+    /// <summary>Checks that a sequence contains at least one element.</summary>
+    /// <remarks>
+    /// Reads at most one element. A lazy sequence that cannot be enumerated twice loses that element for the
+    /// caller, so materialize such a sequence before guarding it.
+    /// </remarks>
     /// <typeparam name="T">The element type.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="source">The sequence to check.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="source"/> has an element; otherwise an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/>, including when it is <see langword="null"/>.
+    /// </returns>
     public static Error? Empty<T>(
         this IGuardClause guard,
         IEnumerable<T>? source,
@@ -405,19 +515,21 @@ public static partial class GuardClauseExtensions
         return source.Any() ? null : Required(GuardDescriptions.Empty, paramName);
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="source"/> contains more than <paramref name="max"/> elements. A
-    /// <see langword="null"/> sequence is a violation.
-    /// </summary>
+    /// <summary>Checks that a sequence contains no more than <paramref name="max"/> elements.</summary>
     /// <remarks>
-    /// Uses the collection's count when it has one; otherwise reads at most <paramref name="max"/> + 1
-    /// elements, so a long or unbounded sequence is not read to the end.
+    /// Uses the collection's count when it exposes one; otherwise reads at most <paramref name="max"/> + 1
+    /// elements, so a long or unbounded sequence is never read to the end.
     /// </remarks>
     /// <typeparam name="T">The element type.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="source">The sequence to check.</param>
-    /// <param name="max">The maximum permitted number of elements.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="max">The maximum permitted number of elements, inclusive.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="source"/> has at most <paramref name="max"/> elements; an
+    /// error with code <see cref="ErrorCodes.Validation.OutOfRange"/> when it has more; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? MaxCount<T>(
         this IGuardClause guard,
         IEnumerable<T>? source,
@@ -433,18 +545,20 @@ public static partial class GuardClauseExtensions
             : null;
     }
 
-    /// <summary>
-    /// Returns an error if <paramref name="source"/> contains fewer than <paramref name="min"/> elements. A
-    /// <see langword="null"/> sequence is a violation.
-    /// </summary>
+    /// <summary>Checks that a sequence contains at least <paramref name="min"/> elements.</summary>
     /// <remarks>
-    /// Uses the collection's count when it has one; otherwise reads at most <paramref name="min"/> elements.
+    /// Uses the collection's count when it exposes one; otherwise reads at most <paramref name="min"/> elements.
     /// </remarks>
     /// <typeparam name="T">The element type.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="source">The sequence to check.</param>
-    /// <param name="min">The minimum required number of elements.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="min">The minimum required number of elements, inclusive.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when <paramref name="source"/> has at least <paramref name="min"/> elements; an
+    /// error with code <see cref="ErrorCodes.Validation.OutOfRange"/> when it has fewer; an error with code
+    /// <see cref="ErrorCodes.Validation.Required"/> when it is <see langword="null"/>.
+    /// </returns>
     public static Error? MinCount<T>(
         this IGuardClause guard,
         IEnumerable<T>? source,
@@ -462,40 +576,52 @@ public static partial class GuardClauseExtensions
     // ── Boolean predicate ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns <paramref name="error"/> if <paramref name="condition"/> is <see langword="false"/>, and
-    /// <see langword="null"/> if it is <see langword="true"/>.
+    /// Reports <paramref name="error"/> unless <paramref name="condition"/> holds. Use it for any rule the
+    /// built-in guards do not cover.
     /// </summary>
-    /// <remarks>
-    /// Use this for any business rule the built-in guards do not cover: you build the <see cref="Error"/>,
-    /// and the guard surfaces it when the condition does not hold.
-    /// </remarks>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="condition">The condition that must be <see langword="true"/> for the guard to pass.</param>
-    /// <param name="error">The error to return when the condition is <see langword="false"/>.</param>
+    /// <param name="error">The error to report when the condition is <see langword="false"/>.</param>
+    /// <returns><see langword="null"/> when <paramref name="condition"/> is <see langword="true"/>; otherwise <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="error"/> is <see langword="null"/>. Checked eagerly: a <see langword="null"/> error would
+    /// otherwise make a violation indistinguishable from a pass.
+    /// </exception>
     public static Error? True(this IGuardClause guard, bool condition, Error error)
-        => condition ? null : error;
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return condition ? null : error;
+    }
 
-    /// <summary>
-    /// Returns <paramref name="error"/> if <paramref name="condition"/> is <see langword="true"/>, and
-    /// <see langword="null"/> if it is <see langword="false"/>.
-    /// </summary>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Reports <paramref name="error"/> when <paramref name="condition"/> holds.</summary>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="condition">The condition that must be <see langword="false"/> for the guard to pass.</param>
-    /// <param name="error">The error to return when the condition is <see langword="true"/>.</param>
+    /// <param name="error">The error to report when the condition is <see langword="true"/>.</param>
+    /// <returns><see langword="null"/> when <paramref name="condition"/> is <see langword="false"/>; otherwise <paramref name="error"/>.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="error"/> is <see langword="null"/>. Checked eagerly: a <see langword="null"/> error would
+    /// otherwise make a violation indistinguishable from a pass.
+    /// </exception>
     public static Error? False(this IGuardClause guard, bool condition, Error error)
-        => condition ? error : null;
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return condition ? error : null;
+    }
 
     // ── SmartEnum ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns an error if <paramref name="value"/> does not correspond to a member of
-    /// <typeparamref name="TEnum"/>.
-    /// </summary>
-    /// <typeparam name="TEnum">The concrete SmartEnum type.</typeparam>
-    /// <typeparam name="TValue">The underlying value type of the SmartEnum.</typeparam>
-    /// <param name="guard">The guard clause entry point.</param>
+    /// <summary>Checks that a raw value corresponds to a member of a <see cref="SmartEnum{TEnum, TValue}"/>.</summary>
+    /// <remarks>Use it on values from outside the process, such as a request field or a database column.</remarks>
+    /// <typeparam name="TEnum">The SmartEnum type.</typeparam>
+    /// <typeparam name="TValue">The SmartEnum's underlying value type.</typeparam>
+    /// <param name="guard">The guard entry point, <see cref="Guard.Against"/>.</param>
     /// <param name="value">The underlying value to look up.</param>
-    /// <param name="paramName">The name used in the error message. Supplied by the compiler.</param>
+    /// <param name="paramName">The name used in the message. Supplied by the compiler.</param>
+    /// <returns>
+    /// <see langword="null"/> when a member of <typeparamref name="TEnum"/> has <paramref name="value"/>;
+    /// otherwise, including when <paramref name="value"/> is <see langword="null"/>, an error with code
+    /// <see cref="ErrorCodes.Validation.OutOfRange"/>.
+    /// </returns>
     public static Error? InvalidSmartEnum<TEnum, TValue>(
         this IGuardClause guard,
         TValue value,
@@ -517,6 +643,19 @@ public static partial class GuardClauseExtensions
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
     private static partial Regex EmailRegex();
+
+    // A timeout means the input drove the pattern into catastrophic backtracking; report it as a mismatch.
+    private static bool IsMatch(Regex regex, string value)
+    {
+        try
+        {
+            return regex.IsMatch(value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
 
     private static string Name(string? paramName) => paramName ?? DefaultParamName;
 

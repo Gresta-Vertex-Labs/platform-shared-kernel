@@ -348,6 +348,7 @@ ResultCombine  (static class — multi-result aggregation, P-292/WO-049)
     Combine(params Result[] | IEnumerable<Result>)             → ValidationResult
     Combine<T>(params Result<T>[] | IEnumerable<Result<T>>)    → ValidationResult<IReadOnlyList<T>>
     — evaluates every input, no short-circuit; a failure carries every failing Error in input order
+    — the generic overloads throw ArgumentException for a null Result<T> element instead of a NullReferenceException
 
 BCL extension methods  (no reflection)
     string         : ToSnakeCase, ToKebabCase, ToCamelCase, ToPascalCase
@@ -432,8 +433,13 @@ GuardErrorExtensions
     Error?.ToResult<T>(Func<T>)     → Result<T>   (the factory runs only when every guard passed)
 
 Guard contract (GuardClauseExtensions)
-    — returns null on pass and a Validation Error on violation, and never throws; a null input is a violation
-      (ErrorCodes.Validation.Required), including for the length, format, range and collection guards
+    — returns null on pass and a Validation Error on violation, and never throws because of the checked value; a null
+      input is a violation (ErrorCodes.Validation.Required), including for the length, format, range and collection guards.
+      It throws only for mistakes in its own arguments: ArgumentNullException for a null regex pattern or a null Error
+      passed to True/False (a null Error would otherwise make a violation read as a pass), ArgumentException for a
+      malformed pattern
+    — a regex match that exceeds the 250 ms timeout is reported as validation.invalid_format, never thrown as
+      RegexMatchTimeoutException
     — every guard ends with `[CallerArgumentExpression] string? paramName = null`, so nameof is optional
     — messages use CompositeFormat with CultureInfo.InvariantCulture, identical on every server; translate by Error.Code
 
