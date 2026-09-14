@@ -28,21 +28,46 @@ namespace SharedKernel.Configuration.Extensions;
 /// </listheader>
 /// <item>
 /// <term>Data Annotations are enough (the common case)</term>
-/// <description><see cref="AddValidatedOptions{TOptions}(IServiceCollection, IConfigurationSection, string?)"/></description>
+/// <description><see cref="AddValidatedOptions{TOptions}(IServiceCollection, IConfigurationSection, string?, OptionsStrictness)"/></description>
 /// </item>
 /// <item>
 /// <term>…and the options type implements <see cref="ISectionBoundOptions"/></term>
-/// <description><see cref="AddValidatedOptions{TOptions}(IServiceCollection, IConfiguration, string?)"/> — the section path is not named at the call site at all</description>
+/// <description><see cref="AddValidatedOptions{TOptions}(IServiceCollection, IConfiguration, string?, OptionsStrictness)"/> — the section path is not named at the call site at all</description>
 /// </item>
 /// <item>
 /// <term>A rule spans two properties, or Data Annotations reflection is unwanted</term>
-/// <description><see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfigurationSection, bool, string?)"/></description>
+/// <description><see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfigurationSection, bool, string?, OptionsStrictness)"/></description>
 /// </item>
 /// <item>
 /// <term>…and the options type implements <see cref="ISectionBoundOptions"/></term>
-/// <description><see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfiguration, bool, string?)"/></description>
+/// <description><see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfiguration, bool, string?, OptionsStrictness)"/></description>
 /// </item>
 /// </list>
+/// <para>
+/// <b>What fails at startup, and as what.</b> Once the host starts, a misconfigured instance
+/// surfaces from <c>IHost.StartAsync()</c> as one of two exception types:
+/// </para>
+/// <list type="bullet">
+/// <item><description>
+/// <see cref="OptionsValidationException"/> — a Data Annotations attribute, a custom validator,
+/// or <see cref="OptionsStrictness.RequireSection"/> rejected the bound values. Every failure for
+/// the instance is collected into <see cref="OptionsValidationException.Failures"/>.
+/// </description></item>
+/// <item><description>
+/// <see cref="InvalidOperationException"/> — binding itself failed before any validator ran: a
+/// value that cannot be converted to its property type (<c>"Port": "abc"</c> for an
+/// <see cref="int"/>), or an unrecognised key under
+/// <see cref="OptionsStrictness.RejectUnknownKeys"/>.
+/// </description></item>
+/// </list>
+/// <para>
+/// <b>Nested objects are not validated unless you ask.</b> Data Annotations on the properties of
+/// a nested object or of collection items are ignored by default — a <c>[Required]</c> inside a
+/// nested class never fires. Mark the property with <see cref="ValidateObjectMembersAttribute"/>
+/// (or <see cref="ValidateEnumeratedItemsAttribute"/> for a collection). Both the Data Annotations
+/// path and an <see cref="OptionsValidatorAttribute"/>-generated validator honour these
+/// attributes.
+/// </para>
 /// <para>
 /// <b>Trimming and AOT — measured, not assumed.</b> These methods carry
 /// <see cref="RequiresUnreferencedCodeAttribute"/> and <see cref="RequiresDynamicCodeAttribute"/>
@@ -66,8 +91,7 @@ namespace SharedKernel.Configuration.Extensions;
 /// <c>ValidateOnStart()</c> requires a real host. With a bare <see cref="IServiceCollection"/>
 /// and <c>BuildServiceProvider()</c> — a worker with no <c>IHost</c>, or a unit test — nothing
 /// validates at build time; the first read of <c>IOptions&lt;TOptions&gt;.Value</c> throws
-/// <see cref="OptionsValidationException"/> instead. The fail-fast guarantee belongs to
-/// <c>IHost.StartAsync()</c>, not to this method.
+/// instead. The fail-fast guarantee belongs to <c>IHost.StartAsync()</c>, not to this method.
 /// </description></item>
 /// <item><description>
 /// A configuration reload that introduces an invalid value throws from
@@ -99,6 +123,9 @@ public static class OptionsExtensions
         | DynamicallyAccessedMemberTypes.NonPublicProperties
         | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor;
 
+    private const OptionsStrictness AllStrictnessFlags =
+        OptionsStrictness.RequireSection | OptionsStrictness.RejectUnknownKeys;
+
     private const string TrimmingWarning =
         "Configuration binding reads the properties of TOptions reflectively. TOptions' own "
         + "properties and parameterless constructor are preserved via DynamicallyAccessedMembers, "
@@ -126,35 +153,44 @@ public static class OptionsExtensions
     /// or <c>IOptionsSnapshot&lt;TOptions&gt;.Get(name)</c> — never plain
     /// <c>IOptions&lt;TOptions&gt;</c>, which only ever sees the default instance.
     /// </param>
+    /// <param name="strictness">
+    /// Opt-in checks for a misspelled section path or key; <see cref="OptionsStrictness.None"/>
+    /// by default. See <see cref="OptionsStrictness"/> for why each is off unless requested.
+    /// </param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="services"/> or <paramref name="section"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="strictness"/> contains a bit that is not a defined
+    /// <see cref="OptionsStrictness"/> flag.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Registers <see cref="IOptions{TOptions}"/>, <see cref="IOptionsSnapshot{TOptions}"/> and
-    /// <see cref="IOptionsMonitor{TOptions}"/>, and makes a misconfigured application throw
-    /// <see cref="OptionsValidationException"/> from <c>IHost.StartAsync()</c> — see the
-    /// type-level remarks for the two cases where that is not literally true.
+    /// <see cref="IOptionsMonitor{TOptions}"/>, and makes a misconfigured application throw from
+    /// <c>IHost.StartAsync()</c> — see the type-level remarks for which exception and for the
+    /// cases where that is not literally true.
     /// </para>
     /// <para>
     /// Calling this twice for the same <typeparamref name="TOptions"/> and <paramref name="name"/>
     /// registers the Data Annotations validator exactly once, so failures are reported once rather
     /// than duplicated. (The BCL's own <c>ValidateDataAnnotations()</c> uses a plain
     /// <c>AddSingleton</c> and does duplicate them; this method deliberately does not call it.)
-    /// The bind itself is re-applied harmlessly — binding the same section twice produces the same
-    /// values.
+    /// The same holds for the <see cref="OptionsStrictness.RequireSection"/> check. The bind
+    /// itself is re-applied harmlessly — binding the same section twice produces the same values.
     /// </para>
     /// <para>
     /// Composes with
-    /// <see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfigurationSection, bool, string?)"/>:
+    /// <see cref="AddValidatedOptions{TOptions, TValidator}(IServiceCollection, IConfigurationSection, bool, string?, OptionsStrictness)"/>:
     /// calling both for one options type runs Data Annotations <i>and</i> the custom validator,
     /// because validators are registered as a collection rather than as a single winner.
     /// </para>
     /// <example>
     /// <code>
     /// services.AddValidatedOptions&lt;DatabaseOptions&gt;(
-    ///     builder.Configuration.GetSection("SharedKernel:Database"));
+    ///     builder.Configuration.GetSection("SharedKernel:Database"),
+    ///     strictness: OptionsStrictness.RequireSection | OptionsStrictness.RejectUnknownKeys);
     /// </code>
     /// </example>
     /// </remarks>
@@ -164,16 +200,18 @@ public static class OptionsExtensions
         [DynamicallyAccessedMembers(BoundOptionsMembers)] TOptions>(
         this IServiceCollection services,
         IConfigurationSection section,
-        string? name = null)
+        string? name = null,
+        OptionsStrictness strictness = OptionsStrictness.None)
         where TOptions : class
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(section);
+        ThrowIfUndefined(strictness);
 
         string resolvedName = name ?? Microsoft.Extensions.Options.Options.DefaultName;
 
         AddDataAnnotationsValidatorOnce<TOptions>(services, resolvedName);
-        BindAndValidateOnStart<TOptions>(services, section, resolvedName);
+        BindAndValidateOnStart<TOptions>(services, section, resolvedName, strictness);
 
         return services;
     }
@@ -198,9 +236,21 @@ public static class OptionsExtensions
     /// through it read the <i>same</i> section; for two instances fed by different sections, use
     /// the explicit-section overload.
     /// </param>
+    /// <param name="strictness">
+    /// Opt-in checks for a misspelled section path or key; <see cref="OptionsStrictness.None"/>
+    /// by default.
+    /// </param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="strictness"/> contains a bit that is not a defined
+    /// <see cref="OptionsStrictness"/> flag.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="TOptions"/>'s <see cref="ISectionBoundOptions.SectionName"/> is
+    /// <see langword="null"/>, empty, or whitespace. Thrown at registration, not at startup.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -231,15 +281,17 @@ public static class OptionsExtensions
         [DynamicallyAccessedMembers(BoundOptionsMembers)] TOptions>(
         this IServiceCollection services,
         IConfiguration configuration,
-        string? name = null)
+        string? name = null,
+        OptionsStrictness strictness = OptionsStrictness.None)
         where TOptions : class, ISectionBoundOptions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         return services.AddValidatedOptions<TOptions>(
-            configuration.GetSection(TOptions.SectionName),
-            name);
+            configuration.GetSection(DeclaredSectionName<TOptions>()),
+            name,
+            strictness);
     }
 
     /// <summary>
@@ -273,9 +325,17 @@ public static class OptionsExtensions
     /// <typeparamref name="TValidator"/> is registered once per type, not once per name, and so
     /// runs for every named instance — see the type-level remarks.
     /// </param>
+    /// <param name="strictness">
+    /// Opt-in checks for a misspelled section path or key; <see cref="OptionsStrictness.None"/>
+    /// by default.
+    /// </param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="services"/> or <paramref name="section"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="strictness"/> contains a bit that is not a defined
+    /// <see cref="OptionsStrictness"/> flag.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -322,12 +382,14 @@ public static class OptionsExtensions
         this IServiceCollection services,
         IConfigurationSection section,
         bool validateDataAnnotations = false,
-        string? name = null)
+        string? name = null,
+        OptionsStrictness strictness = OptionsStrictness.None)
         where TOptions : class
         where TValidator : class, IValidateOptions<TOptions>
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(section);
+        ThrowIfUndefined(strictness);
 
         string resolvedName = name ?? Microsoft.Extensions.Options.Options.DefaultName;
 
@@ -339,7 +401,7 @@ public static class OptionsExtensions
             AddDataAnnotationsValidatorOnce<TOptions>(services, resolvedName);
         }
 
-        BindAndValidateOnStart<TOptions>(services, section, resolvedName);
+        BindAndValidateOnStart<TOptions>(services, section, resolvedName, strictness);
 
         return services;
     }
@@ -369,9 +431,21 @@ public static class OptionsExtensions
     /// <param name="name">
     /// The named options instance, or <see langword="null"/> for the default one.
     /// </param>
+    /// <param name="strictness">
+    /// Opt-in checks for a misspelled section path or key; <see cref="OptionsStrictness.None"/>
+    /// by default.
+    /// </param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="strictness"/> contains a bit that is not a defined
+    /// <see cref="OptionsStrictness"/> flag.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="TOptions"/>'s <see cref="ISectionBoundOptions.SectionName"/> is
+    /// <see langword="null"/>, empty, or whitespace. Thrown at registration, not at startup.
     /// </exception>
     /// <remarks>
     /// The combination this overload exists for — a compile-enforced section path and a
@@ -387,7 +461,8 @@ public static class OptionsExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         bool validateDataAnnotations = false,
-        string? name = null)
+        string? name = null,
+        OptionsStrictness strictness = OptionsStrictness.None)
         where TOptions : class, ISectionBoundOptions
         where TValidator : class, IValidateOptions<TOptions>
     {
@@ -395,13 +470,51 @@ public static class OptionsExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         return services.AddValidatedOptions<TOptions, TValidator>(
-            configuration.GetSection(TOptions.SectionName),
+            configuration.GetSection(DeclaredSectionName<TOptions>()),
             validateDataAnnotations,
-            name);
+            name,
+            strictness);
     }
 
     /// <summary>
-    /// Binds the section and arms <c>ValidateOnStart</c> for one named options instance.
+    /// Reads <see cref="ISectionBoundOptions.SectionName"/>, rejecting a value that cannot name a
+    /// section.
+    /// </summary>
+    /// <remarks>
+    /// Without this, a <see langword="null"/> name surfaces as an <see cref="ArgumentNullException"/>
+    /// for a <c>path</c> parameter the caller never passed, and an empty name binds nothing and
+    /// starts the host on defaults — both measured.
+    /// </remarks>
+    private static string DeclaredSectionName<TOptions>()
+        where TOptions : ISectionBoundOptions
+    {
+        string? sectionName = TOptions.SectionName;
+
+        if (string.IsNullOrWhiteSpace(sectionName))
+        {
+            string actual = sectionName is null ? "null" : $"\"{sectionName}\"";
+            throw new InvalidOperationException(
+                $"{typeof(TOptions).FullName}.{nameof(ISectionBoundOptions.SectionName)} returned "
+                + $"{actual}. It must name a configuration section, for example \"MyService:Database\".");
+        }
+
+        return sectionName;
+    }
+
+    private static void ThrowIfUndefined(OptionsStrictness strictness)
+    {
+        if ((strictness & ~AllStrictnessFlags) != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(strictness),
+                strictness,
+                $"Contains a value that is not a defined {nameof(OptionsStrictness)} flag.");
+        }
+    }
+
+    /// <summary>
+    /// Binds the section, applies the requested strictness, and arms <c>ValidateOnStart</c> for
+    /// one named options instance.
     /// </summary>
     [RequiresUnreferencedCode(TrimmingWarning)]
     [RequiresDynamicCode(AotWarning)]
@@ -409,12 +522,22 @@ public static class OptionsExtensions
         [DynamicallyAccessedMembers(BoundOptionsMembers)] TOptions>(
         IServiceCollection services,
         IConfigurationSection section,
-        string resolvedName)
+        string resolvedName,
+        OptionsStrictness strictness)
         where TOptions : class
-        => services
+    {
+        if ((strictness & OptionsStrictness.RequireSection) != 0)
+        {
+            AddSectionExistsValidatorOnce<TOptions>(services, section, resolvedName);
+        }
+
+        bool rejectUnknownKeys = (strictness & OptionsStrictness.RejectUnknownKeys) != 0;
+
+        services
             .AddOptions<TOptions>(resolvedName)
-            .Bind(section)
+            .Bind(section, binder => binder.ErrorOnUnknownConfiguration = rejectUnknownKeys)
             .ValidateOnStart();
+    }
 
     /// <summary>
     /// Registers the BCL's Data Annotations validator for one named options instance, unless an
@@ -459,5 +582,65 @@ public static class OptionsExtensions
         services.Add(
             ServiceDescriptor.Singleton<IValidateOptions<TOptions>>(
                 new DataAnnotationValidateOptions<TOptions>(resolvedName)));
+    }
+
+    /// <summary>
+    /// Registers the <see cref="OptionsStrictness.RequireSection"/> check for one named instance
+    /// and section path, unless the same check is already registered — the same per-name,
+    /// pre-built-instance technique as <see cref="AddDataAnnotationsValidatorOnce{TOptions}"/>,
+    /// for the same reason.
+    /// </summary>
+    private static void AddSectionExistsValidatorOnce<TOptions>(
+        IServiceCollection services,
+        IConfigurationSection section,
+        string resolvedName)
+        where TOptions : class
+    {
+        foreach (ServiceDescriptor descriptor in services)
+        {
+            if (descriptor.ServiceType == typeof(IValidateOptions<TOptions>)
+                && descriptor.ImplementationInstance
+                    is SectionExistsValidateOptions<TOptions> alreadyRegistered
+                && string.Equals(alreadyRegistered.Name, resolvedName, StringComparison.Ordinal)
+                && string.Equals(alreadyRegistered.Section.Path, section.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        services.Add(
+            ServiceDescriptor.Singleton<IValidateOptions<TOptions>>(
+                new SectionExistsValidateOptions<TOptions>(resolvedName, section)));
+    }
+
+    /// <summary>
+    /// Fails validation for one named instance when its section does not exist. Reads the section
+    /// live on every validation, so a reload that removes the section is caught too.
+    /// </summary>
+    private sealed class SectionExistsValidateOptions<TOptions>(
+        string name,
+        IConfigurationSection section)
+        : IValidateOptions<TOptions>
+        where TOptions : class
+    {
+        public string Name { get; } = name;
+
+        public IConfigurationSection Section { get; } = section;
+
+        public ValidateOptionsResult Validate(string? name, TOptions options)
+        {
+            if (!string.Equals(name ?? Microsoft.Extensions.Options.Options.DefaultName, Name, StringComparison.Ordinal))
+            {
+                return ValidateOptionsResult.Skip;
+            }
+
+            return Section.Exists()
+                ? ValidateOptionsResult.Success
+                : ValidateOptionsResult.Fail(
+                    $"Configuration section '{Section.Path}' does not exist, and "
+                    + $"{typeof(TOptions).Name} was registered with "
+                    + $"{nameof(OptionsStrictness)}.{nameof(OptionsStrictness.RequireSection)}. "
+                    + "Check the section path for a typo; an empty object or a null value also counts as missing.");
+        }
     }
 }

@@ -1,0 +1,12 @@
+#nullable enable
+SharedKernel.Configuration.Extensions.OptionsExtensions
+SharedKernel.Configuration.ISectionBoundOptions
+SharedKernel.Configuration.ISectionBoundOptions.SectionName.get -> string!
+SharedKernel.Configuration.OptionsStrictness
+SharedKernel.Configuration.OptionsStrictness.None = 0 -> SharedKernel.Configuration.OptionsStrictness
+SharedKernel.Configuration.OptionsStrictness.RejectUnknownKeys = 2 -> SharedKernel.Configuration.OptionsStrictness
+SharedKernel.Configuration.OptionsStrictness.RequireSection = 1 -> SharedKernel.Configuration.OptionsStrictness
+static SharedKernel.Configuration.Extensions.OptionsExtensions.AddValidatedOptions<TOptions, TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, bool validateDataAnnotations = false, string? name = null, SharedKernel.Configuration.OptionsStrictness strictness = SharedKernel.Configuration.OptionsStrictness.None) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Configuration.Extensions.OptionsExtensions.AddValidatedOptions<TOptions, TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, bool validateDataAnnotations = false, string? name = null, SharedKernel.Configuration.OptionsStrictness strictness = SharedKernel.Configuration.OptionsStrictness.None) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Configuration.Extensions.OptionsExtensions.AddValidatedOptions<TOptions>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string? name = null, SharedKernel.Configuration.OptionsStrictness strictness = SharedKernel.Configuration.OptionsStrictness.None) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Configuration.Extensions.OptionsExtensions.AddValidatedOptions<TOptions>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string? name = null, SharedKernel.Configuration.OptionsStrictness strictness = SharedKernel.Configuration.OptionsStrictness.None) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

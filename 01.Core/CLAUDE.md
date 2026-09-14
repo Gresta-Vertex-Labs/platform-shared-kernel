@@ -374,18 +374,34 @@ ISectionBoundOptions                                          (P-530/C-130, ship
       a const field cannot satisfy a static abstract property. Reached through a generic type
       parameter, so it compiles to a direct static call: no reflection, nothing for a trimmer to miss.
 
-AddValidatedOptions<TOptions>(IConfigurationSection section, string? name = null)
+[Flags] OptionsStrictness { None = 0, RequireSection = 1, RejectUnknownKeys = 2 }   (P-539, shipped)
+    → trailing `strictness` parameter on all four overloads; both flags OFF by default, deliberately:
+      RequireSection rejects a fully-defaulted type with no section, RejectUnknownKeys crashes old pods
+      when next-release config is live mid-rollout. Undefined bits → ArgumentOutOfRangeException.
+      RequireSection: a pre-built SectionExistsValidateOptions<T> instance, de-duplicated per
+      (name, section path) exactly like the Data Annotations validator, reads IConfigurationSection.Exists()
+      live on every validation → OptionsValidationException. `{}` and null count as missing.
+      RejectUnknownKeys: BinderOptions.ErrorOnUnknownConfiguration → InvalidOperationException from the
+      binder (NOT OptionsValidationException), nested objects included, dictionary keys accepted.
+
+AddValidatedOptions<TOptions>(IConfigurationSection section, string? name = null,
+                              OptionsStrictness strictness = None)
     → registers IOptions<TOptions>, IOptionsSnapshot<TOptions>, IOptionsMonitor<TOptions>;
       binds the section and applies DataAnnotations validation, armed with .ValidateOnStart()
 
-AddValidatedOptions<TOptions>(IConfiguration configuration, string? name = null)
+AddValidatedOptions<TOptions>(IConfiguration configuration, string? name = null,
+                              OptionsStrictness strictness = None)
     where TOptions : class, ISectionBoundOptions                (P-530/C-130, shipped)
     → identical, except the section comes from TOptions.SectionName. Prefer this one: it is the
-      only form in which a caller cannot pass the wrong section, because there is no section argument
+      only form in which a caller cannot pass the wrong section, because there is no section argument.
+      A null/empty/whitespace SectionName throws InvalidOperationException naming the type AT
+      REGISTRATION (P-539) — before, null surfaced as ArgumentNullException("path") and empty bound
+      nothing and started the host on defaults
 
 AddValidatedOptions<TOptions, TValidator>(IConfigurationSection section,
                                           bool validateDataAnnotations = false,
-                                          string? name = null)
+                                          string? name = null,
+                                          OptionsStrictness strictness = None)
     where TValidator : class, IValidateOptions<TOptions>
     → binds the section and registers TValidator via
       TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<TOptions>, TValidator>()) —
@@ -398,10 +414,18 @@ AddValidatedOptions<TOptions, TValidator>(IConfigurationSection section,
 
 AddValidatedOptions<TOptions, TValidator>(IConfiguration configuration,
                                           bool validateDataAnnotations = false,
-                                          string? name = null)
+                                          string? name = null,
+                                          OptionsStrictness strictness = None)
     where TOptions : class, ISectionBoundOptions                (P-530/C-130, shipped)
     where TValidator : class, IValidateOptions<TOptions>
     → the same, with the section path taken from TOptions.SectionName
+
+Startup failure taxonomy (P-539, pinned by tests): OptionsValidationException = an attribute, a validator
+or RequireSection rejected the values; InvalidOperationException = binding failed first (unconvertible
+value, or an unknown key under RejectUnknownKeys). Nested attributes run ONLY under
+[ValidateObjectMembers]/[ValidateEnumeratedItems] — both the DataAnnotations path and a generated
+validator honour them. Public API tracked (PublicApiAnalyzers, PublicAPI.Unshipped.txt, 11 lines).
+Return type stays IServiceCollection by user ruling — never OptionsBuilder<T>.
 ```
 
 > **Corrected P-530:** this block previously listed a `[ValidateOptions]` marker attribute. No such

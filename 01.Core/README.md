@@ -665,122 +665,37 @@ The BCL already covers batching (`Enumerable.Chunk`), Unix time (`DateTimeOffset
 
 ## SharedKernel.Configuration — Validated Options
 
-### AddValidatedOptions Startup-Validation Pattern
-
-`AddValidatedOptions<TOptions>` binds an options class to a configuration section and validates it at host startup using Data Annotations. A misconfigured application fails at `IHost.StartAsync()` — not silently at first access.
-
-#### Step 1 — Define the Options Class
+Binds an options class to configuration and makes `IHost.StartAsync()` throw when it is invalid, so a
+misconfigured service fails its deployment instead of its first request. The full reference, with every
+measured trap, is the package's own [README](SharedKernel.Configuration/README.md). The essentials:
 
 ```csharp
-using System.ComponentModel.DataAnnotations;
-
-public sealed class EmailOptions
+public sealed class EmailOptions : ISectionBoundOptions
 {
-    [Required]
-    public string SmtpHost { get; init; } = string.Empty;
+    public static string SectionName => "Email";
 
-    [Range(1, 65535)]
-    public int SmtpPort { get; init; } = 587;
-
-    [Required, MaxLength(100)]
-    public string SenderName { get; init; } = string.Empty;
-
-    [Required, EmailAddress]
-    public string SenderEmail { get; init; } = string.Empty;
+    [Required]         public string SmtpHost { get; set; } = string.Empty;
+    [Range(1, 65535)]  public int    SmtpPort { get; set; } = 587;
 }
-```
 
-#### Step 2 — Add the Configuration Section
-
-```json
-{
-  "Email": {
-    "SmtpHost": "smtp.example.com",
-    "SmtpPort": 587,
-    "SenderName": "My App",
-    "SenderEmail": "noreply@example.com"
-  }
-}
-```
-
-#### Step 3 — Register at Startup
-
-```csharp
-// Program.cs
 builder.Services.AddValidatedOptions<EmailOptions>(
-    builder.Configuration.GetSection("Email"));
+    builder.Configuration,
+    strictness: OptionsStrictness.RequireSection | OptionsStrictness.RejectUnknownKeys);
 ```
 
-This single call registers `IOptions<EmailOptions>`, `IOptionsSnapshot<EmailOptions>`, and `IOptionsMonitor<EmailOptions>`, and enables eager startup validation.
+| Need | Use |
+| --- | --- |
+| Per-property rules | Data Annotations on the options class (the default overloads) |
+| A rule spanning two properties, or no validation reflection | `AddValidatedOptions<TOptions, TValidator>` with a hand-written or `[OptionsValidator]`-generated `IValidateOptions<TOptions>`; `validateDataAnnotations: true` adds the attributes back for a hand-written one |
+| The section path declared once | Implement `ISectionBoundOptions` and pass the root `IConfiguration`; a null or blank `SectionName` throws at registration |
+| A misspelled section path or key to fail startup | `OptionsStrictness.RequireSection` / `.RejectUnknownKeys` — both opt-in, because each rejects configuration that is sometimes legitimate |
+| Nested objects or collection items validated | `[ValidateObjectMembers]` / `[ValidateEnumeratedItems]` on the property — without them, nested attributes never run |
+| Two instances of one options type | The trailing `name` argument; consume through `IOptionsMonitor<T>.Get(name)` |
 
-#### Step 4 — Inject and Use
-
-```csharp
-// Inject IOptions<T> for singleton-lifetime services (value is fixed at startup)
-public sealed class EmailService(IOptions<EmailOptions> options)
-{
-    private readonly EmailOptions _opts = options.Value;
-}
-
-// Inject IOptionsMonitor<T> for live-reload support (e.g., Kubernetes ConfigMap updates)
-public sealed class EmailService(IOptionsMonitor<EmailOptions> monitor)
-{
-    public Task SendAsync(string to, string subject, string body, CancellationToken ct)
-    {
-        var opts = monitor.CurrentValue; // always the latest valid configuration
-        // ...
-    }
-}
-```
-
-#### Startup failure when configuration is invalid
-
-If any Data Annotations constraint is violated, `IHost.StartAsync()` throws `OptionsValidationException` immediately:
-
-```
-Microsoft.Extensions.Options.OptionsValidationException:
-  DataAnnotation validation failed for 'EmailOptions' members:
-  'SenderEmail' with the error: 'The SenderEmail field is not a valid e-mail address.'.
-```
-
-### Source-Generated Options Validation (opt-in, AOT-clean)
-
-`AddValidatedOptions<TOptions>` (above) remains the platform **default** — every existing consumer
-already depends on its Data Annotations + reflection-based validation, and this section changes
-nothing about it.
-
-An additive **`AddValidatedOptions<TOptions, TValidator>(IConfiguration section)`** overload is also
-available, where `TValidator : class, IValidateOptions<TOptions>`. It binds the section with **no**
-`.ValidateDataAnnotations()` call — the entire point is avoiding that reflection-based validator —
-registers `TValidator` via `TryAddSingleton<IValidateOptions<TOptions>, TValidator>()`, and still calls
-`.ValidateOnStart()`, so a misconfigured application fails at `IHost.StartAsync()` exactly like the
-Data Annotations path.
-
-`TValidator` is typically a `partial class` annotated with the in-box BCL `[OptionsValidator]` source
-generator (part of the base `Microsoft.Extensions.Options` package, no extra NuGet reference needed).
-The generator reads the same Data Annotations attributes on `TOptions` and emits the `Validate` method
-body at compile time — zero reflection at validation time. Any other hand-written
-`IValidateOptions<TOptions>` works too; this overload only depends on the resulting interface, never on
-the generator itself.
-
-```csharp
-using Microsoft.Extensions.Options;
-
-// Same EmailOptions class as Step 1 above — no changes needed.
-
-[OptionsValidator]
-public partial class EmailOptionsValidator : IValidateOptions<EmailOptions>
-{
-}
-
-// Program.cs — note the second generic argument, TValidator.
-builder.Services.AddValidatedOptions<EmailOptions, EmailOptionsValidator>(
-    builder.Configuration.GetSection("Email"));
-```
-
-Choose this path for a strict AOT/trimming posture, or simply to avoid startup-time reflection; keep
-using the Data Annotations overload otherwise. Both call `.ValidateOnStart()` and fail identically at
-`IHost.StartAsync()`.
+Validators register with `TryAddEnumerable` (never `TryAddSingleton`, which silently dropped a second
+validator before P-530), and the Data Annotations and `RequireSection` validators are de-duplicated per
+name, so a repeated call never duplicates a failure message. Binding is reflective, so every overload
+declares `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`; this package is not trim- or AOT-safe.
 
 ---
 
