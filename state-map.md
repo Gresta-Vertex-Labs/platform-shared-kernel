@@ -2274,7 +2274,7 @@ Move every existing test beside the code it covers, then lock the base's isolati
 
 ### P-538 — Core: `SharedKernel.Core` Pre-First-Publish Hardening Pass (BREAKING API + BEHAVIOUR CHANGES)
 
-**Status:** `◐` Dispatched — 11/12 tasks `●`; only the publish itself (`P-60`) remains `○`
+**Status:** `◐` Dispatched — 14/15 tasks `●`; only the publish itself (`P-60`) remains `○`
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 01.Core
 **Depends on:** P-529 (`SharedKernel.Primitives` must be on the feed first)
