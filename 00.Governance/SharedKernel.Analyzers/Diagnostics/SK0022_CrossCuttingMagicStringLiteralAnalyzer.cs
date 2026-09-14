@@ -8,8 +8,9 @@ namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
 /// SK0022 — bans a raw string-literal token at any of four recognized cross-cutting call-site
-/// shapes: an HTTP header indexer/<c>.Add</c>/<c>.TryAddWithoutValidation</c> call,
-/// <c>Activity.SetBaggage</c>/<c>.SetTag</c>, <c>IConfiguration.GetSection</c>, and a
+/// shapes: an HTTP header indexer/<c>.Add</c>/<c>.Append</c>/<c>.TryAddWithoutValidation</c> call,
+/// <c>Activity.SetBaggage</c>/<c>.SetTag</c>/<c>.AddBaggage</c>/<c>.AddTag</c>,
+/// <c>IConfiguration.GetSection</c>/<c>.GetRequiredSection</c>, and a
 /// <c>ClaimsPrincipal</c>/<c>Claim</c> type comparison.
 /// </summary>
 /// <remarks>
@@ -36,6 +37,17 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// the element-access shape) to resolve the receiver/method/indexer to its EXACT containing type —
 /// the same SK0020 discipline: a syntax-only simple-name match on <c>SetTag</c>/<c>GetSection</c>/
 /// <c>FindFirst</c>/etc. would collide with unrelated types sharing those common method names.
+/// </para>
+/// <para>
+/// <strong>Receiver type, not declaring type.</strong> The header and configuration shapes are
+/// matched on the type of the expression the method is called on, never on the type that declares
+/// the method. On the real framework types the two differ: <c>IHeaderDictionary.Add</c> is inherited
+/// from <c>IDictionary&lt;string, StringValues&gt;</c>, <c>headers.Append</c> is an extension method on
+/// <c>HeaderDictionaryExtensions</c>, and <c>ConfigurationManager.GetSection</c> (what
+/// <c>WebApplicationBuilder.Configuration</c> returns) is declared on the class. A declaring-type match
+/// missed all three while passing its tests, because the in-compilation stubs declared the members
+/// directly on the interfaces. Null-conditional calls (<c>Activity.Current?.SetTag(...)</c>) are
+/// handled by resolving the receiver of the enclosing conditional access.
 /// </para>
 /// <para>
 /// <strong>No suppression namespace.</strong> SK0022 fires globally, like SK0014/SK0017–19 — not
@@ -132,7 +144,7 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
     {
         var invocation = (InvocationExpressionSyntax)context.Node;
 
-        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        if (!TryGetReceiver(invocation, out var receiver))
             return;
 
         var symbolInfo = context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken);
@@ -142,28 +154,32 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
         var containingTypeFullName = GetFullTypeName(methodSymbol.ContainingType);
         var methodName = methodSymbol.Name;
 
-        // HTTP header .Add(...) / .TryAddWithoutValidation(...)
+        // HTTP header .Add(...) / .Append(...) / .TryAddWithoutValidation(...), matched on the
+        // receiver: the real IHeaderDictionary inherits Add and gets Append as an extension method.
+        if (methodName is "Add" or "Append" or "TryAddWithoutValidation" && IsHttpHeaderReceiver(context, receiver))
+        {
+            ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
+            return;
+        }
+
+        // Activity.SetBaggage / .SetTag / .AddBaggage / .AddTag
         if (
-            (methodName is "Add" or "TryAddWithoutValidation")
-            && containingTypeFullName is HttpHeadersTypeName or HeaderDictionaryTypeName
+            methodName is "SetBaggage" or "SetTag" or "AddBaggage" or "AddTag"
+            && containingTypeFullName == ActivityTypeName
         )
         {
             ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
             return;
         }
 
-        // Activity.SetBaggage / .SetTag
-        if (methodName is "SetBaggage" or "SetTag" && containingTypeFullName == ActivityTypeName)
-        {
-            ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
-            return;
-        }
-
-        // IConfiguration.GetSection (interface method, or its ConfigurationExtensions
-        // static-extension-method overload)
+        // IConfiguration.GetSection / .GetRequiredSection, on any receiver that is or implements
+        // IConfiguration (ConfigurationManager, IConfigurationRoot, IConfigurationSection, ...)
         if (
-            methodName == "GetSection"
-            && containingTypeFullName is ConfigurationTypeName or ConfigurationExtensionsTypeName
+            methodName is "GetSection" or "GetRequiredSection"
+            && (
+                containingTypeFullName is ConfigurationTypeName or ConfigurationExtensionsTypeName
+                || IsConfigurationReceiver(context, receiver)
+            )
         )
         {
             ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
@@ -188,7 +204,7 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
         if (
             methodName == "Equals"
             && invocation.ArgumentList.Arguments.Count == 1
-            && IsClaimTypePropertyAccess(context, memberAccess.Expression)
+            && IsClaimTypePropertyAccess(context, receiver)
         )
         {
             ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
@@ -225,15 +241,68 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
     // Shared helpers
     // -------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Resolves the expression a method is invoked on: <c>x</c> in <c>x.M()</c>, and also <c>x</c> in
+    /// <c>x?.M()</c>, where the invocation is a member binding inside a conditional access.
+    /// </summary>
+    private static bool TryGetReceiver(InvocationExpressionSyntax invocation, out ExpressionSyntax receiver)
+    {
+        switch (invocation.Expression)
+        {
+            case MemberAccessExpressionSyntax memberAccess:
+                receiver = memberAccess.Expression;
+                return true;
+
+            case MemberBindingExpressionSyntax:
+                for (var node = invocation.Parent; node is not null; node = node.Parent)
+                {
+                    if (node is ConditionalAccessExpressionSyntax conditional)
+                    {
+                        receiver = conditional.Expression;
+                        return true;
+                    }
+                }
+                break;
+        }
+
+        receiver = null!;
+        return false;
+    }
+
+    private static bool IsHttpHeaderReceiver(SyntaxNodeAnalysisContext context, ExpressionSyntax receiver) =>
+        context.SemanticModel.GetTypeInfo(receiver, context.CancellationToken).Type is { } type
+        && IsHttpHeaderReceiverType(type);
+
+    private static bool IsConfigurationReceiver(SyntaxNodeAnalysisContext context, ExpressionSyntax receiver)
+    {
+        if (context.SemanticModel.GetTypeInfo(receiver, context.CancellationToken).Type is not { } type)
+            return false;
+
+        if (GetFullTypeName(type) == ConfigurationTypeName)
+            return true;
+
+        foreach (var iface in type.AllInterfaces)
+        {
+            if (GetFullTypeName(iface) == ConfigurationTypeName)
+                return true;
+        }
+
+        return false;
+    }
+
     private static bool IsClaimTypePropertyAccess(SyntaxNodeAnalysisContext context, ExpressionSyntax expression)
     {
-        if (expression is not MemberAccessExpressionSyntax memberAccess)
+        SimpleNameSyntax? name = expression switch
+        {
+            MemberAccessExpressionSyntax memberAccess => memberAccess.Name,
+            MemberBindingExpressionSyntax memberBinding => memberBinding.Name,
+            _ => null,
+        };
+
+        if (name?.Identifier.Text != "Type")
             return false;
 
-        if (memberAccess.Name.Identifier.Text != "Type")
-            return false;
-
-        var symbolInfo = context.SemanticModel.GetSymbolInfo(memberAccess, context.CancellationToken);
+        var symbolInfo = context.SemanticModel.GetSymbolInfo(expression, context.CancellationToken);
         return symbolInfo.Symbol is IPropertySymbol { ContainingType: { } containingType }
             && GetFullTypeName(containingType) == ClaimTypeName;
     }

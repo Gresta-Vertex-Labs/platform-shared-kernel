@@ -18,7 +18,7 @@ namespace SharedKernel.Analyzers.Tests;
 /// <para>
 /// Fixture stubs are in-compilation stand-ins for the real <c>Temporalio.Workflows.WorkflowAttribute</c>,
 /// <c>Temporalio.Activities.ActivityAttribute</c>, <c>SharedKernel.Workflows.Temporal.Authoring.WorkflowBase</c>/
-/// <c>ActivityBase</c>, <c>SharedKernel.Primitives.IClock</c>, and
+/// <c>ActivityBase</c>, <c>SharedKernel.Primitives.Clocks.IClock</c>, and
 /// <c>Microsoft.Extensions.Logging.ILogger</c>/<c>ILogger&lt;T&gt;</c> types (none of these packages is
 /// referenced by this test project) — the same in-compilation-stub technique already established by
 /// SK0013/SK0020/SK0021/SK0026. Real BCL types (<c>System.DateTime</c>, <c>System.DateTimeOffset</c>,
@@ -55,14 +55,6 @@ public class SK0028_NonDeterministicApiUsageInsideWorkflowAnalyzerTests
             }
         }
 
-        namespace SharedKernel.Primitives
-        {
-            public interface IClock
-            {
-                System.DateTimeOffset UtcNow { get; }
-            }
-        }
-
         namespace Microsoft.Extensions.Logging
         {
             public interface ILogger
@@ -76,11 +68,22 @@ public class SK0028_NonDeterministicApiUsageInsideWorkflowAnalyzerTests
 
         """;
 
+    private const string ClockStub = """
+        namespace SharedKernel.Primitives.Clocks
+        {
+            public interface IClock
+            {
+                System.DateTimeOffset UtcNow { get; }
+            }
+        }
+
+        """;
+
     private static CSharpAnalyzerTest<NonDeterministicApiUsageInsideWorkflowAnalyzer, DefaultVerifier> CreateTest(
         string source) =>
         new()
         {
-            TestCode = Stubs + source,
+            TestCode = Stubs + ClockStub + source,
         };
 
     // ---------------------------------------------------------------------------
@@ -385,13 +388,43 @@ public class SK0028_NonDeterministicApiUsageInsideWorkflowAnalyzerTests
             {
                 public class OrderWorkflow : SharedKernel.Workflows.Temporal.Authoring.WorkflowBase
                 {
-                    public OrderWorkflow({|SK0028:SharedKernel.Primitives.IClock|} clock)
+                    public OrderWorkflow({|SK0028:SharedKernel.Primitives.Clocks.IClock|} clock)
                     {
                     }
                 }
             }
             """
         );
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// Fire path against the <b>real</b> <c>IClock</c> from <c>SharedKernel.Primitives</c>, with no
+    /// in-compilation stub. The stub-based test above can only prove the analyzer matches whatever
+    /// name the stub declares; this one proves that name is the shipped interface's. It exists
+    /// because the analyzer once matched <c>SharedKernel.Primitives.IClock</c> while the real type
+    /// lives in <c>SharedKernel.Primitives.Clocks</c>, and every stub-based test still passed.
+    /// </summary>
+    [Fact]
+    public async Task FirePath_CtorInjectedRealIClock_ReportsSk0028()
+    {
+        var test = new CSharpAnalyzerTest<NonDeterministicApiUsageInsideWorkflowAnalyzer, DefaultVerifier>
+        {
+            TestCode = Stubs + """
+                namespace Fixture.Workflows
+                {
+                    using SharedKernel.Primitives.Clocks;
+
+                    public class OrderWorkflow : SharedKernel.Workflows.Temporal.Authoring.WorkflowBase
+                    {
+                        public OrderWorkflow({|SK0028:IClock|} clock)
+                        {
+                        }
+                    }
+                }
+                """,
+        };
+        test.TestState.AdditionalReferences.Add(typeof(SharedKernel.Primitives.Clocks.IClock).Assembly);
         await test.RunAsync();
     }
 
@@ -459,7 +492,7 @@ public class SK0028_NonDeterministicApiUsageInsideWorkflowAnalyzerTests
                 {
                     public SampleActivity(
                         Microsoft.Extensions.Logging.ILogger<SampleActivity> logger,
-                        SharedKernel.Primitives.IClock clock)
+                        SharedKernel.Primitives.Clocks.IClock clock)
                     {
                     }
 
@@ -589,7 +622,7 @@ public class SK0028_NonDeterministicApiUsageInsideWorkflowAnalyzerTests
             {
                 public class OrdinaryService
                 {
-                    public OrdinaryService(Microsoft.Extensions.Logging.ILogger<OrdinaryService> logger, SharedKernel.Primitives.IClock clock)
+                    public OrdinaryService(Microsoft.Extensions.Logging.ILogger<OrdinaryService> logger, SharedKernel.Primitives.Clocks.IClock clock)
                     {
                     }
 

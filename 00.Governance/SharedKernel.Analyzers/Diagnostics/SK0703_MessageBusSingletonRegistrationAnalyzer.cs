@@ -8,8 +8,8 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0703 — Fires when <c>AddSingleton</c> is called with a type argument whose simple name
-/// starts with <c>"IMessageBus"</c> or <c>"IEventPublisher"</c>.
+/// SK0703 — Fires when <c>AddSingleton</c> is called with a type argument whose simple name is
+/// exactly <c>"IMessageBus"</c> or <c>"IEventPublisher"</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,8 +20,10 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </para>
 /// <para>
 /// This is a <strong>syntax-only</strong> check — no <see cref="SemanticModel"/> is required.
-/// The simple name prefix <c>"IMessageBus"</c> and <c>"IEventPublisher"</c> are unique within
-/// the SharedKernel SDK, making semantic resolution unnecessary and keeping analysis cost minimal.
+/// The match is on the <em>exact</em> simple names <c>"IMessageBus"</c> and <c>"IEventPublisher"</c>,
+/// never a prefix: sibling contracts that share the prefix are legitimately singletons.
+/// <c>IMessageBusProbe</c> is the concrete case: <c>MessagingBusBuilder</c> itself registers it as a
+/// singleton, and a prefix match flagged a consumer doing the same.
 /// </para>
 /// <para>
 /// <b>Covered forms:</b>
@@ -81,15 +83,15 @@ public sealed class MessageBusSingletonRegistrationAnalyzer : AnalyzerBase
         if (genericName is null)
             return;
 
-        // Check every type argument — SK0703 fires if any starts with the forbidden prefixes
+        // Check every type argument — SK0703 fires if any is exactly one of the scoped contracts
         foreach (var typeArg in genericName.TypeArgumentList.Arguments)
         {
             var simpleName = ExtractSimpleName(typeArg);
             if (simpleName is null)
                 continue;
 
-            if (simpleName.StartsWith("IMessageBus", StringComparison.Ordinal) ||
-                simpleName.StartsWith("IEventPublisher", StringComparison.Ordinal))
+            if (string.Equals(simpleName, "IMessageBus", StringComparison.Ordinal) ||
+                string.Equals(simpleName, "IEventPublisher", StringComparison.Ordinal))
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(Rule, invocation.GetLocation(), simpleName)

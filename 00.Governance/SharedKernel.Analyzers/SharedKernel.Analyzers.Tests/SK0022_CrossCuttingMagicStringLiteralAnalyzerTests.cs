@@ -38,17 +38,38 @@ namespace SharedKernel.Analyzers.Tests;
 public class SK0022_CrossCuttingMagicStringLiteralAnalyzerTests
 {
     /// <summary>
-    /// Minimal in-compilation stub of <c>Microsoft.AspNetCore.Http.IHeaderDictionary</c> — an
-    /// ASP.NET Core type unavailable to a plain classlib compilation without the web SDK.
+    /// In-compilation stub of <c>Microsoft.AspNetCore.Http.IHeaderDictionary</c>, an ASP.NET Core
+    /// type unavailable to a plain classlib compilation without the web SDK.
     /// </summary>
+    /// <remarks>
+    /// The stub reproduces the <b>real</b> member layout, not a convenient one: the interface
+    /// declares only its indexer and inherits <c>Add</c> from <c>IDictionary&lt;string, StringValues&gt;</c>,
+    /// and <c>Append</c> is an extension method on a separate static class. An earlier stub declared
+    /// <c>Add</c> directly on the interface, so a test passed while the analyzer missed every real
+    /// <c>headers.Add("X", value)</c> call.
+    /// </remarks>
     private const string HeaderDictionaryStub = """
+        namespace Microsoft.Extensions.Primitives
+        {
+            public readonly struct StringValues
+            {
+                public static implicit operator StringValues(string value) => default;
+            }
+        }
+
         namespace Microsoft.AspNetCore.Http
         {
-            public interface IHeaderDictionary
-            {
-                string this[string key] { get; set; }
+            using System.Collections.Generic;
+            using Microsoft.Extensions.Primitives;
 
-                void Add(string key, string value);
+            public interface IHeaderDictionary : IDictionary<string, StringValues>
+            {
+                new StringValues this[string key] { get; set; }
+            }
+
+            public static class HeaderDictionaryExtensions
+            {
+                public static void Append(this IHeaderDictionary headers, string key, StringValues value) { }
             }
         }
         """;
@@ -67,6 +88,23 @@ public class SK0022_CrossCuttingMagicStringLiteralAnalyzerTests
             public interface IConfiguration
             {
                 IConfigurationSection GetSection(string key);
+            }
+
+            public interface IConfigurationRoot : IConfiguration
+            {
+            }
+
+            // Mirrors the real type behind WebApplicationBuilder.Configuration: GetSection is declared
+            // on the class itself, so a declaring-type match never saw it.
+            public sealed class ConfigurationManager : IConfigurationRoot
+            {
+                public IConfigurationSection GetSection(string key) => null!;
+            }
+
+            public static class ConfigurationExtensions
+            {
+                public static IConfigurationSection GetRequiredSection(this IConfiguration configuration, string key) =>
+                    null!;
             }
         }
         """;
@@ -486,6 +524,175 @@ public class SK0022_CrossCuttingMagicStringLiteralAnalyzerTests
 
                     public bool HasTenant(ClaimsPrincipal principal, string tenantId) =>
                         principal.HasClaim(TenantClaimTypes.TenantId, tenantId);
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    // ---------------------------------------------------------------------------
+    // Shapes that match only on the receiver type, and null-conditional calls
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FirePath_HeaderDictionaryAppend_ReportsSk0022()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.AspNetCore.Http;
+
+            namespace Infrastructure.Middleware
+            {
+                public class CorrelationMiddleware
+                {
+                    public void Apply(IHeaderDictionary headers, string correlationId)
+                    {
+                        headers.Append({|SK0022:"X-Correlation-Id"|}, correlationId);
+                    }
+                }
+            }
+            """,
+            HeaderDictionaryStub
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task FirePath_ConfigurationManagerGetSection_ReportsSk0022()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Configuration;
+
+            namespace Host
+            {
+                public class Startup
+                {
+                    public IConfigurationSection Load(ConfigurationManager configuration)
+                    {
+                        return configuration.GetSection({|SK0022:"FeatureFlags"|});
+                    }
+                }
+            }
+            """,
+            ConfigurationStub
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task FirePath_ConfigurationGetRequiredSection_ReportsSk0022()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Configuration;
+
+            namespace Host
+            {
+                public class Startup
+                {
+                    public IConfigurationSection Load(IConfigurationRoot configuration)
+                    {
+                        return configuration.GetRequiredSection({|SK0022:"FeatureFlags"|});
+                    }
+                }
+            }
+            """,
+            ConfigurationStub
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task FirePath_NullConditionalActivitySetTag_ReportsSk0022()
+    {
+        var test = CreateActivityTest(
+            """
+            using System.Diagnostics;
+
+            namespace Infrastructure.Tracing
+            {
+                public class TenantTagger
+                {
+                    public void Apply(string tenantId)
+                    {
+                        Activity.Current?.SetTag({|SK0022:"tenant.id"|}, tenantId);
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task FirePath_ActivityAddTag_ReportsSk0022()
+    {
+        var test = CreateActivityTest(
+            """
+            using System.Diagnostics;
+
+            namespace Infrastructure.Tracing
+            {
+                public class TenantTagger
+                {
+                    public void Apply(Activity activity, string tenantId)
+                    {
+                        activity.AddTag({|SK0022:"tenant.id"|}, tenantId);
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task FirePath_NullConditionalClaimTypeEquals_ReportsSk0022()
+    {
+        var test = CreateTest(
+            """
+            using System.Security.Claims;
+
+            namespace Infrastructure.Security
+            {
+                public class RoleChecker
+                {
+                    public bool IsRole(Claim? claim) => claim?.Type.Equals({|SK0022:"role"|}) == true;
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// Pass path: matching on the receiver type must not widen the rule to every <c>Add</c> or
+    /// <c>GetSection</c> in the codebase. An ordinary dictionary and an unrelated type with a
+    /// <c>GetSection</c> method stay clean.
+    /// </summary>
+    [Fact]
+    public async Task PassPath_SameMethodNamesOnUnrelatedReceivers_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using System.Collections.Generic;
+
+            namespace App
+            {
+                public class Document
+                {
+                    public string GetSection(string name) => name;
+                }
+
+                public class Builder
+                {
+                    public void Build(Dictionary<string, string> values, Document document)
+                    {
+                        values.Add("X-Correlation-Id", "value");
+                        _ = document.GetSection("FeatureFlags");
+                    }
                 }
             }
             """

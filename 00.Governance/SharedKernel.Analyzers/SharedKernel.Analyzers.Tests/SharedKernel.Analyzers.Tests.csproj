@@ -27,5 +27,11 @@
       Include="..\..\..\01.Core\SharedKernel.DataPrivacy\SharedKernel.DataPrivacy.csproj"
       PrivateAssets="all"
     />
+    <!-- Real-type name locks: SK0002's message names this package's IFeatureManager, and a test
+         asserts that name against the compiled type so the message cannot drift from it again. -->
+    <ProjectReference
+      Include="..\..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj"
+      PrivateAssets="all"
+    />
   </ItemGroup>
 </Project>

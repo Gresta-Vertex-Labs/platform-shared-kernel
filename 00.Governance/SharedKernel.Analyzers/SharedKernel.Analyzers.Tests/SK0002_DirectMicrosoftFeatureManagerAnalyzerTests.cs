@@ -64,14 +64,14 @@ public class SK0002_DirectMicrosoftFeatureManagerAnalyzerTests
         var test = new CSharpAnalyzerTest<DirectMicrosoftFeatureManagerAnalyzer, DefaultVerifier>
         {
             TestCode = """
-                namespace SharedKernel.FeatureManagement
+                namespace SharedKernel.FeatureManagement.Abstractions
                 {
                     public interface IFeatureManager { }
                 }
 
                 namespace MyApp
                 {
-                    using SharedKernel.FeatureManagement;
+                    using SharedKernel.FeatureManagement.Abstractions;
 
                     public class MyService
                     {
@@ -81,5 +81,22 @@ public class SK0002_DirectMicrosoftFeatureManagerAnalyzerTests
                 """,
         };
         await test.RunAsync();
+    }
+
+    /// <summary>
+    /// The diagnostic tells the developer which type to use instead, so that name must be the real
+    /// one. The message once named <c>SharedKernel.FeatureManagement.IFeatureManager</c>, a type
+    /// that does not exist; the shipped interface lives in the <c>.Abstractions</c> namespace.
+    /// </summary>
+    [Fact]
+    public void Message_NamesTheShippedSharedKernelAbstraction()
+    {
+        var shippedName = typeof(SharedKernel.FeatureManagement.Abstractions.IFeatureManager).FullName;
+
+        Assert.Contains(
+            $"'{shippedName}'",
+            DirectMicrosoftFeatureManagerAnalyzer.Rule.MessageFormat.ToString(),
+            StringComparison.Ordinal
+        );
     }
 }

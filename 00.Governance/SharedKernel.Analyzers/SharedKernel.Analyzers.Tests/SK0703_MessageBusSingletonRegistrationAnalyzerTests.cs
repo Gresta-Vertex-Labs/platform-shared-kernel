@@ -174,4 +174,39 @@ public class SK0703_MessageBusSingletonRegistrationAnalyzerTests
         };
         await test.RunAsync();
     }
+
+    /// <summary>
+    /// Pass path: a contract that merely shares the <c>IMessageBus</c> prefix is not the scoped bus.
+    /// <c>IMessageBusProbe</c> is correctly a singleton (<c>MessagingBusBuilder</c> registers it that
+    /// way itself); the rule once matched on the prefix and flagged it.
+    /// </summary>
+    [Fact]
+    public async Task PassPath_AddSingletonWithPrefixSharingProbe_NoDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<MessageBusSingletonRegistrationAnalyzer, DefaultVerifier>
+        {
+            TestCode = """
+                public interface IMessageBusProbe { }
+                public class MassTransitMessageBusProbe : IMessageBusProbe { }
+                public interface IEventPublisherOptions { }
+                public class EventPublisherOptions : IEventPublisherOptions { }
+                public class IServiceCollection { }
+                public static class ServiceCollectionExtensions
+                {
+                    public static IServiceCollection AddSingleton<TService, TImpl>(
+                        this IServiceCollection services) => services;
+                }
+
+                public class Startup
+                {
+                    public void ConfigureServices(IServiceCollection services)
+                    {
+                        services.AddSingleton<IMessageBusProbe, MassTransitMessageBusProbe>();
+                        services.AddSingleton<IEventPublisherOptions, EventPublisherOptions>();
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
 }

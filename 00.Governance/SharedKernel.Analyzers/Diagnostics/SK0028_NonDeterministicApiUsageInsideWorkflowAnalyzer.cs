@@ -47,7 +47,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 ///     scheduler" trigger.
 ///   </description></item>
 ///   <item><description>Any member access resolved to <c>System.Environment</c> or <c>System.IO.File</c>.</description></item>
-///   <item><description>A constructor parameter whose type resolves to <c>SharedKernel.Primitives.IClock</c>.</description></item>
+///   <item><description>A constructor parameter whose type resolves to <c>SharedKernel.Primitives.Clocks.IClock</c>.</description></item>
 ///   <item><description>A constructor parameter whose type resolves to the open generic <c>Microsoft.Extensions.Logging.ILogger&lt;T&gt;</c>.</description></item>
 /// </list>
 /// <para>
@@ -93,7 +93,7 @@ public sealed class NonDeterministicApiUsageInsideWorkflowAnalyzer : AnalyzerBas
     private const string ValueTaskSimpleName = "ValueTask";
     private const string EnvironmentFullName = "System.Environment";
     private const string FileFullName = "System.IO.File";
-    private const string ClockFullName = "SharedKernel.Primitives.IClock";
+    private const string ClockFullName = "SharedKernel.Primitives.Clocks.IClock";
     private const string LoggerNamespace = "Microsoft.Extensions.Logging";
     private const string LoggerSimpleName = "ILogger";
 

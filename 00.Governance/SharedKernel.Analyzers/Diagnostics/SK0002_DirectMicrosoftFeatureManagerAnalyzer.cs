@@ -15,7 +15,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <remarks>
 /// <para>
 /// The platform wraps the third-party feature-flag package behind its own
-/// <c>SharedKernel.FeatureManagement.IFeatureManager</c> abstraction so consuming services never
+/// <c>SharedKernel.FeatureManagement.Abstractions.IFeatureManager</c> abstraction so consuming services never
 /// take a hard, unmediated dependency on that package's exact API surface. Referencing the
 /// Microsoft interface directly defeats the abstraction the moment it happens — nothing then
 /// stands between the consumer and a future breaking change in the underlying package.
@@ -39,7 +39,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// false-positives.
 /// </para>
 /// <para>
-/// <strong>Pass case:</strong> <c>SharedKernel.FeatureManagement.IFeatureManager</c> — a distinct
+/// <strong>Pass case:</strong> <c>SharedKernel.FeatureManagement.Abstractions.IFeatureManager</c> — a distinct
 /// fully-qualified name sharing only the simple name <c>IFeatureManager</c> — never matches on the
 /// primary (resolved) path, since the comparison is against the full display string, not the
 /// simple name.
@@ -56,7 +56,7 @@ public sealed class DirectMicrosoftFeatureManagerAnalyzer : AnalyzerBase
     public static readonly DiagnosticDescriptor Rule = CreateDescriptor(
         id: DiagnosticId,
         title: "Direct Microsoft.FeatureManagement.IFeatureManager usage",
-        messageFormat: "Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly — use 'SharedKernel.FeatureManagement.IFeatureManager' instead",
+        messageFormat: "Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly — use 'SharedKernel.FeatureManagement.Abstractions.IFeatureManager' instead",
         category: Usage,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0002-directmicrosoftfeaturemanagerusage"
