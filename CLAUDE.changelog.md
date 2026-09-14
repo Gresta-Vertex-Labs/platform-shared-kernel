@@ -109,3 +109,4 @@
 - [2026-09-10] WO-082 done: Guards merged into SharedKernel.Core, namespace kept; P-522 regex cap (sync-brain)
 - [2026-09-11] P-529: Primitives pre-publish hardening; 6 defects fixed, SmartEnumJsonConverter added (agent)
 - [2026-09-11] P-530: Configuration pre-publish hardening; 6 defects fixed, ISectionBoundOptions added (agent)
+- [2026-09-14] WO-084: ServiceDefaults split into dependency-free base + 13 integration packages (agent)

@@ -2136,6 +2136,144 @@ As with P-529, the timing is the whole point: the package has never been pushed 
 
 ---
 
+### P-531 — ServiceDefaults: Per-Integration Package Split — Design (BREAKING, package topology only)
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 13.ServiceDefaults
+**Depends on:** None
+
+#### What is needed
+Ratify the target topology for splitting `SharedKernel.ServiceDefaults` into a dependency-free composition base plus one package per integration. Full task breakdown in [`13.ServiceDefaults/state-map.md`](13.ServiceDefaults/state-map.md) under `SK.13.WO084`.
+
+| Package | Contents | References |
+| --- | --- | --- |
+| `SharedKernel.ServiceDefaults` (base) | `AddServiceDefaults`, every `WithXTelemetry`, `BaggageLogRecordProcessor`, `StartupGate`, health endpoints, `HealthCheckNames`/`HealthCheckTags`, rate limiting | **no SharedKernel package**; OpenTelemetry only |
+| `.Persistence` | EF Core + Dapper database readiness | `Persistence.Abstractions`, `Persistence.EfCore` |
+| `.Caching` | cache readiness | `Caching.Abstractions` |
+| `.Caching.Redis` | Redis connectivity check | `AspNetCore.HealthChecks.Redis`, `StackExchange.Redis` |
+| `.Messaging` | message-bus readiness | `Messaging.Abstractions` |
+| `.Storage` | object-storage readiness | `Storage.Abstractions` |
+| `.Search` | search-index readiness | `Search.Abstractions` |
+| `.AI` | vector-store readiness | `AI.Abstractions` |
+| `.Workflows.Temporal` | workflow readiness | `Workflows.Temporal` (the WO-047 grant, now held by this package alone) |
+| `.Scheduling` | scheduler readiness | `Scheduling` (the P-466 grant, now held by this package alone) |
+| `.Security.Mtls` | Kestrel client certificates, forwarded-header certificates | `Security.Mtls` |
+| `.Cryptography.KeyVault` | Key Vault key provider + its readiness check | `Cryptography.KeyVault.Azure` |
+| `.Configuration.KeyVault` | Key Vault as an `IConfiguration` source | `Azure.Extensions.AspNetCore.Configuration.Secrets`, `Azure.Identity` |
+| `.Localization` | culture resolution | `MultiTenancy`, `Security.Abstractions` |
+
+**Naming rule (mechanical, so the next integration needs no debate):** `SharedKernel.ServiceDefaults.` + the integrated package's capability segment, plus its provider segment where that package is provider-specific — **then check the path length.** The name appears three times in its test assembly's `obj` path, which must stay within 245 characters at `C:\Github\platform-shared-kernel`, the longest the repository already reached. Found during P-532, not anticipated here: as first named, `.Configuration.KeyVault.Azure`'s test assembly path reached **261** characters — past Windows' 260-character `MAX_PATH` — and the build produced no assembly and failed with `MSB3030`; `.Cryptography.KeyVault.Azure` reached 258, building only because this clone path is short. Both dropped the `.Azure` segment ("Key Vault" already names the vendor), landing at 243 and 240. The trade-off accepted: these two no longer mirror `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure` exactly.
+
+#### Why this is needed
+Measured by restoring a probe project that references `SharedKernel.ServiceDefaults` and nothing else: **25 SharedKernel projects and 73 NuGet packages**, 54 of them heavyweight — `MassTransit` ×6, `Azure.Messaging.ServiceBus`, `Microsoft.Identity.Web` ×8, EF Core, `Temporalio` ×4, `Quartz` ×3, `StackExchange.Redis`. A service asking for OpenTelemetry and a startup probe restores a durable-workflow client, a message broker, and an identity platform. The cause is 14 unconditional `ProjectReference`s on the composition root.
+
+Four measured facts shape the design:
+1. **Every `WithXTelemetry` extension wires by string name** (`AddSource("SharedKernel.Workflows")`) and reaches no SharedKernel type, so all telemetry stays in the base — moving it would shrink no closure. The two instrumentation packages it needs are light: `OpenTelemetry.Instrumentation.EntityFrameworkCore` does not depend on EF Core, and `.GrpcNetClient` depends only on `OpenTelemetry`.
+2. **Two references are dead.** No source file in the package uses `SharedKernel.Messaging.MassTransit` (string literals and doc comments only) or `SharedKernel.Primitives`. After the split the base references no SharedKernel package at all.
+3. **No integration calls another.** Each depends only on the base's public `HealthCheckNames`/`HealthCheckTags` and two internal helpers.
+4. **A PostgreSQL/Dapper service already restores EF Core** (`Persistence.PostgreSQL` → `Persistence.EfCore`), so persistence readiness stays one package; splitting EF from Dapper would buy nothing.
+
+#### Acceptance criteria
+- [x] Topology, naming rule, and the three cross-cutting decisions below ratified in `13.ServiceDefaults/state-map.md`
+- [x] **Namespaces preserved** — every moved type keeps its `SharedKernel.ServiceDefaults.*` namespace, following the WO-082 Guards→Core precedent, so consumer migration is a `PackageReference` and never a source edit
+- [x] **`HealthCheckRegistrationLogging` becomes public** rather than exposed via `InternalsVisibleTo`: internals visible across separately-published packages bind a consumer to one exact base version, and NuGet's minimum-version resolution lets base and integration drift apart, surfacing as `MissingMethodException` at runtime
+- [x] **Existing EventIds preserved**: 13000/13001/13003 move with mTLS, 13004 with localization, 13002 stays in the base. The ServiceDefaults family shares 13000–13099, allocated per EventId and never reused — measured necessity, since fifteen packages cannot each take a 100-wide sub-block inside 13000–13999, which holds ten
+
+---
+### P-532 — ServiceDefaults: Per-Integration Package Split — Scaffold
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-531
+
+#### What is needed
+Thirteen new package projects and thirteen nested test projects, each with a real `README.md`, `<Description>`, and `<PackageTags>` (SKPKG001–003 fail the pack otherwise) and `GenerateDocumentationFile` set per-project. All 26 registered in `Platform.SharedKernel.slnx` and `Platform.SharedKernel.Unit.slnf`.
+
+#### Acceptance criteria
+- [x] 13 `SharedKernel.ServiceDefaults.*` projects and 13 nested `*.Tests` projects exist and build
+- [x] All 26 registered in the solution and the unit filter
+
+---
+### P-533 — ServiceDefaults: Per-Integration Package Split — Core
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-532
+
+#### What is needed
+Move each integration's source into its package unchanged except for the access change P-531 ratified, then strip the base's `.csproj` to OpenTelemetry alone.
+
+#### Acceptance criteria
+- [x] Every integration file lives in exactly one new package, namespace unchanged
+- [x] Base `.csproj` carries **zero `ProjectReference`s** and only the OpenTelemetry `PackageReference`s
+- [x] `HealthCheckRegistrationLogging.LogRegistration` public, argument-guarded, XML-documented as the supported extension point for readiness checks written outside this domain
+- [x] Moved `[LoggerMessage]` definitions keep their EventIds
+
+---
+### P-534 — ServiceDefaults: Per-Integration Package Split — Tests
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-533
+
+#### What is needed
+Move every existing test beside the code it covers, then lock the base's isolation in two layers — because one layer alone cannot catch both failure modes.
+
+#### Acceptance criteria
+- [x] Every pre-split test passes from its new project: **214 before, 214 after** across the base and thirteen integration test projects (205 `[Fact]`/`[Theory]` attributes before and after the split). Mixed files were distributed method-by-method with only the helpers each destination's tests reference; the base project then gained 14 new tests (87 total)
+- [x] **Type-level lock:** the base assembly has no dependency on any integrated SharedKernel namespace — catches integration code creeping back into the base
+- [x] **Project-level lock:** the base `.csproj` has no `ProjectReference` and only allowlisted `PackageReference`s — catches a DEAD reference, which the type-level lock cannot see because an unused reference leaves no trace in IL (exactly how `Messaging.MassTransit` survived)
+- [x] Both locks proven non-vacuous by executed perturbation — unused `ProjectReference` → only the project-file lock fails; genuine type use → both fail; heavyweight `PackageReference` → only the allowlist fails. **A second blind spot of the metadata lock, found by perturbation:** a probe using only a `const` from another package (`ErrorCodes.NotFound.Default`) also left no assembly reference, because the compiler inlines the value — only the project-file lock caught it. The first perturbation used exactly such a constant and passed the metadata lock, which is how this was found; it is now recorded in the test's own rationale
+- [x] Tests for the newly-public `LogRegistration` guards
+
+---
+### P-535 — Governance: Re-point the ServiceDefaults Layering Rules at the Split Packages
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 00.Governance
+**Depends on:** P-533
+
+#### What is needed
+`ServiceDefaultsWorkflowLayeringRules` and `ServiceDefaultsSchedulingLayeringRules` are already parameterized by assembly; their real-assembly tests resolve the assembly via `typeof(...)`, so they follow the moved types. This phase makes that explicit and closes one pre-existing gap.
+
+#### Acceptance criteria
+- [x] `SharedKernel.ArchitectureTests.Tests` references the new `.Workflows.Temporal`, `.Scheduling`, and `.Security.Mtls` packages; all three real-assembly tests pass against them
+- [x] Each real-assembly test asserts it is inspecting the integration assembly, not the base — otherwise it passes vacuously against a base that no longer contains the probe types at all. Proven: pointed at the base, the guard fails immediately. `SecureDefaultsAssertionTests`' real forwarded-header test, run against the pre-split logger name before being updated, failed with its own "Could not resolve … renamed or moved?" message; its callee is now `MtlsLog`. `SharedKernel.ArchitectureTests.Tests`: **281/281**, unchanged
+
+---
+### P-536 — ServiceDefaults: Per-Integration Package Split — Docs
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** 13.ServiceDefaults (plus root `CLAUDE.md`)
+**Depends on:** P-534, P-535
+
+#### Acceptance criteria
+- [x] `13.ServiceDefaults/CLAUDE.md`: packages table, per-package public surfaces, the base-isolation implementation rule, the EventId family allocation
+- [x] `13.ServiceDefaults/README.md` and the base package README: which package to add for which integration, and the migration note. **Pre-existing defect found by executing the base README's Quick Start:** it called `builder.AddServiceDefaults()` and then `builder.Services.AddSharedKernelHealthChecks()` again, which registers the `"startup"` check twice — the application throws `ArgumentException: Duplicate health checks were registered with the name(s): startup` at startup. The same call appeared in the README's Key Vault readiness sample and in `13.ServiceDefaults/CLAUDE.md`; all three corrected to `AddHealthChecks()`. The rewritten Quick Start was executed against the real packages: `/health/ready` 503 before `MarkReady()`, 200 after; `/health/live` 200. A README for each of the thirteen new packages
+- [x] Root `CLAUDE.md`: folder map, the two layering grants re-scoped to the specific integration packages, and every What-Goes-Where row that routed readiness checks, mTLS, Key Vault, or localization to the base package
+
+---
+### P-537 — ServiceDefaults: Per-Integration Package Split — Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-084
+**Domain:** SharedKernel (repo-wide)
+**Depends on:** P-536
+
+#### Acceptance criteria
+- [x] `Platform.SharedKernel.slnx -c Release`: 0 errors, no warning in any `13.ServiceDefaults` or `00.Governance` project; `samples/OrderApi`, outside the solution, 0 errors
+- [x] `Platform.SharedKernel.Unit.slnf`: **5,328 tests across 62 assemblies, 0 failures, 0 skipped** (was 5,314 across 49 — the thirteen new test projects, plus the 14 new tests)
+- [x] Closure re-measured with the identical probe method: a project referencing only the base restored **25 SharedKernel projects and 73 NuGet packages before, 1 and 10 after** — 63 packages removed, none added. All ten are OpenTelemetry; nothing in the graph resolves EF Core or a gRPC client
+- [x] All 14 packages pack with 0 failures, each shipping its XML documentation and README; each nuspec inspected — the base declares no `SharedKernel.*` dependency and seven OpenTelemetry packages, each integration declares the base plus only what it integrates, and no integration declares another
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).

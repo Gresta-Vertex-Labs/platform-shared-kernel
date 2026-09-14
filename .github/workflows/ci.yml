@@ -88,7 +88,7 @@ jobs:
           # a fully green run would produce correctly-named, wrongly-versioned packages.
           fetch-depth: 0
 
-      # The stock ubuntu-latest image leaves too little free disk to build 151 projects in
+      # The stock ubuntu-latest image leaves too little free disk to build 176 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
       # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
       # SDK install is not the thing that tips it over.
@@ -143,7 +143,7 @@ jobs:
       - name: Build
         run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
 
-      # Narrowed to the 133 container-free projects. See Platform.SharedKernel.Unit.slnf and the
+      # Narrowed to the 158 container-free projects. See Platform.SharedKernel.Unit.slnf and the
       # top-of-file comment for why this split exists.
       - name: Unit test (no Docker dependency)
         # No fixed LogFileName: dotnet test spawns one VSTest host per project in the filter, and a
@@ -260,7 +260,7 @@ jobs:
           # a fully green run would produce correctly-named, wrongly-versioned packages.
           fetch-depth: 0
 
-      # The stock ubuntu-latest image leaves too little free disk to build 151 projects in
+      # The stock ubuntu-latest image leaves too little free disk to build 176 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
       # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
       # SDK install is not the thing that tips it over.
