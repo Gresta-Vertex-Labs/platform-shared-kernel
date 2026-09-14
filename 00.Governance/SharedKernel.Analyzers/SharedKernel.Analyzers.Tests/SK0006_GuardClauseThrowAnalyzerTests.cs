@@ -12,7 +12,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
     // SharedKernel.Guards directly (the analyzer targets netstandard2.0 and tests must
     // supply the full type context inline).
     private const string IGuardClauseDefinition = """
-        namespace SharedKernel.Guards.Clauses
+        namespace SharedKernel.Guards
         {
             public interface IGuardClause { }
         }
@@ -35,7 +35,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
 
                 namespace MyGuards
                 {
-                    using SharedKernel.Guards.Clauses;
+                    using SharedKernel.Guards;
                     using System;
 
                     public static class MyGuardExtensions
@@ -64,7 +64,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
 
                 namespace MyGuards
                 {
-                    using SharedKernel.Guards.Clauses;
+                    using SharedKernel.Guards;
                     using System;
 
                     public static class MyGuardExtensions
@@ -93,7 +93,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
 
                 namespace MyGuards
                 {
-                    using SharedKernel.Guards.Clauses;
+                    using SharedKernel.Guards;
                     using System;
 
                     public class MyGuard : IGuardClause
@@ -128,7 +128,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
 
                 namespace SharedKernel.Guards
                 {
-                    using SharedKernel.Guards.Clauses;
+                    using SharedKernel.Guards;
                     using System;
 
                     public static class Guard
@@ -196,7 +196,7 @@ public class SK0006_GuardClauseThrowAnalyzerTests
 
                 namespace MyGuards
                 {
-                    using SharedKernel.Guards.Clauses;
+                    using SharedKernel.Guards;
 
                     public static class MyGuardExtensions
                     {

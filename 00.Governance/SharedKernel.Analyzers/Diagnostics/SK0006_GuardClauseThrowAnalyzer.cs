@@ -9,7 +9,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
 /// SK0006 — Fires when a method declared on a type that implements
-/// <c>SharedKernel.Guards.Clauses.IGuardClause</c> contains a <see langword="throw"/>
+/// <c>SharedKernel.Guards.IGuardClause</c> contains a <see langword="throw"/>
 /// statement or throw expression, outside the <c>Guard.Throw</c> companion class.
 /// </summary>
 /// <remarks>
@@ -36,7 +36,7 @@ public sealed class GuardClauseThrowAnalyzer : AnalyzerBase
     private const string DiagnosticId = "SK0006";
 
     // Full metadata name of the IGuardClause interface
-    private const string IGuardClauseFullName = "SharedKernel.Guards.Clauses.IGuardClause";
+    private const string IGuardClauseFullName = "SharedKernel.Guards.IGuardClause";
 
     // The Guard.Throw companion class: its containing type is named "Guard" and its own name is "Throw"
     private const string GuardThrowTypeName = "Throw";
@@ -226,7 +226,7 @@ public sealed class GuardClauseThrowAnalyzer : AnalyzerBase
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="typeSymbol"/> or any of its base
-    /// types/interfaces directly implement <c>SharedKernel.Guards.Clauses.IGuardClause</c>.
+    /// types/interfaces directly implement <c>SharedKernel.Guards.IGuardClause</c>.
     /// </summary>
     private static bool ImplementsIGuardClause(INamedTypeSymbol typeSymbol)
     {

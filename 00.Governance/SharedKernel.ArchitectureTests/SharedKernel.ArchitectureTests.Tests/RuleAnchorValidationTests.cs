@@ -6,7 +6,7 @@ using SharedKernel.ArchitectureTests.Rules;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.DomainServices;
-using SharedKernel.Guards.Clauses;
+using SharedKernel.Guards;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;

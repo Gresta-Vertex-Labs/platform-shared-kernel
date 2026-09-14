@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Mono.Cecil;
 using SharedKernel.ArchitectureTests.Predicates;
 using SharedKernel.ArchitectureTests.Rules;
-using SharedKernel.Guards.Clauses;
+using SharedKernel.Guards;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;
@@ -112,7 +112,7 @@ public class GuardPurityRulesTests
     public void DoesNotContainThrowIlPredicate_GuardThrowClass_IsExcluded()
     {
         // Arrange — load the real Guards assembly via Mono.Cecil
-        var guardsAssemblyPath = typeof(SharedKernel.Guards.Clauses.IGuardClause).Assembly.Location;
+        var guardsAssemblyPath = typeof(SharedKernel.Guards.IGuardClause).Assembly.Location;
         guardsAssemblyPath.Should().NotBeNullOrEmpty(
             because: "SharedKernel.Guards must be loaded from disk for Mono.Cecil inspection");
 
@@ -153,7 +153,7 @@ public class GuardPurityRulesTests
     public void GuardAgainstMethodsMustNotThrow_WithGuardThrowPresent_RulePasses()
     {
         // Confirm Guard.Throw exists and has throw statements (pre-condition)
-        var guardsAssemblyPath = typeof(SharedKernel.Guards.Clauses.IGuardClause).Assembly.Location;
+        var guardsAssemblyPath = typeof(SharedKernel.Guards.IGuardClause).Assembly.Location;
         using var assembly = AssemblyDefinition.ReadAssembly(guardsAssemblyPath);
 
         var guardType2 = assembly.MainModule.Types
@@ -207,7 +207,7 @@ public class GuardPurityRulesTests
         // the same technique DomainGoldStandardRulesTests uses for IDomainService) with an
         // implementor whose namespace starts with SharedKernel.Guards and whose method throws.
         const string violationSource = """
-            namespace SharedKernel.Guards.Clauses
+            namespace SharedKernel.Guards
             {
                 public interface IGuardClause { }
             }
@@ -215,7 +215,7 @@ public class GuardPurityRulesTests
             namespace SharedKernel.Guards.NonVacuityFixture
             {
                 public sealed class InNamespaceViolatingGuardClause
-                    : SharedKernel.Guards.Clauses.IGuardClause
+                    : SharedKernel.Guards.IGuardClause
                 {
                     public void BadMethod()
                     {
@@ -263,7 +263,7 @@ public class GuardPurityRulesTests
         // namespace that does NOT start with SharedKernel.Guards, mirroring an unrelated
         // SharedKernel.Core namespace (e.g. SharedKernel.Core.Exceptions/.Extensions).
         const string violationSource = """
-            namespace SharedKernel.Guards.Clauses
+            namespace SharedKernel.Guards
             {
                 public interface IGuardClause { }
             }
@@ -271,7 +271,7 @@ public class GuardPurityRulesTests
             namespace SharedKernel.Core.NonVacuityFixture
             {
                 public sealed class OutsideNamespaceViolatingGuardClause
-                    : SharedKernel.Guards.Clauses.IGuardClause
+                    : SharedKernel.Guards.IGuardClause
                 {
                     public void BadMethod()
                     {

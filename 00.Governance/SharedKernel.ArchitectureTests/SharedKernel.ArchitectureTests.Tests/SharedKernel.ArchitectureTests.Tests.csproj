@@ -39,7 +39,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ArchitectureTests.csproj" />
     <!-- SharedKernel.Guards was merged into SharedKernel.Core (WO-082/P-505); the namespace
-         SharedKernel.Guards.Clauses.IGuardClause was deliberately preserved.
+         SharedKernel.Guards.IGuardClause was deliberately preserved.
          Required to resolve it in GuardPurityRulesTests. -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" PrivateAssets="all" />
     <!-- Required to resolve typeof(IDomainService)/typeof(DomainService) in DomainGoldStandard/DomainLayerPurity tests -->

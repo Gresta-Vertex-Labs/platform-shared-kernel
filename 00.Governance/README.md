@@ -578,7 +578,7 @@ Guard clauses on the functional path must return `Error?`, never throw.
 
 #### Why it matters
 
-SharedKernel guards come in two forms. `Guard.Against.*` is the functional path: extension methods on `IGuardClause` (namespace `SharedKernel.Guards.Clauses`) that return `null` when the check passes and an `Error` when it fails. `Guard.Throw.*` is the imperative path, which throws `DomainException` on failure.
+SharedKernel guards come in two forms. `Guard.Against.*` is the functional path: extension methods on `IGuardClause` (namespace `SharedKernel.Guards`) that return `null` when the check passes and an `Error` when it fails. `Guard.Throw.*` is the imperative path, which throws `DomainException` on failure.
 
 Callers compose functional guards into `Result<T>` flows without try/catch. A custom guard that throws breaks that composition silently: the caller's failure branch never runs, and the exception escapes as an unhandled error instead of a validation result.
 
@@ -586,7 +586,7 @@ Callers compose functional guards into `Result<T>` flows without try/catch. A cu
 
 A `throw` statement or `throw` expression inside a method, local function, accessor, constructor, finalizer, or operator, when either of these is true:
 
-- The nearest containing type implements `SharedKernel.Guards.Clauses.IGuardClause`.
+- The nearest containing type implements `SharedKernel.Guards.IGuardClause`.
 - The containing method is a static extension method whose `this` parameter is `IGuardClause` or a type that implements it.
 
 A throw inside a lambda is attributed to the method that contains the lambda.

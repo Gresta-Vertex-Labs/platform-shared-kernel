@@ -76,7 +76,7 @@ public static class GuardPurityRules
     /// meant to police; they are excluded by namespace, not by which assembly they live in.
     /// </param>
     /// <param name="guardClauseInterface">
-    /// The guard-clause marker interface, i.e. <c>typeof(SharedKernel.Guards.Clauses.IGuardClause)</c>.
+    /// The guard-clause marker interface, i.e. <c>typeof(SharedKernel.Guards.IGuardClause)</c>.
     /// Supplied by the caller rather than hard-bound here so this package declares no dependency
     /// on <c>SharedKernel.Core</c>.
     /// </param>
