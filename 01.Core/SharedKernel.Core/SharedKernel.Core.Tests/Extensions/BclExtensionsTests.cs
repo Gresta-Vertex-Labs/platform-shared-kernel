@@ -1,3 +1,4 @@
+using System.Globalization;
 using SharedKernel.Core.Extensions;
 using Xunit;
 
@@ -8,71 +9,75 @@ public sealed class BclExtensionsTests
     // ---- StringExtensions ----
 
     [Theory]
-    [InlineData("HelloWorld",   "hello_world")]
-    [InlineData("helloWorld",   "hello_world")]
-    [InlineData("MyClassName",  "my_class_name")]
-    [InlineData("",             "")]
-    [InlineData("already",      "already")]
+    [InlineData("HelloWorld", "hello_world")]
+    [InlineData("helloWorld", "hello_world")]
+    [InlineData("MyClassName", "my_class_name")]
+    [InlineData("HTMLParser", "html_parser")]
+    [InlineData("XMLHttpRequest", "xml_http_request")]
+    [InlineData("Order2Line", "order2_line")]
+    [InlineData("User ID", "user_id")]
+    [InlineData("user-id", "user_id")]
+    [InlineData("already_snake", "already_snake")]
+    [InlineData("__double__underscore_", "double_underscore")]
+    [InlineData("", "")]
+    [InlineData("already", "already")]
     public void ToSnakeCase_ProducesExpectedOutput(string input, string expected)
         => Assert.Equal(expected, input.ToSnakeCase());
 
     [Theory]
-    [InlineData("hello_world",  "helloWorld")]
-    [InlineData("HelloWorld",   "helloWorld")]
-    [InlineData("my_class",     "myClass")]
-    [InlineData("",             "")]
+    [InlineData("HTMLParser", "html-parser")]
+    [InlineData("my_property", "my-property")]
+    [InlineData("MyPropertyName", "my-property-name")]
+    public void ToKebabCase_ProducesExpectedOutput(string input, string expected)
+        => Assert.Equal(expected, input.ToKebabCase());
+
+    [Theory]
+    [InlineData("hello_world", "helloWorld")]
+    [InlineData("HelloWorld", "helloWorld")]
+    [InlineData("my_class", "myClass")]
+    [InlineData("HTMLParser", "htmlParser")]
+    [InlineData("ID", "id")]
+    [InlineData("", "")]
     public void ToCamelCase_ProducesExpectedOutput(string input, string expected)
         => Assert.Equal(expected, input.ToCamelCase());
 
     [Theory]
-    [InlineData("hello_world",  "HelloWorld")]
-    [InlineData("hello-world",  "HelloWorld")]
-    [InlineData("hello world",  "HelloWorld")]
-    [InlineData("alreadyPascal","AlreadyPascal")]
-    [InlineData("",             "")]
+    [InlineData("hello_world", "HelloWorld")]
+    [InlineData("hello-world", "HelloWorld")]
+    [InlineData("hello world", "HelloWorld")]
+    [InlineData("alreadyPascal", "AlreadyPascal")]
+    [InlineData("HTML_parser", "HtmlParser")]
+    [InlineData("", "")]
     public void ToPascalCase_ProducesExpectedOutput(string input, string expected)
         => Assert.Equal(expected, input.ToPascalCase());
 
     [Fact]
-    public void IsNullOrWhiteSpace_Null_ReturnsTrue()
-        => Assert.True(((string?)null).IsNullOrWhiteSpace());
+    public void CaseConversions_UseInvariantCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            // Turkish culture lower-cases 'I' to a dotless 'ı'; identifiers must not change with culture.
+            CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+            Assert.Equal("user_id", "UserID".ToSnakeCase());
+            Assert.Equal("Id", "ID".ToPascalCase());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
 
     [Fact]
-    public void IsNullOrWhiteSpace_Empty_ReturnsTrue()
-        => Assert.True("".IsNullOrWhiteSpace());
-
-    [Fact]
-    public void IsNullOrWhiteSpace_Whitespace_ReturnsTrue()
-        => Assert.True("   ".IsNullOrWhiteSpace());
-
-    [Fact]
-    public void IsNullOrWhiteSpace_NonEmpty_ReturnsFalse()
-        => Assert.False("hello".IsNullOrWhiteSpace());
+    public void CaseConversions_Null_ThrowArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => ((string)null!).ToSnakeCase());
+        Assert.Throws<ArgumentNullException>(() => ((string)null!).ToKebabCase());
+        Assert.Throws<ArgumentNullException>(() => ((string)null!).ToCamelCase());
+        Assert.Throws<ArgumentNullException>(() => ((string)null!).ToPascalCase());
+    }
 
     // ---- EnumerableExtensions ----
-
-    [Fact]
-    public void ToBatches_EvenlyDivisible_ProducesFullBatches()
-    {
-        var batches = Enumerable.Range(1, 6).ToBatches(2).ToList();
-        Assert.Equal(3, batches.Count);
-        Assert.Equal([1, 2], batches[0]);
-        Assert.Equal([3, 4], batches[1]);
-        Assert.Equal([5, 6], batches[2]);
-    }
-
-    [Fact]
-    public void ToBatches_NotEvenlyDivisible_LastBatchIsShorter()
-    {
-        var batches = Enumerable.Range(1, 5).ToBatches(2).ToList();
-        Assert.Equal(3, batches.Count);
-        Assert.Equal([5], batches[2]);
-    }
-
-    [Fact]
-    public void ToBatches_SizeZero_Throws()
-        => Assert.Throws<ArgumentOutOfRangeException>(() =>
-            Enumerable.Range(1, 5).ToBatches(0).ToList());
 
     [Fact]
     public void IsNullOrEmpty_Null_ReturnsTrue()
@@ -87,74 +92,64 @@ public sealed class BclExtensionsTests
         => Assert.False(new[] { 1 }.IsNullOrEmpty());
 
     [Fact]
+    public void IsNullOrEmpty_LazySequence_ReadsAtMostOneElement()
+    {
+        var read = 0;
+        IEnumerable<int> Source()
+        {
+            while (true)
+            {
+                read++;
+                yield return read;
+            }
+        }
+
+        Assert.False(Source().IsNullOrEmpty());
+        Assert.Equal(1, read);
+    }
+
+    [Fact]
+    public void IsNullOrEmpty_WhenFalse_TellsTheCompilerTheSourceIsNotNull()
+    {
+        IEnumerable<int>? source = [1, 2];
+
+        // Compiles without a nullable warning only because of [NotNullWhen(false)].
+        if (!source.IsNullOrEmpty())
+            Assert.Equal(2, source.Count());
+    }
+
+    [Fact]
     public void WhereNotNull_FiltersNullElements()
     {
-        var source = new[] { "a", null, "b", null, "c" };
-        var result = source.WhereNotNull().ToList();
-        Assert.Equal(["a", "b", "c"], result);
+        string?[] source = ["a", null, "b", null];
+        Assert.Equal(["a", "b"], source.WhereNotNull());
     }
 
     [Fact]
     public void WhereNotNull_AllNonNull_ReturnsAll()
     {
-        var source = new[] { "a", "b" };
-        Assert.Equal(source, source.WhereNotNull());
+        string?[] source = ["x", "y"];
+        Assert.Equal(["x", "y"], source.WhereNotNull());
+    }
+
+    [Fact]
+    public void WhereNotNull_NullableValueTypes_ReturnsValues()
+    {
+        int?[] source = [1, null, 3];
+        Assert.Equal([1, 3], source.WhereNotNull());
     }
 
     // ---- DateTimeOffsetExtensions ----
 
     [Fact]
-    public void ToUnixMilliseconds_Epoch_ReturnsZero()
+    public void StartOfDay_ReturnsMidnightKeepingOffset()
     {
-        var epoch = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        Assert.Equal(0L, epoch.ToUnixMilliseconds());
+        var offset = TimeSpan.FromHours(3);
+        var value = new DateTimeOffset(2024, 6, 15, 14, 30, 45, 123, offset).AddTicks(4567);
+
+        var start = value.StartOfDay();
+
+        Assert.Equal(new DateTimeOffset(2024, 6, 15, 0, 0, 0, offset), start);
+        Assert.Equal(offset, start.Offset);
     }
-
-    [Fact]
-    public void ToUnixMilliseconds_KnownDate_ReturnsExpectedMs()
-    {
-        // 2000-01-01 00:00:00 UTC = 946684800000 ms
-        var date = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        Assert.Equal(946_684_800_000L, date.ToUnixMilliseconds());
-    }
-
-    [Fact]
-    public void StartOfDay_ReturnsBeginningOfDay()
-    {
-        var dt = new DateTimeOffset(2024, 3, 15, 14, 30, 0, TimeSpan.FromHours(2));
-        var sod = dt.StartOfDay();
-        Assert.Equal(0, sod.Hour);
-        Assert.Equal(0, sod.Minute);
-        Assert.Equal(0, sod.Second);
-        Assert.Equal(0, sod.Millisecond);
-        Assert.Equal(dt.Offset, sod.Offset);
-    }
-
-    [Fact]
-    public void EndOfDay_ReturnsLastMomentOfDay()
-    {
-        var dt = new DateTimeOffset(2024, 3, 15, 8, 0, 0, TimeSpan.Zero);
-        var eod = dt.EndOfDay();
-        Assert.Equal(23, eod.Hour);
-        Assert.Equal(59, eod.Minute);
-        Assert.Equal(59, eod.Second);
-        Assert.Equal(dt.Offset, eod.Offset);
-    }
-
-    [Fact]
-    public void StartOfDay_BeforeEndOfDay()
-    {
-        var dt = new DateTimeOffset(2024, 6, 10, 10, 0, 0, TimeSpan.Zero);
-        Assert.True(dt.StartOfDay() < dt.EndOfDay());
-    }
-
-    // ---- GuidExtensions ----
-
-    [Fact]
-    public void IsEmpty_EmptyGuid_ReturnsTrue()
-        => Assert.True(Guid.Empty.IsEmpty());
-
-    [Fact]
-    public void IsEmpty_NewGuid_ReturnsFalse()
-        => Assert.False(Guid.NewGuid().IsEmpty());
 }

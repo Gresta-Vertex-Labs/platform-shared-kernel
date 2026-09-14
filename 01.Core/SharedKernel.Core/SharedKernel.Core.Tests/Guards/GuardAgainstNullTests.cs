@@ -1,5 +1,4 @@
 using SharedKernel.Guards;
-using SharedKernel.Guards.Clauses;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 

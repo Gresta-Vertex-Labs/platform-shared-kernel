@@ -6,29 +6,24 @@ namespace SharedKernel.Core.Exceptions;
 /// Thrown when a domain rule or invariant is violated.
 /// </summary>
 /// <remarks>
-/// Raise this exception inside domain entities or aggregate roots when an operation
-/// would leave the domain in an invalid state. Map it to an HTTP 422 Unprocessable Entity
-/// (or equivalent) at the presentation layer.
+/// Throw it from entities and aggregates when an operation would leave the domain in an invalid state. <see cref="SharedKernel.Guards.Guard.Throw"/> throws it too. Pair it with an <see cref="ErrorType.BusinessRule"/> or <see cref="ErrorType.Validation"/> error. Not sealed, so a domain can derive its own. The HTTP status is still decided by <see cref="Error.Type"/>; see <see cref="SharedKernelException"/>.
 /// </remarks>
 public class DomainException : SharedKernelException
 {
-    /// <summary>
-    /// Initialises a new <see cref="DomainException"/> carrying the specified <paramref name="error"/>.
-    /// </summary>
-    /// <param name="error">The domain error that was violated.</param>
+    /// <summary>Initialises a new <see cref="DomainException"/> carrying <paramref name="error"/>.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
     public DomainException(Error error)
-        : base(error.Message, error)
+        : base(error)
     {
     }
 
-    /// <summary>
-    /// Initialises a new <see cref="DomainException"/> carrying the specified <paramref name="error"/>
-    /// and wrapping an <paramref name="innerException"/>.
-    /// </summary>
-    /// <param name="error">The domain error that was violated.</param>
-    /// <param name="innerException">The exception that caused this domain exception.</param>
+    /// <summary>Initialises a new <see cref="DomainException"/> carrying <paramref name="error"/> and wrapping <paramref name="innerException"/>.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
     public DomainException(Error error, Exception innerException)
-        : base(error.Message, error, innerException)
+        : base(error, innerException)
     {
     }
 }

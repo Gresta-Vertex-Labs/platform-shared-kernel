@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Compression;
 using SharedKernel.Compression.Extensions;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Cryptography.Argon2;
 using SharedKernel.Cryptography.Argon2.Extensions;
@@ -27,7 +28,6 @@ using SharedKernel.DataPrivacy.Masking;
 using SharedKernel.FeatureManagement.Abstractions;
 using SharedKernel.FeatureManagement.Extensions;
 using SharedKernel.Guards;
-using SharedKernel.Guards.Clauses;
 using SharedKernel.Localization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
@@ -209,28 +209,19 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
-    public void Core_EnumerableExtensions_ToBatches_ResolvedFromPackage()
+    public void Core_EnumerableExtensions_WhereNotNull_ResolvedFromPackage()
     {
-        int[] source = [1, 2, 3, 4, 5];
-        List<IEnumerable<int>> batches = [.. source.ToBatches(2)];
+        string?[] source = ["a", null, "b"];
 
-        Assert.Equal(3, batches.Count);
+        Assert.Equal(["a", "b"], source.WhereNotNull());
     }
 
     [Fact]
-    public void Core_GuidExtensions_IsEmpty_ResolvedFromPackage()
+    public void Core_ErrorExceptionExtensions_ToException_ResolvedFromPackage()
     {
-        Assert.True(Guid.Empty.IsEmpty());
-        Assert.False(Guid.NewGuid().IsEmpty());
-    }
+        var exception = Error.NotFound("x.notfound", "Not found.").ToException();
 
-    [Fact]
-    public void Core_DateTimeOffsetExtensions_ToUnixMilliseconds_ResolvedFromPackage()
-    {
-        DateTimeOffset epoch = DateTimeOffset.UnixEpoch;
-        long ms = epoch.ToUnixMilliseconds();
-
-        Assert.Equal(0L, ms);
+        Assert.IsType<NotFoundException>(exception);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -326,7 +317,7 @@ public sealed class ConsumerDependencyGraphTests
     // SharedKernel.Guards was merged into SharedKernel.Core (P-505/WO-082) and no longer exists
     // as a standalone package — these tests now verify that the Guard/IGuardClause surface
     // resolves correctly from the packed SharedKernel.Core assembly, under the exact same
-    // SharedKernel.Guards/SharedKernel.Guards.Clauses C# namespaces it always used, and that
+    // SharedKernel.Guards C# namespace, and that
     // SharedKernel.Core's transitive dependency (Primitives only) resolves without conflict.
     // ──────────────────────────────────────────────────────────────────────────
 

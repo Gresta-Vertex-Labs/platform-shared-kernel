@@ -4,7 +4,13 @@ The foundation layer of [Platform.SharedKernel](https://github.com/Gresta-Vertex
 
 It gives you four things: a way to return failures without exceptions (`Result<T>`, `Error`), a testable clock (`IClock`), a richer enum (`SmartEnum<TEnum, TValue>`), and the registries that stop two packages from disagreeing about a wire identifier.
 
+```shell
+dotnet add package SharedKernel.Primitives
+```
+
 **One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by `AddClock()`.
+
+This package defines the types. The operations on them live one layer up, in [`SharedKernel.Core`](../SharedKernel.Core/README.md): railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses, and the exception hierarchy. Most services reference both.
 
 **Trim- and AOT-clean.** Compiles with zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`, and `SmartEnum` lookups are verified working against a self-contained `TrimMode=full` publish. No reflection, no `dynamic`, no expression trees, no runtime code generation anywhere.
 
@@ -55,7 +61,17 @@ Use(result.Value);
 | `Result` | The operation returns nothing on success — a command, a side effect. |
 | `ValidationResult` / `<T>` | Several things can fail **at once** and the caller needs all of them. |
 
-**Accessing the wrong side throws.** `Value` on a failure and `Error` on a success both throw `InvalidOperationException`. That is deliberate — a silent default would hide the bug. Check `IsSuccess`/`IsFailure` first.
+**Accessing the wrong side throws.** `Value` on a failure and `Error` on a success both throw `InvalidOperationException`. That is deliberate — a silent default would hide the bug. Check `IsSuccess`/`IsFailure` first, or let `SharedKernel.Core` do the branching:
+
+```csharp
+using SharedKernel.Core.Extensions;
+
+Result<OrderDto> dto = Find(id)
+    .Ensure(order => order.IsOpen, OrderErrors.Closed)
+    .Map(order => order.ToDto());
+
+Order order = Find(id).GetValueOrThrow();   // throws NotFoundException for the NotFound error
+```
 
 `Error` is a `sealed record` of `(Code, Message, Type)` with value equality, and one factory per `ErrorType`:
 
@@ -96,6 +112,20 @@ if (cmd.Quantity <= 0)                   errors.Add(Error.Validation("quantity.p
 return errors.Count == 0
     ? ValidationResult<OrderDraft>.Success(draft)
     : ValidationResult<OrderDraft>.Failure(errors);
+```
+
+You rarely need to build the list by hand. `SharedKernel.Core` produces a `ValidationResult` from guards or from several results:
+
+```csharp
+using SharedKernel.Core.Extensions;   // ResultCombine
+using SharedKernel.Guards;            // Guard
+
+ValidationResult validation = Guard.Collect(
+    Guard.Against.NullOrWhiteSpace(cmd.Name),
+    Guard.Against.NegativeOrZero(cmd.Quantity));
+
+// or, from independent Result<T> checks:
+ValidationResult<IReadOnlyList<LineItem>> lines = ResultCombine.Combine(cmd.Lines.Select(ParseLine));
 ```
 
 Both types **snapshot** the errors you pass, so continuing to mutate your own list afterwards cannot change the result, and both compare **by value**, so two results built from equal errors are equal. `Failure` rejects an empty sequence and a `null` element.
@@ -254,8 +284,9 @@ Each of these was found by executing the assembly, and each is pinned by a test.
 
 ## Deliberately not here
 
-- **`Map` / `Bind` / `Tap` and other railway combinators** → `SharedKernel.Core`, with `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
-- **Guard clauses** → `SharedKernel.Core`, under the `SharedKernel.Guards` namespace.
+- **Railway combinators** (`Map`, `Bind`, `Ensure`, `Tap`, `TapError`, `Match`, `GetValueOrThrow`) for both `Result<T>` and `Result`, with `Task` and `ValueTask` overloads → `SharedKernel.Core`, alongside `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
+- **Guard clauses** (`Guard.Against.*`, `Guard.Throw.*`, `Guard.Collect`) → `SharedKernel.Core`, in the `SharedKernel.Guards` namespace.
+- **Exceptions** (`DomainException`, `ValidationException`, `NotFoundException`, `ConflictException`, `UnauthorizedException`, `ForbiddenException`) and `error.ToException()`, which picks the one matching an `ErrorType` → `SharedKernel.Core`. Primitives deliberately contains no exception types: it models failures as values.
 - **A metadata bag on `Error`** — evaluated and declined. It breaks the type's value-equality contract and raises AOT and cross-process-serialization questions. Both motivating needs (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead.
 - **A DI extension for `IIdGenerator`** — one implementation, one line to register.
 - **A local-time member on `IClock`** — presentation concern.

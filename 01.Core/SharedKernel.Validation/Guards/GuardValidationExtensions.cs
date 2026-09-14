@@ -1,4 +1,4 @@
-using SharedKernel.Guards.Clauses;
+using SharedKernel.Guards;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Validation.Errors;

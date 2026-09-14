@@ -1,3 +1,4 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -5,100 +6,99 @@ namespace SharedKernel.Core.Extensions;
 
 /// <summary>
 /// Railway-oriented extension methods for <see cref="Result{T}"/> and <see cref="Result"/>.
-/// All methods are static and AOT-safe. Async overloads avoid unnecessary state machine
-/// allocation on the outer extension body — only the continuation lambda is async when required.
 /// </summary>
-public static class ResultExtensions
+/// <remarks>
+/// <para>
+/// A failure short-circuits every operation: the continuation is not called and the original
+/// <see cref="Error"/> flows through unchanged. <c>Tap</c> and <c>TapError</c> run a side effect and return
+/// the result they were given.
+/// </para>
+/// <para>
+/// Every operation has asynchronous overloads. A <see cref="Task{TResult}"/> source accepts synchronous or
+/// <see cref="Task"/>-returning continuations; a <see cref="ValueTask{TResult}"/> source accepts synchronous
+/// or <see cref="ValueTask"/>-returning continuations; a plain result accepts <see cref="Task"/>-returning
+/// continuations. Keeping the continuation's awaitable type the same as the source's is what lets an
+/// <c>async</c> lambda bind to exactly one overload.
+/// </para>
+/// <para>
+/// Awaiting an asynchronous overload rethrows the original exception of a faulted source and
+/// <see cref="OperationCanceledException"/> for a cancelled one. Neither is ever converted into a failed
+/// result.
+/// </para>
+/// </remarks>
+public static partial class ResultExtensions
 {
     // -------------------------------------------------------------------------
-    // Synchronous extensions on Result<T>
+    // Result<T>
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Projects the success value of <paramref name="result"/> through <paramref name="map"/>.
-    /// If the result is a failure, the error is forwarded unchanged.
-    /// </summary>
+    /// <summary>Projects the success value through <paramref name="map"/>.</summary>
     /// <typeparam name="T">The input success type.</typeparam>
     /// <typeparam name="TOut">The output success type.</typeparam>
     /// <param name="result">The source result.</param>
-    /// <param name="map">A projection applied to the success value.</param>
-    public static Result<TOut> Map<T, TOut>(
-        this Result<T> result,
-        Func<T, TOut> map)
+    /// <param name="map">The projection applied to the success value.</param>
+    public static Result<TOut> Map<T, TOut>(this Result<T> result, Func<T, TOut> map)
     {
+        ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(map);
-        return result.IsSuccess
-            ? Result<TOut>.Success(map(result.Value))
-            : Result<TOut>.Failure(result.Error);
+        return result.IsSuccess ? Result<TOut>.Success(map(result.Value)) : Result<TOut>.Failure(result.Error);
     }
 
-    /// <summary>
-    /// Projects the error of a failed <paramref name="result"/> through <paramref name="map"/>.
-    /// If the result is a success, the value is forwarded unchanged.
-    /// </summary>
+    /// <summary>Projects the error of a failed result through <paramref name="map"/>.</summary>
     /// <typeparam name="T">The success type.</typeparam>
     /// <param name="result">The source result.</param>
-    /// <param name="map">A projection applied to the error.</param>
-    public static Result<T> MapError<T>(
-        this Result<T> result,
-        Func<Error, Error> map)
+    /// <param name="map">The projection applied to the error.</param>
+    public static Result<T> MapError<T>(this Result<T> result, Func<Error, Error> map)
     {
+        ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(map);
-        return result.IsFailure
-            ? Result<T>.Failure(map(result.Error))
-            : result;
+        return result.IsFailure ? Result<T>.Failure(map(result.Error)) : result;
     }
 
-    /// <summary>
-    /// Chains a result-returning operation after a successful <paramref name="result"/>.
-    /// Short-circuits on failure — <paramref name="bind"/> is never called when the input is a failure.
-    /// </summary>
+    /// <summary>Chains a result-returning operation onto the success value.</summary>
     /// <typeparam name="T">The input success type.</typeparam>
     /// <typeparam name="TOut">The output success type.</typeparam>
     /// <param name="result">The source result.</param>
-    /// <param name="bind">A function that returns a new result from the success value.</param>
-    public static Result<TOut> Bind<T, TOut>(
-        this Result<T> result,
-        Func<T, Result<TOut>> bind)
+    /// <param name="bind">The operation to run on the success value.</param>
+    public static Result<TOut> Bind<T, TOut>(this Result<T> result, Func<T, Result<TOut>> bind)
     {
+        ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(bind);
-        return result.IsSuccess
-            ? bind(result.Value)
-            : Result<TOut>.Failure(result.Error);
+        return result.IsSuccess ? bind(result.Value) : Result<TOut>.Failure(result.Error);
     }
 
-    /// <summary>
-    /// Folds the result into a single value by applying either <paramref name="onSuccess"/>
-    /// or <paramref name="onFailure"/>.
-    /// </summary>
+    /// <summary>Chains an operation that returns a non-generic <see cref="Result"/> onto the success value.</summary>
+    /// <typeparam name="T">The input success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="bind">The operation to run on the success value.</param>
+    public static Result Bind<T>(this Result<T> result, Func<T, Result> bind)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(bind);
+        return result.IsSuccess ? bind(result.Value) : Result.Failure(result.Error);
+    }
+
+    /// <summary>Folds the result into a single value.</summary>
     /// <typeparam name="T">The success type.</typeparam>
     /// <typeparam name="TOut">The folded output type.</typeparam>
     /// <param name="result">The source result.</param>
-    /// <param name="onSuccess">Applied when the result is a success.</param>
-    /// <param name="onFailure">Applied when the result is a failure.</param>
-    public static TOut Match<T, TOut>(
-        this Result<T> result,
-        Func<T, TOut> onSuccess,
-        Func<Error, TOut> onFailure)
+    /// <param name="onSuccess">Applied to the success value.</param>
+    /// <param name="onFailure">Applied to the error.</param>
+    public static TOut Match<T, TOut>(this Result<T> result, Func<T, TOut> onSuccess, Func<Error, TOut> onFailure)
     {
+        ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(onSuccess);
         ArgumentNullException.ThrowIfNull(onFailure);
-        return result.IsSuccess
-            ? onSuccess(result.Value)
-            : onFailure(result.Error);
+        return result.IsSuccess ? onSuccess(result.Value) : onFailure(result.Error);
     }
 
-    /// <summary>
-    /// Executes a side-effecting <paramref name="action"/> if the result is a success,
-    /// then returns the original result unchanged.
-    /// </summary>
+    /// <summary>Runs <paramref name="action"/> on the success value, then returns the result unchanged.</summary>
     /// <typeparam name="T">The success type.</typeparam>
     /// <param name="result">The source result.</param>
-    /// <param name="action">A side-effecting action applied to the success value.</param>
-    public static Result<T> Tap<T>(
-        this Result<T> result,
-        Action<T> action)
+    /// <param name="action">The side effect to run on success.</param>
+    public static Result<T> Tap<T>(this Result<T> result, Action<T> action)
     {
+        ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(action);
         if (result.IsSuccess)
             action(result.Value);
@@ -106,21 +106,126 @@ public static class ResultExtensions
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // Void Match on non-generic Result
-    // -------------------------------------------------------------------------
+    /// <summary>Runs <paramref name="action"/> on the error of a failed result, then returns the result unchanged.</summary>
+    /// <typeparam name="T">The success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="action">The side effect to run on failure, such as logging.</param>
+    public static Result<T> TapError<T>(this Result<T> result, Action<Error> action)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(action);
+        if (result.IsFailure)
+            action(result.Error);
+
+        return result;
+    }
 
     /// <summary>
-    /// Executes either <paramref name="onSuccess"/> or <paramref name="onFailure"/> depending
-    /// on the state of the non-generic <paramref name="result"/>.
+    /// Turns a success into a failure carrying <paramref name="error"/> when <paramref name="predicate"/>
+    /// returns <see langword="false"/>.
     /// </summary>
-    /// <param name="result">The source void result.</param>
-    /// <param name="onSuccess">Action executed when the result is a success.</param>
-    /// <param name="onFailure">Action executed when the result is a failure, receiving the error.</param>
-    public static void Match(
-        this Result result,
-        Action onSuccess,
-        Action<Error> onFailure)
+    /// <typeparam name="T">The success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="predicate">The condition the success value must satisfy.</param>
+    /// <param name="error">The error to return when the condition is not satisfied.</param>
+    public static Result<T> Ensure<T>(this Result<T> result, Func<T, bool> predicate, Error error)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(predicate);
+        ArgumentNullException.ThrowIfNull(error);
+        return result.IsFailure || predicate(result.Value) ? result : Result<T>.Failure(error);
+    }
+
+    /// <summary>
+    /// Turns a success into a failure carrying the error built by <paramref name="errorFactory"/> when
+    /// <paramref name="predicate"/> returns <see langword="false"/>.
+    /// </summary>
+    /// <typeparam name="T">The success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="predicate">The condition the success value must satisfy.</param>
+    /// <param name="errorFactory">Builds the error from the rejected value.</param>
+    public static Result<T> Ensure<T>(this Result<T> result, Func<T, bool> predicate, Func<T, Error> errorFactory)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(predicate);
+        ArgumentNullException.ThrowIfNull(errorFactory);
+        return result.IsFailure || predicate(result.Value) ? result : Result<T>.Failure(errorFactory(result.Value));
+    }
+
+    /// <summary>
+    /// Returns the success value, or throws the exception that matches the error. The bridge from the
+    /// result railway to code that expects exceptions.
+    /// </summary>
+    /// <typeparam name="T">The success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <exception cref="SharedKernelException">
+    /// Thrown when the result is a failure; the subclass is chosen by <see cref="ErrorExceptionExtensions.ToException(Error)"/>.
+    /// </exception>
+    public static T GetValueOrThrow<T>(this Result<T> result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return result.IsSuccess ? result.Value : throw result.Error.ToException();
+    }
+
+    // -------------------------------------------------------------------------
+    // Result
+    // -------------------------------------------------------------------------
+
+    /// <summary>Produces a value from <paramref name="map"/> when the result is a success.</summary>
+    /// <typeparam name="TOut">The output success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="map">Produces the success value.</param>
+    public static Result<TOut> Map<TOut>(this Result result, Func<TOut> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        return result.IsSuccess ? Result<TOut>.Success(map()) : Result<TOut>.Failure(result.Error);
+    }
+
+    /// <summary>Projects the error of a failed result through <paramref name="map"/>.</summary>
+    /// <param name="result">The source result.</param>
+    /// <param name="map">The projection applied to the error.</param>
+    public static Result MapError(this Result result, Func<Error, Error> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        return result.IsFailure ? Result.Failure(map(result.Error)) : result;
+    }
+
+    /// <summary>Chains a result-returning operation after a success.</summary>
+    /// <param name="result">The source result.</param>
+    /// <param name="bind">The operation to run on success.</param>
+    public static Result Bind(this Result result, Func<Result> bind)
+    {
+        ArgumentNullException.ThrowIfNull(bind);
+        return result.IsSuccess ? bind() : result;
+    }
+
+    /// <summary>Chains an operation that returns a <see cref="Result{T}"/> after a success.</summary>
+    /// <typeparam name="TOut">The output success type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="bind">The operation to run on success.</param>
+    public static Result<TOut> Bind<TOut>(this Result result, Func<Result<TOut>> bind)
+    {
+        ArgumentNullException.ThrowIfNull(bind);
+        return result.IsSuccess ? bind() : Result<TOut>.Failure(result.Error);
+    }
+
+    /// <summary>Folds the result into a single value.</summary>
+    /// <typeparam name="TOut">The folded output type.</typeparam>
+    /// <param name="result">The source result.</param>
+    /// <param name="onSuccess">Produces the value on success.</param>
+    /// <param name="onFailure">Applied to the error.</param>
+    public static TOut Match<TOut>(this Result result, Func<TOut> onSuccess, Func<Error, TOut> onFailure)
+    {
+        ArgumentNullException.ThrowIfNull(onSuccess);
+        ArgumentNullException.ThrowIfNull(onFailure);
+        return result.IsSuccess ? onSuccess() : onFailure(result.Error);
+    }
+
+    /// <summary>Runs <paramref name="onSuccess"/> or <paramref name="onFailure"/> depending on the result.</summary>
+    /// <param name="result">The source result.</param>
+    /// <param name="onSuccess">Runs on success.</param>
+    /// <param name="onFailure">Runs on failure, receiving the error.</param>
+    public static void Match(this Result result, Action onSuccess, Action<Error> onFailure)
     {
         ArgumentNullException.ThrowIfNull(onSuccess);
         ArgumentNullException.ThrowIfNull(onFailure);
@@ -131,146 +236,55 @@ public static class ResultExtensions
             onFailure(result.Error);
     }
 
-    // -------------------------------------------------------------------------
-    // Async extensions on Task<Result<T>>
-    // Outer extension bodies do NOT use async/await to avoid needless state machines.
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Asynchronously projects the success value using a synchronous <paramref name="map"/> function.
-    /// </summary>
-    public static Task<Result<TOut>> Map<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, TOut> map)
-    {
-        ArgumentNullException.ThrowIfNull(map);
-        return resultTask.ContinueWith(
-            t => t.Result.Map(map),
-            TaskContinuationOptions.ExecuteSynchronously);
-    }
-
-    /// <summary>
-    /// Asynchronously projects the success value using an async <paramref name="map"/> function.
-    /// </summary>
-    public static Task<Result<TOut>> Map<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, Task<TOut>> map)
-    {
-        ArgumentNullException.ThrowIfNull(map);
-        return resultTask.ContinueWith(async t =>
-        {
-            var result = t.Result;
-            return result.IsSuccess
-                ? Result<TOut>.Success(await map(result.Value).ConfigureAwait(false))
-                : Result<TOut>.Failure(result.Error);
-        }, TaskContinuationOptions.ExecuteSynchronously).Unwrap();
-    }
-
-    /// <summary>
-    /// Asynchronously projects the error using a synchronous <paramref name="map"/> function.
-    /// </summary>
-    public static Task<Result<T>> MapError<T>(
-        this Task<Result<T>> resultTask,
-        Func<Error, Error> map)
-    {
-        ArgumentNullException.ThrowIfNull(map);
-        return resultTask.ContinueWith(
-            t => t.Result.MapError(map),
-            TaskContinuationOptions.ExecuteSynchronously);
-    }
-
-    /// <summary>
-    /// Asynchronously chains a synchronous result-returning operation.
-    /// </summary>
-    public static Task<Result<TOut>> Bind<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, Result<TOut>> bind)
-    {
-        ArgumentNullException.ThrowIfNull(bind);
-        return resultTask.ContinueWith(
-            t => t.Result.Bind(bind),
-            TaskContinuationOptions.ExecuteSynchronously);
-    }
-
-    /// <summary>
-    /// Asynchronously chains an async result-returning operation.
-    /// </summary>
-    public static Task<Result<TOut>> Bind<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, Task<Result<TOut>>> bind)
-    {
-        ArgumentNullException.ThrowIfNull(bind);
-        return resultTask.ContinueWith(t =>
-        {
-            var result = t.Result;
-            return result.IsSuccess
-                ? bind(result.Value)
-                : Task.FromResult(Result<TOut>.Failure(result.Error));
-        }, TaskContinuationOptions.ExecuteSynchronously).Unwrap();
-    }
-
-    /// <summary>
-    /// Asynchronously folds the result using synchronous selector functions.
-    /// </summary>
-    public static Task<TOut> Match<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, TOut> onSuccess,
-        Func<Error, TOut> onFailure)
-    {
-        ArgumentNullException.ThrowIfNull(onSuccess);
-        ArgumentNullException.ThrowIfNull(onFailure);
-        return resultTask.ContinueWith(
-            t => t.Result.Match(onSuccess, onFailure),
-            TaskContinuationOptions.ExecuteSynchronously);
-    }
-
-    /// <summary>
-    /// Asynchronously folds the result using async selector functions.
-    /// </summary>
-    public static Task<TOut> Match<T, TOut>(
-        this Task<Result<T>> resultTask,
-        Func<T, Task<TOut>> onSuccess,
-        Func<Error, Task<TOut>> onFailure)
-    {
-        ArgumentNullException.ThrowIfNull(onSuccess);
-        ArgumentNullException.ThrowIfNull(onFailure);
-        return resultTask.ContinueWith(t =>
-        {
-            var result = t.Result;
-            return result.IsSuccess
-                ? onSuccess(result.Value)
-                : onFailure(result.Error);
-        }, TaskContinuationOptions.ExecuteSynchronously).Unwrap();
-    }
-
-    /// <summary>
-    /// Asynchronously executes a synchronous side-effecting action on success, then forwards the result.
-    /// </summary>
-    public static Task<Result<T>> Tap<T>(
-        this Task<Result<T>> resultTask,
-        Action<T> action)
+    /// <summary>Runs <paramref name="action"/> on success, then returns the result unchanged.</summary>
+    /// <param name="result">The source result.</param>
+    /// <param name="action">The side effect to run on success.</param>
+    public static Result Tap(this Result result, Action action)
     {
         ArgumentNullException.ThrowIfNull(action);
-        return resultTask.ContinueWith(
-            t => t.Result.Tap(action),
-            TaskContinuationOptions.ExecuteSynchronously);
+        if (result.IsSuccess)
+            action();
+
+        return result;
+    }
+
+    /// <summary>Runs <paramref name="action"/> on the error of a failed result, then returns the result unchanged.</summary>
+    /// <param name="result">The source result.</param>
+    /// <param name="action">The side effect to run on failure, such as logging.</param>
+    public static Result TapError(this Result result, Action<Error> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        if (result.IsFailure)
+            action(result.Error);
+
+        return result;
     }
 
     /// <summary>
-    /// Asynchronously executes an async side-effecting action on success, then forwards the result.
+    /// Turns a success into a failure carrying <paramref name="error"/> when <paramref name="predicate"/>
+    /// returns <see langword="false"/>.
     /// </summary>
-    public static Task<Result<T>> Tap<T>(
-        this Task<Result<T>> resultTask,
-        Func<T, Task> action)
+    /// <param name="result">The source result.</param>
+    /// <param name="predicate">The condition that must hold.</param>
+    /// <param name="error">The error to return when the condition does not hold.</param>
+    public static Result Ensure(this Result result, Func<bool> predicate, Error error)
     {
-        ArgumentNullException.ThrowIfNull(action);
-        return resultTask.ContinueWith(async t =>
-        {
-            var result = t.Result;
-            if (result.IsSuccess)
-                await action(result.Value).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(predicate);
+        ArgumentNullException.ThrowIfNull(error);
+        return result.IsFailure || predicate() ? result : Result.Failure(error);
+    }
 
-            return result;
-        }, TaskContinuationOptions.ExecuteSynchronously).Unwrap();
+    /// <summary>
+    /// Throws the exception that matches the error when the result is a failure. The bridge from the result
+    /// railway to code that expects exceptions.
+    /// </summary>
+    /// <param name="result">The source result.</param>
+    /// <exception cref="SharedKernelException">
+    /// Thrown when the result is a failure; the subclass is chosen by <see cref="ErrorExceptionExtensions.ToException(Error)"/>.
+    /// </exception>
+    public static void ThrowIfFailure(this Result result)
+    {
+        if (result.IsFailure)
+            throw result.Error.ToException();
     }
 }

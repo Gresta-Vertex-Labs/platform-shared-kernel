@@ -1,18 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Core building blocks for the SharedKernel: base exception hierarchy, Result&lt;T&gt; railway extension methods (Map, Bind, Match, Tap, async), BCL extension methods (string, IEnumerable&lt;T&gt;, DateTimeOffset, Guid), and the two-path guard clause system (Guard.Against.* functional, Guard.Throw.* imperative — merged from SharedKernel.Guards, P-505/WO-082, same SharedKernel.Guards namespace preserved unchanged). Zero third-party NuGet dependencies. Depends on SharedKernel.Primitives.</Description>
-    <PackageReleaseNotes>WO-082 / P-505 (BREAKING — package retirement, no namespace/source change for consumers):
-- SharedKernel.Guards.csproj no longer exists as a separately packed/published project. Every type it contained (Guard, Guard.Against.*, Guard.Throw.*, IGuardClause, GuardDescriptions) now lives inside this package, under the exact same SharedKernel.Guards / SharedKernel.Guards.Clauses / SharedKernel.Guards.Descriptions namespaces. A consumer's only required change is swapping the PackageReference from SharedKernel.Guards to SharedKernel.Core — no source edit.
-WO-083 / P-522 (additive, non-breaking):
-- The compiled-Regex cache backing Guard.Against.InvalidFormat/.Email is now bounded (a fixed maximum distinct-pattern count with oldest-first eviction) instead of growing without bound on every distinct caller-supplied pattern ever seen. Every existing call site passes a literal, compile-time-known pattern, so eviction never triggers in practice — this closes a hypothetical future vector where a pattern derived from configuration or user input could grow the cache and its JIT-compilation cost without limit.
-WO-083 / P-510 (BREAKING BEHAVIOR CHANGE — no signature changes):
-- ResultTry.Try/TryAsync's default (no custom onException) exception mapping no longer interpolates the caught exception's raw "{ExceptionType}: {ExceptionMessage}" into Error.Message. Error.Message is now always the fixed, safe ResultTry.DefaultUnexpectedMessage string. A caught exception (e.g. a database driver or third-party SDK error) can carry sensitive text — connection-string fragments, usernames, internal hostnames — that must never reach an HTTP response via Error.ToProblemDetails(). The raw exception detail is now recorded on the ambient System.Diagnostics.Activity via Activity.Current?.AddException(exception) (a .NET 8+ BCL member, zero new dependency) instead — one call per flattened AggregateException inner exception. A caller supplying its own onException mapper is completely unaffected; it still receives the raw exception exactly as before.
-- Every ResultTry catch clause (Try, Try w/ mapper, TryAsync, TryAsync w/ mapper) now excludes OperationCanceledException (and its subclass TaskCanceledException) via `catch (Exception exception) when (exception is not OperationCanceledException)`. A genuine cancellation now always propagates as a thrown exception instead of being silently converted into a Result.Failure — a client disconnect must not become a synthesized failure result that looks like an ordinary error.
-- Honors this same security audit's ratified DECLINED "no metadata bag on Error" ruling: Error stays exactly (Code, Message, Type) — no new field was added to carry exception detail.</PackageReleaseNotes>
-    <PackageTags>shared-kernel;railway-oriented;exceptions;extensions;guard;guard-clause;validation;aot</PackageTags>
+    <Description>Core building blocks for .NET services built on SharedKernel.Primitives: railway extensions for Result and Result&lt;T&gt; (Map, Bind, Ensure, Tap, Match, with Task and ValueTask overloads), exception boundaries (ResultTry), multi-result aggregation (ResultCombine), a base exception hierarchy that always carries a structured Error, and two-path guard clauses (Guard.Against returns an Error, Guard.Throw throws). No third-party dependencies.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;result;railway-oriented;guard-clauses;exceptions;ddd</PackageTags>
+    <!--
+      Ship the XML documentation alongside the assembly. Not redundant with Directory.Build.targets: the SDK
+      assigns GenerateDocumentationFile=false early, so that file's empty-string-guarded default never applies,
+      and the nupkg would otherwise contain the .dll and no .xml. CS1591 below makes an undocumented public
+      member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027 discourage optional parameters on overloads. Every guard ends with an optional
+         [CallerArgumentExpression] paramName, which must be optional to work, as in ArgumentNullException.ThrowIfNull. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

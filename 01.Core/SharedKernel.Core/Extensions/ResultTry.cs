@@ -5,114 +5,50 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Core.Extensions;
 
 /// <summary>
-/// Exception-boundary entry points that invoke a delegate and convert any thrown exception into a
-/// <see cref="Result{T}"/> failure instead of letting it propagate.
+/// Exception boundaries: run a delegate and turn a thrown exception into a failed <see cref="Result"/> or
+/// <see cref="Result{T}"/> instead of letting it propagate.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Use <see cref="Try{T}(Func{T})"/> / <see cref="TryAsync{T}(Func{Task{T}})"/> as the sanctioned seam
-/// for the one legitimate place Result-oriented code still touches a throwing third-party SDK call or a
-/// BCL method with no <see cref="Result{T}"/>-returning equivalent. Every call site otherwise
-/// hand-rolling <c>try</c>/<c>catch</c>-to-<see cref="Result{T}"/> translation should route through this
-/// instead.
+/// Use these where result-oriented code has to call something that throws, such as a third-party SDK or a
+/// BCL method with no result-returning equivalent, instead of hand-writing <c>try</c>/<c>catch</c>.
 /// </para>
 /// <para>
-/// The delegate is always invoked. On normal completion, the returned value becomes
-/// <see cref="Result{T}.Success(T)"/>. On any thrown exception — never rethrown — the exception is
-/// translated to <see cref="Result{T}.Failure(Error)"/>, either via the caller-supplied
-/// <c>onException</c> mapper, or, when none is supplied, a default mapping that produces
-/// <see cref="Error.Unexpected(string, string)"/> with code <see cref="ErrorCodes.Unexpected.Default"/>.
+/// <b>Default mapping.</b> Without an <c>onException</c> mapper, a thrown exception becomes
+/// <see cref="Error.Unexpected(string, string)"/> with code <see cref="ErrorCodes.Unexpected.Default"/> and
+/// the fixed message <see cref="DefaultUnexpectedMessage"/>. The exception's own type and message are never
+/// copied into the error: they can contain connection-string fragments, user names, or internal host
+/// names, and an error's message can reach an HTTP response. The exception is recorded on the current
+/// <see cref="Activity"/> instead, one entry per inner exception of an <see cref="AggregateException"/>.
+/// When there is no current activity it is recorded nowhere; pass an <c>onException</c> mapper to capture
+/// it yourself.
 /// </para>
 /// <para>
-/// <b>
-/// SECURITY (P-510/WO-083): THE DEFAULT MAPPING'S <see cref="Error.Message"/> IS ALWAYS THE FIXED,
-/// SAFE <see cref="DefaultUnexpectedMessage"/> STRING — IT NEVER CONTAINS THE CAUGHT EXCEPTION'S RAW
-/// TYPE NAME OR MESSAGE. A caught exception (e.g. from a database driver or third-party SDK) can carry
-/// sensitive text — connection-string fragments, usernames, internal hostnames — that must never reach
-/// an HTTP response via <c>Error.ToProblemDetails()</c>. The raw exception detail is instead recorded on
-/// the AMBIENT <see cref="Activity"/> via <see cref="Activity.AddException(Exception, in TagList, DateTimeOffset)"/>
-/// (a real .NET 8+ BCL member — no new dependency), the SAME ambient OpenTelemetry trace-context channel
-/// this platform's Logging Conventions already use for CorrelationId/TraceId/SpanId propagation. When
-/// <see cref="Activity.Current"/> is <c>null</c> (no active span), the exception detail is recorded
-/// nowhere — a documented, accepted limitation. A caller wanting a guaranteed capture path must supply
-/// its own <c>onException</c> mapper, which receives the raw exception exactly as before and is entirely
-/// unaffected by this redaction.
-/// </b>
-/// </para>
-/// <para>
-/// An <see cref="AggregateException"/> (e.g., one caught from a <c>Task.Wait()</c>/<c>.Result</c>-style
-/// call, or a <c>Task.WhenAll</c> await) is flattened via <see cref="AggregateException.Flatten"/> before
-/// being recorded — one <see cref="Activity.AddException(Exception, in TagList, DateTimeOffset)"/> call
-/// per flattened inner exception, so every inner exception is individually represented on the trace, not
-/// just the generic outer aggregate. This flattening applies only to the default mapper; a caller-supplied
-/// <c>onException</c> mapper receives the raw, unflattened exception and is free to apply its own
-/// flattening strategy.
-/// </para>
-/// <para>
-/// <b>
-/// CANCELLATION (P-510/WO-083): EVERY CATCH CLAUSE ON THIS TYPE — INCLUDING THE CUSTOM-<c>onException</c>
-/// OVERLOADS — EXCLUDES <see cref="OperationCanceledException"/> (AND ITS SUBCLASS
-/// <see cref="TaskCanceledException"/>). A GENUINE CANCELLATION MUST ALWAYS PROPAGATE AS A THROWN
-/// EXCEPTION; IT IS NEVER CONVERTED INTO A <see cref="Result{T}"/> FAILURE, REGARDLESS OF WHICH MAPPER
-/// (DEFAULT OR CALLER-SUPPLIED) WOULD OTHERWISE HANDLE IT. A CLIENT DISCONNECT / REQUEST-ABORT MUST NOT
-/// BECOME A SYNTHESIZED FAILURE RESULT THAT LOOKS LIKE AN ORDINARY 500.
-/// </b>
-/// </para>
-/// <para>
-/// <see cref="TryAsync{T}(Func{Task{T}})"/> is a genuine <c>async</c>/<c>await</c> method — the one
-/// documented exception to this domain's "avoid async/await when only awaiting the input" railway rule
-/// (see <see cref="ResultExtensions"/>'s async overloads). Catching an exception thrown during an awaited
-/// operation requires the <c>try</c>/<c>catch</c> to wrap the <c>await</c> itself, which is impossible
-/// without a genuine async state machine.
+/// <b>Cancellation.</b> <see cref="OperationCanceledException"/>, including
+/// <see cref="TaskCanceledException"/>, is never caught, with or without a mapper. A cancelled request
+/// must surface as cancellation, not as a failure that looks like an ordinary error.
 /// </para>
 /// </remarks>
 public static class ResultTry
 {
     /// <summary>
-    /// The fixed, safe <see cref="Error.Message"/> produced by the default exception mapping. Never
-    /// varies with the caught exception's own type or message — see the SECURITY remarks on this type.
+    /// The message of the error produced by the default exception mapping. It never varies with the
+    /// exception caught.
     /// </summary>
     public const string DefaultUnexpectedMessage = "An unexpected error occurred while executing the operation.";
 
-    /// <summary>
-    /// Invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/> on normal
-    /// completion or <see cref="Result{T}.Failure(Error)"/> (via the default exception mapping) if it
-    /// throws. Never rethrows.
-    /// </summary>
+    /// <summary>Runs <paramref name="operation"/> and returns its value as a success, or the exception as a failure.</summary>
     /// <typeparam name="T">The success value type.</typeparam>
-    /// <param name="operation">The delegate to invoke inside the exception boundary.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <c>null</c>.</exception>
+    /// <param name="operation">The delegate to run.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
     public static Result<T> Try<T>(Func<T> operation)
-    {
-        ArgumentNullException.ThrowIfNull(operation);
+        => Try(operation, MapException);
 
-        try
-        {
-            return Result<T>.Success(operation());
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return Result<T>.Failure(MapException(exception));
-        }
-    }
-
-    /// <summary>
-    /// Invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/> on normal
-    /// completion or <see cref="Result{T}.Failure(Error)"/> (via <paramref name="onException"/>) if it
-    /// throws. Never rethrows — except a thrown <see cref="OperationCanceledException"/>, which always
-    /// propagates uncaught, bypassing <paramref name="onException"/> entirely (see the CANCELLATION
-    /// remarks on this type).
-    /// </summary>
+    /// <summary>Runs <paramref name="operation"/> and returns its value as a success, or the exception mapped by <paramref name="onException"/>.</summary>
     /// <typeparam name="T">The success value type.</typeparam>
-    /// <param name="operation">The delegate to invoke inside the exception boundary.</param>
-    /// <param name="onException">
-    /// Maps a thrown exception to an <see cref="Error"/>. Receives the raw exception — including a raw,
-    /// unflattened <see cref="AggregateException"/> when one is thrown. Never invoked for a thrown
-    /// <see cref="OperationCanceledException"/>.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <c>null</c>.
-    /// </exception>
+    /// <param name="operation">The delegate to run.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged, including an unflattened <see cref="AggregateException"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
     public static Result<T> Try<T>(Func<T> operation, Func<Exception, Error> onException)
     {
         ArgumentNullException.ThrowIfNull(operation);
@@ -128,77 +64,185 @@ public static class ResultTry
         }
     }
 
-    /// <summary>
-    /// Asynchronously invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/>
-    /// on normal completion or <see cref="Result{T}.Failure(Error)"/> (via the default exception mapping)
-    /// if it throws or its returned task faults. Never rethrows.
-    /// </summary>
-    /// <typeparam name="T">The success value type.</typeparam>
-    /// <param name="operation">The async delegate to invoke inside the exception boundary.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <c>null</c>.</exception>
-    public static async Task<Result<T>> TryAsync<T>(Func<Task<T>> operation)
-    {
-        ArgumentNullException.ThrowIfNull(operation);
+    /// <summary>Runs <paramref name="operation"/> and returns a success, or the exception as a failure.</summary>
+    /// <param name="operation">The delegate to run.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
+    public static Result Try(Action operation)
+        => Try(operation, MapException);
 
-        try
-        {
-            var value = await operation().ConfigureAwait(false);
-            return Result<T>.Success(value);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return Result<T>.Failure(MapException(exception));
-        }
-    }
-
-    /// <summary>
-    /// Asynchronously invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/>
-    /// on normal completion or <see cref="Result{T}.Failure(Error)"/> (via <paramref name="onException"/>)
-    /// if it throws or its returned task faults. Never rethrows — except a thrown or faulted-with
-    /// <see cref="OperationCanceledException"/>, which always propagates uncaught, bypassing
-    /// <paramref name="onException"/> entirely (see the CANCELLATION remarks on this type).
-    /// </summary>
-    /// <typeparam name="T">The success value type.</typeparam>
-    /// <param name="operation">The async delegate to invoke inside the exception boundary.</param>
-    /// <param name="onException">
-    /// Maps a thrown exception to an <see cref="Error"/>. Receives the raw exception — including a raw,
-    /// unflattened <see cref="AggregateException"/> when one is thrown. Never invoked for a thrown
-    /// <see cref="OperationCanceledException"/>.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <c>null</c>.
-    /// </exception>
-    public static async Task<Result<T>> TryAsync<T>(Func<Task<T>> operation, Func<Exception, Error> onException)
+    /// <summary>Runs <paramref name="operation"/> and returns a success, or the exception mapped by <paramref name="onException"/>.</summary>
+    /// <param name="operation">The delegate to run.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
+    public static Result Try(Action operation, Func<Exception, Error> onException)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(onException);
 
         try
         {
-            var value = await operation().ConfigureAwait(false);
-            return Result<T>.Success(value);
+            operation();
+            return Result.Success();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return Result<T>.Failure(onException(exception));
+            return Result.Failure(onException(exception));
+        }
+    }
+
+    /// <summary>Awaits <paramref name="operation"/> and returns its value as a success, or the exception as a failure.</summary>
+    /// <typeparam name="T">The success value type.</typeparam>
+    /// <param name="operation">The asynchronous delegate to run.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
+    public static Task<Result<T>> TryAsync<T>(Func<Task<T>> operation)
+        => TryAsync(operation, MapException);
+
+    /// <summary>Awaits <paramref name="operation"/> and returns its value as a success, or the exception mapped by <paramref name="onException"/>.</summary>
+    /// <typeparam name="T">The success value type.</typeparam>
+    /// <param name="operation">The asynchronous delegate to run.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged, including an unflattened <see cref="AggregateException"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
+    public static Task<Result<T>> TryAsync<T>(Func<Task<T>> operation, Func<Exception, Error> onException)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(onException);
+        return Core(operation, onException);
+
+        static async Task<Result<T>> Core(Func<Task<T>> operation, Func<Exception, Error> onException)
+        {
+            try
+            {
+                return Result<T>.Success(await operation().ConfigureAwait(false));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                return Result<T>.Failure(onException(exception));
+            }
+        }
+    }
+
+    /// <summary>Awaits <paramref name="operation"/> and returns a success, or the exception as a failure.</summary>
+    /// <param name="operation">The asynchronous delegate to run.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
+    public static Task<Result> TryAsync(Func<Task> operation)
+        => TryAsync(operation, MapException);
+
+    /// <summary>Awaits <paramref name="operation"/> and returns a success, or the exception mapped by <paramref name="onException"/>.</summary>
+    /// <param name="operation">The asynchronous delegate to run.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
+    public static Task<Result> TryAsync(Func<Task> operation, Func<Exception, Error> onException)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(onException);
+        return Core(operation, onException);
+
+        static async Task<Result> Core(Func<Task> operation, Func<Exception, Error> onException)
+        {
+            try
+            {
+                await operation().ConfigureAwait(false);
+                return Result.Success();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                return Result.Failure(onException(exception));
+            }
         }
     }
 
     /// <summary>
-    /// The default exception-to-<see cref="Error"/> mapping used when the caller supplies no custom
-    /// <c>onException</c> delegate. The returned <see cref="Error.Message"/> is ALWAYS the fixed
-    /// <see cref="DefaultUnexpectedMessage"/> string — see the SECURITY remarks on this type. Flattens an
-    /// <see cref="AggregateException"/> so every inner exception is individually recorded on the ambient
-    /// <see cref="Activity"/>, not just the generic outer aggregate.
+    /// Awaits <paramref name="operation"/> with <paramref name="cancellationToken"/> and returns its value as a
+    /// success, or the exception as a failure.
     /// </summary>
+    /// <remarks>
+    /// Throws <see cref="OperationCanceledException"/> without running the delegate when the token is already
+    /// cancelled.
+    /// </remarks>
+    /// <typeparam name="T">The success value type.</typeparam>
+    /// <param name="operation">The asynchronous delegate to run. Receives <paramref name="cancellationToken"/>.</param>
+    /// <param name="cancellationToken">The token passed to <paramref name="operation"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
+    public static Task<Result<T>> TryAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+        => TryAsync(operation, MapException, cancellationToken);
+
+    /// <summary>
+    /// Awaits <paramref name="operation"/> with <paramref name="cancellationToken"/> and returns its value as a
+    /// success, or the exception mapped by <paramref name="onException"/>.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="OperationCanceledException"/> without running the delegate when the token is already
+    /// cancelled.
+    /// </remarks>
+    /// <typeparam name="T">The success value type.</typeparam>
+    /// <param name="operation">The asynchronous delegate to run. Receives <paramref name="cancellationToken"/>.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged.</param>
+    /// <param name="cancellationToken">The token passed to <paramref name="operation"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
+    public static Task<Result<T>> TryAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        Func<Exception, Error> onException,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(onException);
+        return TryAsync(() => Start(operation, cancellationToken), onException);
+    }
+
+    /// <summary>
+    /// Awaits <paramref name="operation"/> with <paramref name="cancellationToken"/> and returns a success, or
+    /// the exception as a failure.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="OperationCanceledException"/> without running the delegate when the token is already
+    /// cancelled.
+    /// </remarks>
+    /// <param name="operation">The asynchronous delegate to run. Receives <paramref name="cancellationToken"/>.</param>
+    /// <param name="cancellationToken">The token passed to <paramref name="operation"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is <see langword="null"/>.</exception>
+    public static Task<Result> TryAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+        => TryAsync(operation, MapException, cancellationToken);
+
+    /// <summary>
+    /// Awaits <paramref name="operation"/> with <paramref name="cancellationToken"/> and returns a success, or
+    /// the exception mapped by <paramref name="onException"/>.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="OperationCanceledException"/> without running the delegate when the token is already
+    /// cancelled.
+    /// </remarks>
+    /// <param name="operation">The asynchronous delegate to run. Receives <paramref name="cancellationToken"/>.</param>
+    /// <param name="onException">Maps the exception to an error. Receives it unchanged.</param>
+    /// <param name="cancellationToken">The token passed to <paramref name="operation"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <see langword="null"/>.</exception>
+    public static Task<Result> TryAsync(
+        Func<CancellationToken, Task> operation,
+        Func<Exception, Error> onException,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(onException);
+        return TryAsync(() => Start(operation, cancellationToken), onException);
+    }
+
+    private static Task<T> Start<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return operation(cancellationToken);
+    }
+
+    private static Task Start(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return operation(cancellationToken);
+    }
+
     private static Error MapException(Exception exception)
     {
         if (exception is AggregateException aggregate)
         {
             foreach (var inner in aggregate.Flatten().InnerExceptions)
-            {
                 Activity.Current?.AddException(inner);
-            }
         }
         else
         {

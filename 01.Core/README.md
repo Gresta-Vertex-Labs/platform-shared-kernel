@@ -1,11 +1,11 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve independently publishable NuGet packages (thirteen minus `SharedKernel.Guards`, merged into `SharedKernel.Core` — P-505/WO-082, shipped, breaking as a package retirement only; the `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces are completely unchanged) — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve independently publishable NuGet packages (thirteen minus `SharedKernel.Guards`, merged into `SharedKernel.Core` by P-505/WO-082; guard clauses now live in the single `SharedKernel.Guards` namespace inside `SharedKernel.Core`) — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
 
 | Package | Purpose |
 |---------|---------|
 | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, `SmartEnum`, `ValidationResult` |
-| `SharedKernel.Core` | Base exceptions, railway extensions, BCL helpers, and the two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) — merged from the former `SharedKernel.Guards` package (P-505/WO-082) |
+| `SharedKernel.Core` | Railway extensions for `Result`/`Result<T>` (sync, `Task`, `ValueTask`), `ResultTry`, `ResultCombine`, base exceptions, BCL helpers, and the two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
 | `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation |
@@ -472,9 +472,11 @@ if (result.IsFailure)
 
 ## SharedKernel.Core — Railway-Oriented Extensions
 
+Package reference: [SharedKernel.Core/README.md](SharedKernel.Core/README.md).
+
 ### Result\<T\> Railway Pattern
 
-Railway-oriented programming (ROP) chains `Result<T>`-returning operations without nested `if` blocks. When any step fails, all subsequent steps are skipped and the original error propagates to the terminal `Match`.
+Railway-oriented programming chains `Result`-returning operations without nested `if` blocks. When a step fails, every later step is skipped and the original error flows to the end of the chain.
 
 ```
 Input ──► [Step 1] ──success──► [Step 2] ──success──► [Step 3] ──success──► Output
@@ -483,267 +485,181 @@ Input ──► [Step 1] ──success──► [Step 2] ──success──► 
                        └───────────────────────┴────────────────────────► Error propagates
 ```
 
-#### Map — Transform the Success Value
+| Method | On success | On failure |
+|--------|------------|------------|
+| `Map` | Transforms the value | Passes the error through |
+| `Bind` | Runs the next `Result`-returning step (`Result<TOut>` or non-generic `Result`) | Passes the error through |
+| `Ensure` | Fails with the supplied error when the predicate is false | Passes the error through |
+| `Tap` | Runs a side effect, returns the result unchanged | Skipped |
+| `TapError` | Skipped | Runs a side effect, returns the result unchanged |
+| `MapError` | Passes the value through | Transforms the error |
+| `Match` | Folds to one value (or runs one of two actions) | Folds to one value (or runs one of two actions) |
+| `GetValueOrThrow` / `ThrowIfFailure` | Returns the value / does nothing | Throws `error.ToException()` |
 
-`Map` projects the success value to a different type. Failures pass through unchanged.
-
-```csharp
-Result<string> name = GetUserName(userId);
-
-Result<int> nameLength = name.Map(n => n.Length);
-// Success:  nameLength.Value == n.Length
-// Failure:  nameLength.Error == original GetUserName error (unchanged)
-```
-
-#### MapError — Transform the Error
-
-`MapError` enriches or replaces an error on the failure path. Successes pass through unchanged.
+Every method exists for `Result<T>` and for the non-generic `Result`.
 
 ```csharp
-Result<Order> order = repository.FindOrder(orderId)
-    .MapError(e => Error.NotFound(
-        "order.not_found",
-        $"Order {orderId} was not found. (inner: {e.Code})"));
+Result<Order> result = repository.FindOrder(orderId)          // Result<Order>
+    .Ensure(order => order.Status == OrderStatus.Open, OrderErrors.NotOpen)
+    .Bind(order => inventory.Reserve(order))                  // Result<Order>
+    .Tap(order => Log.OrderReserved(logger, order.Id))
+    .TapError(error => Log.ReservationFailed(logger, error.Code))
+    .MapError(error => error.Type == ErrorType.NotFound
+        ? Error.NotFound("order.not_found", $"Order {orderId} was not found.")
+        : error);
+
+// Commands that return the non-generic Result chain the same way.
+Result saved = command.Validate()
+    .Bind(() => repository.Save(command))
+    .Tap(() => Log.CommandSaved(logger));
 ```
 
-#### Bind — Chain Operations That Can Fail
+#### Async chains
 
-`Bind` chains a function that itself returns a `Result<TOut>`. The chain short-circuits on the first failure.
+A chain may start from a plain result, a `Task<Result…>`, or a `ValueTask<Result…>`. Each source accepts synchronous steps, plus asynchronous steps of **its own awaitable type**:
 
-```csharp
-Result<Order> result = repository.FindOrder(orderId)   // Result<Order>
-    .Bind(order => inventory.Reserve(order))            // Result<Order>
-    .Bind(order => payment.Charge(order));              // Result<Order>
+| Source | Synchronous steps | Asynchronous steps |
+|--------|-------------------|--------------------|
+| `Result<T>` / `Result` | yes | `Task`-returning |
+| `Task<Result<T>>` / `Task<Result>` | yes | `Task`-returning |
+| `ValueTask<Result<T>>` / `ValueTask<Result>` | yes | `ValueTask`-returning |
 
-// If FindOrder fails, Reserve and Charge are never called.
-// The first failure propagates unchanged to the end of the chain.
-```
-
-#### Match — Fold to a Single Value
-
-`Match` terminates the chain by folding both branches into one value. This is the primary bridge between the domain (railway world) and the presentation layer.
-
-```csharp
-IResult httpResult = result.Match(
-    onSuccess: order => Results.Ok(order),
-    onFailure: error => error.Type switch
-    {
-        ErrorType.NotFound   => Results.NotFound(new { error.Code, error.Message }),
-        ErrorType.Conflict   => Results.Conflict(new { error.Code, error.Message }),
-        ErrorType.Validation => Results.BadRequest(new { error.Code, error.Message }),
-        _                    => Results.Problem(error.Message)
-    });
-```
-
-#### Tap — Side Effects on Success
-
-`Tap` runs a side-effecting action on success (logging, publishing events) and returns the original result unchanged.
-
-```csharp
-Result<Order> result = repository.FindOrder(orderId)
-    .Tap(order => logger.LogInformation("Order {Id} loaded.", order.Id))
-    .Bind(order => inventory.Reserve(order));
-```
-
-#### Void Match on non-generic Result
-
-For `Result` (non-generic, void operations), `Match` accepts two `Action` delegates:
-
-```csharp
-Result commandResult = commandHandler.Handle(command, ct);
-
-commandResult.Match(
-    onSuccess: ()    => logger.LogInformation("Command completed."),
-    onFailure: error => logger.LogWarning("Command failed: {Code}", error.Code));
-```
-
-#### Full Async Railway Chain Example
+Offering both `Task` and `ValueTask` steps on one source would make every `async` lambda ambiguous, so the awaitable type never mixes.
 
 ```csharp
 public async Task<IResult> PlaceOrderAsync(PlaceOrderCommand command, CancellationToken ct)
 {
-    return await repository.FindCustomerAsync(command.CustomerId, ct)  // Task<Result<Customer>>
-        .Bind(customer => ValidateCustomer(customer))                  // Result<Customer>
+    Result<Order> result = await repository.FindCustomerAsync(command.CustomerId, ct)  // Task<Result<Customer>>
+        .Ensure(customer => customer.IsActive, CustomerErrors.Inactive)
         .Bind(customer => BuildOrder(command, customer))               // Result<Order>
         .Bind(order    => inventory.ReserveAsync(order, ct))           // Task<Result<Order>>
-        .Tap(order     => logger.LogInformation("Order {Id} reserved.", order.Id))
-        .Bind(order    => repository.SaveAsync(order, ct))             // Task<Result<Order>>
-        .Match(
-            onSuccess: order => Results.Created($"/orders/{order.Id}", order),
-            onFailure: error => error.Type switch
-            {
-                ErrorType.NotFound   => Results.NotFound(),
-                ErrorType.Conflict   => Results.Conflict(),
-                ErrorType.Validation => Results.BadRequest(error.Message),
-                _                    => Results.Problem()
-            });
+        .Tap(order     => Log.OrderReserved(logger, order.Id))
+        .Bind(order    => repository.SaveAsync(order, ct));            // Task<Result<Order>>
+
+    return result.ToProblemDetailsResult(order => Results.Created($"/orders/{order.Id}", order));
 }
 ```
 
-#### Error Propagation Rules
+`ToProblemDetailsResult` comes from `14.Presentation`'s `SharedKernel.Presentation.WebApi`, which turns a failure into an RFC 9457 response whose status follows `Error.Type`.
 
-1. The first failure terminates all subsequent `Map`, `Bind`, and `Tap` calls — they become no-ops.
-2. `MapError` is the only railway method that executes on the failure path — use it to enrich or reclassify errors.
-3. `Match` always executes exactly one branch — it is the safe terminal of every railway chain.
-4. Never throw inside a railway lambda. Return `Result<T>.Failure(error)` instead.
-5. Use `Error.None` as the sentinel — never `null`. Accessing `result.Error` on a success result throws `InvalidOperationException`.
-6. Async overloads (`Task<Result<T>>` extensions) avoid unnecessary `async`/`await` on the outer extension body to minimize state machine allocation.
+#### Error propagation rules
+
+1. The first failure makes every later `Map`, `Bind`, `Ensure`, and `Tap` a no-op.
+2. `MapError` and `TapError` are the only steps that run on the failure path.
+3. `Match` always runs exactly one branch; it is the natural end of a chain.
+4. Don't throw inside a step. Return a failed result instead.
+5. Awaiting an async chain rethrows the original exception of a faulted task and `OperationCanceledException` for a cancelled one. Neither is turned into a failed result.
+6. A lambda whose body only throws (`() => throw …`) has no return type and matches both the synchronous and the asynchronous overload. Give it an explicit return type: `Result () => throw …`.
 
 ---
 
 ### Result Exception Boundary and Multi-Result Aggregation
 
-Two everyday patterns that otherwise push developers toward hand-rolled code: wrapping a throwing third-party/BCL call as a `Result<T>`, and combining several independent `Result`/`Result<T>` checks into one aggregate outcome.
-
 #### ResultTry — Wrapping a Throwing Call
 
-`ResultTry.Try` / `ResultTry.TryAsync` invoke a delegate and convert any thrown exception into `Result<T>.Failure(...)` instead of letting it propagate. Use this as the sanctioned seam for the one legitimate place Result-oriented code still touches a throwing third-party SDK call or a BCL method with no `Result`-returning equivalent — never hand-roll `try`/`catch`-to-`Result` translation at the call site.
+`ResultTry` runs a delegate and converts a thrown exception into a failed result. Use it wherever result-oriented code calls a throwing third-party SDK or a BCL method with no result-returning equivalent, instead of hand-writing `try`/`catch`.
 
-> **Breaking behavior change (P-510/WO-083).** Two narrow behavior changes, no signature changes:
-> 1. **Default message content.** The default (no custom `onException`) mapping's `Error.Message` is now always the fixed, safe string `ResultTry.DefaultUnexpectedMessage` — it no longer interpolates the caught exception's raw `"{ExceptionType}: {ExceptionMessage}"`. A caught exception can carry sensitive text (a connection-string fragment, a username, an internal hostname) that must never reach an HTTP response via `Error.ToProblemDetails()`. A caller relying on the old raw-text message must now read exception detail from the ambient trace instead (see below), or supply its own `onException` mapper — which is completely unaffected by this change and still receives the raw exception.
-> 2. **`OperationCanceledException` (and its subclass `TaskCanceledException`) now propagates uncaught** from all four members (`Try`, `Try` w/ mapper, `TryAsync`, `TryAsync` w/ mapper) instead of being silently converted into a `Result.Failure`. A genuine cancellation — e.g. an HTTP client disconnect — must never be observed as an ordinary failure result; it must always surface as a thrown exception, exactly like every other `async`/`await` call site on this platform. A caller relying on the old swallow-into-`Result` behavior must now catch `OperationCanceledException` itself around the `ResultTry` call.
+| Member | Returns |
+|--------|---------|
+| `Try<T>(Func<T> [, onException])` | `Result<T>` |
+| `Try(Action [, onException])` | `Result` |
+| `TryAsync<T>(Func<Task<T>> [, onException])` | `Task<Result<T>>` |
+| `TryAsync(Func<Task> [, onException])` | `Task<Result>` |
+| `TryAsync<T>(Func<CancellationToken, Task<T>> [, onException], CancellationToken)` | `Task<Result<T>>` |
+| `TryAsync(Func<CancellationToken, Task> [, onException], CancellationToken)` | `Task<Result>` |
 
 ```csharp
-// Default mapping: Error.Unexpected(ErrorCodes.Unexpected.Default, ResultTry.DefaultUnexpectedMessage)
-Result<Customer> result = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
+// Default mapping
+Result<Customer> customer = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
 
-// Custom mapping — translate a known SDK exception into a more specific Error
-Result<Customer> result = ResultTry.Try(
+// Custom mapping for a known exception
+Result<Customer> mapped = ResultTry.Try(
     () => thirdPartySdk.GetCustomer(customerId),
     ex => ex is SdkNotFoundException
         ? Error.NotFound("customer.not_found", $"Customer {customerId} was not found.")
-        : Error.Unexpected(ErrorCodes.Unexpected.Default, ex.Message));
+        : Error.Unexpected(ErrorCodes.Unexpected.Default, ResultTry.DefaultUnexpectedMessage));
 
-// TryAsync — the one documented exception to this domain's async-avoidance railway rule:
-// catching an exception thrown during an awaited operation requires the try/catch to wrap
-// the await itself, which needs a genuine async state machine.
-Result<Invoice> result = await ResultTry.TryAsync(() => paymentGateway.ChargeAsync(order, ct));
+// With a cancellation token: throws OperationCanceledException without running the delegate
+// if the token is already cancelled.
+Result<Invoice> invoice = await ResultTry.TryAsync(ct => paymentGateway.ChargeAsync(order, ct), ct);
 ```
 
-An `AggregateException` (e.g., caught from a `Task.Wait()`/`.Result`-style call) is flattened via `AggregateException.Flatten()` before recording, so every inner exception is individually represented — not just the generic outer aggregate. `ResultTry` never rethrows, except for a genuine `OperationCanceledException`/`TaskCanceledException`, which always propagates (see above).
+- **Safe default message.** Without a mapper, the error is `Error.Unexpected(ErrorCodes.Unexpected.Default, ResultTry.DefaultUnexpectedMessage)`. The exception's type and message are never copied into it, because they can carry connection-string fragments, user names, or internal host names, and an error message can reach an HTTP response (P-510/WO-083).
+- **Where the exception goes.** It is recorded on the current span with `Activity.Current?.AddException(exception)`, once per inner exception of a flattened `AggregateException`, and exported by `13.ServiceDefaults`'s tracing pipeline. With no current span it is recorded nowhere; pass an `onException` mapper when you need a guaranteed capture path.
+- **Cancellation.** `OperationCanceledException` and `TaskCanceledException` always propagate, with or without a mapper. A client disconnect must never look like an ordinary failure.
 
-**Reading exception detail from traces.** The default mapping never puts raw exception text into `Error.Message` — instead it calls `Activity.Current?.AddException(exception)` (a .NET 8+ BCL member, zero new dependency) once per (flattened) exception, recording it as a structured OTel-semantic-convention event on the ambient trace span:
+#### ResultCombine and Guard.Collect — Reporting Every Failure
 
-```csharp
-Result<Customer> result = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
-// On failure: result.Error.Message == ResultTry.DefaultUnexpectedMessage — no raw exception text.
-// The raw exception (type, message, stack trace) is recorded as an "exception" event on
-// Activity.Current, flowing through the same ambient OTel trace-export pipeline that
-// 13.ServiceDefaults already wires up — never serialized into the HTTP response.
-```
-
-When `Activity.Current` is `null` (no active span), the exception detail is recorded nowhere — a documented, accepted limitation. A caller that needs a guaranteed capture path should supply its own `onException` mapper.
-
-#### ResultCombine — Aggregating Independent Checks
-
-`ResultCombine.Combine` folds a batch of independent `Result`/`Result<T>` outcomes into a single `ValidationResult` / `ValidationResult<IReadOnlyList<T>>`. Every input is evaluated — there is no short-circuit on the first failure — so a failed aggregate always carries every failing `Error`, not just the first.
+`ResultCombine.Combine` folds independent `Result`/`Result<T>` outcomes into a `ValidationResult` / `ValidationResult<IReadOnlyList<T>>`. Every input is evaluated, so a failure carries every failing `Error` in input order. For guard results, `Guard.Collect` does the same without wrapping each one in a `Result`.
 
 ```csharp
-// Non-generic: several independent field checks, each returning a plain Result
-ValidationResult validation = ResultCombine.Combine(
-    Guard.Against.NullOrWhiteSpace(command.Email, nameof(command.Email)) is { } e1
-        ? Result.Failure(e1) : Result.Success(),
-    Guard.Against.OutOfRange(command.Age, 0, 150, nameof(command.Age)) is { } e2
-        ? Result.Failure(e2) : Result.Success());
+// Several independent guards
+ValidationResult validation = Guard.Collect(
+    Guard.Against.NullOrWhiteSpace(command.Email),
+    Guard.Against.OutOfRange(command.Age, 0, 150));
 
-if (validation.IsValid)
-{
-    // proceed
-}
-else
-{
-    foreach (var error in validation.Errors)
-        logger.LogWarning("Validation failed: {Code} — {Message}", error.Code, error.Message);
-}
+if (!validation.IsValid)
+    throw new ValidationException(validation.Errors);
 
-// Generic: batch-validate/parse several independent Result<T>-returning steps and collect
-// every success value, in input order, when all succeed
+// Several Result<T>-returning steps, collecting every success value in order
 ValidationResult<IReadOnlyList<LineItem>> lineItems = ResultCombine.Combine(
     request.Lines.Select(line => ParseLineItem(line)));   // IEnumerable<Result<LineItem>>
-
-Order order = lineItems.IsValid
-    ? Order.Create(lineItems.Value)
-    : throw new ValidationException(lineItems.Errors);
 ```
 
 ---
 
 ### Base Exceptions
 
-The exception hierarchy bridges `Result<T>` (railway world) with callers that consume exceptions. Every exception carries a structured `Error` payload. String-only constructors are not provided.
+The exception hierarchy connects the result railway to code that works with exceptions. Every exception carries a structured `Error`, and every constructor rejects a `null` one; string-only constructors are not provided (analyzer `SK0005`).
 
 ```csharp
-// At domain rule violations
-throw new DomainException(Error.Validation("order.max_items", "Orders cannot exceed 50 items."));
-
-// At validation pipeline boundaries (bridges ValidationResult to exception world)
-throw new ValidationException(validationResult.Errors);
-
-// At infrastructure boundaries
+throw new DomainException(Error.BusinessRule("order.max_items", "Orders cannot exceed 50 items."));
+throw new ValidationException(validationResult.Errors);          // or a single Error
 throw new NotFoundException(Error.NotFound("product.not_found", "SKU-42 not found."));
 throw new ConflictException(Error.Conflict("order.duplicate", "Duplicate order detected."));
-throw new UnauthorizedException(Error.Unauthorized("auth.forbidden", "Insufficient permissions."));
+throw new UnauthorizedException(Error.Unauthorized("auth.expired", "The token has expired."));
+throw new ForbiddenException(Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission, "Not permitted."));
+
+// Or let the error pick the exception type
+throw error.ToException();
+Order order = result.GetValueOrThrow();
 ```
 
-HTTP mapping guidance:
+`14.Presentation` derives the HTTP status from `Error.Type`, not from the exception class. Keep the two consistent; `error.ToException()` does that for you.
 
-| Exception | HTTP Status |
-|-----------|------------|
-| `DomainException` | 422 Unprocessable Entity |
-| `ValidationException` | 400 Bad Request |
-| `NotFoundException` | 404 Not Found |
-| `ConflictException` | 409 Conflict |
-| `UnauthorizedException` | 401 Unauthorized / 403 Forbidden |
+| Exception | Pair it with | HTTP status (from `Error.Type`) |
+|-----------|--------------|---------------------------------|
+| `ValidationException` | `ErrorType.Validation` | 400 |
+| `NotFoundException` | `ErrorType.NotFound` | 404 |
+| `ConflictException` | `ErrorType.Conflict` | 409 |
+| `UnauthorizedException` | `ErrorType.Unauthorized` | 401 |
+| `ForbiddenException` | `ErrorType.Forbidden` | 403 |
+| `DomainException` (not sealed) | `ErrorType.BusinessRule`, or any other | per `Error.Type` |
 
 ---
 
 ### BCL Extension Methods
 
-#### String Extensions
-
 ```csharp
-"UserProfileService".ToSnakeCase()   // "user_profile_service"
-"user_profile".ToPascalCase()        // "UserProfile"
-"UserProfile".ToCamelCase()          // "userProfile"
-"  ".IsNullOrWhiteSpace()            // true
-((string?)null).IsNullOrWhiteSpace() // true
-```
+// Casing: one word splitter shared by all four, invariant culture
+"HTMLParser".ToSnakeCase()     // "html_parser"
+"HTMLParser".ToKebabCase()     // "html-parser"
+"user_profile".ToPascalCase()  // "UserProfile"
+"UserProfile".ToCamelCase()    // "userProfile"
 
-#### IEnumerable Extensions
-
-```csharp
-// Split a large collection into batches for bulk processing
-int[] ids = [1, 2, 3, 4, 5, 6, 7];
-foreach (int[] batch in ids.ToBatches(3))
-{
-    // batch 1: [1, 2, 3], batch 2: [4, 5, 6], batch 3: [7]
-}
-
-// Null/empty guard at API boundaries
+// Sequences
 List<string>? names = null;
-names.IsNullOrEmpty(); // true
+if (!names.IsNullOrEmpty())
+    Console.WriteLine(names.Count);   // no nullable warning: IsNullOrEmpty is [NotNullWhen(false)]
 
-// Filter nulls from a mixed collection
-IEnumerable<string?> mixed = ["a", null, "b", null, "c"];
-IEnumerable<string> clean = mixed.WhereNotNull(); // ["a", "b", "c"]
+IEnumerable<string> clean = new string?[] { "a", null, "b" }.WhereNotNull();   // ["a", "b"]
+
+// Whole-day ranges: use an exclusive end, not 23:59:59.999
+DateTimeOffset start = clock.UtcNow.StartOfDay();
+var todays = orders.Where(o => o.PlacedAt >= start && o.PlacedAt < start.AddDays(1));
 ```
 
-#### DateTimeOffset Extensions
-
-```csharp
-DateTimeOffset now = clock.UtcNow;
-
-long ms             = now.ToUnixMilliseconds(); // e.g., 1747180800000
-DateTimeOffset start = now.StartOfDay();        // 2026-05-14T00:00:00.000+00:00
-DateTimeOffset end   = now.EndOfDay();          // 2026-05-14T23:59:59.999+00:00
-```
-
-#### Guid Extensions
-
-```csharp
-Guid.Empty.IsEmpty()     // true
-Guid.NewGuid().IsEmpty() // false
-```
+The BCL already covers batching (`Enumerable.Chunk`), Unix time (`DateTimeOffset.ToUnixTimeMilliseconds`), and `string.IsNullOrWhiteSpace`, so this package does not duplicate them.
 
 ---
 
@@ -1043,166 +959,99 @@ public sealed record TenantContext(string TenantId)
 
 ---
 
-## SharedKernel.Core — Guard Clauses (merged from `SharedKernel.Guards`, P-505/WO-082)
+## SharedKernel.Core — Guard Clauses
 
-`SharedKernel.Core` provides a two-path guard system for validating inputs and enforcing invariants, merged in from the former standalone `SharedKernel.Guards` package — the `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces below are completely unchanged by that move; only the physical package changed, so an existing consumer's only required change is swapping the `PackageReference` from `SharedKernel.Guards` to `SharedKernel.Core`. Every guard is available via both paths:
+`SharedKernel.Core` provides a two-path guard system for validating input and enforcing invariants. Everything lives in one namespace:
+
+```csharp
+using SharedKernel.Guards;
+```
 
 | Path | Entry point | Returns | Use when |
 |------|-------------|---------|---------|
-| Functional | `Guard.Against.*` | `Error?` — `null` on pass, non-null on violation | Railway chains, explicit error handling |
-| Imperative | `Guard.Throw.*` | `void` — throws `DomainException` on violation | Constructor guards, domain invariants |
+| Functional | `Guard.Against.*` | `Error?`: `null` on pass, an `Error` on violation | Factory methods, handlers returning `Result<T>` |
+| Imperative | `Guard.Throw.*` | `void`; throws `DomainException` on violation | Constructors, domain invariants |
+
+Both paths have the same guards with the same names and parameters (a reflection test keeps them in step). Every guard captures the parameter name from the argument expression, as `ArgumentNullException.ThrowIfNull` does, so `nameof(...)` is optional.
 
 ### Functional Path — `Guard.Against.*`
 
-The functional path returns `Error?`. `null` means the guard passed; a non-null `Error` means it was violated. This is the preferred path inside railway chains.
+A functional guard never throws. A `null` input is reported as a violation, so guards are safe on unvalidated input.
 
 ```csharp
-// Null / empty checks
-Error? e1 = Guard.Against.Null(order, nameof(order));
-Error? e2 = Guard.Against.NullOrEmpty(request.Name, nameof(request.Name));
-Error? e3 = Guard.Against.NullOrWhiteSpace(request.Email, nameof(request.Email));
+// First failure wins, then build the value only if everything passed
+Result<Money> money = (Guard.Against.NegativeOrZero(amount)
+                       ?? Guard.Against.NullOrWhiteSpace(currency)
+                       ?? Guard.Against.LongerThan(currency, maxLength: 3))
+    .ToResult(() => new Money(amount, currency!));
 
-// String length
-Error? e4 = Guard.Against.ShorterThan(request.Name, minLength: 2, nameof(request.Name));
-Error? e5 = Guard.Against.LongerThan(request.Bio, maxLength: 500, nameof(request.Bio));
+// Every failure collected
+ValidationResult validation = Guard.Collect(
+    Guard.Against.NullOrWhiteSpace(request.Name),
+    Guard.Against.Email(request.Email),
+    Guard.Against.InvalidEnumValue(request.Channel),
+    Guard.Against.NotUtc(request.ScheduledAt));
 
-// Numeric (overloaded for int, decimal, long)
-Error? e6 = Guard.Against.NegativeOrZero(order.Quantity, nameof(order.Quantity));
-Error? e7 = Guard.Against.Negative(account.Balance, nameof(account.Balance));
-Error? e8 = Guard.Against.NotPositive(product.Price, nameof(product.Price));
-
-// Range
-Error? e9 = Guard.Against.OutOfRange(rating, min: 1, max: 5, nameof(rating));
-
-// Default value / Guid
-Error? e10 = Guard.Against.Default(customerId, nameof(customerId));
-Error? e11 = Guard.Against.InvalidGuid(orderId, nameof(orderId));
-
-// Format and email
-Error? e12 = Guard.Against.InvalidFormat(code, pattern: @"^[A-Z]{3}-\d{4}$", nameof(code));
-Error? e13 = Guard.Against.Email(request.Email, nameof(request.Email));
-
-// Collections
-Error? e14 = Guard.Against.Empty(order.Items, nameof(order.Items));
-Error? e15 = Guard.Against.MaxCount(tags, max: 10, nameof(tags));
-Error? e16 = Guard.Against.MinCount(recipients, min: 1, nameof(recipients));
-
-// Boolean predicates — caller supplies the Error for arbitrary business rules
-Error? e17 = Guard.Against.True(order.IsCancelled, Error.Conflict("order.cancelled", "Order is already cancelled."));
-Error? e18 = Guard.Against.False(customer.IsActive, Error.Unauthorized("customer.inactive", "Customer account is inactive."));
-
-// SmartEnum membership
-Error? e19 = Guard.Against.InvalidSmartEnum<OrderStatus, int>(statusId);
-```
-
-#### Using Against.* inside a railway chain
-
-```csharp
-public Result<Order> PlaceOrder(PlaceOrderCommand cmd)
-{
-    if (Guard.Against.NullOrWhiteSpace(cmd.CustomerId, nameof(cmd.CustomerId)) is { } e1)
-        return e1;
-
-    if (Guard.Against.NegativeOrZero(cmd.Quantity, nameof(cmd.Quantity)) is { } e2)
-        return e2;
-
-    if (Guard.Against.InvalidSmartEnum<OrderStatus, int>(cmd.StatusId) is { } e3)
-        return e3;
-
-    // All guards passed — proceed with business logic
-    var order = new Order(cmd.CustomerId, cmd.Quantity, OrderStatus.FromValue(cmd.StatusId));
-    return Result<Order>.Success(order);
-}
+// Custom rule
+Error? tooMany = Guard.Against.False(order.Lines.Count > 50,
+    Error.BusinessRule("order.max_lines", "An order can have at most 50 lines."));
 ```
 
 ### Imperative Path — `Guard.Throw.*`
 
-The imperative path throws `DomainException` on violation. It mirrors every `Against.*` extension as a void method. Use this in domain constructors and invariant methods where railway chains are not in use.
-
 ```csharp
-public sealed class Order
+public sealed class Payment
 {
-    public string CustomerId { get; }
-    public int Quantity { get; }
-    public OrderStatus Status { get; }
-
-    public Order(string customerId, int quantity, OrderStatus status)
+    public Payment(decimal amount, string? currency)
     {
-        Guard.Throw.NullOrWhiteSpace(customerId, nameof(customerId));
-        Guard.Throw.NegativeOrZero(quantity, nameof(quantity));
-        Guard.Throw.Null(status, nameof(status));
+        Guard.Throw.NegativeOrZero(amount);
+        Guard.Throw.NullOrWhiteSpace(currency);
+        Guard.Throw.LongerThan(currency, maxLength: 3);
 
-        CustomerId = customerId;
-        Quantity   = quantity;
-        Status     = status;
+        Amount = amount;
+        Currency = currency;   // no nullable warning: the guards carry [NotNull]
     }
 
-    public void Ship()
-    {
-        Guard.Throw.False(
-            Status == OrderStatus.Processing,
-            Error.Conflict("order.invalid_state", "Only Processing orders can be shipped."));
-
-        // proceed to ship
-    }
-}
-```
-
-#### Complete imperative example — service constructor
-
-```csharp
-public sealed class PaymentService
-{
-    private readonly string _apiKey;
-    private readonly Uri _endpoint;
-
-    public PaymentService(string apiKey, Uri endpoint)
-    {
-        Guard.Throw.NullOrWhiteSpace(apiKey, nameof(apiKey));
-        Guard.Throw.Null(endpoint, nameof(endpoint));
-
-        _apiKey   = apiKey;
-        _endpoint = endpoint;
-    }
-
-    public Task<Result<PaymentReceipt>> ChargeAsync(
-        decimal amount, string currency, CancellationToken ct)
-    {
-        Guard.Throw.NegativeOrZero(amount, nameof(amount));
-        Guard.Throw.NullOrWhiteSpace(currency, nameof(currency));
-        Guard.Throw.LongerThan(currency, maxLength: 3, nameof(currency));
-
-        // proceed with payment API call
-        throw new NotImplementedException();
-    }
+    public decimal Amount { get; }
+    public string Currency { get; }
 }
 ```
 
 ### Guard Category Reference
 
-| Category | `Against.*` method | Throws on… |
-|----------|--------------------|-----------|
-| Null | `Null<T>` | reference is `null` |
-| Null/empty | `NullOrEmpty` | `null` or `""` |
-| Null/whitespace | `NullOrWhiteSpace` | `null`, `""`, or only whitespace |
-| Min length | `ShorterThan(value, minLength)` | `value.Length < minLength` |
-| Max length | `LongerThan(value, maxLength)` | `value.Length > maxLength` |
-| Positive only | `NegativeOrZero` | `value <= 0` |
-| Non-negative | `Negative` | `value < 0` |
-| Positive only | `NotPositive` | `value <= 0` (alias with different message) |
-| Range | `OutOfRange<T>(value, min, max)` | `value < min` or `value > max` |
-| Default value | `Default<T>` | `EqualityComparer<T>.Default` match |
-| Empty GUID | `InvalidGuid` | `value == Guid.Empty` |
-| Regex format | `InvalidFormat(value, pattern)` | pattern not matched (cached `Regex`) |
-| Email | `Email` | not a valid email address |
-| Empty collection | `Empty<T>` | no elements |
-| Max elements | `MaxCount<T>(source, max)` | `Count > max` |
-| Min elements | `MinCount<T>(source, min)` | `Count < min` |
-| Predicate true | `True(condition, error)` | `condition == false` |
-| Predicate false | `False(condition, error)` | `condition == true` |
-| SmartEnum | `InvalidSmartEnum<TEnum, TValue>(id)` | `id` not a known member |
+| Category | Guard | Violation | `Error.Code` |
+|----------|-------|-----------|--------------|
+| Null | `Null<T>` (reference and `Nullable<T>`) | `null` | `validation.required` |
+| Null/empty | `NullOrEmpty` | `null` or `""` | `validation.required` |
+| Null/whitespace | `NullOrWhiteSpace` | `null`, `""`, or only whitespace | `validation.required` |
+| Min length | `ShorterThan(value, minLength)` | `Length < minLength` | `validation.min_length` |
+| Max length | `LongerThan(value, maxLength)` | `Length > maxLength` | `validation.max_length` |
+| Non-negative | `Negative<T>` (any numeric type) | `value < 0` or `NaN` | `validation.out_of_range` |
+| Positive | `NegativeOrZero<T>` (any numeric type) | `value <= 0` or `NaN` | `validation.out_of_range` |
+| Range | `OutOfRange<T>(value, min, max)` | outside `[min, max]` | `validation.out_of_range` |
+| Lower bound | `LessThan<T>(value, min)` | `value < min` | `validation.out_of_range` |
+| Upper bound | `GreaterThan<T>(value, max)` | `value > max` | `validation.out_of_range` |
+| Default value | `Default<T>` | equals `default(T)` | `validation.required` |
+| Empty GUID | `InvalidGuid` | `Guid.Empty` | `validation.required` |
+| Enum | `InvalidEnumValue<TEnum>` | not a named member | `validation.out_of_range` |
+| UTC | `NotUtc` (`DateTimeOffset`, `DateTime`) | non-zero offset / kind not `Utc` | `validation.invalid_format` |
+| Regex format | `InvalidFormat(value, pattern)` | pattern not matched | `validation.invalid_format` |
+| Email | `Email` | not `local@domain.tld` | `validation.invalid_format` |
+| Empty collection | `Empty<T>` | no elements | `validation.required` |
+| Max elements | `MaxCount<T>(source, max)` | more than `max` | `validation.out_of_range` |
+| Min elements | `MinCount<T>(source, min)` | fewer than `min` | `validation.out_of_range` |
+| Predicate | `True(condition, error)` / `False(condition, error)` | `false` / `true` | the supplied error |
+| SmartEnum | `InvalidSmartEnum<TEnum, TValue>(value)` | not a known member | `validation.out_of_range` |
 
-**Bounded format-guard `Regex` cache (P-522/WO-083).** `InvalidFormat`/`Email`'s pattern-keyed compiled-`Regex` cache is capped at 256 distinct patterns (`MaxCachedPatterns`), evicting the oldest-inserted pattern first (FIFO, via a companion insertion-order queue) once the cap is exceeded. The existing 250ms ReDoS timeout is unaffected. Every current call site passes a literal, compile-time-known pattern, so eviction never triggers in practice — the bound exists purely against a hypothetical future call site deriving a pattern from configuration or user input.
+A `null` input to a length, format, range, or collection guard returns `validation.required`.
+
+**Messages.** Messages are formatted with the invariant culture, so they are identical on every server; translate by `Error.Code` (see `SharedKernel.Localization`). `InvalidFormat` leaves the pattern out of its message, because the message can reach an HTTP response.
+
+**Format guard cache (P-522/WO-083).** Each distinct `InvalidFormat` pattern is compiled once and cached, with a 250 ms match timeout. The cache holds at most 256 patterns and evicts the oldest first, so a pattern derived from configuration or user input cannot grow it without bound. `Email` uses a source-generated regular expression.
+
+**Collections.** `Empty`, `MinCount`, and `MaxCount` use a collection's count when it has one; otherwise they stop reading as soon as the answer is known.
+
+**Custom guards.** Write an extension method on `IGuardClause` that returns `Error?` and never throws. Analyzer `SK0006` flags a `throw` in guard code; `SharedKernel.Validation` adds its IBAN, BIC, PAN, and national-ID guards this way.
 
 ---
 

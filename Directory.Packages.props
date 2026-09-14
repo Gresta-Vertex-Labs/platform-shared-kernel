@@ -149,6 +149,9 @@
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
+    <!-- Build-time only (PrivateAssets=all): tracks each published package's public API in PublicAPI.Shipped.txt /
+         PublicAPI.Unshipped.txt, so any change to the public surface is a reviewed diff. SharedKernel.Core first. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
     <!--
       WO-071/P-457: test-only. SQLite's EF Core provider refuses to translate ORDER BY on a

@@ -72,14 +72,6 @@ public sealed class GuardThrowTests
         => Guard.Throw.Negative(0, "n");
 
     [Fact]
-    public void Throw_NotPositive_Int_WhenZero_ThrowsDomainException()
-        => Assert.Throws<DomainException>(() => Guard.Throw.NotPositive(0, "n"));
-
-    [Fact]
-    public void Throw_NotPositive_Int_WhenPositive_DoesNotThrow()
-        => Guard.Throw.NotPositive(5, "n");
-
-    [Fact]
     public void Throw_NegativeOrZero_Decimal_WhenZero_ThrowsDomainException()
         => Assert.Throws<DomainException>(() => Guard.Throw.NegativeOrZero(0m, "d"));
 

@@ -3,108 +3,125 @@ using System.Text;
 namespace SharedKernel.Core.Extensions;
 
 /// <summary>
-/// Extension methods for <see cref="string"/>.
+/// Casing conversions for identifier strings.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Every conversion splits the input into words the same way, then joins them in the target style. A word
+/// boundary is an underscore, a hyphen, or whitespace; a lowercase letter or digit followed by an uppercase
+/// letter (<c>myName</c>, <c>Order2Line</c>); or the last capital of an acronym followed by a lowercase
+/// letter (<c>HTMLParser</c> becomes <c>HTML</c> + <c>Parser</c>). Separators at either end are dropped.
+/// </para>
+/// <para>
+/// Letters are changed with invariant-culture rules, so the result is the same on every server.
+/// </para>
+/// </remarks>
 public static class StringExtensions
 {
+    /// <summary>Converts an identifier to <c>snake_case</c>: <c>HTMLParser</c> becomes <c>html_parser</c>.</summary>
+    /// <param name="value">The identifier to convert.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    public static string ToSnakeCase(this string value) => JoinLower(value, '_');
+
+    /// <summary>Converts an identifier to <c>kebab-case</c>: <c>HTMLParser</c> becomes <c>html-parser</c>.</summary>
+    /// <param name="value">The identifier to convert.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    public static string ToKebabCase(this string value) => JoinLower(value, '-');
+
     /// <summary>
-    /// Converts an identifier string to <c>snake_case</c>.
+    /// Converts an identifier to <c>PascalCase</c>: <c>html_parser</c> and <c>HTMLParser</c> both become
+    /// <c>HtmlParser</c>.
     /// </summary>
-    /// <remarks>
-    /// Handles PascalCase, camelCase, and strings that already contain underscores.
-    /// Consecutive uppercase letters (e.g., <c>"HTMLParser"</c>) are treated as a single word:
-    /// <c>"html_parser"</c>.
-    /// </remarks>
-    /// <param name="value">The string to convert.</param>
-    /// <returns>The snake_case representation, or <see cref="string.Empty"/> if the input is empty.</returns>
-    public static string ToSnakeCase(this string value)
+    /// <param name="value">The identifier to convert.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    public static string ToPascalCase(this string value) => JoinCapitalized(value, lowerFirstWord: false);
+
+    /// <summary>
+    /// Converts an identifier to <c>camelCase</c>: <c>html_parser</c> and <c>HTMLParser</c> both become
+    /// <c>htmlParser</c>.
+    /// </summary>
+    /// <param name="value">The identifier to convert.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    public static string ToCamelCase(this string value) => JoinCapitalized(value, lowerFirstWord: true);
+
+    private static string JoinLower(string value, char separator)
     {
-        if (string.IsNullOrEmpty(value))
-            return value;
+        ArgumentNullException.ThrowIfNull(value);
 
         var builder = new StringBuilder(value.Length + 8);
-
-        for (int i = 0; i < value.Length; i++)
+        foreach (var (start, length) in Words(value))
         {
-            char c = value[i];
+            if (builder.Length > 0)
+                builder.Append(separator);
 
-            if (char.IsUpper(c))
-            {
-                bool isPrecededByLower = i > 0 && char.IsLower(value[i - 1]);
-                bool isFollowedByLower = i + 1 < value.Length && char.IsLower(value[i + 1]);
-
-                if (i > 0 && (isPrecededByLower || isFollowedByLower))
-                    builder.Append('_');
-
-                builder.Append(char.ToLowerInvariant(c));
-            }
-            else
-            {
-                builder.Append(c);
-            }
+            for (var i = start; i < start + length; i++)
+                builder.Append(char.ToLowerInvariant(value[i]));
         }
 
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Converts an identifier string to <c>camelCase</c>.
-    /// </summary>
-    /// <remarks>
-    /// If the string starts with uppercase letters, they are lowercased until the first
-    /// lowercase letter or word boundary is reached.
-    /// </remarks>
-    /// <param name="value">The string to convert.</param>
-    /// <returns>The camelCase representation, or <see cref="string.Empty"/> if the input is empty.</returns>
-    public static string ToCamelCase(this string value)
+    private static string JoinCapitalized(string value, bool lowerFirstWord)
     {
-        if (string.IsNullOrEmpty(value))
-            return value;
-
-        var pascal = value.ToPascalCase();
-        if (pascal.Length == 0)
-            return pascal;
-
-        return char.ToLowerInvariant(pascal[0]) + pascal[1..];
-    }
-
-    /// <summary>
-    /// Converts an identifier string to <c>PascalCase</c>.
-    /// </summary>
-    /// <remarks>
-    /// Word boundaries are detected at underscores, hyphens, spaces, and transitions from
-    /// lowercase to uppercase.
-    /// </remarks>
-    /// <param name="value">The string to convert.</param>
-    /// <returns>The PascalCase representation, or <see cref="string.Empty"/> if the input is empty.</returns>
-    public static string ToPascalCase(this string value)
-    {
-        if (string.IsNullOrEmpty(value))
-            return value;
+        ArgumentNullException.ThrowIfNull(value);
 
         var builder = new StringBuilder(value.Length);
-        bool capitalizeNext = true;
-
-        foreach (char c in value)
+        foreach (var (start, length) in Words(value))
         {
-            if (c is '_' or '-' or ' ')
+            var capitalize = !(lowerFirstWord && builder.Length == 0);
+            builder.Append(capitalize ? char.ToUpperInvariant(value[start]) : char.ToLowerInvariant(value[start]));
+
+            for (var i = start + 1; i < start + length; i++)
+                builder.Append(char.ToLowerInvariant(value[i]));
+        }
+
+        return builder.ToString();
+    }
+
+    private static List<(int Start, int Length)> Words(string value)
+    {
+        var words = new List<(int Start, int Length)>();
+        var start = -1;
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            if (c is '_' or '-' || char.IsWhiteSpace(c))
             {
-                capitalizeNext = true;
+                if (start >= 0)
+                    words.Add((start, i - start));
+
+                start = -1;
                 continue;
             }
 
-            builder.Append(capitalizeNext ? char.ToUpperInvariant(c) : c);
-            capitalizeNext = false;
+            if (start < 0)
+            {
+                start = i;
+                continue;
+            }
+
+            if (char.IsUpper(c) && IsBoundaryBeforeUpper(value, i))
+            {
+                words.Add((start, i - start));
+                start = i;
+            }
         }
 
-        return builder.ToString();
+        if (start >= 0)
+            words.Add((start, value.Length - start));
+
+        return words;
     }
 
-    /// <summary>
-    /// Returns <c>true</c> if <paramref name="value"/> is <c>null</c>, empty, or consists
-    /// only of white-space characters.
-    /// </summary>
-    /// <param name="value">The string to test.</param>
-    public static bool IsNullOrWhiteSpace(this string? value)
-        => string.IsNullOrWhiteSpace(value);
+    private static bool IsBoundaryBeforeUpper(string value, int index)
+    {
+        var previous = value[index - 1];
+        if (char.IsLower(previous) || char.IsDigit(previous))
+            return true;
+
+        // The last capital of an acronym starts the next word: "HTMLParser" -> "HTML" + "Parser".
+        return char.IsUpper(previous) && index + 1 < value.Length && char.IsLower(value[index + 1]);
+    }
 }
