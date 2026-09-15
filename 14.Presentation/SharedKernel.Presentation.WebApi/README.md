@@ -147,9 +147,11 @@ On every failure path, `ResultHttpExtensions` always routes through `Error.ToPro
 hand-rolled `if (result.IsSuccess) ... else ...` branching immediately before returning an HTTP
 result type is a platform violation, not just a style preference.
 
-> `ResultHttpExtensions` (HTTP error shape) and `SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions`
-> (wire DTO shape, `04.Contracts`) are not interchangeable. An endpoint may use either, or both —
-> e.g. `Envelope<T>` for the success body and `ProblemDetails` for the failure body.
+> Handlers return `Result`/`Result<T>`; `ResultHttpExtensions` is the only mapping to HTTP. By default a
+> success writes the value itself as the response body (204 for a plain `Result`), and a failure writes
+> RFC 9457 `ProblemDetails`. A
+> calling service built on `SharedKernel.Communication.Rest` maps that response back to a `Result<T>`
+> with `ReadResultAsync`.
 
 ---
 

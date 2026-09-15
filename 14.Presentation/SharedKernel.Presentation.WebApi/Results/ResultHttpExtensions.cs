@@ -12,15 +12,15 @@ namespace SharedKernel.Presentation.WebApi.Results;
 /// <para>
 /// This is the canonical <c>Result&lt;T&gt;</c>→HTTP mapping — inline
 /// <c>if (result.IsSuccess) ... else ...</c> in endpoint or controller code is a platform
-/// violation, mirroring the WO-026 P-166/167 precedent for <c>Result&lt;T&gt;</c>→<c>Envelope&lt;T&gt;</c>
-/// mapping.
+/// violation.
 /// </para>
 /// <para>
-/// Distinct purpose from <c>SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions</c>
-/// (<c>04.Contracts</c>): <c>Envelope&lt;T&gt;</c> is a wire DTO for service-to-service payloads;
-/// <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> is the RFC 9457 HTTP <em>error</em>
-/// response shape. A REST endpoint may combine both or use <c>ProblemDetails</c> alone — this
-/// package does not decide that policy, it only supplies the conversion primitives.
+/// Handlers return <see cref="Result"/>/<see cref="Result{T}"/>; there is no separate response
+/// wrapper DTO. On success the value itself is the response body (or 204 for a non-generic
+/// <see cref="Result"/>); on failure the body is an RFC 9457
+/// <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/>. A calling service built on
+/// <c>SharedKernel.Communication.Rest</c> maps that response back to a <see cref="Result{T}"/>
+/// with <c>ReadResultAsync</c>.
 /// </para>
 /// <para>
 /// The Minimal API overloads return <see cref="IResult"/>; the MVC overloads return

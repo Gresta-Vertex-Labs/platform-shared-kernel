@@ -24,7 +24,6 @@
       Errors/LocalizedDetailResolver.cs.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
-    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>

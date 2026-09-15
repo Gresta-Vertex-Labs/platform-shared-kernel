@@ -16,10 +16,9 @@ namespace SharedKernel.Presentation.Grpc.Results;
 /// always call <see cref="ToGrpcResult"/>/<see cref="ToGrpcResult{T}"/> instead.
 /// </para>
 /// <para>
-/// Explicitly distinct from <c>SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions</c>
-/// (<c>04.Contracts</c>): this package never references <c>04.Contracts</c> at all (D-78) —
-/// protobuf-generated messages are this package's only wire-contract surface, never
-/// <c>Envelope&lt;T&gt;</c>.
+/// This package never references <c>04.Contracts</c> at all (D-78) — protobuf-generated messages
+/// are this package's only wire-contract surface, and a failure travels as the
+/// <see cref="RpcException"/> status rather than as a response DTO.
 /// </para>
 /// </remarks>
 public static class GrpcResultExtensions
