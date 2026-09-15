@@ -73,6 +73,34 @@ internal static class RuleAnchor
     }
 
     /// <summary>
+    /// Validates that <paramref name="anchor"/> is a non-null open generic type definition with exactly
+    /// <paramref name="arity"/> type parameters.
+    /// </summary>
+    /// <param name="anchor">The caller-supplied anchor type.</param>
+    /// <param name="arity">The required number of type parameters.</param>
+    /// <param name="parameterName">The parameter name to report on failure.</param>
+    /// <returns><paramref name="anchor"/>, unchanged, when valid.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="anchor"/> is not an open generic definition, or has a different arity.
+    /// </exception>
+    internal static Type GenericDefinition(Type anchor, int arity, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(anchor, parameterName);
+
+        if (!anchor.IsGenericTypeDefinition || anchor.GetGenericArguments().Length != arity)
+        {
+            throw new ArgumentException(
+                $"'{anchor.FullName ?? anchor.Name}' is not an open generic type definition with {arity} type "
+                    + "parameter(s). Pass the unbound form, such as typeof(IAggregateFactory<,>); a closed "
+                    + "type would match nothing and make the rule pass vacuously.",
+                parameterName);
+        }
+
+        return anchor;
+    }
+
+    /// <summary>
     /// Validates that <paramref name="assembly"/> is not null.
     /// </summary>
     /// <param name="assembly">The caller-supplied assembly under inspection.</param>

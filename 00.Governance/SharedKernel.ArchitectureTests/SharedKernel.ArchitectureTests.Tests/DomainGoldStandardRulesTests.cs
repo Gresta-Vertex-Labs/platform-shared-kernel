@@ -90,6 +90,115 @@ public class DomainGoldStandardRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // AggregateFactoriesMustCreateValidationResults
+    // ---------------------------------------------------------------------------
+
+    private const string FactoryFixturePrelude = """
+        using System;
+        using SharedKernel.Domain.Abstractions;
+        using SharedKernel.Domain.Aggregates;
+        using SharedKernel.Primitives.Results;
+
+        namespace Shop
+        {
+            public sealed class Order : AggregateRoot<Guid> { public Order() { } }
+            public sealed class Invoice : AggregateRoot<Guid> { public Invoice() { } }
+        """;
+
+    public static TheoryData<string, string, bool> FactoryCases => new()
+    {
+        {
+            "static_create_returns_validation_result",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { public static ValidationResult<Order> Create() => ValidationResult<Order>.Success(new Order()); }",
+            true
+        },
+        {
+            "instance_create_returns_validation_result",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { public ValidationResult<Order> Create(string customer) => ValidationResult<Order>.Success(new Order()); }",
+            true
+        },
+        {
+            "create_returns_the_aggregate_directly",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { public Order Create() => new Order(); }",
+            false
+        },
+        {
+            "create_returns_a_different_aggregate",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { public ValidationResult<Invoice> Create() => ValidationResult<Invoice>.Success(new Invoice()); }",
+            false
+        },
+        {
+            "create_is_not_public",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { internal ValidationResult<Order> Create() => ValidationResult<Order>.Success(new Order()); }",
+            false
+        },
+        {
+            "no_create_method",
+            "public sealed class OrderFactory : IAggregateFactory<Order, Guid> { public ValidationResult<Order> Build() => ValidationResult<Order>.Success(new Order()); }",
+            false
+        },
+        {
+            "class_that_is_not_a_factory",
+            "public sealed class Unrelated { public Order Create() => new Order(); }",
+            true
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(FactoryCases))]
+    public void AggregateFactoriesMustCreateValidationResults_JudgesEachShape(string name, string factorySource, bool expectedSuccess)
+    {
+        var assembly = CompileInMemory(
+            $"AggregateFactory_{name}",
+            FactoryFixturePrelude + factorySource + "\n}",
+            extraReferences:
+            [
+                typeof(IAggregateFactory<,>).Assembly.Location,
+                typeof(SharedKernel.Primitives.Results.ValidationResult<>).Assembly.Location,
+                Assembly.Load("System.Collections").Location,
+            ]);
+
+        var result = DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults(
+            assembly,
+            typeof(IAggregateFactory<,>),
+            typeof(SharedKernel.Primitives.Results.ValidationResult<>)).GetResult();
+
+        result.IsSuccessful.Should().Be(expectedSuccess, because: name);
+    }
+
+    [Fact]
+    public void AggregateFactoriesMustCreateValidationResults_RealDomainAssembly_Passes() =>
+        DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults(
+                typeof(IAggregateFactory<,>).Assembly,
+                typeof(IAggregateFactory<,>),
+                typeof(SharedKernel.Primitives.Results.ValidationResult<>))
+            .GetResult().IsSuccessful.Should().BeTrue();
+
+    [Theory]
+    [InlineData(typeof(IDomainService), "aggregateFactoryDefinition")]
+    [InlineData(typeof(IAggregateFactory<SharedKernel.Domain.Aggregates.TenantedAggregateRoot<Guid>, Guid>), "aggregateFactoryDefinition")]
+    public void AggregateFactoriesMustCreateValidationResults_NonDefinitionFactoryAnchor_Throws(Type anchor, string parameter)
+    {
+        var act = () => DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults(
+            typeof(IDomainService).Assembly,
+            anchor,
+            typeof(SharedKernel.Primitives.Results.ValidationResult<>));
+
+        act.Should().Throw<ArgumentException>().WithParameterName(parameter).WithMessage("*vacuously*");
+    }
+
+    [Fact]
+    public void AggregateFactoriesMustCreateValidationResults_ClosedResultAnchor_Throws()
+    {
+        var act = () => DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults(
+            typeof(IDomainService).Assembly,
+            typeof(IAggregateFactory<,>),
+            typeof(SharedKernel.Primitives.Results.ValidationResult<int>));
+
+        act.Should().Throw<ArgumentException>().WithParameterName("validationResultDefinition");
+    }
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 

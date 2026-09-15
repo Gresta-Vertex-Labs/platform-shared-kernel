@@ -174,6 +174,7 @@ Named constants, provider clients, security and data privacy.
 | [`SK0034`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0034-amountcurrencypaircoupling) | A `decimal` amount member paired with a `string` currency-code member | Consider `SharedKernel.Domain.Money` — advisory only |
 | [`SK0035`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or PII data passed unmasked to a `[LoggerMessage]` parameter | Route it through the matching `PiiMasking.*` helper |
 | [`SK0036`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0036-rawrpcexceptionconstruction) | `RpcException`/`Status` constructed outside the gRPC presentation layer | `GrpcResultExtensions` |
+| [`SK0037`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0037-valueobjectmissingensurevalid) | A `ValueObject` subclass whose constructor completes without calling `EnsureValid()` | Call `EnsureValid()` as the last statement of every constructor |
 
 ### Persistence
 
