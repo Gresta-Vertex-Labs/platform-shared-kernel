@@ -6,10 +6,11 @@ namespace SharedKernel.Search.Abstractions.Tests.Models;
 
 /// <summary>
 /// T-05: <see cref="SearchResults{TDocument}.ToPagedList"/> guard tests — <see cref="TotalHitsAccuracy.Estimated"/>
-/// and <see cref="TotalHitsAccuracy.LowerBound"/> each return <c>TotalHitsNotExact</c>; an overflowing
-/// <c>TotalHits</c> returns <c>TotalHitsOverflow</c>; an invalid page/page-size returns
-/// <c>InvalidSearchRequest</c>; and a valid <see cref="TotalHitsAccuracy.Exact"/> result projects
-/// correctly while dropping facets, rank, and highlights.
+/// and <see cref="TotalHitsAccuracy.LowerBound"/> each return <c>TotalHitsNotExact</c>; a negative
+/// <c>TotalHits</c>, an invalid page/page-size, or more hits than the page size returns
+/// <c>InvalidSearchRequest</c>; and a valid <see cref="TotalHitsAccuracy.Exact"/> result, including one
+/// whose <c>TotalHits</c> exceeds <see cref="int.MaxValue"/>, projects correctly while dropping facets,
+/// rank, and highlights.
 /// </summary>
 public sealed class SearchResultsToPagedListTests
 {
@@ -56,12 +57,31 @@ public sealed class SearchResultsToPagedListTests
     }
 
     [Fact]
-    public void TotalHitsExceedingIntMaxValue_ReturnsTotalHitsOverflow()
+    public void TotalHitsExceedingIntMaxValue_ProjectsWithoutLoss()
+    {
+        const long totalHits = (long)int.MaxValue + 1;
+        var results = new SearchResults<TestDocument>
+        {
+            Hits = [],
+            TotalHits = totalHits,
+            Accuracy = TotalHitsAccuracy.Exact,
+            Page = 1,
+            PageSize = 20,
+        };
+
+        var result = results.ToPagedList();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCount.Should().Be(totalHits);
+    }
+
+    [Fact]
+    public void NegativeTotalHits_ReturnsInvalidSearchRequest()
     {
         var results = new SearchResults<TestDocument>
         {
             Hits = [],
-            TotalHits = (long)int.MaxValue + 1,
+            TotalHits = -1,
             Accuracy = TotalHitsAccuracy.Exact,
             Page = 1,
             PageSize = 20,
@@ -70,7 +90,29 @@ public sealed class SearchResultsToPagedListTests
         var result = results.ToPagedList();
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("search.total_hits_overflow");
+        result.Error.Code.Should().Be("search.invalid_request");
+    }
+
+    [Fact]
+    public void MoreHitsThanPageSize_ReturnsInvalidSearchRequest_InsteadOfThrowing()
+    {
+        var results = new SearchResults<TestDocument>
+        {
+            Hits =
+            [
+                new SearchHit<TestDocument> { Document = new TestDocument { DocumentId = "a" }, Rank = 0 },
+                new SearchHit<TestDocument> { Document = new TestDocument { DocumentId = "b" }, Rank = 1 },
+            ],
+            TotalHits = 2,
+            Accuracy = TotalHitsAccuracy.Exact,
+            Page = 1,
+            PageSize = 1,
+        };
+
+        var result = results.ToPagedList();
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("search.invalid_request");
     }
 
     [Fact]

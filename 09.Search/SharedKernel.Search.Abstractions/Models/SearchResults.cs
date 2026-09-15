@@ -10,16 +10,15 @@ namespace SharedKernel.Search.Abstractions.Models;
 /// <remarks>
 /// <para>
 /// <see cref="TotalHits"/> is <see cref="long"/>, not <see cref="int"/> — ElasticSearch hit counts
-/// routinely exceed <see cref="int.MaxValue"/> on analytics indices, and
-/// <see cref="PagedList{T}.TotalCount"/> is an <see cref="int"/> treated as exact.
+/// routinely exceed <see cref="int.MaxValue"/> on analytics indices. It maps directly onto
+/// <see cref="PagedList{T}.TotalCount"/>, which is also a <see cref="long"/> but is treated as exact.
 /// </para>
 /// <para>
 /// This domain declares its own result type rather than returning <see cref="PagedList{T}"/> directly
-/// because <see cref="PagedList{T}"/> is <see langword="sealed"/> (so this type cannot extend it),
-/// every property is <c>private init</c> with an <c>internal</c> constructor (so facets, highlights,
-/// rank, duration, and an accuracy qualifier have nowhere to live on it), its
-/// <see cref="PagedList{T}.TotalCount"/> is an <see cref="int"/> treated as exact, and its
-/// <c>Create</c> hard-throws on an invalid page. Routing a Meilisearch estimate through it would
+/// because <see cref="PagedList{T}"/> is <see langword="sealed"/> (so this type cannot extend it), it
+/// has no members for facets, highlights, rank, duration, or an accuracy qualifier, its
+/// <see cref="PagedList{T}.TotalCount"/> is treated as exact, and its <c>Create</c> throws on an
+/// invalid page. Routing a Meilisearch estimate through it would
 /// publish an estimate as fact. <see cref="ToPagedList"/> is the guarded, lossy bridge instead.
 /// </para>
 /// </remarks>
@@ -71,9 +70,9 @@ public sealed record SearchResults<TDocument>
     /// <returns>
     /// A failed <see cref="Result{T}"/> with <see cref="SearchErrors.TotalHitsNotExact"/> when
     /// <see cref="Accuracy"/> is not <see cref="TotalHitsAccuracy.Exact"/>; with
-    /// <see cref="SearchErrors.TotalHitsOverflow"/> when <see cref="TotalHits"/> exceeds
-    /// <see cref="int.MaxValue"/>; with <see cref="SearchErrors.InvalidSearchRequest"/> when
-    /// <see cref="Page"/> or <see cref="PageSize"/> is less than 1; otherwise a successful
+    /// <see cref="SearchErrors.InvalidSearchRequest"/> when <see cref="TotalHits"/> is negative,
+    /// <see cref="Page"/> or <see cref="PageSize"/> is less than 1, or <see cref="Hits"/> holds more
+    /// than <see cref="PageSize"/> hits; otherwise a successful
     /// <see cref="Result{T}"/> carrying the projected <see cref="PagedList{T}"/>.
     /// </returns>
     public Result<PagedList<TDocument>> ToPagedList()
@@ -83,9 +82,10 @@ public sealed record SearchResults<TDocument>
             return Result<PagedList<TDocument>>.Failure(SearchErrors.TotalHitsNotExact());
         }
 
-        if (TotalHits > int.MaxValue)
+        if (TotalHits < 0)
         {
-            return Result<PagedList<TDocument>>.Failure(SearchErrors.TotalHitsOverflow(TotalHits));
+            return Result<PagedList<TDocument>>.Failure(
+                SearchErrors.InvalidSearchRequest($"TotalHits must not be negative; received {TotalHits}."));
         }
 
         if (Page < 1)
@@ -100,8 +100,14 @@ public sealed record SearchResults<TDocument>
                 SearchErrors.InvalidSearchRequest($"PageSize must be at least 1; received {PageSize}."));
         }
 
+        if (Hits.Count > PageSize)
+        {
+            return Result<PagedList<TDocument>>.Failure(
+                SearchErrors.InvalidSearchRequest($"A page of size {PageSize} cannot hold {Hits.Count} hits."));
+        }
+
         var items = Hits.Select(hit => hit.Document).ToArray();
         return Result<PagedList<TDocument>>.Success(
-            PagedList<TDocument>.Create(items, Page, PageSize, (int)TotalHits));
+            PagedList<TDocument>.Create(items, Page, PageSize, TotalHits));
     }
 }

@@ -28,7 +28,6 @@ public static class SearchErrors
     private const string PaginationLimitExceededCode = "search.pagination_limit_exceeded";
     private const string FacetLimitExceededCode = "search.facet_limit_exceeded";
     private const string TotalHitsNotExactCode = "search.total_hits_not_exact";
-    private const string TotalHitsOverflowCode = "search.total_hits_overflow";
     private const string UnsupportedCapabilityCode = "search.unsupported_capability";
     private const string IndexAlreadyExistsCode = "search.index_already_exists";
     private const string IndexDefinitionConflictCode = "search.index_definition_conflict";
@@ -116,12 +115,6 @@ public static class SearchErrors
         Error.Validation(
             TotalHitsNotExactCode,
             "TotalHits is not exact. Set SearchRequest.RequireExactTotalHits = true before calling ToPagedList().");
-
-    /// <summary><c>ToPagedList()</c> was called on a result whose <c>TotalHits</c> exceeds <see cref="int.MaxValue"/>.</summary>
-    public static Error TotalHitsOverflow(long totalHits) =>
-        Error.Validation(
-            TotalHitsOverflowCode,
-            $"TotalHits ({totalHits}) exceeds int.MaxValue and cannot be represented by PagedList<T>.TotalCount.");
 
     /// <summary>
     /// Reserved and currently unreachable by construction — the closed 8-node filter hierarchy has no

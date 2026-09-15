@@ -141,7 +141,7 @@ Result<PagedList<ProductSearchDocument>> paged = results.ToPagedList();
 // and the provider actually returned TotalHitsAccuracy.Exact.
 ```
 
-Set `RequireExactTotalHits` on the request when you intend to call `ToPagedList()` afterwards — `SearchErrors.TotalHitsNotExact`'s own message names this member as the remedy. `ToPagedList()` also fails with `SearchErrors.TotalHitsOverflow` when `TotalHits > int.MaxValue` (routine on ElasticSearch analytics indices, since `PagedList<T>.TotalCount` is an `int`) and drops `Facets`, `Rank`, and `Highlights` in the projection — none of those have a place on `PagedList<T>`.
+Set `RequireExactTotalHits` on the request when you intend to call `ToPagedList()` afterwards — `SearchErrors.TotalHitsNotExact`'s own message names this member as the remedy. `TotalHits` maps directly onto `PagedList<T>.TotalCount` (both are `long`, so ElasticSearch analytics totals above `int.MaxValue` project without loss). `ToPagedList()` also fails with `SearchErrors.InvalidSearchRequest` for a negative total, a page or page size below 1, or more hits than the page size, and drops `Facets`, `Rank`, and `Highlights` in the projection — none of those have a place on `PagedList<T>`.
 
 ## Package
 

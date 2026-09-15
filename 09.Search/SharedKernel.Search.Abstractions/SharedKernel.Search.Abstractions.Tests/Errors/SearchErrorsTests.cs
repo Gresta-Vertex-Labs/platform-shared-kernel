@@ -8,7 +8,7 @@ namespace SharedKernel.Search.Abstractions.Tests.Errors;
 /// T-01: <see cref="SearchErrors"/> factory tests — every member returns the expected
 /// <see cref="ErrorType"/> and a dot-separated-lowercase code, and the factory-choice tally is
 /// asserted explicitly against the live <see cref="Error"/> API: <see cref="ErrorType.NotFound"/> x2,
-/// <see cref="ErrorType.Validation"/> x13, <see cref="ErrorType.Conflict"/> x4,
+/// <see cref="ErrorType.Validation"/> x12, <see cref="ErrorType.Conflict"/> x4,
 /// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x8,
 /// <see cref="ErrorType.BusinessRule"/> x0.
 /// </summary>
@@ -39,7 +39,7 @@ public sealed class SearchErrorsTests
     }
 
     // ---------------------------------------------------------------------------
-    // Error.Validation (x13)
+    // Error.Validation (x12)
     // ---------------------------------------------------------------------------
 
     [Fact]
@@ -144,15 +144,6 @@ public sealed class SearchErrorsTests
         error.Type.Should().Be(ErrorType.Validation);
         error.Code.Should().Be("search.total_hits_not_exact");
         error.Message.Should().Contain("RequireExactTotalHits");
-    }
-
-    [Fact]
-    public void TotalHitsOverflow_ReturnsValidation()
-    {
-        var error = SearchErrors.TotalHitsOverflow(3_000_000_000L);
-
-        error.Type.Should().Be(ErrorType.Validation);
-        error.Code.Should().Be("search.total_hits_overflow");
     }
 
     [Fact]
@@ -327,7 +318,6 @@ public sealed class SearchErrorsTests
             SearchErrors.PaginationLimitExceeded(1, 1, 1, "p"),
             SearchErrors.FacetLimitExceeded(1, 1),
             SearchErrors.TotalHitsNotExact(),
-            SearchErrors.TotalHitsOverflow(1),
             SearchErrors.UnsupportedCapability("c", "p"),
             SearchErrors.IndexAlreadyExists("i"),
             SearchErrors.IndexDefinitionConflict("i", "f"),
@@ -345,9 +335,9 @@ public sealed class SearchErrorsTests
             SearchErrors.EngineFault("p", "o", "d"),
         ];
 
-        errors.Should().HaveCount(29);
+        errors.Should().HaveCount(28);
         errors.Count(e => e.Type == ErrorType.NotFound).Should().Be(2);
-        errors.Count(e => e.Type == ErrorType.Validation).Should().Be(13);
+        errors.Count(e => e.Type == ErrorType.Validation).Should().Be(12);
         errors.Count(e => e.Type == ErrorType.Conflict).Should().Be(4);
         errors.Count(e => e.Type == ErrorType.Unauthorized).Should().Be(2);
         errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(8);
