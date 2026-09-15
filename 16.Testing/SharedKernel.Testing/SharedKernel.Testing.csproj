@@ -28,8 +28,8 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <!--
-      Contracts test helpers (S-03, P-064/P-182): PagedListBuilder<T>, EnvelopeAssertions,
-      IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>, PagedListAssertions.
+      Contracts test helpers (S-03, P-064/P-182): PagedListBuilder<T>, PagedListAssertions (PagedList/CursorPagedList),
+      IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>.
     -->
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <!--

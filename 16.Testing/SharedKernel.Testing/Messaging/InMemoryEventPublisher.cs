@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 
@@ -59,7 +60,8 @@ public sealed class InMemoryEventPublisher : IEventPublisher
     public IReadOnlyList<object> Published => _published.Select(p => p.Event).ToArray();
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : class
+    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+        where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var context = BuildContext(configure: null);
@@ -69,7 +71,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
 
     /// <inheritdoc />
     public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
-        where TEvent : class
+        where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         ArgumentNullException.ThrowIfNull(configure);
@@ -97,7 +99,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
         if (match is null)
         {
             throw new InvalidOperationException(
-                $"Expected a published event of type '{typeof(TEvent).Name}' but none was found.");
+                $"Expected a published event of type {DisplayName(typeof(TEvent))} but none was found.");
         }
 
         return match;
@@ -116,7 +118,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
         if (matches.Count != 1)
         {
             throw new InvalidOperationException(
-                $"Expected exactly one published event of type '{typeof(TEvent).Name}' but found {matches.Count}.");
+                $"Expected exactly one published event of type {DisplayName(typeof(TEvent))} but found {matches.Count}.");
         }
 
         return matches[0];
@@ -131,7 +133,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
         if (count > 0)
         {
             throw new InvalidOperationException(
-                $"Expected no published events of type '{typeof(TEvent).Name}' but found {count}.");
+                $"Expected no published events of type {DisplayName(typeof(TEvent))} but found {count}.");
         }
     }
 
@@ -149,7 +151,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
         if (match.Event is null)
         {
             throw new InvalidOperationException(
-                $"Expected a published event of type '{typeof(TEvent).Name}' but none was found.");
+                $"Expected a published event of type {DisplayName(typeof(TEvent))} but none was found.");
         }
 
         return match.Context;
@@ -168,5 +170,19 @@ public sealed class InMemoryEventPublisher : IEventPublisher
 
         configure?.Invoke(context);
         return context;
+    }
+
+    // Formats a type for an assertion message, with its wire name and version when it declares a valid
+    // [IntegrationEvent]. Never throws, so a bad declaration cannot hide the assertion failure itself.
+    private static string DisplayName(Type eventType)
+    {
+        try
+        {
+            return $"'{eventType.Name}' ({IntegrationEventDescriptor.For(eventType)})";
+        }
+        catch (InvalidOperationException)
+        {
+            return $"'{eventType.Name}'";
+        }
     }
 }

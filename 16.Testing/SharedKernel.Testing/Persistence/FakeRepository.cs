@@ -319,8 +319,9 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
 
     /// <inheritdoc />
     /// <remarks>
-    /// <c>page</c>/<c>pageSize</c> are derived from <paramref name="spec"/>'s <c>Skip</c>/<c>Take</c>
-    /// using the inverse of <c>PagedSpecification&lt;T&gt;</c>'s own construction arithmetic.
+    /// <c>page</c>/<c>pageSize</c> are derived exactly as <c>EfReadRepository</c> derives them: from a
+    /// <c>PagedSpecification&lt;T&gt;</c>'s own <c>Page</c>/<c>PageSize</c> when they still match its
+    /// <c>Skip</c>/<c>Take</c>, otherwise from <c>Skip</c>/<c>Take</c>, or a single page when <c>Take</c> is unset.
     /// <c>totalCount</c> comes from a second, un-paged pass through the filter/order/distinct steps
     /// only (steps 0-1/3-5) — never Skip/Take.
     /// </remarks>
@@ -329,11 +330,10 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         ArgumentNullException.ThrowIfNull(spec);
         ct.ThrowIfCancellationRequested();
 
-        var totalCount = ApplyFilterOrderDistinct(spec).Count();
-        var (page, pageSize) = DerivePaging(spec, totalCount);
+        long totalCount = ApplyFilterOrderDistinct(spec).LongCount();
         var items = ApplySpecification(spec).ToList();
 
-        return Task.FromResult(PagedList<TAggregate>.Create(items, page, pageSize, totalCount));
+        return Task.FromResult(CreatePage(items, spec, totalCount));
     }
 
     /// <inheritdoc />
@@ -370,12 +370,11 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         ArgumentNullException.ThrowIfNull(spec);
         ct.ThrowIfCancellationRequested();
 
-        var totalCount = ApplyFilterOrderDistinct(spec).Count();
-        var (page, pageSize) = DerivePaging(spec, totalCount);
+        long totalCount = ApplyFilterOrderDistinct(spec).LongCount();
         var selector = spec.Selector.Compile();
         var items = ApplySpecification(spec).Select(selector).ToList();
 
-        return Task.FromResult(PagedList<TResult>.Create(items, page, pageSize, totalCount));
+        return Task.FromResult(CreatePage(items, spec, totalCount));
     }
 
     /// <inheritdoc />
@@ -599,13 +598,38 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         return query;
     }
 
-    private static (int Page, int PageSize) DerivePaging(ISpecification<TAggregate> spec, int totalCount)
+    // Mirrors EfReadRepository<TAggregate, TId>.CreatePage exactly, so a paged result from this fake has the same
+    // page, page size and total as the real repository would report for the same specification.
+    private static PagedList<TItem> CreatePage<TItem>(List<TItem> items, ISpecification<TAggregate> spec, long totalCount)
     {
-        // Falls back to a single full page when the caller passes a plain, non-paged specification
-        // (spec.Take is null). Math.Max(totalCount, 1) guards PagedList<T>.Create's own
-        // pageSize-must-be-at-least-1 requirement for an empty, unpaged result set.
-        var pageSize = spec.Take ?? Math.Max(totalCount, 1);
-        var page = spec.Skip.HasValue && pageSize > 0 ? (spec.Skip.Value / pageSize) + 1 : 1;
-        return (page, pageSize);
+        var (page, pageSize) = ExtractPageInfo(spec, items.Count);
+
+        if (items.Count > pageSize)
+        {
+            throw new InvalidOperationException(
+                $"The specification returned {items.Count} rows for a page of size {pageSize}. " +
+                "The specification's Take must be the page window.");
+        }
+
+        return PagedList<TItem>.Create(items, page, pageSize, totalCount);
+    }
+
+    // A PagedSpecification<T> supplies its own Page/PageSize when they still match its Skip/Take (a subclass may
+    // have replaced them with ApplyPaging). Otherwise the page is inferred from Skip/Take, rounding a Skip that is
+    // not a multiple of Take down to the page it starts in. A specification with no Take returns every matching
+    // row, so the whole result is reported as a single page.
+    private static (int Page, int PageSize) ExtractPageInfo(ISpecification<TAggregate> spec, int itemCount)
+    {
+        if (spec is PagedSpecification<TAggregate> paged
+            && spec.Take == paged.PageSize
+            && spec.Skip == ((long)paged.Page - 1) * paged.PageSize)
+        {
+            return (paged.Page, paged.PageSize);
+        }
+
+        if (spec.Take is { } take)
+            return (((spec.Skip ?? 0) / take) + 1, take);
+
+        return (1, Math.Max(itemCount, 1));
     }
 }

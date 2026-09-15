@@ -170,11 +170,13 @@ public sealed class InMemoryWebhookDispatcherTests
         Assert.Throws<InvalidOperationException>(() => dispatcher.ShouldHaveDispatchedTo(subscription.SubscriptionId));
     }
 
+    [SharedKernel.Contracts.Events.IntegrationEvent("tests.testing.integration.webhook-dispatcher-event")]
     private sealed record TestIntegrationEvent(Guid EventId) : SharedKernel.Contracts.Events.IIntegrationEvent
     {
         public DateTimeOffset OccurredOn { get; } = DateTimeOffset.UnixEpoch;
     }
 
+    [SharedKernel.Contracts.Events.IntegrationEvent("tests.testing.integration.webhook-dispatcher-other-event")]
     private sealed record OtherIntegrationEvent(Guid EventId) : SharedKernel.Contracts.Events.IIntegrationEvent
     {
         public DateTimeOffset OccurredOn { get; } = DateTimeOffset.UnixEpoch;

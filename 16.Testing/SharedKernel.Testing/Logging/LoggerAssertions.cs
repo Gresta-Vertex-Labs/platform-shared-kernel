@@ -9,7 +9,7 @@ namespace SharedKernel.Testing.Logging;
 /// <remarks>
 /// All members throw a plain <see cref="InvalidOperationException"/> on failure — zero
 /// test-framework dependency, mirroring <c>InMemoryMessageBus</c>'s <c>Should*</c> naming and
-/// <c>EnvelopeAssertions</c>'s exception convention. These are read-only queries; they never
+/// <c>PagedListAssertions</c>'s exception convention. These are read-only queries; they never
 /// mutate the supplied record list.
 /// </remarks>
 public static class LoggerAssertions

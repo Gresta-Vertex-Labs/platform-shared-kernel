@@ -51,7 +51,7 @@ SharedKernel.Testing/
   Clocks/          — SharedKernel.Testing.Clocks         — IClock fake (01.Core) — FakeClock
   Caching/         — SharedKernel.Testing.Caching         — ICacheService / IDistributedLockService / ITenantCacheKeyProvider / ICacheInvalidationBus fakes (02.Caching), plus IRedisChannelService / IRedisHashService / ITypedHashStore<T> / ICacheWarmupStrategy fakes (02.Caching, P-306/WO-050); FakeTenantCacheService / AddFakeTenantCacheService() implementing ITenantCacheService (02.Caching Phase 44/P-435/WO-065)
   Domain/          — SharedKernel.Testing.Domain          — assertion helpers over 03.Domain primitives — DomainEventAssertions, BusinessRuleAssertions, SpecificationAssert, DomainVersionAssertions, SpecificationTestBuilder<T>, FakeDomainNotFoundException; MoneyFaker / FakeExchangeRateProvider implementing IExchangeRateProvider (P-441/WO-066, implemented 2026-09-04)
-  Contracts/       — SharedKernel.Testing.Contracts       — DTO test helpers (04.Contracts) — PagedListBuilder<T>, EnvelopeAssertions, IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>, PagedListAssertions
+  Contracts/       — SharedKernel.Testing.Contracts       — DTO test helpers (04.Contracts) — PagedListBuilder<T>, PagedListAssertions (PagedList<T> and CursorPagedList<T>), IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>
   Security/        — SharedKernel.Testing.Security        — IUserContext / ITenantProvider fakes (12.Security), plus SecurityTestContextBuilder (fluent ClaimsPrincipal/IUserContext test-fixture builder, P-382/WO-058) and FakeUserContext's AuthenticationMethods/AuthContextClassReference/AuthTime/WasAuthenticatedWith/IsAuthenticationFresherThan surface tracking 12.Security's step-up-authentication expansion (P-375/WO-058, implemented) — plus DpopTestProofBuilder, MtlsTestCertificateBuilder/MtlsTestCertificateAuthority, and ApiKeyRotationScenarioBuilder (P-391/WO-060, implemented), BCL-only test-fixture builders for 12.Security's WO-060 hardening (DPoP ath binding, mTLS default posture, API-key rotation), taking zero ProjectReference to SharedKernel.Security.Oidc/.Mtls/.ApiKey; FakeTotpChallengeStore implementing ITotpChallengeStore (P-453/WO-069, implemented 2026-09-04)
   Messaging/       — SharedKernel.Testing.Messaging       — IMessageBus / IEventPublisher in-memory doubles (07.Messaging), TestHarnessFactory
   Persistence/     — SharedKernel.Testing.Persistence     — IDbConnectionFactory / IRepository<TAggregate,TId> / IReadRepository<TAggregate,TId> / IUnitOfWork / ITransactionalUnitOfWork fakes + EF Core test helpers (06.Persistence) — FakeDbConnectionFactory, FakeRepository<TAggregate,TId>, FakeUnitOfWork, FakePersistenceTransaction (all P-335/WO-053, implemented C-102–C-105/SK.16.Core), TestSharedKernelDbContext, AggregateRootFaker, EfContextExtensions, ProjectionSpecificationBuilder, BulkAggregateFaker, WithDeletedSpecification, PersistenceTestHelpers; FakeAuditTrailWriter / FakeAuditQueryService / FakeAuditActorContext implementing IAuditTrailWriter/IAuditQueryService/IAuditActorContext (the RICH 06.Persistence.Abstractions contract — see Application/ below for the DIFFERENT, smaller same-named local-seam contract) (P-459/WO-071, implemented 2026-09-04)
@@ -488,54 +488,50 @@ PagedListBuilder<T>  (sealed class — fluent test builder)
     .WithItems(IEnumerable<T> items)                            → PagedListBuilder<T>  (fluent; also sets default TotalCount = items.Count)
     .WithPage(int page)                                         → PagedListBuilder<T>  (fluent; default 1)
     .WithPageSize(int pageSize)                                 → PagedListBuilder<T>  (fluent; default 10)
-    .WithTotalCount(int totalCount)                             → PagedListBuilder<T>  (fluent; overrides the WithItems-derived default)
-    .Build()                                                    → PagedList<T>  (calls PagedList<T>.Create(...))
-    static .Empty<T>()                                          → PagedList<T>  (zero items, TotalCount=0, Page=1, PageSize=10)
+    .WithRequest(PageRequest request)                           → PagedListBuilder<T>  (fluent; copies Page/PageSize from a validated PageRequest)
+    .WithTotalCount(long totalCount)                            → PagedListBuilder<T>  (fluent; overrides the WithItems-derived default)
+    .Build()                                                    → PagedList<T>  (calls PagedList<T>.Create(items, page, pageSize, long totalCount))
+    static PagedListBuilder<T>.Empty()                          → PagedList<T>  (zero items, TotalCount=0, Page=1, PageSize=10)
     NOTE: Eliminates repetitive PagedList<T>.Create(...) boilerplate in paged-query test setups.
+          Build() goes through the production factory, so production's rules apply unchanged: page
+          and page size at least 1, total count not negative, no more items than the page size.
           Standalone builder, no owning consuming-domain interface — proven in SelfTests.
 
-EnvelopeAssertions  (static class — extension methods on Envelope / Envelope<T>)
-    .ShouldBeSuccess(this Envelope envelope)                    → void  (throws with Error details if IsSuccess == false)
-    .ShouldBeFailure(this Envelope envelope)                    → void  (throws if IsSuccess == true)
-    .ShouldBeSuccess<T>(this Envelope<T> envelope)               → T  (returns Value for chaining; throws if failure)
-    .ShouldBeFailure<T>(this Envelope<T> envelope, ErrorType? expectedType = null) → void  (throws if success; optionally asserts ErrorType)
-    .ShouldHaveError<T>(this Envelope<T> envelope, string expectedCode)             → void  (throws if failure but code mismatches, or if success)
-    NOTE: All throw InvalidOperationException, zero test-framework dependency. Standalone assertion
-          helper, no owning consuming-domain interface — proven in SelfTests.
-    NAMESPACE RENAME ADOPTED (P-330/WO-052, 2026-07-31): the underlying `Envelope`/`Envelope<T>` types
-          were relocated by `04.Contracts` from namespace `SharedKernel.Contracts.Envelope` to
-          `SharedKernel.Contracts.Envelopes` (folder `Envelope/` → `Envelopes/`, `04.Contracts` P-328,
-          shipped in `SharedKernel.Contracts` v2.0.0) to eliminate a namespace-vs-type-name collision —
-          the exact reason this file previously carried a `using EnvelopeNs = SharedKernel.Contracts.Envelope;`
-          alias. `EnvelopeAssertions.cs`/`EnvelopeAssertionsTests.cs` now reference the type directly via
-          a plain `using SharedKernel.Contracts.Envelopes;`, with zero `EnvelopeNs` alias remaining and
-          every method signature/`<see cref>` doc reference unqualified `Envelope`/`Envelope<T>` — a
-          purely mechanical `using`/type-reference update, no signature or behavior change.
-
 IntegrationEventFaker<TEvent>  (abstract class, extends Bogus.Faker<TEvent>)
-    where TEvent : IIntegrationEvent
+    where TEvent : class, IIntegrationEvent
     protected .RuleForEventId()                                 → void  (pre-wires EventId to f.Random.Guid())
     protected .RuleForOccurredOn()                               → void  (pre-wires OccurredOn to f.Date.RecentOffset())
     NOTE: Subclasses call these helpers in their constructor then add their own RuleFor declarations.
           Eliminates EventId/OccurredOn boilerplate on every integration event faker.
 
-EventEnvelopeBuilder<TEvent>  (sealed class — fluent test builder)  where TEvent : IDomainEvent
-    .WithPayload(TEvent @event)                                  → EventEnvelopeBuilder<TEvent>  (fluent)
-    .WithSourceService(string name)                              → EventEnvelopeBuilder<TEvent>  (fluent; default "test-service")
-    .WithCorrelationId(string id)                                → EventEnvelopeBuilder<TEvent>  (fluent; default Guid.NewGuid().ToString("N"))
-    .WithCausationId(string id)                                  → EventEnvelopeBuilder<TEvent>  (fluent; default null)
-    .Build()                                                     → EventEnvelope<TEvent>  (wraps EventEnvelope.Wrap<TEvent>(...))
-    NOTE: Gives messaging/integration test setups a clean way to construct envelopes without knowing
-          every metadata field.
+EventEnvelopeBuilder<TEvent>  (sealed class — fluent test builder)  where TEvent : class, IIntegrationEvent
+    .WithData(TEvent integrationEvent)                           → EventEnvelopeBuilder<TEvent>  (fluent; required; throws ArgumentNullException on null)
+    .WithSource(string source)                                   → EventEnvelopeBuilder<TEvent>  (fluent; default "test-service")
+    .WithSubject(string? subject)                                → EventEnvelopeBuilder<TEvent>  (fluent; default null)
+    .WithTenantId(Guid? tenantId)                                → EventEnvelopeBuilder<TEvent>  (fluent; default null)
+    .WithCorrelationId(string? correlationId)                    → EventEnvelopeBuilder<TEvent>  (fluent; default Guid.NewGuid().ToString("N"))
+    .WithCausationId(string? causationId)                        → EventEnvelopeBuilder<TEvent>  (fluent; default null)
+    .Build()                                                     → EventEnvelope<TEvent>  (EventEnvelope.Wrap(data, source, subject:, tenantId:, correlationId:, causationId:))
+    NOTE: Wrap is the only way to create an EventEnvelope<TEvent> (no public constructor or setter),
+          so the builder cannot produce an envelope production could not. Values are validated by
+          Wrap at Build() time, not by the setters, so an invalid value surfaces as the same
+          ArgumentException production would see. Build() throws InvalidOperationException when
+          WithData was never called or TEvent lacks a valid [IntegrationEvent("name", Version = n)]
+          attribute — a test event type must carry one.
 
-PagedListAssertions  (static class — extension methods on PagedList<T>)
-    .ShouldHaveTotalCount(this PagedList<T> list, int expected)  → void
-    .ShouldHaveItems(this PagedList<T> list, params T[] expected) → void
-    .ShouldBeEmpty(this PagedList<T> list)                       → void
-    NOTE: Plain exception-throwing boolean checks — ZERO FluentAssertions reference, correcting an
-          earlier superseded-phase draft that specified a FluentAssertions implementation. This
-          package's standing hard rule (no assertion-library dependency of its own) takes precedence.
-          Proven in SelfTests.
+PagedListAssertions  (static class — extension methods on PagedList<T> and CursorPagedList<T>)
+    .ShouldHaveTotalCount(this PagedList<T> list, long expected)        → void
+    .ShouldHaveItems(this PagedList<T> list, params T[] expected)       → void  (in order)
+    .ShouldBeEmpty(this PagedList<T> list)                              → void
+    .ShouldHaveItems(this CursorPagedList<T> list, params T[] expected) → void  (in order)
+    .ShouldBeEmpty(this CursorPagedList<T> list)                        → void
+    .ShouldHaveNextPage(this CursorPagedList<T> list)                   → string  (returns NextCursor for chaining; throws on the last page)
+    .ShouldBeLastPage(this CursorPagedList<T> list)                     → void  (throws when NextCursor is non-null)
+    NOTE: Plain exception-throwing checks — ZERO FluentAssertions reference. This package's standing
+          hard rule (no assertion-library dependency of its own) takes precedence. Proven in SelfTests.
+
+Removed: EnvelopeAssertions — 04.Contracts no longer ships Envelope/Envelope<T>; HTTP failures are
+    RFC 9457 ProblemDetails and there is no response-wrapper DTO left to assert on.
 
 AddFakeContractsServices(this IServiceCollection)                                    [STATUS: Deferred — P-064/WO-012]
     NOTE: Deferred — none of the above Contracts/ helpers currently need DI registration (all are
@@ -836,11 +832,14 @@ InMemoryEventPublisher  (sealed class, implements IEventPublisher)
     constructor(IEnumerable<IMessageHeaderPropagator>? propagators = null)
         Materialized once via `propagators?.ToArray() ?? []`, mirroring InMemoryMessageBus's constructor
         exactly (including the re-enumeration-avoidance rationale).
-    .PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)             → Task
-    .PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct) → Task
+    .PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)             → Task  where TEvent : class, IIntegrationEvent
+    .PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct) → Task  where TEvent : class, IIntegrationEvent
     .Published                                                 → IReadOnlyList<object>
     .PublishedOf<TEvent>()                                     → IReadOnlyList<TEvent>
     .ShouldHavePublishedContext<TEvent>()                       → PublishContext  (throws if none found)
+    NOTE: The IIntegrationEvent constraint mirrors IEventPublisher's own (07.Messaging). Assertion
+          failure messages name the event by type plus wire name and version — e.g.
+          'OrderPlaced' (orders.order-placed v1) — via a private DisplayName helper.
     NOTE: Does not wrap events in EventEnvelope<TEvent> — that's a MassTransitEventPublisher-specific
           transport concern (07.Messaging). This double records the raw TEvent instances only.
           Thread-safe under concurrent publish. SCOPE LOCK (P-352/WO-054): this divergence means P-340's
@@ -875,8 +874,10 @@ TestHarnessFactory  (static class)
     NOTE: May reference SharedKernel.Messaging.MassTransit as a test-only dependency — this is
           permitted because 16.Testing is never shipped inside a production artifact. InMemoryMessageBus
           and InMemoryEventPublisher themselves remain reference-isolated to
-          SharedKernel.Messaging.Abstractions only; TestHarnessFactory is a separate file/type that
-          carries the heavier MassTransit reference.
+          SharedKernel.Messaging.Abstractions (plus SharedKernel.Contracts for the IIntegrationEvent
+          constraint that IEventPublisher itself carries);
+          TestHarnessFactory is a separate file/type
+          that carries the heavier MassTransit reference.
 ```
 
 ### `Persistence/` — connection factory fake and EF Core test helpers (06.Persistence)
@@ -910,7 +911,7 @@ FakeRepository<TAggregate, TId>  (sealed class, implements IRepository<TAggregat
     .ListAsync / .CountAsync / .AnyAsync(spec, ct)                → the shared in-memory specification pipeline (see below)
     .GetByIdsAsync(IEnumerable<TId> ids, ct)                     → Task<IReadOnlyList<TAggregate>>  (missing id = no entry; order not guaranteed)
     .GetByIdsChunkedAsync(IEnumerable<TId> ids, int chunkSize, ct) → Task<IReadOnlyList<TAggregate>>  (identical results, chunked mechanically)
-    .ListPagedAsync(spec, ct)                                    → Task<PagedList<TAggregate>>  (page/pageSize derived from spec.Skip/spec.Take)
+    .ListPagedAsync(spec, ct)                                    → Task<PagedList<TAggregate>>  (long TotalCount; page/pageSize derived exactly as EfReadRepository.CreatePage — see PAGED READS below)
     .ListProjectedAsync<TResult> / .GetBySpecProjectedAsync<TResult> / .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult>, ct)
         → pipeline through step 7, then Select(spec.Selector) as step 8
     .StreamAsync / .StreamProjectedAsync<TResult>(spec, ct)       → IAsyncEnumerable<T>  (genuine cancellable iterator; eagerly materialized
@@ -939,6 +940,15 @@ FakeRepository<TAggregate, TId>  (sealed class, implements IRepository<TAggregat
         8. Select(spec.Selector) — projection overloads only, strictly after Skip/Take
         CountAsync/AnyAsync reuse this IDENTICAL pipeline (including Skip/Take if set) — no special-casing,
         mirroring ISpecificationEvaluator<T>.GetQuery's own method-agnostic real behavior.
+
+    PAGED READS (ListPagedAsync / ListPagedProjectedAsync) mirror EfReadRepository<TAggregate,TId>.CreatePage
+        exactly, so a page from this fake reports the same page, page size and total as the real
+        repository for the same specification. TotalCount is a long, from a second un-paged pass
+        (steps 0-1/3-5, LongCount, never Skip/Take). Page/pageSize: a PagedSpecification<T>'s own
+        Page/PageSize when they still match its Skip/Take; otherwise ((Skip ?? 0) / Take) + 1 and Take;
+        a specification with no Take is one page sized Math.Max(itemCount, 1). A result holding more
+        rows than the page size throws InvalidOperationException — the specification's Take must be
+        the page window.
 
     ListKeysetAsync<TKey> ALGORITHM: apply pipeline steps 0–1, then OrderBy/OrderByDescending/ThenBys
         (already correctly populated by KeysetSpecification<T,TKey>'s own base constructor — no special
@@ -1820,7 +1830,7 @@ LoggerAssertions  (static class — extension methods on IReadOnlyList<LogRecord
     .ShouldNotHaveLogged(EventId eventId)                       → void  (throws if any match exists)
     .ShouldHaveLoggedCount(EventId eventId, int expectedCount)  → void
     NOTE: All throw plain InvalidOperationException — zero test-framework dependency, mirroring
-          InMemoryMessageBus's Should* naming and EnvelopeAssertions's exception convention. Read-only
+          InMemoryMessageBus's Should* naming and PagedListAssertions's exception convention. Read-only
           queries — never mutate .Records.
 
 AddInMemoryLoggerFactory(this IServiceCollection)
@@ -3440,6 +3450,8 @@ InMemoryWebhookDispatcher  (sealed class, implements IWebhookDispatcher — 15.I
     .TestDeliveries                                             → IReadOnlyList<WebhookSubscription>  (every SendTestDeliveryAsync call, in call order)
     .ShouldHaveDispatched<TEvent>()                             → TEvent  (returns the recorded event; throws if none found)
     .ShouldNotHaveDispatched<TEvent>()                          → void  (throws if any recorded)
+        Both failure messages name the event by type plus wire name and version via
+        a private DisplayName helper, matching InMemoryEventPublisher.
     .ShouldHaveDispatchedTo(Guid subscriptionId)                → void  (throws if no DispatchToSubscriptionAsync call was recorded for that subscription)
     .ShouldHaveSentTestDelivery(Guid subscriptionId)            → void  (throws if no SendTestDeliveryAsync call was recorded for that subscription)
     NOTE: Thread-safe via ConcurrentQueue/ConcurrentDictionary backing collections, mirroring
@@ -3487,7 +3499,7 @@ AddInMemoryWebhookDeliveryObserver(this IServiceCollection)
 
 SCOPE LOCK (P-431/WO-064): Integration/ references SharedKernel.Integration.Webhooks only — the two
     interfaces (IWebhookDispatcher, IWebhookDeliveryObserver) plus the pure-DTO types they traffic in
-    (WebhookSubscription, WebhookDeliveryResult) — never a sibling capability folder in this package.
+    (WebhookSubscription, WebhookDeliveryResult) — never a sibling capability folder's public types.
     IIntegrationEvent (SharedKernel.Contracts.Events, 04.Contracts) is consumed transitively via the
     already-existing SharedKernel.Contracts reference (S-03), never a new direct reference.
 ```
@@ -3710,7 +3722,7 @@ CultureScope  (sealed class : IDisposable)
 SCOPE LOCK (P-485/WO-078): Localization/ references NOTHING beyond System.Globalization (BCL).
 ```
 
-- Sibling capability folders (`Caching/`, `Domain/`, `Contracts/`, `Security/`, `Messaging/`, `Persistence/`, `Clocks/`, `Containers/`, `Communication/`, `ServiceDefaults/`, `Fakers/`, `Application/`, `Logging/`, `Storage/`, `Search/`, `Intelligence/`, `Workflows/`, `Cryptography/`, `FeatureManagement/`, `Integration/`, `Validation/`, `Notifications/`, `Scheduling/`, `Grpc/`, `DataPrivacy/`, `Reporting/`, `Localization/`) must **never reference each other** — reconfirmed explicitly at the twelve-phase P-441/P-445/P-450/P-453/P-459/P-463/P-467/P-470/P-473/P-475/P-481/P-485 dispatch (2026-08-26): `Persistence/FakeAuditTrailWriter`'s hash chain is a deliberately non-cryptographic, self-contained deterministic hash rather than a dependency on the already-shipped `Cryptography/FakeContentHasher`, even though the latter ships exactly the algorithm the former could reuse. Each fake depends only on the single abstraction package it implements (e.g., `FakeCacheService` → `SharedKernel.Caching.Abstractions` only). Mirrors the platform's sibling-package-isolation rule already enforced in `02.Caching`. Standalone helpers with no owning abstraction (`SpecificationTestBuilder<T>`, `ProjectionSpecificationBuilder<TAggregate,TResult>`, etc.) depend only on the domain types they operate over, never on a sibling folder's fake types. Demonstrated concretely by `Application/ApplicationPipelineTestHarness` (WO-040): it needs `ActivityListener`-based span capture, functionally similar to `Communication/ActivityRecorder`, but the rule forbids reusing it across folders — it hand-rolls its own small, self-contained `ActivityListener` wiring instead. A little duplicated boilerplate across sibling folders is the accepted cost of this rule; it is not a bug to "fix" by punching a hole in the isolation rule.
+- Sibling capability folders (`Caching/`, `Domain/`, `Contracts/`, `Security/`, `Messaging/`, `Persistence/`, `Clocks/`, `Containers/`, `Communication/`, `ServiceDefaults/`, `Fakers/`, `Application/`, `Logging/`, `Storage/`, `Search/`, `Intelligence/`, `Workflows/`, `Cryptography/`, `FeatureManagement/`, `Integration/`, `Validation/`, `Notifications/`, `Scheduling/`, `Grpc/`, `DataPrivacy/`, `Reporting/`, `Localization/`) must **never reference each other** — reconfirmed explicitly at the twelve-phase P-441/P-445/P-450/P-453/P-459/P-463/P-467/P-470/P-473/P-475/P-481/P-485 dispatch (2026-08-26): `Persistence/FakeAuditTrailWriter`'s hash chain is a deliberately non-cryptographic, self-contained deterministic hash rather than a dependency on the already-shipped `Cryptography/FakeContentHasher`, even though the latter ships exactly the algorithm the former could reuse. Each fake depends only on the single abstraction package it implements (e.g., `FakeCacheService` → `SharedKernel.Caching.Abstractions` only). Mirrors the platform's sibling-package-isolation rule already enforced in `02.Caching`. Standalone helpers with no owning abstraction (`SpecificationTestBuilder<T>`, `ProjectionSpecificationBuilder<TAggregate,TResult>`, etc.) depend only on the domain types they operate over, never on a sibling folder's fake types. Demonstrated concretely by `Application/ApplicationPipelineTestHarness` (WO-040): it needs `ActivityListener`-based span capture, functionally similar to `Communication/ActivityRecorder`, but the rule forbids reusing it across folders — it hand-rolls its own small, self-contained `ActivityListener` wiring instead. A little duplicated boilerplate across sibling folders is the accepted cost of this rule; it is not a bug to "fix" by punching a hole in the isolation rule. The same applies to message formatting: `Messaging/InMemoryEventPublisher` and `Integration/InMemoryWebhookDispatcher` each carry their own private `DisplayName` helper (wire name and version from `IntegrationEventDescriptor`) rather than sharing one.
 - A local-seam interface that a consuming domain deliberately ships with zero implementation (e.g. `05.Application.Behaviors`' own `IUnitOfWork`/`IAuthorizationContext`/`IIdempotencyKeyStore`) is faked against **that domain's own narrower interface**, never against a same-named interface owned by a different domain — `Application/FakeUnitOfWork` implements `SharedKernel.Application.Behaviors.IUnitOfWork`, never `SharedKernel.Persistence.Abstractions.IUnitOfWork`; the two are unrelated types that happen to share a name (root `CLAUDE.md` documents the same disambiguation). Fakes in this domain must document which of two same-named interfaces they satisfy whenever a naming collision like this exists.
 - When a real production implementation of an interface may **optionally** implement a second, additive capability interface detected at runtime via an `is`-check (e.g. `IIdempotencyKeyStore` optionally also implementing `IIdempotencyResponseStore`, `05.Application.Behaviors` P-242), the corresponding fakes must ship as **two separate concrete types** — one implementing only the base interface, one implementing both — never as a single type with a constructor flag that claims to toggle the optional capability. C# interface implementation is a compile-time, per-type fact; it cannot be turned on/off at runtime, so a flag-based single-type fake would make the `is`-check always succeed (or always fail) regardless of the flag, silently breaking whichever test path the flag was supposed to disable. `Application/FakeIdempotencyKeyStore` / `Application/FakeIdempotencyResponseStore` (WO-040) is the reference example for this rule.
 - Every fake is a **`sealed` class** — no inheritance extension point. Tests compose behavior via constructor parameters and mutable properties (`SimulateFailure`, `IsAuthenticated`, etc.), never by subclassing a fake. Abstract bases (`EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>`, `AggregateRootFaker<TAggregate,TId>`, `TenantedAggregateFaker<TAggregate,TId>`, `TestSharedKernelDbContext`) are the deliberate, documented exception — they exist specifically to be subclassed by consuming test projects, unlike fakes which are leaf types.
@@ -3929,6 +3941,7 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - `Security/DpopTestProofBuilder`/`MtlsTestCertificateBuilder`/`MtlsTestCertificateAuthority`/`ApiKeyRotationScenarioBuilder` (P-391/WO-060) are proven in `SharedKernel.Testing.SelfTests` — net-new, no owning-domain-implementable interface (these are scenario/data builders, not fakes of an abstraction), and `12.Security` sits below `16.Testing` in the layering rules so `SharedKernel.Security.Oidc.Tests`/`.Mtls.Tests`/`.ApiKey.Tests` can never take a `ProjectReference` back to this package — mirroring `FakeClock`/`Cryptography/`/`FeatureManagement/`'s established no-owning-suite-possible fallback, the fourth folder area to invoke this specific rationale. **IMPLEMENTED AND PROVEN (T-82–T-84, 2026-08-17)**: `Security/DpopTestProofBuilderTests.cs` (13 tests) independently re-verifies the ES256 signature via a fresh `ECDsa` public-key import (not merely round-tripping through the builder's own signing code) and proves all three negative-path `ath` corruption methods; `Security/MtlsTestCertificateBuilderTests.cs` (10 tests) proves self-signed/chained/revoked certificate construction via a REAL `X509Chain` validation (`AsChainedFromEphemeralCa` builds and validates against the returned `IssuingCertificate`) plus a hand-parsed CRL proof — writing the CRL-parsing helper surfaced a genuine `CertificateRevocationListBuilder.AddEntry` DER sign-padding quirk (see the `MtlsTestCertificateBuilder` NOTE above), worked around in the TEST's own parsing helper, never in the production builder; `Security/ApiKeyRotationScenarioBuilderTests.cs` (9 tests) proves the scenario-generation half only — its class-level `<remarks>` documents that the end-to-end interop half (calling the real `SharedKernel.Security.ApiKey.ApiKeyRotationComparer.AnyMatch` against this builder's output) is DEFERRED, since that type does not exist yet as of this pass (re-confirmed absent from every `.cs` file under `12.Security/SharedKernel.Security.ApiKey/`; root `P-389` still `◐` Dispatched), mirroring the `Search/` T-75 intra-package-only precedent (P-355/WO-055). Both crypto-fixture builders were additionally proven via throwaway smoke-test console apps (built, run, then deleted) before their final `SelfTests` files were written, per this domain's established crypto-fixture-verification discipline. Full regression `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` (real Docker daemon, incl. `Containers/`) passes 996/996 (930 pre-existing + 66 net new across all three bullets above), zero regressions.
 - `Caching/FakeTenantCacheService`/`AddFakeTenantCacheService()` (P-438/WO-065) are proven in `SharedKernel.Testing.SelfTests` (`Caching/FakeTenantCacheServiceTests.cs`, 9 facts), per the same no-actual-consumer-yet rationale already established for this same folder's earlier fakes — `02.Caching`'s own `.FusionCache.Tests`/`.Redis.Tests` projects reference `SharedKernel.Testing` but do not yet reference `FakeTenantCacheService` itself. The companion "fake encryption seam" interop proof (`Caching/CacheEncryptionFakeCryptographyInteropTests.cs`, T-88) is a SEPARATE test file taking a test-only `ProjectReference` to `SharedKernel.Caching.FusionCache` — mirroring `Security/ApiKeyRotationScenarioBuilderTests.cs`'s T-84 precedent of referencing a real production package under test — since it proves composition with the real `AddCacheEncryption()` extension, not merely this package's own `Cryptography/FakeSymmetricEncryptionService` in isolation (already proven by its own pre-existing test file).
 - **All twelve fakes from the 2026-08-26 batch dispatch (P-441/P-445/P-450/P-453/P-459/P-463/P-467/P-470/P-473/P-475/P-481/P-485) route to `SharedKernel.Testing.SelfTests` unconditionally — none has any possible owning-domain suite to "prove it there" against.** Every target interface is genuinely new (not yet even compiled) as of this dispatch, so no owning domain's own `.Tests` project can reference a `16.Testing` fake for an interface that does not exist yet in its own package — the "actual consumer today, not theoretical" rule (established at `Application/`/`Integration/`) applies at its most extreme: there is no theoretical consumer either. Routing, once each fake ships: `Domain/MoneyFaker`/`FakeExchangeRateProvider` (T-89), `Validation/ValidationSampleGenerator` (T-90), the migrated `Cryptography/FakeEncryptionKeyProvider` + `FakeEnvelopeEncryptionProvider` (T-91), `Cryptography/FakeTotpReplayGuard` + `Security/FakeTotpChallengeStore` (T-92), `Persistence/FakeAuditTrailWriter`/`FakeAuditQueryService` + `Application/FakeAuditTrailWriter` (T-93), `Notifications/InMemoryNotificationSender`/`InMemoryNotificationDeliveryObserver` (T-94), `Scheduling/InMemoryScheduledJobRegistry` (T-95), `Grpc/TestServerCallContext` (T-96), `ServiceDefaults/InMemoryTenantCatalog` (T-97), `DataPrivacy/RecordingDataSubjectRequestHandler`/`PiiMaskingAssertions` (T-98), `Reporting/InMemoryReportExporter<TRow>` (T-99), and `Localization/CultureScope` (T-100, the one fully-unblocked-from-day-one type in this batch — its restore-after-exception proof needs no upstream package at all) plus the D-235 audit-finding integration proof against `01.Core`'s own `InMemoryLocalizationCatalog` (T-101). See `16.Testing/state-map.md`'s Cross-Domain Dependencies table for each fake's specific upstream blocker.
+- `Contracts/` helpers are proven in `SharedKernel.Testing.SelfTests` (`Contracts/EventEnvelopeBuilderTests.cs`, `IntegrationEventFakerTests.cs`, `PagedListBuilderTests.cs`, `PagedListAssertionsTests.cs`). Any test event type passed to `EventEnvelopeBuilder<TEvent>`, `InMemoryEventPublisher` or `InMemoryWebhookDispatcher` must be a `sealed` `IIntegrationEvent` carrying a valid `[IntegrationEvent("name", Version = n)]` — `Build()` goes through `EventEnvelope.Wrap`, which refuses an undeclared type, and SK0038 flags one at compile time. A test that asserts on a failure message asserts on the display-name shape `'TypeName' (wire.name vN)`, not the bare type name.
 
 ---
 
@@ -4020,3 +4033,5 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-09-09] Bug fix, not phase work — no `P-`/`WO-` number: `Security/MtlsTestCertificateBuilder.cs`'s `AsRevoked()` fixed a confirmed, real production defect that was the sole CI failure (traced from a real GitHub Actions run, then reproduced deterministically). `IssueLeafCertificate` previously returned the PRE-issuance raw random 16-byte serial via its `out` parameter, and `BuildRevocationList` fed that same raw byte array directly into `CertificateRevocationListBuilder.AddEntry`. Confirmed via a throwaway smoke-test program (per this domain's established crypto-fixture verification discipline — see the `CertificateRevocationListBuilder`-API-shape lesson already on record in this file's Interface Contracts / agent memory): `AddEntry` throws `ArgumentException` on ANY leading `0x00` byte, including the legitimate DER sign-safety pad byte, and never re-applies that pad itself — a raw random draw starts with a leading-zero-after-reversal shape with probability 1/256, exactly the intermittent CI failure. Independently, `CertificateRequest.Create(..., byte[] serialNumber)` re-normalizes its input during embedding (strips genuinely redundant leading zeros, adds exactly one sign-safety pad when needed) — so the raw pre-issuance bytes are not even guaranteed to equal what the certificate actually carries, a correctness gap distinct from the crash. Fix: `IssueLeafCertificate` now reads the AUTHORITATIVE serial back from the issued certificate via `X509Certificate2.GetSerialNumber()` before returning it (never the pre-issuance draw), and `BuildRevocationList` converts that little-endian value to the big-endian, all-leading-zero-bytes-stripped form `AddEntry` requires via a new private `ToCrlEntrySerialNumber` helper — verified end-to-end (including a hand-parsed round-trip byte match) in the smoke test before being written into production code. This means a serial whose magnitude's top bit is set is still encoded by `AddEntry` as a technically-negative DER `INTEGER` under strict signed semantics — a confirmed, unavoidable limitation of `AddEntry` itself (not introduced here), already worked around by `MtlsTestCertificateBuilderTests.CrlContainsSerialNumber`'s existing raw-content-byte comparison. Added a NEW deterministic regression test, `MtlsTestCertificateBuilderTests.AsRevoked_SerialWithLeadingZeroByteAfterReversal_DoesNotThrow_AndCrlListsTheExactSameValue`, which drives the private `MtlsTestCertificateAuthority.Revoke`/`BuildRevocationList` members via reflection (no production access modifier widened — this package's `ComputeHash`-is-public precedent was considered and rejected here since the transform is a pure implementation detail with no consumer-facing meaning) with a hand-crafted, non-random serial guaranteed to trigger the bug's exact shape every single run, then independently verifies (via `BigInteger`, never reusing the production transform) that the CRL's entry represents the identical numeric value — never relying on a 1-in-256 draw the way the failing CI run did. `dotnet build 16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj --configuration Release` succeeds 0 errors (5 pre-existing, unrelated CS8509 warnings in `Intelligence/`/`Search/` files untouched by this fix). Full `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` result recorded in the same session's next changelog entry below.
 - [2026-09-09] Cleanup, handed off from `devops-lead`, not phase work — no `P-`/`WO-` number: deleted `Containers/MilvusContainerFixture.cs` and its self-test `SharedKernel.Testing.SelfTests/Containers/MilvusContainerFixtureTests.cs`, and dropped the `Testcontainers.Milvus` `PackageReference` from `SharedKernel.Testing.csproj`. Verified the retraction before deleting anything (never trust a handoff's premise blindly): root `CLAUDE.md` confirms `SharedKernel.AI.Milvus` was retracted in WO-048 (`Milvus.Client` abandoned), and `10.Intelligence/` on disk today contains only `SharedKernel.AI.Abstractions`/`.Qdrant`/`.SemanticKernel` — no Milvus project exists at all. Grepped every `.cs`/`.csproj` source file repo-wide for `MilvusContainerFixture`: the only real consumers were the fixture and its own self-test, both now deleted; the sole surviving mentions are prose (a doc-comment in `Intelligence/InMemoryEmbeddingGenerator.cs`, corrected in this same pass, and one comment in `11.Communication/SharedKernel.Communication.Internal.Tests/FakeClockTtlCacheTests.cs` referencing it only as a naming-precedent citation, left untouched — outside `16.Testing/`, not this session's file to edit). **Correction to devops-lead's stated rationale, recorded here for provenance accuracy:** the fixture was NOT a proven flake source — on the real CI runner it passed (`SelfTests` ran 1269/1269 including it, before this session's changes). The reason for deletion is that it was dead infrastructure booting a real Docker container for a provider package that no longer exists, not that it was failing. `devops-lead` separately drops the now-unused `Testcontainers.Milvus` `PackageVersion` pin from `Directory.Packages.props` — not edited here, per this session's protocol (only `16.Testing/` files). `dotnet build` and the full `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` run covering both this session's changes are recorded together below.
 - [2026-09-09] Verification for the two entries above: `dotnet build 16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj --configuration Release` and the `SharedKernel.Testing.SelfTests.csproj` build both succeed 0 errors (the former's 5 pre-existing CS8509 warnings, the latter 0 warnings — neither touched by these changes). Full `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release`: 1266/1267 passed (previously 1269/1269 before this session — the 2-test net change is exactly accounted for: -3 deleted `MilvusContainerFixtureTests` facts, +1 new `MtlsTestCertificateBuilderTests.AsRevoked_SerialWithLeadingZeroByteAfterReversal_DoesNotThrow_AndCrlListsTheExactSameValue`). The one failure, `MeilisearchContainerFixtureTests.FullLifecycle_...` (`System.TimeoutException` from `DotNet.Testcontainers`' own readiness wait), is unrelated to either change in this session — confirmed by re-running it alone: it passes in 933 ms (vs. timing out at 39 s when run concurrently with the suite's seven other Testcontainers fixtures), a local Docker resource-contention flake, not a regression. All 11 `MtlsTestCertificateBuilderTests` facts (the 10 pre-existing plus the 1 new regression test) pass individually and in the full run.
+- [2026-09-15] Contracts redesign: `EnvelopeAssertions` removed from the `Contracts/` surface and folder map; `EventEnvelopeBuilder<TEvent>` re-documented on `EventEnvelope.Wrap` for `class, IIntegrationEvent` (`WithData`/`WithSource`/`WithSubject`/`WithTenantId`/`WithCorrelationId`/`WithCausationId`); `PagedListBuilder` `long` total + `WithRequest(PageRequest)`; `PagedListAssertions` `long` total plus `CursorPagedList<T>` assertions; internal `IntegrationEventDisplayName` documented, with `InMemoryEventPublisher` (`class, IIntegrationEvent` constraint) and `InMemoryWebhookDispatcher` failure messages; `FakeRepository` paged reads documented as mirroring `EfReadRepository.CreatePage`; the cross-folder use of `IntegrationEventDisplayName` recorded as a known deviation from the sibling-folder isolation rule (coordinator)
+- [2026-09-15] `IntegrationEventDisplayName` removed: `InMemoryEventPublisher` and `InMemoryWebhookDispatcher` each inline a private `DisplayName` helper, restoring the sibling-folder isolation rule (coordinator)

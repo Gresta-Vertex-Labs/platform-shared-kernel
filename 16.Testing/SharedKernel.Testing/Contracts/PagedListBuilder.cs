@@ -3,16 +3,21 @@ using SharedKernel.Contracts.Pagination;
 namespace SharedKernel.Testing.Contracts;
 
 /// <summary>
-/// Fluent test builder eliminating repetitive <see cref="PagedList{T}.Create"/> boilerplate in
-/// paged-query test setups.
+/// Fluent test builder eliminating repetitive <see cref="PagedList{T}"/> factory boilerplate in paged-query test
+/// setups.
 /// </summary>
 /// <typeparam name="T">The item type contained in the paged list.</typeparam>
+/// <remarks>
+/// <see cref="Build"/> goes through <see cref="PagedList{T}.Create(IReadOnlyList{T}, int, int, long)"/>, so the
+/// same rules apply as in production: the page and page size must be at least 1, the total count must not be
+/// negative, and the page must not hold more items than its page size.
+/// </remarks>
 public sealed class PagedListBuilder<T>
 {
     private IReadOnlyList<T> _items = [];
     private int _page = 1;
     private int _pageSize = 10;
-    private int? _totalCount;
+    private long? _totalCount;
 
     /// <summary>
     /// Sets the items for this page. Also sets the default <see cref="WithTotalCount"/> value to
@@ -48,13 +53,25 @@ public sealed class PagedListBuilder<T>
         return this;
     }
 
+    /// <summary>Sets the page number and page size from a validated <see cref="PageRequest"/>.</summary>
+    /// <param name="request">The request the page answers. Must not be null.</param>
+    /// <returns>This builder, for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    public PagedListBuilder<T> WithRequest(PageRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        _page = request.Page;
+        _pageSize = request.PageSize;
+        return this;
+    }
+
     /// <summary>
     /// Overrides the total record count. By default this equals the number of items supplied via
     /// <see cref="WithItems"/>.
     /// </summary>
     /// <param name="totalCount">The total record count across all pages.</param>
     /// <returns>This builder, for fluent chaining.</returns>
-    public PagedListBuilder<T> WithTotalCount(int totalCount)
+    public PagedListBuilder<T> WithTotalCount(long totalCount)
     {
         _totalCount = totalCount;
         return this;
@@ -62,6 +79,8 @@ public sealed class PagedListBuilder<T>
 
     /// <summary>Builds the configured <see cref="PagedList{T}"/>.</summary>
     /// <returns>A new <see cref="PagedList{T}"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The page or page size is below 1, or the total count is negative.</exception>
+    /// <exception cref="ArgumentException">More items were supplied than the page size allows.</exception>
     public PagedList<T> Build() =>
         PagedList<T>.Create(_items, _page, _pageSize, _totalCount ?? _items.Count);
 

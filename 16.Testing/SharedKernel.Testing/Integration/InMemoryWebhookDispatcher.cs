@@ -174,7 +174,7 @@ public sealed class InMemoryWebhookDispatcher : IWebhookDispatcher
         }
 
         throw new InvalidOperationException(
-            $"Expected a dispatched event of type '{typeof(TEvent).Name}' but none was found.");
+            $"Expected a dispatched event of type {DisplayName(typeof(TEvent))} but none was found.");
     }
 
     /// <summary>Asserts that no event of type <typeparamref name="TEvent"/> was dispatched.</summary>
@@ -186,7 +186,7 @@ public sealed class InMemoryWebhookDispatcher : IWebhookDispatcher
         if (count > 0)
         {
             throw new InvalidOperationException(
-                $"Expected no dispatched events of type '{typeof(TEvent).Name}' but found {count}.");
+                $"Expected no dispatched events of type {DisplayName(typeof(TEvent))} but found {count}.");
         }
     }
 
@@ -213,6 +213,20 @@ public sealed class InMemoryWebhookDispatcher : IWebhookDispatcher
         {
             throw new InvalidOperationException(
                 $"Expected a test delivery to subscription '{subscriptionId}' but none was found.");
+        }
+    }
+
+    // Formats a type for an assertion message, with its wire name and version when it declares a valid
+    // [IntegrationEvent]. Never throws, so a bad declaration cannot hide the assertion failure itself.
+    private static string DisplayName(Type eventType)
+    {
+        try
+        {
+            return $"'{eventType.Name}' ({IntegrationEventDescriptor.For(eventType)})";
+        }
+        catch (InvalidOperationException)
+        {
+            return $"'{eventType.Name}'";
         }
     }
 }

@@ -1,3 +1,4 @@
+using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Testing.Messaging;
@@ -7,7 +8,13 @@ namespace SharedKernel.Testing.SelfTests.Messaging;
 
 public sealed class InMemoryEventPublisherTests
 {
-    private sealed record TestIntegrationEvent(string Value);
+    [IntegrationEvent("tests.testing.messaging.in-memory-event-publisher")]
+    private sealed record TestIntegrationEvent(string Value) : IIntegrationEvent
+    {
+        public Guid EventId { get; } = Guid.NewGuid();
+
+        public DateTimeOffset OccurredOn { get; } = DateTimeOffset.UtcNow;
+    }
 
     /// <summary>
     /// Test-double propagator that appends its <paramref name="name"/> to a shared,
@@ -97,6 +104,26 @@ public sealed class InMemoryEventPublisherTests
     {
         var publisher = new InMemoryEventPublisher();
         Assert.Throws<InvalidOperationException>(publisher.ShouldHavePublished<TestIntegrationEvent>);
+    }
+
+    [Fact]
+    public void ShouldHavePublished_NoMatch_MessageNamesTheWireNameAndVersion()
+    {
+        var publisher = new InMemoryEventPublisher();
+
+        var ex = Assert.Throws<InvalidOperationException>(publisher.ShouldHavePublished<TestIntegrationEvent>);
+
+        Assert.Contains("'TestIntegrationEvent' (tests.testing.messaging.in-memory-event-publisher v1)", ex.Message);
+    }
+
+    [Fact]
+    public void ShouldHavePublished_NoMatchForAnInterface_MessageFallsBackToTheTypeName()
+    {
+        var publisher = new InMemoryEventPublisher();
+
+        var ex = Assert.Throws<InvalidOperationException>(publisher.ShouldHavePublished<IIntegrationEvent>);
+
+        Assert.Contains("'IIntegrationEvent' but none", ex.Message);
     }
 
     [Fact]
