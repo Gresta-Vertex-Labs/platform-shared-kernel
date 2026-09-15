@@ -16,7 +16,7 @@ public sealed class Order : AggregateRoot<OrderId>
     private readonly List<string> _lines = [];
 
     public string Customer { get; private set; } = string.Empty;
-    public Money Total { get; private set; } = new(0, "EUR");
+    public Money Total { get; private set; } = Money.Zero("EUR");
     public IReadOnlyList<string> Lines => _lines.AsReadOnly();
 
     private Order(OrderId id, IClock clock) : base(id, clock) { }

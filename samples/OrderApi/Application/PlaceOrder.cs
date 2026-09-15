@@ -19,8 +19,8 @@ public sealed class PlaceOrderHandler(IOrderRepository repository, IClock clock)
     public async Task<Result<Guid>> Handle(PlaceOrderCommand request, CancellationToken cancellationToken)
     {
         var money = Money.Create(request.Amount, request.Currency);
-        if (money.IsFailure)
-            return Result<Guid>.Failure(money.Error);
+        if (!money.IsValid)
+            return Result<Guid>.Failure(money.Errors[0]);
 
         var placed = Order.Place(request.Customer, money.Value, request.Lines, clock);
         if (placed.IsFailure)

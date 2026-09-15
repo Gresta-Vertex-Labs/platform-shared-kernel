@@ -7,19 +7,29 @@ namespace OrderApi.Domain;
 /// <summary>
 /// A monetary amount in a given currency.
 /// <para>
-/// Note the primary-constructor form: <see cref="ValueObject"/>'s base constructor runs
-/// <see cref="Validate"/>, and field initializers execute <i>before</i> the base constructor
-/// while a constructor body executes <i>after</i> it. Assigning these properties in a body
-/// would let validation observe unset values.
+/// Demonstrates the value-object pattern: assign every member in the constructor, then call
+/// <c>EnsureValid()</c> last so <see cref="Validate"/> sees the fully built object, and create
+/// instances through a <see cref="ValidationResult{T}"/>-returning factory that reports every error.
+/// A real service would use <c>SharedKernel.Domain.Monetary.Money</c>; this one stays deliberately small.
 /// </para>
 /// </summary>
-public sealed class Money(decimal amount, string currency) : ValueObject
+public sealed class Money : ValueObject
 {
-    public decimal Amount { get; } = amount;
-    public string Currency { get; } = (currency ?? string.Empty).Trim().ToUpperInvariant();
+    private Money(decimal amount, string currency)
+    {
+        Amount = amount;
+        Currency = (currency ?? string.Empty).Trim().ToUpperInvariant();
+        EnsureValid();
+    }
 
-    /// <summary>Result-returning factory — the platform's preferred creation path.</summary>
-    public static Result<Money> Create(decimal amount, string currency)
+    public decimal Amount { get; }
+
+    public string Currency { get; }
+
+    public static Money Zero(string currency) => new(0m, currency);
+
+    /// <summary>Validation-returning factory: the platform's preferred creation path.</summary>
+    public static ValidationResult<Money> Create(decimal amount, string currency)
         => TryCreate(() => new Money(amount, currency));
 
     protected override IEnumerable<object?> GetEqualityComponents()
@@ -28,7 +38,7 @@ public sealed class Money(decimal amount, string currency) : ValueObject
         yield return Currency;
     }
 
-    protected override IEnumerable<Error>? Validate()
+    protected override IEnumerable<Error> Validate()
     {
         if (Amount < 0)
             yield return Error.Validation("money.negative", "Amount must not be negative.");
