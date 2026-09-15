@@ -166,6 +166,9 @@ static void Verify(bool condition, string label)
 }
 
 // ── Minimal integration event used solely to exercise IWebhookDispatcher.DispatchAsync ──────────
+// The dispatcher routes on the [IntegrationEvent] name, so an undeclared event type would throw before the
+// subscription lookup.
+[IntegrationEvent("consumer-verify.webhooks.integration-event")]
 internal sealed record ConsumerVerifyIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn) : IIntegrationEvent;
 
 // ── Store that always returns zero subscriptions — proves Surface 1's pipeline without needing a
@@ -180,11 +183,12 @@ internal sealed class NoSubscriptionsStore : IWebhookSubscriptionStore
 // surface; the real IEventPublisher wiring belongs to 07.Messaging and is out of scope here. ────
 internal sealed class NoOpEventPublisher : IEventPublisher
 {
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : class
+    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+        where TEvent : class, IIntegrationEvent
         => Task.CompletedTask;
 
     public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
-        where TEvent : class
+        where TEvent : class, IIntegrationEvent
         => Task.CompletedTask;
 }
 

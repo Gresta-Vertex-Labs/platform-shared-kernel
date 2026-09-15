@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using SharedKernel.Contracts.Events;
+using SharedKernel.Integration.Webhooks.Dispatch;
 using SharedKernel.Integration.Webhooks.Events;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
@@ -11,7 +14,7 @@ namespace SharedKernel.Integration.Webhooks.Tests.Dispatch;
 /// <summary>
 /// Coverage for P-429: <c>SendTestDeliveryAsync</c> reuses the real delivery pipeline verbatim — no
 /// parallel signing/retry/observer logic — and the delivered event type is unambiguously
-/// <c>"WebhookPingEvent"</c>.
+/// <c>"sharedkernel.webhooks.ping"</c>.
 /// </summary>
 public sealed class WebhookPingDeliveryTests
 {
@@ -54,9 +57,46 @@ public sealed class WebhookPingDeliveryTests
     }
 
     [Fact]
-    public void SendTestDeliveryAsync_RoutesAsWebhookPingEvent()
+    public void WebhookPingEvent_DeclaresReservedIntegrationEventName()
     {
-        typeof(WebhookPingEvent).Name.Should().Be("WebhookPingEvent");
+        WebhookPingEvent.EventName.Should().Be("sharedkernel.webhooks.ping");
+        IntegrationEventDescriptor.For<WebhookPingEvent>().Name.Should().Be(WebhookPingEvent.EventName);
+        IntegrationEventDescriptor.For<WebhookPingEvent>().Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void WebhookDeliveryExhaustedEvent_DeclaresIntegrationEventName()
+    {
+        WebhookDeliveryExhaustedEvent.EventName.Should().Be("sharedkernel.webhooks.delivery-exhausted");
+        IntegrationEventDescriptor.For<WebhookDeliveryExhaustedEvent>().Name.Should().Be(WebhookDeliveryExhaustedEvent.EventName);
+    }
+
+    [Fact]
+    public async Task SendTestDeliveryAsync_TagsSpanWithPingEventName()
+    {
+        var subscription = Subscription();
+        var store = new FakeWebhookSubscriptionStore([subscription]);
+        var eventTypeTags = new System.Collections.Concurrent.ConcurrentBag<object?>();
+
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == WebhookIntegrationActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (Equals(activity.GetTagItem(WebhookActivityTags.SubscriptionId), subscription.SubscriptionId))
+                    eventTypeTags.Add(activity.GetTagItem(WebhookActivityTags.EventType));
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        var result = await harness.Dispatcher.SendTestDeliveryAsync(subscription, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        eventTypeTags.Should().ContainSingle().Which.Should().Be(WebhookPingEvent.EventName);
     }
 
     [Fact]

@@ -17,7 +17,10 @@ public static class WebhookActivityTags
     /// <summary>The tag carrying the subscription id a span is attributed to.</summary>
     public const string SubscriptionId = "webhook.subscription_id";
 
-    /// <summary>The tag carrying the integration event's type name (<c>typeof(TEvent).Name</c>).</summary>
+    /// <summary>
+    /// The tag carrying the integration event's type: its <c>[IntegrationEvent]</c> name, identical to the
+    /// CloudEvents <c>type</c> of its <c>EventEnvelope&lt;TEvent&gt;</c>.
+    /// </summary>
     public const string EventType = "webhook.event_type";
 
     /// <summary>The tag carrying the terminal delivery outcome (<c>"success"</c> or <c>"failure"</c>).</summary>

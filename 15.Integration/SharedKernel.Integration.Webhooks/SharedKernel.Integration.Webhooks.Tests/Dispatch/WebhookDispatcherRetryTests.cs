@@ -86,7 +86,7 @@ public sealed class WebhookDispatcherRetryTests
 
         var exhausted = harness.EventPublisher.ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>();
         exhausted.SubscriptionId.Should().Be(subscription.SubscriptionId);
-        exhausted.EventType.Should().Be(nameof(TestOrderShippedEvent));
+        exhausted.EventType.Should().Be(TestOrderShippedEvent.EventName);
     }
 
     [Fact]

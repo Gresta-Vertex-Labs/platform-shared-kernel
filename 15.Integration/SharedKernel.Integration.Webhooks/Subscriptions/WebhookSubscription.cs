@@ -15,8 +15,9 @@ namespace SharedKernel.Integration.Webhooks.Subscriptions;
 /// anywhere except as signing/verification input.
 /// </param>
 /// <param name="EventTypes">
-/// The set of event type names (matching <c>typeof(TEvent).Name</c>) this subscription receives. An
-/// empty list means "subscribed to every event type".
+/// The set of event type names this subscription receives — each an event's <c>[IntegrationEvent]</c> name
+/// (for example <c>orders.order-placed</c>), identical to the CloudEvents <c>type</c> of its
+/// <c>EventEnvelope&lt;TEvent&gt;</c>, never a CLR class name. An empty list means "subscribed to every event type".
 /// </param>
 /// <param name="IsActive">Whether this subscription currently receives deliveries.</param>
 /// <param name="Headers">
@@ -49,7 +50,7 @@ public sealed record WebhookSubscription(
     /// <param name="subscriptionId">The unique identifier of the subscription.</param>
     /// <param name="url">The destination URL that signed webhook payloads are POSTed to.</param>
     /// <param name="secret">The subscription's single signing secret.</param>
-    /// <param name="eventTypes">The set of event type names this subscription receives.</param>
+    /// <param name="eventTypes">The set of event type (<c>[IntegrationEvent]</c>) names this subscription receives.</param>
     /// <param name="isActive">Whether this subscription currently receives deliveries.</param>
     [Obsolete(
         "Use the Secrets-list constructor to support zero-downtime signing-secret rotation. This " +

@@ -72,7 +72,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
 
-        var eventType = typeof(TEvent).Name;
+        var eventType = ResolveEventType(integrationEvent);
         var subscriptions = await _subscriptionStore.GetActiveSubscriptionsAsync(eventType, ct).ConfigureAwait(false);
 
         using var dispatchActivity = WebhookIntegrationActivitySource.StartDispatch(subscriptions.Count, eventType);
@@ -110,7 +110,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         ArgumentNullException.ThrowIfNull(subscription);
         ArgumentNullException.ThrowIfNull(integrationEvent);
 
-        var eventType = typeof(TEvent).Name;
+        var eventType = ResolveEventType(integrationEvent);
         var deliveryId = Guid.NewGuid();
         var payloadJson = JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
 
@@ -146,6 +146,17 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         var pingEvent = new WebhookPingEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
         return DispatchToSubscriptionAsync(subscription, pingEvent, ct);
     }
+
+    /// <summary>
+    /// Resolves the routing key: the <see cref="IntegrationEventAttribute"/> name of the event's runtime type,
+    /// identical to the CloudEvents <c>type</c> of its <see cref="EventEnvelope{TEvent}"/>.
+    /// </summary>
+    /// <remarks>
+    /// Resolved from the runtime type rather than <c>TEvent</c>, which may be an interface or base type, so the
+    /// routing key always describes the same type the payload is serialized as.
+    /// </remarks>
+    private static string ResolveEventType(IIntegrationEvent integrationEvent) =>
+        IntegrationEventDescriptor.For(integrationEvent.GetType()).Name;
 
     private async Task<WebhookDeliveryResult> SendAsync(
         WebhookSubscription subscription,

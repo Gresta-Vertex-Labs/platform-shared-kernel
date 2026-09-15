@@ -1,5 +1,6 @@
 using System.Net;
 using FluentAssertions;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Integration.Webhooks.Tests.TestSupport;
 
@@ -46,8 +47,8 @@ public sealed class WebhookDispatcherFanOutTests
     [Fact]
     public async Task DispatchAsync_ExcludesNonMatchingEventTypeSubscriptions()
     {
-        var matching = Subscription(eventTypes: nameof(TestOrderShippedEvent));
-        var nonMatching = Subscription(eventTypes: "SomeOtherEvent");
+        var matching = Subscription(eventTypes: TestOrderShippedEvent.EventName);
+        var nonMatching = Subscription(eventTypes: "tests.webhooks.some-other-event");
         var store = new FakeWebhookSubscriptionStore([matching, nonMatching]);
         using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
         using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
@@ -57,6 +58,53 @@ public sealed class WebhookDispatcherFanOutTests
 
         results.Should().ContainSingle();
         results[0].SubscriptionId.Should().Be(matching.SubscriptionId);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_SubscriptionKeyedByClassName_DoesNotMatch()
+    {
+        // The routing key is the [IntegrationEvent] name; a subscription still keyed by the CLR class
+        // name must not receive the event.
+        var byClassName = Subscription(eventTypes: nameof(TestOrderShippedEvent));
+        var store = new FakeWebhookSubscriptionStore([byClassName]);
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        var results = await harness.Dispatcher.DispatchAsync(
+            new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid()), CancellationToken.None);
+
+        results.Should().BeEmpty();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_AsInterfaceTypedEvent_RoutesByRuntimeTypeName()
+    {
+        // TEvent is IIntegrationEvent here; the routing key must still come from the runtime type.
+        var matching = Subscription(eventTypes: TestOrderShippedEvent.EventName);
+        var store = new FakeWebhookSubscriptionStore([matching]);
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        IIntegrationEvent integrationEvent = new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid());
+        var results = await harness.Dispatcher.DispatchAsync(integrationEvent, CancellationToken.None);
+
+        results.Should().ContainSingle();
+        results[0].SubscriptionId.Should().Be(matching.SubscriptionId);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_EventWithoutIntegrationEventAttribute_Throws()
+    {
+        var store = new FakeWebhookSubscriptionStore([Subscription()]);
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        var act = async () => await harness.Dispatcher.DispatchAsync(
+            new UndeclaredWebhookEvent(Guid.NewGuid(), DateTimeOffset.UtcNow), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        handler.CallCount.Should().Be(0);
     }
 
     [Fact]
@@ -110,3 +158,6 @@ public sealed class WebhookDispatcherFanOutTests
         handler.CallCount.Should().Be(0);
     }
 }
+
+// Deliberately has no [IntegrationEvent] attribute.
+file sealed record UndeclaredWebhookEvent(Guid EventId, DateTimeOffset OccurredOn) : IIntegrationEvent;

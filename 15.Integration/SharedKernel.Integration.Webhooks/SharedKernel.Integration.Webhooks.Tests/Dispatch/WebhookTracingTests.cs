@@ -43,7 +43,7 @@ public sealed class WebhookTracingTests
 
         var span = FindSubscriptionSpan(activities, subscription.SubscriptionId);
 
-        span.GetTagItem(WebhookActivityTags.EventType).Should().Be(nameof(TestOrderShippedEvent));
+        span.GetTagItem(WebhookActivityTags.EventType).Should().Be(TestOrderShippedEvent.EventName);
         span.GetTagItem(WebhookActivityTags.Outcome).Should().Be("success");
         span.GetTagItem(WebhookActivityTags.AttemptCount).Should().Be(1);
 
@@ -98,7 +98,7 @@ public sealed class WebhookTracingTests
 
         parentSpan.OperationName.Should().Be("WebhookDispatcher.Dispatch");
         parentSpan.GetTagItem(WebhookActivityTags.SubscriptionCount).Should().Be(2);
-        parentSpan.GetTagItem(WebhookActivityTags.EventType).Should().Be(nameof(TestOrderShippedEvent));
+        parentSpan.GetTagItem(WebhookActivityTags.EventType).Should().Be(TestOrderShippedEvent.EventName);
     }
 
     private static Activity FindSubscriptionSpan(ActivityCollector activities, Guid subscriptionId)

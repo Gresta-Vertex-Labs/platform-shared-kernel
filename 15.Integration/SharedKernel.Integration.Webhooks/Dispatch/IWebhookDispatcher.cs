@@ -18,12 +18,17 @@ public interface IWebhookDispatcher
     /// <param name="ct">Cancellation token.</param>
     /// <returns>One <see cref="WebhookDeliveryResult"/> per matched subscription.</returns>
     /// <remarks>
-    /// The routing key is resolved as <c>typeof(TEvent).Name</c> — a deliberate convention parallel to
-    /// <c>EventEnvelope&lt;TEvent&gt;.EventType</c>'s identical derivation in <c>04.Contracts</c>, so one
-    /// event type routes identically whether it travels over <c>07.Messaging</c> or as a webhook. A
-    /// single subscription's delivery failure never faults the others — see
+    /// The routing key is the <see cref="IntegrationEventAttribute"/> name of the event's runtime type (via
+    /// <see cref="IntegrationEventDescriptor"/>) — identical to the CloudEvents <c>type</c> of its
+    /// <see cref="EventEnvelope{TEvent}"/> in <c>04.Contracts</c>, so one event routes identically whether it
+    /// travels over <c>07.Messaging</c> or as a webhook, and a class rename never silently breaks a
+    /// subscription. A single subscription's delivery failure never faults the others — see
     /// <see cref="DispatchToSubscriptionAsync{TEvent}"/>.
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="integrationEvent"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The event's runtime type has no valid <see cref="IntegrationEventAttribute"/>.
+    /// </exception>
     Task<IReadOnlyList<WebhookDeliveryResult>> DispatchAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
         where TEvent : IIntegrationEvent;
 
@@ -40,10 +45,18 @@ public interface IWebhookDispatcher
     /// "redeliver this one" admin action) and don't need the fan-out lookup. Never throws for an
     /// HTTP-level failure (non-2xx, timeout, transport exception) — those surface as a
     /// <see cref="WebhookDeliveryResult"/> with <c>IsSuccess == false</c>. Only invalid input (null
-    /// arguments) throws. On exhausting <c>WebhookDeliveryOptions.MaxAttempts</c> without a 2xx
-    /// response, publishes exactly one <c>WebhookDeliveryExhaustedEvent</c> via <c>IEventPublisher</c>
-    /// before returning the failed result.
+    /// arguments, or an event type with no valid <see cref="IntegrationEventAttribute"/>) throws. The event
+    /// type recorded in tracing tags, logs and <c>WebhookDeliveryExhaustedEvent.EventType</c> is the
+    /// attribute name of the event's runtime type. On exhausting <c>WebhookDeliveryOptions.MaxAttempts</c>
+    /// without a 2xx response, publishes exactly one <c>WebhookDeliveryExhaustedEvent</c> via
+    /// <c>IEventPublisher</c> before returning the failed result.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="subscription"/> or <paramref name="integrationEvent"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The event's runtime type has no valid <see cref="IntegrationEventAttribute"/>.
+    /// </exception>
     Task<WebhookDeliveryResult> DispatchToSubscriptionAsync<TEvent>(
         WebhookSubscription subscription,
         TEvent integrationEvent,
@@ -60,8 +73,9 @@ public interface IWebhookDispatcher
     /// Constructs a <c>WebhookPingEvent</c> and calls
     /// <see cref="DispatchToSubscriptionAsync{TEvent}"/> verbatim — zero parallel signing, retry, or
     /// observer logic. Lets a subscriber verify their endpoint, signature verification, and header
-    /// handling before any real business event fires. The delivered payload's event type is always
-    /// <c>"WebhookPingEvent"</c>, unambiguously distinguishing it from real business events.
+    /// handling before any real business event fires. The delivery's event type is always
+    /// <c>"sharedkernel.webhooks.ping"</c> (<c>WebhookPingEvent.EventName</c>), unambiguously distinguishing it
+    /// from real business events.
     /// </remarks>
     Task<WebhookDeliveryResult> SendTestDeliveryAsync(WebhookSubscription subscription, CancellationToken ct);
 }

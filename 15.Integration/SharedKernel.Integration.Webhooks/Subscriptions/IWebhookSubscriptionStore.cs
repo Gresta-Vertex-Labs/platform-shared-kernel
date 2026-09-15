@@ -16,7 +16,9 @@ public interface IWebhookSubscriptionStore
     /// <paramref name="eventType"/>.
     /// </summary>
     /// <param name="eventType">
-    /// The routing key, derived by the dispatcher as <c>typeof(TEvent).Name</c>.
+    /// The routing key: the event's <c>[IntegrationEvent]</c> name (for example
+    /// <c>orders.order-placed</c>), identical to the CloudEvents <c>type</c> of its
+    /// <c>EventEnvelope&lt;TEvent&gt;</c>. Never the CLR class name.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>

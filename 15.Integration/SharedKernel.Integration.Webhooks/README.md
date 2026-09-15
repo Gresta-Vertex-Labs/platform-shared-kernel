@@ -241,12 +241,17 @@ builder.Services.WithDeliveryObserver<EfWebhookDeliveryLedger>();
 
 ## Dispatching an integration event
 
-Define an integration event implementing `IIntegrationEvent` (from `SharedKernel.Contracts`), then
-call `IWebhookDispatcher.DispatchAsync`. The routing key is always `typeof(TEvent).Name` — the same
-convention `EventEnvelope<TEvent>.EventType` uses in `04.Contracts`, so one event type routes
-identically whether it travels over `07.Messaging` or as a webhook.
+Define an integration event implementing `IIntegrationEvent` (from `SharedKernel.Contracts`) and
+declare its wire name with `[IntegrationEvent(...)]`, then call `IWebhookDispatcher.DispatchAsync`.
+The routing key is always that declared name (resolved from the event's runtime type through
+`IntegrationEventDescriptor`) — the same value as the CloudEvents `type` of its `EventEnvelope<TEvent>`
+in `04.Contracts`, so one event routes identically whether it travels over `07.Messaging` or as a
+webhook. It is never the CLR class name: `WebhookSubscription.EventTypes` holds names such as
+`orders.order-shipped`, and renaming the class never breaks a subscription. Dispatching an event type
+without a valid `[IntegrationEvent]` attribute throws `InvalidOperationException` before any lookup.
 
 ```csharp
+[IntegrationEvent("orders.order-shipped")]
 public sealed record OrderShippedIntegrationEvent(
     Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
 
@@ -298,8 +303,9 @@ if (await processedDeliveryStore.HasProcessedAsync(deliveryId, ct))
 ### Reacting to delivery exhaustion
 
 When a subscription exhausts `WebhookDeliveryOptions.MaxAttempts` without ever receiving a 2xx
-response, the dispatcher publishes exactly one `WebhookDeliveryExhaustedEvent` via `IEventPublisher`.
-Any consumer elsewhere on the platform — an ops/alerting handler, or the owning service itself — can
+response, the dispatcher publishes exactly one `WebhookDeliveryExhaustedEvent` via `IEventPublisher`
+(wire name `sharedkernel.webhooks.delivery-exhausted`; its `EventType` property carries the failed
+event's `[IntegrationEvent]` name). Any consumer elsewhere on the platform — an ops/alerting handler, or the owning service itself — can
 react to it (disable the subscription, page someone, surface it in an admin UI):
 
 ```csharp
@@ -342,10 +348,11 @@ app.MapPost("/admin/webhook-subscriptions/{subscriptionId:guid}/test", async (
 });
 ```
 
-The delivered payload's event type is always `"WebhookPingEvent"` — a reserved name giving the
-subscriber an unambiguous way to distinguish a test delivery from real business data at their own
-routing logic. `WebhookPingEvent` is never published onto `07.Messaging` and never fanned out via
-`DispatchAsync`'s normal subscription lookup.
+The delivery's event type is always `"sharedkernel.webhooks.ping"` (`WebhookPingEvent.EventName`, its
+`[IntegrationEvent]` name) — a reserved name, recorded on the delivery's trace span and logs. The request body is the serialized `WebhookPingEvent`, which carries only
+`EventId` and `OccurredOn`, so a subscriber can tell a test delivery from real business data.
+`WebhookPingEvent` is never published onto `07.Messaging` and never fanned out via `DispatchAsync`'s
+normal subscription lookup.
 
 ---
 
