@@ -1,57 +1,44 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Domain.Internal;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Domain.Aggregates;
 
 /// <summary>
-/// Abstract aggregate root that implements <see cref="ISoftDeletable"/>, enabling logical deletion
-/// without physical record removal.
+/// An aggregate root that is deleted logically: it is marked deleted and kept, rather than removed.
 /// </summary>
-/// <typeparam name="TId">The type of the aggregate's identity key. Must be non-null.</typeparam>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
-/// Subclasses override <see cref="OnDelete"/> to raise the appropriate domain event when
-/// the aggregate is soft-deleted.
-/// </para>
-/// <para>
-/// Soft-delete fields (<see cref="IsDeleted"/>, <see cref="DeletedOn"/>, <see cref="DeletedBy"/>)
-/// have <c>private set</c> and are only written by <see cref="MarkAsDeleted"/>.
+/// Delete through a domain method that calls <see cref="MarkAsDeleted"/>, and raise the deletion event
+/// from <see cref="OnDelete"/>. Removing the aggregate through a repository also soft-deletes it, via
+/// the persistence layer's interceptor, but raises no domain event, so prefer the domain method
+/// whenever other parts of the system must react to the deletion.
 /// </para>
 /// </remarks>
 /// <example>
 /// <code>
 /// public sealed class Customer : SoftDeletableAggregateRoot&lt;CustomerId&gt;
 /// {
-///     public string Email { get; private set; }
+///     public void Close(string closedBy) =&gt; MarkAsDeleted(closedBy);
 ///
-///     public Customer(CustomerId id, string email, IClock clock) : base(id, clock)
-///     {
-///         Email = email;
-///     }
-///
-///     protected Customer() { } // ORM path
-///
-///     protected override void OnDelete()
-///     {
-///         RaiseDomainEvent(ts =&gt; new CustomerDeletedEvent(Id.Value) { OccurredOn = ts });
-///     }
-///
-///     public void Delete(string deletedBy) =&gt; MarkAsDeleted(deletedBy);
+///     protected override void OnDelete() =&gt;
+///         RaiseDomainEvent(at =&gt; new CustomerClosed(Id.Value) { OccurredOn = at });
 /// }
 /// </code>
 /// </example>
 public abstract class SoftDeletableAggregateRoot<TId> : AggregateRoot<TId>, ISoftDeletable
     where TId : notnull
 {
-    /// <summary>
-    /// Initialises a new soft-deletable aggregate root with the specified identity key and clock.
-    /// </summary>
+    /// <summary>Initializes the aggregate with its identity key and clock.</summary>
+    /// <param name="id">The identity key.</param>
+    /// <param name="clock">The clock that timestamps events and time-dependent state.</param>
+    /// <exception cref="DomainException"><paramref name="clock"/> is <see langword="null"/>.</exception>
     protected SoftDeletableAggregateRoot(TId id, IClock clock) : base(id, clock) { }
 
-    /// <summary>
-    /// Protected parameterless constructor for ORM materialisation paths.
-    /// </summary>
-    protected SoftDeletableAggregateRoot() : base() { }
+    /// <summary>Initializes the aggregate for ORM materialization. Do not call from domain code.</summary>
+    protected SoftDeletableAggregateRoot() { }
 
     /// <inheritdoc/>
     public bool IsDeleted { get; private set; }
@@ -63,21 +50,25 @@ public abstract class SoftDeletableAggregateRoot<TId> : AggregateRoot<TId>, ISof
     public string? DeletedBy { get; private set; }
 
     /// <summary>
-    /// Called by <see cref="MarkAsDeleted"/> after soft-delete fields are set.
-    /// Override to raise the domain event that signals deletion.
-    /// </summary>
-    protected abstract void OnDelete();
-
-    /// <summary>
-    /// Sets the soft-delete fields and calls <see cref="OnDelete"/> so subclasses can raise
-    /// the appropriate domain event.
+    /// Marks the aggregate deleted by <paramref name="deletedBy"/> at the clock's current time, then
+    /// calls <see cref="OnDelete"/>. Does nothing when the aggregate is already deleted.
     /// </summary>
     /// <param name="deletedBy">The identifier of the actor performing the deletion.</param>
+    /// <exception cref="DomainException"><paramref name="deletedBy"/> is null, empty or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">No clock is attached.</exception>
     protected void MarkAsDeleted(string deletedBy)
     {
-        IsDeleted = true;
+        if (!SoftDeletion.ShouldMarkDeleted(IsDeleted, deletedBy))
+            return;
+
         DeletedOn = Now;
         DeletedBy = deletedBy;
+        IsDeleted = true;
         OnDelete();
     }
+
+    /// <summary>
+    /// Called once, right after the aggregate is first marked deleted. Raise the deletion event here.
+    /// </summary>
+    protected abstract void OnDelete();
 }

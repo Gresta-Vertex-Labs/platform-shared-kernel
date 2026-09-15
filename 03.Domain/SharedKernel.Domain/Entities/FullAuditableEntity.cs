@@ -3,79 +3,22 @@ using SharedKernel.Domain.Abstractions;
 namespace SharedKernel.Domain.Entities;
 
 /// <summary>
-/// Abstract entity base implementing <see cref="IHasAudit"/>, <see cref="ISoftDeletable"/>,
-/// and <see cref="IHasConcurrency"/> — the full audit stack for non-aggregate child entities.
+/// A child entity with audit metadata, soft deletion, and an optimistic concurrency token.
 /// </summary>
-/// <typeparam name="TId">The type of the entity's identity key. Must be non-null.</typeparam>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
-/// <para>
-/// All audit and soft-delete fields have <c>private set</c> — populated exclusively by
-/// EF Core interceptors or persistence-layer conventions.
-/// </para>
-/// <para>
-/// <see cref="RowVersion"/> has <c>protected set</c> so the persistence layer can populate
-/// it after fetch without EF Core shadow properties.
-/// </para>
-/// <para>
-/// Unlike <c>SoftDeletableAggregateRoot</c>, this entity base does not provide a
-/// <c>MarkAsDeleted</c> helper — soft-delete on a non-aggregate entity should be driven
-/// by the owning aggregate root.
-/// </para>
+/// Extends <see cref="AuditableSoftDeletableEntity{TId}"/> with <see cref="RowVersion"/>.
 /// </remarks>
-/// <example>
-/// <code>
-/// public sealed class AttachmentId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value);
-///
-/// public sealed class Attachment : FullAuditableEntity&lt;AttachmentId&gt;
-/// {
-///     public string FileName { get; private set; }
-///
-///     public Attachment(AttachmentId id, string fileName) : base(id)
-///     {
-///         FileName = fileName;
-///     }
-///
-///     protected Attachment() { } // ORM path
-/// }
-/// </code>
-/// </example>
-public abstract class FullAuditableEntity<TId> : Entity<TId>, IHasAudit, ISoftDeletable, IHasConcurrency
+public abstract class FullAuditableEntity<TId> : AuditableSoftDeletableEntity<TId>, IHasConcurrency
     where TId : notnull
 {
-    /// <summary>
-    /// Initialises a new full-auditable entity with the specified identity key.
-    /// </summary>
+    /// <summary>Initializes the entity with its identity key.</summary>
+    /// <param name="id">The identity key; <c>default(TId)</c> makes the entity transient.</param>
     protected FullAuditableEntity(TId id) : base(id) { }
 
-    /// <summary>
-    /// Protected parameterless constructor for ORM materialisation paths.
-    /// </summary>
-    protected FullAuditableEntity() : base() { }
+    /// <summary>Initializes the entity for ORM materialization. Do not call from domain code.</summary>
+    protected FullAuditableEntity() { }
 
     /// <inheritdoc/>
-    public string CreatedBy { get; private set; } = string.Empty;
-
-    /// <inheritdoc/>
-    public DateTimeOffset CreatedOn { get; private set; }
-
-    /// <inheritdoc/>
-    public string? ModifiedBy { get; private set; }
-
-    /// <inheritdoc/>
-    public DateTimeOffset? ModifiedOn { get; private set; }
-
-    /// <inheritdoc/>
-    public bool IsDeleted { get; private set; }
-
-    /// <inheritdoc/>
-    public DateTimeOffset? DeletedOn { get; private set; }
-
-    /// <inheritdoc/>
-    public string? DeletedBy { get; private set; }
-
-    /// <summary>
-    /// Gets or sets the opaque concurrency token.
-    /// <c>protected set</c> allows the persistence layer to populate this after a fetch.
-    /// </summary>
     public byte[] RowVersion { get; protected set; } = [];
 }

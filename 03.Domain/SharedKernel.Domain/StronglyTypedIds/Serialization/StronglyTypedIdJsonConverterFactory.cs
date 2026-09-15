@@ -1,72 +1,77 @@
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SharedKernel.Domain.StronglyTypedIds.Serialization;
 
 /// <summary>
-/// A <see cref="JsonConverterFactory"/> that produces bare-primitive converters for concrete
-/// <see cref="StronglyTypedId{TValue}"/> types.
+/// Serializes every concrete <see cref="StronglyTypedId{TValue}"/> as its bare underlying value, from a single
+/// registration.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Supports exactly four <c>TValue</c> shapes: <see cref="Guid"/>, <see cref="int"/>, <see cref="long"/>,
-/// and <see cref="string"/>. A closed <see cref="StronglyTypedId{TValue}"/> for any other
-/// <c>TValue</c> is not converted by this factory — <see cref="CanConvert"/> returns <c>false</c> and
-/// such types fall back to default System.Text.Json record serialization (an object wrapper
-/// <c>{ "value": ... }</c>) unless the consuming service registers its own converter.
+/// Register it once and every identifier type is covered: an <c>OrderId</c> wrapping a <see cref="Guid"/> is
+/// written as <c>"3f2b…"</c>, not <c>{"Value":"3f2b…"}</c>. It also works for identifiers used as dictionary
+/// keys.
 /// </para>
-/// <para>
-/// This factory is opt-in. <c>SharedKernel.Domain</c> does not call
-/// <see cref="JsonSerializerOptions.Converters"/> anywhere itself and ships no global System.Text.Json
-/// configuration. Consuming services register it explicitly:
 /// <code>
 /// var options = new JsonSerializerOptions();
 /// options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
-/// // OrderId, CustomerId, etc. now (de)serialize as their bare TValue.
 /// </code>
+/// <para>
+/// Any underlying type System.Text.Json can serialize is supported. An identifier used as a dictionary key
+/// additionally needs an underlying type that System.Text.Json supports as a key, which every primitive,
+/// <see cref="Guid"/>, <see cref="string"/> and date type does.
+/// </para>
+/// <para>
+/// A JSON <c>null</c> reads as a <see langword="null"/> identifier. Each identifier needs a public constructor
+/// taking the underlying value, which the positional record declaration provides.
+/// </para>
+/// <para>
+/// Uses runtime reflection to build a converter per identifier type the first time it is seen; not intended
+/// for trimmed or native AOT applications.
 /// </para>
 /// </remarks>
 public sealed class StronglyTypedIdJsonConverterFactory : JsonConverterFactory
 {
-    private static readonly Type[] SupportedValueTypes = [typeof(Guid), typeof(int), typeof(long), typeof(string)];
-
-    /// <inheritdoc />
+    /// <inheritdoc/>
     public override bool CanConvert(Type typeToConvert) => TryGetValueType(typeToConvert) is not null;
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="typeToConvert"/> is not a concrete strongly-typed identifier, or has no public
+    /// constructor taking its underlying value.
+    /// </exception>
     public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
     {
+        ArgumentNullException.ThrowIfNull(typeToConvert);
+
         var valueType = TryGetValueType(typeToConvert)
             ?? throw new InvalidOperationException(
-                $"Type '{typeToConvert}' is not a supported closed StronglyTypedId<TValue> type.");
+                $"'{typeToConvert}' is not a concrete StronglyTypedId<TValue> type.");
 
         var converterType = typeof(StronglyTypedIdJsonConverter<,>).MakeGenericType(typeToConvert, valueType);
-
-        return (JsonConverter)Activator.CreateInstance(converterType)!;
+        try
+        {
+            return (JsonConverter)Activator.CreateInstance(converterType)!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Throw(ex.InnerException);
+            throw;
+        }
     }
 
-    /// <summary>
-    /// Walks <paramref name="typeToConvert"/>'s base type chain looking for a closed
-    /// <see cref="StronglyTypedId{TValue}"/> whose <c>TValue</c> is one of the supported shapes.
-    /// </summary>
-    /// <param name="typeToConvert">The candidate type.</param>
-    /// <returns>The closed <c>TValue</c> type if <paramref name="typeToConvert"/> qualifies; otherwise <see langword="null"/>.</returns>
     private static Type? TryGetValueType(Type typeToConvert)
     {
-        if (typeToConvert.IsAbstract)
-        {
+        if (typeToConvert.IsAbstract || typeToConvert.IsGenericTypeDefinition)
             return null;
-        }
 
         for (var current = typeToConvert.BaseType; current is not null; current = current.BaseType)
         {
-            if (!current.IsGenericType || current.GetGenericTypeDefinition() != typeof(StronglyTypedId<>))
-            {
-                continue;
-            }
-
-            var valueType = current.GetGenericArguments()[0];
-            return Array.IndexOf(SupportedValueTypes, valueType) >= 0 ? valueType : null;
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == typeof(StronglyTypedId<>))
+                return current.GetGenericArguments()[0];
         }
 
         return null;

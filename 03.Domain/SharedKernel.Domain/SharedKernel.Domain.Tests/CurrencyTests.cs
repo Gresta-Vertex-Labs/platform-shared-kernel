@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Tests;
@@ -14,7 +14,7 @@ public class CurrencyTests
     {
         var result = Currency.Create("usd");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.Code.Should().Be("USD");
     }
 
@@ -23,7 +23,7 @@ public class CurrencyTests
     {
         var result = Currency.Create("  eur  ");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.Code.Should().Be("EUR");
     }
 
@@ -32,8 +32,8 @@ public class CurrencyTests
     {
         var result = Currency.Create("US");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors[0].Type.Should().Be(ErrorType.Validation);
     }
 
     [Fact]
@@ -41,8 +41,8 @@ public class CurrencyTests
     {
         var result = Currency.Create("ZZZ");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors[0].Type.Should().Be(ErrorType.Validation);
     }
 
     [Fact]
@@ -50,8 +50,8 @@ public class CurrencyTests
     {
         var result = Currency.Create("U5D");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors[0].Type.Should().Be(ErrorType.Validation);
     }
 
     [Fact]
@@ -59,8 +59,8 @@ public class CurrencyTests
     {
         var result = Currency.Create(null!);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors[0].Type.Should().Be(ErrorType.Validation);
     }
 
     [Fact]

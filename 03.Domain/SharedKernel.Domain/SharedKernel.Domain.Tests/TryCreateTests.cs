@@ -1,8 +1,8 @@
 using FluentAssertions;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.BusinessRules;
-using SharedKernel.Domain.Events;
-using SharedKernel.Domain.Exceptions;
+using SharedKernel.Guards;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -10,111 +10,100 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Domain.Tests;
 
 /// <summary>
-/// T-27: P-054/WO-011 — TryCreate&lt;T&gt; factory helper tests.
+/// AggregateRoot.TryCreate: every domain failure during construction becomes a failed
+/// ValidationResult carrying all of its errors; anything else still throws.
 /// </summary>
 public class TryCreateTests
 {
     private sealed class FixedClock : IClock
     {
-        public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-        public DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+        public DateTimeOffset UtcNow => new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        public DateOnly Today => new(2026, 1, 1);
     }
 
-    private sealed record OrderCreatedEvent : DomainEvent
+    private sealed class NoEmptyNameRule(string name) : IBusinessRule
     {
-        public Guid OrderId { get; init; }
-    }
-
-    private sealed class AlwaysBrokenRule : IBusinessRule
-    {
-        public string Message => "rule is broken";
-        public bool IsBroken() => true;
+        public string Code => "order.customer_name_required";
+        public string Message => "Customer name must not be empty.";
+        public bool IsBroken() => string.IsNullOrWhiteSpace(name);
     }
 
     private sealed class Order : AggregateRoot<Guid>
     {
-        public string CustomerName { get; private set; } = string.Empty;
-
         private Order(Guid id, string customerName, IClock clock) : base(id, clock)
         {
             CheckRule(new NoEmptyNameRule(customerName));
             CustomerName = customerName;
         }
 
-        public Order() : base() { }
+        public string CustomerName { get; } = string.Empty;
 
-        public static Result<Order> Create(Guid id, string customerName, IClock clock)
-            => TryCreate(() => new Order(id, customerName, clock));
+        public static ValidationResult<Order> Create(Guid id, string customerName, IClock clock) =>
+            TryCreate(() => new Order(id, customerName, clock));
+
+        public static ValidationResult<Order> Throwing(Func<Order> factory) => TryCreate(factory);
     }
-
-    private sealed class NoEmptyNameRule : IBusinessRule
-    {
-        private readonly string _name;
-        public NoEmptyNameRule(string name) => _name = name;
-        public string Message => "Customer name must not be empty.";
-        public bool IsBroken() => string.IsNullOrWhiteSpace(_name);
-    }
-
-    // --- Success path ---
 
     [Fact]
-    public void TryCreate_Success_ReturnsSuccessResult()
+    public void Success_ReturnsTheCreatedAggregate()
     {
         var result = Order.Create(Guid.NewGuid(), "Alice", new FixedClock());
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.CustomerName.Should().Be("Alice");
     }
 
-    // --- BusinessRuleViolationException → Result.Failure ---
-
     [Fact]
-    public void TryCreate_BusinessRuleViolationException_ReturnsFailure()
-    {
-        var result = Order.Create(Guid.NewGuid(), string.Empty, new FixedClock());
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.BusinessRule);
-    }
-
-    [Fact]
-    public void TryCreate_BusinessRuleViolationException_ErrorCode_IsRuleViolated()
+    public void BrokenRule_ReturnsFailure_WithTheRulesOwnCode()
     {
         var result = Order.Create(Guid.NewGuid(), "", new FixedClock());
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(ErrorCodes.Domain.RuleViolated);
-    }
-
-    // --- ValidationException → Result.Failure ---
-
-    private sealed class AlwaysInvalidValueOrder : AggregateRoot<Guid>
-    {
-        private AlwaysInvalidValueOrder() : base() { }
-
-        public static Result<AlwaysInvalidValueOrder> CreateInvalid()
-            => TryCreate<AlwaysInvalidValueOrder>(() =>
-                throw new SharedKernel.Core.Exceptions.ValidationException(
-                    [Error.Validation("test.error", "Always invalid")]));
+        result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Type.Should().Be(ErrorType.BusinessRule);
+        error.Code.Should().Be("order.customer_name_required");
     }
 
     [Fact]
-    public void TryCreate_ValidationException_ReturnsFailure()
+    public void GuardViolation_ReturnsFailure_InsteadOfThrowing()
     {
-        var result = AlwaysInvalidValueOrder.CreateInvalid();
+        // A null clock is rejected by Guard.Throw inside the base constructor, which throws DomainException.
+        var result = Order.Create(Guid.NewGuid(), "Alice", null!);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Code.Should().Be(ErrorCodes.Validation.Required);
     }
 
-    // --- Existing aggregate tests unchanged ---
+    [Fact]
+    public void ValidationException_ReturnsEveryError()
+    {
+        var result = Order.Throwing(() => throw new ValidationException(
+        [
+            Error.Validation("a.required", "A is required."),
+            Error.Validation("b.required", "B is required."),
+        ]));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Select(e => e.Code).Should().Equal("a.required", "b.required");
+    }
 
     [Fact]
-    public void TryCreate_ExistingAggregateTests_Unaffected()
+    public void UnrelatedException_Propagates()
     {
-        var clock = new FixedClock();
-        var result = Order.Create(Guid.NewGuid(), "Bob", clock);
-        result.IsSuccess.Should().BeTrue();
-        result.Value.CustomerName.Should().Be("Bob");
+        var act = () => Order.Throwing(() => throw new InvalidOperationException("defect"));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("defect");
+    }
+
+    [Fact]
+    public void GuardThrowInsideFactory_IsCaught()
+    {
+        var result = Order.Throwing(() =>
+        {
+            Guard.Throw.NullOrWhiteSpace("  ", "name");
+            return null!;
+        });
+
+        result.IsValid.Should().BeFalse();
     }
 }

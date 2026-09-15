@@ -1,59 +1,38 @@
-using System.Linq.Expressions;
-
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// A composite specification that combines two specifications with logical AND.
-/// An entity satisfies this specification only when it satisfies both the left and right
-/// constituent specifications.
+/// A specification satisfied only by entities that satisfy both operands.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <remarks>
+/// <para>
+/// Carries over the criteria (combined with AND), every include and string include (without duplicates),
+/// and the <see cref="ISpecification{T}.AsNoTracking"/>, <see cref="ISpecification{T}.AsSplitQuery"/> and
+/// <see cref="ISpecification{T}.IncludeDeleted"/> flags, each set when either operand sets it.
+/// </para>
+/// <para>
+/// <b>Ordering, paging and <c>Distinct</c> are not carried over</b>: two operands can disagree about them,
+/// and no merge is correct in general. Compose the filters, then apply ordering and paging in a named
+/// specification.
+/// </para>
+/// </remarks>
 public sealed class AndSpecification<T> : Specification<T>
 {
-    /// <summary>
-    /// Initialises a new <see cref="AndSpecification{T}"/> by composing <paramref name="left"/>
-    /// and <paramref name="right"/> via logical AND.
-    /// </summary>
+    /// <summary>Combines <paramref name="left"/> and <paramref name="right"/> with logical AND.</summary>
+    /// <param name="left">The first specification.</param>
+    /// <param name="right">The second specification.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public AndSpecification(Specification<T> left, Specification<T> right)
     {
-        if (left.Criteria is not null && right.Criteria is not null)
-        {
-            var param = left.Criteria.Parameters[0];
-            var rightBody = new ParameterReplacer(right.Criteria.Parameters[0], param)
-                .Visit(right.Criteria.Body);
-            AddCriteria(Expression.Lambda<Func<T, bool>>(
-                Expression.AndAlso(left.Criteria.Body, rightBody), param));
-        }
-        else if (left.Criteria is not null)
-        {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        if (left.Criteria is not null)
             AddCriteria(left.Criteria);
-        }
-        else if (right.Criteria is not null)
-        {
+        if (right.Criteria is not null)
             AddCriteria(right.Criteria);
-        }
 
-        if (left.AsNoTracking || right.AsNoTracking)
-            ApplyNoTracking();
-
-        if (left.AsSplitQuery || right.AsSplitQuery)
-            ApplySplitQuery();
-
-        if (left.IncludeDeleted || right.IncludeDeleted)
-            IncludeSoftDeleted();
-
-        // WO-051/P-307: union expression-based Includes from both operands — previously dropped entirely.
-        foreach (var include in left.Includes)
-            AddInclude(include);
-
-        foreach (var include in right.Includes)
-            AddInclude(include);
-
-        foreach (var path in left.StringIncludes)
-            AddStringInclude(path);
-
-        foreach (var path in right.StringIncludes)
-            if (!StringIncludes.Contains(path))
-                AddStringInclude(path);
+        CopyQueryShapeFrom(left);
+        CopyQueryShapeFrom(right);
     }
 }

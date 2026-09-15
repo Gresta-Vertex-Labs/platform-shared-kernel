@@ -1,98 +1,65 @@
+using System.Collections;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Exceptions;
+using SharedKernel.Domain.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Domain.ValueObjects;
 
 /// <summary>
-/// Abstract base class for all domain value objects. Equality is structural: two instances
-/// are equal if and only if all components returned by <see cref="GetEqualityComponents"/>
-/// are equal in sequence.
+/// Base class for value objects: immutable domain values with no identity, equal when all their equality
+/// components are equal.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The base constructor invokes <see cref="Validate"/> immediately. Return <see langword="null"/>
-/// for valid state; return one or more <see cref="Error"/> instances to signal validation failure.
-/// When errors are returned, a <see cref="ValidationException"/> is thrown before the instance
-/// is observable to callers.
+/// <b>Validation is explicit.</b> Assign every member in the constructor, then call
+/// <see cref="EnsureValid"/> as the constructor's last statement. It runs <see cref="Validate"/> against the
+/// fully initialized object and throws <see cref="ValidationException"/> carrying every error. The base
+/// constructor never calls <see cref="Validate"/>, because a virtual call there would read the subclass's
+/// members before its constructor assigned them. <see cref="SingleValueObject{TValue}"/> calls
+/// <see cref="EnsureValid"/> for you.
 /// </para>
 /// <para>
-/// Design choice: abstract class (not abstract record) to give full control over
-/// <see cref="Equals(object?)"/> and <see cref="GetHashCode()"/>, and to support
-/// <see cref="Validate"/> with arbitrary constructor logic. Abstract records with primary
-/// constructors do not compose cleanly with this validation hook.
+/// <b>Create through a factory.</b> Keep the constructor private and expose a static <c>Create</c> that uses
+/// <see cref="TryCreate{T}"/>, so invalid input becomes a failed <see cref="ValidationResult{T}"/> holding
+/// every error instead of an exception.
 /// </para>
 /// <para>
-/// <strong>Construction-order hazard:</strong> The base constructor calls <see cref="Validate"/>
-/// before the subclass constructor body executes. If <see cref="Validate"/> reads properties that
-/// are assigned inside the subclass constructor body (rather than as field initializers), those
-/// properties will have their default values (<c>null</c>, <c>0</c>, <c>false</c>) when
-/// <see cref="Validate"/> runs — leading to incorrect validation results or
-/// <see cref="NullReferenceException"/>.
-/// </para>
-/// <para>
-/// Two safe patterns to avoid this hazard:
-/// <list type="number">
-///   <item>
-///     <term>Field-initializer / primary-constructor assignment</term>
-///     <description>
-///     Assign properties via field initializers or primary constructor parameter assignments.
-///     These execute before the base constructor body, so <see cref="Validate"/> sees the
-///     correct values:
-///     <code>
-///     public sealed class Email : ValueObject
-///     {
-///         public string Value { get; } = value; // field initializer — safe
-///         public Email(string value) { }        // base() called after initializer
-///         ...
-///     }
-///     </code>
-///     </description>
-///   </item>
-///   <item>
-///     <term>Factory method pattern</term>
-///     <description>
-///     Keep the constructor <c>private</c> or <c>protected</c> and expose a
-///     <c>static Result&lt;TValueObject&gt; Create(...)</c> factory. The factory constructs
-///     the object (triggering validation) and wraps <see cref="ValidationException"/> into
-///     a railway-friendly <c>Result.Failure</c>. See the example block below.
-///     </description>
-///   </item>
-/// </list>
+/// <b>Collection components compare by content.</b> A component that is a sequence (other than a
+/// <see cref="string"/>) is compared element by element, so two value objects holding equal lists are equal.
+/// Expose such a collection as a read-only type, since a value object must never change after construction.
 /// </para>
 /// </remarks>
 /// <example>
-/// Factory method pattern (recommended for complex value objects):
 /// <code>
-/// public sealed class Money : ValueObject
+/// public sealed class DateRange : ValueObject
 /// {
-///     public decimal Amount { get; }
-///     public string Currency { get; }
-///
-///     private Money(decimal amount, string currency)
+///     private DateRange(DateOnly start, DateOnly end)
 ///     {
-///         Amount = amount;
-///         Currency = currency;
+///         Start = start;
+///         End = end;
+///         EnsureValid();
 ///     }
 ///
-///     public static Result&lt;Money&gt; Create(decimal amount, string currency)
-///         =&gt; TryCreate(() =&gt; new Money(amount, currency));
+///     public DateOnly Start { get; }
+///     public DateOnly End { get; }
+///
+///     public static ValidationResult&lt;DateRange&gt; Create(DateOnly start, DateOnly end) =&gt;
+///         TryCreate(() =&gt; new DateRange(start, end));
 ///
 ///     protected override IEnumerable&lt;object?&gt; GetEqualityComponents()
 ///     {
-///         yield return Amount;
-///         yield return Currency;
+///         yield return Start;
+///         yield return End;
 ///     }
 ///
-///     protected override IEnumerable&lt;Error&gt;? Validate()
+///     protected override IEnumerable&lt;Error&gt; Validate()
 ///     {
-///         if (Amount &lt; 0)
-///             yield return Error.Validation("Money.NegativeAmount", "Amount must be non-negative.");
-///         if (string.IsNullOrWhiteSpace(Currency))
-///             yield return Error.Validation("Money.InvalidCurrency", "Currency code is required.");
+///         if (End &lt; Start)
+///             yield return Error.Validation("date_range.end_before_start", "The end date must not be before the start date.");
 ///     }
 /// }
 /// </code>
@@ -100,121 +67,124 @@ namespace SharedKernel.Domain.ValueObjects;
 public abstract class ValueObject : IValueObject, IEquatable<ValueObject>
 {
     /// <summary>
-    /// Initialises the value object and validates it.
+    /// Returns the components that define this value, in a fixed order. Two value objects of the same type
+    /// are equal when these sequences are equal.
     /// </summary>
-    /// <exception cref="ValidationException">
-    /// Thrown when <see cref="Validate"/> returns one or more errors.
-    /// </exception>
-    protected ValueObject()
-    {
-        var errors = Validate();
-        if (errors is not null)
-        {
-            var errorList = errors.ToList();
-            if (errorList.Count > 0)
-                throw new ValidationException(errorList);
-        }
-    }
-
-    /// <summary>
-    /// Returns the sequence of components used for structural equality comparison.
-    /// Components are compared in order using <see cref="object.Equals(object)"/>.
-    /// </summary>
+    /// <returns>The equality components.</returns>
     protected abstract IEnumerable<object?> GetEqualityComponents();
 
     /// <summary>
-    /// Validates the value object's state at construction time.
-    /// Return <see langword="null"/> (or an empty sequence) to indicate valid state.
-    /// Return one or more <see cref="Error"/> instances to signal validation failure.
+    /// Returns the validation errors of this value, or an empty sequence when it is valid. Called by
+    /// <see cref="EnsureValid"/>.
     /// </summary>
+    /// <returns>The errors, if any. <see langword="null"/> is treated as no errors.</returns>
     protected abstract IEnumerable<Error>? Validate();
 
-    /// <inheritdoc/>
-    public override bool Equals(object? obj)
+    /// <summary>
+    /// Throws when <see cref="Validate"/> reports any error. Call it as the last statement of the constructor.
+    /// </summary>
+    /// <exception cref="ValidationException">Validation reported one or more errors; all are included.</exception>
+    protected void EnsureValid()
     {
-        if (obj is null || obj.GetType() != GetType()) return false;
-        return GetEqualityComponents().SequenceEqual(((ValueObject)obj).GetEqualityComponents());
+        var errors = Validate()?.ToArray();
+        if (errors is { Length: > 0 })
+            throw new ValidationException(errors);
     }
 
-    /// <inheritdoc/>
-    public override int GetHashCode() =>
-        GetEqualityComponents().Aggregate(0, (hash, component) =>
-            HashCode.Combine(hash, component?.GetHashCode() ?? 0));
+    /// <summary>Returns <see langword="true"/> when <paramref name="obj"/> is a value object of the same type with equal components.</summary>
+    /// <param name="obj">The object to compare with.</param>
+    /// <returns><see langword="true"/> when equal; otherwise <see langword="false"/>.</returns>
+    public override bool Equals(object? obj)
+    {
+        if (ReferenceEquals(this, obj))
+            return true;
 
-    /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="other"/> is structurally equal to this
-    /// value object.
-    /// </summary>
-    /// <remarks>
-    /// WO-051/P-311 — <see cref="IEquatable{T}"/> implementation delegating to
-    /// <see cref="Equals(object?)"/>. Purely a boxing/virtual-dispatch-avoidance addition for
-    /// generic-collection consumers (<see cref="List{T}.Contains"/>, dictionary keys, LINQ
-    /// <c>Distinct</c>/<c>Except</c>) — not a behavior change.
-    /// </remarks>
+        if (obj is not ValueObject other || obj.GetType() != GetType())
+            return false;
+
+        using var left = GetEqualityComponents().GetEnumerator();
+        using var right = other.GetEqualityComponents().GetEnumerator();
+
+        while (true)
+        {
+            var leftHasNext = left.MoveNext();
+            if (leftHasNext != right.MoveNext())
+                return false;
+            if (!leftHasNext)
+                return true;
+            if (!ComponentEquals(left.Current, right.Current))
+                return false;
+        }
+    }
+
+    /// <summary>Returns <see langword="true"/> when <paramref name="other"/> is a value object of the same type with equal components.</summary>
+    /// <param name="other">The value object to compare with.</param>
+    /// <returns><see langword="true"/> when equal; otherwise <see langword="false"/>.</returns>
     public bool Equals(ValueObject? other) => Equals((object?)other);
 
-    /// <summary>Returns <see langword="true"/> when both value objects are structurally equal.</summary>
+    /// <summary>Returns a hash code combining every equality component.</summary>
+    /// <returns>The hash code.</returns>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(GetType());
+        foreach (var component in GetEqualityComponents())
+            hash.Add(ComponentHashCode(component));
+        return hash.ToHashCode();
+    }
+
+    /// <summary>Returns <see langword="true"/> when both operands are equal, or both are null.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns><see langword="true"/> when equal; otherwise <see langword="false"/>.</returns>
     public static bool operator ==(ValueObject? left, ValueObject? right) =>
         left is null ? right is null : left.Equals(right);
 
-    /// <summary>Returns <see langword="true"/> when the value objects are not structurally equal.</summary>
+    /// <summary>Returns <see langword="true"/> when the operands are not equal.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns><see langword="true"/> when not equal; otherwise <see langword="false"/>.</returns>
     public static bool operator !=(ValueObject? left, ValueObject? right) => !(left == right);
 
-    /// <summary>
-    /// Evaluates <paramref name="rule"/> and throws <see cref="BusinessRuleViolationException"/>
-    /// if the rule is broken.
-    /// </summary>
-    /// <param name="rule">The business rule to enforce.</param>
-    /// <exception cref="BusinessRuleViolationException">Thrown when <paramref name="rule"/> is broken.</exception>
-    /// <remarks>
-    /// Identical semantics to <c>AggregateRoot&lt;TId&gt;.CheckRule</c> — provided here so value
-    /// object constructors and factory methods can enforce business rules without depending on
-    /// the aggregate hierarchy.
-    /// </remarks>
-    protected static void CheckRule(IBusinessRule rule)
-    {
-        if (rule.IsBroken())
-            throw new BusinessRuleViolationException(rule);
-    }
+    /// <summary>Throws when <paramref name="rule"/> is broken.</summary>
+    /// <param name="rule">The rule to enforce.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="rule"/> is <see langword="null"/>.</exception>
+    /// <exception cref="BusinessRuleViolationException"><paramref name="rule"/> is broken.</exception>
+    protected static void CheckRule(IBusinessRule rule) => DomainInvariants.CheckRule(rule);
 
     /// <summary>
-    /// Executes the <paramref name="factory"/> and wraps the result in a railway-friendly
-    /// <see cref="Result{T}"/>. Exceptions raised during construction are converted to
-    /// <see cref="Result{T}.Failure"/> rather than propagating.
+    /// Runs <paramref name="factory"/> and turns a domain failure during construction into a failed
+    /// <see cref="ValidationResult{T}"/> instead of an exception.
     /// </summary>
-    /// <typeparam name="T">The type of the value object produced by the factory.</typeparam>
-    /// <param name="factory">The construction delegate. Typically a lambda that calls <c>new SomeValueObject(...)</c>.</param>
+    /// <typeparam name="T">The type the factory creates.</typeparam>
+    /// <param name="factory">The construction delegate, typically <c>() =&gt; new Email(value)</c>.</param>
     /// <returns>
-    /// <see cref="Result{T}.Success"/> when the factory completes without throwing.
-    /// <see cref="Result{T}.Failure"/> with <c>ErrorType.BusinessRule</c> when a
-    /// <see cref="BusinessRuleViolationException"/> is thrown.
-    /// <see cref="Result{T}.Failure"/> with the first validation error when a
-    /// <see cref="ValidationException"/> is thrown.
+    /// A successful result holding the created value; or a failed result holding every error from a
+    /// <see cref="ValidationException"/>, or the single error of any <see cref="DomainException"/>, which
+    /// includes <see cref="BusinessRuleViolationException"/> and guard violations.
     /// </returns>
-    /// <remarks>
-    /// Identical semantics to <c>AggregateRoot&lt;TId&gt;.TryCreate&lt;T&gt;</c> — achieves full
-    /// parity between the two base types. Lives on <see cref="ValueObject"/> itself so
-    /// <see cref="SingleValueObject{TValue}"/> inherits this helper with zero additional code.
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// public static Result&lt;Money&gt; Create(decimal amount, string currency)
-    ///     =&gt; TryCreate(() =&gt; new Money(amount, currency));
-    /// </code>
-    /// </example>
-    protected static Result<T> TryCreate<T>(Func<T> factory)
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    /// <remarks>Any other exception propagates: it signals a defect, not invalid input.</remarks>
+    protected static ValidationResult<T> TryCreate<T>(Func<T> factory) => DomainInvariants.TryCreate(factory);
+
+    private static bool ComponentEquals(object? left, object? right)
     {
-        try
+        if (left is IEnumerable leftSequence and not string && right is IEnumerable rightSequence and not string)
+            return leftSequence.Cast<object?>().SequenceEqual(rightSequence.Cast<object?>());
+
+        return Equals(left, right);
+    }
+
+    private static int ComponentHashCode(object? component)
+    {
+        if (component is IEnumerable sequence and not string)
         {
-            return Result<T>.Success(factory());
+            var hash = new HashCode();
+            foreach (var item in sequence)
+                hash.Add(item);
+            return hash.ToHashCode();
         }
-        catch (BusinessRuleViolationException ex)
-        {
-            return Result<T>.Failure(ex.Error);
-        }
-        catch (ValidationException ex)
-        {
-            return Result<T>.Failure(ex.Errors[0]);
-        }
+
+        return component?.GetHashCode() ?? 0;
     }
 }

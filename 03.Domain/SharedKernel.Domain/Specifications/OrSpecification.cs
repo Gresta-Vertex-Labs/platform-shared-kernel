@@ -3,57 +3,36 @@ using System.Linq.Expressions;
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// A composite specification that combines two specifications with logical OR.
-/// An entity satisfies this specification when it satisfies either the left or right
-/// constituent specification.
+/// A specification satisfied by entities that satisfy at least one operand.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <remarks>
+/// <para>
+/// When either operand has no criteria it matches every entity, so the combination has no criteria either.
+/// Includes, string includes and the tracking, split-query and include-deleted flags are carried over as in
+/// <see cref="AndSpecification{T}"/>.
+/// </para>
+/// <para><b>Ordering, paging and <c>Distinct</c> are not carried over.</b></para>
+/// </remarks>
 public sealed class OrSpecification<T> : Specification<T>
 {
-    /// <summary>
-    /// Initialises a new <see cref="OrSpecification{T}"/> by composing <paramref name="left"/>
-    /// and <paramref name="right"/> via logical OR.
-    /// </summary>
-    /// <remarks>
-    /// When either operand has a <see langword="null"/> <c>Criteria</c> (meaning "match all"),
-    /// the combined <c>Criteria</c> is also <see langword="null"/> — a logical OR with an
-    /// unconditional-match operand always matches everything.
-    /// </remarks>
+    /// <summary>Combines <paramref name="left"/> and <paramref name="right"/> with logical OR.</summary>
+    /// <param name="left">The first specification.</param>
+    /// <param name="right">The second specification.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public OrSpecification(Specification<T> left, Specification<T> right)
     {
-        // If either operand has null criteria it matches everything.
-        // OR of (match-all, anything) = match-all → combined criteria is null.
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
         if (left.Criteria is not null && right.Criteria is not null)
         {
-            var param = left.Criteria.Parameters[0];
-            var rightBody = new ParameterReplacer(right.Criteria.Parameters[0], param)
-                .Visit(right.Criteria.Body);
-            AddCriteria(Expression.Lambda<Func<T, bool>>(
-                Expression.OrElse(left.Criteria.Body, rightBody), param));
+            var parameter = left.Criteria.Parameters[0];
+            var rightBody = new ParameterReplacer(right.Criteria.Parameters[0], parameter).Visit(right.Criteria.Body);
+            AddCriteria(Expression.Lambda<Func<T, bool>>(Expression.OrElse(left.Criteria.Body, rightBody), parameter));
         }
-        // else: at least one operand has null criteria → combined Criteria stays null (match all)
 
-        if (left.AsNoTracking || right.AsNoTracking)
-            ApplyNoTracking();
-
-        if (left.AsSplitQuery || right.AsSplitQuery)
-            ApplySplitQuery();
-
-        if (left.IncludeDeleted || right.IncludeDeleted)
-            IncludeSoftDeleted();
-
-        // WO-051/P-307: union expression-based Includes and string-based StringIncludes from both
-        // operands — previously dropped entirely by this composite.
-        foreach (var include in left.Includes)
-            AddInclude(include);
-
-        foreach (var include in right.Includes)
-            AddInclude(include);
-
-        foreach (var path in left.StringIncludes)
-            AddStringInclude(path);
-
-        foreach (var path in right.StringIncludes)
-            AddStringInclude(path);
+        CopyQueryShapeFrom(left);
+        CopyQueryShapeFrom(right);
     }
 }

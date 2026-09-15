@@ -9,12 +9,14 @@ public class BusinessRuleCompositeTests
 
     private sealed class AlwaysBroken : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "always broken";
         public bool IsBroken() => true;
     }
 
     private sealed class NeverBroken : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "never broken";
         public bool IsBroken() => false;
     }
@@ -101,7 +103,7 @@ public class BusinessRuleCompositeTests
         var rule = new OrBusinessRule(new AlwaysBroken(), new NeverBroken());
         rule.Message.Should().Contain("always broken");
         rule.Message.Should().Contain("never broken");
-        rule.Message.Should().Contain(" or ");
+        rule.Message.Should().StartWith("At least one of these must hold:");
     }
 
     // --- NotBusinessRule ---
@@ -109,23 +111,23 @@ public class BusinessRuleCompositeTests
     [Fact]
     public void Not_InnerBroken_IsBroken_ReturnsFalse()
     {
-        var rule = new NotBusinessRule(new AlwaysBroken());
+        var rule = new NotBusinessRule(new AlwaysBroken(), "test.not", "Must not hold.");
         rule.IsBroken().Should().BeFalse();
     }
 
     [Fact]
     public void Not_InnerNotBroken_IsBroken_ReturnsTrue()
     {
-        var rule = new NotBusinessRule(new NeverBroken());
+        var rule = new NotBusinessRule(new NeverBroken(), "test.not", "Must not hold.");
         rule.IsBroken().Should().BeTrue();
     }
 
     [Fact]
-    public void Not_Message_ContainsNegationPrefix()
+    public void Not_CodeAndMessage_AreTheSuppliedOnes()
     {
-        var rule = new NotBusinessRule(new AlwaysBroken());
-        rule.Message.Should().Contain("Not:");
-        rule.Message.Should().Contain("always broken");
+        var rule = new NotBusinessRule(new NeverBroken(), "test.not", "Must not hold.");
+        rule.Code.Should().Be("test.not");
+        rule.Message.Should().Be("Must not hold.");
     }
 
     // --- Extension methods ---
@@ -149,7 +151,7 @@ public class BusinessRuleCompositeTests
     [Fact]
     public void Extension_Not_ProducesNotBusinessRule()
     {
-        var result = new AlwaysBroken().Not();
+        var result = new AlwaysBroken().Not("test.not", "Must not hold.");
         result.Should().BeOfType<NotBusinessRule>();
         result.IsBroken().Should().BeFalse();
     }

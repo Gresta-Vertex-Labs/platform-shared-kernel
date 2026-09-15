@@ -3,39 +3,35 @@ using System.Linq.Expressions;
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// A composite specification that negates another specification.
-/// An entity satisfies this specification only when it does NOT satisfy the inner specification.
+/// A specification satisfied by entities that do not satisfy the inner specification.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <remarks>
+/// <para>
+/// An inner specification without criteria matches every entity, and its negation therefore matches none.
+/// Includes, string includes and the tracking, split-query and include-deleted flags are carried over.
+/// </para>
+/// <para><b>Ordering, paging and <c>Distinct</c> are not carried over.</b></para>
+/// </remarks>
 public sealed class NotSpecification<T> : Specification<T>
 {
-    /// <summary>
-    /// Initialises a new <see cref="NotSpecification{T}"/> that negates <paramref name="spec"/>.
-    /// </summary>
+    /// <summary>Negates <paramref name="spec"/>.</summary>
+    /// <param name="spec">The specification to negate.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="spec"/> is <see langword="null"/>.</exception>
     public NotSpecification(Specification<T> spec)
     {
-        if (spec.Criteria is not null)
+        ArgumentNullException.ThrowIfNull(spec);
+
+        if (spec.Criteria is null)
         {
-            var param = spec.Criteria.Parameters[0];
-            AddCriteria(Expression.Lambda<Func<T, bool>>(
-                Expression.Not(spec.Criteria.Body), param));
+            AddCriteria(_ => false);
+        }
+        else
+        {
+            var parameter = spec.Criteria.Parameters[0];
+            AddCriteria(Expression.Lambda<Func<T, bool>>(Expression.Not(spec.Criteria.Body), parameter));
         }
 
-        if (spec.AsNoTracking)
-            ApplyNoTracking();
-
-        if (spec.AsSplitQuery)
-            ApplySplitQuery();
-
-        if (spec.IncludeDeleted)
-            IncludeSoftDeleted();
-
-        // WO-051/P-307: union expression-based Includes and string-based StringIncludes from the
-        // negated operand — previously dropped entirely by this composite.
-        foreach (var include in spec.Includes)
-            AddInclude(include);
-
-        foreach (var path in spec.StringIncludes)
-            AddStringInclude(path);
+        CopyQueryShapeFrom(spec);
     }
 }

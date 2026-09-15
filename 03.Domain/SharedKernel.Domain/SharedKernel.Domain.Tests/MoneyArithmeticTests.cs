@@ -1,7 +1,7 @@
 using FluentAssertions;
 using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Exceptions;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Tests;

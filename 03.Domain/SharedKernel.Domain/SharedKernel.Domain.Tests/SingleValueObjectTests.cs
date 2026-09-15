@@ -84,10 +84,10 @@ public class SingleValueObjectTests
     }
 
     [Fact]
-    public void SingleValueObject_ImplicitOperator_UnwrapsValue()
+    public void SingleValueObject_ExplicitOperator_UnwrapsValue()
     {
         var email = new EmailAddress("hello@example.com");
-        string unwrapped = email;
+        var unwrapped = (string)email;
 
         unwrapped.Should().Be("hello@example.com");
     }

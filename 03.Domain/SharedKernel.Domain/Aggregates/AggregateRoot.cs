@@ -4,6 +4,7 @@ using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Entities;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Exceptions;
+using SharedKernel.Domain.Internal;
 using SharedKernel.Guards;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
@@ -11,71 +12,65 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Domain.Aggregates;
 
 /// <summary>
-/// Abstract base class for all DDD aggregate roots.
-/// Extends <see cref="Entity{TId}"/> with domain event accumulation, clock-sourced event
-/// factories, and business rule enforcement.
+/// Base class for aggregate roots: an entity that guards its own invariants, records the domain
+/// events it raises, and reads time from an injected <see cref="IClock"/>.
 /// </summary>
-/// <typeparam name="TId">The type of the aggregate's identity key. Must be non-null.</typeparam>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
-/// Inject an <see cref="IClock"/> via the primary constructor so that domain events carry
-/// accurate timestamps. The protected parameterless constructor assigns <see cref="NullClock"/>
-/// for ORM materialisation paths — no events should be raised during hydration.
+/// <b>Time.</b> Construct with an <see cref="IClock"/>. An aggregate materialized by an ORM through the
+/// parameterless constructor has no clock until infrastructure calls <see cref="IHasClock.AttachClock"/>;
+/// reading <see cref="Now"/> before then throws <see cref="InvalidOperationException"/>, so a missing
+/// clock can never become a year-0001 timestamp in an event or a soft-delete column.
 /// </para>
 /// <para>
-/// Only this class and its subclasses may call <see cref="RaiseDomainEvent(IDomainEvent)"/>.
-/// Plain entities must not accumulate domain events.
+/// <b>Events.</b> Raise events with <see cref="RaiseDomainEvent(Func{DateTimeOffset, IDomainEvent})"/>
+/// so the timestamp comes from the clock at the moment the event is recorded. Each raised event
+/// advances <see cref="Version"/> by one. Infrastructure dispatches the pending events after the unit
+/// of work commits and then calls <see cref="ClearDomainEvents"/>.
 /// </para>
 /// </remarks>
 /// <example>
 /// <code>
-/// public sealed record OrderId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value);
-///
 /// public sealed class Order : AggregateRoot&lt;OrderId&gt;
 /// {
-///     public string CustomerName { get; private set; }
-///
-///     public Order(OrderId id, string customerName, IClock clock) : base(id, clock)
+///     private Order(OrderId id, string customerName, IClock clock) : base(id, clock)
 ///     {
+///         Guard.Throw.NullOrWhiteSpace(customerName);
 ///         CustomerName = customerName;
-///         RaiseDomainEvent(ts =&gt; new OrderCreatedEvent(id.Value) { OccurredOn = ts });
+///         RaiseDomainEvent(at =&gt; new OrderPlaced(id.Value) { OccurredOn = at });
 ///     }
 ///
-///     protected Order() { } // ORM path
+///     private Order() { } // ORM
+///
+///     public string CustomerName { get; private set; } = string.Empty;
+///
+///     public static ValidationResult&lt;Order&gt; Create(OrderId id, string customerName, IClock clock) =&gt;
+///         TryCreate(() =&gt; new Order(id, customerName, clock));
 /// }
 /// </code>
 /// </example>
-public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot<TId>, IHasVersion where TId : notnull
+public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot<TId>, IHasVersion, IHasClock
+    where TId : notnull
 {
     private readonly List<IDomainEvent> _domainEvents = [];
-    private IClock _clock;
+    private IClock? _clock;
 
-    /// <summary>
-    /// Initialises a new aggregate root with the specified identity key and clock.
-    /// </summary>
-    /// <param name="id">The aggregate's identity key.</param>
-    /// <param name="clock">The clock used to timestamp domain events raised by this aggregate.</param>
-    /// <exception cref="DomainException">
-    /// Thrown when <paramref name="clock"/> is <see langword="null"/> (WO-051/P-311 — guarded via
-    /// <see cref="Guard.Throw"/> so the failure surfaces at the constructor boundary instead of a
-    /// downstream <see cref="NullReferenceException"/> from <see cref="Now"/> or
-    /// <see cref="RaiseDomainEvent(Func{DateTimeOffset, IDomainEvent})"/>). This single guard site
-    /// protects <see cref="TenantedAggregateRoot{TId}"/>, <see cref="TenantedAuditableAggregateRoot{TId}"/>,
-    /// and <see cref="TenantedFullAuditableAggregateRoot{TId}"/> too, since each chains through
-    /// <c>base(id, clock)</c> to this same constructor.
-    /// </exception>
+    /// <summary>Initializes an aggregate root with its identity key and clock.</summary>
+    /// <param name="id">The identity key.</param>
+    /// <param name="clock">The clock that timestamps events and time-dependent state.</param>
+    /// <exception cref="DomainException"><paramref name="clock"/> is <see langword="null"/>.</exception>
     protected AggregateRoot(TId id, IClock clock) : base(id)
     {
-        Guard.Throw.Null(clock, nameof(clock));
+        Guard.Throw.Null(clock);
         _clock = clock;
     }
 
     /// <summary>
-    /// Protected parameterless constructor for ORM materialisation paths (e.g., EF Core proxies).
-    /// Assigns <see cref="NullClock"/> so <c>_clock</c> is never null.
-    /// Do not call directly in domain code.
+    /// Initializes an aggregate root for ORM materialization, without a clock. Do not call from
+    /// domain code.
     /// </summary>
-    protected AggregateRoot() : base() => _clock = NullClock.Instance;
+    protected AggregateRoot() { }
 
     /// <inheritdoc/>
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
@@ -84,111 +79,77 @@ public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot<TId>, IHa
     public int Version { get; private set; }
 
     /// <inheritdoc/>
+    bool IHasClock.IsClockAttached => _clock is not null;
+
+    /// <summary>Gets the current UTC time from the aggregate's clock.</summary>
     /// <remarks>
-    /// This method is intended exclusively for infrastructure dispatch code (e.g., an EF Core interceptor
-    /// or outbox publisher) after domain events have been successfully committed and dispatched.
-    /// Aggregates must never call <c>ClearDomainEvents()</c> on themselves — doing so would silently
-    /// discard events before infrastructure has had a chance to process them.
+    /// Use it for time-dependent state such as due dates. For an event timestamp use
+    /// <see cref="RaiseDomainEvent(Func{DateTimeOffset, IDomainEvent})"/>, which reads the clock
+    /// at the moment the event is recorded.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// No clock is attached: the aggregate was materialized by an ORM and infrastructure has not
+    /// called <see cref="IHasClock.AttachClock"/>.
+    /// </exception>
+    protected DateTimeOffset Now =>
+        (_clock ?? throw new InvalidOperationException(
+            $"{GetType().Name} has no clock. It was created through its parameterless constructor, "
+            + $"and infrastructure must call {nameof(IHasClock)}.{nameof(IHasClock.AttachClock)} "
+            + "before the aggregate reads the time.")).UtcNow;
+
+    /// <inheritdoc/>
+    void IHasClock.AttachClock(IClock clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        _clock = clock;
+    }
+
+    /// <inheritdoc/>
     public void ClearDomainEvents() => _domainEvents.Clear();
 
-    /// <summary>
-    /// Gets the current UTC time from the injected clock.
-    /// Subclasses can use this to timestamp operations without exposing the full <see cref="IClock"/>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <strong>Do not use <see cref="Now"/> to supply <c>OccurredOn</c> for domain events.</strong>
-    /// Although it compiles, writing <c>new MyEvent { OccurredOn = Now }</c> is a soft violation
-    /// of the deterministic timestamp contract: the timestamp is captured at object-construction time
-    /// rather than at event-registration time, which makes event timestamps non-deterministic in unit
-    /// tests that control the clock via a fake <see cref="IClock"/>.
-    /// </para>
-    /// <para>
-    /// Use the factory overload instead:
-    /// <code>
-    /// RaiseDomainEvent(ts => new MyEvent { OccurredOn = ts });
-    /// </code>
-    /// The <c>RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;)</c> overload passes
-    /// <c>_clock.UtcNow</c> to the factory exactly when the event is registered, ensuring that
-    /// the timestamp is always sourced from the injected <see cref="IClock"/>. This allows tests
-    /// to advance a fake clock to a known point and then assert that the raised event carries
-    /// exactly that timestamp.
-    /// </para>
-    /// </remarks>
-    protected DateTimeOffset Now => _clock.UtcNow;
-
-    /// <summary>
-    /// Adds a pre-constructed <paramref name="domainEvent"/> to this aggregate's event collection
-    /// and increments <see cref="Version"/>.
-    /// </summary>
-    /// <param name="domainEvent">The domain event to record.</param>
+    /// <summary>Records <paramref name="domainEvent"/> and advances <see cref="Version"/> by one.</summary>
+    /// <param name="domainEvent">The event to record.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="domainEvent"/> is <see langword="null"/>.</exception>
     protected void RaiseDomainEvent(IDomainEvent domainEvent)
     {
+        ArgumentNullException.ThrowIfNull(domainEvent);
         _domainEvents.Add(domainEvent);
         Version++;
     }
 
     /// <summary>
-    /// Adds a domain event constructed via <paramref name="factory"/>, passing the current UTC
-    /// timestamp sourced from the injected <see cref="IClock"/>. Use this overload to ensure
-    /// events carry accurate, deterministic timestamps in tests.
-    /// Increments <see cref="Version"/>.
+    /// Creates an event from the current clock time, records it, and advances <see cref="Version"/>
+    /// by one.
     /// </summary>
-    /// <param name="factory">
-    /// A delegate that accepts the current <see cref="DateTimeOffset"/> and returns the domain event.
-    /// </param>
+    /// <param name="factory">Builds the event from the timestamp it should carry.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="factory"/> is <see langword="null"/>, or it returned <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">No clock is attached; see <see cref="Now"/>.</exception>
     protected void RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent> factory)
     {
-        _domainEvents.Add(factory(_clock.UtcNow));
-        Version++;
+        ArgumentNullException.ThrowIfNull(factory);
+        RaiseDomainEvent(factory(Now) ?? throw new ArgumentNullException(nameof(factory), "The event factory returned null."));
     }
 
-    /// <summary>
-    /// Evaluates <paramref name="rule"/> and throws <see cref="BusinessRuleViolationException"/>
-    /// if the rule is broken.
-    /// </summary>
-    /// <param name="rule">The business rule to enforce.</param>
-    /// <exception cref="BusinessRuleViolationException">Thrown when <paramref name="rule"/> is broken.</exception>
-    protected static void CheckRule(IBusinessRule rule)
-    {
-        if (rule.IsBroken())
-            throw new BusinessRuleViolationException(rule);
-    }
+    /// <summary>Throws when <paramref name="rule"/> is broken.</summary>
+    /// <param name="rule">The rule to enforce.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="rule"/> is <see langword="null"/>.</exception>
+    /// <exception cref="BusinessRuleViolationException"><paramref name="rule"/> is broken.</exception>
+    protected static void CheckRule(IBusinessRule rule) => DomainInvariants.CheckRule(rule);
 
     /// <summary>
-    /// Executes the <paramref name="factory"/> and wraps the result in a railway-friendly
-    /// <see cref="Result{T}"/>. Exceptions raised during construction are converted to
-    /// <see cref="Result{T}.Failure"/> rather than propagating.
+    /// Runs <paramref name="factory"/> and turns a domain failure during construction into a failed
+    /// <see cref="ValidationResult{T}"/> instead of an exception.
     /// </summary>
-    /// <typeparam name="T">The type of the aggregate or object produced by the factory.</typeparam>
-    /// <param name="factory">The construction delegate. Typically a lambda that calls <c>new AggregateType(...)</c>.</param>
+    /// <typeparam name="T">The type the factory creates.</typeparam>
+    /// <param name="factory">The construction delegate, typically <c>() =&gt; new Order(...)</c>.</param>
     /// <returns>
-    /// <see cref="Result{T}.Success"/> when the factory completes without throwing.
-    /// <see cref="Result{T}.Failure"/> with <c>ErrorType.BusinessRule</c> when a
-    /// <see cref="BusinessRuleViolationException"/> is thrown.
-    /// <see cref="Result{T}.Failure"/> with the first validation error when a
-    /// <see cref="ValidationException"/> is thrown.
+    /// A successful result holding the created object; or a failed result holding every error from a
+    /// <see cref="ValidationException"/>, or the single error of any <see cref="DomainException"/>, which
+    /// includes <see cref="BusinessRuleViolationException"/> and guard violations.
     /// </returns>
-    /// <example>
-    /// <code>
-    /// public static Result&lt;Order&gt; Create(Guid id, string customerName, IClock clock)
-    ///     => TryCreate(() => new Order(new OrderId(id), customerName, clock));
-    /// </code>
-    /// </example>
-    protected static Result<T> TryCreate<T>(Func<T> factory)
-    {
-        try
-        {
-            return Result<T>.Success(factory());
-        }
-        catch (BusinessRuleViolationException ex)
-        {
-            return Result<T>.Failure(ex.Error);
-        }
-        catch (ValidationException ex)
-        {
-            return Result<T>.Failure(ex.Errors[0]);
-        }
-    }
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    /// <remarks>Any other exception propagates: it signals a defect, not invalid input.</remarks>
+    protected static ValidationResult<T> TryCreate<T>(Func<T> factory) => DomainInvariants.TryCreate(factory);
 }

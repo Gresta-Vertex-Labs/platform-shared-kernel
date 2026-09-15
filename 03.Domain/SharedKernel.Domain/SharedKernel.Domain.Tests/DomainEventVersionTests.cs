@@ -103,7 +103,7 @@ public class DomainEventVersionTests
     public void GetVersion_RepeatedCallsSameType_CachesReflectionLookup()
     {
         var cacheField = typeof(DomainEventVersionHelper)
-            .GetField("_versionCache", BindingFlags.NonPublic | BindingFlags.Static);
+            .GetField("VersionCache", BindingFlags.NonPublic | BindingFlags.Static);
         var cache = (System.Collections.IDictionary)cacheField!.GetValue(null)!;
 
         cache.Remove(typeof(CachingProbeEvent));

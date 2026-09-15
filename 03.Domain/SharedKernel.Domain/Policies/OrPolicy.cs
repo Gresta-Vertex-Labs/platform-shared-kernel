@@ -1,37 +1,31 @@
 namespace SharedKernel.Domain.Policies;
 
-/// <summary>
-/// A composite policy that is compliant when at least one sub-policy is compliant
-/// (logical OR).
-/// </summary>
-/// <typeparam name="T">The type of domain object evaluated.</typeparam>
+/// <summary>A policy that a subject complies with when it complies with at least one operand.</summary>
+/// <typeparam name="T">The type of subject the policy evaluates.</typeparam>
 public sealed class OrPolicy<T> : IPolicy<T>
 {
     private readonly IPolicy<T> _left;
     private readonly IPolicy<T> _right;
 
-    /// <summary>
-    /// Initialises a new <see cref="OrPolicy{T}"/> combining <paramref name="left"/>
-    /// and <paramref name="right"/>.
-    /// </summary>
+    /// <summary>Combines two alternative policies, at least one of which must be satisfied.</summary>
+    /// <param name="left">The first alternative.</param>
+    /// <param name="right">The second alternative.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public OrPolicy(IPolicy<T> left, IPolicy<T> right)
     {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         _left = left;
         _right = right;
     }
 
     /// <inheritdoc/>
-    /// <remarks>Returns <see langword="true"/> when at least one sub-policy is compliant.</remarks>
     public bool IsCompliant(T subject) => _left.IsCompliant(subject) || _right.IsCompliant(subject);
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// WO-051/P-312 — non-empty only when compliance fails, which for a logical OR means
-    /// <em>both</em> sub-policies failed; in that case both explanations are aggregated with
-    /// <c>"; "</c>.
-    /// </remarks>
+    /// <remarks>When the subject fails both alternatives, names both explanations.</remarks>
     public string Explain(T subject) =>
         IsCompliant(subject)
             ? string.Empty
-            : string.Join("; ", _left.Explain(subject), _right.Explain(subject));
+            : $"At least one of these must be satisfied: {_left.Explain(subject)}; {_right.Explain(subject)}";
 }

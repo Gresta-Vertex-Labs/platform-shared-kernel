@@ -29,8 +29,9 @@ namespace SharedKernel.Domain.Specifications;
 /// </para>
 /// <para>
 /// <strong>The Id tiebreaker is mandatory, never optional.</strong> The constructor always calls
-/// <see cref="Specification{T}.ApplyThenBy"/> on the Id selector (ascending) after the
-/// primary sort, regardless of caller input. A keyset page boundary is unsound without a unique,
+/// <see cref="Specification{T}.ApplyThenBy"/> on the Id selector after the primary sort, in the same
+/// direction as the primary sort. The seek predicate compares both key and Id in that one direction, so a
+/// tiebreak sorted the other way would skip or repeat rows that share a sort key. A keyset page boundary is unsound without a unique,
 /// deterministic sort order — if many rows share the same <typeparamref name="TKey"/> value, a
 /// sort on <typeparamref name="TKey"/> alone cannot guarantee which of them comes "next".
 /// </para>
@@ -114,8 +115,8 @@ public abstract class KeysetSpecification<T, TKey> : ReadOnlySpecification<T>
         else
             ApplyOrderBy(objectKeySelector);
 
-        // Mandatory deterministic tiebreaker — never optional, regardless of caller input.
-        ApplyThenBy(idSelector, descending: false);
+        // Mandatory tiebreaker, in the primary sort's direction so it matches the seek predicate.
+        ApplyThenBy(idSelector, descending);
 
         ApplyPaging(0, take);
     }

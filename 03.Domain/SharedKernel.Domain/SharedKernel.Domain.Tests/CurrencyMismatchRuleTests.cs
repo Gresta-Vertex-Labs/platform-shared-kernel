@@ -1,6 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Domain.BusinessRules;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 
 namespace SharedKernel.Domain.Tests;
 

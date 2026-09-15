@@ -1,45 +1,37 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Domain.Aggregates;
 
-/// <summary>
-/// Abstract aggregate root that implements <see cref="IHasAudit"/>, adding creation and
-/// last-modification audit metadata.
-/// </summary>
-/// <typeparam name="TId">The type of the aggregate's identity key. Must be non-null.</typeparam>
+/// <summary>An aggregate root that records who created and last modified it, and when.</summary>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
-/// Audit properties (<see cref="CreatedBy"/>, <see cref="CreatedOn"/>, <see cref="ModifiedBy"/>,
-/// <see cref="ModifiedOn"/>) have <c>private set</c> — they are populated exclusively by
-/// EF Core interceptors or persistence-layer conventions, never by domain code.
+/// The audit properties are written by the persistence layer when the aggregate is saved, never by
+/// domain code, which is why their setters are private. The full set of bases:
+/// <list type="table">
+/// <listheader><term>Base class</term><description>Adds</description></listheader>
+/// <item><term><see cref="AggregateRoot{TId}"/></term><description>Events, rules, clock</description></item>
+/// <item><term><see cref="AuditableAggregateRoot{TId}"/></term><description>Audit</description></item>
+/// <item><term><see cref="SoftDeletableAggregateRoot{TId}"/></term><description>Soft delete</description></item>
+/// <item><term><see cref="AuditableSoftDeletableAggregateRoot{TId}"/></term><description>Audit, soft delete</description></item>
+/// <item><term><see cref="FullAuditableAggregateRoot{TId}"/></term><description>Audit, soft delete, concurrency token</description></item>
+/// </list>
+/// Each has a <c>Tenanted</c> counterpart that adds <see cref="IHasTenant"/>. For a combination not
+/// listed, extend <see cref="AggregateRoot{TId}"/> and implement the interfaces directly: the
+/// persistence layer reads the interfaces, never the base classes.
 /// </remarks>
-/// <example>
-/// <code>
-/// public sealed class Product : AuditableAggregateRoot&lt;ProductId&gt;
-/// {
-///     public string Name { get; private set; }
-///
-///     public Product(ProductId id, string name, IClock clock) : base(id, clock)
-///     {
-///         Name = name;
-///     }
-///
-///     protected Product() { } // ORM path
-/// }
-/// </code>
-/// </example>
 public abstract class AuditableAggregateRoot<TId> : AggregateRoot<TId>, IHasAudit
     where TId : notnull
 {
-    /// <summary>
-    /// Initialises a new auditable aggregate root with the specified identity key and clock.
-    /// </summary>
+    /// <summary>Initializes the aggregate with its identity key and clock.</summary>
+    /// <param name="id">The identity key.</param>
+    /// <param name="clock">The clock that timestamps events and time-dependent state.</param>
+    /// <exception cref="DomainException"><paramref name="clock"/> is <see langword="null"/>.</exception>
     protected AuditableAggregateRoot(TId id, IClock clock) : base(id, clock) { }
 
-    /// <summary>
-    /// Protected parameterless constructor for ORM materialisation paths.
-    /// </summary>
-    protected AuditableAggregateRoot() : base() { }
+    /// <summary>Initializes the aggregate for ORM materialization. Do not call from domain code.</summary>
+    protected AuditableAggregateRoot() { }
 
     /// <inheritdoc/>
     public string CreatedBy { get; private set; } = string.Empty;

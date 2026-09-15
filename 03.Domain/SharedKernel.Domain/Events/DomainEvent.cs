@@ -1,37 +1,39 @@
 namespace SharedKernel.Domain.Events;
 
 /// <summary>
-/// Abstract base record for all domain events in SharedKernel-based microservices.
-/// Provides a stable <see cref="Id"/> generated at construction and an <c>init</c>-only
-/// <see cref="OccurredOn"/> timestamp that must be supplied by the caller.
+/// Base record for domain events, supplying a stable, time-ordered <see cref="Id"/> and a required
+/// <see cref="OccurredOn"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="OccurredOn"/> must be sourced from <c>IClock.UtcNow</c> via the aggregate's
-/// <c>RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;)</c> factory overload.
-/// Direct <c>DateTimeOffset.UtcNow</c> usage anywhere in this package is a hard violation.
+/// <b>Identity survives serialization.</b> <see cref="Id"/> is a version 7 UUID generated when the event
+/// is created, and it is <c>init</c>-settable, so a serializer restores the original value when the event
+/// is read back from an outbox or a message. Deduplication keyed on <see cref="Id"/> therefore sees the
+/// same event as the same event. Never assign it yourself when raising a new event.
 /// </para>
 /// <para>
-/// Concrete domain event records should be sealed and add only the domain-specific properties
-/// they require. Use record positional parameters or <c>required init</c> properties.
+/// <b>Time comes from the aggregate.</b> Supply <see cref="OccurredOn"/> through
+/// <c>RaiseDomainEvent(at =&gt; new MyEvent { OccurredOn = at })</c>, which reads the aggregate's clock.
 /// </para>
+/// <para>
+/// Declare concrete events as <see langword="sealed"/> records, and mark each with
+/// <see cref="DomainEventVersionAttribute"/> from its first schema version.
+/// </para>
+/// </remarks>
 /// <example>
 /// <code>
-/// public sealed record OrderPlacedEvent(Guid OrderId) : DomainEvent
-/// {
-///     // OccurredOn is supplied by the aggregate via RaiseDomainEvent(clock => new OrderPlacedEvent(Id) { OccurredOn = clock })
-/// }
+/// [DomainEventVersion(1)]
+/// public sealed record OrderPlaced(Guid OrderId) : DomainEvent;
+///
+/// // Inside the Order aggregate:
+/// RaiseDomainEvent(at =&gt; new OrderPlaced(Id.Value) { OccurredOn = at });
 /// </code>
 /// </example>
-/// </remarks>
 public abstract record DomainEvent : IDomainEvent
 {
-    /// <summary>Gets the unique identifier of this event instance. Generated automatically at construction.</summary>
-    public Guid Id { get; } = Guid.NewGuid();
+    /// <inheritdoc/>
+    public Guid Id { get; init; } = Guid.CreateVersion7();
 
-    /// <summary>
-    /// Gets the UTC timestamp at which this event occurred.
-    /// This value is <c>init</c>-only and must be supplied by the aggregate's clock-sourced raise overload.
-    /// </summary>
+    /// <inheritdoc/>
     public required DateTimeOffset OccurredOn { get; init; }
 }

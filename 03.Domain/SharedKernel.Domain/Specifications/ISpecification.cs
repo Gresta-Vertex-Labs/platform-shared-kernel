@@ -17,8 +17,8 @@ namespace SharedKernel.Domain.Specifications;
 /// <strong>Ordering precedence:</strong>
 /// <list type="number">
 ///   <item><description>
-///     <strong>Primary sort:</strong> either <see cref="OrderBy"/> or <see cref="OrderByDescending"/>
-///     (mutually exclusive — calling both is allowed but the last call wins).
+///     <strong>Primary sort:</strong> either <see cref="OrderBy"/> or <see cref="OrderByDescending"/>,
+///     never both. <see cref="Specification{T}"/> throws when a second primary sort is applied.
 ///   </description></item>
 ///   <item><description>
 ///     <strong>Secondary sorts:</strong> <see cref="ThenBys"/> entries, applied in the order
@@ -115,8 +115,8 @@ public interface ISpecification<T>
     /// <code>
     /// AddCriteria(e => e.TenantId == tenantId);
     /// </code>
-    /// This ensures the tenant boundary is re-enforced at the query level even when the global tenant
-    /// filter has been bypassed.
+    /// <c>AddCriteria</c> combines conditions with logical AND, so this adds the tenant boundary to the
+    /// specification's other criteria rather than replacing them.
     /// </para>
     /// <para>
     /// Composite specifications (<c>AndSpecification&lt;T&gt;</c>, <c>OrSpecification&lt;T&gt;</c>,

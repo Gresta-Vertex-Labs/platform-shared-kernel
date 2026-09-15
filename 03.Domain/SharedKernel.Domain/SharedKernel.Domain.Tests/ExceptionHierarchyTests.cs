@@ -13,6 +13,7 @@ public class ExceptionHierarchyTests
 {
     private sealed class AlwaysBrokenRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is broken";
         public bool IsBroken() => true;
     }
@@ -50,7 +51,7 @@ public class ExceptionHierarchyTests
     {
         var ex = new DomainNotFoundException(typeof(string), "abc-123");
 
-        ex.Message.Should().Be("Entity of type 'String' with id 'abc-123' was not found.");
+        ex.Message.Should().Be("String 'abc-123' was not found.");
     }
 
     [Fact]

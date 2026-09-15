@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Events;
@@ -59,12 +60,14 @@ public class AggregateRootEventTests
 
     private sealed class BrokenRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is broken";
         public bool IsBroken() => true;
     }
 
     private sealed class ValidRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is fine";
         public bool IsBroken() => false;
     }
@@ -163,26 +166,30 @@ public class AggregateRootEventTests
     // --- NullClock sentinel (T-03) ---
 
     [Fact]
-    public void OrmPath_Constructor_UsesNullClock_RaisedEventHasMinValue()
+    public void OrmPath_WithoutAttachedClock_RaisingATimestampedEvent_Throws()
     {
-        // The ORM-path (parameterless) constructor assigns NullClock.
-        // When an event is raised via the factory overload, OccurredOn == DateTimeOffset.MinValue.
+        // Before: the ORM constructor used a NullClock and the event was silently stamped 01.01.0001.
         var order = new Order();
-        order.Create();
 
-        var evt = order.DomainEvents.OfType<OrderCreatedEvent>().Single();
-        evt.OccurredOn.Should().Be(DateTimeOffset.MinValue);
+        var act = order.Create;
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*AttachClock*");
+        order.DomainEvents.Should().BeEmpty();
+        order.Version.Should().Be(0);
     }
 
     [Fact]
-    public void OrmPath_Constructor_UsesNullClock_NotRealTime()
+    public void OrmPath_AfterAttachClock_StampsEventsFromTheAttachedClock()
     {
-        // NullClock.UtcNow returns DateTimeOffset.MinValue, never a real UTC time.
+        var clock = new FixedClock(new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero));
         var order = new Order();
+
+        ((IHasClock)order).IsClockAttached.Should().BeFalse();
+        ((IHasClock)order).AttachClock(clock);
         order.Create();
 
-        var evt = order.DomainEvents.OfType<OrderCreatedEvent>().Single();
-        evt.OccurredOn.Should().NotBeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(60));
+        ((IHasClock)order).IsClockAttached.Should().BeTrue();
+        order.DomainEvents.OfType<OrderCreatedEvent>().Single().OccurredOn.Should().Be(clock.UtcNow);
     }
 
     // --- CheckRule ---

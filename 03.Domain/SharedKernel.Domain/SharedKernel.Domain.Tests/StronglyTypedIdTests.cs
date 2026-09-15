@@ -13,22 +13,22 @@ public class StronglyTypedIdTests
     // --- Implicit operator ---
 
     [Fact]
-    public void ImplicitOperator_UnwrapsToGuid()
+    public void ExplicitOperator_UnwrapsToGuid()
     {
         var guid = Guid.NewGuid();
         var id = new OrderId(guid);
 
-        Guid unwrapped = id; // implicit cast
+        var unwrapped = (Guid)id;
 
         unwrapped.Should().Be(guid);
     }
 
     [Fact]
-    public void ImplicitOperator_IntId_UnwrapsToInt()
+    public void ExplicitOperator_IntId_UnwrapsToInt()
     {
         var id = new ProductId(42);
 
-        int unwrapped = id;
+        var unwrapped = (int)id;
 
         unwrapped.Should().Be(42);
     }

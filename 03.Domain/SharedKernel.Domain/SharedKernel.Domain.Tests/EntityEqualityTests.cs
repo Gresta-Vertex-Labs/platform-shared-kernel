@@ -86,10 +86,21 @@ public class EntityEqualityTests
     }
 
     [Fact]
-    public void Equals_TransientEntity_ToItself_ReturnsFalse()
+    public void Equals_TransientEntity_ToItself_ReturnsTrue()
     {
         var t = new Order();
-        t.Equals(t).Should().BeFalse();
+        t.Equals(t).Should().BeTrue();
+        (t == t).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TransientEntity_CanBeFoundAndRemovedFromCollections()
+    {
+        var t = new Order();
+        var list = new List<Order> { t };
+
+        new HashSet<Order> { t }.Contains(t).Should().BeTrue();
+        list.Remove(t).Should().BeTrue();
     }
 
     [Fact]

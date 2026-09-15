@@ -3,41 +3,36 @@ using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Exceptions;
 
-/// <summary>
-/// Thrown when a required aggregate or entity cannot be found.
-/// </summary>
+/// <summary>Thrown when a required aggregate or entity does not exist.</summary>
 /// <remarks>
-/// <para>
-/// Hierarchy: <c>Exception</c> → <c>SharedKernelException</c> → <c>DomainException</c>
-/// → <c>DomainNotFoundException</c>.
-/// Catching <c>DomainException</c> catches this; catching <c>SharedKernelException</c>
-/// also catches this.
-/// </para>
-/// <para>
-/// <see cref="SharedKernelException.Error"/> carries <c>ErrorType.NotFound</c> — maps to HTTP 404
-/// at the presentation layer.
-/// </para>
+/// <see cref="SharedKernelException.Error"/> is an <see cref="ErrorType.NotFound"/> error (HTTP 404). The
+/// hierarchy is <c>SharedKernelException</c>, then <c>DomainException</c>, then this type. Prefer returning a
+/// failed result for a lookup the caller expects to miss; throw this when a missing aggregate means the
+/// operation cannot continue.
 /// </remarks>
 public sealed class DomainNotFoundException : DomainException
 {
-    /// <summary>
-    /// Initialises a new <see cref="DomainNotFoundException"/> for the specified
-    /// aggregate type and identity.
-    /// </summary>
-    /// <param name="aggregateType">The CLR type of the aggregate that was not found.</param>
-    /// <param name="aggregateId">The identifier that was searched for.</param>
+    /// <summary>Creates the exception for the aggregate type and identity that were not found.</summary>
+    /// <param name="aggregateType">The type of the missing aggregate.</param>
+    /// <param name="aggregateId">The identity that was looked up.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="aggregateType"/> or <paramref name="aggregateId"/> is <see langword="null"/>.</exception>
     public DomainNotFoundException(Type aggregateType, object aggregateId)
-        : base(Error.NotFound(
-            ErrorCodes.NotFound.Default,
-            $"Entity of type '{aggregateType.Name}' with id '{aggregateId}' was not found."))
+        : base(CreateError(aggregateType, aggregateId))
     {
         AggregateType = aggregateType;
         AggregateId = aggregateId;
     }
 
-    /// <summary>Gets the CLR type of the aggregate that was not found.</summary>
+    /// <summary>Gets the type of the missing aggregate.</summary>
     public Type AggregateType { get; }
 
-    /// <summary>Gets the identifier that was searched for.</summary>
+    /// <summary>Gets the identity that was looked up.</summary>
     public object AggregateId { get; }
+
+    private static Error CreateError(Type aggregateType, object aggregateId)
+    {
+        ArgumentNullException.ThrowIfNull(aggregateType);
+        ArgumentNullException.ThrowIfNull(aggregateId);
+        return Error.NotFound(ErrorCodes.NotFound.Default, $"{aggregateType.Name} '{aggregateId}' was not found.");
+    }
 }

@@ -4,37 +4,30 @@ using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Exceptions;
 
-/// <summary>
-/// Thrown when a domain business rule is violated.
-/// Carries the <see cref="IBusinessRule"/> instance that was broken so callers can inspect
-/// the rule's message or type.
-/// </summary>
+/// <summary>Thrown when a business rule is broken.</summary>
 /// <remarks>
-/// <para>
-/// This exception is raised by <c>AggregateRoot&lt;TId&gt;.CheckRule(IBusinessRule)</c> when
-/// <c>IBusinessRule.IsBroken()</c> returns <see langword="true"/>. Map it to an HTTP 422
-/// Unprocessable Entity at the presentation layer — never HTTP 500.
-/// </para>
-/// <para>
-/// Hierarchy: <c>Exception</c> → <c>SharedKernelException</c> → <c>DomainException</c>
-/// → <c>BusinessRuleViolationException</c>.
-/// Catching <c>DomainException</c> catches this; catching <c>SharedKernelException</c>
-/// also catches this. <see cref="Error"/> carries <c>ErrorType.BusinessRule</c>.
-/// </para>
+/// <see cref="SharedKernelException.Error"/> is an <see cref="ErrorType.BusinessRule"/> error (HTTP 422)
+/// carrying the rule's own <see cref="IBusinessRule.Code"/> and <see cref="IBusinessRule.Message"/>.
+/// The hierarchy is <c>SharedKernelException</c>, then <c>DomainException</c>, then this type, so catching
+/// <c>DomainException</c> catches it.
 /// </remarks>
 public sealed class BusinessRuleViolationException : DomainException
 {
-    /// <summary>
-    /// Initialises a new <see cref="BusinessRuleViolationException"/> for the specified
-    /// <paramref name="rule"/>.
-    /// </summary>
-    /// <param name="rule">The business rule that was violated. Must not be <see langword="null"/>.</param>
+    /// <summary>Creates the exception for the broken <paramref name="rule"/>.</summary>
+    /// <param name="rule">The rule that was broken.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="rule"/> is <see langword="null"/>.</exception>
     public BusinessRuleViolationException(IBusinessRule rule)
-        : base(Error.BusinessRule(ErrorCodes.Domain.RuleViolated, rule.Message))
+        : base(CreateError(rule))
     {
         Rule = rule;
     }
 
-    /// <summary>Gets the business rule that was violated.</summary>
+    /// <summary>Gets the rule that was broken.</summary>
     public IBusinessRule Rule { get; }
+
+    private static Error CreateError(IBusinessRule rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+        return Error.BusinessRule(rule.Code, rule.Message);
+    }
 }

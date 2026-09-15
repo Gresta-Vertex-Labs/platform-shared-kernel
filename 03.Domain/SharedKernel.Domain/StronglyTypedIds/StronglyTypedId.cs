@@ -1,68 +1,48 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
-using SharedKernel.Primitives.Errors;
+using SharedKernel.Domain.Internal;
 
 namespace SharedKernel.Domain.StronglyTypedIds;
 
 /// <summary>
-/// Abstract base record for strongly-typed identifiers. Wraps a primitive value of type
-/// <typeparamref name="TValue"/> and provides implicit unwrapping.
+/// Base record for strongly-typed identifiers: a named wrapper around a primitive key, so an
+/// <c>OrderId</c> cannot be passed where a <c>CustomerId</c> is expected.
 /// </summary>
-/// <typeparam name="TValue">The underlying primitive type (e.g., <see cref="Guid"/>, <see cref="int"/>). Must be non-null.</typeparam>
-/// <param name="Value">The underlying primitive value of this identifier.</param>
+/// <typeparam name="TValue">The underlying key type, such as <see cref="Guid"/> or <see cref="long"/>. Must be non-null.</typeparam>
+/// <param name="Value">The underlying key value.</param>
 /// <remarks>
-/// <para>
-/// Concrete strongly-typed ID records should be sealed:
+/// <para>Declare each identifier as a sealed record with a single positional parameter:</para>
 /// <code>
 /// public sealed record OrderId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value);
 /// </code>
+/// <para>
+/// Equality is by concrete type and value: <c>OrderId</c> and <c>CustomerId</c> wrapping the same
+/// <see cref="Guid"/> are not equal. Unwrap with <see cref="Value"/> or an explicit cast; there is no
+/// implicit conversion, which would let one identifier silently flow into a parameter of the underlying type.
 /// </para>
 /// <para>
-/// Record-based equality is derived from <typeparamref name="TValue"/> automatically.
-/// </para>
-/// <para>
-/// <strong>STJ serialisation note:</strong> This package ships <see cref="Serialization.StronglyTypedIdJsonConverterFactory"/>,
-/// an opt-in <see cref="System.Text.Json.Serialization.JsonConverterFactory"/> that (de)serializes
-/// concrete <see cref="StronglyTypedId{TValue}"/> types as the bare underlying <typeparamref name="TValue"/>
-/// (e.g. a JSON string for <see cref="Guid"/>/<see cref="string"/>, a JSON number for <see cref="int"/>/<see cref="long"/>),
-/// never as an object wrapper. It is not registered automatically — consuming services opt in via
-/// <c>options.Converters.Add(new StronglyTypedIdJsonConverterFactory())</c>. Concrete types must follow
-/// the documented shape above (a public primary constructor <c>(TValue Value)</c> on a non-abstract closed type).
+/// For JSON, register <see cref="Serialization.StronglyTypedIdJsonConverterFactory"/> once; every identifier
+/// then serializes as its bare value, including as a dictionary key.
 /// </para>
 /// </remarks>
 public abstract record StronglyTypedId<TValue>(TValue Value) : IStronglyTypedId<TValue>
     where TValue : notnull
 {
-    /// <summary>Gets the underlying primitive value of this identifier.</summary>
-    /// <remarks>
-    /// WO-051/P-311 — the positional parameter is redeclared as an explicit property with a
-    /// guarded initializer (<see cref="GuardValue"/>) so a reference-type <typeparamref name="TValue"/>
-    /// instantiated with <see langword="null"/> (e.g. <c>new SomeId(null!)</c>) throws
-    /// <see cref="DomainException"/> at construction rather than surfacing a
-    /// <see cref="NullReferenceException"/> later at first use. This is a no-op for value-type
-    /// <typeparamref name="TValue"/> instantiations (e.g. <see cref="Guid"/>, <see cref="int"/>),
-    /// since <c>value is null</c> is always <see langword="false"/> for those.
-    /// </remarks>
-    public TValue Value { get; } = GuardValue(Value);
+    /// <summary>Gets the underlying key value.</summary>
+    /// <exception cref="DomainException">Construction with a <see langword="null"/> value.</exception>
+    public TValue Value { get; } = DomainInvariants.NotNull(Value, nameof(Value));
 
-    /// <summary>Returns the string representation of the underlying <see cref="Value"/>.</summary>
-    public sealed override string ToString() => Value.ToString()!;
+    /// <summary>Returns the underlying value's string representation.</summary>
+    /// <returns>The string representation of <see cref="Value"/>.</returns>
+    public sealed override string ToString() => Value.ToString() ?? string.Empty;
 
-    /// <summary>Implicitly converts a <see cref="StronglyTypedId{TValue}"/> to its underlying <typeparamref name="TValue"/>.</summary>
-    public static implicit operator TValue(StronglyTypedId<TValue> id) => id.Value;
-
-    /// <summary>
-    /// Throws <see cref="DomainException"/> when <paramref name="value"/> is <see langword="null"/>
-    /// and <typeparamref name="TValue"/> is a reference type; a no-op for value-type instantiations,
-    /// since <c>Guard.Throw.Null&lt;T&gt;</c>'s <c>where T : class</c> constraint cannot apply to an
-    /// unconstrained <typeparamref name="TValue"/>.
-    /// </summary>
-    private static TValue GuardValue(TValue value)
+    /// <summary>Unwraps the identifier.</summary>
+    /// <param name="id">The identifier to unwrap.</param>
+    /// <returns>The underlying key value.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="id"/> is <see langword="null"/>.</exception>
+    public static explicit operator TValue(StronglyTypedId<TValue> id)
     {
-        if (value is null)
-            throw new DomainException(
-                Error.Validation("StronglyTypedId.Value.Null", "Value must not be null."));
-
-        return value;
+        ArgumentNullException.ThrowIfNull(id);
+        return id.Value;
     }
 }

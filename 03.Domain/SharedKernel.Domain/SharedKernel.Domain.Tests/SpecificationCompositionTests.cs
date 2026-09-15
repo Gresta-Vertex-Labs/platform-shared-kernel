@@ -109,10 +109,12 @@ public class SpecificationCompositionTests
     }
 
     [Fact]
-    public void Not_NoCriteriaSpec_HasNullCriteria()
+    public void Not_NoCriteriaSpec_MatchesNothing()
     {
+        // A spec without criteria matches everything, so its negation must match nothing, not everything.
         var spec = new AllProductsSpec().Not();
-        spec.Criteria.Should().BeNull();
+        spec.Criteria.Should().NotBeNull();
+        spec.IsSatisfiedBy(new Product("any", 1m, true)).Should().BeFalse();
     }
 
     // --- Extension methods produce correct types ---

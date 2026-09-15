@@ -5,64 +5,63 @@ using System.Text.Json.Serialization;
 namespace SharedKernel.Domain.StronglyTypedIds.Serialization;
 
 /// <summary>
-/// Converts a closed <see cref="StronglyTypedId{TValue}"/> type to and from its underlying
-/// <typeparamref name="TValue"/> primitive, producing a bare-primitive wire format.
+/// Serializes one strongly-typed identifier type as its bare underlying value, including as a dictionary key.
 /// </summary>
-/// <typeparam name="TStronglyTypedId">The concrete strongly-typed identifier type.</typeparam>
-/// <typeparam name="TValue">The underlying primitive value type wrapped by <typeparamref name="TStronglyTypedId"/>.</typeparam>
+/// <typeparam name="TStronglyTypedId">The identifier type.</typeparam>
+/// <typeparam name="TValue">The identifier's underlying value type.</typeparam>
 /// <remarks>
-/// <para>
-/// This converter is not registered directly. Register <see cref="StronglyTypedIdJsonConverterFactory"/>
-/// with <see cref="JsonSerializerOptions.Converters"/>; the factory creates the closed converter for
-/// each concrete <see cref="StronglyTypedId{TValue}"/> type encountered.
-/// </para>
-/// <para>
-/// The wire format is the bare <typeparamref name="TValue"/> — a JSON string for <see cref="Guid"/>
-/// or <see cref="string"/>, a JSON number for <see cref="int"/> or <see cref="long"/> — never an
-/// object wrapper such as <c>{ "value": ... }</c>.
-/// </para>
-/// <para>
-/// <see cref="Read"/> deserializes the raw <typeparamref name="TValue"/> token and constructs
-/// <typeparamref name="TStronglyTypedId"/> via a <see cref="Func{TValue, TStronglyTypedId}"/> activator
-/// compiled once (via <see cref="Expression.New(System.Reflection.ConstructorInfo, IEnumerable{Expression})"/>)
-/// against the concrete type's public <c>(TValue Value)</c> primary constructor and cached for the
-/// lifetime of this converter instance. A concrete type that omits or hides this constructor shape
-/// will throw an <see cref="InvalidOperationException"/> the first time the converter is used, not
-/// when the converter is created.
-/// </para>
+/// Normally created by <see cref="StronglyTypedIdJsonConverterFactory"/>. Apply it directly with
+/// <c>[JsonConverter(typeof(StronglyTypedIdJsonConverter&lt;OrderId, Guid&gt;))]</c> only to cover a single
+/// identifier type without registering the factory.
 /// </remarks>
 public sealed class StronglyTypedIdJsonConverter<TStronglyTypedId, TValue> : JsonConverter<TStronglyTypedId>
     where TStronglyTypedId : StronglyTypedId<TValue>
     where TValue : notnull
 {
-    private static readonly Func<TValue, TStronglyTypedId> Activator = CreateActivator();
+    private readonly Func<TValue, TStronglyTypedId> _create = CompileConstructor();
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override bool HandleNull => false;
+
+    /// <inheritdoc/>
     public override TStronglyTypedId? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var value = JsonSerializer.Deserialize<TValue>(ref reader, options);
-        return value is null ? null : Activator(value);
+        return value is null ? null : _create(value);
     }
 
-    /// <inheritdoc />
-    public override void Write(Utf8JsonWriter writer, TStronglyTypedId value, JsonSerializerOptions options) =>
+    /// <inheritdoc/>
+    public override void Write(Utf8JsonWriter writer, TStronglyTypedId value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(value);
         JsonSerializer.Serialize(writer, value.Value, options);
+    }
 
-    /// <summary>
-    /// Compiles a <see cref="Func{TValue, TStronglyTypedId}"/> activator over the public
-    /// <c>(TValue Value)</c> primary constructor of <typeparamref name="TStronglyTypedId"/>.
-    /// </summary>
-    private static Func<TValue, TStronglyTypedId> CreateActivator()
+    /// <inheritdoc/>
+    public override TStronglyTypedId ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        _create(ValueConverter(options).ReadAsPropertyName(ref reader, typeof(TValue), options));
+
+    /// <inheritdoc/>
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, TStronglyTypedId value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(value);
+        ValueConverter(options).WriteAsPropertyName(writer, value.Value, options);
+    }
+
+    private static JsonConverter<TValue> ValueConverter(JsonSerializerOptions options) =>
+        (JsonConverter<TValue>)options.GetConverter(typeof(TValue));
+
+    private static Func<TValue, TStronglyTypedId> CompileConstructor()
     {
         var constructor = typeof(TStronglyTypedId).GetConstructor([typeof(TValue)])
             ?? throw new InvalidOperationException(
-                $"Type '{typeof(TStronglyTypedId)}' does not declare a public constructor with a single " +
-                $"parameter of type '{typeof(TValue)}'. Strongly-typed identifiers must follow the shape " +
-                $"'public sealed record MyId(TValue Value) : StronglyTypedId<TValue>(Value);'.");
+                $"'{typeof(TStronglyTypedId)}' has no public constructor taking a single '{typeof(TValue)}'. "
+                + $"Declare it as 'public sealed record {typeof(TStronglyTypedId).Name}({typeof(TValue).Name} Value) "
+                + $": StronglyTypedId<{typeof(TValue).Name}>(Value);'.");
 
-        var valueParameter = Expression.Parameter(typeof(TValue), "value");
-        var body = Expression.New(constructor, valueParameter);
-
-        return Expression.Lambda<Func<TValue, TStronglyTypedId>>(body, valueParameter).Compile();
+        var parameter = Expression.Parameter(typeof(TValue), "value");
+        return Expression.Lambda<Func<TValue, TStronglyTypedId>>(Expression.New(constructor, parameter), parameter).Compile();
     }
 }

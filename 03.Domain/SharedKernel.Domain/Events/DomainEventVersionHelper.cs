@@ -3,31 +3,34 @@ using System.Reflection;
 
 namespace SharedKernel.Domain.Events;
 
-/// <summary>
-/// Reads the declared schema version of a domain event type.
-/// </summary>
+/// <summary>Reads the declared schema version of a domain event type.</summary>
 /// <remarks>
-/// Use this helper in infrastructure code (messaging, outbox) to determine which
-/// deserializer or handler registration to invoke for a given domain event type.
-/// A type without a <see cref="DomainEventVersionAttribute"/> reads as version <c>1</c>. That is a
-/// runtime fallback only: every concrete event should declare its version explicitly, which
-/// analyzer <c>SK0009</c> enforces.
+/// Infrastructure (messaging, outbox) uses the version to choose a deserializer or handler. A type without a
+/// <see cref="DomainEventVersionAttribute"/> reads as version <c>1</c>; that is a runtime fallback only, because
+/// every concrete event should declare its version, which analyzer <c>SK0009</c> enforces. Lookups are cached per
+/// type, so calling this for every message is cheap.
 /// </remarks>
 public static class DomainEventVersionHelper
 {
-    // WO-051/P-311 — caches the reflection lookup per distinct Type so GetCustomAttribute runs at
-    // most once per Type for the process lifetime. Unlike StronglyTypedIdJsonConverterFactory
-    // (already cached by JsonSerializerOptions), this helper is called directly by infrastructure
-    // (messaging/outbox) on a potential per-message hot path with no caller-side cache of its own.
-    private static readonly ConcurrentDictionary<Type, int> _versionCache = new();
+    private static readonly ConcurrentDictionary<Type, int> VersionCache = new();
 
     /// <summary>
-    /// Returns the schema version declared on <paramref name="domainEventType"/> via
-    /// <see cref="DomainEventVersionAttribute"/>, or <c>1</c> when the attribute is absent.
+    /// Returns the version declared on <paramref name="domainEventType"/> with
+    /// <see cref="DomainEventVersionAttribute"/>, or <c>1</c> when it declares none.
     /// </summary>
-    /// <param name="domainEventType">The CLR type of the domain event to inspect.</param>
-    /// <returns>The declared version, or <c>1</c> as the implicit default.</returns>
-    public static int GetVersion(Type domainEventType) =>
-        _versionCache.GetOrAdd(domainEventType, static t =>
-            t.GetCustomAttribute<DomainEventVersionAttribute>(inherit: false)?.Version ?? 1);
+    /// <param name="domainEventType">The event type.</param>
+    /// <returns>The declared version, or <c>1</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="domainEventType"/> is <see langword="null"/>.</exception>
+    public static int GetVersion(Type domainEventType)
+    {
+        ArgumentNullException.ThrowIfNull(domainEventType);
+        return VersionCache.GetOrAdd(
+            domainEventType,
+            static type => type.GetCustomAttribute<DomainEventVersionAttribute>(inherit: false)?.Version ?? 1);
+    }
+
+    /// <summary>Returns the version declared on <typeparamref name="TEvent"/>, or <c>1</c> when it declares none.</summary>
+    /// <typeparam name="TEvent">The event type.</typeparam>
+    /// <returns>The declared version, or <c>1</c>.</returns>
+    public static int GetVersion<TEvent>() where TEvent : IDomainEvent => GetVersion(typeof(TEvent));
 }

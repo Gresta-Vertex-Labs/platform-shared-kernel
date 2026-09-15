@@ -1,5 +1,7 @@
 using FluentAssertions;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.Exceptions;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -7,29 +9,35 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Domain.Tests;
 
 /// <summary>
-/// T-35: P-310/WO-051 — ValueObject.TryCreate&lt;T&gt;/CheckRule tests, mirroring the existing
-/// AggregateRoot&lt;TId&gt; TryCreateTests.cs coverage.
+/// ValueObject explicit validation (EnsureValid), TryCreate and CheckRule, and their inheritance by
+/// SingleValueObject.
 /// </summary>
 public class ValueObjectTryCreateTests
 {
-    private sealed class NoNegativeAmountRule : IBusinessRule
+    private sealed class NoNegativeAmountRule(decimal amount) : IBusinessRule
     {
-        private readonly decimal _amount;
-        public NoNegativeAmountRule(decimal amount) => _amount = amount;
+        public string Code => "amount.negative";
         public string Message => "Amount must not be negative.";
-        public bool IsBroken() => _amount < 0;
+        public bool IsBroken() => amount < 0;
     }
 
-    // Uses the field-initializer / primary-constructor pattern documented as construction-order-safe
-    // on ValueObject itself — Amount/Currency are assigned before the base ValueObject() constructor
-    // invokes Validate(), so Validate() can safely read them.
-    private sealed class Money(decimal amount, string currency) : ValueObject
+    /// <summary>Assigns in the constructor body, then validates: the pattern the base now requires.</summary>
+    private sealed class Price : ValueObject
     {
-        public decimal Amount { get; } = GuardAmount(amount);
-        public string Currency { get; } = currency;
+        private Price(decimal amount, string currency)
+        {
+            CheckRule(new NoNegativeAmountRule(amount));
+            Amount = amount;
+            Currency = currency;
+            EnsureValid();
+        }
 
-        public static Result<Money> Create(decimal amount, string currency) =>
-            TryCreate(() => new Money(amount, currency));
+        public decimal Amount { get; }
+
+        public string Currency { get; }
+
+        public static ValidationResult<Price> Create(decimal amount, string currency) =>
+            TryCreate(() => new Price(amount, currency));
 
         protected override IEnumerable<object?> GetEqualityComponents()
         {
@@ -37,157 +45,123 @@ public class ValueObjectTryCreateTests
             yield return Currency;
         }
 
-        protected override IEnumerable<Error>? Validate()
+        protected override IEnumerable<Error> Validate()
         {
             if (string.IsNullOrWhiteSpace(Currency))
-                yield return Error.Validation("money.currency.required", "Currency is required.");
-        }
-
-        private static decimal GuardAmount(decimal amount)
-        {
-            CheckRule(new NoNegativeAmountRule(amount));
-            return amount;
+                yield return Error.Validation("price.currency_required", "Currency is required.");
+            if (Amount > 1_000_000m)
+                yield return Error.Validation("price.too_large", "Amount is too large.");
         }
     }
 
-    private sealed class NoNegativeAmountRuleThrower : ValueObject
+    /// <summary>Never calls EnsureValid, so its Validate rules are never applied.</summary>
+    private sealed class NeverValidated : ValueObject
     {
-        public NoNegativeAmountRuleThrower(decimal amount) => CheckRule(new NoNegativeAmountRule(amount));
+        public NeverValidated() { }
 
         protected override IEnumerable<object?> GetEqualityComponents() => [];
 
-        protected override IEnumerable<Error>? Validate() => null;
+        protected override IEnumerable<Error> Validate() => [Error.Validation("always", "Always invalid.")];
     }
 
-    private sealed class AlwaysInvalidMoney : ValueObject
+    private sealed class Percentage : SingleValueObject<int>
     {
-        private AlwaysInvalidMoney() { }
+        private Percentage(int value) : base(value) { }
 
-        public static Result<AlwaysInvalidMoney> CreateInvalid() =>
-            TryCreate<AlwaysInvalidMoney>(() =>
-                throw new SharedKernel.Core.Exceptions.ValidationException(
-                    [Error.Validation("test.error", "Always invalid")]));
+        public static ValidationResult<Percentage> Create(int value) => TryCreate(() => new Percentage(value));
 
-        protected override IEnumerable<object?> GetEqualityComponents() => [];
-
-        protected override IEnumerable<Error>? Validate() => null;
-    }
-
-    private sealed class MultipleOfFiveRule : IBusinessRule
-    {
-        private readonly int _value;
-        public MultipleOfFiveRule(int value) => _value = value;
-        public string Message => "Percentage must be a multiple of five.";
-        public bool IsBroken() => _value % 5 != 0;
-    }
-
-    // Exercises both inherited ValueObject helpers directly: Validate() (constructor-order-safe,
-    // via the field-initializer Value) enforces the range invariant, then the constructor body
-    // calls the inherited CheckRule for a business-rule invariant, and the static factory calls
-    // the inherited TryCreate — proving SingleValueObject<TValue> gets both with zero additional code.
-    private sealed class PercentageValueObject : SingleValueObject<int>
-    {
-        private PercentageValueObject(int value) : base(value) => CheckRule(new MultipleOfFiveRule(value));
-
-        public static Result<PercentageValueObject> Create(int value) =>
-            TryCreate(() => new PercentageValueObject(value));
-
-        protected override IEnumerable<Error>? Validate()
+        protected override IEnumerable<Error> Validate()
         {
             if (Value is < 0 or > 100)
                 yield return Error.Validation("percentage.range", "Value must be between 0 and 100.");
         }
     }
 
-    // --- Success path ---
-
     [Fact]
-    public void TryCreate_Success_ReturnsSuccessResult()
+    public void Success_ReturnsTheValue()
     {
-        var result = Money.Create(100m, "USD");
+        var result = Price.Create(100m, "USD");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.Amount.Should().Be(100m);
-        result.Value.Currency.Should().Be("USD");
-    }
-
-    // --- BusinessRuleViolationException → Result.Failure ---
-
-    [Fact]
-    public void TryCreate_BusinessRuleViolationException_ReturnsFailure()
-    {
-        var result = Money.Create(-50m, "USD");
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.BusinessRule);
     }
 
     [Fact]
-    public void TryCreate_BusinessRuleViolationException_ErrorCode_IsRuleViolated()
+    public void Validate_SeesMembersAssignedInTheConstructorBody()
     {
-        var result = Money.Create(-1m, "USD");
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(ErrorCodes.Domain.RuleViolated);
+        // Before EnsureValid, the base constructor validated before the body ran, so Currency was still null.
+        Price.Create(1m, "EUR").IsValid.Should().BeTrue();
     }
 
     [Fact]
-    public void CheckRule_BrokenRule_OutsideTryCreate_ThrowsBusinessRuleViolationException()
+    public void EveryValidationError_IsReturned()
     {
-        var act = () => new NoNegativeAmountRuleThrower(-1m);
+        var result = Price.Create(2_000_000m, "");
 
-        act.Should().Throw<SharedKernel.Domain.Exceptions.BusinessRuleViolationException>()
-            .Which.Rule.Should().BeOfType<NoNegativeAmountRule>();
-    }
-
-    // --- ValidationException → Result.Failure ---
-
-    [Fact]
-    public void TryCreate_ValidationException_ReturnsFailure()
-    {
-        var result = Money.Create(50m, string.Empty);
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Select(e => e.Code).Should().Equal("price.currency_required", "price.too_large");
     }
 
     [Fact]
-    public void TryCreate_ThrownValidationException_ReturnsFailure()
+    public void BrokenRule_ReturnsFailure_WithTheRulesCode()
     {
-        var result = AlwaysInvalidMoney.CreateInvalid();
+        var result = Price.Create(-1m, "USD");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
-    }
-
-    // --- SingleValueObject<TValue> inherits both helpers with zero additional code ---
-
-    [Fact]
-    public void SingleValueObject_TryCreate_Success_ReturnsSuccessResult()
-    {
-        var result = PercentageValueObject.Create(50);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Value.Should().Be(50);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Code.Should().Be("amount.negative");
     }
 
     [Fact]
-    public void SingleValueObject_TryCreate_ValidationFailure_ReturnsFailure()
+    public void FailedResult_ValueAccess_Throws()
     {
-        var result = PercentageValueObject.Create(150);
+        var act = () => Price.Create(-1m, "USD").Value;
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Validation);
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
-    public void SingleValueObject_TryCreate_BusinessRuleViolation_ReturnsFailure()
+    public void EnsureValid_ThrowsValidationException_WithAllErrors()
     {
-        // 53 is within the valid 0-100 range (Validate() passes) but is not a multiple of five,
-        // so the inherited CheckRule call in the constructor body throws BusinessRuleViolationException.
-        var result = PercentageValueObject.Create(53);
+        var act = () => new ThrowingPrice();
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.BusinessRule);
+        act.Should().Throw<ValidationException>().Which.Errors.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ValueObject_ThatNeverCallsEnsureValid_IsNotValidated()
+    {
+        var act = () => new NeverValidated();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void SingleValueObject_ValidatesAutomatically()
+    {
+        Percentage.Create(50).IsValid.Should().BeTrue();
+        Percentage.Create(150).Errors.Should().ContainSingle().Which.Code.Should().Be("percentage.range");
+    }
+
+    [Fact]
+    public void SingleValueObject_NullValue_IsAFailure()
+    {
+        var act = () => new NullableText(null!);
+
+        act.Should().Throw<DomainException>().Which.Error.Code.Should().Be(ErrorCodes.Validation.Required);
+    }
+
+    private sealed class ThrowingPrice : ValueObject
+    {
+        public ThrowingPrice() => EnsureValid();
+
+        protected override IEnumerable<object?> GetEqualityComponents() => [];
+
+        protected override IEnumerable<Error> Validate() =>
+            [Error.Validation("one", "One."), Error.Validation("two", "Two.")];
+    }
+
+    private sealed class NullableText(string value) : SingleValueObject<string>(value)
+    {
+        protected override IEnumerable<Error>? Validate() => null;
     }
 }

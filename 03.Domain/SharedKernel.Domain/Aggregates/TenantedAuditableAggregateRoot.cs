@@ -1,44 +1,40 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Guards;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Domain.Aggregates;
 
-/// <summary>
-/// Abstract aggregate root that adds tenant isolation and full audit metadata.
-/// Extends <see cref="AuditableAggregateRoot{TId}"/> and implements <see cref="IHasTenant"/>.
-/// </summary>
-/// <typeparam name="TId">The type of the aggregate's identity key. Must be non-null.</typeparam>
+/// <summary>An aggregate root with audit metadata that belongs to exactly one tenant.</summary>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
-/// <see cref="TenantId"/> is set exclusively at construction time and must never change.
-/// Tenant reassignment is a domain violation. The application layer passes the tenant identifier
-/// as a <c>Guid</c> primitive — the domain layer must never reference <c>ITenantProvider</c>
-/// from <c>12.Security</c> directly.
+/// Extends <see cref="AuditableAggregateRoot{TId}"/> with <see cref="TenantId"/>. The tenant is fixed at construction and
+/// never changes; the application layer supplies it from the resolved tenant context, because the domain
+/// never resolves tenants itself.
 /// </para>
 /// <para>
-/// The ORM-path parameterless constructor leaves <see cref="TenantId"/> as <see cref="Guid.Empty"/>.
+/// The ORM-materialization constructor leaves <see cref="TenantId"/> empty until the ORM populates it.
 /// </para>
 /// </remarks>
 public abstract class TenantedAuditableAggregateRoot<TId> : AuditableAggregateRoot<TId>, IHasTenant
     where TId : notnull
 {
-    /// <summary>
-    /// Initialises a new tenanted auditable aggregate root with the specified identity key,
-    /// tenant, and clock.
-    /// </summary>
-    /// <param name="id">The aggregate's identity key.</param>
-    /// <param name="tenantId">The tenant identifier. Supplied by the application layer.</param>
-    /// <param name="clock">The clock used to timestamp domain events raised by this aggregate.</param>
+    /// <summary>Initializes the aggregate with its identity key, owning tenant and clock.</summary>
+    /// <param name="id">The identity key.</param>
+    /// <param name="tenantId">The owning tenant.</param>
+    /// <param name="clock">The clock that timestamps events and time-dependent state.</param>
+    /// <exception cref="DomainException">
+    /// <paramref name="tenantId"/> is <see cref="Guid.Empty"/>, or <paramref name="clock"/> is <see langword="null"/>.
+    /// </exception>
     protected TenantedAuditableAggregateRoot(TId id, Guid tenantId, IClock clock) : base(id, clock)
     {
+        Guard.Throw.InvalidGuid(tenantId);
         TenantId = tenantId;
     }
 
-    /// <summary>
-    /// Protected parameterless constructor for ORM materialisation paths.
-    /// <see cref="TenantId"/> will be <see cref="Guid.Empty"/> until populated by the ORM.
-    /// </summary>
-    protected TenantedAuditableAggregateRoot() : base() { }
+    /// <summary>Initializes the aggregate for ORM materialization. Do not call from domain code.</summary>
+    protected TenantedAuditableAggregateRoot() { }
 
     /// <inheritdoc/>
     public Guid TenantId { get; private set; }

@@ -1,70 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <PackageReleaseNotes>1.7.0 (WO-051 / P-307..P-313):
-- Fixed a silent eager-loading data-loss defect (P-307): AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, and NotSpecification&lt;T&gt; now union both Includes and StringIncludes from their operand(s) — previously AndSpecification dropped expression Includes entirely and OrSpecification/NotSpecification dropped both Includes and StringIncludes.
-- KeysetSpecification&lt;T, TKey&gt; added (P-308): cursor/seek-pagination sibling to PagedSpecification&lt;T&gt;, extends ReadOnlySpecification&lt;T&gt;; constrained `where TKey : struct, IComparable&lt;TKey&gt;` (a `struct` constraint is required for AfterKey's TKey? to compile to a real Nullable&lt;TKey&gt; instead of erasing to plain TKey); mandatory Id tiebreaker via ApplyThenBy; guards on take/partial-cursor.
-- ISpecification&lt;T&gt;.AsSplitQuery flag added (P-308): default false; Specification&lt;T&gt;.ApplySplitQuery() builder; composite specs propagate true when either operand has it set (mirrors AsNoTracking/IncludeDeleted).
-- IHasAggregateId&lt;TId&gt; opt-in marker interface added (P-309): single TId AggregateId member, mirroring IHasTenant exactly; a concrete domain event may additionally implement it to declare which aggregate raised it.
-- ValueObject.TryCreate&lt;T&gt;/CheckRule added (P-310): identical shape and exception-mapping semantics to AggregateRoot&lt;TId&gt;'s existing helpers of the same name; SingleValueObject&lt;TValue&gt; inherits both for free.
-- SharedKernel.Guards adopted as a third 01.Core ProjectReference (P-311): AggregateRoot&lt;TId&gt;'s clock constructor parameter is now guarded via Guard.Throw.Null — a single guard site that also protects all three tenanted aggregate bases via constructor chaining; StronglyTypedId&lt;TValue&gt;.Value and SingleValueObject&lt;TValue&gt;.Value are guarded against null for reference-type TValue instantiations (no-op for value types).
-- DomainEventVersionHelper.GetVersion(Type) now caches its reflection lookup in a ConcurrentDictionary&lt;Type, int&gt; (P-311) — the GetCustomAttribute call happens at most once per distinct Type for the process lifetime.
-- Entity&lt;TId&gt; and ValueObject now implement IEquatable&lt;T&gt; (P-311): Equals(T? other) delegates to the existing Equals(object?) override — avoids boxing/virtual dispatch for generic-collection consumers (List&lt;T&gt;.Contains, Dictionary keys, LINQ Distinct/Except).
-- IPolicy&lt;T&gt;.Explain added as a C# default interface member (P-312): zero-breaking-change — any existing IPolicy&lt;T&gt; implementor that only ever declared IsCompliant continues to compile unmodified; AndPolicy&lt;T&gt;/OrPolicy&lt;T&gt;/NotPolicy&lt;T&gt; override it to aggregate/synthesize a meaningful explanation.
-- Specification&lt;T&gt;.Create(Expression&lt;Func&lt;T, bool&gt;&gt; criteria) added (P-313): ad hoc, criteria-only factory for genuinely one-off/throwaway filters, extending the AllSpecification&lt;T&gt;/EmptySpecification&lt;T&gt; sealed-wrapper precedent; does not relax the constructor-only builder rule for named, reusable specifications.
-- Zero new NuGet dependencies — SharedKernel.Guards is a dependency-free 01.Core ProjectReference, same class as the two existing SharedKernel.Primitives/SharedKernel.Core references.
-
-1.6.0 (WO-024 / P-152):
-- StronglyTypedIdJsonConverterFactory and StronglyTypedIdJsonConverter&lt;TStronglyTypedId, TValue&gt; added (C-37): generic System.Text.Json converter factory for StronglyTypedId&lt;TValue&gt; types.
-- Supported TValue shapes: Guid, int, long, string. CanConvert walks Type.BaseType to detect a closed StronglyTypedId&lt;TValue&gt; for these four shapes.
-- Wire format is the bare TValue primitive (a JSON string for Guid/string, a JSON number for int/long) — never an object wrapper such as { "value": ... }.
-- Opt-in only: not auto-registered. Consuming services call options.Converters.Add(new StronglyTypedIdJsonConverterFactory()).
-- Activator pattern: CreateConverter is called once per closed type by STJ (cached by JsonSerializerOptions); the converter compiles a Func&lt;TValue, TStronglyTypedId&gt; once via Expression.New over the concrete type's public (TValue Value) primary constructor — same class of startup-time reflection as DomainEventVersionHelper.GetVersion(Type).
-- Concrete strongly-typed ID types must follow the documented shape: public sealed record OrderId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value);
-- Zero new NuGet dependencies — System.Text.Json is part of the net10.0 shared framework.
-
-1.5.0 (WO-014 / P-081):
-- IDomainEventDispatcher interface added (C-36): single method Task DispatchAsync(IReadOnlyList&lt;IDomainEvent&gt;, CancellationToken); opt-in DI contract — not auto-registered by any infrastructure builder.
-- Contract rules: empty events list must be treated as a no-op by any conforming implementation; handler exceptions must propagate unchanged without swallowing.
-- Consumed by EfUnitOfWork in 06.Persistence.EfCore as an optional dependency; consuming services register an implementation alongside their persistence builder.
-- IDomainEventHandler&lt;TEvent&gt; is NOT added here — handler registration remains 05.Application territory. MediatR-based implementation (MediatRDomainEventDispatcher) is a future 05.Application phase.
-- Zero new NuGet dependencies — references only IDomainEvent already in this package.
-
-1.4.0 (WO-016 / P-095):
-- ISpecification&lt;T&gt;.IncludeDeleted flag added (C-35): when true, the consuming repository must bypass the global soft-delete query filter so soft-deleted records are included in results; default false.
-- Specification&lt;T&gt;.IncludeSoftDeleted() protected builder method added: call in concrete spec constructors for admin/audit/export/recovery specifications only; never in user-facing query specifications.
-- AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, NotSpecification&lt;T&gt; now propagate IncludeDeleted = true when any operand has it set (more-permissive wins, mirrors AsNoTracking propagation).
-- WARNING: IgnoreQueryFilters() bypasses ALL EF Core global query filters including tenant isolation; re-apply tenant criterion manually via AddCriteria(e =&gt; e.TenantId == tenantId) for tenant-scoped soft-delete queries.
-- Prerequisite for P-080 Capability 5 (soft-delete filter encapsulation in 06.Persistence.EfCore).
-
-1.3.0 (WO-011):
-- IHasDomainEvents interface extracted (P-045): DomainEvents + ClearDomainEvents moved to IHasDomainEvents; IAggregateRoot&lt;TId&gt; extends it; infrastructure dispatch must depend on IHasDomainEvents only.
-- SingleValueObject&lt;TValue&gt; abstract class added (P-046): extends ValueObject; Value assigned before Validate() runs (construction-order safe); sealed GetEqualityComponents, ToString, implicit operator TValue.
-- DomainService abstract class added (P-047): implements IDomainService; protected static CheckRule; no IClock, no DomainEvents, no repository access.
-- IHasVersion interface added (P-048): int Version on AggregateRoot&lt;TId&gt;; starts at 0; increments on every RaiseDomainEvent; ClearDomainEvents does not decrement.
-- DomainNotFoundException added (P-049): extends DomainException; AggregateType + AggregateId; Error.NotFound payload; BusinessRuleViolationException now extends DomainException (not SharedKernelException directly).
-- AllSpecification&lt;T&gt; and EmptySpecification&lt;T&gt; sentinel classes added (P-050): AND/OR identity elements; OrSpecification null-criteria handling fixed.
-- PagedSpecification&lt;T&gt; abstract class added (P-051): extends ReadOnlySpecification&lt;T&gt;; 1-based page; guards for page/pageSize/MaxPageSize(1000); AsNoTracking always true.
-- ApplyThenByDescending convenience alias added to Specification&lt;T&gt; (P-052): delegates to ApplyThenBy(keySelector, descending: true); ordering precedence documented.
-- DomainEventVersionAttribute and DomainEventVersionHelper added (P-053): attribute on concrete event class; helper returns declared version or 1 as default; IDomainEvent interface unchanged.
-- IAggregateFactory&lt;TAggregateRoot, TId&gt; zero-member marker interface added (P-054); TryCreate&lt;T&gt; protected static helper on AggregateRoot&lt;TId&gt;: BusinessRuleViolationException -&gt; Result.Failure; ValidationException -&gt; Result.Failure; success -&gt; Result.Success.
-
-1.2.0 (WO-010):
-- BusinessRuleViolationException now uses Error.BusinessRule(ErrorCodes.Domain.RuleViolated, ...) (P-043): ErrorType.BusinessRule maps to HTTP 422; magic string "domain.rule.violated" eliminated.
-- ValueObject constructor-call-order hazard documented (P-043): base constructor calls Validate() before subclass body; two safe patterns: field-initializer assignment and factory method returning Result&lt;T&gt;.
-- TenantedAggregateRoot&lt;TId&gt;, TenantedAuditableAggregateRoot&lt;TId&gt;, TenantedFullAuditableAggregateRoot&lt;TId&gt; added (P-044): TenantId set at construction (private set); ORM-path parameterless constructor leaves TenantId = Guid.Empty.
-
-1.1.0 (WO-009):
-- FullAuditableAggregateRoot&lt;TId&gt; now correctly extends AuditableSoftDeletableAggregateRoot&lt;TId&gt; (P-036): all soft-delete fields, MarkAsDeleted, and OnDelete are inherited from the hierarchy — no duplication.
-- Specification&lt;T&gt;.IsSatisfiedBy(T) added for in-domain/in-test evaluation (P-038): compiles Criteria once and caches the delegate; returns true when Criteria is null.
-- DomainEvent&lt;TPayload&gt; abstract record added (P-039): extends DomainEvent; required TPayload Payload where TPayload : notnull; non-generic DomainEvent unchanged.
-- ISpecification&lt;T&gt;.AsNoTracking flag and ReadOnlySpecification&lt;T&gt; convenience base added (P-040): composites propagate true when either operand is true.
-- AggregateRoot&lt;TId&gt;.Now remarks tightened (P-041): must not be used to supply OccurredOn; use RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;) factory overload.</PackageReleaseNotes>
-    <Description>DDD building blocks for Platform.SharedKernel microservices: Entity, AggregateRoot, ValueObject, IDomainEvent, specifications, business rules, policies, and strongly-typed IDs.</Description>
-    <PackageTags>ddd;domain;aggregate;valueobject;specification;SharedKernel</PackageTags>
+    <Description>Domain-driven design building blocks for .NET services: entities with identity equality, aggregate roots that raise timestamped domain events and enforce business rules, value objects with explicit validation, strongly-typed identifiers with JSON support, audit, soft-delete and tenant bases, query specifications with offset and keyset paging, domain policies, and a currency-aware Money type with loss-free allocation. Built on SharedKernel.Primitives and SharedKernel.Core.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;ddd;domain-driven-design;aggregate;entity;value-object;domain-events;specification;money;strongly-typed-id</PackageTags>
+    <!--
+      Ship the XML documentation alongside the assembly. Not redundant with Directory.Build.targets: the SDK
+      assigns GenerateDocumentationFile=false early, so that file's empty-string-guarded default never applies.
+      CS1591 below makes an undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027 discourage optional parameters on overloads. Money's arithmetic and allocation overloads take an
+         optional rounding policy, which reads better at call sites than a second overload per method. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

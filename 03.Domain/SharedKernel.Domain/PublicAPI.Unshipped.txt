@@ -1,0 +1,405 @@
+#nullable enable
+SharedKernel.Domain.Abstractions.IAggregateFactory<TAggregateRoot, TId>
+SharedKernel.Domain.Abstractions.IAggregateRoot<TId>
+SharedKernel.Domain.Abstractions.IDomainEventDispatcher
+SharedKernel.Domain.Abstractions.IDomainEventDispatcher.DispatchAsync(System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Events.IDomainEvent!>! events, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+SharedKernel.Domain.Abstractions.IDomainService
+SharedKernel.Domain.Abstractions.IEntity<TId>
+SharedKernel.Domain.Abstractions.IEntity<TId>.Id.get -> TId
+SharedKernel.Domain.Abstractions.IHasAggregateId<TId>
+SharedKernel.Domain.Abstractions.IHasAggregateId<TId>.AggregateId.get -> TId
+SharedKernel.Domain.Abstractions.IHasAudit
+SharedKernel.Domain.Abstractions.IHasAudit.ModifiedBy.get -> string?
+SharedKernel.Domain.Abstractions.IHasAudit.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Abstractions.IHasClock
+SharedKernel.Domain.Abstractions.IHasClock.AttachClock(SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Abstractions.IHasClock.IsClockAttached.get -> bool
+SharedKernel.Domain.Abstractions.IHasConcurrency
+SharedKernel.Domain.Abstractions.IHasConcurrency.RowVersion.get -> byte[]!
+SharedKernel.Domain.Abstractions.IHasCreatedAudit
+SharedKernel.Domain.Abstractions.IHasCreatedAudit.CreatedBy.get -> string!
+SharedKernel.Domain.Abstractions.IHasCreatedAudit.CreatedOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Abstractions.IHasDomainEvents
+SharedKernel.Domain.Abstractions.IHasDomainEvents.ClearDomainEvents() -> void
+SharedKernel.Domain.Abstractions.IHasDomainEvents.DomainEvents.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>!
+SharedKernel.Domain.Abstractions.IHasTenant
+SharedKernel.Domain.Abstractions.IHasTenant.TenantId.get -> System.Guid
+SharedKernel.Domain.Abstractions.IHasVersion
+SharedKernel.Domain.Abstractions.IHasVersion.Version.get -> int
+SharedKernel.Domain.Abstractions.ISoftDeletable
+SharedKernel.Domain.Abstractions.ISoftDeletable.DeletedBy.get -> string?
+SharedKernel.Domain.Abstractions.ISoftDeletable.DeletedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Abstractions.ISoftDeletable.IsDeleted.get -> bool
+SharedKernel.Domain.Abstractions.IStronglyTypedId<TValue>
+SharedKernel.Domain.Abstractions.IStronglyTypedId<TValue>.Value.get -> TValue
+SharedKernel.Domain.Abstractions.IValueObject
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.AggregateRoot() -> void
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.AggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.ClearDomainEvents() -> void
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.DomainEvents.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>!
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.Now.get -> System.DateTimeOffset
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.RaiseDomainEvent(SharedKernel.Domain.Events.IDomainEvent! domainEvent) -> void
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.RaiseDomainEvent(System.Func<System.DateTimeOffset, SharedKernel.Domain.Events.IDomainEvent!>! factory) -> void
+SharedKernel.Domain.Aggregates.AggregateRoot<TId>.Version.get -> int
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.AuditableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.AuditableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.CreatedBy.get -> string!
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.CreatedOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.ModifiedBy.get -> string?
+SharedKernel.Domain.Aggregates.AuditableAggregateRoot<TId>.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.AuditableSoftDeletableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.AuditableSoftDeletableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.CreatedBy.get -> string!
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.CreatedOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.DeletedBy.get -> string?
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.DeletedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.IsDeleted.get -> bool
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.MarkAsDeleted(string! deletedBy) -> void
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.ModifiedBy.get -> string?
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.FullAuditableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.FullAuditableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.RowVersion.get -> byte[]!
+SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.RowVersion.set -> void
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.DeletedBy.get -> string?
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.DeletedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.IsDeleted.get -> bool
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.MarkAsDeleted(string! deletedBy) -> void
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantedAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantedAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantedAuditableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantedAuditableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantedAuditableSoftDeletableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantedAuditableSoftDeletableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantedFullAuditableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantedFullAuditableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantedSoftDeletableAggregateRoot() -> void
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantedSoftDeletableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.BusinessRules.AndBusinessRule
+SharedKernel.Domain.BusinessRules.AndBusinessRule.AndBusinessRule(SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> void
+SharedKernel.Domain.BusinessRules.AndBusinessRule.Code.get -> string!
+SharedKernel.Domain.BusinessRules.AndBusinessRule.IsBroken() -> bool
+SharedKernel.Domain.BusinessRules.AndBusinessRule.Message.get -> string!
+SharedKernel.Domain.BusinessRules.BusinessRuleExtensions
+SharedKernel.Domain.BusinessRules.IBusinessRule
+SharedKernel.Domain.BusinessRules.IBusinessRule.Code.get -> string!
+SharedKernel.Domain.BusinessRules.IBusinessRule.IsBroken() -> bool
+SharedKernel.Domain.BusinessRules.IBusinessRule.Message.get -> string!
+SharedKernel.Domain.BusinessRules.NotBusinessRule
+SharedKernel.Domain.BusinessRules.NotBusinessRule.Code.get -> string!
+SharedKernel.Domain.BusinessRules.NotBusinessRule.IsBroken() -> bool
+SharedKernel.Domain.BusinessRules.NotBusinessRule.Message.get -> string!
+SharedKernel.Domain.BusinessRules.NotBusinessRule.NotBusinessRule(SharedKernel.Domain.BusinessRules.IBusinessRule! inner, string! code, string! message) -> void
+SharedKernel.Domain.BusinessRules.OrBusinessRule
+SharedKernel.Domain.BusinessRules.OrBusinessRule.Code.get -> string!
+SharedKernel.Domain.BusinessRules.OrBusinessRule.IsBroken() -> bool
+SharedKernel.Domain.BusinessRules.OrBusinessRule.Message.get -> string!
+SharedKernel.Domain.BusinessRules.OrBusinessRule.OrBusinessRule(SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> void
+SharedKernel.Domain.DomainServices.DomainService
+SharedKernel.Domain.DomainServices.DomainService.DomainService() -> void
+SharedKernel.Domain.Entities.AuditableEntity<TId>
+SharedKernel.Domain.Entities.AuditableEntity<TId>.AuditableEntity() -> void
+SharedKernel.Domain.Entities.AuditableEntity<TId>.AuditableEntity(TId id) -> void
+SharedKernel.Domain.Entities.AuditableEntity<TId>.CreatedBy.get -> string!
+SharedKernel.Domain.Entities.AuditableEntity<TId>.CreatedOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Entities.AuditableEntity<TId>.ModifiedBy.get -> string?
+SharedKernel.Domain.Entities.AuditableEntity<TId>.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.AuditableSoftDeletableEntity() -> void
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.AuditableSoftDeletableEntity(TId id) -> void
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.CreatedBy.get -> string!
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.CreatedOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.DeletedBy.get -> string?
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.DeletedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.IsDeleted.get -> bool
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.MarkAsDeleted(string! deletedBy, System.DateTimeOffset deletedOn) -> void
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.ModifiedBy.get -> string?
+SharedKernel.Domain.Entities.AuditableSoftDeletableEntity<TId>.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Entities.Entity<TId>
+SharedKernel.Domain.Entities.Entity<TId>.Entity() -> void
+SharedKernel.Domain.Entities.Entity<TId>.Entity(TId id) -> void
+SharedKernel.Domain.Entities.Entity<TId>.Equals(SharedKernel.Domain.Entities.Entity<TId>? other) -> bool
+SharedKernel.Domain.Entities.Entity<TId>.Id.get -> TId
+SharedKernel.Domain.Entities.Entity<TId>.IsTransient() -> bool
+SharedKernel.Domain.Entities.FullAuditableEntity<TId>
+SharedKernel.Domain.Entities.FullAuditableEntity<TId>.FullAuditableEntity() -> void
+SharedKernel.Domain.Entities.FullAuditableEntity<TId>.FullAuditableEntity(TId id) -> void
+SharedKernel.Domain.Entities.FullAuditableEntity<TId>.RowVersion.get -> byte[]!
+SharedKernel.Domain.Entities.FullAuditableEntity<TId>.RowVersion.set -> void
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.DeletedBy.get -> string?
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.DeletedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.IsDeleted.get -> bool
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.MarkAsDeleted(string! deletedBy, System.DateTimeOffset deletedOn) -> void
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.SoftDeletableEntity() -> void
+SharedKernel.Domain.Entities.SoftDeletableEntity<TId>.SoftDeletableEntity(TId id) -> void
+SharedKernel.Domain.Events.DomainEvent
+SharedKernel.Domain.Events.DomainEvent.DomainEvent() -> void
+SharedKernel.Domain.Events.DomainEvent.DomainEvent(SharedKernel.Domain.Events.DomainEvent! original) -> void
+SharedKernel.Domain.Events.DomainEvent.Id.get -> System.Guid
+SharedKernel.Domain.Events.DomainEvent.Id.init -> void
+SharedKernel.Domain.Events.DomainEvent.OccurredOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Events.DomainEvent.OccurredOn.init -> void
+SharedKernel.Domain.Events.DomainEvent<TPayload>
+SharedKernel.Domain.Events.DomainEvent<TPayload>.DomainEvent() -> void
+SharedKernel.Domain.Events.DomainEvent<TPayload>.DomainEvent(SharedKernel.Domain.Events.DomainEvent<TPayload>! original) -> void
+SharedKernel.Domain.Events.DomainEvent<TPayload>.Payload.get -> TPayload
+SharedKernel.Domain.Events.DomainEvent<TPayload>.Payload.init -> void
+SharedKernel.Domain.Events.DomainEventVersionAttribute
+SharedKernel.Domain.Events.DomainEventVersionAttribute.DomainEventVersionAttribute(int version) -> void
+SharedKernel.Domain.Events.DomainEventVersionAttribute.Version.get -> int
+SharedKernel.Domain.Events.DomainEventVersionHelper
+SharedKernel.Domain.Events.IDomainEvent
+SharedKernel.Domain.Events.IDomainEvent.Id.get -> System.Guid
+SharedKernel.Domain.Events.IDomainEvent.OccurredOn.get -> System.DateTimeOffset
+SharedKernel.Domain.Exceptions.BusinessRuleViolationException
+SharedKernel.Domain.Exceptions.BusinessRuleViolationException.BusinessRuleViolationException(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+SharedKernel.Domain.Exceptions.BusinessRuleViolationException.Rule.get -> SharedKernel.Domain.BusinessRules.IBusinessRule!
+SharedKernel.Domain.Exceptions.DomainNotFoundException
+SharedKernel.Domain.Exceptions.DomainNotFoundException.AggregateId.get -> object!
+SharedKernel.Domain.Exceptions.DomainNotFoundException.AggregateType.get -> System.Type!
+SharedKernel.Domain.Exceptions.DomainNotFoundException.DomainNotFoundException(System.Type! aggregateType, object! aggregateId) -> void
+SharedKernel.Domain.Monetary.Currency
+SharedKernel.Domain.Monetary.Currency.Code.get -> string!
+SharedKernel.Domain.Monetary.Currency.MinorUnitDigits.get -> int
+SharedKernel.Domain.Monetary.CurrencyCatalog
+SharedKernel.Domain.Monetary.CurrencyMismatchRule
+SharedKernel.Domain.Monetary.CurrencyMismatchRule.Code.get -> string!
+SharedKernel.Domain.Monetary.CurrencyMismatchRule.CurrencyMismatchRule(SharedKernel.Domain.Monetary.Currency! expected, SharedKernel.Domain.Monetary.Currency! actual) -> void
+SharedKernel.Domain.Monetary.CurrencyMismatchRule.IsBroken() -> bool
+SharedKernel.Domain.Monetary.CurrencyMismatchRule.Message.get -> string!
+SharedKernel.Domain.Monetary.IExchangeRateProvider
+SharedKernel.Domain.Monetary.IExchangeRateProvider.GetExchangeRateAsync(SharedKernel.Domain.Monetary.Currency! source, SharedKernel.Domain.Monetary.Currency! target, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<decimal>!>!
+SharedKernel.Domain.Monetary.Money
+SharedKernel.Domain.Monetary.Money.Abs() -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.Add(SharedKernel.Domain.Monetary.Money! other) -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.Allocate(System.Collections.Generic.IReadOnlyList<int>! ratios) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Monetary.Money!>!
+SharedKernel.Domain.Monetary.Money.Allocate(int numberOfParts) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Monetary.Money!>!
+SharedKernel.Domain.Monetary.Money.Amount.get -> decimal
+SharedKernel.Domain.Monetary.Money.CompareTo(SharedKernel.Domain.Monetary.Money? other) -> int
+SharedKernel.Domain.Monetary.Money.Currency.get -> SharedKernel.Domain.Monetary.Currency!
+SharedKernel.Domain.Monetary.Money.Divide(decimal divisor, SharedKernel.Domain.Monetary.RoundingPolicy roundingPolicy = SharedKernel.Domain.Monetary.RoundingPolicy.BankersRounding) -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.IsNegative.get -> bool
+SharedKernel.Domain.Monetary.Money.IsPositive.get -> bool
+SharedKernel.Domain.Monetary.Money.IsZero.get -> bool
+SharedKernel.Domain.Monetary.Money.Multiply(decimal factor, SharedKernel.Domain.Monetary.RoundingPolicy roundingPolicy = SharedKernel.Domain.Monetary.RoundingPolicy.BankersRounding) -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.Negate() -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.Subtract(SharedKernel.Domain.Monetary.Money! other) -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Domain.Monetary.Money.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+SharedKernel.Domain.Monetary.MoneyExtensions
+SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Monetary.RoundingPolicy.AwayFromZero = 1 -> SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Monetary.RoundingPolicy.BankersRounding = 0 -> SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Monetary.RoundingPolicy.Ceiling = 3 -> SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Monetary.RoundingPolicy.Floor = 4 -> SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Monetary.RoundingPolicy.ToZero = 2 -> SharedKernel.Domain.Monetary.RoundingPolicy
+SharedKernel.Domain.Policies.AndPolicy<T>
+SharedKernel.Domain.Policies.AndPolicy<T>.AndPolicy(SharedKernel.Domain.Policies.IPolicy<T>! left, SharedKernel.Domain.Policies.IPolicy<T>! right) -> void
+SharedKernel.Domain.Policies.AndPolicy<T>.Explain(T subject) -> string!
+SharedKernel.Domain.Policies.AndPolicy<T>.IsCompliant(T subject) -> bool
+SharedKernel.Domain.Policies.IPolicy<T>
+SharedKernel.Domain.Policies.IPolicy<T>.Explain(T subject) -> string!
+SharedKernel.Domain.Policies.IPolicy<T>.IsCompliant(T subject) -> bool
+SharedKernel.Domain.Policies.NotPolicy<T>
+SharedKernel.Domain.Policies.NotPolicy<T>.Explain(T subject) -> string!
+SharedKernel.Domain.Policies.NotPolicy<T>.IsCompliant(T subject) -> bool
+SharedKernel.Domain.Policies.NotPolicy<T>.NotPolicy(SharedKernel.Domain.Policies.IPolicy<T>! inner, string! explanation) -> void
+SharedKernel.Domain.Policies.OrPolicy<T>
+SharedKernel.Domain.Policies.OrPolicy<T>.Explain(T subject) -> string!
+SharedKernel.Domain.Policies.OrPolicy<T>.IsCompliant(T subject) -> bool
+SharedKernel.Domain.Policies.OrPolicy<T>.OrPolicy(SharedKernel.Domain.Policies.IPolicy<T>! left, SharedKernel.Domain.Policies.IPolicy<T>! right) -> void
+SharedKernel.Domain.Policies.PolicyExtensions
+SharedKernel.Domain.Specifications.AllSpecification<T>
+SharedKernel.Domain.Specifications.AllSpecification<T>.AllSpecification() -> void
+SharedKernel.Domain.Specifications.AndSpecification<T>
+SharedKernel.Domain.Specifications.AndSpecification<T>.AndSpecification(SharedKernel.Domain.Specifications.Specification<T>! left, SharedKernel.Domain.Specifications.Specification<T>! right) -> void
+SharedKernel.Domain.Specifications.EmptySpecification<T>
+SharedKernel.Domain.Specifications.EmptySpecification<T>.EmptySpecification() -> void
+SharedKernel.Domain.Specifications.ISpecification<T>
+SharedKernel.Domain.Specifications.ISpecification<T>.AsNoTracking.get -> bool
+SharedKernel.Domain.Specifications.ISpecification<T>.AsSplitQuery.get -> bool
+SharedKernel.Domain.Specifications.ISpecification<T>.Criteria.get -> System.Linq.Expressions.Expression<System.Func<T, bool>!>?
+SharedKernel.Domain.Specifications.ISpecification<T>.IncludeDeleted.get -> bool
+SharedKernel.Domain.Specifications.ISpecification<T>.Includes.get -> System.Collections.Generic.IReadOnlyList<System.Linq.Expressions.Expression<System.Func<T, object!>!>!>!
+SharedKernel.Domain.Specifications.ISpecification<T>.IsDistinct.get -> bool
+SharedKernel.Domain.Specifications.ISpecification<T>.OrderBy.get -> System.Linq.Expressions.Expression<System.Func<T, object!>!>?
+SharedKernel.Domain.Specifications.ISpecification<T>.OrderByDescending.get -> System.Linq.Expressions.Expression<System.Func<T, object!>!>?
+SharedKernel.Domain.Specifications.ISpecification<T>.Skip.get -> int?
+SharedKernel.Domain.Specifications.ISpecification<T>.StringIncludes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Domain.Specifications.ISpecification<T>.Take.get -> int?
+SharedKernel.Domain.Specifications.ISpecification<T>.ThenBys.get -> System.Collections.Generic.IReadOnlyList<(System.Linq.Expressions.Expression<System.Func<T, object!>!>! KeySelector, bool Descending)>!
+SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey>
+SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey>.AfterId.get -> object?
+SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey>.AfterKey.get -> TKey?
+SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey>.Descending.get -> bool
+SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey>.KeysetSpecification(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector, System.Linq.Expressions.Expression<System.Func<T, object!>!>! idSelector, TKey? afterKey, object? afterId, bool descending, int take) -> void
+SharedKernel.Domain.Specifications.NotSpecification<T>
+SharedKernel.Domain.Specifications.NotSpecification<T>.NotSpecification(SharedKernel.Domain.Specifications.Specification<T>! spec) -> void
+SharedKernel.Domain.Specifications.OrSpecification<T>
+SharedKernel.Domain.Specifications.OrSpecification<T>.OrSpecification(SharedKernel.Domain.Specifications.Specification<T>! left, SharedKernel.Domain.Specifications.Specification<T>! right) -> void
+SharedKernel.Domain.Specifications.PagedSpecification<T>
+SharedKernel.Domain.Specifications.PagedSpecification<T>.Page.get -> int
+SharedKernel.Domain.Specifications.PagedSpecification<T>.PageSize.get -> int
+SharedKernel.Domain.Specifications.PagedSpecification<T>.PagedSpecification(int page, int pageSize) -> void
+SharedKernel.Domain.Specifications.ReadOnlySpecification<T>
+SharedKernel.Domain.Specifications.ReadOnlySpecification<T>.ReadOnlySpecification() -> void
+SharedKernel.Domain.Specifications.Specification<T>
+SharedKernel.Domain.Specifications.Specification<T>.AddCriteria(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> void
+SharedKernel.Domain.Specifications.Specification<T>.AddInclude(System.Linq.Expressions.Expression<System.Func<T, object!>!>! include) -> void
+SharedKernel.Domain.Specifications.Specification<T>.AddStringInclude(string! path) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyDistinct() -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyNoTracking() -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyOrderBy(System.Linq.Expressions.Expression<System.Func<T, object!>!>! orderBy) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyOrderByDescending(System.Linq.Expressions.Expression<System.Func<T, object!>!>! orderByDescending) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyPaging(int skip, int take) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplySplitQuery() -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyThenBy(System.Linq.Expressions.Expression<System.Func<T, object!>!>! keySelector, bool descending) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyThenByDescending(System.Linq.Expressions.Expression<System.Func<T, object!>!>! keySelector) -> void
+SharedKernel.Domain.Specifications.Specification<T>.AsNoTracking.get -> bool
+SharedKernel.Domain.Specifications.Specification<T>.AsSplitQuery.get -> bool
+SharedKernel.Domain.Specifications.Specification<T>.Criteria.get -> System.Linq.Expressions.Expression<System.Func<T, bool>!>?
+SharedKernel.Domain.Specifications.Specification<T>.IncludeDeleted.get -> bool
+SharedKernel.Domain.Specifications.Specification<T>.IncludeSoftDeleted() -> void
+SharedKernel.Domain.Specifications.Specification<T>.Includes.get -> System.Collections.Generic.IReadOnlyList<System.Linq.Expressions.Expression<System.Func<T, object!>!>!>!
+SharedKernel.Domain.Specifications.Specification<T>.IsDistinct.get -> bool
+SharedKernel.Domain.Specifications.Specification<T>.IsSatisfiedBy(T entity) -> bool
+SharedKernel.Domain.Specifications.Specification<T>.OrderBy.get -> System.Linq.Expressions.Expression<System.Func<T, object!>!>?
+SharedKernel.Domain.Specifications.Specification<T>.OrderByDescending.get -> System.Linq.Expressions.Expression<System.Func<T, object!>!>?
+SharedKernel.Domain.Specifications.Specification<T>.Skip.get -> int?
+SharedKernel.Domain.Specifications.Specification<T>.Specification() -> void
+SharedKernel.Domain.Specifications.Specification<T>.StringIncludes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Domain.Specifications.Specification<T>.Take.get -> int?
+SharedKernel.Domain.Specifications.Specification<T>.ThenBys.get -> System.Collections.Generic.IReadOnlyList<(System.Linq.Expressions.Expression<System.Func<T, object!>!>! KeySelector, bool Descending)>!
+SharedKernel.Domain.Specifications.SpecificationExtensions
+SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>
+SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.StronglyTypedIdJsonConverter() -> void
+SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverterFactory
+SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverterFactory.StronglyTypedIdJsonConverterFactory() -> void
+SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>
+SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Deconstruct(out TValue Value) -> void
+SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.StronglyTypedId(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>! original) -> void
+SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.StronglyTypedId(TValue Value) -> void
+SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Value.get -> TValue
+SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>
+SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.SingleValueObject(TValue value) -> void
+SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.Value.get -> TValue
+SharedKernel.Domain.ValueObjects.ValueObject
+SharedKernel.Domain.ValueObjects.ValueObject.EnsureValid() -> void
+SharedKernel.Domain.ValueObjects.ValueObject.Equals(SharedKernel.Domain.ValueObjects.ValueObject? other) -> bool
+SharedKernel.Domain.ValueObjects.ValueObject.ValueObject() -> void
+abstract SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.OnDelete() -> void
+abstract SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.OnDelete() -> void
+abstract SharedKernel.Domain.Events.DomainEvent.<Clone>$() -> SharedKernel.Domain.Events.DomainEvent!
+abstract SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.<Clone>$() -> SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>!
+abstract SharedKernel.Domain.ValueObjects.ValueObject.GetEqualityComponents() -> System.Collections.Generic.IEnumerable<object?>!
+abstract SharedKernel.Domain.ValueObjects.ValueObject.Validate() -> System.Collections.Generic.IEnumerable<SharedKernel.Primitives.Errors.Error!>?
+const SharedKernel.Domain.Monetary.CurrencyCatalog.RegistryAsOf = "2026-09" -> string!
+const SharedKernel.Domain.Monetary.CurrencyMismatchRule.ErrorCode = "money.currency_mismatch" -> string!
+const SharedKernel.Domain.Specifications.PagedSpecification<T>.MaxPageSize = 1000 -> int
+override SharedKernel.Domain.Events.DomainEvent.Equals(object? obj) -> bool
+override SharedKernel.Domain.Events.DomainEvent.GetHashCode() -> int
+override SharedKernel.Domain.Events.DomainEvent.ToString() -> string!
+override SharedKernel.Domain.Events.DomainEvent<TPayload>.EqualityContract.get -> System.Type!
+override SharedKernel.Domain.Events.DomainEvent<TPayload>.Equals(object? obj) -> bool
+override SharedKernel.Domain.Events.DomainEvent<TPayload>.GetHashCode() -> int
+override SharedKernel.Domain.Events.DomainEvent<TPayload>.PrintMembers(System.Text.StringBuilder! builder) -> bool
+override SharedKernel.Domain.Events.DomainEvent<TPayload>.ToString() -> string!
+override SharedKernel.Domain.Monetary.Money.ToString() -> string!
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.HandleNull.get -> bool
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> TStronglyTypedId?
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.ReadAsPropertyName(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> TStronglyTypedId!
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.Write(System.Text.Json.Utf8JsonWriter! writer, TStronglyTypedId! value, System.Text.Json.JsonSerializerOptions! options) -> void
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.WriteAsPropertyName(System.Text.Json.Utf8JsonWriter! writer, TStronglyTypedId! value, System.Text.Json.JsonSerializerOptions! options) -> void
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverterFactory.CanConvert(System.Type! typeToConvert) -> bool
+override SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverterFactory.CreateConverter(System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Text.Json.Serialization.JsonConverter!
+override SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Equals(object? obj) -> bool
+override SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.GetHashCode() -> int
+override SharedKernel.Domain.ValueObjects.ValueObject.Equals(object? obj) -> bool
+override SharedKernel.Domain.ValueObjects.ValueObject.GetHashCode() -> int
+override abstract SharedKernel.Domain.Events.DomainEvent<TPayload>.<Clone>$() -> SharedKernel.Domain.Events.DomainEvent<TPayload>!
+override sealed SharedKernel.Domain.Entities.Entity<TId>.Equals(object? obj) -> bool
+override sealed SharedKernel.Domain.Entities.Entity<TId>.GetHashCode() -> int
+override sealed SharedKernel.Domain.Events.DomainEvent<TPayload>.Equals(SharedKernel.Domain.Events.DomainEvent? other) -> bool
+override sealed SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.ToString() -> string!
+override sealed SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.GetEqualityComponents() -> System.Collections.Generic.IEnumerable<object?>!
+override sealed SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.ToString() -> string!
+static SharedKernel.Domain.Aggregates.AggregateRoot<TId>.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.Aggregates.AggregateRoot<TId>.TryCreate<T>(System.Func<T>! factory) -> SharedKernel.Primitives.Results.ValidationResult<T>!
+static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.And(this SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> SharedKernel.Domain.BusinessRules.AndBusinessRule!
+static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.Not(this SharedKernel.Domain.BusinessRules.IBusinessRule! rule, string! code, string! message) -> SharedKernel.Domain.BusinessRules.NotBusinessRule!
+static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.Or(this SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> SharedKernel.Domain.BusinessRules.OrBusinessRule!
+static SharedKernel.Domain.DomainServices.DomainService.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.Entities.Entity<TId>.operator !=(SharedKernel.Domain.Entities.Entity<TId>? left, SharedKernel.Domain.Entities.Entity<TId>? right) -> bool
+static SharedKernel.Domain.Entities.Entity<TId>.operator ==(SharedKernel.Domain.Entities.Entity<TId>? left, SharedKernel.Domain.Entities.Entity<TId>? right) -> bool
+static SharedKernel.Domain.Events.DomainEvent.operator !=(SharedKernel.Domain.Events.DomainEvent? left, SharedKernel.Domain.Events.DomainEvent? right) -> bool
+static SharedKernel.Domain.Events.DomainEvent.operator ==(SharedKernel.Domain.Events.DomainEvent? left, SharedKernel.Domain.Events.DomainEvent? right) -> bool
+static SharedKernel.Domain.Events.DomainEvent<TPayload>.operator !=(SharedKernel.Domain.Events.DomainEvent<TPayload>? left, SharedKernel.Domain.Events.DomainEvent<TPayload>? right) -> bool
+static SharedKernel.Domain.Events.DomainEvent<TPayload>.operator ==(SharedKernel.Domain.Events.DomainEvent<TPayload>? left, SharedKernel.Domain.Events.DomainEvent<TPayload>? right) -> bool
+static SharedKernel.Domain.Events.DomainEventVersionHelper.GetVersion(System.Type! domainEventType) -> int
+static SharedKernel.Domain.Events.DomainEventVersionHelper.GetVersion<TEvent>() -> int
+static SharedKernel.Domain.Monetary.Currency.Create(string? code) -> SharedKernel.Primitives.Results.ValidationResult<SharedKernel.Domain.Monetary.Currency!>!
+static SharedKernel.Domain.Monetary.Currency.Eur.get -> SharedKernel.Domain.Monetary.Currency!
+static SharedKernel.Domain.Monetary.Currency.Gbp.get -> SharedKernel.Domain.Monetary.Currency!
+static SharedKernel.Domain.Monetary.Currency.Jpy.get -> SharedKernel.Domain.Monetary.Currency!
+static SharedKernel.Domain.Monetary.Currency.Try.get -> SharedKernel.Domain.Monetary.Currency!
+static SharedKernel.Domain.Monetary.Currency.Usd.get -> SharedKernel.Domain.Monetary.Currency!
+static SharedKernel.Domain.Monetary.CurrencyCatalog.Codes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static SharedKernel.Domain.Monetary.CurrencyCatalog.IsKnownCode(string? code) -> bool
+static SharedKernel.Domain.Monetary.CurrencyCatalog.TryGetMinorUnitDigits(string? code, out int digits) -> bool
+static SharedKernel.Domain.Monetary.Money.Create(decimal amount, SharedKernel.Domain.Monetary.Currency! currency, SharedKernel.Domain.Monetary.RoundingPolicy roundingPolicy = SharedKernel.Domain.Monetary.RoundingPolicy.BankersRounding) -> SharedKernel.Primitives.Results.ValidationResult<SharedKernel.Domain.Monetary.Money!>!
+static SharedKernel.Domain.Monetary.Money.Max(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.Min(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.Sum(System.Collections.Generic.IEnumerable<SharedKernel.Domain.Monetary.Money!>! amounts, SharedKernel.Domain.Monetary.Currency! currency) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.Zero(SharedKernel.Domain.Monetary.Currency! currency) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator *(SharedKernel.Domain.Monetary.Money! money, decimal factor) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator +(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator -(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator -(SharedKernel.Domain.Monetary.Money! money) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator /(SharedKernel.Domain.Monetary.Money! money, decimal divisor) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.Money.operator <(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> bool
+static SharedKernel.Domain.Monetary.Money.operator <=(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> bool
+static SharedKernel.Domain.Monetary.Money.operator >(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> bool
+static SharedKernel.Domain.Monetary.Money.operator >=(SharedKernel.Domain.Monetary.Money! left, SharedKernel.Domain.Monetary.Money! right) -> bool
+static SharedKernel.Domain.Monetary.MoneyExtensions.ConvertAsync(this SharedKernel.Domain.Monetary.Money! money, SharedKernel.Domain.Monetary.Currency! targetCurrency, SharedKernel.Domain.Monetary.IExchangeRateProvider! rateProvider, SharedKernel.Domain.Monetary.RoundingPolicy roundingPolicy = SharedKernel.Domain.Monetary.RoundingPolicy.BankersRounding, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Domain.Monetary.Money!>!>!
+static SharedKernel.Domain.Monetary.MoneyExtensions.Sum(this System.Collections.Generic.IEnumerable<SharedKernel.Domain.Monetary.Money!>! amounts) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Monetary.MoneyExtensions.Sum(this System.Collections.Generic.IEnumerable<SharedKernel.Domain.Monetary.Money!>! amounts, SharedKernel.Domain.Monetary.Currency! currency) -> SharedKernel.Domain.Monetary.Money!
+static SharedKernel.Domain.Policies.PolicyExtensions.And<T>(this SharedKernel.Domain.Policies.IPolicy<T>! left, SharedKernel.Domain.Policies.IPolicy<T>! right) -> SharedKernel.Domain.Policies.AndPolicy<T>!
+static SharedKernel.Domain.Policies.PolicyExtensions.Not<T>(this SharedKernel.Domain.Policies.IPolicy<T>! policy, string! explanation) -> SharedKernel.Domain.Policies.NotPolicy<T>!
+static SharedKernel.Domain.Policies.PolicyExtensions.Or<T>(this SharedKernel.Domain.Policies.IPolicy<T>! left, SharedKernel.Domain.Policies.IPolicy<T>! right) -> SharedKernel.Domain.Policies.OrPolicy<T>!
+static SharedKernel.Domain.Policies.PolicyExtensions.ToRule<T>(this SharedKernel.Domain.Policies.IPolicy<T>! policy, T subject, string! code) -> SharedKernel.Domain.BusinessRules.IBusinessRule!
+static SharedKernel.Domain.Specifications.Specification<T>.Create(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> SharedKernel.Domain.Specifications.Specification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.And<T>(this SharedKernel.Domain.Specifications.Specification<T>! left, SharedKernel.Domain.Specifications.Specification<T>! right) -> SharedKernel.Domain.Specifications.AndSpecification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.Not<T>(this SharedKernel.Domain.Specifications.Specification<T>! spec) -> SharedKernel.Domain.Specifications.NotSpecification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.Or<T>(this SharedKernel.Domain.Specifications.Specification<T>! left, SharedKernel.Domain.Specifications.Specification<T>! right) -> SharedKernel.Domain.Specifications.OrSpecification<T>!
+static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.explicit operator TValue(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>! id) -> TValue
+static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator !=(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? left, SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? right) -> bool
+static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator ==(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? left, SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? right) -> bool
+static SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.explicit operator TValue(SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>! valueObject) -> TValue
+static SharedKernel.Domain.ValueObjects.ValueObject.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.ValueObjects.ValueObject.TryCreate<T>(System.Func<T>! factory) -> SharedKernel.Primitives.Results.ValidationResult<T>!
+static SharedKernel.Domain.ValueObjects.ValueObject.operator !=(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool
+static SharedKernel.Domain.ValueObjects.ValueObject.operator ==(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool
+virtual SharedKernel.Domain.Events.DomainEvent.EqualityContract.get -> System.Type!
+virtual SharedKernel.Domain.Events.DomainEvent.Equals(SharedKernel.Domain.Events.DomainEvent? other) -> bool
+virtual SharedKernel.Domain.Events.DomainEvent.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual SharedKernel.Domain.Events.DomainEvent<TPayload>.Equals(SharedKernel.Domain.Events.DomainEvent<TPayload>? other) -> bool
+virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.EqualityContract.get -> System.Type!
+virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Equals(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? other) -> bool
+virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.PrintMembers(System.Text.StringBuilder! builder) -> bool

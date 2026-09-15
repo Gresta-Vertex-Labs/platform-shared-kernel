@@ -47,7 +47,8 @@ public class ValueObjectEqualityTests
     {
         public InvalidMoney(decimal amount)
         {
-            _ = amount; // store conceptually
+            _ = amount;
+            EnsureValid();
         }
 
         protected override IEnumerable<object?> GetEqualityComponents()
@@ -63,9 +64,7 @@ public class ValueObjectEqualityTests
 
     private sealed class MultiErrorMoney : ValueObject
     {
-        public MultiErrorMoney()
-        {
-        }
+        public MultiErrorMoney() => EnsureValid();
 
         protected override IEnumerable<object?> GetEqualityComponents()
         {

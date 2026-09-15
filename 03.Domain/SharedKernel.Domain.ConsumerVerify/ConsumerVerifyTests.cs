@@ -98,16 +98,16 @@ public sealed class ConsumerVerifyTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // StronglyTypedId<TValue> — implicit operator and ToString
+    // StronglyTypedId<TValue> — explicit operator and ToString
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void StronglyTypedId_ImplicitOperator_UnwrapsValue_ResolvedFromPackage()
+    public void StronglyTypedId_ExplicitOperator_UnwrapsValue_ResolvedFromPackage()
     {
         var raw = Guid.NewGuid();
         var id = new OrderId(raw);
 
-        Guid unwrapped = id;
+        var unwrapped = (Guid)id;
 
         Assert.Equal(raw, unwrapped);
     }
@@ -346,7 +346,7 @@ public sealed class ConsumerVerifyTests
     {
         var result = Quantity.Create(5);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsValid);
         Assert.Equal(5, result.Value.Amount);
     }
 
@@ -355,7 +355,7 @@ public sealed class ConsumerVerifyTests
     {
         var result = Quantity.Create(-1);
 
-        Assert.True(result.IsFailure);
+        Assert.False(result.IsValid);
     }
 
     [Fact]
@@ -454,12 +454,14 @@ internal sealed class HighValueOrderSpec : Specification<OrderDto>
 // Business rules
 internal sealed class AlwaysPassRule : IBusinessRule
 {
+    public string Code => "test.rule";
     public string Message => "Always passes.";
     public bool IsBroken() => false;
 }
 
 internal sealed class AlwaysFailRule : IBusinessRule
 {
+    public string Code => "test.rule";
     public string Message => "Always fails.";
     public bool IsBroken() => true;
 }
@@ -511,13 +513,18 @@ internal sealed class SplitQueryOrderSpec : Specification<OrderDto>
 internal sealed record OrderShippedEvent(Guid AggregateId) : DomainEvent, IHasAggregateId<Guid>;
 
 // P-310 — ValueObject.TryCreate<T>/CheckRule
-// Primary-constructor field initializer, not constructor-body assignment: Amount must be visible
-// to Validate() while the base ValueObject() constructor is still running.
-internal sealed class Quantity(int amount) : ValueObject
+// Assigns in the constructor body and calls EnsureValid last, the pattern ValueObject requires.
+internal sealed class Quantity : ValueObject
 {
-    public int Amount { get; } = amount;
+    private Quantity(int amount)
+    {
+        Amount = amount;
+        EnsureValid();
+    }
 
-    public static SharedKernel.Primitives.Results.Result<Quantity> Create(int amount) =>
+    public int Amount { get; }
+
+    public static SharedKernel.Primitives.Results.ValidationResult<Quantity> Create(int amount) =>
         TryCreate(() => new Quantity(amount));
 
     protected override IEnumerable<object?> GetEqualityComponents()

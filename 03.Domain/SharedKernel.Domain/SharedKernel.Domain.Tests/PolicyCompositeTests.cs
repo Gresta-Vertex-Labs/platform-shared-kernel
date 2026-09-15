@@ -84,14 +84,14 @@ public class PolicyCompositeTests
     [Fact]
     public void Not_InnerCompliant_ReturnsFalse()
     {
-        var policy = new NotPolicy<Order>(new ActiveOrderPolicy());
+        var policy = new NotPolicy<Order>(new ActiveOrderPolicy(), "The order must not be active.");
         policy.IsCompliant(new Order(true, 0m)).Should().BeFalse();
     }
 
     [Fact]
     public void Not_InnerNotCompliant_ReturnsTrue()
     {
-        var policy = new NotPolicy<Order>(new ActiveOrderPolicy());
+        var policy = new NotPolicy<Order>(new ActiveOrderPolicy(), "The order must not be active.");
         policy.IsCompliant(new Order(false, 0m)).Should().BeTrue();
     }
 
@@ -114,7 +114,7 @@ public class PolicyCompositeTests
     [Fact]
     public void Extension_Not_ProducesNotPolicy()
     {
-        var result = new ActiveOrderPolicy().Not();
+        var result = new ActiveOrderPolicy().Not("The order must not be active.");
         result.Should().BeOfType<NotPolicy<Order>>();
     }
 
@@ -216,19 +216,19 @@ public class PolicyCompositeTests
     [Fact]
     public void NotPolicy_Explain_InnerNotCompliant_ReturnsEmptyString()
     {
-        var policy = new NotPolicy<Order>(new ActiveOrderPolicy());
+        var policy = new NotPolicy<Order>(new ActiveOrderPolicy(), "The order must not be active.");
 
         policy.Explain(new Order(false, 0m)).Should().BeEmpty();
     }
 
     [Fact]
-    public void NotPolicy_Explain_InnerUnexpectedlyCompliant_ReturnsFixedGenericMessage()
+    public void NotPolicy_Explain_InnerCompliant_ReturnsSuppliedExplanation()
     {
-        var policy = new NotPolicy<Order>(new ActiveOrderPolicy());
+        var policy = new NotPolicy<Order>(new ActiveOrderPolicy(), "The order must not be active.");
 
         var explanation = policy.Explain(new Order(true, 0m));
 
         explanation.Should().NotBeEmpty();
-        explanation.Should().Contain(nameof(NotPolicy<Order>));
+        explanation.Should().Be("The order must not be active.");
     }
 }

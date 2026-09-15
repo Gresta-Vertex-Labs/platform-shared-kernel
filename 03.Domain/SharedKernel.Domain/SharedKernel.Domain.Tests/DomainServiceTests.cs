@@ -12,12 +12,14 @@ public class DomainServiceTests
 {
     private sealed class AlwaysBrokenRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is broken";
         public bool IsBroken() => true;
     }
 
     private sealed class NeverBrokenRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is fine";
         public bool IsBroken() => false;
     }

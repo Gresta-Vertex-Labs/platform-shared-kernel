@@ -8,8 +8,15 @@ namespace SharedKernel.Domain.Specifications;
 /// </summary>
 /// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
 /// <remarks>
+/// <para>
 /// All builder methods are <c>protected void</c> and must be called exclusively from the
 /// subclass constructor. No fluent chaining is permitted outside the constructor.
+/// </para>
+/// <para>
+/// <see cref="AddCriteria"/> accumulates: each call is combined with the criteria already present by
+/// logical AND, so a subclass can add a tenant or status condition to an inherited filter without
+/// replacing it.
+/// </para>
 /// <example>
 /// <code>
 /// public sealed class ActiveOrdersSpec : Specification&lt;Order&gt;
@@ -71,24 +78,102 @@ public abstract class Specification<T> : ISpecification<T>
     /// <inheritdoc/>
     public IReadOnlyList<string> StringIncludes => _stringIncludes.AsReadOnly();
 
-    /// <summary>Sets the filter predicate for this specification.</summary>
-    protected void AddCriteria(Expression<Func<T, bool>> criteria) => Criteria = criteria;
+    /// <summary>
+    /// Adds a filter condition, combined by logical AND with any criteria already present.
+    /// </summary>
+    /// <param name="criteria">The condition an entity must satisfy.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="criteria"/> is <see langword="null"/>.</exception>
+    protected void AddCriteria(Expression<Func<T, bool>> criteria)
+    {
+        ArgumentNullException.ThrowIfNull(criteria);
+
+        if (Criteria is null)
+        {
+            Criteria = criteria;
+        }
+        else
+        {
+            var parameter = Criteria.Parameters[0];
+            var body = new ParameterReplacer(criteria.Parameters[0], parameter).Visit(criteria.Body);
+            Criteria = Expression.Lambda<Func<T, bool>>(Expression.AndAlso(Criteria.Body, body), parameter);
+        }
+
+        _compiledCriteria = null;
+    }
 
     /// <summary>Adds a navigation property include for eager loading.</summary>
-    protected void AddInclude(Expression<Func<T, object>> include) => _includes.Add(include);
+    /// <param name="include">The navigation to load.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="include"/> is <see langword="null"/>.</exception>
+    protected void AddInclude(Expression<Func<T, object>> include)
+    {
+        ArgumentNullException.ThrowIfNull(include);
+        _includes.Add(include);
+    }
 
-    /// <summary>Sets the primary ascending sort expression.</summary>
-    protected void ApplyOrderBy(Expression<Func<T, object>> orderBy) => OrderBy = orderBy;
+    /// <summary>Sets the primary ascending sort.</summary>
+    /// <param name="orderBy">The sort key selector.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="orderBy"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A primary sort is already set; add further keys with <see cref="ApplyThenBy"/>.</exception>
+    protected void ApplyOrderBy(Expression<Func<T, object>> orderBy)
+    {
+        ArgumentNullException.ThrowIfNull(orderBy);
+        EnsureNoPrimarySort();
+        OrderBy = orderBy;
+    }
 
-    /// <summary>Sets the primary descending sort expression.</summary>
-    protected void ApplyOrderByDescending(Expression<Func<T, object>> orderByDescending) =>
+    /// <summary>Sets the primary descending sort.</summary>
+    /// <param name="orderByDescending">The sort key selector.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="orderByDescending"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A primary sort is already set; add further keys with <see cref="ApplyThenBy"/>.</exception>
+    protected void ApplyOrderByDescending(Expression<Func<T, object>> orderByDescending)
+    {
+        ArgumentNullException.ThrowIfNull(orderByDescending);
+        EnsureNoPrimarySort();
         OrderByDescending = orderByDescending;
+    }
+
+    /// <summary>
+    /// Carries <paramref name="source"/>'s includes (without duplicates) and its tracking, split-query and
+    /// include-deleted flags into this specification. Used by the composite specifications.
+    /// </summary>
+    private protected void CopyQueryShapeFrom(Specification<T> source)
+    {
+        foreach (var include in source._includes)
+        {
+            if (!_includes.Contains(include))
+                _includes.Add(include);
+        }
+
+        foreach (var path in source._stringIncludes)
+        {
+            if (!_stringIncludes.Contains(path, StringComparer.Ordinal))
+                _stringIncludes.Add(path);
+        }
+
+        _asNoTracking |= source._asNoTracking;
+        _asSplitQuery |= source._asSplitQuery;
+        _includeDeleted |= source._includeDeleted;
+    }
+
+    private void EnsureNoPrimarySort()
+    {
+        if (OrderBy is not null || OrderByDescending is not null)
+        {
+            throw new InvalidOperationException(
+                $"{GetType().Name} already has a primary sort. A specification has one primary sort; "
+                + $"add further sort keys with {nameof(ApplyThenBy)}.");
+        }
+    }
 
     /// <summary>Adds a secondary sort expression after the primary sort.</summary>
     /// <param name="keySelector">The sort key selector.</param>
     /// <param name="descending"><see langword="true"/> for descending order; <see langword="false"/> for ascending.</param>
-    protected void ApplyThenBy(Expression<Func<T, object>> keySelector, bool descending) =>
+    /// <exception cref="ArgumentNullException"><paramref name="keySelector"/> is <see langword="null"/>.</exception>
+    protected void ApplyThenBy(Expression<Func<T, object>> keySelector, bool descending)
+    {
+        ArgumentNullException.ThrowIfNull(keySelector);
         _thenBys.Add((keySelector, descending));
+    }
 
     /// <summary>
     /// Adds a secondary descending sort expression after the primary sort.
@@ -99,8 +184,13 @@ public abstract class Specification<T> : ISpecification<T>
         ApplyThenBy(keySelector, descending: true);
 
     /// <summary>Applies paging by setting <see cref="Skip"/> and <see cref="Take"/>.</summary>
+    /// <param name="skip">The number of entities to skip. Must not be negative.</param>
+    /// <param name="take">The maximum number of entities to return. Must be at least 1.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="skip"/> is negative, or <paramref name="take"/> is less than 1.</exception>
     protected void ApplyPaging(int skip, int take)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(skip);
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
         Skip = skip;
         Take = take;
     }
@@ -190,21 +280,11 @@ public abstract class Specification<T> : ISpecification<T>
     /// ordering, or paging; <c>AsNoTracking</c>/<c>IncludeDeleted</c>/<c>AsSplitQuery</c> all
     /// default <see langword="false"/>.
     /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="criteria"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// <para>
-    /// WO-051/P-313 — a third sealed-wrapper sentinel alongside <see cref="AllSpecification{T}"/>/
-    /// <see cref="EmptySpecification{T}"/>, backed internally by
-    /// <see cref="CriteriaSpecification{T}"/>. Returns <see cref="Specification{T}"/> (not
-    /// <see cref="ISpecification{T}"/>) so the result composes via the existing
-    /// <see cref="SpecificationExtensions.And{T}"/>/<see cref="SpecificationExtensions.Or{T}"/>/
-    /// <see cref="SpecificationExtensions.Not{T}"/> extension methods.
-    /// </para>
-    /// <para>
-    /// <strong>Does not relax the constructor-only/no-fluent-chaining builder rule</strong> for
-    /// named, reusable specifications — a reusable business concept must still be its own
-    /// dedicated <see cref="Specification{T}"/> subclass. Use <see cref="Create"/> only for a
-    /// genuinely single-use filter.
-    /// </para>
+    /// Returns <see cref="Specification{T}"/> so the result composes with <c>And</c>, <c>Or</c> and
+    /// <c>Not</c>. A reusable business concept still deserves its own named subclass; use this only for
+    /// a genuinely single-use filter.
     /// </remarks>
     public static Specification<T> Create(Expression<Func<T, bool>> criteria) =>
         new CriteriaSpecification<T>(criteria);

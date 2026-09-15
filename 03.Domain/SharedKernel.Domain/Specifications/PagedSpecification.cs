@@ -41,7 +41,8 @@ public abstract class PagedSpecification<T> : ReadOnlySpecification<T>
     /// <param name="pageSize">The number of items per page.</param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="page"/> is less than 1, <paramref name="pageSize"/> is less than 1,
-    /// or <paramref name="pageSize"/> exceeds <see cref="MaxPageSize"/>.
+    /// <paramref name="pageSize"/> exceeds <see cref="MaxPageSize"/>, or the page starts beyond
+    /// <see cref="int.MaxValue"/> rows.
     /// </exception>
     protected PagedSpecification(int page, int pageSize)
     {
@@ -55,9 +56,14 @@ public abstract class PagedSpecification<T> : ReadOnlySpecification<T>
             throw new ArgumentOutOfRangeException(nameof(pageSize), pageSize,
                 $"Page size must not exceed {MaxPageSize}.");
 
+        var skip = (long)(page - 1) * pageSize;
+        if (skip > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(page), page,
+                $"Page {page} of size {pageSize} starts beyond the largest supported offset.");
+
         Page = page;
         PageSize = pageSize;
-        ApplyPaging((page - 1) * pageSize, pageSize);
+        ApplyPaging((int)skip, pageSize);
     }
 
     /// <summary>Gets the 1-based page number.</summary>

@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
 namespace SharedKernel.Domain.Tests;
@@ -18,14 +19,14 @@ public class DomainEventDispatcherContractTests
     [Fact]
     public void IDomainEventDispatcher_ExistsInAssembly()
     {
-        var type = DomainAssembly.GetType("SharedKernel.Domain.IDomainEventDispatcher");
+        var type = DomainAssembly.GetType("SharedKernel.Domain.Abstractions.IDomainEventDispatcher");
         type.Should().NotBeNull("IDomainEventDispatcher must be exported from SharedKernel.Domain");
     }
 
     [Fact]
-    public void IDomainEventDispatcher_IsInNamespace_SharedKernelDomain()
+    public void IDomainEventDispatcher_IsInTheAbstractionsNamespace()
     {
-        typeof(IDomainEventDispatcher).Namespace.Should().Be("SharedKernel.Domain");
+        typeof(IDomainEventDispatcher).Namespace.Should().Be("SharedKernel.Domain.Abstractions");
     }
 
     // (2) Has exactly one method: DispatchAsync

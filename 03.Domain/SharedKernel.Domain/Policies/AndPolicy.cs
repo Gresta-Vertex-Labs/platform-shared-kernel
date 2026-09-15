@@ -1,39 +1,36 @@
 namespace SharedKernel.Domain.Policies;
 
-/// <summary>
-/// A composite policy that is compliant only when both sub-policies are compliant
-/// (logical AND).
-/// </summary>
-/// <typeparam name="T">The type of domain object evaluated.</typeparam>
+/// <summary>A policy that a subject complies with only when it complies with both operands.</summary>
+/// <typeparam name="T">The type of subject the policy evaluates.</typeparam>
 public sealed class AndPolicy<T> : IPolicy<T>
 {
     private readonly IPolicy<T> _left;
     private readonly IPolicy<T> _right;
 
-    /// <summary>
-    /// Initialises a new <see cref="AndPolicy{T}"/> combining <paramref name="left"/>
-    /// and <paramref name="right"/>.
-    /// </summary>
+    /// <summary>Combines two policies that must both be satisfied.</summary>
+    /// <param name="left">The first policy.</param>
+    /// <param name="right">The second policy.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public AndPolicy(IPolicy<T> left, IPolicy<T> right)
     {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         _left = left;
         _right = right;
     }
 
     /// <inheritdoc/>
-    /// <remarks>Returns <see langword="true"/> only when both sub-policies are compliant.</remarks>
     public bool IsCompliant(T subject) => _left.IsCompliant(subject) && _right.IsCompliant(subject);
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// WO-051/P-312 — aggregates every non-compliant sub-policy's <see cref="IPolicy{T}.Explain"/>
-    /// with <c>"; "</c>, mirroring
-    /// <see cref="SharedKernel.Domain.BusinessRules.AndBusinessRule.Message"/>'s
-    /// <c>string.Join("; ", ...)</c> pattern exactly. Returns an empty string when both sub-policies
-    /// are compliant.
-    /// </remarks>
-    public string Explain(T subject) =>
-        string.Join(
-            "; ",
-            new[] { _left, _right }.Where(p => !p.IsCompliant(subject)).Select(p => p.Explain(subject)));
+    /// <remarks>Combines the explanations of every operand the subject fails.</remarks>
+    public string Explain(T subject)
+    {
+        var failures = new List<string>(2);
+        if (!_left.IsCompliant(subject))
+            failures.Add(_left.Explain(subject));
+        if (!_right.IsCompliant(subject))
+            failures.Add(_right.Explain(subject));
+        return string.Join("; ", failures);
+    }
 }

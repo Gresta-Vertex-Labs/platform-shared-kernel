@@ -1,6 +1,6 @@
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Domain;
+namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
 /// Defines the contract for dispatching a batch of domain events raised by one or more aggregate roots.

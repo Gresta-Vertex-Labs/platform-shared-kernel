@@ -20,6 +20,7 @@ public class BusinessRuleErrorTypeTests
 
     private sealed class AlwaysBrokenRule : IBusinessRule
     {
+        public string Code => "test.rule";
         public string Message => "rule is broken";
         public bool IsBroken() => true;
     }
@@ -47,10 +48,10 @@ public class BusinessRuleErrorTypeTests
     }
 
     [Fact]
-    public void BusinessRuleViolationException_Error_CodeIsRuleViolated()
+    public void BusinessRuleViolationException_Error_CodeIsTheRulesOwnCode()
     {
         var ex = new BusinessRuleViolationException(new AlwaysBrokenRule());
-        ex.Error.Code.Should().Be(ErrorCodes.Domain.RuleViolated);
+        ex.Error.Code.Should().Be("test.rule");
     }
 
     [Fact]

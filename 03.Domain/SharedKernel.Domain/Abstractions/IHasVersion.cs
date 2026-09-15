@@ -1,28 +1,32 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Represents a domain aggregate that tracks the number of domain events raised
-/// since construction via an integer version counter.
+/// An aggregate that numbers the domain events it raises, so every event can be placed in the
+/// aggregate's own history.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="Version"/> is a domain-native optimistic concurrency helper. It starts at
-/// <c>0</c> and increments by <c>1</c> on every call to <c>RaiseDomainEvent</c>.
-/// <c>ClearDomainEvents()</c> does not decrement <see cref="Version"/> — it is a monotonically
-/// increasing counter reflecting the total number of events raised in this aggregate instance's
-/// lifetime, not the current size of the pending event queue.
+/// <see cref="Version"/> is the <b>event sequence number</b> of the aggregate: <c>0</c> for an
+/// aggregate that has never raised an event, and increased by exactly <c>1</c> for every event it
+/// raises. After raising an event, <see cref="Version"/> is that event's position in the
+/// aggregate's history. Clearing the pending events does not change it.
 /// </para>
 /// <para>
-/// This is semantically distinct from <see cref="IHasConcurrency.RowVersion"/>, which is an
-/// infrastructure-specific SQL Server opaque byte array managed by the persistence layer.
-/// <see cref="IHasVersion.Version"/> is a pure domain concept with no persistence obligation.
+/// <b>It is only meaningful when persisted.</b> The persistence layer maps <see cref="Version"/>
+/// as a column, so an aggregate loaded from the database continues numbering where it left off.
+/// Consumers can then stamp each published event with the aggregate's version and detect a
+/// missing or out-of-order event for one aggregate, which a concurrency token cannot express.
+/// </para>
+/// <para>
+/// It is not a concurrency token. Optimistic concurrency is <see cref="IHasConcurrency.RowVersion"/>,
+/// which changes on every write, including writes that raise no event.
 /// </para>
 /// </remarks>
 public interface IHasVersion
 {
     /// <summary>
-    /// Gets the domain event version counter. Starts at <c>0</c>; increments on every
-    /// <c>RaiseDomainEvent</c> call. <c>ClearDomainEvents()</c> does not decrement this value.
+    /// Gets the sequence number of the most recently raised domain event, or <c>0</c> when the
+    /// aggregate has never raised one.
     /// </summary>
     int Version { get; }
 }

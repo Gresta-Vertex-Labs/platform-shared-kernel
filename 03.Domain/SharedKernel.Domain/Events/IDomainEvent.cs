@@ -1,22 +1,16 @@
 namespace SharedKernel.Domain.Events;
 
-/// <summary>
-/// Represents a domain event — a record of something significant that occurred within the domain.
-/// </summary>
+/// <summary>A record of something significant that happened in the domain.</summary>
 /// <remarks>
-/// Domain events are raised by aggregate roots and dispatched by infrastructure after the unit of
-/// work commits successfully. Handlers for domain events live in <c>05.Application</c>, never here.
+/// Aggregates raise domain events; infrastructure dispatches them after the unit of work commits. Handlers
+/// belong to the application layer, never to the domain.
 /// </remarks>
 public interface IDomainEvent
 {
-    /// <summary>Gets the unique identifier of this event instance.</summary>
+    /// <summary>Gets the unique identifier of this event occurrence.</summary>
+    /// <remarks>Stable for the life of the event, including across serialization; use it to deduplicate.</remarks>
     Guid Id { get; }
 
-    /// <summary>
-    /// Gets the UTC timestamp at which this event occurred.
-    /// Must be sourced from <c>IClock.UtcNow</c> via the aggregate's
-    /// <c>RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;)</c> overload.
-    /// Direct use of <c>DateTimeOffset.UtcNow</c> is a hard violation.
-    /// </summary>
+    /// <summary>Gets the UTC time at which the event occurred, read from the raising aggregate's clock.</summary>
     DateTimeOffset OccurredOn { get; }
 }

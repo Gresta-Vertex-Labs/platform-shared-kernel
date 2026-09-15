@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 

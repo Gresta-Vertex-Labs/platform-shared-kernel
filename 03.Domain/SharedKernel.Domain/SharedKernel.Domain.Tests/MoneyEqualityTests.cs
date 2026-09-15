@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 
 namespace SharedKernel.Domain.Tests;
 
@@ -102,7 +102,7 @@ public class MoneyEqualityTests
     {
         var result = Money.Create(10.005m, Currency.Usd);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.Amount.Should().Be(10.00m);
     }
 
@@ -111,7 +111,7 @@ public class MoneyEqualityTests
     {
         var result = Money.Create(10.005m, Currency.Usd, RoundingPolicy.AwayFromZero);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         result.Value.Amount.Should().Be(10.01m);
     }
 
