@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 
 namespace SharedKernel.Persistence.EfCore.Conversions;
 
@@ -39,7 +39,7 @@ public sealed class CurrencyValueConverter : ValueConverter<Currency, string>
     /// </summary>
     public CurrencyValueConverter()
         : base(
-            currency => currency,                              // implicit operator — AOT-safe
+            currency => currency.Code,
             code => FromProvider(code))
     {
     }
@@ -48,11 +48,11 @@ public sealed class CurrencyValueConverter : ValueConverter<Currency, string>
     {
         var result = Currency.Create(code);
 
-        return result.IsSuccess
-            ? result.Value!
+        return result.IsValid
+            ? result.Value
             : throw new InvalidOperationException(
                 $"Stored currency code '{code}' could not be reconstructed as a valid " +
-                $"{nameof(Currency)}: {result.Error?.Message}. This indicates data corruption " +
+                $"{nameof(Currency)}: {string.Join(" ", result.Errors.Select(e => e.Message))}. This indicates data corruption " +
                 "or a write performed outside of Currency.Create's validation.");
     }
 }

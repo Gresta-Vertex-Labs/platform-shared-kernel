@@ -278,7 +278,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     // Builds `left.CompareTo(right) > 0` (or "< 0" when descending) — the universal,
     // EF-Core-translatable way to express ordering comparisons for ANY IComparable<T> type,
     // including types with no native `>`/`<` operator overload (e.g. Guid). Falls back to
-    // unwrapping a StronglyTypedId<TValue>-shaped implicit conversion when CompareTo isn't found
+    // unwrapping a StronglyTypedId<TValue>-shaped explicit conversion when CompareTo isn't found
     // directly on the operand's own type, so a strongly-typed ID used as the mandatory Id
     // tiebreaker still compares correctly via its underlying primitive value (WO-051/P-317).
     private static Expression BuildOrderingComparison(Expression left, Expression right, bool descending)
@@ -289,9 +289,9 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         if (compareToMethod is null)
         {
             // StronglyTypedId<TValue> itself does not implement IComparable<T> — it always wraps a
-            // single, real comparable value. Unwrap via its implicit conversion to TValue and retry
+            // single, real comparable value. Unwrap via its explicit conversion to TValue and retry
             // comparison there. Two reflection pitfalls avoided here, both confirmed empirically:
-            // (1) a generic "any op_Implicit" scan via Type.GetMethod on the CONCRETE type (e.g.
+            // (1) a generic "any op_Explicit" scan via Type.GetMethod on the CONCRETE type (e.g.
             // TestId) never finds it — Type.GetMethod does not return inherited STATIC members
             // without BindingFlags.FlattenHierarchy, and the operator is declared on the
             // StronglyTypedId<TValue> BASE, not the concrete sealed record; (2) even after locating
@@ -324,7 +324,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     }
 
     // Walks the base-type chain looking for the closed StronglyTypedId<TValue> generic base,
-    // returning TValue plus the implicit-conversion MethodInfo (declared directly on that closed
+    // returning TValue plus the explicit-conversion MethodInfo (declared directly on that closed
     // base type — e.g. StronglyTypedId<Guid> — not on the concrete sealed record) when found;
     // otherwise null. Query-build-time-only reflection (once per GetKeysetQuery call, never
     // per-row) — the same accepted class of build-time type inspection already used elsewhere in
@@ -341,7 +341,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
 
             var valueType = current.GetGenericArguments()[0];
             var conversionMethod = current.GetMethod(
-                "op_Implicit", BindingFlags.Public | BindingFlags.Static, [current]);
+                "op_Explicit", BindingFlags.Public | BindingFlags.Static, [current]);
 
             if (conversionMethod is not null)
                 return (valueType, conversionMethod);

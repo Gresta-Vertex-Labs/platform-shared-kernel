@@ -135,8 +135,8 @@ public sealed class AuditingContractTests
             "descending: true routes the primary sort through OrderByDescending, not OrderBy");
         spec.OrderBy.Should().BeNull();
         spec.ThenBys.Should().ContainSingle();
-        spec.ThenBys[0].Descending.Should().BeFalse(
-            "the Id tiebreaker stays ascending even when the primary sort is descending");
+        spec.ThenBys[0].Descending.Should().BeTrue(
+            "the Id tiebreaker follows the primary sort direction, matching the seek predicate's comparison");
     }
 
     [Fact]

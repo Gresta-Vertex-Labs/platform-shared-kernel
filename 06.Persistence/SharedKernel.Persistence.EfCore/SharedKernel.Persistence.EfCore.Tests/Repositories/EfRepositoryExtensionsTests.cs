@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel.Domain;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Specifications;

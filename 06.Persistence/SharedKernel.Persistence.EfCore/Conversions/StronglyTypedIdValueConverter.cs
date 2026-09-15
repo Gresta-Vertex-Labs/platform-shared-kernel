@@ -44,7 +44,7 @@ public sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
     /// </summary>
     public StronglyTypedIdValueConverter()
         : base(
-            id => (TValue)id,                                 // implicit operator — AOT-safe
+            id => id.Value,
             value => CreateId(value))
     {
     }

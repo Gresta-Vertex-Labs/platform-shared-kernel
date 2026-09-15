@@ -1,6 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 
 namespace SharedKernel.Persistence.EfCore.Conversions;
 
@@ -104,19 +104,19 @@ public sealed class MoneyValueConverter : ValueConverter<Money, string>
         }
 
         var currencyResult = Currency.Create(currencyCode);
-        if (currencyResult.IsFailure)
+        if (!currencyResult.IsValid)
         {
             throw new InvalidOperationException(
-                $"Stored Money value '{stored}' has an invalid currency component: {currencyResult.Error?.Message}");
+                $"Stored Money value '{stored}' has an invalid currency component: {string.Join(" ", currencyResult.Errors.Select(e => e.Message))}");
         }
 
-        var moneyResult = Money.Create(amount, currencyResult.Value!);
-        if (moneyResult.IsFailure)
+        var moneyResult = Money.Create(amount, currencyResult.Value);
+        if (!moneyResult.IsValid)
         {
             throw new InvalidOperationException(
-                $"Stored Money value '{stored}' could not be reconstructed: {moneyResult.Error?.Message}");
+                $"Stored Money value '{stored}' could not be reconstructed: {string.Join(" ", moneyResult.Errors.Select(e => e.Message))}");
         }
 
-        return moneyResult.Value!;
+        return moneyResult.Value;
     }
 }
