@@ -2304,7 +2304,7 @@ Measured in a real host: a misspelled section path or key started the service si
 
 ### P-540 — Domain: `SharedKernel.Domain` Pre-First-Publish Gold-Standard Pass (BREAKING API + BEHAVIOUR CHANGES)
 
-**Status:** `◐` In progress — 12/13 tasks `●`; only the publish (P-13) remains
+**Status:** `●` Complete — 13/13 tasks `●`; published to GitHub Packages as `1.0.0-alpha.0.923` (2026-09-15) from `b45b61b`, with `SharedKernel.Primitives` and `SharedKernel.Core` republished at the same version
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 03.Domain (with migration edits in 05.Application, 06.Persistence, 16.Testing, samples)
 **Depends on:** P-538
