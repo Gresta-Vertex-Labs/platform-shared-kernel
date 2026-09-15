@@ -196,6 +196,10 @@ public abstract class SharedKernelDbContext : DbContext
     /// <seealso cref="IEncryptionVersionOverride"/>
     internal IEncryptionVersionOverride CurrentEncryptionVersionOverride => _encryptionVersionOverride;
 
+    /// <summary>Gets the clock this context's audit interceptor uses, attached to every aggregate it materializes.</summary>
+    /// <seealso cref="DomainClockMaterializationInterceptor"/>
+    internal SharedKernel.Primitives.Clocks.IClock Clock => _auditInterceptor.Clock;
+
     /// <inheritdoc />
     /// <remarks>
     /// <strong>Pooling guard (WO-051/P-322):</strong> when <c>optionsBuilder.Options.IsFrozen</c> is
@@ -223,7 +227,8 @@ public abstract class SharedKernelDbContext : DbContext
             {
                 _auditInterceptor,
                 _softDeleteInterceptor,
-                _concurrencyInterceptor
+                _concurrencyInterceptor,
+                DomainClockMaterializationInterceptor.FromContext,
             };
             interceptors.AddRange(_additionalInterceptors);
 

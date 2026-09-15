@@ -51,6 +51,9 @@ public sealed class AuditableTestAggregate : AuditableSoftDeletableAggregateRoot
     /// <summary>Raises a test domain event for dispatch tests.</summary>
     public void RaiseTestEvent()
         => RaiseDomainEvent(ts => new TestDomainEvent { OccurredOn = ts });
+
+    /// <summary>Soft-deletes through the domain path, which reads the aggregate's clock.</summary>
+    public void Close(string closedBy) => MarkAsDeleted(closedBy);
 }
 
 // ---------------------------------------------------------------------------

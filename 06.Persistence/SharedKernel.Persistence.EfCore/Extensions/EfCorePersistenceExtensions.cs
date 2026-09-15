@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Domain;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
@@ -853,6 +853,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
                     new AuditInterceptor(placeholderUserContext, clock, serviceOptions),
                     new SoftDeleteInterceptor(placeholderUserContext, clock, serviceOptions),
                     new ConcurrencyInterceptor(sp.GetService<ILogger<ConcurrencyInterceptor>>()),
+                    DomainClockMaterializationInterceptor.FromContext,
                 };
                 foreach (var interceptorType in _additionalInterceptorTypes)
                 {

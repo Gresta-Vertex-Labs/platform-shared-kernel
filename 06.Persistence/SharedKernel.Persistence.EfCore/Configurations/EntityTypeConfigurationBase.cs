@@ -79,6 +79,19 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         ConfigureSoftDelete(builder);
         ConfigureAuditColumns(builder);
         ConfigureTenantColumn(builder);
+        ConfigureEventSequence(builder);
+    }
+
+    // Maps IHasVersion.Version so a loaded aggregate continues its event numbering instead of restarting at 0.
+    // It is deliberately NOT a concurrency token: it changes only when an event is raised, while RowVersion
+    // guards every write.
+    private static void ConfigureEventSequence(EntityTypeBuilder<TEntity> builder)
+    {
+        if (typeof(IHasVersion).IsAssignableFrom(typeof(TEntity)))
+        {
+            builder.Property(nameof(IHasVersion.Version))
+                   .IsRequired();
+        }
     }
 
     // Configures the primary key on TId.

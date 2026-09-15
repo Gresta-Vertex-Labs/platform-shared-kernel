@@ -207,6 +207,43 @@ public sealed class KeysetPaginationTests
         allItems.Should().ContainInOrder("Item3", "Item2", "Item1", "Item0");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListKeysetAsync_DuplicateSortKeys_ReturnsEveryRowExactlyOnce(bool descending)
+    {
+        // Several rows share each sort key, so page boundaries fall inside a run of equal keys and only
+        // the Id tiebreak decides what comes next. Before P-540 the tiebreak sorted ascending while the
+        // seek predicate compared Ids descending, so a descending walk skipped or repeated rows here.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var clock = new SystemClock();
+        long[] keys = [0, 1, 1, 1, 2, 2, 2, 2, 3];
+        for (var i = 0; i < keys.Length; i++)
+            ctx.KeysetAggregates.Add(new KeysetTestAggregate(TestId.New(), $"Item{i}", keys[i], clock));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+        var repo = new KeysetTestReadRepository(ctx);
+
+        var seen = new List<KeysetTestAggregate>();
+        long? afterKey = null;
+        object? afterId = null;
+        bool hasMore;
+        var pageCount = 0;
+        do
+        {
+            var page = await repo.ListKeysetAsync(new KeysetBySequenceSpec(afterKey, afterId, take: 2, descending));
+            seen.AddRange(page.Items);
+            afterKey = page.NextAfterKey;
+            afterId = page.NextAfterId;
+            hasMore = page.HasMore;
+            pageCount++;
+        } while (hasMore && pageCount < 20);
+
+        seen.Select(a => a.Name).Should().OnlyHaveUniqueItems().And.HaveCount(keys.Length);
+        var sequence = seen.Select(a => a.SequenceNumber).ToList();
+        (descending ? sequence.Should().BeInDescendingOrder() : sequence.Should().BeInAscendingOrder()).Should().NotBeNull();
+    }
+
     [Fact]
     public async Task ListAsync_WithKeysetSpecification_SilentlyIgnoresCursor_AlwaysFirstPage()
     {

@@ -87,6 +87,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// </remarks>
     internal IUserContext UserContext => _userContext;
 
+    /// <summary>Gets the clock captured at construction time.</summary>
+    /// <remarks>
+    /// Exposed so <see cref="SharedKernelDbContext"/> can give the same clock to
+    /// <see cref="DomainClockMaterializationInterceptor"/> without a new constructor parameter, mirroring
+    /// <see cref="UserContext"/>.
+    /// </remarks>
+    internal IClock Clock => _clock;
+
     /// <inheritdoc />
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
