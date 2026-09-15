@@ -16,11 +16,11 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Calling both ordering methods in the same constructor produces non-deterministic sort results
-/// at query execution time because the last call overwrites the previous ordering direction
-/// (both set the same <c>OrderBy</c>/<c>OrderByDescending</c> property). Use only one ordering
-/// direction per specification constructor; apply secondary sorting via <c>ThenBy</c> /
-/// <c>ThenByDescending</c> overloads if needed.
+/// A specification has one primary sort: <c>Specification&lt;T&gt;</c> throws
+/// <c>InvalidOperationException</c> when a constructor applies a second one, so calling both ordering
+/// methods fails the first time the specification is created. This rule reports it at compile time.
+/// Use only one ordering direction per specification constructor; apply secondary sorting via
+/// <c>ApplyThenBy</c> / <c>ApplyThenByDescending</c>.
 /// </para>
 /// <para>
 /// Simple name check on invocation method names. No type-scoping to <c>Specification&lt;T&gt;</c>

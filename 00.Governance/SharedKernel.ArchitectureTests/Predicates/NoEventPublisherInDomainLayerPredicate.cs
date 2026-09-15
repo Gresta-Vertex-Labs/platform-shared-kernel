@@ -11,7 +11,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.MessagingArchitectureRules"/> to enforce that domain types do not
 /// reach out to publish integration events directly. Domain events are raised internally via
-/// <c>AddDomainEvent()</c> and dispatched by <c>IDomainEventDispatcher</c> in the application
+/// <c>RaiseDomainEvent()</c> and dispatched by <c>IDomainEventDispatcher</c> in the application
 /// layer — domain types must never inject <c>IEventPublisher</c>.
 /// </para>
 /// <para>
@@ -45,7 +45,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <code>class OrderAggregate(IEventPublisher publisher) : AggregateRoot&lt;Guid&gt; { }</code>
 /// </para>
 /// <para>
-/// <strong>Compliant pattern:</strong> raise domain events via <c>AddDomainEvent()</c>;
+/// <strong>Compliant pattern:</strong> raise domain events via <c>RaiseDomainEvent()</c>;
 /// let the application layer dispatch them to <c>IEventPublisher</c> via
 /// <c>IDomainEventDispatcher</c>.
 /// </para>

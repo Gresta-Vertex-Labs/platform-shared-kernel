@@ -30,7 +30,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     SK0702 (<see cref="NoEventPublisherInDomainLayer"/>) — prevents domain types from
 ///     injecting <c>IEventPublisher</c>. Domain events are dispatched by
 ///     <c>IDomainEventDispatcher</c> in the application layer; domain types raise events
-///     internally via <c>AddDomainEvent()</c> only.
+///     internally via <c>RaiseDomainEvent()</c> only.
 ///   </description></item>
 /// </list>
 /// </para>
@@ -121,7 +121,7 @@ public static class MessagingArchitectureRules
     /// </para>
     /// <para>
     /// <strong>Correct event publishing flow:</strong> domain type raises event via
-    /// <c>AddDomainEvent()</c> → <c>IDomainEventDispatcher</c> dispatches in the application
+    /// <c>RaiseDomainEvent()</c> → <c>IDomainEventDispatcher</c> dispatches in the application
     /// layer → application handler calls <c>IEventPublisher</c>.
     /// </para>
     /// <para>
@@ -130,7 +130,7 @@ public static class MessagingArchitectureRules
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong>
-    /// <code>class OrderAggregate : AggregateRoot&lt;Guid&gt; { /* raises via AddDomainEvent() */ }</code>
+    /// <code>class OrderAggregate : AggregateRoot&lt;Guid&gt; { /* raises via RaiseDomainEvent() */ }</code>
     /// </para>
     /// </remarks>
     /// <param name="domainAssembly">

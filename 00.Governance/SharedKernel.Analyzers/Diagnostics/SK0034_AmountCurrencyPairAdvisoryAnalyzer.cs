@@ -89,7 +89,7 @@ public sealed class AmountCurrencyPairAdvisoryAnalyzer : AnalyzerBase
         title: "Raw decimal amount + string currency-code pair",
         messageFormat: "'{0}' declares a decimal-shaped amount member ({1}) alongside a "
             + "string-shaped currency-code member ({2}). Consider replacing this pair with "
-            + "SharedKernel.Domain.ValueObjects.Money, which enforces ISO 4217 minor-unit-correct "
+            + "SharedKernel.Domain.Monetary, which enforces ISO 4217 minor-unit-correct "
             + "rounding and rejects cross-currency arithmetic. This is an advisory nudge — suppress "
             + "with a one-line comment naming the reason when this is a deliberate wire-format/"
             + "read-model choice.",
