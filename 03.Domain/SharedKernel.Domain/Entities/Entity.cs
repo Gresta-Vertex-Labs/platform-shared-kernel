@@ -4,28 +4,27 @@ using SharedKernel.Domain.Abstractions;
 namespace SharedKernel.Domain.Entities;
 
 /// <summary>
-/// Base class for domain entities. Equality is by identity: two entities of the same concrete type
-/// are equal when their <see cref="Id"/> values are equal.
+/// Base class for an entity: a domain object with identity-based equality, where two entities of the
+/// same concrete type are equal when their identity keys are equal.
 /// </summary>
 /// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
 /// <b>Transient entities.</b> An entity whose <see cref="Id"/> is still <c>default(TId)</c> has no
-/// identity yet. It is equal only to itself, never to another transient instance, so two new,
-/// unsaved entities are always distinct while one instance can still be found in and removed from a
-/// collection.
+/// identity yet. It is equal only to itself, never to another transient instance, so two new, unsaved
+/// entities are always distinct while one instance can still be found in and removed from a collection.
 /// </para>
 /// <para>
-/// <b>Hash codes change when an identity is assigned.</b> A transient entity hashes by reference;
-/// once the database assigns its key, it hashes by <see cref="Id"/>. Do not keep a transient entity
-/// in a <see cref="HashSet{T}"/> or dictionary key across the save that assigns its identity.
+/// <b>Pitfall.</b> The hash code changes when an identity is assigned: a transient entity hashes by
+/// reference, and once its key is set, by <see cref="Id"/>. Do not keep a transient entity in a
+/// <see cref="HashSet{T}"/> or as a dictionary key across the save that assigns its identity.
 /// </para>
 /// <para>
-/// <b>Runtime type is part of equality.</b> Entities of different concrete types never compare equal,
-/// even with the same key. A lazy-loading proxy has a different runtime type from the entity it wraps,
-/// so compare identities with <see cref="Id"/> when proxies are enabled.
+/// <b>Runtime type.</b> Entities of different concrete types never compare equal, even with the same
+/// key. A lazy-loading proxy has a different runtime type from the entity it wraps, so compare
+/// <see cref="Id"/> values directly when proxies are enabled.
 /// </para>
-/// <para>Equality is sealed at this level; subclasses cannot override it.</para>
+/// <para><b>Equality.</b> Equality is sealed at this level; derived classes cannot override it.</para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -44,24 +43,27 @@ namespace SharedKernel.Domain.Entities;
 public abstract class Entity<TId> : IEntity<TId>, IEquatable<Entity<TId>>
     where TId : notnull
 {
-    /// <summary>Initializes an entity with the specified identity key.</summary>
+    /// <summary>Initializes a new entity with its identity key.</summary>
     /// <param name="id">
-    /// The identity key. <c>default(TId)</c> is allowed and makes the entity transient: an identity
+    /// The identity key. <c>default(TId)</c> is allowed and makes the entity transient, with an identity
     /// assigned later, typically by the database.
     /// </param>
     protected Entity(TId id) => Id = id;
 
-    /// <summary>Initializes an entity for ORM materialization. Do not call from domain code.</summary>
+    /// <summary>
+    /// Initializes a new transient entity for ORM materialization only. Do not call from domain code.
+    /// </summary>
     protected Entity() => Id = default!;
 
     /// <inheritdoc/>
     public TId Id { get; private init; }
 
     /// <summary>
-    /// Returns <see langword="true"/> when this entity has no identity yet, meaning <see cref="Id"/>
-    /// equals <c>default(TId)</c>.
+    /// Returns whether the entity is transient, meaning <see cref="Id"/> still equals <c>default(TId)</c>.
     /// </summary>
-    /// <returns><see langword="true"/> for a transient entity; otherwise <see langword="false"/>.</returns>
+    /// <returns>
+    /// <see langword="true"/> when the entity has no identity yet; otherwise <see langword="false"/>.
+    /// </returns>
     public bool IsTransient() => EqualityComparer<TId>.Default.Equals(Id, default!);
 
     /// <summary>
@@ -84,8 +86,11 @@ public abstract class Entity<TId> : IEntity<TId>, IEquatable<Entity<TId>>
         return EqualityComparer<TId>.Default.Equals(Id, other.Id);
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="other"/> is the same entity.</summary>
-    /// <param name="other">The entity to compare with.</param>
+    /// <summary>
+    /// Returns whether <paramref name="other"/> is the same entity, by the rules of
+    /// <see cref="Equals(object)"/>.
+    /// </summary>
+    /// <param name="other">The entity to compare with, or <see langword="null"/>.</param>
     /// <returns><see langword="true"/> when the two are the same entity; otherwise <see langword="false"/>.</returns>
     public bool Equals(Entity<TId>? other) => Equals((object?)other);
 
@@ -93,20 +98,25 @@ public abstract class Entity<TId> : IEntity<TId>, IEquatable<Entity<TId>>
     /// Returns a hash code from the runtime type and <see cref="Id"/>, or from the instance reference
     /// while the entity is transient.
     /// </summary>
-    /// <returns>The hash code.</returns>
+    /// <returns>The hash code; it changes when a transient entity is assigned an identity.</returns>
     public sealed override int GetHashCode() =>
         IsTransient() ? RuntimeHelpers.GetHashCode(this) : HashCode.Combine(GetType(), Id);
 
-    /// <summary>Returns <see langword="true"/> when both operands are the same entity, or both are null.</summary>
-    /// <param name="left">The first entity.</param>
-    /// <param name="right">The second entity.</param>
-    /// <returns><see langword="true"/> when equal; otherwise <see langword="false"/>.</returns>
+    /// <summary>Compares two entities by identity.</summary>
+    /// <param name="left">The first entity, or <see langword="null"/>.</param>
+    /// <param name="right">The second entity, or <see langword="null"/>.</param>
+    /// <returns>
+    /// <see langword="true"/> when both are the same entity or both are <see langword="null"/>; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
     public static bool operator ==(Entity<TId>? left, Entity<TId>? right) =>
         left is null ? right is null : left.Equals(right);
 
-    /// <summary>Returns <see langword="true"/> when the operands are not the same entity.</summary>
-    /// <param name="left">The first entity.</param>
-    /// <param name="right">The second entity.</param>
-    /// <returns><see langword="true"/> when not equal; otherwise <see langword="false"/>.</returns>
+    /// <summary>Compares two entities by identity for inequality.</summary>
+    /// <param name="left">The first entity, or <see langword="null"/>.</param>
+    /// <param name="right">The second entity, or <see langword="null"/>.</param>
+    /// <returns>
+    /// <see langword="true"/> when the operands are not the same entity; otherwise <see langword="false"/>.
+    /// </returns>
     public static bool operator !=(Entity<TId>? left, Entity<TId>? right) => !(left == right);
 }

@@ -1,44 +1,40 @@
 namespace SharedKernel.Domain.Events;
 
 /// <summary>
-/// Abstract base record for domain events that carry a strongly-typed payload.
-/// Extends <see cref="DomainEvent"/> with a <typeparamref name="TPayload"/> property for
-/// type-safe structured access to domain-specific event data.
+/// Base record for a domain event whose data is carried as one strongly-typed <see cref="Payload"/>.
 /// </summary>
 /// <typeparam name="TPayload">
-/// The type of the domain-specific event payload. Must be non-null.
-/// Typically a sealed record carrying all data the event needs to convey.
+/// The type of the event data, typically a sealed record. Must be non-null.
 /// </typeparam>
 /// <remarks>
 /// <para>
-/// Use <see cref="DomainEvent{TPayload}"/> when the event payload is also published as an
-/// integration event payload (e.g., forwarded to <c>07.Messaging</c>) or when handlers
-/// need type-safe structured access to the event data without casting.
+/// <b>Usage.</b> Choose this base when the same payload is also forwarded as an integration event, or when
+/// handlers treat several events through their payload type. For an event whose data fits naturally as its
+/// own properties, derive from <see cref="DomainEvent"/> instead; both bases are equally supported.
 /// </para>
 /// <para>
-/// The non-generic <see cref="DomainEvent"/> base is unchanged and not deprecated.
-/// Simple events with no structured payload should continue to extend <see cref="DomainEvent"/> directly.
+/// <b>Declaration.</b> As with <see cref="DomainEvent"/>, mark the concrete event with
+/// <see cref="DomainEventVersionAttribute"/>. The payload type is not versioned separately, so a breaking
+/// change to it is a breaking change to the event.
 /// </para>
+/// </remarks>
 /// <example>
 /// <code>
-/// public sealed record OrderPlacedPayload(Guid OrderId, decimal Total);
+/// public sealed record OrderPlacedPayload(Guid OrderId, decimal Total, string Currency);
 ///
-/// public sealed record OrderPlacedEvent : DomainEvent&lt;OrderPlacedPayload&gt;;
+/// [DomainEventVersion(1)]
+/// public sealed record OrderPlaced : DomainEvent&lt;OrderPlacedPayload&gt;;
 ///
-/// // Raised inside the aggregate:
-/// RaiseDomainEvent(ts => new OrderPlacedEvent
+/// // Inside the Order aggregate:
+/// RaiseDomainEvent(at =&gt; new OrderPlaced
 /// {
-///     OccurredOn = ts,
-///     Payload    = new OrderPlacedPayload(Id.Value, Total)
+///     OccurredOn = at,
+///     Payload = new OrderPlacedPayload(Id.Value, Total.Amount, Total.Currency.Code),
 /// });
 /// </code>
 /// </example>
-/// </remarks>
 public abstract record DomainEvent<TPayload> : DomainEvent where TPayload : notnull
 {
-    /// <summary>
-    /// Gets the domain-specific event payload.
-    /// This property is <c>required init</c> — it must be set at object-initializer time.
-    /// </summary>
+    /// <summary>Gets the event data; it must be set in the object initializer.</summary>
     public required TPayload Payload { get; init; }
 }

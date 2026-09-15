@@ -1,15 +1,21 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Marks a type as having creation audit metadata.
-/// The <see cref="CreatedBy"/> and <see cref="CreatedOn"/> properties are populated exclusively
-/// by EF Core interceptors or persistence-layer conventions — the domain never writes them.
+/// A record that tracks who created it and when.
 /// </summary>
+/// <remarks>
+/// <b>Persistence.</b> The persistence layer writes <see cref="CreatedBy"/> and <see cref="CreatedOn"/>
+/// when a new record is first saved; domain code never sets them. Before that save they hold their
+/// default values.
+/// </remarks>
 public interface IHasCreatedAudit
 {
-    /// <summary>Gets the identifier of the actor who created this entity.</summary>
+    /// <summary>
+    /// Gets the actor that created the record, typically a user identifier, or a service name when no
+    /// user is authenticated.
+    /// </summary>
     string CreatedBy { get; }
 
-    /// <summary>Gets the UTC timestamp at which this entity was created.</summary>
+    /// <summary>Gets the UTC time the record was first saved.</summary>
     DateTimeOffset CreatedOn { get; }
 }

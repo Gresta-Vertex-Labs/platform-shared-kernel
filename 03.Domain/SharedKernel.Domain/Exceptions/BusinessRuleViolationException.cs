@@ -4,17 +4,26 @@ using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Exceptions;
 
-/// <summary>Thrown when a business rule is broken.</summary>
+/// <summary>The exception thrown when a business rule is broken, carrying the rule and its error code.</summary>
 /// <remarks>
-/// <see cref="SharedKernelException.Error"/> is an <see cref="ErrorType.BusinessRule"/> error (HTTP 422)
-/// carrying the rule's own <see cref="IBusinessRule.Code"/> and <see cref="IBusinessRule.Message"/>.
-/// The hierarchy is <c>SharedKernelException</c>, then <c>DomainException</c>, then this type, so catching
-/// <c>DomainException</c> catches it.
+/// <para>
+/// <b>Usage.</b> <c>CheckRule</c> on an aggregate, value object or domain service throws it; construct it
+/// directly only when enforcing a rule outside those bases.
+/// </para>
+/// <para>
+/// <b>Error.</b> <see cref="SharedKernelException.Error"/> is an <see cref="ErrorType.BusinessRule"/> error,
+/// mapped to HTTP 422, whose code and message are the rule's <see cref="IBusinessRule.Code"/> and
+/// <see cref="IBusinessRule.Message"/>, read once when the exception is constructed.
+/// </para>
+/// <para>
+/// <b>Hierarchy.</b> Derives from <see cref="DomainException"/>, so a handler for <see cref="DomainException"/>
+/// also catches it, and <c>TryCreate</c> turns it into a failed result.
+/// </para>
 /// </remarks>
 public sealed class BusinessRuleViolationException : DomainException
 {
-    /// <summary>Creates the exception for the broken <paramref name="rule"/>.</summary>
-    /// <param name="rule">The rule that was broken.</param>
+    /// <summary>Initializes a new exception for the broken <paramref name="rule"/>.</summary>
+    /// <param name="rule">The rule that was broken. Must not be null.</param>
     /// <exception cref="ArgumentNullException"><paramref name="rule"/> is <see langword="null"/>.</exception>
     public BusinessRuleViolationException(IBusinessRule rule)
         : base(CreateError(rule))

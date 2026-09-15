@@ -3,147 +3,167 @@ using System.Linq.Expressions;
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// Defines a query specification that encapsulates filtering, ordering, paging, and eager-loading
-/// rules for a domain query against entities of type <typeparamref name="T"/>.
+/// A query over entities of type <typeparamref name="T"/>: the filter, eager loading, ordering, paging
+/// and query-shape flags a persistence-layer query evaluator translates into one database query.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type the query returns.</typeparam>
 /// <remarks>
 /// <para>
-/// Specifications are consumed by repository implementations in <c>06.Persistence</c> to build
-/// LINQ or SQL queries. The domain layer defines the <em>what</em>; the persistence layer handles
-/// the <em>how</em>.
+/// <b>Usage.</b> Derive from <see cref="Specification{T}"/> (or <see cref="ReadOnlySpecification{T}"/>,
+/// <see cref="PagedSpecification{T}"/>, <see cref="KeysetSpecification{T, TKey}"/>) rather than implementing
+/// this interface directly; the base class enforces the invariants below. The domain declares what to
+/// fetch; the evaluator decides how.
 /// </para>
 /// <para>
-/// <strong>Ordering precedence:</strong>
+/// <b>Evaluation contract.</b> An evaluator must, in this order:
 /// <list type="number">
-///   <item><description>
-///     <strong>Primary sort:</strong> either <see cref="OrderBy"/> or <see cref="OrderByDescending"/>,
-///     never both. <see cref="Specification{T}"/> throws when a second primary sort is applied.
-///   </description></item>
-///   <item><description>
-///     <strong>Secondary sorts:</strong> <see cref="ThenBys"/> entries, applied in the order
-///     <c>ApplyThenBy</c> / <c>ApplyThenByDescending</c> were called.
-///   </description></item>
-///   <item><description>
-///     If neither primary sort is set, <see cref="ThenBys"/> entries are ignored by
-///     well-behaved repository implementations.
-///   </description></item>
+///   <item><description>Bypass every global query filter when <see cref="IncludeDeleted"/> is
+///   <see langword="true"/>.</description></item>
+///   <item><description>Filter by <see cref="Criteria"/>, when not <see langword="null"/>.</description></item>
+///   <item><description>Eager-load <see cref="Includes"/>, then <see cref="StringIncludes"/>, and split the
+///   query when <see cref="AsSplitQuery"/> is <see langword="true"/>.</description></item>
+///   <item><description>Sort by the one primary sort (<see cref="OrderBy"/> or <see cref="OrderByDescending"/>),
+///   then by each <see cref="ThenBys"/> key in list order. Without a primary sort, ignore
+///   <see cref="ThenBys"/>.</description></item>
+///   <item><description>Apply <see cref="IsDistinct"/> and <see cref="AsNoTracking"/>.</description></item>
+///   <item><description>Apply <see cref="Skip"/> and then <see cref="Take"/> last, after ordering, so a page
+///   is taken from a stable order.</description></item>
 /// </list>
+/// A <see cref="KeysetSpecification{T, TKey}"/> replaces the offset step with a seek predicate; see that
+/// type.
+/// </para>
+/// <para>
+/// <b>Composition.</b> <see cref="AndSpecification{T}"/>, <see cref="OrSpecification{T}"/> and
+/// <see cref="NotSpecification{T}"/> combine criteria and copy includes and the
+/// <see cref="AsNoTracking"/>, <see cref="AsSplitQuery"/> and <see cref="IncludeDeleted"/> flags (each set
+/// when any operand sets it). They never copy ordering, paging or <see cref="IsDistinct"/>.
 /// </para>
 /// </remarks>
 public interface ISpecification<T>
 {
-    /// <summary>Gets the filter predicate applied to entities, or <see langword="null"/> when all entities match.</summary>
+    /// <summary>
+    /// Gets the filter predicate an entity must satisfy, or <see langword="null"/> when every entity matches.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Specification{T}"/> builds this as the logical AND of every condition added to it, expressed
+    /// over a single lambda parameter.
+    /// </remarks>
     Expression<Func<T, bool>>? Criteria { get; }
 
-    /// <summary>Gets the list of navigation property include paths for eager loading.</summary>
+    /// <summary>
+    /// Gets the navigation selectors to eager-load, in the order they were added; empty when none.
+    /// </summary>
     IReadOnlyList<Expression<Func<T, object>>> Includes { get; }
 
-    /// <summary>Gets the primary ascending-order expression, or <see langword="null"/> when no ordering is applied.</summary>
+    /// <summary>
+    /// Gets the ascending primary sort key, or <see langword="null"/> when the primary sort is descending or
+    /// absent.
+    /// </summary>
+    /// <remarks>
+    /// At most one of <see cref="OrderBy"/> and <see cref="OrderByDescending"/> is non-null.
+    /// </remarks>
     Expression<Func<T, object>>? OrderBy { get; }
 
-    /// <summary>Gets the primary descending-order expression, or <see langword="null"/> when no ordering is applied.</summary>
+    /// <summary>
+    /// Gets the descending primary sort key, or <see langword="null"/> when the primary sort is ascending or
+    /// absent.
+    /// </summary>
+    /// <remarks>
+    /// At most one of <see cref="OrderBy"/> and <see cref="OrderByDescending"/> is non-null.
+    /// </remarks>
     Expression<Func<T, object>>? OrderByDescending { get; }
 
     /// <summary>
-    /// Gets the list of secondary sort expressions applied after the primary sort.
-    /// Each entry carries the key selector and a flag indicating descending order.
+    /// Gets the secondary sort keys, applied after the primary sort in list order; each entry pairs a key
+    /// selector with <see langword="true"/> for descending order.
     /// </summary>
+    /// <remarks>
+    /// An evaluator ignores these keys when neither <see cref="OrderBy"/> nor <see cref="OrderByDescending"/>
+    /// is set.
+    /// </remarks>
     IReadOnlyList<(Expression<Func<T, object>> KeySelector, bool Descending)> ThenBys { get; }
 
-    /// <summary>Gets the number of entities to skip (for paging), or <see langword="null"/> when paging is not applied.</summary>
+    /// <summary>
+    /// Gets the number of ordered rows to skip before taking a page, or <see langword="null"/> when the query
+    /// is not paged.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Specification{T}"/> sets <see cref="Skip"/> and <see cref="Take"/> together: when set,
+    /// <see cref="Skip"/> is zero or greater and <see cref="Take"/> is at least 1.
+    /// </remarks>
     int? Skip { get; }
 
-    /// <summary>Gets the maximum number of entities to return (page size), or <see langword="null"/> when paging is not applied.</summary>
+    /// <summary>
+    /// Gets the maximum number of rows to return, or <see langword="null"/> when the query is not paged.
+    /// </summary>
+    /// <remarks>
+    /// When set through <see cref="Specification{T}"/>, the value is at least 1.
+    /// </remarks>
     int? Take { get; }
 
-    /// <summary>Gets a value indicating whether duplicate results should be eliminated.</summary>
+    /// <summary>Gets a value indicating whether duplicate rows are removed from the result.</summary>
     bool IsDistinct { get; }
 
     /// <summary>
-    /// Gets a value indicating whether the consuming repository should apply change-tracking suppression
-    /// (e.g., <c>AsNoTracking()</c>) to the underlying query.
+    /// Gets a value indicating whether the evaluator must run the query without change tracking.
     /// </summary>
     /// <remarks>
-    /// The default is <see langword="false"/> — safe for specifications used before write operations.
-    /// Set to <see langword="true"/> for read-only query specifications to avoid unnecessary
-    /// change-tracking overhead. Composite specifications propagate <see langword="true"/> if either
-    /// operand carries <see langword="true"/> (more restrictive wins).
+    /// <para>
+    /// <b>Default.</b> <see langword="false"/>, so entities loaded to be modified stay tracked. Set it for
+    /// read-only queries; <see cref="ReadOnlySpecification{T}"/> does so automatically.
+    /// </para>
+    /// <para>
+    /// <b>Composition.</b> A composite specification sets it when any operand sets it.
+    /// </para>
     /// </remarks>
     bool AsNoTracking { get; }
 
     /// <summary>
-    /// Gets a value indicating whether the consuming repository should split a query with multiple
-    /// collection <see cref="Includes"/> into separate queries (EF Core's <c>AsSplitQuery()</c>)
-    /// instead of a single Cartesian-joined query.
+    /// Gets a value indicating whether the evaluator must load <see cref="Includes"/> with one query per
+    /// included collection instead of a single joined query.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The default is <see langword="false"/> — a single-query plan is never wrong, only
-    /// potentially less efficient. Set this to <see langword="true"/> when a specification declares
-    /// two or more collection <see cref="Includes"/>: a single joined query produces a Cartesian
-    /// product across the included collections, which duplicates rows in the result set. Splitting
-    /// into separate queries avoids this duplication.
+    /// <b>Usage.</b> Set it when the specification includes two or more collections: a single joined query
+    /// returns the Cartesian product of those collections, repeating rows. The default,
+    /// <see langword="false"/>, is always correct and only potentially slower.
     /// </para>
     /// <para>
-    /// Composite specifications propagate <see langword="true"/> if either operand (or the single
-    /// operand, for <c>NotSpecification&lt;T&gt;</c>) carries <see langword="true"/> — identical
-    /// more-permissive-wins semantics to <see cref="AsNoTracking"/> and <see cref="IncludeDeleted"/>.
+    /// <b>Composition.</b> A composite specification sets it when any operand sets it.
     /// </para>
     /// </remarks>
     bool AsSplitQuery { get; }
 
     /// <summary>
-    /// Gets a value indicating whether the consuming repository should bypass the global soft-delete
-    /// query filter so that soft-deleted records are included in results.
+    /// Gets a value indicating whether the evaluator must bypass the global query filters so that soft-deleted
+    /// entities are returned.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The default is <see langword="false"/> — soft-deleted records are hidden by the global query
-    /// filter. Intended for admin panels, audit trails, data export, and recovery operations only.
-    /// Never set this flag in read-model or user-facing query specifications.
+    /// <b>Usage.</b> The default, <see langword="false"/>, hides soft-deleted entities. Set it only for admin,
+    /// audit, export and recovery queries, never for user-facing queries.
     /// </para>
     /// <para>
-    /// <strong>WARNING:</strong> Setting <c>IncludeDeleted = true</c> causes the repository to call
-    /// <c>IgnoreQueryFilters()</c> internally (in EF Core), which bypasses <em>ALL</em> global query
-    /// filters on the entity type — including any tenant isolation filter registered in a
-    /// <c>TenantedDbContext</c>. EF Core's <c>IgnoreQueryFilters()</c> cannot selectively bypass a
-    /// single filter; it disables every filter for that entity type.
+    /// <b>Pitfall.</b> The bypass is not selective: it disables <em>every</em> global query filter on the
+    /// entity, including tenant isolation. Always add the tenant condition back as criteria, for example
+    /// <c>AddCriteria(o =&gt; o.TenantId == tenantId)</c>; criteria accumulate with AND, so this narrows the
+    /// existing filter rather than replacing it.
     /// </para>
     /// <para>
-    /// For tenant-scoped soft-delete queries, always re-apply the tenant criterion manually:
-    /// <code>
-    /// AddCriteria(e => e.TenantId == tenantId);
-    /// </code>
-    /// <c>AddCriteria</c> combines conditions with logical AND, so this adds the tenant boundary to the
-    /// specification's other criteria rather than replacing them.
-    /// </para>
-    /// <para>
-    /// Composite specifications (<c>AndSpecification&lt;T&gt;</c>, <c>OrSpecification&lt;T&gt;</c>,
-    /// <c>NotSpecification&lt;T&gt;</c>) propagate <see langword="true"/> when any operand has
-    /// <c>IncludeDeleted = true</c> (more-permissive wins, mirroring the <c>AsNoTracking</c>
-    /// propagation rule).
+    /// <b>Composition.</b> A composite specification sets it when any operand sets it, so combining with a
+    /// single soft-delete-inclusive operand removes the tenant filter from the whole query.
     /// </para>
     /// </remarks>
     bool IncludeDeleted { get; }
 
     /// <summary>
-    /// Gets the list of string-based navigation-include paths for deep eager loading.
+    /// Gets the dot-separated navigation paths to eager-load, such as <c>"Lines.Product.Supplier"</c>; empty
+    /// when none.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// String includes are applied after expression-based <see cref="Includes"/> (step 2b in the
-    /// <c>SpecificationEvaluator&lt;T&gt;</c> pipeline) and before ordering. Each entry is a
-    /// dot-separated navigation path such as <c>"Orders.Items.Product"</c>.
-    /// </para>
-    /// <para>
-    /// Intended for deep multi-level navigation paths where expression-based
-    /// <c>ThenInclude</c> chains become cumbersome. Existing specifications that do not call
-    /// <c>AddStringInclude</c> return an empty list, which is a no-op in the evaluator.
-    /// </para>
-    /// <para>
-    /// <c>AddStringInclude(null/whitespace)</c> throws <see cref="ArgumentException"/>.
-    /// </para>
+    /// An evaluator loads these after <see cref="Includes"/> and before ordering. Use them for deep paths where
+    /// expression includes become unwieldy. <see cref="Specification{T}"/> never stores a null or whitespace
+    /// path.
     /// </remarks>
     IReadOnlyList<string> StringIncludes { get; }
 }

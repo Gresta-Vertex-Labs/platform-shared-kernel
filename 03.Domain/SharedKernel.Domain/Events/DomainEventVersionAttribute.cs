@@ -1,62 +1,38 @@
 namespace SharedKernel.Domain.Events;
 
 /// <summary>
-/// Declares the schema version of a domain event class, so infrastructure can route each event to
-/// the correct deserializer or handler.
+/// Declares the schema version of a concrete domain event type, so infrastructure can pick the matching
+/// deserializer or handler.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Declare it on every concrete domain event, starting with <c>[DomainEventVersion(1)]</c> for the
-/// initial schema, and increment it when a backward-incompatible change is introduced. The platform
-/// enforces this: analyzer <c>SK0009</c> (<c>SharedKernel.Analyzers</c>) flags an event type without
-/// it. An explicit version makes the first breaking change a visible, reviewable edit of an existing
-/// number rather than the easy-to-forget addition of an attribute nobody had to write before.
+/// <b>Usage.</b> Apply it to every concrete event, starting at <c>[DomainEventVersion(1)]</c>, and increment
+/// it with every backward-incompatible change to the event's shape. Analyzer <c>SK0009</c> flags a
+/// non-abstract event type that lacks it. Infrastructure reads the value with
+/// <see cref="DomainEventVersionHelper.GetVersion(Type)"/>; events carry no version property of their own.
 /// </para>
 /// <para>
-/// <see cref="DomainEventVersionHelper.GetVersion(Type)"/> still returns <c>1</c> for a type without
-/// the attribute. That is a runtime fallback for events declared outside the analyzer's reach, not a
-/// licence to omit the declaration.
+/// <b>Pitfall.</b> The attribute is not inherited. Apply it to the concrete sealed record itself: a type
+/// that only inherits it from a base record reads as version <c>1</c>.
 /// </para>
 /// <para>
-/// Infrastructure (messaging, outbox) reads the version via
-/// <see cref="DomainEventVersionHelper.GetVersion(Type)"/> to route events to the correct
-/// deserializer or handler registration. The <see cref="IDomainEvent"/> interface is unchanged
-/// — no runtime <c>Version</c> property is added to domain events themselves.
-/// </para>
-/// <para>
-/// This attribute is non-inherited and cannot be applied multiple times to the same class.
-/// Apply it only to the concrete sealed event record, not to abstract base records.
+/// <b>Validation.</b> A version below 1 compiles, but the constructor throws when the attribute is read
+/// through reflection.
 /// </para>
 /// </remarks>
 /// <example>
 /// <code>
-/// [DomainEventVersion(1)]
-/// public sealed record OrderPlacedEvent : DomainEvent
-/// {
-///     public required Guid OrderId { get; init; }
-///     public required decimal Total { get; init; }
-/// }
-///
+/// // Version 2: Total changed from decimal to Money, which breaks existing readers.
 /// [DomainEventVersion(2)]
-/// public sealed record OrderPlacedEventV2 : DomainEvent
-/// {
-///     public required Guid OrderId { get; init; }
-///     public required decimal Total { get; init; }
-///     public required string Currency { get; init; } // new field in v2
-/// }
+/// public sealed record OrderPlaced(OrderId OrderId, Money Total) : DomainEvent;
 /// </code>
 /// </example>
 [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
 public sealed class DomainEventVersionAttribute : Attribute
 {
-    /// <summary>
-    /// Initialises a new <see cref="DomainEventVersionAttribute"/> with the specified
-    /// <paramref name="version"/>.
-    /// </summary>
-    /// <param name="version">The schema version. Must be greater than or equal to 1.</param>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="version"/> is less than 1.
-    /// </exception>
+    /// <summary>Initializes a new attribute declaring schema version <paramref name="version"/>.</summary>
+    /// <param name="version">The schema version. Must be 1 or greater.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="version"/> is less than 1.</exception>
     public DomainEventVersionAttribute(int version)
     {
         if (version < 1)
@@ -65,6 +41,6 @@ public sealed class DomainEventVersionAttribute : Attribute
         Version = version;
     }
 
-    /// <summary>Gets the declared schema version of the domain event.</summary>
+    /// <summary>Gets the declared schema version; always 1 or greater.</summary>
     public int Version { get; }
 }

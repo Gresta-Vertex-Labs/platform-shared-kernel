@@ -1,14 +1,20 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Marks a type as a DDD aggregate root — the consistency boundary for a cluster of domain objects.
-/// Extends <see cref="IEntity{TId}"/> and <see cref="IHasDomainEvents"/>, providing access to the
-/// domain events raised during the current unit of work.
+/// An aggregate root: the entity that guards the consistency boundary of a cluster of domain objects
+/// and records the domain events raised inside it.
 /// </summary>
-/// <typeparam name="TId">The type of the aggregate's identity key. Must be non-null.</typeparam>
+/// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
 /// <remarks>
-/// Infrastructure dispatch code must depend on <see cref="IHasDomainEvents"/> rather than
-/// <see cref="IAggregateRoot{TId}"/> — aggregate identity is not required for event dispatch.
+/// <para>
+/// <b>Usage.</b> Extend <see cref="SharedKernel.Domain.Aggregates.AggregateRoot{TId}"/> or one of its
+/// audit, soft-delete and tenant variants rather than implementing this interface directly; the base
+/// class supplies event recording, the clock and the event sequence number.
+/// </para>
+/// <para>
+/// <b>Dispatch.</b> Code that only collects and dispatches events depends on
+/// <see cref="IHasDomainEvents"/> instead, because dispatch needs no identity type.
+/// </para>
 /// </remarks>
 public interface IAggregateRoot<TId> : IEntity<TId>, IHasDomainEvents where TId : notnull
 {

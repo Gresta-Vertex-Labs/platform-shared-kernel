@@ -3,20 +3,21 @@ using System.Linq.Expressions;
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// Ad hoc, criteria-only specification backing <see cref="Specification{T}.Create"/> — a third
-/// sealed-wrapper sentinel alongside <see cref="AllSpecification{T}"/>/<see cref="EmptySpecification{T}"/>.
-/// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
-/// <remarks>
-/// Internal — never referenced directly by consumers. Constructed exclusively via
+/// An unnamed specification that carries only criteria; the implementation behind
 /// <see cref="Specification{T}.Create"/>.
+/// </summary>
+/// <typeparam name="T">The entity type the query returns.</typeparam>
+/// <remarks>
+/// Create instances through <see cref="Specification{T}.Create"/>; callers see only
+/// <see cref="Specification{T}"/>.
 /// </remarks>
 internal sealed class CriteriaSpecification<T> : Specification<T>
 {
     /// <summary>
-    /// Initialises a new <see cref="CriteriaSpecification{T}"/> with the supplied
-    /// <paramref name="criteria"/> and no other builder calls — no includes, no ordering, no
-    /// paging; <c>AsNoTracking</c>/<c>IncludeDeleted</c>/<c>AsSplitQuery</c> all default <see langword="false"/>.
+    /// Initializes a new specification whose only content is <paramref name="criteria"/>: no includes,
+    /// ordering or paging, and every flag <see langword="false"/>.
     /// </summary>
+    /// <param name="criteria">The condition an entity must satisfy. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="criteria"/> is <see langword="null"/>.</exception>
     public CriteriaSpecification(Expression<Func<T, bool>> criteria) => AddCriteria(criteria);
 }

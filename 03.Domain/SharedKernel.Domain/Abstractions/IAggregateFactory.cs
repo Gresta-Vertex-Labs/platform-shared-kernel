@@ -1,22 +1,24 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Marks a class as the factory for one aggregate root type.
+/// Marker for a class that creates one aggregate root type, used when creation needs collaborators the
+/// aggregate itself should not depend on.
 /// </summary>
-/// <typeparam name="TAggregateRoot">The aggregate root type the factory produces.</typeparam>
-/// <typeparam name="TId">The aggregate's identity key type.</typeparam>
+/// <typeparam name="TAggregateRoot">The aggregate root type the factory creates.</typeparam>
+/// <typeparam name="TId">The identity key type of that aggregate. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
-/// A marker, deliberately without members: creation signatures differ for every aggregate, so no
-/// shared method could describe them. The marker lets architecture rules find every factory and
-/// hold them to one convention: a factory lives in the domain assembly, and creates its aggregate
-/// through a <c>Create</c> method that returns a <c>ValidationResult</c> instead of throwing.
+/// <b>Usage.</b> Write a factory when creation needs something outside the aggregate, such as an
+/// identifier generator or a uniqueness check. When the aggregate can build itself, give it a static
+/// <c>Create</c> method that calls <c>TryCreate</c> instead; it needs no factory.
 /// </para>
 /// <para>
-/// Use a dedicated factory when creation needs collaborators the aggregate should not know about,
-/// such as a uniqueness check or an identifier generator. When the aggregate can build itself,
-/// a static <c>Create</c> on the aggregate using <c>TryCreate</c> is enough and needs no factory.
+/// <b>Convention.</b> The interface has no members, because every aggregate has a different creation
+/// signature. Architecture rules find factories through it and require a public <c>Create</c> method
+/// that returns <see cref="SharedKernel.Primitives.Results.ValidationResult{T}"/> of
+/// <typeparamref name="TAggregateRoot"/>. Report invalid input as a failed result, never by throwing.
 /// </para>
+/// </remarks>
 /// <example>
 /// <code>
 /// public sealed class OrderFactory(IIdGenerator ids, IClock clock) : IAggregateFactory&lt;Order, OrderId&gt;
@@ -26,7 +28,6 @@ namespace SharedKernel.Domain.Abstractions;
 /// }
 /// </code>
 /// </example>
-/// </remarks>
 public interface IAggregateFactory<TAggregateRoot, TId>
     where TAggregateRoot : IAggregateRoot<TId>
     where TId : notnull

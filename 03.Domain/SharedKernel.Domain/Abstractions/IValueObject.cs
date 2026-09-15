@@ -1,10 +1,13 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Zero-member marker interface for domain value objects.
-/// Types implementing this interface use structural equality — two instances are equal
-/// if and only if all their equality components are equal.
+/// Marker for a value object: a domain object with no identity, compared by its values.
 /// </summary>
+/// <remarks>
+/// <b>Usage.</b> Extend <see cref="SharedKernel.Domain.ValueObjects.ValueObject"/> rather than
+/// implementing this interface directly. The base class supplies equality over its equality components
+/// and validation through <c>EnsureValid()</c>; the marker alone guarantees neither.
+/// </remarks>
 public interface IValueObject
 {
 }

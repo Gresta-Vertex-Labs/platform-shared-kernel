@@ -1,16 +1,20 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Marks a type as a strongly-typed identifier wrapping a primitive value of type <typeparamref name="TValue"/>.
+/// A strongly-typed identifier: a named wrapper around a primitive key, so one kind of identifier
+/// cannot be passed where another is expected.
 /// </summary>
-/// <typeparam name="TValue">The underlying primitive value type (e.g., <see cref="Guid"/>, <see cref="int"/>). Must be non-null.</typeparam>
+/// <typeparam name="TValue">
+/// The underlying key type, such as <see cref="Guid"/> or <see cref="long"/>. Must be non-null.
+/// </typeparam>
 /// <remarks>
-/// Implementing types should be records to obtain value equality. An implicit conversion operator
-/// from the implementing type to <typeparamref name="TValue"/> is recommended so callers can
-/// unwrap without casting.
+/// <b>Usage.</b> Derive from <see cref="SharedKernel.Domain.StronglyTypedIds.StronglyTypedId{TValue}"/>
+/// rather than implementing this interface directly. The base record supplies equality by type and
+/// value, rejects a <see langword="null"/> value, and converts to <typeparamref name="TValue"/> only
+/// explicitly, so an identifier never flows silently into a parameter of the underlying type.
 /// </remarks>
 public interface IStronglyTypedId<TValue> where TValue : notnull
 {
-    /// <summary>Gets the underlying primitive value of this strongly-typed identifier.</summary>
+    /// <summary>Gets the underlying key value.</summary>
     TValue Value { get; }
 }

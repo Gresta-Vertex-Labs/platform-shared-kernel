@@ -1,29 +1,33 @@
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// A specification that matches all entities — the identity element for AND composition.
+/// A specification with no criteria, matched by every entity: the neutral starting point for building a
+/// filter with AND.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type the query returns.</typeparam>
 /// <remarks>
 /// <para>
-/// <see cref="ISpecification{T}.Criteria"/> is <see langword="null"/>, meaning every entity
-/// satisfies this specification. <see cref="Specification{T}.IsSatisfiedBy"/> always returns
-/// <see langword="true"/>.
+/// <b>Behaviour.</b> <see cref="Specification{T}.Criteria"/> is <see langword="null"/>, so
+/// <see cref="Specification{T}.IsSatisfiedBy"/> always returns <see langword="true"/>. It has no includes,
+/// ordering or paging, and every flag is <see langword="false"/>.
 /// </para>
 /// <para>
-/// <strong>Identity element semantics:</strong>
-/// <c>And(AllSpecification, spec)</c> effectively returns <c>spec</c> because an
-/// <see cref="AndSpecification{T}"/> with a null-criteria left operand adopts the right
-/// operand's criteria. <see cref="AllSpecification{T}"/> is the AND identity element.
+/// <b>Composition.</b> AND with another specification yields that specification's criteria and query shape;
+/// OR with any specification yields no criteria, matching every entity; NOT yields a specification that
+/// matches nothing.
 /// </para>
+/// <para>
+/// <b>Pitfall.</b> AND does not return the other operand itself: its ordering, paging and Distinct are
+/// dropped, as with any composition.
+/// </para>
+/// </remarks>
 /// <example>
 /// <code>
-/// // Compose a base "all" specification with a runtime filter:
-/// ISpecification&lt;Order&gt; spec = new AllSpecification&lt;Order&gt;().And(new ActiveOrdersSpec());
-/// // spec.Criteria == ActiveOrdersSpec.Criteria (AllSpecification is transparent in AND)
+/// Specification&lt;Order&gt; spec = new AllSpecification&lt;Order&gt;();
+/// if (customerId is not null)
+///     spec = spec.And(Specification&lt;Order&gt;.Create(o =&gt; o.CustomerId == customerId));
 /// </code>
 /// </example>
-/// </remarks>
 public sealed class AllSpecification<T> : Specification<T>
 {
     // No criteria, no ordering, no paging — matches everything.

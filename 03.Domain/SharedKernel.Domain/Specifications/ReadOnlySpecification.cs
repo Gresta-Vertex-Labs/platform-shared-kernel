@@ -1,37 +1,38 @@
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// Convenience base class for read-only query specifications.
-/// Automatically applies <c>AsNoTracking = true</c> so that consuming repositories
-/// suppress change-tracking on every query built from this specification.
+/// Base class for a query whose results are only read, never modified: the evaluator runs it without change
+/// tracking.
 /// </summary>
-/// <typeparam name="T">The type of domain entity this specification applies to.</typeparam>
+/// <typeparam name="T">The entity type the query returns.</typeparam>
 /// <remarks>
 /// <para>
-/// Use <see cref="ReadOnlySpecification{T}"/> instead of calling <c>ApplyNoTracking()</c>
-/// manually in every read-only specification constructor. Any subclass constructor inherits
-/// the no-tracking flag automatically.
+/// <b>Usage.</b> Derive from it for list, lookup and report queries instead of calling
+/// <see cref="Specification{T}.ApplyNoTracking"/> in each constructor. The flag is set before the subclass
+/// constructor runs and cannot be cleared.
 /// </para>
 /// <para>
-/// This class is <c>abstract</c> — it cannot be instantiated directly, only subclassed.
+/// <b>Pitfall.</b> Never use it to load entities you intend to modify: changes to untracked entities are not
+/// saved. Use <see cref="Specification{T}"/> for write-side fetches.
 /// </para>
+/// </remarks>
 /// <example>
 /// <code>
-/// public sealed class ActiveOrdersReadOnlySpec : ReadOnlySpecification&lt;Order&gt;
+/// public sealed class RecentOrdersSpec : ReadOnlySpecification&lt;Order&gt;
 /// {
-///     public ActiveOrdersReadOnlySpec()
+///     public RecentOrdersSpec(DateTimeOffset since)
 ///     {
-///         AddCriteria(o => !o.IsDeleted);
-///         ApplyOrderByDescending(o => o.CreatedOn);
+///         AddCriteria(o =&gt; o.CreatedOn &gt;= since);
+///         ApplyOrderByDescending(o =&gt; o.CreatedOn);
 ///     }
 /// }
 /// </code>
 /// </example>
-/// </remarks>
 public abstract class ReadOnlySpecification<T> : Specification<T>
 {
     /// <summary>
-    /// Initialises the specification with <c>AsNoTracking = true</c>.
+    /// Initializes a new read-only specification with <see cref="Specification{T}.AsNoTracking"/> set to
+    /// <see langword="true"/>.
     /// </summary>
     protected ReadOnlySpecification() => ApplyNoTracking();
 }

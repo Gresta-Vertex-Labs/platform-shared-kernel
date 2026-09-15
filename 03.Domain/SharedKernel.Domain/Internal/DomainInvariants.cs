@@ -7,14 +7,15 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Domain.Internal;
 
 /// <summary>
-/// The single implementation of rule enforcement and exception-to-result creation shared by
-/// aggregates, value objects and domain services, so the three cannot drift apart.
+/// The single implementation of null checking, business rule enforcement and exception-to-result creation
+/// shared by aggregates, value objects, strongly-typed identifiers and domain services.
 /// </summary>
 internal static class DomainInvariants
 {
     /// <summary>
-    /// Throws the same error <c>Guard.Throw.Null</c> produces, for a type parameter that is not constrained to
-    /// a class or struct and so cannot call it.
+    /// Returns <paramref name="value"/>, or throws <see cref="DomainException"/> with the same
+    /// <c>Required</c> validation error <c>Guard.Throw.Null</c> produces when it is <see langword="null"/>.
+    /// Exists for unconstrained type parameters, which cannot call that guard.
     /// </summary>
     internal static T NotNull<T>(T value, string paramName)
     {
@@ -27,6 +28,10 @@ internal static class DomainInvariants
         return value;
     }
 
+    /// <summary>
+    /// Throws <see cref="BusinessRuleViolationException"/> when <paramref name="rule"/> is broken, or
+    /// <see cref="ArgumentNullException"/> when it is <see langword="null"/>.
+    /// </summary>
     internal static void CheckRule(IBusinessRule rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
@@ -35,6 +40,10 @@ internal static class DomainInvariants
             throw new BusinessRuleViolationException(rule);
     }
 
+    /// <summary>
+    /// Runs <paramref name="factory"/>, returning every error of a <see cref="ValidationException"/> or the
+    /// single error of any other <see cref="DomainException"/> as a failed result; other exceptions propagate.
+    /// </summary>
     internal static ValidationResult<T> TryCreate<T>(Func<T> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);

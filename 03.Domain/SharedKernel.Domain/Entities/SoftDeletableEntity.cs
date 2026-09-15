@@ -5,8 +5,15 @@ using SharedKernel.Guards;
 
 namespace SharedKernel.Domain.Entities;
 
-/// <summary>A child entity that is deleted logically: marked deleted and kept, rather than removed.</summary>
+/// <summary>
+/// A child entity inside an aggregate that supports soft delete: it is marked deleted and kept, rather
+/// than removed.
+/// </summary>
 /// <typeparam name="TId">The identity key type. Must be non-null.</typeparam>
+/// <remarks>
+/// <b>Usage.</b> The owning aggregate soft-deletes the entity through a domain method that passes the
+/// aggregate's own time to <see cref="MarkAsDeleted"/>, and raises any deletion event itself.
+/// </remarks>
 /// <example>
 /// <code>
 /// public sealed class OrderLine : SoftDeletableEntity&lt;OrderLineId&gt;
@@ -22,11 +29,13 @@ namespace SharedKernel.Domain.Entities;
 public abstract class SoftDeletableEntity<TId> : Entity<TId>, ISoftDeletable
     where TId : notnull
 {
-    /// <summary>Initializes the entity with its identity key.</summary>
+    /// <summary>Initializes a new entity with its identity key.</summary>
     /// <param name="id">The identity key; <c>default(TId)</c> makes the entity transient.</param>
     protected SoftDeletableEntity(TId id) : base(id) { }
 
-    /// <summary>Initializes the entity for ORM materialization. Do not call from domain code.</summary>
+    /// <summary>
+    /// Initializes a new transient entity for ORM materialization only. Do not call from domain code.
+    /// </summary>
     protected SoftDeletableEntity() { }
 
     /// <inheritdoc/>
@@ -39,17 +48,26 @@ public abstract class SoftDeletableEntity<TId> : Entity<TId>, ISoftDeletable
     public string? DeletedBy { get; private set; }
 
     /// <summary>
-    /// Marks the entity deleted by <paramref name="deletedBy"/> at <paramref name="deletedOn"/>. Does nothing
-    /// when the entity is already deleted.
+    /// Soft-deletes the entity: records <paramref name="deletedBy"/> and <paramref name="deletedOn"/> and
+    /// sets <see cref="IsDeleted"/>.
     /// </summary>
-    /// <param name="deletedBy">The identifier of the actor performing the deletion.</param>
-    /// <param name="deletedOn">The UTC time of the deletion, normally the owning aggregate's current time.</param>
+    /// <param name="deletedBy">The actor performing the deletion. Must not be null or whitespace.</param>
+    /// <param name="deletedOn">
+    /// The time of the deletion, normally the owning aggregate's current time. Must have a zero UTC offset.
+    /// </param>
     /// <exception cref="DomainException">
-    /// <paramref name="deletedBy"/> is null, empty or whitespace, or <paramref name="deletedOn"/> is not UTC.
+    /// <paramref name="deletedOn"/> has a non-zero UTC offset, or <paramref name="deletedBy"/> is
+    /// <see langword="null"/>, empty or whitespace. Both are checked even when the entity is already deleted.
     /// </exception>
     /// <remarks>
-    /// An entity has no clock, so the owning aggregate passes its own time. Expose a domain method on the
-    /// entity that calls this, and call that method from the aggregate.
+    /// <para>
+    /// <b>Time.</b> An entity has no clock, so the owning aggregate passes its own time. Expose a domain
+    /// method on the entity that calls this, and call that method from the aggregate.
+    /// </para>
+    /// <para>
+    /// <b>Idempotent.</b> When the entity is already deleted, the call changes nothing, so the original time
+    /// and actor are kept. No domain event is raised; the owning aggregate raises one if needed.
+    /// </para>
     /// </remarks>
     protected void MarkAsDeleted(string deletedBy, DateTimeOffset deletedOn)
     {

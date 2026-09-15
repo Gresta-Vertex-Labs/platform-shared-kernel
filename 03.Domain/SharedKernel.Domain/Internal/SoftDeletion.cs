@@ -9,9 +9,9 @@ namespace SharedKernel.Domain.Internal;
 internal static class SoftDeletion
 {
     /// <summary>
-    /// Validates the actor and reports whether the record should transition to deleted. A record that
-    /// is already deleted stays as it is, so deleting twice keeps the original timestamp and actor and
-    /// raises no second event.
+    /// Throws <c>DomainException</c> when <paramref name="deletedBy"/> is null or whitespace, then returns
+    /// whether the record should transition to deleted. A record that is already deleted stays as it is, so
+    /// deleting twice keeps the original timestamp and actor and raises no second event.
     /// </summary>
     internal static bool ShouldMarkDeleted(bool isDeleted, string deletedBy)
     {

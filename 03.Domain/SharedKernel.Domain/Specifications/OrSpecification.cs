@@ -3,23 +3,35 @@ using System.Linq.Expressions;
 namespace SharedKernel.Domain.Specifications;
 
 /// <summary>
-/// A specification satisfied by entities that satisfy at least one operand.
+/// A specification matched by entities that satisfy the criteria of at least one of its operands.
 /// </summary>
-/// <typeparam name="T">The entity type.</typeparam>
+/// <typeparam name="T">The entity type the query returns.</typeparam>
 /// <remarks>
 /// <para>
-/// When either operand has no criteria it matches every entity, so the combination has no criteria either.
-/// Includes, string includes and the tracking, split-query and include-deleted flags are carried over as in
-/// <see cref="AndSpecification{T}"/>.
+/// <b>Criteria.</b> The left criteria OR the right criteria. An operand without criteria matches every
+/// entity, so when either operand has no criteria the result has none and matches every entity.
 /// </para>
-/// <para><b>Ordering, paging and <c>Distinct</c> are not carried over.</b></para>
+/// <para>
+/// <b>Query shape.</b> Includes, string includes and the tracking, split-query and include-deleted flags are
+/// copied as in <see cref="AndSpecification{T}"/>.
+/// </para>
+/// <para>
+/// <b>Pitfall.</b> Ordering, paging and <see cref="ISpecification{T}.IsDistinct"/> are never copied, and the
+/// include-deleted flag of either operand removes every global query filter, tenant isolation included,
+/// from the whole result.
+/// </para>
 /// </remarks>
 public sealed class OrSpecification<T> : Specification<T>
 {
-    /// <summary>Combines <paramref name="left"/> and <paramref name="right"/> with logical OR.</summary>
-    /// <param name="left">The first specification.</param>
-    /// <param name="right">The second specification.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
+    /// <summary>
+    /// Initializes a new specification that combines <paramref name="left"/> and <paramref name="right"/> with
+    /// logical OR.
+    /// </summary>
+    /// <param name="left">The first operand. Must not be <see langword="null"/>.</param>
+    /// <param name="right">The second operand. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.
+    /// </exception>
     public OrSpecification(Specification<T> left, Specification<T> right)
     {
         ArgumentNullException.ThrowIfNull(left);

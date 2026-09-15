@@ -1,41 +1,35 @@
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
-/// Opt-in marker interface correlating a domain event back to the aggregate that raised it.
+/// An optional contract for a domain event that carries the identity key of the aggregate that
+/// raised it.
 /// </summary>
-/// <typeparam name="TId">The type of the raising aggregate's identity key. Must be non-null.</typeparam>
+/// <typeparam name="TId">The identity key type of the raising aggregate. Must be non-null.</typeparam>
 /// <remarks>
 /// <para>
-/// This is a zero-ceremony shape deliberately mirroring <see cref="IHasTenant"/> exactly — a
-/// single-property marker with no domain logic. <see cref="SharedKernel.Domain.Events.IDomainEvent"/>,
-/// <see cref="SharedKernel.Domain.Events.DomainEvent"/>, and
-/// <see cref="SharedKernel.Domain.Events.DomainEvent{TPayload}"/> are completely unchanged — this
-/// interface is purely something a concrete event may additionally implement, never a new required
-/// member on the existing event hierarchy.
+/// <b>Usage.</b> Implement it on a concrete event when infrastructure, such as an audit trail, outbox
+/// translation or a projection, must correlate the event with its aggregate. That code then needs one
+/// type check, <c>is IHasAggregateId&lt;TId&gt;</c>, instead of knowing each event's own property name.
 /// </para>
 /// <para>
-/// Gives infrastructure code (audit trails, outbox/messaging translation, projections, logging) a
-/// single <c>is IHasAggregateId&lt;TId&gt;</c> type check instead of per-event ad hoc
-/// property-name conventions (<c>OrderId</c>, <c>SourceId</c>, etc.).
+/// It is opt-in: <see cref="SharedKernel.Domain.Events.IDomainEvent"/> does not require it.
 /// </para>
 /// </remarks>
 /// <example>
 /// <code>
-/// public sealed record OrderPlacedPayload(Guid OrderId, decimal Total);
+/// [DomainEventVersion(1)]
+/// public sealed record OrderPlaced(OrderId AggregateId, Money Total) : DomainEvent, IHasAggregateId&lt;OrderId&gt;;
 ///
-/// public sealed record OrderPlacedEvent(OrderId AggregateId)
-///     : DomainEvent&lt;OrderPlacedPayload&gt;, IHasAggregateId&lt;OrderId&gt;;
-///
-/// // Infrastructure code can now correlate any event back to its raising aggregate uniformly:
+/// // In infrastructure:
 /// if (domainEvent is IHasAggregateId&lt;OrderId&gt; correlated)
 /// {
-///     var aggregateId = correlated.AggregateId;
+///     OrderId orderId = correlated.AggregateId;
 /// }
 /// </code>
 /// </example>
 public interface IHasAggregateId<TId>
     where TId : notnull
 {
-    /// <summary>Gets the identity key of the aggregate that raised this event.</summary>
+    /// <summary>Gets the identity key of the aggregate that raised the event.</summary>
     TId AggregateId { get; }
 }

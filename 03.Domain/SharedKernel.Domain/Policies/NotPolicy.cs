@@ -1,21 +1,26 @@
 namespace SharedKernel.Domain.Policies;
 
-/// <summary>A policy that a subject complies with when it does not comply with the inner policy.</summary>
+/// <summary>A policy that a subject complies with exactly when it does not comply with the inner policy.</summary>
 /// <typeparam name="T">The type of subject the policy evaluates.</typeparam>
 /// <remarks>
-/// The inner policy's explanation describes the opposite condition, so a negated policy takes its own
-/// explanation.
+/// <b>Explanation.</b> The inner policy's explanation describes the opposite condition, so the negated policy
+/// takes its own explanation at construction.
 /// </remarks>
 public sealed class NotPolicy<T> : IPolicy<T>
 {
     private readonly IPolicy<T> _inner;
     private readonly string _explanation;
 
-    /// <summary>Negates <paramref name="inner"/>.</summary>
-    /// <param name="inner">The policy to negate.</param>
-    /// <param name="explanation">The explanation returned when a subject complies with <paramref name="inner"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="inner"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="explanation"/> is null, empty or whitespace.</exception>
+    /// <summary>Initializes a new policy negating <paramref name="inner"/>, with its own explanation.</summary>
+    /// <param name="inner">The policy to negate. Must not be null.</param>
+    /// <param name="explanation">
+    /// The explanation returned when a subject complies with <paramref name="inner"/>. Must not be null or
+    /// whitespace.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="inner"/> or <paramref name="explanation"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="explanation"/> is empty or whitespace.</exception>
     public NotPolicy(IPolicy<T> inner, string explanation)
     {
         ArgumentNullException.ThrowIfNull(inner);
@@ -24,9 +29,19 @@ public sealed class NotPolicy<T> : IPolicy<T>
         _explanation = explanation;
     }
 
-    /// <inheritdoc/>
+    /// <summary>Returns whether <paramref name="subject"/> fails the inner policy.</summary>
+    /// <param name="subject">The subject to evaluate.</param>
+    /// <returns>
+    /// <see langword="true"/> when the subject does not comply with the inner policy; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
     public bool IsCompliant(T subject) => !_inner.IsCompliant(subject);
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Returns the explanation supplied at construction when <paramref name="subject"/> complies with the inner
+    /// policy.
+    /// </summary>
+    /// <param name="subject">The subject to evaluate.</param>
+    /// <returns>The supplied explanation; or <see cref="string.Empty"/> when this policy is satisfied.</returns>
     public string Explain(T subject) => IsCompliant(subject) ? string.Empty : _explanation;
 }

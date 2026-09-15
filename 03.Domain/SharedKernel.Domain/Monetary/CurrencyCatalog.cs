@@ -3,22 +3,32 @@ using System.Collections.Frozen;
 namespace SharedKernel.Domain.Monetary;
 
 /// <summary>
-/// The ISO 4217 currencies this package accepts, with the number of decimal places of each minor unit.
+/// The table of ISO 4217 currency codes that <see cref="Currency"/> accepts, with the number of decimal places of
+/// each currency's minor unit.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Covers every active national and supranational transactional currency as of <see cref="RegistryAsOf"/>.
-/// Fund codes (such as <c>USN</c> and <c>CLF</c>), special drawing rights (<c>XDR</c>) and precious metals
-/// (<c>XAU</c>) are deliberately excluded, since they are not amounts a service charges or pays.
+/// <b>Scope.</b> Covers every active national and supranational transactional currency as of
+/// <see cref="RegistryAsOf"/>. Fund codes (such as <c>USN</c> and <c>CLF</c>), special drawing rights
+/// (<c>XDR</c>) and precious metals (<c>XAU</c>) are deliberately excluded, since they are not amounts a service
+/// charges or pays.
 /// </para>
 /// <para>
-/// The table is compiled in. When ISO publishes an amendment, a new package version updates it; nothing is
-/// loaded at runtime.
+/// <b>Updates.</b> The table is compiled in and read-only; nothing is loaded at runtime. An ISO amendment is
+/// picked up only by a new package version.
+/// </para>
+/// <para>
+/// <b>Lookup.</b> Lookups are ordinal and case-sensitive: pass uppercase codes, or use <see cref="Currency.Create"/>,
+/// which normalizes input. The members are thread-safe.
 /// </para>
 /// </remarks>
 public static class CurrencyCatalog
 {
-    /// <summary>The ISO 4217 amendment state this table reflects, as a year and month.</summary>
+    /// <summary>The ISO 4217 amendment state this table reflects, as a year and month: <c>yyyy-MM</c>.</summary>
+    /// <remarks>
+    /// A constant is compiled into the calling assembly, so a caller sees the value of the package version it was
+    /// built against.
+    /// </remarks>
     public const string RegistryAsOf = "2026-09";
 
     private static readonly string[] ZeroDecimalCodes =
@@ -62,13 +72,18 @@ public static class CurrencyCatalog
 
     private static readonly FrozenDictionary<string, int> MinorUnitDigitsByCode = BuildCatalog();
 
-    /// <summary>Gets every code in the catalog.</summary>
+    /// <summary>Gets every uppercase code in the catalog, in no particular order.</summary>
     public static IReadOnlyCollection<string> Codes => MinorUnitDigitsByCode.Keys;
 
-    /// <summary>Looks up the number of minor-unit decimal places for <paramref name="code"/>.</summary>
-    /// <param name="code">An uppercase ISO 4217 alphabetic code, e.g. <c>USD</c>.</param>
-    /// <param name="digits">The number of decimal places when the code is known; otherwise <c>0</c>.</param>
-    /// <returns><see langword="true"/> when the code is in the catalog.</returns>
+    /// <summary>Looks up the number of decimal places of the minor unit of <paramref name="code"/>.</summary>
+    /// <param name="code">
+    /// An uppercase ISO 4217 alphabetic code, e.g. <c>USD</c>. Lowercase or <see langword="null"/> is not found.
+    /// </param>
+    /// <param name="digits">
+    /// When this method returns, <c>0</c>, <c>2</c> or <c>3</c> for a known code; otherwise <c>0</c>, which is
+    /// indistinguishable from a zero-decimal currency, so check the return value.
+    /// </param>
+    /// <returns><see langword="true"/> when the code is in the catalog; otherwise <see langword="false"/>.</returns>
     public static bool TryGetMinorUnitDigits(string? code, out int digits)
     {
         if (code is not null && MinorUnitDigitsByCode.TryGetValue(code, out digits))
@@ -78,9 +93,11 @@ public static class CurrencyCatalog
         return false;
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="code"/> is in the catalog.</summary>
-    /// <param name="code">An uppercase ISO 4217 alphabetic code, e.g. <c>USD</c>.</param>
-    /// <returns><see langword="true"/> when the code is known.</returns>
+    /// <summary>Returns whether <paramref name="code"/> is in the catalog.</summary>
+    /// <param name="code">
+    /// An uppercase ISO 4217 alphabetic code, e.g. <c>USD</c>. Lowercase or <see langword="null"/> is not found.
+    /// </param>
+    /// <returns><see langword="true"/> when the code is known; otherwise <see langword="false"/>.</returns>
     public static bool IsKnownCode(string? code) => code is not null && MinorUnitDigitsByCode.ContainsKey(code);
 
     private static FrozenDictionary<string, int> BuildCatalog()
