@@ -84,7 +84,7 @@ SharedKernel.Communication.Grpc  →  SharedKernel.Primitives (01.Core),
 ```
 
 Target framework: `net10.0`. Deliberately does **not** reference `04.Contracts` — gRPC uses
-Protobuf-generated types directly; `Envelope<T>`, `PagedList<T>`, and `EventEnvelope<T>` have no
+Protobuf-generated types directly; `PagedList<T>` and `EventEnvelope<T>` have no
 place in gRPC package code. Never references `02.Caching`, `05.Application`, `06.Persistence`, or
 `07.Messaging`.
 

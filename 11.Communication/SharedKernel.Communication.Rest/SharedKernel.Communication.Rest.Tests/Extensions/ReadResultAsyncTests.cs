@@ -10,85 +10,96 @@ using SharedKernel.Communication.Rest.ProblemDetails;
 namespace SharedKernel.Communication.Rest.Tests.Extensions;
 
 /// <summary>
-/// T-21: ReadEnvelopeAsync&lt;T&gt; unit tests covering both the JsonTypeInfo&lt;T&gt; (AOT-safe)
+/// ReadResultAsync&lt;T&gt; unit tests covering both the JsonTypeInfo&lt;T&gt; (source-generated)
 /// and JsonSerializerOptions? (reflection-based) overloads.
 /// </summary>
-public sealed class ReadEnvelopeAsyncTests
+public sealed class ReadResultAsyncTests
 {
     // STJ source-generated context for test DTO (JsonTypeInfo overload)
     private static readonly JsonTypeInfo<OrderDto> OrderDtoTypeInfo =
-        ReadEnvelopeTestJsonContext.Default.OrderDto;
+        ReadResultTestJsonContext.Default.OrderDto;
 
     // -----------------------------------------------------------------------
     // JsonTypeInfo<T> overload (R-15)
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task ReadEnvelopeAsync_TypeInfo_2xxWithValidJson_ReturnsOkEnvelope()
+    public async Task ReadResultAsync_TypeInfo_2xxWithValidJson_ReturnsSuccess()
     {
         // Source-generated context uses exact property names (Id, Amount)
         var response = BuildJsonResponse(HttpStatusCode.OK, """{"Id":"order-1","Amount":99.99}""");
 
-        var envelope = await response.ReadEnvelopeAsync(OrderDtoTypeInfo);
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
 
-        envelope.IsSuccess.Should().BeTrue();
-        envelope.Value.Should().NotBeNull();
-        envelope.Value!.Id.Should().Be("order-1");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value.Id.Should().Be("order-1");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_TypeInfo_2xxWithEmptyBody_ReturnsFail_EmptyBodyCode()
+    public async Task ReadResultAsync_TypeInfo_2xxWithEmptyBody_ReturnsFailure_EmptyBodyCode()
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
         };
 
-        var envelope = await response.ReadEnvelopeAsync(OrderDtoTypeInfo);
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().Be("http.empty-body");
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("http.empty-body");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_TypeInfo_2xxWithWhitespaceBody_ReturnsFail_EmptyBodyCode()
+    public async Task ReadResultAsync_TypeInfo_2xxWithWhitespaceBody_ReturnsFailure_EmptyBodyCode()
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("   ", Encoding.UTF8, "application/json")
         };
 
-        var envelope = await response.ReadEnvelopeAsync(OrderDtoTypeInfo);
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().Be("http.empty-body");
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("http.empty-body");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_TypeInfo_Non2xxWithProblemJson_ReturnsFail_WithProblemCode()
+    public async Task ReadResultAsync_TypeInfo_2xxWithJsonNullBody_ReturnsFailure_EmptyBodyCode()
+    {
+        var response = BuildJsonResponse(HttpStatusCode.OK, "null");
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("http.empty-body");
+    }
+
+    [Fact]
+    public async Task ReadResultAsync_TypeInfo_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
         var body = """{"type":"validation.required","title":"Validation Failed","detail":"Id is required","status":422}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.UnprocessableEntity, body);
 
-        var envelope = await response.ReadEnvelopeAsync(OrderDtoTypeInfo);
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().Be("validation.required");
-        envelope.Error!.Message.Should().Be("Id is required");
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("validation.required");
+        result.Error.Message.Should().Be("Id is required");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_TypeInfo_Non2xxWithNonProblemBody_ReturnsFail_WithGenericCode()
+    public async Task ReadResultAsync_TypeInfo_Non2xxWithNonProblemBody_ReturnsFailure_WithGenericCode()
     {
         var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("<html>Error</html>", Encoding.UTF8, "text/html")
         };
 
-        var envelope = await response.ReadEnvelopeAsync(OrderDtoTypeInfo);
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().NotBeNullOrEmpty();
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().NotBeNullOrEmpty();
     }
 
     // -----------------------------------------------------------------------
@@ -96,68 +107,68 @@ public sealed class ReadEnvelopeAsyncTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task ReadEnvelopeAsync_Options_2xxWithValidJson_ReturnsOkEnvelope()
+    public async Task ReadResultAsync_Options_2xxWithValidJson_ReturnsSuccess()
     {
         var response = BuildJsonResponse(HttpStatusCode.OK, """{"id":"order-2","amount":50.00}""");
 
-        var envelope = await response.ReadEnvelopeAsync<OrderDto>(options: null);
+        var result = await response.ReadResultAsync<OrderDto>(options: null);
 
-        envelope.IsSuccess.Should().BeTrue();
-        envelope.Value!.Id.Should().Be("order-2");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be("order-2");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_Options_2xxWithEmptyBody_ReturnsFail_EmptyBodyCode()
+    public async Task ReadResultAsync_Options_2xxWithEmptyBody_ReturnsFailure_EmptyBodyCode()
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
         };
 
-        var envelope = await response.ReadEnvelopeAsync<OrderDto>(options: null);
+        var result = await response.ReadResultAsync<OrderDto>(options: null);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().Be("http.empty-body");
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("http.empty-body");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_Options_Non2xxWithProblemJson_ReturnsFail_WithProblemCode()
+    public async Task ReadResultAsync_Options_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
         var body = """{"type":"not.found","title":"Not Found","detail":"Order does not exist","status":404}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.NotFound, body);
 
-        var envelope = await response.ReadEnvelopeAsync<OrderDto>(options: null);
+        var result = await response.ReadResultAsync<OrderDto>(options: null);
 
-        envelope.IsSuccess.Should().BeFalse();
-        envelope.Error!.Code.Should().Be("not.found");
-        envelope.Error!.Message.Should().Be("Order does not exist");
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("not.found");
+        result.Error.Message.Should().Be("Order does not exist");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_Options_UsesReflectionFallbackWhenOptionsNull()
+    public async Task ReadResultAsync_Options_UsesReflectionFallbackWhenOptionsNull()
     {
         // Assert that null options resolves to the static readonly field (case-insensitive)
         var response = BuildJsonResponse(HttpStatusCode.OK, """{"ID":"order-3","Amount":25.00}""");
         // Case-insensitive matching — ID (uppercase) should map to Id property
         var caseInsensitiveOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-        var envelope = await response.ReadEnvelopeAsync<OrderDto>(options: caseInsensitiveOptions);
+        var result = await response.ReadResultAsync<OrderDto>(options: caseInsensitiveOptions);
 
-        envelope.IsSuccess.Should().BeTrue();
-        envelope.Value!.Id.Should().Be("order-3");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be("order-3");
     }
 
     [Fact]
-    public async Task ReadEnvelopeAsync_Options_WithExplicitOptions_UsesProvidedOptions()
+    public async Task ReadResultAsync_Options_WithExplicitOptions_UsesProvidedOptions()
     {
         // Explicit camelCase policy — "id" maps to "Id" when PropertyNameCaseInsensitive is true
         var camelCaseOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var response = BuildJsonResponse(HttpStatusCode.OK, """{"id":"order-4","amount":10.00}""");
 
-        var envelope = await response.ReadEnvelopeAsync<OrderDto>(options: camelCaseOptions);
+        var result = await response.ReadResultAsync<OrderDto>(options: camelCaseOptions);
 
-        envelope.IsSuccess.Should().BeTrue();
-        envelope.Value!.Id.Should().Be("order-4");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be("order-4");
     }
 
     // -----------------------------------------------------------------------
@@ -178,7 +189,7 @@ public sealed class ReadEnvelopeAsyncTests
     }
 }
 
-/// <summary>DTO for ReadEnvelopeAsync tests.</summary>
+/// <summary>DTO for ReadResultAsync tests.</summary>
 public sealed class OrderDto
 {
     public string Id { get; set; } = string.Empty;
@@ -186,4 +197,4 @@ public sealed class OrderDto
 }
 
 [JsonSerializable(typeof(OrderDto))]
-internal partial class ReadEnvelopeTestJsonContext : JsonSerializerContext;
+internal partial class ReadResultTestJsonContext : JsonSerializerContext;

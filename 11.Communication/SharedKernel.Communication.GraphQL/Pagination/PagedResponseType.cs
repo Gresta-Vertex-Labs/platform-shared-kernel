@@ -17,7 +17,13 @@ namespace SharedKernel.Communication.GraphQL.Pagination;
 public sealed class PagedResponseType<T>
 {
     /// <summary>Total number of items matching the query (before paging).</summary>
-    public int TotalCount { get; init; }
+    /// <remarks>
+    /// A <see cref="long"/>, matching <see cref="PagedList{T}.TotalCount"/>, so a repository total never
+    /// narrows on its way to the client. HotChocolate exposes it as the <c>Long</c> scalar; totals from
+    /// HotChocolate's own <see cref="IPage"/> and <see cref="Connection{T}"/> results are <see cref="int"/>
+    /// and widen without loss.
+    /// </remarks>
+    public long TotalCount { get; init; }
 
     /// <summary>Items in the current page.</summary>
     public IReadOnlyList<T> Items { get; init; } = [];
@@ -69,7 +75,7 @@ public sealed class PagedResponseType<T>
     /// <param name="items">The items in the current page.</param>
     /// <param name="totalCount">The total number of items matching the query.</param>
     /// <returns>A new <see cref="PagedResponseType{T}"/>.</returns>
-    public static PagedResponseType<T> From(IReadOnlyList<T> items, int totalCount) =>
+    public static PagedResponseType<T> From(IReadOnlyList<T> items, long totalCount) =>
         new() { Items = items, TotalCount = totalCount };
 
     /// <summary>

@@ -80,6 +80,10 @@ Never unpack `.Items`/`.TotalCount` manually in a resolver — use `FromPagedLis
 application-layer `PagedList<T>` source, or `FromPage`/`FromConnection` for a HotChocolate-paged
 source (`IPage`/`Connection<T>`).
 
+`TotalCount` is a `long`, matching `PagedList<T>.TotalCount`, and appears in the schema as the `Long`
+scalar rather than `Int`. HotChocolate's own `IPage`/`Connection<T>` totals are `int` and widen without
+loss.
+
 ## Layering
 
 ```text

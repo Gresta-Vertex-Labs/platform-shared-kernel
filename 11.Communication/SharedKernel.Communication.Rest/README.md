@@ -34,10 +34,10 @@ services
 // CorrelationIdDelegatingHandler + TenantIdDelegatingHandler already wired, in that pipeline order.
 public sealed class OrderServiceClient(HttpClient httpClient)
 {
-    public async Task<Envelope<OrderDto>> GetOrderAsync(Guid orderId, CancellationToken ct)
+    public async Task<Result<OrderDto>> GetOrderAsync(Guid orderId, CancellationToken ct)
     {
-        var response = await httpClient.GetAsync($"/api/orders/{orderId}", ct);
-        return await response.ReadEnvelopeAsync<OrderDto>(OrderJsonContext.Default.OrderDto, ct);
+        using var response = await httpClient.GetAsync($"/api/orders/{orderId}", ct);
+        return await response.ReadResultAsync(OrderJsonContext.Default.OrderDto, ct);
     }
 }
 ```
@@ -62,19 +62,24 @@ Result result = await httpClient
     .PostAsync("/api/orders", content, ct)
     .Result.EnsureSuccessOrErrorAsync(ct);
 
-// Deserialized payload — the AOT-safe primary path via a source-generated JsonTypeInfo<T>.
-Envelope<OrderDto> envelope = await httpClient
+// Deserialized payload via a source-generated JsonTypeInfo<T>.
+Result<OrderDto> order = await httpClient
     .GetAsync($"/api/orders/{orderId}", ct)
-    .Result.ReadEnvelopeAsync(OrderJsonContext.Default.OrderDto, ct);
+    .Result.ReadResultAsync(OrderJsonContext.Default.OrderDto, ct);
 
-// Reflection-based fallback overload, when no JsonTypeInfo<T> is available.
-Envelope<OrderDto> envelope2 = await httpClient
+// Reflection-based overload, when no JsonTypeInfo<T> is available.
+Result<OrderDto> order2 = await httpClient
     .GetAsync($"/api/orders/{orderId}", ct)
-    .Result.ReadEnvelopeAsync<OrderDto>(options: null, ct);
+    .Result.ReadResultAsync<OrderDto>(options: null, ct);
 ```
 
 Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` via `ProblemDetailsDeserializer`
-(`type` → `Error.Code`, `detail` ?? `title` → `Error.Message`). Never re-add a generic
+(`type` → `Error.Code`, `detail` ?? `title` → `Error.Message`). A 2xx response with an empty body, or
+one that deserializes to `null`, fails with the `http.empty-body` code.
+
+This is the client half of the platform's error round trip: a handler returns `Result`/`Result<T>`,
+the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions`
+(`SharedKernel.Presentation.WebApi`), and `ReadResultAsync` maps it back to a `Result<T>` here. Never re-add a generic
 `EnsureSuccessOrErrorAsync<T>` overload that promises a payload but does not deliver one — that shape
 was retired for exactly that defect (P-361).
 
@@ -102,7 +107,6 @@ Disabled by default. A caller-supplied `x-idempotency-key` value is never overwr
 
 ```text
 SharedKernel.Communication.Rest  →  SharedKernel.Primitives (01.Core),
-                                     SharedKernel.Contracts (04.Contracts),
                                      SharedKernel.Security.Abstractions (12.Security),
                                      Microsoft.Extensions.Http, Microsoft.Extensions.Http.Resilience
 ```

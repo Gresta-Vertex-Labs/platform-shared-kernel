@@ -83,6 +83,25 @@ public sealed class PagedResponseTypeTests
     }
 
     [Fact]
+    public void FromPagedList_TotalCountAboveIntMaxValue_IsPreserved()
+    {
+        const long totalCount = (long)int.MaxValue + 10;
+        var pagedList = PagedList<string>.Create(["x"], page: 1, pageSize: 10, totalCount: totalCount);
+
+        var result = PagedResponseType<string>.FromPagedList(pagedList);
+
+        result.TotalCount.Should().Be(totalCount);
+    }
+
+    [Fact]
+    public void From_AcceptsLongTotalCount()
+    {
+        var result = PagedResponseType<string>.From(["a"], 5_000_000_000L);
+
+        result.TotalCount.Should().Be(5_000_000_000L);
+    }
+
+    [Fact]
     public void FromPagedList_EmptyList_ProducesEmptyItemsAndZeroTotalCount()
     {
         var pagedList = PagedList<string>.Create([], page: 1, pageSize: 10, totalCount: 0);
