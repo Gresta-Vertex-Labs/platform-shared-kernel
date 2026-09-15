@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.MessageBus;
@@ -108,13 +109,14 @@ public sealed class ConsumerVerifyTests
         var publisher = provider.GetRequiredService<IEventPublisher>();
         var recorder = provider.GetRequiredService<InMemoryEventPublisher>();
 
-        var integrationEvent = new TestIntegrationMessage("integration-event-payload");
+        var integrationEvent = new TestIntegrationEvent(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, "integration-event-payload");
 
         // Act
         await publisher.PublishAsync(integrationEvent, CancellationToken.None);
 
         // Assert
-        recorder.ShouldHavePublished<TestIntegrationMessage>().Should().BeSameAs(integrationEvent);
+        recorder.ShouldHavePublished<TestIntegrationEvent>().Should().BeSameAs(integrationEvent);
     }
 
     /// <summary>
@@ -191,8 +193,18 @@ public sealed class ConsumerVerifyTests
 }
 
 /// <summary>
-/// Minimal message type used to exercise <see cref="IMessageBus"/>/<see cref="IEventPublisher"/>
-/// publish/send recording in <see cref="ConsumerVerifyTests"/> — carries no transport dependency.
+/// Minimal message type used to exercise <see cref="IMessageBus"/> publish/send recording in
+/// <see cref="ConsumerVerifyTests"/> — carries no transport dependency.
 /// </summary>
 /// <param name="Payload">An arbitrary string payload distinguishing one test message from another.</param>
 public sealed record TestIntegrationMessage(string Payload);
+
+/// <summary>
+/// Minimal integration event used to exercise <see cref="IEventPublisher"/> publish recording in
+/// <see cref="ConsumerVerifyTests"/> — carries no transport dependency.
+/// </summary>
+/// <param name="EventId">The unique identifier of this event occurrence.</param>
+/// <param name="OccurredOn">The time the event occurred.</param>
+/// <param name="Payload">An arbitrary string payload distinguishing one test event from another.</param>
+[IntegrationEvent("tests.messaging.abstractions.consumer-verify-event")]
+public sealed record TestIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn, string Payload) : IIntegrationEvent;

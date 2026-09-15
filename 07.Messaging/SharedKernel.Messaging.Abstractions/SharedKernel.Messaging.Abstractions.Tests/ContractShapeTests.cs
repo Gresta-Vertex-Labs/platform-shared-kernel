@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.MessageBus;
@@ -63,6 +64,19 @@ public sealed class ContractShapeTests
             .Where(m => m.Name == nameof(IEventPublisher.PublishAsync) && m.IsGenericMethodDefinition)
             .ToList();
         methods.Should().HaveCount(2, "IEventPublisher has two PublishAsync overloads");
+    }
+
+    [Fact]
+    public void IEventPublisher_PublishAsync_ConstrainsTEventToIntegrationEvents()
+    {
+        var methods = typeof(IEventPublisher).GetMethods()
+            .Where(m => m.Name == nameof(IEventPublisher.PublishAsync) && m.IsGenericMethodDefinition)
+            .ToList();
+
+        methods.Should().AllSatisfy(m =>
+            m.GetGenericArguments().Single().GetGenericParameterConstraints()
+                .Should().Contain(typeof(IIntegrationEvent),
+                    "only IIntegrationEvent types may be published through IEventPublisher"));
     }
 
     [Fact]

@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.Options;
@@ -231,7 +230,7 @@ public sealed class DiagnosticsCoverageTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var evt = new DcPublishDomainEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+        var evt = new DcPublishIntegrationEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid());
 
         await publisher.PublishAsync(evt, CancellationToken.None);
         await harness.Stop();
@@ -239,8 +238,9 @@ public sealed class DiagnosticsCoverageTests
         measurements.Should().Contain(m =>
                 m.InstrumentName == "messaging.publish.count" &&
                 m.Value == 1 &&
-                m.Tags.Any(t => t.Key == "messaging.event_type" && Equals(t.Value, nameof(DcPublishDomainEvent))),
-            "messaging.publish.count must record exactly one measurement tagged with the event type " +
+                m.Tags.Any(t => t.Key == "messaging.event_type" && Equals(t.Value, DcPublishIntegrationEvent.EventName)),
+            "messaging.publish.count must record exactly one measurement tagged with the event's " +
+            "[IntegrationEvent] name (never the CLR class name) " +
             "after a successful IEventPublisher.PublishAsync call");
     }
 
@@ -444,9 +444,10 @@ internal sealed record DcConsumeMessage(string Text);
 internal sealed record DcRetryMessage(string Text);
 internal sealed record DcFaultMessage(string Text);
 
-internal sealed record DcPublishDomainEvent : DomainEvent
+[IntegrationEvent(DcPublishIntegrationEvent.EventName)]
+internal sealed record DcPublishIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent
 {
-    public Guid OrderId { get; init; }
+    public const string EventName = "tests.messaging.diagnostics.publish-counted";
 }
 
 // ---------------------------------------------------------------------------

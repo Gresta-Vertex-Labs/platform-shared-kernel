@@ -6,7 +6,6 @@ using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.TenantContext;
@@ -184,7 +183,7 @@ public sealed class AmbientPropagationTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var evt = new ApIntegrationTestEvent { OccurredOn = DateTimeOffset.UtcNow };
+        var evt = new ApIntegrationTestEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
         await publisher.PublishAsync(evt, CancellationToken.None);
 
@@ -215,7 +214,7 @@ public sealed class AmbientPropagationTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var evt = new ApIntegrationTestEvent { OccurredOn = DateTimeOffset.UtcNow };
+        var evt = new ApIntegrationTestEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
         // Act: must not throw, even though no ITenantContextAccessor/propagator is registered.
         var act = async () => await publisher.PublishAsync(evt, CancellationToken.None);
@@ -252,7 +251,7 @@ public sealed class AmbientPropagationTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var evt = new ApIntegrationTestEvent { OccurredOn = DateTimeOffset.UtcNow };
+        var evt = new ApIntegrationTestEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
         var explicitCorrelationId = Guid.NewGuid();
         var explicitTenantId = Guid.NewGuid();
@@ -288,7 +287,8 @@ internal sealed record ApSendTestCommand(string Text);
 internal sealed record ApRequestMessage(string Text);
 internal sealed record ApResponseMessage(string Reply);
 
-internal sealed record ApIntegrationTestEvent : DomainEvent;
+[IntegrationEvent("tests.messaging.ambient-propagation.integration-test")]
+internal sealed record ApIntegrationTestEvent(Guid EventId, DateTimeOffset OccurredOn) : IIntegrationEvent;
 
 // ---------------------------------------------------------------------------
 // Static stores for cross-scope state capture

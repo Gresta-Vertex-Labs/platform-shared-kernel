@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Consumers;
@@ -119,7 +118,7 @@ public sealed class OTelInstrumentationTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var evt = new OTelTestDomainEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+        var evt = new OTelTestIntegrationEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid());
 
         await publisher.PublishAsync(evt, CancellationToken.None);
 
@@ -127,16 +126,18 @@ public sealed class OTelInstrumentationTests
         await harness.Stop();
 
         // Filter by the event-type tag rather than asserting global singularity — see note above.
+        // The tag is the [IntegrationEvent] name (the envelope's CloudEvents type), never the CLR class name.
         var publishActivity = capturedActivities
             .Should().ContainSingle(a =>
                 a.OperationName == "EventPublisher.Publish" &&
-                Equals(a.GetTagItem("messaging.event_type"), nameof(OTelTestDomainEvent)))
+                Equals(a.GetTagItem("messaging.event_type"), OTelTestIntegrationEvent.EventName))
             .Subject;
-        publishActivity.GetTagItem("messaging.event_type").Should().Be(nameof(OTelTestDomainEvent));
+        publishActivity.GetTagItem("messaging.event_type").Should().Be(OTelTestIntegrationEvent.EventName);
+        publishActivity.GetTagItem("messaging.event_type").Should().NotBe(nameof(OTelTestIntegrationEvent));
     }
 
     [Fact]
-    public async Task PublishAsync_WhenThrowsForNonDomainEvent_StillDisposesActivity()
+    public async Task PublishAsync_WhenEnvelopeConstructionThrows_StillDisposesActivity()
     {
         var capturedActivities = new List<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -164,20 +165,22 @@ public sealed class OTelInstrumentationTests
 
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var plainObject = new OTelPlainMessage("not-a-domain-event");
+        // A declared event with an empty EventId: the activity has started (and been tagged) before
+        // EventEnvelope.Wrap rejects the event.
+        var invalidEvent = new OTelInvalidIntegrationEvent(Guid.Empty, DateTimeOffset.UtcNow);
 
-        var act = async () => await publisher.PublishAsync(plainObject, CancellationToken.None);
+        var act = async () => await publisher.PublishAsync(invalidEvent, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<ArgumentException>();
         await activityStopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await harness.Stop();
 
         // The activity must still be started (and disposed) even though the publish call throws.
-        // Filter by the event-type tag (set before the IDomainEvent guard runs) rather than
+        // Filter by the event-type tag (set before envelope construction runs) rather than
         // asserting global singularity — see note in PublishAsync_ProducesEventPublisherPublishActivity...
         capturedActivities.Should().ContainSingle(a =>
             a.OperationName == "EventPublisher.Publish" &&
-            Equals(a.GetTagItem("messaging.event_type"), nameof(OTelPlainMessage)));
+            Equals(a.GetTagItem("messaging.event_type"), OTelInvalidIntegrationEvent.EventName));
     }
 
     // -------------------------------------------------------------------------
@@ -247,11 +250,17 @@ public sealed class OTelInstrumentationTests
 
 internal sealed record OTelTestMessage(string Text);
 internal sealed record OTelLogScopeTestMessage(string Text);
-internal sealed record OTelPlainMessage(string Text);
 
-internal sealed record OTelTestDomainEvent : DomainEvent
+[IntegrationEvent(OTelTestIntegrationEvent.EventName)]
+internal sealed record OTelTestIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent
 {
-    public Guid OrderId { get; init; }
+    public const string EventName = "tests.messaging.otel.publish-activity";
+}
+
+[IntegrationEvent(OTelInvalidIntegrationEvent.EventName)]
+internal sealed record OTelInvalidIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn) : IIntegrationEvent
+{
+    public const string EventName = "tests.messaging.otel.publish-activity-throws";
 }
 
 // ---------------------------------------------------------------------------

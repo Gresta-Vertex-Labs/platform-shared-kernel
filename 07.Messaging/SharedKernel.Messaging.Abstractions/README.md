@@ -6,9 +6,9 @@ Transport-agnostic messaging abstractions for Platform.SharedKernel microservice
 `IRoutingSlipBuilder` — the contracts every transport package
 ([`SharedKernel.Messaging.MassTransit`](https://www.nuget.org/packages/SharedKernel.Messaging.MassTransit))
 implements. **Zero transport NuGet dependency** — references only
-`Microsoft.Extensions.DependencyInjection.Abstractions` — so `05.Application` and other upstream
-layers can depend on messaging contracts without pulling in MassTransit, RabbitMQ, or Azure Service
-Bus client libraries.
+`Microsoft.Extensions.DependencyInjection.Abstractions` and `SharedKernel.Contracts` (for
+`IIntegrationEvent`) — so `05.Application` and other upstream layers can depend on messaging
+contracts without pulling in MassTransit, RabbitMQ, or Azure Service Bus client libraries.
 
 ## Install
 
@@ -33,10 +33,25 @@ public sealed class PlaceOrderHandler(IMessageBus bus, IEventPublisher publisher
         // ... domain logic ...
 
         await bus.SendAsync(new ProcessPaymentCommand(command.OrderId), ct);
-        await publisher.PublishAsync(new OrderPlacedEvent(command.OrderId), ct);
+
+        // Optional per-publish metadata; Subject becomes the CloudEvents "subject" attribute.
+        await publisher.PublishAsync(
+            new OrderPlaced(Guid.NewGuid(), DateTimeOffset.UtcNow, command.OrderId),
+            ctx => ctx.WithSubject($"order/{command.OrderId}"),
+            ct);
     }
 }
+
+// An integration event: a sealed record implementing IIntegrationEvent (SharedKernel.Contracts),
+// with a stable wire name. The name — never the class name — becomes the envelope's CloudEvents "type".
+[IntegrationEvent("orders.order-placed", Version = 1)]
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
 ```
+
+`IEventPublisher.PublishAsync<TEvent>` is constrained to `class, IIntegrationEvent`: a domain event or
+a plain message type does not compile. An integration event type without a valid `[IntegrationEvent]`
+attribute compiles but throws `InvalidOperationException` at publish time. Plain messages go through
+`IMessageBus`.
 
 This package ships **no DI registration or transport wiring of its own** — a microservice's
 composition root wires a concrete transport that satisfies these contracts, e.g.
@@ -112,10 +127,11 @@ mechanism.
 ## Layering
 
 ```
-SharedKernel.Messaging.Abstractions  →  Microsoft.Extensions.DependencyInjection.Abstractions only
+SharedKernel.Messaging.Abstractions  →  Microsoft.Extensions.DependencyInjection.Abstractions,
+                                         SharedKernel.Contracts (04.Contracts)
 ```
 
-Target framework: `net10.0`. AOT-compatible. No MassTransit, RabbitMQ, or Azure Service Bus
+Target framework: `net10.0`. No MassTransit, RabbitMQ, or Azure Service Bus
 dependency — any transport NuGet reference leaking into this package is a hard architectural
 violation.
 

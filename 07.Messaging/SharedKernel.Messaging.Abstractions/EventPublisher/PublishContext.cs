@@ -56,6 +56,18 @@ public sealed class PublishContext
     public string? PartitionKey { get; private set; }
 
     /// <summary>
+    /// Gets the resource the published event is about, such as <c>order/42</c>.
+    /// <c>null</c> means the subject is omitted from the envelope.
+    /// </summary>
+    /// <remarks>
+    /// Flows into the CloudEvents <c>subject</c> attribute (<c>EventEnvelope&lt;TEvent&gt;.Subject</c>,
+    /// <c>04.Contracts</c>) via the <c>IEventPublisher</c> path only, so brokers and subscribers can filter on
+    /// it without reading the event data. Like <see cref="TenantId"/>, setting it on a plain
+    /// <c>IMessageBus.PublishAsync</c>/<c>SendAsync</c> call is a no-op.
+    /// </remarks>
+    public string? Subject { get; private set; }
+
+    /// <summary>
     /// Gets the custom transport headers to attach to the outgoing message.
     /// Keys are non-null, non-empty. Duplicate keys overwrite the earlier value.
     /// </summary>
@@ -108,6 +120,23 @@ public sealed class PublishContext
             throw new ArgumentException("Partition key must not be null or empty.", nameof(partitionKey));
 
         PartitionKey = partitionKey;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the CloudEvents subject for the outgoing integration event envelope.
+    /// </summary>
+    /// <param name="subject">
+    /// The resource the event is about, e.g. <c>order/42</c>. Must not be null, empty or whitespace.
+    /// </param>
+    /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="subject"/> is null, empty or whitespace.</exception>
+    public PublishContext WithSubject(string subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject))
+            throw new ArgumentException("Subject must not be null, empty or whitespace.", nameof(subject));
+
+        Subject = subject;
         return this;
     }
 

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NSubstitute;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 
@@ -121,4 +122,10 @@ file sealed record TestCommand(string Data);
 
 file sealed record AnotherTestCommand(int Value);
 
-file sealed record TestIntegrationEvent(string Payload);
+[IntegrationEvent("tests.messaging.mock.integration-event")]
+file sealed record TestIntegrationEvent(string Payload) : IIntegrationEvent
+{
+    public Guid EventId { get; } = Guid.NewGuid();
+
+    public DateTimeOffset OccurredOn { get; } = DateTimeOffset.UtcNow;
+}

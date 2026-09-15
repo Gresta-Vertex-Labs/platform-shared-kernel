@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus, IEventPublisher, PublishContext, IMessagingBuilder, MessagingOptions. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions. AOT-safe.</Description>
+    <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus, IEventPublisher, PublishContext, IMessagingBuilder, MessagingOptions. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions and SharedKernel.Contracts (for the IIntegrationEvent constraint on IEventPublisher).</Description>
     <PackageTags>messaging;abstractions;message-bus;event-publisher;cloud-events;shared-kernel;masstransit</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -12,5 +12,13 @@
       Only DI.Abstractions is permitted here — any transport NuGet leak is a hard violation.
     -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      SharedKernel.Contracts — IIntegrationEvent, the constraint on IEventPublisher.PublishAsync<TEvent>.
+      Permitted by the root layering rule ("07.Messaging may reference 01-04"); it references only
+      SharedKernel.Primitives, so no transport or domain dependency leaks in.
+    -->
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
   </ItemGroup>
 </Project>

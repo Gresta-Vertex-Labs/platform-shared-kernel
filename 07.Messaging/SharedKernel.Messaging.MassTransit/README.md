@@ -31,17 +31,40 @@ services
 // Application layer injects the abstractions only — never the MassTransit concrete types
 public sealed class PlaceOrderHandler(IMessageBus bus, IEventPublisher publisher) { /* ... */ }
 
-// Consumer implementation
-public sealed class OrderPlacedConsumer : ConsumerBase<OrderPlacedEvent>
+// Integration event — IEventPublisher only accepts IIntegrationEvent types with a declared wire name
+[IntegrationEvent("orders.order-placed")]
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+
+// Consumer implementation — IEventPublisher publishes EventEnvelope<TEvent>, so that is what is consumed
+public sealed class OrderPlacedConsumer : ConsumerBase<EventEnvelope<OrderPlaced>>
 {
-    protected override Task ConsumeAsync(OrderPlacedEvent message, CancellationToken ct)
+    protected override Task ConsumeAsync(EventEnvelope<OrderPlaced> message, CancellationToken ct)
     {
-        // Business logic only — no MassTransit concerns here.
+        // Business logic only — no MassTransit concerns here. message.Data is the event;
+        // message.Type, .Source, .Subject, .TenantId and .CorrelationId are the CloudEvents metadata.
         // Do not swallow exceptions: an unhandled exception activates MassTransit's
         // retry/fault policies.
     }
 }
 ```
+
+## What `MassTransitEventPublisher` puts on the envelope
+
+`IEventPublisher.PublishAsync` builds the envelope with `EventEnvelope.Wrap(...)` only:
+
+| Envelope property | Source |
+|---|---|
+| `Id`, `Time` | the event's `EventId` and `OccurredOn` |
+| `Type`, `DataVersion` | the event's `[IntegrationEvent(name, Version = n)]` attribute |
+| `Source` | `MessagingOptions.ServiceName` |
+| `Subject` | `PublishContext.WithSubject(...)`, otherwise omitted |
+| `TenantId` | `PublishContext.WithTenantId(...)` (or `WithTenantContext<T>()`), otherwise omitted |
+| `CorrelationId` | `PublishContext.WithCorrelationId(...)`, else `Activity.Current.TraceId`, else a new GUID |
+| `CausationId` | `PublishContext.WithCausationId(...)`, otherwise omitted |
+
+The `EventPublisher.Publish` activity and the `messaging.publish.count` counter tag
+`messaging.event_type` with the attribute name (e.g. `orders.order-placed`) — the same value as
+the envelope's `Type` — never the CLR class name.
 
 See [`07.Messaging/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/CLAUDE.md)
 for the full `MessagingBusBuilder` fluent API — Azure Service Bus, the EF Core outbox, circuit
@@ -50,7 +73,7 @@ delivery, and payload transform are all documented there with worked examples.
 
 ## Recipe: ambient correlation and tenant-identity propagation
 
-Every published `EventEnvelope<TEvent>` carries `CorrelationId` and `TenantId` fields. Rather than
+Every published `EventEnvelope<TEvent>` carries `CorrelationId` and `TenantId` attributes. Rather than
 hand-rolling an `IMessageHeaderPropagator` that reads `Activity.Current` or a tenant provider
 directly, use the two built-in propagators shipped in this package:
 

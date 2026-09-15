@@ -7,7 +7,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Consumers;
@@ -59,7 +58,7 @@ public sealed class OutboxRoundTripTests : IDisposable
             var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
             var db = scope.ServiceProvider.GetRequiredService<OutboxTestDbContext>();
 
-            var evt = new ItemShippedEvent { OccurredOn = DateTimeOffset.UtcNow, ItemId = Guid.NewGuid() };
+            var evt = new ItemShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid());
 
             // The outbox row is written atomically during SaveChangesAsync via MassTransit's
             // OutboxSaveChangesObserver intercepting the EF Core pipeline.
@@ -90,7 +89,7 @@ public sealed class OutboxRoundTripTests : IDisposable
         using var scope = provider.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         var expectedItemId = Guid.NewGuid();
-        var evt = new ItemShippedEvent { OccurredOn = DateTimeOffset.UtcNow, ItemId = expectedItemId };
+        var evt = new ItemShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, expectedItemId);
 
         await publisher.PublishAsync(evt, CancellationToken.None);
 
@@ -98,7 +97,8 @@ public sealed class OutboxRoundTripTests : IDisposable
             "IEventPublisher must publish EventEnvelope<TEvent> to the MassTransit bus");
 
         var published = harness.Published.Select<EventEnvelope<ItemShippedEvent>>().First();
-        published.Context.Message.Payload.ItemId.Should().Be(expectedItemId);
+        published.Context.Message.Data.ItemId.Should().Be(expectedItemId);
+        published.Context.Message.Type.Should().Be("tests.messaging.outbox.item-shipped");
 
         await harness.Stop();
     }
@@ -187,10 +187,8 @@ internal sealed class ItemShippedConsumer : ConsumerBase<EventEnvelope<ItemShipp
 }
 
 // ---------------------------------------------------------------------------
-// Domain event
+// Integration event
 // ---------------------------------------------------------------------------
 
-internal sealed record ItemShippedEvent : DomainEvent
-{
-    public Guid ItemId { get; init; }
-}
+[IntegrationEvent("tests.messaging.outbox.item-shipped")]
+internal sealed record ItemShippedEvent(Guid EventId, DateTimeOffset OccurredOn, Guid ItemId) : IIntegrationEvent;

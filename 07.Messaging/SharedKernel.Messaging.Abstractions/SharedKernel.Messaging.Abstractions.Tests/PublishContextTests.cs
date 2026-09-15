@@ -5,7 +5,8 @@ namespace SharedKernel.Messaging.Abstractions.Tests;
 
 /// <summary>
 /// Tests for <see cref="PublishContext"/> fluent builder API.
-/// Covers T-01: WithCorrelationId, WithCausationId, WithHeader; null/empty key ArgumentException; duplicate key overwrite.
+/// Covers T-01: WithCorrelationId, WithCausationId, WithTenantId, WithPartitionKey, WithSubject, WithHeader;
+/// null/empty/blank argument ArgumentException; duplicate key overwrite.
 /// </summary>
 public sealed class PublishContextTests
 {
@@ -60,6 +61,26 @@ public sealed class PublishContextTests
 
         act.Should().Throw<ArgumentException>()
             .WithParameterName("partitionKey");
+    }
+
+    [Fact]
+    public void WithSubject_SetsSubject()
+    {
+        var ctx = new PublishContext().WithSubject("order/123");
+
+        ctx.Subject.Should().Be("order/123");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void WithSubject_NullEmptyOrWhitespace_ThrowsArgumentException(string? subject)
+    {
+        var act = () => new PublishContext().WithSubject(subject!);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("subject");
     }
 
     [Fact]
@@ -124,6 +145,7 @@ public sealed class PublishContextTests
             .WithCausationId(causationId)
             .WithTenantId(tenantId)
             .WithPartitionKey("order-123")
+            .WithSubject("order/123")
             .WithHeader("x-flag", "true");
 
         returned.Should().BeSameAs(ctx);
@@ -138,6 +160,7 @@ public sealed class PublishContextTests
         ctx.CausationId.Should().BeNull();
         ctx.TenantId.Should().BeNull();
         ctx.PartitionKey.Should().BeNull();
+        ctx.Subject.Should().BeNull();
         ctx.Headers.Should().BeEmpty();
     }
 }

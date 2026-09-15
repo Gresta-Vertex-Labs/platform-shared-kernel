@@ -1,10 +1,7 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
 using MassTransit;
 using Microsoft.Extensions.Options;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
@@ -22,25 +19,11 @@ namespace SharedKernel.Messaging.MassTransit.EventPublisher;
 /// <see cref="EventEnvelope.Wrap{TEvent}"/>, never a raw object initializer (P-340/WO-054) —
 /// and publishes via MassTransit. Starts an <c>"EventPublisher.Publish"</c> activity and
 /// increments <see cref="MessagingDiagnostics.PublishCounter"/> on successful publish
-/// (P-172/P-348/WO-054).
+/// (P-172/P-348/WO-054). Both carry a <c>messaging.event_type</c> tag set to the event's
+/// <see cref="IntegrationEventAttribute"/> name — the same value as the envelope's CloudEvents <c>type</c>.
 /// </summary>
 internal sealed class MassTransitEventPublisher : IEventPublisher
 {
-    // Cache of (IPublishEndpoint, object event, string sourceService, PublishContext?, CancellationToken) → Task delegates
-    // keyed by closed TEvent type. Built once per type; subsequent calls are direct delegate invocations.
-    private static readonly ConcurrentDictionary<Type, PublishDelegate> _publisherCache = new();
-
-    private delegate Task PublishDelegate(
-        IPublishEndpoint publishEndpoint,
-        object integrationEvent,
-        string sourceService,
-        MessagingPublishContext? ctx,
-        CancellationToken ct);
-
-    private static readonly MethodInfo BuildPublisherMethod =
-        typeof(MassTransitEventPublisher).GetMethod(
-            nameof(BuildPublisher), BindingFlags.NonPublic | BindingFlags.Static)!;
-
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly MessagingOptions _messagingOptions;
     private readonly IEnumerable<IMessageHeaderPropagator> _propagators;
@@ -56,12 +39,14 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
     }
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : class =>
+    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+        where TEvent : class, IIntegrationEvent =>
         // HP-04: Run propagators first with no explicit configure callback.
         PublishEnvelopeAsync(integrationEvent, ctx: BuildContextFromPropagators(configure: null), ct);
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<MessagingPublishContext> configure, CancellationToken ct) where TEvent : class
+    public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<MessagingPublishContext> configure, CancellationToken ct)
+        where TEvent : class, IIntegrationEvent
     {
         // HP-04: Propagators run first; explicit configure callback runs after (explicit wins on same key).
         var ctx = BuildContextFromPropagators(configure);
@@ -91,53 +76,21 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
     }
 
     private async Task PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext? ctx, CancellationToken ct)
-        where TEvent : class
+        where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
 
-        var eventType = typeof(TEvent);
+        // The event's declared wire name — identical to the envelope's CloudEvents "type". Resolving it
+        // before the activity starts means an event type with no valid [IntegrationEvent] attribute fails
+        // fast, before any telemetry or transport work.
+        var eventTypeName = IntegrationEventDescriptor.For<TEvent>().Name;
 
         // OT-04: child activity for the publish operation, disposed after the publish
         // call completes or throws. Independent of the EventEnvelope CorrelationId field —
         // this activity's TraceId/SpanId comes from the ambient Activity.Current chain.
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish");
-        activity?.SetTag("messaging.event_type", eventType.Name);
+        activity?.SetTag("messaging.event_type", eventTypeName);
 
-        if (!typeof(IDomainEvent).IsAssignableFrom(eventType))
-            throw new InvalidOperationException(
-                $"IEventPublisher only supports integration events that implement IDomainEvent. " +
-                $"Type '{eventType.Name}' does not implement IDomainEvent. " +
-                $"Use IMessageBus.PublishAsync<T> for plain message types.");
-
-        var publisher = _publisherCache.GetOrAdd(eventType, static t =>
-        {
-            var method = BuildPublisherMethod.MakeGenericMethod(t);
-            return (PublishDelegate)method.Invoke(null, null)!;
-        });
-
-        await publisher(_publishEndpoint, integrationEvent, _messagingOptions.ServiceName, ctx, ct).ConfigureAwait(false);
-    }
-
-    // Called once per TEvent type via MakeGenericMethod — startup cost only, not a hot path.
-    // Returns a closed-over delegate that satisfies the IDomainEvent constraint.
-    private static PublishDelegate BuildPublisher<TEvent>()
-        where TEvent : class, IDomainEvent
-    {
-        return (publishEndpoint, eventObj, sourceService, ctx, ct) =>
-        {
-            var integrationEvent = (TEvent)eventObj;
-            return PublishEnvelope(publishEndpoint, integrationEvent, sourceService, ctx, ct);
-        };
-    }
-
-    private static async Task PublishEnvelope<TEvent>(
-        IPublishEndpoint publishEndpoint,
-        TEvent integrationEvent,
-        string sourceService,
-        MessagingPublishContext? ctx,
-        CancellationToken ct)
-        where TEvent : class, IDomainEvent
-    {
         // Resolve CorrelationId: explicit override > ambient Activity.TraceId > new Guid.
         string correlationId;
         if (ctx?.CorrelationId.HasValue == true)
@@ -158,17 +111,20 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         // Build the CloudEvents-compliant envelope exclusively via EventEnvelope.Wrap<TEvent>()
         // (04.Contracts's mandated factory) — never a raw object-initializer construction
         // (P-340/WO-054, fixing a confirmed prior violation of that construction rule).
+        // Every optional argument is passed by name: subject, correlationId and causationId are all
+        // optional strings, so a positional call would silently swap them.
         var envelope = EventEnvelope.Wrap(
             integrationEvent,
-            sourceService,
-            correlationId,
-            causationId,
-            tenantId);
+            source: _messagingOptions.ServiceName,
+            subject: ctx?.Subject,
+            tenantId: tenantId,
+            correlationId: correlationId,
+            causationId: causationId);
 
         // P-344/WO-054: the pipe callback must also run when only PartitionKey is set (no headers).
         if (ctx is { } publishContext && (publishContext.Headers.Count > 0 || publishContext.PartitionKey is not null))
         {
-            await publishEndpoint.Publish(envelope, pipe =>
+            await _publishEndpoint.Publish(envelope, pipe =>
             {
                 foreach (var (key, value) in publishContext.Headers)
                     pipe.Headers.Set(key, value);
@@ -182,12 +138,12 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         }
         else
         {
-            await publishEndpoint.Publish(envelope, ct).ConfigureAwait(false);
+            await _publishEndpoint.Publish(envelope, ct).ConfigureAwait(false);
         }
 
         // P-348/WO-054: incremented only after the publish call above completes without
         // throwing — a faulted publish is never counted as published.
         MessagingDiagnostics.PublishCounter.Add(
-            1, new KeyValuePair<string, object?>("messaging.event_type", typeof(TEvent).Name));
+            1, new KeyValuePair<string, object?>("messaging.event_type", eventTypeName));
     }
 }
