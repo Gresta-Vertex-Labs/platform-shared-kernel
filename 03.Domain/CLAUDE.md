@@ -1,12 +1,27 @@
 # 03.Domain — DDD Building Blocks
 
+> **Audience:** maintainers and AI agents changing code in this folder.
+> **Consumers** read [`SharedKernel.Domain/README.md`](SharedKernel.Domain/README.md); the folder overview is
+> [`README.md`](README.md). This brain holds only what the source does not make obvious: rules, traps,
+> couplings and decisions. It never repeats the README.
+
 ## What This Domain Is
 
-The DDD primitives layer. Every aggregate, entity, value object, strongly-typed identifier and domain event in a downstream service derives from the types defined here. This domain may only reference `01.Core`; it never references infrastructure, persistence or messaging.
+The DDD primitives layer. Every aggregate, entity, value object, strongly-typed identifier and domain event
+in a downstream service derives from the types here.
 
-Philosophy: **Pure domain model. No side effects. No I/O. No system clock. Validation that reports every error.** AOT and trimming are not design constraints (user ruling, 2026-09-15): pick the API that is best for consumers, even when it uses reflection, and document it honestly.
+**Philosophy:** pure domain model; no I/O, no system clock, no logging, no DI; invalid input is a result;
+validation reports every error; fail loudly instead of silently.
 
-The consumer-facing reference is [`SharedKernel.Domain/README.md`](SharedKernel.Domain/README.md). This brain records the rules, decisions and traps an implementer needs; it does not repeat the README.
+**Hard rules**
+
+1. References `01.Core` only (`SharedKernel.Primitives`, `SharedKernel.Core`). Never persistence, messaging,
+   DI, logging or HTTP types.
+2. Never read `DateTime.UtcNow`/`DateTimeOffset.UtcNow`; time comes from `IClock`.
+3. Every public API change is recorded in `PublicAPI.Unshipped.txt`; every public member has XML docs.
+4. Shipped docs, XML comments and release notes never contain WO/P IDs or change history.
+5. AOT and trimming are **not** constraints (user ruling, 2026-09-15). Choose the best consumer API, even with
+   reflection, and document it honestly.
 
 ---
 
@@ -16,93 +31,179 @@ The consumer-facing reference is [`SharedKernel.Domain/README.md`](SharedKernel.
 | --- | --- | --- |
 | `SharedKernel.Domain` | All DDD building blocks | `SharedKernel.Primitives`, `SharedKernel.Core` |
 
-Zero third-party NuGet dependencies. Public API tracked with `Microsoft.CodeAnalysis.PublicApiAnalyzers` (`PublicAPI.Unshipped.txt`, 404 lines at P-540); `nullable`, `CS1591` and RS0016/17/22/24/25/36/37 are build errors; XML docs ship in the package. Tests live in `SharedKernel.Domain/SharedKernel.Domain.Tests/`; `SharedKernel.Domain.ConsumerVerify/` restores the package from a feed.
+| Project | Purpose |
+| --- | --- |
+| `SharedKernel.Domain/SharedKernel.Domain.Tests/` | Unit tests; `DomainHardeningTests` and `MoneyHardeningTests` pin fixed defects |
+| `SharedKernel.Domain.ConsumerVerify/` | Restores the **published** package from the feed and exercises the public API |
+
+Build settings: zero third-party dependencies; `Microsoft.CodeAnalysis.PublicApiAnalyzers` (private);
+`nullable`, `CS1591` and RS0016/17/22/24/25/36/37 are errors; XML docs and `README.md` ship in the package.
+
+## Technology Stack
+
+| Concern | Choice |
+| --- | --- |
+| Validation results | `SharedKernel.Primitives` `ValidationResult<T>`, `Error`, `ErrorCodes` |
+| Guards | `SharedKernel.Guards` namespace inside `SharedKernel.Core` (`Guard.Throw.*` throws `DomainException`) |
+| JSON | System.Text.Json converter factory for strongly-typed identifiers |
+| Currency data | Compiled-in frozen ISO 4217 table (`CurrencyCatalog`) |
+
+## DI Registration
+
+None. Everything is a base class, an interface, an extension method or a static factory.
+
+## AOT Compatibility
+
+Not a design constraint. Reflection in use: `StronglyTypedIdJsonConverterFactory` (`MakeGenericType` + compiled
+constructor delegate) and `DomainEventVersionHelper` (attribute lookup, cached).
 
 ---
 
-## Namespaces and surface
+## Interface Contracts
 
-| Namespace | Types |
+| Namespace (`SharedKernel.Domain.`) | Types |
 | --- | --- |
-| `Abstractions` | `IEntity<out TId>` (exposes `Id`), `IAggregateRoot<TId>`, `IHasDomainEvents`, `IHasClock`, `IHasVersion`, `IHasAudit`/`IHasCreatedAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`, `IHasAggregateId<TId>`, `IStronglyTypedId<TValue>`, `IDomainEventDispatcher`, markers `IAggregateFactory<,>`, `IDomainService`, `IValueObject` |
-| `Aggregates` | `AggregateRoot<TId>`; `Auditable…`, `SoftDeletable…`, `AuditableSoftDeletable…`, `FullAuditable…AggregateRoot<TId>`; a `Tenanted…` counterpart of each (five tenanted bases) |
+| `Abstractions` | `IEntity<out TId>`, `IAggregateRoot<TId>`, `IHasDomainEvents`, `IHasClock`, `IHasVersion`, `IHasAudit`/`IHasCreatedAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`, `IHasAggregateId<TId>`, `IStronglyTypedId<TValue>`, `IDomainEventDispatcher`; markers `IAggregateFactory<,>`, `IDomainService`, `IValueObject` |
+| `Aggregates` | `AggregateRoot<TId>`; `Auditable…`, `SoftDeletable…`, `AuditableSoftDeletable…`, `FullAuditable…AggregateRoot<TId>`; a `Tenanted…` counterpart of each |
 | `Entities` | `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`, `AuditableSoftDeletableEntity<TId>`, `FullAuditableEntity<TId>` |
 | `Events` | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, `DomainEventVersionAttribute`, `DomainEventVersionHelper` |
-| `BusinessRules` | `IBusinessRule` (`Code`, `Message`, `IsBroken`), `AndBusinessRule`, `OrBusinessRule`, `NotBusinessRule`, `BusinessRuleExtensions` |
+| `BusinessRules` | `IBusinessRule` (`Code`, `Message`, `IsBroken`), `And/Or/NotBusinessRule`, `BusinessRuleExtensions` |
 | `ValueObjects` | `ValueObject`, `SingleValueObject<TValue>` |
 | `StronglyTypedIds` | `StronglyTypedId<TValue>`; `Serialization.StronglyTypedIdJsonConverterFactory`, `StronglyTypedIdJsonConverter<TId, TValue>` |
 | `Specifications` | `ISpecification<T>`, `Specification<T>`, `ReadOnlySpecification<T>`, `PagedSpecification<T>`, `KeysetSpecification<T, TKey>`, `AllSpecification<T>`, `EmptySpecification<T>`, `And/Or/NotSpecification<T>`, `SpecificationExtensions` |
 | `Policies` | `IPolicy<in T>`, `And/Or/NotPolicy<T>`, `PolicyExtensions` (incl. `ToRule`) |
+| `DomainServices` | `DomainService` |
 | `Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` |
 | `Exceptions` | `BusinessRuleViolationException`, `DomainNotFoundException` |
-| `Internal` (internal) | `DomainInvariants` (the single `CheckRule`/`TryCreate`/`NotNull` implementation), `SoftDeletion` |
+| `Internal` (internal) | `DomainInvariants` (the only `CheckRule`/`TryCreate`/`NotNull` implementation), `SoftDeletion` |
+
+Base-class matrix (closed; do not add combinations — a consumer needing another extends `AggregateRoot<TId>` and
+implements the interfaces, which is all persistence reads):
+
+| Non-tenanted aggregate | Extends | Tenanted counterpart | Entity mirror |
+| --- | --- | --- | --- |
+| `AggregateRoot` | `Entity` | `TenantedAggregateRoot` | `Entity` |
+| `AuditableAggregateRoot` | `AggregateRoot` | `TenantedAuditableAggregateRoot` | `AuditableEntity` |
+| `SoftDeletableAggregateRoot` | `AggregateRoot` | `TenantedSoftDeletableAggregateRoot` | `SoftDeletableEntity` |
+| `AuditableSoftDeletableAggregateRoot` | `AggregateRoot` | `TenantedAuditableSoftDeletableAggregateRoot` | `AuditableSoftDeletableEntity` |
+| `FullAuditableAggregateRoot` | `AuditableSoftDeletableAggregateRoot` | `TenantedFullAuditableAggregateRoot` | `FullAuditableEntity` |
 
 ---
 
 ## Implementation Rules
 
 ### Entities and aggregates
-- `Entity<TId>` equality is sealed: same concrete runtime type and equal non-default `Id`. **A transient entity (default `Id`) equals itself** (`ReferenceEquals` first) and nothing else. Its hash is by reference until an identity is assigned — never keep one in a hash set across the save that assigns its key. `Entity<TId>`'s `id` constructor argument stays unguarded: default is the transient sentinel.
-- `AggregateRoot<TId>` holds a nullable `IClock`. The ORM constructor sets none. **`Now` throws `InvalidOperationException` when no clock is attached** — never fall back to a sentinel time; a `NullClock` returning `DateTimeOffset.MinValue` shipped before P-540 and stamped year 0001 on every event raised by a loaded aggregate. Infrastructure attaches the clock through the explicitly implemented `IHasClock.AttachClock` (`06.Persistence`'s shared `DomainClockMaterializationInterceptor`, P-541).
-- Raise events only through `RaiseDomainEvent`; both overloads null-check. Each raised event increments `Version`, which is **the persisted event sequence number** (`IHasVersion`), not a concurrency token; `ClearDomainEvents` does not change it. Persistence maps it as a column (P-541); stamping published events with it is deferred because `IDomainEvent` and `EventEnvelope` have no field for it.
-- Audit fields have private setters and are written only by persistence. `RowVersion` has a protected setter; on PostgreSQL it maps to `xmin`.
-- Tenanted bases guard `tenantId` with `Guard.Throw.InvalidGuid` — an aggregate may never belong to `Guid.Empty`. `TenantId` never changes after construction; the domain receives it as a primitive and never references `ITenantProvider`.
-- The base-class matrix is: non-tenanted `{AggregateRoot, Auditable, SoftDeletable, AuditableSoftDeletable, FullAuditable}`, each with a `Tenanted` counterpart; entity bases mirror the non-tenanted set. Do not add further combinations; a consumer needing another extends `AggregateRoot<TId>` and implements the interfaces, which is all persistence reads.
-- Soft delete: aggregates' `MarkAsDeleted(deletedBy)` uses `Now`; entities' `MarkAsDeleted(deletedBy, deletedOn)` takes UTC time from the owning aggregate. Both go through `SoftDeletion.ShouldMarkDeleted`: blank actor throws `DomainException`; an already-deleted record is left untouched (no second event, original actor and time kept). `OnDelete` (aggregates) runs once.
+
+| Rule | Detail |
+| --- | --- |
+| Entity equality | Sealed. Same concrete runtime type and equal non-default `Id`. `ReferenceEquals` first, so a **transient** entity (default `Id`) equals itself and nothing else; its hash is by reference until an `Id` is assigned. `Entity<TId>`'s `id` argument is deliberately unguarded: default is the transient sentinel. |
+| Clock | `AggregateRoot<TId>` holds a nullable `IClock`; the ORM constructor sets none. `Now` **throws `InvalidOperationException`** without one. Never add a sentinel clock (a `NullClock` returning `MinValue` once stamped year 0001 on every event of a loaded aggregate). Attach only through the explicit `IHasClock.AttachClock`. |
+| Events | Only through `RaiseDomainEvent` (both overloads null-check). Each call increments `Version`, the **event sequence number** (`IHasVersion`), never a concurrency token. `ClearDomainEvents` does not reset it. |
+| Audit fields | Private setters, written only by persistence. `RowVersion` has a protected setter (PostgreSQL maps it to `xmin`). |
+| Tenancy | Tenanted bases guard `tenantId` with `Guard.Throw.InvalidGuid` (never `Guid.Empty`). `TenantId` never changes. The domain receives it as a `Guid`; never reference `ITenantProvider`. |
+| Soft delete | Aggregates: `MarkAsDeleted(deletedBy)` uses `Now`, calls `OnDelete` once. Entities: `MarkAsDeleted(deletedBy, deletedOn)`, `deletedOn` must be UTC. Both go through `SoftDeletion.ShouldMarkDeleted`: a blank actor throws `DomainException` (even when already deleted); an already-deleted record is left untouched (no second event, original actor and time kept). |
 
 ### Rules, creation and exceptions
-- `IBusinessRule.Code` is **required** — no default, no fallback. `BusinessRuleViolationException` uses `rule.Code`; `ErrorCodes.Domain.RuleViolated` is no longer used by this package. `AndBusinessRule` reports the first broken operand's code and joins broken messages with `"; "` (empty when unbroken); `OrBusinessRule` reports the left code; `NotBusinessRule` requires its own code and message.
-- `CheckRule` and `TryCreate` exist on `AggregateRoot`, `ValueObject` and (`CheckRule` only) `DomainService`, all delegating to `Internal.DomainInvariants` — never reimplement them.
-- `TryCreate<T>` returns `ValidationResult<T>`: `ValidationException` → all its errors; **any `DomainException`** (rules, `Guard.Throw` violations) → its single error; anything else rethrows. It must never catch broader exceptions.
-- `DomainNotFoundException` message format: `"{TypeName} '{id}' was not found."`; both arguments null-checked.
+
+| Rule | Detail |
+| --- | --- |
+| Rule codes | `IBusinessRule.Code` is **required**; no default or fallback. `BusinessRuleViolationException` uses `rule.Code`. |
+| Composites | `And`: first broken operand's code, broken messages joined with `"; "`, empty when unbroken. `Or`: left code. `Not`: requires its own code and message. |
+| One implementation | `CheckRule`/`TryCreate` on `AggregateRoot`, `ValueObject` and (`CheckRule` only) `DomainService` delegate to `Internal.DomainInvariants`. Never reimplement. |
+| `TryCreate<T>` | Returns `ValidationResult<T>`: `ValidationException` → all its errors; **any `DomainException`** (rules, guards) → its single error; anything else rethrows. Never catch broader. |
+| `DomainNotFoundException` | Message `"{TypeName} '{id}' was not found."`; both arguments null-checked; code `not_found.default`. |
 
 ### Value objects
-- **The base constructor never validates.** A value object assigns its members and calls `EnsureValid()` as its constructor's last statement; `EnsureValid` throws `ValidationException` with every error. `SingleValueObject<TValue>` calls it in its own constructor. A value object that omits `EnsureValid()` is silently unvalidated — the only trap left in this model, reported by analyzer SK0037.
-- Equality: same runtime type and component-wise equality; **a non-string `IEnumerable` component compares element by element** and hashes by its elements.
-- `SingleValueObject<TValue>` and `StronglyTypedId<TValue>` have **explicit** conversion operators only (null → `ArgumentNullException`); a null value throws `DomainException` with `ErrorCodes.Validation.Required` via `DomainInvariants.NotNull`, because `Guard.Throw.Null` cannot take an unconstrained `TValue`.
-- `Money` is validated by constructor guards (`Guard.Throw.Null(currency)`, `InvalidEnumValue(roundingPolicy)`); its `Validate()` returns empty.
+
+| Rule | Detail |
+| --- | --- |
+| Validation | **The base constructor never validates.** A subclass assigns members and calls `EnsureValid()` last; it throws `ValidationException` with every error. Omitting it compiles and silently skips validation — SK0037 reports it. |
+| `SingleValueObject<TValue>` | Calls `EnsureValid()` in its own constructor; null value → `DomainException` with `ErrorCodes.Validation.Required` via `DomainInvariants.NotNull` (`Guard.Throw.Null` cannot take an unconstrained `TValue`). |
+| Equality | Same runtime type, component-wise. A non-string `IEnumerable` component compares and hashes element by element. |
+| Conversions | `SingleValueObject<TValue>` and `StronglyTypedId<TValue>` have **explicit** operators only; null → `ArgumentNullException`. |
+| `Money` | Validated by constructor guards (`Guard.Throw.Null(currency)`, `InvalidEnumValue(roundingPolicy)`); `Validate()` returns empty. |
 
 ### Strongly-typed identifiers and JSON
+
 - Shape: `public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);`.
-- `StronglyTypedIdJsonConverterFactory` handles any concrete `StronglyTypedId<TValue>` whose `TValue` STJ can serialize (no allowlist), writes the bare value, reads JSON `null` as null, and supports dictionary keys by delegating `Read/WriteAsPropertyName` to `TValue`'s converter. It uses `MakeGenericType` + a compiled constructor delegate; that is acceptable under the no-AOT ruling. A converter construction failure is rethrown unwrapped from `TargetInvocationException`.
-- `06.Persistence`'s keyset evaluator unwraps IDs through `op_Explicit` by reflection — renaming or removing the explicit operator breaks keyset paging at runtime, not compile time.
+- The factory handles any concrete `StronglyTypedId<TValue>` whose `TValue` STJ can serialize (no allowlist),
+  writes the bare value, reads JSON `null` as null (`HandleNull => false`), and supports dictionary keys by
+  delegating `Read/WriteAsPropertyName` to `TValue`'s converter. Construction failures are rethrown unwrapped
+  from `TargetInvocationException`.
 
 ### Specifications
-- **`AddCriteria` accumulates with AND** and resets the compiled `IsSatisfiedBy` cache. Never make it replace.
-- One primary sort: a second `ApplyOrderBy`/`ApplyOrderByDescending` throws. `ApplyPaging` rejects negative skip and take < 1. `PagedSpecification` rejects an offset above `int.MaxValue` (computed in `long`).
-- **`KeysetSpecification`'s Id tiebreak sorts in the primary sort's direction** — the 06.Persistence seek predicate flips both comparisons when descending; an ascending tiebreak under a descending key skips or repeats rows sharing a key (shipped defect until P-540).
-- Composites copy criteria and the query shape (includes deduplicated by reference, string includes by ordinal value, tracking/split/include-deleted OR-ed) through `Specification<T>.CopyQueryShapeFrom`. They never copy ordering, paging or `Distinct`. `Not` of a criteria-less spec matches nothing.
-- `IncludeDeleted` bypasses every EF Core global filter, including tenancy; re-add the tenant criterion.
 
-### Policies, events, Money
-- `IPolicy<in T>` is contravariant. `NotPolicy`/`.Not(explanation)` require an explanation. `policy.ToRule(subject, code)` is the only bridge from a policy to `CheckRule`.
-- `DomainEvent.Id` is `init`-settable and defaults to `Guid.CreateVersion7()` so it survives serialization; never make it get-only again. Every concrete event declares `[DomainEventVersion(n)]` (SK0009).
-- `Money` lives in `SharedKernel.Domain.Monetary` (a namespace named `Money` collided with the type). Arithmetic rounds with banker's rounding; `Multiply`/`Divide` take a policy. `RoundingPolicy` members are `BankersRounding, AwayFromZero, ToZero, Ceiling, Floor` — never `Up`/`Down`, which libraries disagree on. Cross-currency `+ - < > Min Max Sum` throw `BusinessRuleViolationException` with `money.currency_mismatch`. `Allocate` is largest-remainder, ties to the later index, and must always sum to the original.
-- `CurrencyCatalog` is compiled in, frozen, and carries `RegistryAsOf`. Update it only against ISO 4217 amendments; `SharedKernel.Validation`'s `IsoCurrencyValidator` holds a second table that must be kept consistent.
-- `IExchangeRateProvider` is a port; `ConvertAsync` builds the result through `Money.FromTrusted`.
+| Rule | Detail |
+| --- | --- |
+| Criteria | `AddCriteria` **accumulates with AND** and resets the compiled `IsSatisfiedBy` cache. Never make it replace. |
+| Sorting | One primary sort; a second `ApplyOrderBy`/`ApplyOrderByDescending` throws. |
+| Paging | `ApplyPaging` rejects negative skip and take < 1. `PagedSpecification` computes the offset in `long` and rejects one above `int.MaxValue`; `MaxPageSize` is 1000. |
+| Keyset | `TKey : struct, IComparable<TKey>`. The `Id` tiebreak sorts **in the primary direction**; an ascending tiebreak under a descending key skips or repeats rows sharing a key. |
+| Composites | Copy criteria and query shape through `private protected CopyQueryShapeFrom` (includes deduplicated by reference, string includes by ordinal value, tracking/split/include-deleted OR-ed). Never copy ordering, paging or `Distinct`. `Not` of a criteria-less spec matches nothing. |
+| Soft-deleted rows | `IncludeDeleted` bypasses every EF Core global filter, tenancy included. |
+
+### Policies, events and Money
+
+| Rule | Detail |
+| --- | --- |
+| Policies | `IPolicy<in T>` is contravariant; `Explain` is empty when compliant. `NotPolicy`/`.Not(explanation)` require an explanation. `policy.ToRule(subject, code)` is the only bridge to `CheckRule`. |
+| Event identity | `DomainEvent.Id` is `init`-settable, defaulting to `Guid.CreateVersion7()`, so it survives serialization. Never make it get-only. Every concrete event declares `[DomainEventVersion(n)]` (SK0009). |
+| Money namespace | `SharedKernel.Domain.Monetary` (a namespace named `Money` collided with the type). |
+| Rounding | Arithmetic uses banker's rounding; `Multiply`/`Divide` take a policy. `RoundingPolicy` = `BankersRounding, AwayFromZero, ToZero, Ceiling, Floor`; never `Up`/`Down`, which libraries define differently. |
+| Mismatch | Cross-currency `+ - < > <= >= Min Max Sum` throw `BusinessRuleViolationException` with `money.currency_mismatch`. |
+| Allocation | Largest remainder; leftover minor units go to the later indexes; parts always sum to the original. |
+| Sum | `Sum()` throws `InvalidOperationException` on an empty sequence; `Sum(currency)` returns zero. |
+| Catalog | Frozen, compiled in, carries `RegistryAsOf`. Update only against ISO 4217 amendments. |
+| Conversion | `IExchangeRateProvider` is a port; `ConvertAsync` builds the result through the internal `Money.FromTrusted`. |
 
 ### General
-- No static mutable state except the `DomainEventVersionHelper` cache. No persistence, messaging or DI types. No `DateTime.UtcNow`/`DateTimeOffset.UtcNow`.
-- Shipped XML docs and release notes never contain internal WO/P IDs.
+
+- No static mutable state except the `DomainEventVersionHelper` cache.
+- `ToString()` of `Money` is invariant culture (`"59.97 USD"`); culture only through `IFormattable`.
+
+---
+
+## Cross-Domain Couplings
+
+Changes here that silently break another layer. Check the right column before merging.
+
+| If you change… | Also check |
+| --- | --- |
+| The explicit operator on `StronglyTypedId<TValue>` | `06.Persistence` `SpecificationEvaluator` finds `op_Explicit` **by reflection** for keyset paging; a rename breaks at runtime, not compile time |
+| `IHasClock`, the ORM constructors or `Now` | `06.Persistence` `DomainClockMaterializationInterceptor` |
+| `IHasVersion` or the event sequence semantics | `06.Persistence` `EntityTypeConfigurationBase.ConfigureEventSequence` (maps `Version` as a required, non-concurrency column) |
+| Keyset tiebreak direction | `06.Persistence` seek predicate, which flips both comparisons when descending |
+| `CurrencyCatalog` codes or minor units | `01.Core` `SharedKernel.Validation` holds a second ISO 4217 table; keep them consistent |
+| `Money`/`Currency` factories | `06.Persistence` `MoneyValueConverter`/`CurrencyValueConverter`; `16.Testing` `MoneyFaker` |
+| `IBusinessRule`, `ValueObject` validation or `TryCreate` | `16.Testing` fixtures; `samples/OrderApi`; `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
+| `IDomainEventDispatcher` | `05.Application` `MediatRDomainEventDispatcher`; `06.Persistence` unit of work |
+| Any public API | `PublicAPI.Unshipped.txt`, `SharedKernel.Domain.ConsumerVerify`, the package README |
 
 ---
 
 ## Decision Records
 
-- **Value object validation (P-540):** explicit `EnsureValid()` replaced validation in the base constructor, which called a virtual method before subclass members were assigned. Rejected: factory-only validation (least enforced). Accepted cost: an omitted `EnsureValid()` compiles; analyzer SK0037 (P-542) reports it at build time.
-- **Clock on loaded aggregates (P-540):** attach-on-load through `IHasClock` + throw when absent. Rejected: passing time into every mutating method (largest break), fail-loud without a supported attach path.
-- **Kept, not removed (P-540, user ruling):** `IHasVersion` (redefined as event sequence), `IAggregateFactory` (enforced by `DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults`, P-542), `IPolicy<T>` (distinct from rules and specifications), the audit/soft-delete/tenant base classes (missing tenant combinations added).
-- **Return type of `TryCreate` (P-540):** `ValidationResult<T>` so multi-error validation is not truncated. `Result<T>` interop is by the caller (`Errors[0]`), since `Primitives` has no conversion.
-- **Equality strategy:** abstract class + `GetEqualityComponents()`, not records, for explicit control over components and constructors.
+| Decision | Chosen | Rejected | Accepted cost |
+| --- | --- | --- | --- |
+| Value object validation | Explicit `EnsureValid()` last in the constructor | Base-constructor validation (virtual call before members are assigned); factory-only validation (least enforced) | An omitted call compiles; SK0037 reports it |
+| Clock on loaded aggregates | Attach on load through `IHasClock`; throw when absent | Time passed into every mutating method (largest break); a null clock (silent wrong data) | Non-EF loaders must attach the clock themselves |
+| `TryCreate` return type | `ValidationResult<T>` (keeps every error) | `Result<T>` (single error) | `Result<T>` interop is by the caller (`Errors[0]`) |
+| Kept abstractions (user ruling) | `IHasVersion` as event sequence; `IAggregateFactory` with an architecture rule; `IPolicy<T>`; audit/soft-delete/tenant bases with missing tenanted combinations added | Removing them as unused | Larger surface to maintain |
+| Rule codes | Required `Code` on every rule | Optional code with a shared default | Every rule author picks a code |
+| Conversions | Explicit only | Implicit (identifiers flow into any `Guid`) | `.Value` or a cast at call sites |
+| Equality strategy | Abstract classes + `GetEqualityComponents()` | Records (generated equality and constructors bypass validation) | More boilerplate per value object |
+| AOT | Not a constraint | AOT-clean JSON limited to four identifier value types | Reflection in the JSON factory |
 
 ---
 
 ## Test Rules
 
-- Every behaviour change is pinned in `DomainHardeningTests`/`MoneyHardeningTests` with the pre-fix behaviour noted, and proven by executed perturbation (reverting the fix fails the named tests).
+- Every behaviour change is pinned in `DomainHardeningTests`/`MoneyHardeningTests` with the pre-fix behaviour
+  noted, and proven by perturbation: reverting the fix fails the named tests.
 - Test rules use their own `Code` (`"test.rule"` where the code is irrelevant).
-- Value-object fixtures call `EnsureValid()`; a fixture that relies on base-constructor validation is a test bug.
-- `ConsumerVerify` resolves the package from a feed and must be updated with every public API change.
+- Value-object fixtures call `EnsureValid()`; a fixture relying on base-constructor validation is a test bug.
+- Code snippets in the package README compile and their shown outputs are produced by running them.
+- `ConsumerVerify` resolves the package from a feed and is updated with every public API change.
 
 ---
 
@@ -133,3 +234,4 @@ Zero third-party NuGet dependencies. Public API tracked with `Microsoft.CodeAnal
 - [2026-09-02] SK.03.Core closed (WO-066/C-47..C-53) — `RoundingPolicy`/`CurrencyCatalog`/`Currency`/`CurrencyMismatchRule`/`Money` fully implemented; the "Money system" subsection and Implementation Rules corrected post-implementation for one genuine design/compiler mismatch (`Money`'s private-constructor field-initializer technique cannot compile with `private` accessibility on a `sealed` non-abstract class — the currency-null-guard moved into the constructor body, `Validate()` is now documented as a no-op) plus one previously-unspecified detail (`Allocate`'s leftover-minor-unit tie-break is by descending original index, matching the `$10.00`→`[3.33, 3.33, 3.34]` worked example). 417/417 tests green, 0 build warnings (domain-phase-implementer)
 - [2026-09-10] WO-082/P-509 — `SharedKernel.Guards` was merged into `SharedKernel.Core` upstream (P-505, 01.Core), retiring `01.Core/SharedKernel.Guards/` as an independent package; the `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces were deliberately preserved on the merge (now physically hosted inside `SharedKernel.Core`). `SharedKernel.Domain.csproj`'s `ProjectReference` to the now-deleted `SharedKernel.Guards.csproj` was re-pointed onto `SharedKernel.Core.csproj` — already permitted by the root layering table ("03.Domain may reference 01.Core"), so no new layering exception was needed. Verified by direct source inspection that `AggregateRoot.cs`, `Money.cs` (the only two production `Guard.Against`/`Guard.Throw` call sites in this domain), `StronglyTypedId.cs`, and `SingleValueObject.cs` (comment-only `Guard.Throw.Null<T>` mentions, no live call) all needed zero source change — their existing `using SharedKernel.Guards;` directives resolve unchanged against the new assembly. Packages table, and the Implementation Rules/AOT Compatibility current-state prose that named `SharedKernel.Guards` as a live `ProjectReference`, updated to describe it as a namespace now hosted inside `SharedKernel.Core`; all prior WO-051/WO-066 changelog entries above are left untouched as historical record of what was true when written, per the root `CLAUDE.md`'s "historical record, not current state" convention for versioned/dependency claims. `dotnet build` clean (0 warnings/0 errors); `dotnet test` 423/423 green — no test file changed. This domain's own `00.Governance` layering re-verification (`SharedKernel.ArchitectureTests`' 03.Domain rules) is deferred to P-508, which cannot build until this phase lands (`SharedKernel.ArchitectureTests` itself still references the now-deleted `SharedKernel.Guards.csproj`). No new phase/task IDs were opened in `03.Domain/state-map.md` for this change — `03.Domain` is fully `●` Published and this is a mechanical upstream-merge follow-up, not a new architectural phase; the Package Board's `SharedKernel.Guards` dependency mentions describe the last real `dotnet pack` run (P-12, WO-066) and are intentionally left as-is until the next real re-pack (domain-phase-implementer)
 - [2026-09-15] P-540 — pre-first-publish gold-standard pass, audited by execution. Fixed: transient entities not equal to themselves; aggregates loaded by an ORM stamping 0001-01-01 on events and DeletedOn (NullClock removed, IHasClock added, Now throws without a clock); AddCriteria replacing earlier criteria; TryCreate letting guard violations escape and truncating validation to one error (now ValidationResult<T>); DomainEvent.Id regenerated on deserialization (init + UUIDv7); BIF minor units and stale/missing ISO 4217 codes; Money.ToString printing the type name; duplicate soft-delete events; PagedSpecification offset overflow; empty tenants accepted; two primary sorts allowed; value-object collection components compared by reference; keyset Id tiebreak sorted against the seek predicate; strongly-typed ID JSON failing as dictionary keys and limited to four value types. Changed by user ruling: IBusinessRule.Code required; explicit EnsureValid; explicit conversions; Money moved to Monetary with IFormattable, predicates, Divide, Min/Max, Sum and ToZero/Ceiling/Floor; missing tenanted soft-delete bases and soft-deletable entity bases added; IHasVersion redefined as event sequence; IPolicy polished with ToRule; AOT dropped as a constraint. Public API tracked (404 lines). 425 → 511 domain tests; 10 perturbations each caught; cross-domain fixes in 05/06/16/samples; unit filter and Postgres integration suites green (domain-phase)
+- [2026-09-15] Brain restructured for readability (tables, cross-domain couplings); README and folder landing page rewritten (agent)
