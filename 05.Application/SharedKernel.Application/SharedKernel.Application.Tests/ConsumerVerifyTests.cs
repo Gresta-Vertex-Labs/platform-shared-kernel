@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.DomainEvents;
 using SharedKernel.Application.Extensions;
 using SharedKernel.Application.Messaging;
-using SharedKernel.Domain;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 using SharedKernel.Primitives.Results;
 

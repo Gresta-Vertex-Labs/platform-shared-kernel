@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using MediatR;
 using Microsoft.Extensions.Options;
-using SharedKernel.Domain;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
 namespace SharedKernel.Application.DomainEvents;

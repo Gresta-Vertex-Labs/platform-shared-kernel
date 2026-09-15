@@ -1,7 +1,7 @@
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.DomainEvents;
-using SharedKernel.Domain;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
 namespace SharedKernel.Application.Extensions;
