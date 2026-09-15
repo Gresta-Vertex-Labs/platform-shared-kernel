@@ -1,236 +1,366 @@
 # SharedKernel.Domain
 
-DDD building blocks for .NET 10 microservices. Provides abstract base classes and interfaces for entities, aggregate roots, value objects, domain events, business rules, policies, and specifications. References only `SharedKernel.Primitives` — zero infrastructure dependencies.
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
----
+**Domain-driven design building blocks for .NET services.**
 
-## Quick Start: Aggregate Root
+- **Entities and aggregate roots:** identity equality, domain events stamped from an injected clock, and business-rule enforcement.
+- **Value objects:** structural equality with explicit validation that reports every error, plus single-value wrappers.
+- **Strongly-typed identifiers:** `OrderId` instead of `Guid`, with one-line JSON support.
+- **Audit, soft-delete and tenant bases:** the properties your persistence layer fills in.
+- **Specifications:** query filters with composition, offset paging and keyset paging.
+- **Policies:** reusable domain decisions that explain themselves.
+- **Money:** a currency-aware amount with ISO 4217 minor units, rounding policies and loss-free allocation.
+
+## Contents
+
+- [Install](#install)
+- [At a glance](#at-a-glance)
+- [Namespaces](#namespaces)
+- [Aggregates and entities](#aggregates-and-entities)
+  - [Time and domain events](#time-and-domain-events)
+  - [Loading an aggregate: attaching the clock](#loading-an-aggregate-attaching-the-clock)
+  - [Base classes](#base-classes)
+  - [Soft delete](#soft-delete)
+- [Business rules](#business-rules)
+- [Creating objects without exceptions: TryCreate](#creating-objects-without-exceptions-trycreate)
+- [Value objects](#value-objects)
+- [Strongly-typed identifiers](#strongly-typed-identifiers)
+- [Specifications](#specifications)
+- [Policies](#policies)
+- [Money](#money)
+- [Error codes](#error-codes)
+- [Compatibility and guarantees](#compatibility-and-guarantees)
+- [Deliberately not included](#deliberately-not-included)
+
+## Install
+
+```shell
+dotnet add package SharedKernel.Domain
+```
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Dependencies | `SharedKernel.Primitives` and `SharedKernel.Core` only |
+| Registration | None. Everything is a base class, an interface or a static method. |
+
+## At a glance
 
 ```csharp
-// 1. Define a strongly-typed ID
 public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
 
-// 2. Define a domain event (sealed record, OccurredOn is required init)
-public sealed record OrderCreatedEvent(Guid OrderId) : DomainEvent;
+[DomainEventVersion(1)]
+public sealed record OrderPlaced(Guid OrderId, Money Total) : DomainEvent;
 
-// 3. Implement the aggregate — inject IClock, raise events via the factory overload
-public sealed class Order : AggregateRoot<OrderId>
+public sealed class OrderMustHaveLines(int lineCount) : IBusinessRule
 {
-    public string CustomerName { get; private set; }
+    public string Code => "order.no_lines";
+    public string Message => "An order needs at least one line.";
+    public bool IsBroken() => lineCount == 0;
+}
 
-    public Order(OrderId id, string customerName, IClock clock) : base(id, clock)
+public sealed class Order : TenantedAggregateRoot<OrderId>
+{
+    private Order(OrderId id, Guid tenantId, Money total, int lineCount, IClock clock)
+        : base(id, tenantId, clock)
     {
-        CustomerName = customerName;
-        // Use the Func<DateTimeOffset, IDomainEvent> overload so the clock sources the timestamp
-        RaiseDomainEvent(ts => new OrderCreatedEvent(id.Value) { OccurredOn = ts });
+        CheckRule(new OrderMustHaveLines(lineCount));
+        Total = total;
+        RaiseDomainEvent(at => new OrderPlaced(id.Value, total) { OccurredOn = at });
     }
 
-    protected Order() { } // Required for ORM materialisation (EF Core)
+    private Order() { } // ORM
+
+    public Money Total { get; private set; } = null!;
+
+    public static ValidationResult<Order> Place(OrderId id, Guid tenantId, Money total, int lineCount, IClock clock) =>
+        TryCreate(() => new Order(id, tenantId, total, lineCount, clock));
 }
 ```
 
-After persisting, the infrastructure dispatch layer calls `order.ClearDomainEvents()`. The aggregate must never call this itself.
+`Order.Place` never throws for invalid input. A broken rule, a guard violation such as an empty tenant, or a
+failed value-object validation becomes a failed `ValidationResult<Order>`. Construction stops at the first
+failure, so a result carries one error unless a value object reports several from `EnsureValid`.
 
----
+## Namespaces
 
-## Value Object with Validate() Hook
+| Namespace | Contains |
+| --- | --- |
+| `SharedKernel.Domain.Abstractions` | `IEntity<TId>`, `IAggregateRoot<TId>`, `IHasDomainEvents`, `IHasClock`, `IHasVersion`, `IHasAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`, `IDomainEventDispatcher`, markers |
+| `SharedKernel.Domain.Aggregates` | `AggregateRoot<TId>` and the audit, soft-delete and tenant bases |
+| `SharedKernel.Domain.Entities` | `Entity<TId>` and the entity bases |
+| `SharedKernel.Domain.Events` | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, versioning |
+| `SharedKernel.Domain.BusinessRules` | `IBusinessRule` and its `And`/`Or`/`Not` composition |
+| `SharedKernel.Domain.ValueObjects` | `ValueObject`, `SingleValueObject<TValue>` |
+| `SharedKernel.Domain.StronglyTypedIds` | `StronglyTypedId<TValue>` and its JSON converter |
+| `SharedKernel.Domain.Specifications` | `Specification<T>`, paged and keyset specifications |
+| `SharedKernel.Domain.Policies` | `IPolicy<T>` and its composition |
+| `SharedKernel.Domain.Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `IExchangeRateProvider` |
+| `SharedKernel.Domain.Exceptions` | `BusinessRuleViolationException`, `DomainNotFoundException` |
+
+## Aggregates and entities
+
+### Time and domain events
+
+An aggregate reads time only from the `IClock` it is constructed with, never from `DateTimeOffset.UtcNow`
+(analyzer `SK0001` enforces it). Raise events through the factory overload, which passes the clock's time at
+the moment the event is recorded:
 
 ```csharp
-public sealed class Coordinates : ValueObject
-{
-    public double Latitude { get; }
-    public double Longitude { get; }
+RaiseDomainEvent(at => new OrderShipped(Id.Value) { OccurredOn = at });
+```
 
-    public Coordinates(double latitude, double longitude)
+Each raised event advances `Version` by one, so `Version` is the aggregate's event sequence number. Map it as a
+column so a loaded aggregate continues its numbering; consumers can then use it to detect a missing or
+out-of-order event. Infrastructure
+dispatches the pending events after the unit of work commits, then calls `ClearDomainEvents()`; an aggregate
+never clears its own events.
+
+Every `DomainEvent` gets a version 7 UUID as its `Id`, which is time-ordered and survives serialization, so
+deduplication keyed on `Id` keeps working after an event passes through an outbox.
+
+### Loading an aggregate: attaching the clock
+
+An ORM creates an aggregate through its parameterless constructor, which cannot receive a clock. Until
+infrastructure attaches one through `IHasClock.AttachClock`, anything that needs the time throws
+`InvalidOperationException`:
+
+```csharp
+var order = await db.Orders.SingleAsync(o => o.Id == id);
+order.Ship();   // throws: "Order has no clock ... AttachClock"
+```
+
+`SharedKernel.Persistence.EfCore` attaches the clock automatically as each aggregate is materialized. If you load
+aggregates another way, call `AttachClock` yourself as each one is created. This exists so that a missing
+clock fails loudly instead of recording `0001-01-01` as the time an event happened.
+
+### Base classes
+
+| Base class | Adds |
+| --- | --- |
+| `AggregateRoot<TId>` | Events, rules, clock |
+| `AuditableAggregateRoot<TId>` | `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` |
+| `SoftDeletableAggregateRoot<TId>` | `IsDeleted`, `DeletedOn`, `DeletedBy`, `MarkAsDeleted` |
+| `AuditableSoftDeletableAggregateRoot<TId>` | Audit and soft delete |
+| `FullAuditableAggregateRoot<TId>` | Audit, soft delete and a `RowVersion` concurrency token |
+
+Each has a `Tenanted…` counterpart that adds a `TenantId`, which is fixed at construction and must not be
+`Guid.Empty`. Child entities have `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`,
+`AuditableSoftDeletableEntity<TId>` and `FullAuditableEntity<TId>`.
+
+The persistence layer fills audit and concurrency properties and reads only the interfaces, never the base
+classes. For a combination not listed, extend `AggregateRoot<TId>` and implement the interfaces yourself.
+
+**Entity equality** is by concrete type and `Id`. An entity whose `Id` is still the default is *transient*: it
+is equal only to itself, so two unsaved entities stay distinct while each can still be removed from a
+collection. Its hash code changes once the database assigns its key, so do not keep a transient entity in a
+`HashSet` across that save.
+
+### Soft delete
+
+```csharp
+public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
+{
+    public void Close(string closedBy) => MarkAsDeleted(closedBy);
+
+    protected override void OnDelete() =>
+        RaiseDomainEvent(at => new CustomerClosed(Id.Value) { OccurredOn = at });
+}
+```
+
+`MarkAsDeleted` records the actor and the clock's time, then calls `OnDelete` once. Deleting an already
+deleted aggregate changes nothing and raises no second event; an empty actor throws. Entities have no clock,
+so their `MarkAsDeleted(deletedBy, deletedOn)` takes the owning aggregate's time, which must be UTC.
+
+Removing an aggregate through a repository also soft-deletes it, but raises no domain event. Prefer a domain
+method whenever other parts of the system must react.
+
+## Business rules
+
+A rule has a stable `Code`, a `Message` and `IsBroken()`. `CheckRule(rule)` throws
+`BusinessRuleViolationException` when the rule is broken; its error has type `BusinessRule` (HTTP 422) and the
+rule's own code, which clients branch on and localization looks messages up by.
+
+| Composition | Broken when | Reports |
+| --- | --- | --- |
+| `a.And(b)` | Either is broken | The code of the first broken operand; the messages of all broken operands, joined with `; ` |
+| `a.Or(b)` | Both are broken | `a`'s code; both messages |
+| `a.Not(code, message)` | `a` holds | The code and message you supply |
+
+## Creating objects without exceptions: TryCreate
+
+Aggregates and value objects expose a protected `TryCreate(() => new …)`. It returns a `ValidationResult<T>`:
+
+| What the constructor throws | Result |
+| --- | --- |
+| Nothing | Valid, holding the object |
+| `ValidationException` (from `EnsureValid`) | Invalid, holding **every** error |
+| `BusinessRuleViolationException` | Invalid, holding the rule's error |
+| Any other `DomainException`, including every `Guard.Throw` violation | Invalid, holding its error |
+| Anything else | Rethrown: it is a defect, not invalid input |
+
+## Value objects
+
+Assign every member in the constructor, then call `EnsureValid()` as the last statement. It runs `Validate()`
+against the fully built object and throws a `ValidationException` with all errors:
+
+```csharp
+public sealed class DateRange : ValueObject
+{
+    private DateRange(DateOnly start, DateOnly end)
     {
-        Latitude = latitude;
-        Longitude = longitude;
-        // Base constructor calls Validate() automatically — do NOT call it here
+        Start = start;
+        End = end;
+        EnsureValid();
     }
+
+    public DateOnly Start { get; }
+    public DateOnly End { get; }
+
+    public static ValidationResult<DateRange> Create(DateOnly start, DateOnly end) =>
+        TryCreate(() => new DateRange(start, end));
 
     protected override IEnumerable<object?> GetEqualityComponents()
     {
-        yield return Latitude;
-        yield return Longitude;
+        yield return Start;
+        yield return End;
     }
 
-    // Return null (or empty) for valid; yield Error instances to fail construction
-    protected override IEnumerable<Error>? Validate()
+    protected override IEnumerable<Error> Validate()
     {
-        if (Latitude is < -90 or > 90)
-            yield return Error.Validation("Coordinates.InvalidLatitude", "Latitude must be between -90 and 90.");
-        if (Longitude is < -180 or > 180)
-            yield return Error.Validation("Coordinates.InvalidLongitude", "Longitude must be between -180 and 180.");
+        if (End < Start)
+            yield return Error.Validation("date_range.end_before_start", "The end must not be before the start.");
     }
 }
-
-// Usage — throws ValidationException if invariants are violated
-var origin       = new Coordinates(0, 0);
-var sanFrancisco = new Coordinates(37.7749, -122.4194);
-Console.WriteLine(origin == sanFrancisco); // false — structural equality on Latitude + Longitude
 ```
 
----
+The base class never validates by itself: a virtual call from its constructor would run before your constructor
+assigned anything. A value object that never calls `EnsureValid()` is never validated; analyzer `SK0037` in
+`SharedKernel.Analyzers` reports that at build time.
 
-## Money — Currency-Aware Monetary Value Object
+`SingleValueObject<TValue>` wraps one value and calls `EnsureValid()` for you, so a subclass only implements
+`Validate()`. A sequence used as an equality component, other than a `string`, is compared element by element.
 
-`Money` (`ValueObjects/Money/`) is a shipped, production-ready value object — not a pattern to
-reimplement per service. It pairs a `decimal` amount with a validated ISO 4217 `Currency`, rounds
-unconditionally to the currency's minor-unit precision (`RoundingPolicy.BankersRounding` by
-default), and rejects cross-currency arithmetic via the existing business-rule pipeline.
+## Strongly-typed identifiers
 
 ```csharp
-// Create — validates the currency and unconditionally rounds the amount to its minor-unit
-// precision (2 places for USD). Returns Result<Money>, never throws on excess precision.
-Result<Money> priceResult = Money.Create(19.995m, Currency.Usd);
-if (priceResult.IsFailure)
-    throw new InvalidOperationException(priceResult.Error.Message);
+public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
 
-Money price    = priceResult.Value;                    // 20.00 USD (rounded via BankersRounding)
-Money shipping = Money.Create(4.99m, Currency.Usd).Value;
-
-// Arithmetic — same-currency only. A mismatched currency throws BusinessRuleViolationException
-// (ErrorType.BusinessRule -> HTTP 422), carrying a CurrencyMismatchRule.
-Money total      = price + shipping;                   // 24.99 USD
-Money discounted = total * 0.9m;                        // 22.49 USD — Multiply re-rounds the product
-
-// Comparison
-if (total > Money.Zero(Currency.Usd))
-    Console.WriteLine("Order total is positive.");
-
-// Allocate — largest-remainder (Hare-Niemeyer) split that conserves the total exactly.
-IReadOnlyList<Money> splitThreeWays = Money.Create(10.00m, Currency.Usd).Value.Allocate(3);
-// [3.33, 3.33, 3.34] USD — never [3.33, 3.33, 3.33] (loses a cent) or [3.34, 3.34, 3.34] (invents two)
-
-IReadOnlyList<Money> weightedSplit = total.Allocate(ratios: [2, 1, 1]); // 50% / 25% / 25%
-
-// Cross-currency conversion — SharedKernel.Domain ships only the IExchangeRateProvider port and
-// the ConvertAsync composition helper; the consuming service supplies the real rate lookup
-// (typically bridged via 11.Communication) at its own composition root.
-Result<Money> converted = await price.ConvertAsync(
-    Currency.Eur, rateProvider, cancellationToken: cancellationToken);
+var id = new OrderId(Guid.CreateVersion7());
+Guid raw = id.Value;       // or (Guid)id
 ```
 
+There is no implicit conversion, so an `OrderId` can never flow silently into a parameter that expects another
+concept's `Guid`. Register the converter factory once and every identifier serializes as its bare value,
+including as a dictionary key:
+
 ```csharp
-// A minimal test/demo IExchangeRateProvider — production code bridges to a real rate source.
-public sealed class FixedRateProvider(decimal rate) : IExchangeRateProvider
+var options = new JsonSerializerOptions();
+options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
+// {"3f2b…": 5} for a Dictionary<OrderId, int>
+```
+
+## Specifications
+
+```csharp
+public sealed class ActiveOrders : Specification<Order>
 {
-    public Task<Result<decimal>> GetExchangeRateAsync(
-        Currency source, Currency target, CancellationToken cancellationToken) =>
-        Task.FromResult(Result<decimal>.Success(rate));
-}
-```
-
-`Currency.Create("try")` normalizes casing/whitespace and validates against a fixed, compile-time
-ISO 4217 catalog (`CurrencyCatalog`) — correctly distinguishing zero-decimal currencies (e.g. JPY)
-and three-decimal currencies (e.g. BHD) from the 2-digit default. `Currency.Usd`/`.Eur`/`.Gbp`/`.Jpy`
-are DX-convenience statics only, not an exhaustive currency list — use `Create` for any other code.
-
----
-
-## Specification Pattern
-
-```csharp
-// Define a specification in its constructor using the protected builder methods
-public sealed class ActiveOrdersSpec : Specification<Order>
-{
-    public ActiveOrdersSpec()
+    public ActiveOrders(Guid tenantId)
     {
-        AddCriteria(o => !o.IsDeleted && o.Status == OrderStatus.Active);
+        AddCriteria(o => !o.IsDeleted);
+        AddCriteria(o => o.TenantId == tenantId);   // combined with AND
         ApplyOrderByDescending(o => o.CreatedOn);
-        ApplyPaging(skip: 0, take: 20);
     }
 }
 
-public sealed class LargeOrdersSpec : Specification<Order>
-{
-    public LargeOrdersSpec(decimal threshold)
-    {
-        AddCriteria(o => o.Total > threshold);
-    }
-}
-
-// Compose specifications with And / Or / Not extension methods
-var spec = new ActiveOrdersSpec().And(new LargeOrdersSpec(1000m));
-
-// Pass to a repository (06.Persistence) — the spec encodes what; persistence handles how
-var orders = await repository.ListAsync(spec, cancellationToken);
+var spec = new ActiveOrders(tenantId).And(Specification<Order>.Create(o => o.Total.Amount > 100));
 ```
 
----
+| Rule | Behaviour |
+| --- | --- |
+| `AddCriteria` twice | Conditions are combined with AND |
+| A second primary sort | Throws; add further keys with `ApplyThenBy` |
+| `And`, `Or`, `Not` | Carry over criteria, includes and the tracking, split-query and include-deleted flags; **not** ordering, paging or `Distinct` |
+| `Not` of a specification without criteria | Matches nothing |
+| `PagedSpecification<T>` | 1-based pages, page size up to 1000, rejects an offset beyond `int.MaxValue` |
+| `KeysetSpecification<T, TKey>` | Seek paging; the `Id` tiebreak always sorts in the same direction as the key |
+| `IncludeSoftDeleted()` | Bypasses **every** global query filter, including tenant isolation; re-add the tenant criterion |
 
-## Business Rule Composition
+## Policies
 
 ```csharp
-// Implement a rule as a small, focused class
-public sealed class OrderMustNotBeEmpty : IBusinessRule
+public sealed class DiscountEligibility : IPolicy<Customer>
 {
-    private readonly int _lineCount;
-    public OrderMustNotBeEmpty(int lineCount) => _lineCount = lineCount;
-    public string Message => "An order must contain at least one line item.";
-    public bool IsBroken() => _lineCount == 0;
+    public bool IsCompliant(Customer customer) => customer.OrderCount >= 5;
+
+    public string Explain(Customer customer) =>
+        IsCompliant(customer) ? string.Empty : "A discount needs at least five previous orders.";
 }
 
-public sealed class OrderTotalMustBePositive : IBusinessRule
-{
-    private readonly decimal _total;
-    public OrderTotalMustBePositive(decimal total) => _total = total;
-    public string Message => "Order total must be greater than zero.";
-    public bool IsBroken() => _total <= 0;
-}
+if (!policy.IsCompliant(customer))
+    return Error.BusinessRule("discount.not_eligible", policy.Explain(customer));
 
-// Inside an aggregate method, enforce rules with CheckRule (throws BusinessRuleViolationException)
-public void Submit()
-{
-    // Compose rules with .And() — both must pass
-    CheckRule(new OrderMustNotBeEmpty(Lines.Count)
-        .And(new OrderTotalMustBePositive(Total)));
-
-    RaiseDomainEvent(ts => new OrderSubmittedEvent(Id.Value) { OccurredOn = ts });
-}
+// Or enforce it inside an aggregate:
+CheckRule(policy.ToRule(customer, "discount.not_eligible"));
 ```
 
-Use `IBusinessRule` for primitive invariants (counts, amounts, strings) inside aggregates and value objects.
-Use `IPolicy<T>` when the compliance check operates on a full domain object and may involve multiple collaborators.
+Use a policy for a decision about any subject passed in, a rule for an invariant bound to its data, and a
+specification for a query.
 
----
-
-## Policy vs Business Rule
-
-| Concern | Use |
-|---------|-----|
-| Primitive invariant within an aggregate constructor or method | `IBusinessRule` + `CheckRule` |
-| Compliance evaluation on a rich domain object (e.g., "is this order eligible for express shipping?") | `IPolicy<T>` |
+## Money
 
 ```csharp
-// Policy example — evaluates a full domain object
-public sealed class EligibleForExpressShippingPolicy : IPolicy<Order>
-{
-    public bool IsCompliant(Order subject) =>
-        subject.Total > 50m && subject.ShippingAddress.Country == "US";
-}
+var price = Money.Create(19.99m, Currency.Usd).Value;
 
-// Compose policies
-var policy = new EligibleForExpressShippingPolicy()
-    .And(new OrderNotFlaggedForReviewPolicy());
+var total = price * 3;                              // 59.97 USD
+var perPerson = total.Allocate(2);                  // 29.98 USD, 29.99 USD — adds up exactly
+var net = total.Divide(1.2m, RoundingPolicy.Floor); // 49.97 USD
+var sum = new[] { price, total }.Sum();             // 79.96 USD
 
-if (policy.IsCompliant(order))
-    order.ApplyExpressShipping();
+Console.WriteLine(total.ToString());                // "59.97 USD", invariant culture
+Console.WriteLine(total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"))); // "59,97 USD"
 ```
 
----
+| Behaviour | Detail |
+| --- | --- |
+| Rounding | Always to the currency's minor unit when created: `BankersRounding` (default), `AwayFromZero`, `ToZero`, `Ceiling`, `Floor` |
+| Currency mismatch | `+`, `-`, comparison, `Min`, `Max` and `Sum` throw `BusinessRuleViolationException` with code `money.currency_mismatch` |
+| Allocation | Largest-remainder: parts differ by at most one minor unit and always add up to the original |
+| Conversion | `money.ConvertAsync(target, rateProvider)` through your `IExchangeRateProvider` |
+| Currencies | `CurrencyCatalog` holds every active ISO 4217 transactional currency as of `CurrencyCatalog.RegistryAsOf`, with its minor units |
 
-## Domain Event Handler Location
+`Currency.Create("try")` accepts any casing and returns a `ValidationResult<Currency>`; `Currency.Usd`, `.Eur`,
+`.Gbp`, `.Jpy` and `.Try` are ready-made instances.
 
-`IDomainEventHandler<TEvent>` is **not in this package**. Domain event dispatch and handler registration live in `05.Application`. This package defines only the event contract (`IDomainEvent`, `DomainEvent`) and the raising mechanism on `AggregateRoot<TId>`.
+## Error codes
 
----
+| Code | Raised by |
+| --- | --- |
+| The rule's own `Code` | `BusinessRuleViolationException` |
+| `money.currency_mismatch` | Money operations across currencies |
+| `currency.code.invalid_format` | `Currency.Create` with input that is not three letters |
+| `currency.code.unknown` | `Currency.Create` with a code outside the catalog |
+| `validation.required` | A null strongly-typed identifier or single value; guard violations |
+| `not_found.default` | `DomainNotFoundException` |
 
-## Package Rules
+## Compatibility and guarantees
 
-- Zero NuGet dependencies beyond `SharedKernel.Primitives`.
-- `IClock` is the only permitted time source — `DateTimeOffset.UtcNow` is a hard violation.
-- Audit properties (`CreatedBy`, `CreatedOn`, etc.) are populated by EF Core interceptors in `06.Persistence`, never by domain code.
-- `ClearDomainEvents()` is called only by infrastructure after successful dispatch — never by an aggregate.
-- STJ serialization of strongly-typed IDs requires a custom `JsonConverter` in the consuming service — this package ships none.
-- `Money`/`Currency` perform no I/O — `IExchangeRateProvider` is a pure port; the consuming service supplies the real rate-lookup implementation, never this package.
+- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; any change fails the build until
+  it is recorded.
+- **Every public member is documented**, including the exceptions it throws; the XML documentation ships in the
+  package.
+- **No infrastructure dependency.** The package references only `SharedKernel.Primitives` and
+  `SharedKernel.Core`, performs no I/O, and never reads the system clock.
+
+## Deliberately not included
+
+- **No event handlers or dispatcher implementation.** Handlers and the MediatR dispatcher live in the
+  application layer; this package defines `IDomainEventDispatcher` only.
+- **No persistence.** Repositories, EF Core mappings and the clock-attaching interceptor live in the persistence
+  layer; the domain never references it.
+- **No implicit conversions** from identifiers or single-value objects to their primitive, by design.
+- **No exchange rates.** `IExchangeRateProvider` is a port; a service supplies the rate source.
