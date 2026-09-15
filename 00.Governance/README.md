@@ -192,6 +192,7 @@ Primitives, domain modelling and error handling.
 | [SK0009](#sk0009-domaineventmissingversionattribute) | A domain event without a schema version | Add `[DomainEventVersion(n)]` |
 | [SK0010](#sk0010-specificationorderingconflict) | A specification applying two primary orderings | One primary ordering, then `ApplyThenBy` |
 | [SK0011](#sk0011-guidformatcodemisuse) | `Guid.ToString` with a non-canonical format | `ToString()` or `ToString("D")` |
+| [SK0037](#sk0037-valueobjectmissingensurevalid) | A value object whose constructor never calls `EnsureValid()` | Call `EnsureValid()` last in every constructor |
 
 #### Application and communication
 
@@ -836,9 +837,9 @@ Set one primary sort direction per specification constructor.
 
 #### Why it matters
 
-`Specification<T>` stores the ascending and descending primary sorts in two separate properties, `OrderBy` and `OrderByDescending`. When a constructor calls both `ApplyOrderBy` and `ApplyOrderByDescending`, both are set. The specification evaluators apply `OrderBy` and silently ignore `OrderByDescending`, whichever call came first in your code.
+A specification has one primary sort. `Specification<T>` throws `InvalidOperationException` when a constructor applies a second one, so a constructor calling both `ApplyOrderBy` and `ApplyOrderByDescending` fails the first time the specification is created, typically at request time. This rule reports it at compile time instead.
 
-The result is a query that sorts in a different order than the specification appears to request, with no error. Secondary sorts belong in `ApplyThenBy(selector, descending)` or `ApplyThenByDescending(selector)`.
+Secondary sorts belong in `ApplyThenBy(selector, descending)` or `ApplyThenByDescending(selector)`.
 
 #### What it flags
 
@@ -2393,6 +2394,67 @@ public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerC
 ```text
 warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
 warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
+```
+
+---
+
+<a id="sk0037-valueobjectmissingensurevalid"></a>
+### SK0037 — ValueObjectMissingEnsureValid
+
+**Category:** Design · **Default severity:** Warning
+
+Call `EnsureValid()` as the last statement of every value object constructor.
+
+#### Why it matters
+
+`ValueObject`'s base constructor does not validate. A value object assigns its members, then calls `EnsureValid()`, which runs `Validate()` against the finished object and throws a `ValidationException` carrying every error. A constructor that forgets the call compiles and runs, and every value it creates skips its rules: an invalid email or a date range ending before it starts flows through the domain unnoticed.
+
+#### What it flags
+
+- A concrete class deriving from `SharedKernel.Domain.ValueObjects.ValueObject`, resolved with the semantic model.
+- It is reported on the class name when no class between it and `ValueObject` has every constructor either calling `EnsureValid()` (directly, or as `this.EnsureValid()`/`base.EnsureValid()`) or delegating with `: this(...)`.
+- A class with no declared constructor, or only a primary constructor, has no constructor body that could call it, so it is flagged.
+
+#### What it does not flag
+
+- Classes deriving from `SingleValueObject<TValue>`, which calls `EnsureValid()` itself.
+- Abstract classes; their concrete subclasses are checked, and an abstract intermediate whose constructors call `EnsureValid()` satisfies them.
+- A value object whose effective `Validate()` override declares no rules: an expression body of `[]`, `null`, `default`, `Array.Empty<…>()` or `Enumerable.Empty<…>()`, or a block containing only `yield break;` or a `return` of one of those.
+- Classes named `ValueObject` in other namespaces, and generated code.
+
+#### Example
+
+```csharp
+// Flagged: SK0037
+public sealed class DateRange : ValueObject
+{
+    public DateRange(DateOnly start, DateOnly end)
+    {
+        Start = start;
+        End = end;
+    }
+    // GetEqualityComponents and a Validate() that rejects End < Start ...
+}
+```
+
+```csharp
+// Compliant
+public sealed class DateRange : ValueObject
+{
+    public DateRange(DateOnly start, DateOnly end)
+    {
+        Start = start;
+        End = end;
+        EnsureValid();
+    }
+    // ...
+}
+```
+
+#### Diagnostic
+
+```text
+warning SK0037: 'DateRange' derives from ValueObject but a constructor completes without calling EnsureValid(), so the rules in Validate() never run. Call EnsureValid() as the last statement of every constructor.
 ```
 
 ---

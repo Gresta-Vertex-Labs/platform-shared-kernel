@@ -1361,7 +1361,7 @@ SK0034  AmountCurrencyPairCoupling
                 the diagnostic message. Self-exempt: a type whose own identifier is exactly
                 "Money" never fires, regardless of its members.
     Fix       : Replace the raw decimal+string pair with `03.Domain`'s `Money` value object
-                (`SharedKernel.Domain.ValueObjects.Money`), which enforces ISO 4217 minor-unit-
+                (`SharedKernel.Domain.Monetary.Money`), which enforces ISO 4217 minor-unit-
                 correct rounding and rejects cross-currency arithmetic — a pattern the raw pair
                 cannot express and can silently violate (mixed currencies summed as if equal,
                 minor-unit precision drift).
@@ -2655,7 +2655,7 @@ MessagingArchitectureRules  (static class — messaging abstraction boundary enf
         application layer. Injecting IEventPublisher in a domain type collapses the separation
         between domain events and integration events, breaking the DDD event propagation model.
         Offending pattern: class OrderAggregate(IEventPublisher publisher) : AggregateRoot<Guid>
-        Compliant pattern: raise domain events via AddDomainEvent(); let the application layer
+        Compliant pattern: raise domain events via RaiseDomainEvent(); let the application layer
             dispatch them to IEventPublisher via IDomainEventDispatcher
 
     Exemption list (assemblies whose types are exempt from NoDirectBusInjectionOutsideMessaging):
@@ -5097,7 +5097,7 @@ SecurityArchitectureRules  (static class — 12.Security hard-rule enforcement p
         check at all.
         Offending pattern: class PricingPolicy(ITenantProvider tenantProvider) : DomainService { ... }
         Compliant pattern: class PricingPolicy : DomainService {
-            public Result<Money> Reprice(Guid tenantId, ...) { ... } } — the application layer
+            public ValidationResult<Money> Reprice(Guid tenantId, ...) { ... } } — the application layer
             resolves ITenantProvider.TenantId and passes it as a Guid primitive into the
             domain call.
 
