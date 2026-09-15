@@ -21,9 +21,8 @@ namespace SharedKernel.Persistence.PostgreSQL.Vector;
 /// namespace, <c>SharedKernel.Persistence.PostgreSQL.Vector</c>, collides with the bare simple name
 /// <c>Vector</c> (confirmed by direct compilation — the C# compiler resolves an unqualified
 /// <c>Vector</c> parameter-type reference against the enclosing namespace segment before the
-/// imported <see cref="Pgvector.Vector"/> type, producing <c>CS0118</c>), mirroring the same class
-/// of collision <c>04.Contracts</c> hit between its <c>Envelope</c> type and its (pre-rename)
-/// <c>SharedKernel.Contracts.Envelope</c> namespace (WO-052/P-328). The public API surface below is
+/// imported <see cref="Pgvector.Vector"/> type, producing <c>CS0118</c>), the usual collision between a
+/// namespace segment and a type of the same simple name. The public API surface below is
 /// unaffected — <c>PgVector</c> is exactly <see cref="Pgvector.Vector"/>, spelled differently only
 /// inside this file.
 /// </para>

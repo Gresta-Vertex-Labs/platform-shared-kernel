@@ -215,7 +215,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <list type="number">
     ///   <item><description>
     ///     <strong>Count query:</strong> the specification is evaluated without Skip/Take (via
-    ///     <c>NoPagingWrapper</c>) and <c>CountAsync</c> is called to obtain the true total.
+    ///     <c>NoPagingWrapper</c>) and <c>LongCountAsync</c> is called to obtain the true total.
     ///   </description></item>
     ///   <item><description>
     ///     <strong>Data query:</strong> the full specification (including Skip/Take) is evaluated
@@ -233,16 +233,13 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
             // Count query: apply spec without Skip/Take to get the true total.
             var countQuery = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             // Strip paging from count — we need the full-filter count.
-            var totalCount = await StripPaging(countQuery, spec).CountAsync(ct);
+            var totalCount = await StripPaging(countQuery, spec).LongCountAsync(ct);
 
             // Data query: full spec including Skip/Take.
             var dataQuery = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             var items = await dataQuery.ToListAsync(ct);
 
-            // Extract page metadata from spec (PagedSpecification carries these).
-            var (page, pageSize) = ExtractPageInfo(spec);
-
-            return PagedList<TAggregate>.Create(items, page, pageSize, totalCount);
+            return CreatePage(items, spec, totalCount);
         });
 
     /// <inheritdoc />
@@ -286,7 +283,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <list type="number">
     ///   <item><description>
     ///     <strong>Count query:</strong> the specification is evaluated without projection and
-    ///     without Skip/Take (via <c>NoPagingWrapper</c>), and <c>CountAsync</c> is called to
+    ///     without Skip/Take (via <c>NoPagingWrapper</c>), and <c>LongCountAsync</c> is called to
     ///     obtain the true total.
     ///   </description></item>
     ///   <item><description>
@@ -306,14 +303,13 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         {
             // Count query: apply spec without projection and without Skip/Take.
             var countSpec = new NoPagingWrapper<TAggregate>(spec);
-            var totalCount = await _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), countSpec).CountAsync(ct);
+            var totalCount = await _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), countSpec).LongCountAsync(ct);
 
             // Data query: full spec including projection and Skip/Take.
             var projected = _evaluator.GetProjectedQuery(EffectiveContext.Set<TAggregate>(), spec);
             var items = await projected.ToListAsync(ct);
 
-            var (page, pageSize) = ExtractPageInfo(spec);
-            return PagedList<TResult>.Create(items, page, pageSize, totalCount);
+            return CreatePage(items, spec, totalCount);
         });
 
     /// <inheritdoc />
@@ -411,19 +407,44 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         return _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), countSpec);
     }
 
-    // Extracts page and pageSize from a spec that implements PagedSpecification<T>.
-    // Falls back to sensible defaults when the spec is not a PagedSpecification.
-    private static (int page, int pageSize) ExtractPageInfo(ISpecification<TAggregate> spec)
+    // Builds the page from the rows the data query returned. The page size is the Take the evaluator
+    // applied, so a page can hold more rows than its size only when a custom evaluator ignores Take;
+    // that is reported as an evaluator bug rather than returned as an inconsistent page.
+    private static PagedList<TItem> CreatePage<TItem>(
+        List<TItem> items,
+        ISpecification<TAggregate> spec,
+        long totalCount)
     {
-        if (spec is PagedSpecification<TAggregate> paged)
-            return (paged.Page, paged.PageSize);
+        var (page, pageSize) = ExtractPageInfo(spec, items.Count);
 
-        // For non-paged specs, infer from Skip/Take or use defaults.
-        var skip = spec.Skip ?? 0;
-        var take = spec.Take ?? int.MaxValue;
-        var pageSize = take == int.MaxValue ? 1 : take;
-        var page = take == int.MaxValue ? 1 : (skip / take) + 1;
-        return (page, pageSize);
+        if (items.Count > pageSize)
+        {
+            throw new InvalidOperationException(
+                $"The specification evaluator returned {items.Count} rows for a page of size {pageSize}. " +
+                "An ISpecificationEvaluator must apply the specification's Take as the page window.");
+        }
+
+        return PagedList<TItem>.Create(items, page, pageSize, totalCount);
+    }
+
+    // Derives the 1-based page number and page size from the paging the specification applies.
+    // A PagedSpecification<T> supplies its own Page/PageSize when they still match its Skip/Take (a
+    // subclass may have replaced them with ApplyPaging). Otherwise the page is inferred from Skip/Take,
+    // rounding a Skip that is not a multiple of Take down to the page it starts in. A specification with
+    // no Take returns every matching row, so the whole result is reported as a single page.
+    private static (int Page, int PageSize) ExtractPageInfo(ISpecification<TAggregate> spec, int itemCount)
+    {
+        if (spec is PagedSpecification<TAggregate> paged
+            && spec.Take == paged.PageSize
+            && spec.Skip == ((long)paged.Page - 1) * paged.PageSize)
+        {
+            return (paged.Page, paged.PageSize);
+        }
+
+        if (spec.Take is { } take)
+            return (((spec.Skip ?? 0) / take) + 1, take);
+
+        return (1, Math.Max(itemCount, 1));
     }
 
     // Wraps an existing ISpecification<T> and zeroes out Skip/Take for count queries.

@@ -140,9 +140,16 @@ public interface IReadRepository<TAggregate, TId>
     /// A <see cref="PagedList{TAggregate}"/> with the current page of items and pagination metadata.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// Issues two database round-trips under the same <c>DbContext</c> scope: one count query
     /// (Skip/Take stripped) and one data query (full spec applied). Both share the same connection.
     /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
+    /// </para>
+    /// <para>
+    /// The total is counted as a <see cref="long"/>. The page size is the specification's
+    /// <c>Take</c>, so the page never holds more items than its size; a specification with no
+    /// <c>Take</c> is reported as a single page holding every matching item.
+    /// </para>
     /// </remarks>
     Task<PagedList<TAggregate>> ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct = default);
 
@@ -214,7 +221,7 @@ public interface IReadRepository<TAggregate, TId>
     /// <list type="number">
     ///   <item><description>
     ///     <strong>Count query:</strong> the specification is evaluated without projection and
-    ///     without Skip/Take via <c>GetQuery</c>, then <c>CountAsync</c> is called.
+    ///     without Skip/Take via <c>GetQuery</c>, then <c>LongCountAsync</c> is called.
     ///   </description></item>
     ///   <item><description>
     ///     <strong>Data query:</strong> the full specification (including projection and Skip/Take)
@@ -223,6 +230,8 @@ public interface IReadRepository<TAggregate, TId>
     /// </list>
     /// Both queries share the same connection and <c>DbContext</c> scope.
     /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
+    /// Page metadata follows the same rules as <see cref="ListPagedAsync"/>: a <see cref="long"/>
+    /// total and a page size taken from the specification's <c>Take</c>.
     /// </remarks>
     Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,

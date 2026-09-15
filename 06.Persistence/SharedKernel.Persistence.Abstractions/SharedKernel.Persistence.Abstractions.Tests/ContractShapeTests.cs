@@ -144,6 +144,23 @@ public sealed class ContractShapeTests
     }
 
     [Fact]
+    public void IReadRepository_PagedReads_Return_PagedList_With_LongTotalCount()
+    {
+        var paged = typeof(IReadRepository<,>).GetMethod("ListPagedAsync")!;
+        var projected = typeof(IReadRepository<,>).GetMethod("ListPagedProjectedAsync")!;
+
+        foreach (var method in new[] { paged, projected })
+        {
+            method.ReturnType.GetGenericTypeDefinition().Should().Be(typeof(Task<>));
+            method.ReturnType.GetGenericArguments()[0].GetGenericTypeDefinition()
+                .Should().Be(typeof(PagedList<>), $"{method.Name} must return Task<PagedList<T>>");
+        }
+
+        typeof(PagedList<object>).GetProperty(nameof(PagedList<object>.TotalCount))!.PropertyType
+            .Should().Be(typeof(long), "paged reads count the total with LongCountAsync");
+    }
+
+    [Fact]
     public void IReadRepository_Has_ListProjectedAsync()
     {
         var method = typeof(IReadRepository<,>).GetMethod("ListProjectedAsync");

@@ -380,6 +380,20 @@ internal sealed class AllItemsPagedSpec : PagedSpecification<TestAggregate>
     }
 }
 
+internal sealed class AllItemsUnpagedSpec : Specification<TestAggregate>
+{
+    public AllItemsUnpagedSpec() => ApplyOrderBy(e => e.Name!);
+}
+
+internal sealed class AllItemsSkipTakeSpec : Specification<TestAggregate>
+{
+    public AllItemsSkipTakeSpec(int skip, int take)
+    {
+        ApplyOrderBy(e => e.Name!);
+        ApplyPaging(skip, take);
+    }
+}
+
 public sealed class ListPagedAsyncTests
 {
     [Fact]
@@ -426,6 +440,44 @@ public sealed class ListPagedAsyncTests
 
         result.Items.Should().BeEmpty();
         result.TotalCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ListPagedAsync_SpecWithoutTake_ReturnsEverythingAsOneFullPage()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var readRepo = new ExtendedTestReadRepository(ctx);
+        for (var i = 1; i <= 5; i++)
+            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i}", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var result = await readRepo.ListPagedAsync(new AllItemsUnpagedSpec());
+
+        result.Items.Should().HaveCount(5);
+        result.Page.Should().Be(1);
+        result.PageSize.Should().Be(5, "a specification with no Take is reported as a single page");
+        result.TotalCount.Should().Be(5L);
+        result.HasNextPage.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ListPagedAsync_SkipTakeSpec_DerivesPageFromSkipAndTake()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var readRepo = new ExtendedTestReadRepository(ctx);
+        for (var i = 1; i <= 10; i++)
+            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i:D2}", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var result = await readRepo.ListPagedAsync(new AllItemsSkipTakeSpec(skip: 4, take: 2));
+
+        result.Items.Should().HaveCount(2);
+        result.Page.Should().Be(3);
+        result.PageSize.Should().Be(2);
+        result.TotalCount.Should().Be(10L);
+        result.TotalPages.Should().Be(5L);
     }
 }
 
