@@ -96,6 +96,8 @@ public abstract class KeysetSpecification<T, TKey> : ReadOnlySpecification<T>
         bool descending,
         int take)
     {
+        ArgumentNullException.ThrowIfNull(keySelector);
+
         if (take < 1)
             throw new ArgumentOutOfRangeException(nameof(take), take,
                 "Take must be greater than or equal to 1.");

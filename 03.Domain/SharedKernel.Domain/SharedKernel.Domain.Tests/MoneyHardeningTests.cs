@@ -184,6 +184,16 @@ public sealed class MoneyHardeningTests
         FluentActions.Invoking(() => Usd(1m).Allocate(null!)).Should().Throw<ArgumentNullException>();
 
     [Fact]
+    public void MinAndMax_NullRight_ThrowArgumentNullException()
+    {
+        // Before: a null right operand compared as smaller, so Min returned null and Max returned left.
+        FluentActions.Invoking(() => Money.Min(Usd(1m), null!)).Should().Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("right");
+        FluentActions.Invoking(() => Money.Max(Usd(1m), null!)).Should().Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("right");
+    }
+
+    [Fact]
     public void CurrencyMismatchRule_HasItsOwnCode()
     {
         var rule = new CurrencyMismatchRule(Currency.Usd, Currency.Eur);

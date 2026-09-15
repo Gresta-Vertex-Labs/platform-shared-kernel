@@ -410,6 +410,17 @@ public sealed class DomainHardeningTests
         new ByCreated(descending).ThenBys.Should().ContainSingle().Which.Descending.Should().Be(descending);
     }
 
+    private sealed class NullKeySelector() : KeysetSpecification<Item, DateTimeOffset>(
+        null!, i => i.Id, null, null, false, 10);
+
+    [Fact]
+    public void Keyset_NullKeySelector_ThrowsArgumentNullException()
+    {
+        // Before: a NullReferenceException from deep inside the selector conversion.
+        FluentActions.Invoking(() => new NullKeySelector()).Should().Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("keySelector");
+    }
+
     private sealed class WithInclude : Specification<Item>
     {
         public static readonly Expression<Func<Item, object>> Nav = i => i.Tenant;

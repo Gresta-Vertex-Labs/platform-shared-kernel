@@ -101,6 +101,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     public static Money Min(Money left, Money right)
     {
         ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         return left.CompareTo(right) <= 0 ? left : right;
     }
 
@@ -113,6 +114,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     public static Money Max(Money left, Money right)
     {
         ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         return left.CompareTo(right) >= 0 ? left : right;
     }
 
