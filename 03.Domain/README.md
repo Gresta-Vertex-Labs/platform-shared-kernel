@@ -47,7 +47,6 @@ flowchart BT
 
     Domain["03.Domain<br/>SharedKernel.Domain"]
 
-    Contracts["04.Contracts"]
     Application["05.Application<br/>dispatches domain events"]
     Persistence["06.Persistence<br/>maps aggregates, attaches the clock"]
     Governance["00.Governance<br/>analyzers and architecture rules"]
@@ -57,7 +56,6 @@ flowchart BT
     Core --> Primitives
     Domain --> Primitives
     Domain --> Core
-    Contracts --> Domain
     Application --> Domain
     Persistence --> Domain
     Persistence --> Application

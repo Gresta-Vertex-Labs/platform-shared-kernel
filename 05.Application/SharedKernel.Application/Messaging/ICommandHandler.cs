@@ -12,8 +12,9 @@ namespace SharedKernel.Application.Messaging;
 /// members — it exists so handler classes self-document their CQRS role in the class declaration
 /// (<c>public sealed class DeleteOrderCommandHandler : ICommandHandler&lt;DeleteOrderCommand&gt;</c>)
 /// instead of the less informative <c>IRequestHandler&lt;DeleteOrderCommand, Result&gt;</c>.
-/// Handlers must never return <c>Envelope</c>/<c>Envelope&lt;T&gt;</c> — this layer returns
-/// <see cref="Result"/>/<see cref="Result{T}"/> exclusively.
+/// Handlers return <see cref="Result"/>/<see cref="Result{T}"/> exclusively and never shape a wire
+/// response: the HTTP boundary maps a failure to RFC 9457 ProblemDetails through
+/// <c>ResultHttpExtensions</c>, and the REST client maps it back with <c>ReadResultAsync</c>.
 /// </remarks>
 public interface ICommandHandler<in TCommand> : IRequestHandler<TCommand, Result>
     where TCommand : ICommand;

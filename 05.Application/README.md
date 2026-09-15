@@ -43,7 +43,7 @@ public sealed class GetOrderByIdQueryHandler : IQueryHandler<GetOrderByIdQuery, 
 }
 ```
 
-Handlers return `Result` / `Result<T>` exclusively — never `Envelope` / `Envelope<T>` (`04.Contracts`), which is a presentation-boundary type only.
+Handlers return `Result` / `Result<T>` exclusively and never shape a wire response: the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions` (`14.Presentation`), and the REST client maps it back to a `Result<T>` with `ReadResultAsync` (`11.Communication`).
 
 See each package's own README for the full vocabulary (streaming queries, fire-and-forget commands, domain events) and the full ten-behavior registration example, local-seam bridging pattern, and pairing guidance (caching + invalidation, resilience + idempotency).
 
