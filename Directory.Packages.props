@@ -266,6 +266,7 @@
     <PackageVersion Include="SharedKernel.Caching.Redis.PubSub" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Compression" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Configuration" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Contracts" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Core" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography.Argon2" Version="$(SharedKernelPackageVersion)" />

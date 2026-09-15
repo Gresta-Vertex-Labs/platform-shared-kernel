@@ -1,261 +1,380 @@
-using SharedKernel.Domain.Events;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SharedKernel.Contracts.Events;
 
 /// <summary>
-/// Messaging transport wrapper that carries a domain event payload alongside routing and tracing metadata.
+/// The wire format for an integration event: the event as <see cref="Data"/>, with routing and tracing metadata,
+/// serialized as a CloudEvents 1.0 structured-mode JSON document.
 /// </summary>
-/// <typeparam name="TEvent">
-/// The domain event type being wrapped. Must implement <see cref="IDomainEvent"/>.
-/// </typeparam>
+/// <typeparam name="TEvent">The concrete integration event type carried as <see cref="Data"/>.</typeparam>
 /// <remarks>
 /// <para>
-/// <see cref="EventEnvelope{TEvent}"/> is the wire format used by <c>07.Messaging</c> to publish
-/// domain events across service boundaries. It attaches routing metadata (<see cref="EventType"/>,
-/// <see cref="EventVersion"/>) and distributed-tracing context (<see cref="CorrelationId"/>,
-/// <see cref="CausationId"/>) alongside the original domain event payload.
+/// <b>Construction.</b> Create one with <see cref="EventEnvelope.Wrap{TEvent}"/>. There is no public constructor
+/// and no settable property, so an envelope cannot be assembled with missing or inconsistent metadata.
 /// </para>
 /// <para>
-/// <strong>Construction:</strong> <see cref="EventEnvelope.Wrap{TEvent}"/> is the only permitted
-/// construction path. Do not construct instances directly.
+/// <b>Wire shape.</b> Every member has a fixed JSON name from <see cref="CloudEventAttributeNames"/>, so the output
+/// does not depend on the serializer's naming policy. Optional members are omitted when absent, as CloudEvents
+/// requires. <c>dataversion</c>, <c>tenantid</c>, <c>correlationid</c> and <c>causationid</c> are extension
+/// attributes; any CloudEvents-aware tool can read the rest.
 /// </para>
 /// <para>
-/// <strong>EventId identity:</strong> <see cref="EventId"/> is copied from the domain event
-/// (<c>TEvent.Id</c>). It is not a new envelope-level identity. Deduplication at the transport
-/// layer uses this same <see cref="EventId"/> from the payload.
+/// <b>Deserialization.</b> Reading an envelope applies the same rules as <see cref="EventEnvelope.Wrap{TEvent}"/>,
+/// and additionally requires <c>type</c> to match <typeparamref name="TEvent"/>'s declared name and <c>id</c> and
+/// <c>time</c> to match the data. A document that breaks a rule throws <see cref="JsonException"/>, so a
+/// misrouted or tampered message fails at the edge instead of deep in a handler.
 /// </para>
 /// </remarks>
-public sealed record EventEnvelope<TEvent> where TEvent : IDomainEvent
+/// <example>
+/// <code>
+/// {
+///   "specversion": "1.0",
+///   "id": "0199a1b2-...",
+///   "source": "orders-service",
+///   "type": "orders.order-placed",
+///   "dataversion": 1,
+///   "time": "2026-09-15T12:00:00+00:00",
+///   "subject": "order/0199a1b2-...",
+///   "datacontenttype": "application/json",
+///   "tenantid": "7c9e6679-...",
+///   "correlationid": "4bf92f3577b34da6a3ce929d0e0e4736",
+///   "data": { "eventId": "0199a1b2-...", "occurredOn": "2026-09-15T12:00:00+00:00", "orderId": "..." }
+/// }
+/// </code>
+/// </example>
+public sealed record EventEnvelope<TEvent>
+    where TEvent : class, IIntegrationEvent
 {
-    /// <summary>
-    /// Gets the unique identifier of the wrapped domain event.
-    /// Copied from <c>TEvent.Id</c> — not a new envelope-level identity.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// This is <strong>not</strong> a new envelope-level identifier. It is copied verbatim from the
-    /// originating domain event's <c>Id</c> property via <see cref="EventEnvelope.Wrap{TEvent}"/>.
-    /// Deduplication at the transport layer (idempotent consumers) uses this same <see cref="EventId"/>.
-    /// </para>
-    /// <para>
-    /// Preserving the domain event's identity here provides a direct trace from the wire message
-    /// back to the aggregate that raised it, without an additional lookup.
-    /// </para>
-    /// </remarks>
-    public required Guid EventId { get; init; }
+    [JsonConstructor]
+    internal EventEnvelope(
+        string specVersion,
+        Guid id,
+        string source,
+        string type,
+        int dataVersion,
+        DateTimeOffset time,
+        string? subject,
+        string dataContentType,
+        Guid? tenantId,
+        string? correlationId,
+        string? causationId,
+        TEvent data)
+    {
+        var problem = EventEnvelope.FindProblem(source, subject, tenantId, correlationId, causationId, data)?.Message
+            ?? FindWireProblem(specVersion, id, type, dataVersion, time, dataContentType, data);
+
+        if (problem is not null)
+            throw new JsonException($"Invalid event envelope for '{typeof(TEvent).FullName}': {problem}");
+
+        SpecVersion = specVersion;
+        Id = id;
+        Source = source;
+        Type = type;
+        DataVersion = dataVersion;
+        Time = time;
+        Subject = subject;
+        DataContentType = dataContentType;
+        TenantId = tenantId;
+        CorrelationId = correlationId;
+        CausationId = causationId;
+        Data = data;
+    }
+
+    private EventEnvelope(
+        TEvent data,
+        IntegrationEventDescriptor descriptor,
+        string source,
+        string? subject,
+        Guid? tenantId,
+        string? correlationId,
+        string? causationId)
+    {
+        SpecVersion = EventEnvelope.CloudEventsSpecVersion;
+        Id = data.EventId;
+        Source = source;
+        Type = descriptor.Name;
+        DataVersion = descriptor.Version;
+        Time = data.OccurredOn;
+        Subject = subject;
+        DataContentType = EventEnvelope.JsonContentType;
+        TenantId = tenantId;
+        CorrelationId = correlationId;
+        CausationId = causationId;
+        Data = data;
+    }
+
+    /// <summary>Gets the CloudEvents specification version, always <c>1.0</c>.</summary>
+    [JsonPropertyName(CloudEventAttributeNames.SpecVersion)]
+    public string SpecVersion { get; }
+
+    /// <summary>Gets the event identifier, equal to <see cref="IIntegrationEvent.EventId"/> of <see cref="Data"/>.</summary>
+    /// <remarks>Consumers deduplicate on this value together with <see cref="Source"/>.</remarks>
+    [JsonPropertyName(CloudEventAttributeNames.Id)]
+    public Guid Id { get; }
+
+    /// <summary>Gets the logical name of the producing service, such as <c>orders-service</c>.</summary>
+    [JsonPropertyName(CloudEventAttributeNames.Source)]
+    public string Source { get; }
 
     /// <summary>
-    /// Gets the UTC timestamp at which the domain event occurred.
-    /// Copied from <c>TEvent.OccurredOn</c>.
+    /// Gets the event's wire name from <see cref="IntegrationEventAttribute.Name"/>, such as
+    /// <c>orders.order-placed</c>.
     /// </summary>
-    /// <remarks>
-    /// Sourced from the originating domain event's <c>OccurredOn</c> property at wrapping time.
-    /// This reflects when the business fact occurred in the domain, not when the envelope was created
-    /// or when the message was published to the broker.
-    /// </remarks>
-    public required DateTimeOffset OccurredOn { get; init; }
+    [JsonPropertyName(CloudEventAttributeNames.Type)]
+    public string Type { get; }
 
     /// <summary>
-    /// Gets the event type name used for routing and deserialization.
-    /// Equals <c>typeof(TEvent).Name</c> — AOT-safe; trimmer preserves <c>Type.Name</c>.
+    /// Gets the schema version of <see cref="Data"/> from <see cref="IntegrationEventAttribute.Version"/>, at
+    /// least 1.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Consumers use this value to determine which concrete type to deserialize <see cref="Payload"/>
-    /// into, and message-broker routing can use it as a topic or exchange key.
-    /// </para>
-    /// <para>
-    /// The value is derived via <c>typeof(TEvent).Name</c>, which is trimmer-safe — the .NET trimmer
-    /// always preserves <c>Type.Name</c>. No reflection-based type resolution is performed.
-    /// </para>
+    /// On a received envelope this is the producer's version, which can differ from the version declared by the
+    /// consumer's <typeparamref name="TEvent"/> while a schema change rolls out.
     /// </remarks>
-    public required string EventType { get; init; }
+    [JsonPropertyName(CloudEventAttributeNames.DataVersion)]
+    public int DataVersion { get; }
+
+    /// <summary>Gets the time the fact occurred, equal to <see cref="IIntegrationEvent.OccurredOn"/> of <see cref="Data"/>.</summary>
+    [JsonPropertyName(CloudEventAttributeNames.Time)]
+    public DateTimeOffset Time { get; }
 
     /// <summary>
-    /// Gets the schema version of the event type.
-    /// Sourced from <see cref="DomainEventVersionAttribute"/> via <see cref="DomainEventVersionHelper.GetVersion"/>.
-    /// Defaults to <c>1</c> when the attribute is absent on <typeparamref name="TEvent"/>.
+    /// Gets the resource the event is about, such as <c>order/42</c>, or <see langword="null"/> when not set.
     /// </summary>
+    /// <remarks>Brokers and subscribers can filter on it without reading <see cref="Data"/>.</remarks>
+    [JsonPropertyName(CloudEventAttributeNames.Subject)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Subject { get; }
+
+    /// <summary>Gets the media type of <see cref="Data"/>, always <c>application/json</c> for an envelope this package creates.</summary>
+    [JsonPropertyName(CloudEventAttributeNames.DataContentType)]
+    public string DataContentType { get; }
+
+    /// <summary>Gets the tenant the event belongs to, or <see langword="null"/> for an event with no tenant.</summary>
     /// <remarks>
-    /// <para>
-    /// The version is populated automatically by <see cref="EventEnvelope.Wrap{TEvent}"/> using
-    /// <c>DomainEventVersionHelper.GetVersion(typeof(TEvent))</c>. Publishers do not compute version
-    /// numbers manually.
-    /// </para>
-    /// <para>
-    /// When <c>[DomainEventVersionAttribute(N)]</c> is absent on <typeparamref name="TEvent"/>, the
-    /// helper returns <c>1</c> as the default. Increment the attribute value when the event shape
-    /// changes in a breaking way and consumers need to distinguish schemas.
-    /// </para>
+    /// Lets a consumer, a dead-letter inspector or a replay tool scope the event without reading
+    /// <see cref="Data"/>. It is set only from the value passed to <see cref="EventEnvelope.Wrap{TEvent}"/>, never
+    /// inferred from the data.
     /// </remarks>
-    public required int EventVersion { get; init; }
+    [JsonPropertyName(CloudEventAttributeNames.TenantId)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? TenantId { get; }
 
     /// <summary>
-    /// Gets the distributed-trace correlation identifier propagated from ambient OTel context.
-    /// <c>null</c> is a valid value when no ambient trace context is available (root events).
-    /// Publishers should propagate from <c>Activity.Current?.TraceId</c> when available.
+    /// Gets the identifier shared by every message in one end-to-end flow, or <see langword="null"/> when not set.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>null</c> is explicitly permitted — not every event originates within a traced request.
-    /// Root events (e.g., scheduled tasks, system-initiated events) will have no ambient
-    /// <c>Activity</c> and should pass <c>null</c>.
-    /// </para>
-    /// <para>
-    /// When an ambient <c>Activity</c> exists, publishers should set this to
-    /// <c>Activity.Current?.TraceId.ToString()</c> so consumers can correlate related events across
-    /// service boundaries in distributed traces.
-    /// </para>
-    /// </remarks>
-    public string? CorrelationId { get; init; }
+    [JsonPropertyName(CloudEventAttributeNames.CorrelationId)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CorrelationId { get; }
 
     /// <summary>
-    /// Gets the identifier of the command or event that caused this event.
-    /// <c>null</c> for root events with no causal predecessor.
+    /// Gets the identifier of the command or event that directly caused this event, or <see langword="null"/> for
+    /// an event with no recorded cause.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The causation chain allows consumers to reconstruct which command or prior event triggered
-    /// this event. For example, if an <c>OrderPlacedEvent</c> was caused by a <c>PlaceOrderCommand</c>,
-    /// <see cref="CausationId"/> would carry the command's correlation or message identifier.
-    /// </para>
-    /// <para>
-    /// <c>null</c> is valid for root events — those originating from user actions or scheduled
-    /// processes that have no traceable causal predecessor.
-    /// </para>
-    /// </remarks>
-    public string? CausationId { get; init; }
+    [JsonPropertyName(CloudEventAttributeNames.CausationId)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CausationId { get; }
 
-    /// <summary>
-    /// Gets the tenant identifier this event belongs to, when the publisher is tenant-aware.
-    /// <c>null</c> is valid and expected for non-tenanted or root events.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// (WO-052/P-331) This is envelope-level wire-format routing metadata, added so a message-bus
-    /// consumer, dead-letter-queue inspector, or audit/replay tool can answer "which tenant does this
-    /// event belong to" without deserializing <see cref="Payload"/>. It is populated only when the
-    /// publisher explicitly supplies a value to <see cref="EventEnvelope.Wrap{TEvent}"/>; <c>null</c>
-    /// is otherwise the default and is valid.
-    /// </para>
-    /// <para>
-    /// <see cref="TenantId"/> carries no guarantee derived from <typeparamref name="TEvent"/> or
-    /// <see cref="IDomainEvent"/> — <see cref="IDomainEvent"/> declares no tenant member, so this
-    /// value is never inferred from <see cref="Payload"/>. It is distinct from <c>07.Messaging</c>'s
-    /// <c>IMessageHeaderPropagator</c>, which is a transient, broker-adapter-specific transport header
-    /// that never survives into a durably-stored outbox row or any protocol other than the one adapter
-    /// that propagated it — <see cref="TenantId"/> is the durable, wire-format-level analogue. A
-    /// publisher bridging <c>IMessageHeaderPropagator</c>'s tenant header into this field at
-    /// composition-root/publish time is the intended integration pattern, not automatic behavior of
-    /// this package.
-    /// </para>
-    /// <para>
-    /// Do not conflate this with <c>03.Domain</c>'s <c>IHasTenant.TenantId</c> — there is no
-    /// compile-time relationship between the two; this property exists so <c>04.Contracts</c> stays
-    /// decoupled from any per-event tenant marker interface.
-    /// </para>
-    /// </remarks>
-    public Guid? TenantId { get; init; }
+    /// <summary>Gets the integration event.</summary>
+    [JsonPropertyName(CloudEventAttributeNames.Data)]
+    public TEvent Data { get; }
 
-    /// <summary>
-    /// Gets the name of the service that raised this event.
-    /// Set at the composition root of the publishing service.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// This is the logical service name — for example <c>"orders-service"</c> or
-    /// <c>"inventory-service"</c>. It identifies which bounded context published this message.
-    /// </para>
-    /// <para>
-    /// The value is supplied by the caller of <see cref="EventEnvelope.Wrap{TEvent}"/> and must not
-    /// be null or empty. It is typically read from application configuration at the composition root
-    /// (e.g. <c>IConfiguration["ServiceName"]</c>).
-    /// </para>
-    /// </remarks>
-    public required string SourceService { get; init; }
+    internal static EventEnvelope<TEvent> Create(
+        TEvent data,
+        IntegrationEventDescriptor descriptor,
+        string source,
+        string? subject,
+        Guid? tenantId,
+        string? correlationId,
+        string? causationId) =>
+        new(data, descriptor, source, subject, tenantId, correlationId, causationId);
 
-    /// <summary>Gets the wrapped domain event payload.</summary>
-    /// <remarks>
-    /// <para>
-    /// This is the original domain event — unchanged from the moment <see cref="EventEnvelope.Wrap{TEvent}"/>
-    /// was called. Consumers deserialize this property into the concrete <typeparamref name="TEvent"/>
-    /// type to access the business data.
-    /// </para>
-    /// <para>
-    /// The bare constraint <c>where TEvent : IDomainEvent</c> guarantees that <see cref="Payload"/>
-    /// exposes only <c>Id</c> and <c>OccurredOn</c> — <c>IDomainEvent</c> has never declared an
-    /// <c>AggregateId</c> member. A correlating aggregate identifier is available on
-    /// <see cref="Payload"/> only when the concrete <typeparamref name="TEvent"/> additionally
-    /// implements <c>03.Domain</c>'s opt-in
-    /// <see cref="SharedKernel.Domain.Abstractions.IHasAggregateId{TId}"/> marker. Do not assume the
-    /// member exists unconditionally — type-check instead:
-    /// <code>
-    /// if (envelope.Payload is IHasAggregateId&lt;OrderId&gt; correlated)
-    /// {
-    ///     var aggregateId = correlated.AggregateId;
-    /// }
-    /// </code>
-    /// </para>
-    /// </remarks>
-    public required TEvent Payload { get; init; }
+    private static string? FindWireProblem(
+        string specVersion,
+        Guid id,
+        string type,
+        int dataVersion,
+        DateTimeOffset time,
+        string dataContentType,
+        TEvent data)
+    {
+        if (specVersion != EventEnvelope.CloudEventsSpecVersion)
+            return $"'{CloudEventAttributeNames.SpecVersion}' must be '{EventEnvelope.CloudEventsSpecVersion}'.";
+
+        string expectedType;
+        try
+        {
+            expectedType = IntegrationEventDescriptor.For<TEvent>().Name;
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ex.Message;
+        }
+
+        if (type != expectedType)
+            return $"'{CloudEventAttributeNames.Type}' is '{type}' but the target type declares '{expectedType}'.";
+
+        if (dataVersion < 1)
+            return $"'{CloudEventAttributeNames.DataVersion}' must be at least 1.";
+
+        if (id != data.EventId)
+            return $"'{CloudEventAttributeNames.Id}' does not match the data's event identifier.";
+
+        if (time != data.OccurredOn)
+            return $"'{CloudEventAttributeNames.Time}' does not match the data's occurrence time.";
+
+        if (!IsJsonMediaType(dataContentType))
+            return $"'{CloudEventAttributeNames.DataContentType}' must be a JSON media type.";
+
+        return null;
+    }
+
+    private static bool IsJsonMediaType(string? mediaType)
+    {
+        if (string.IsNullOrWhiteSpace(mediaType))
+            return false;
+
+        var essence = mediaType.AsSpan();
+        var parameters = essence.IndexOf(';');
+        if (parameters >= 0)
+            essence = essence[..parameters];
+
+        essence = essence.Trim();
+        return essence.Equals(EventEnvelope.JsonContentType, StringComparison.OrdinalIgnoreCase)
+            || essence.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>
-/// Provides the static <see cref="Wrap{TEvent}"/> factory for creating <see cref="EventEnvelope{TEvent}"/> instances.
+/// Creates <see cref="EventEnvelope{TEvent}"/> instances, the only way to build one.
 /// </summary>
 public static class EventEnvelope
 {
+    /// <summary>The CloudEvents specification version every envelope declares: <c>1.0</c>.</summary>
+    public const string CloudEventsSpecVersion = "1.0";
+
+    /// <summary>The media type every envelope created by <see cref="Wrap{TEvent}"/> declares: <c>application/json</c>.</summary>
+    public const string JsonContentType = "application/json";
+
     /// <summary>
-    /// Wraps a domain event in an <see cref="EventEnvelope{TEvent}"/>, populating all routing
-    /// and tracing metadata automatically.
+    /// Wraps an integration event in an envelope, taking <c>id</c> and <c>time</c> from the event and
+    /// <c>type</c> and <c>dataversion</c> from its <see cref="IntegrationEventAttribute"/>.
     /// </summary>
-    /// <typeparam name="TEvent">The domain event type. Must implement <see cref="IDomainEvent"/>.</typeparam>
-    /// <param name="domainEvent">The domain event to wrap.</param>
-    /// <param name="sourceService">
-    /// The name of the service publishing this event. Must not be null or empty.
+    /// <typeparam name="TEvent">
+    /// The concrete type of <paramref name="integrationEvent"/>. Must be the runtime type, not a base type or an
+    /// interface, so the data serializes with all its members.
+    /// </typeparam>
+    /// <param name="integrationEvent">The event to wrap. Must not be null.</param>
+    /// <param name="source">
+    /// The logical name of the producing service, such as <c>orders-service</c>. Must be a non-blank URI reference
+    /// of at most 256 characters.
     /// </param>
-    /// <param name="correlationId">
-    /// The distributed-trace correlation identifier from ambient OTel context.
-    /// Pass <c>null</c> when no ambient context is available.
-    /// </param>
-    /// <param name="causationId">
-    /// The identifier of the command or event that caused this domain event.
-    /// Pass <c>null</c> for root events.
+    /// <param name="subject">
+    /// The resource the event is about, such as <c>order/42</c>, or <see langword="null"/>. Must not be blank when
+    /// set.
     /// </param>
     /// <param name="tenantId">
-    /// (WO-052/P-331) The tenant this event belongs to, when the publisher is tenant-aware.
-    /// Pass <c>null</c> (the default) for non-tenanted or root events. Never inferred from
-    /// <paramref name="domainEvent"/> — the caller must supply it explicitly.
+    /// The tenant the event belongs to, or <see langword="null"/> for an event with no tenant. Must not be
+    /// <see cref="Guid.Empty"/>.
     /// </param>
-    /// <returns>A new <see cref="EventEnvelope{TEvent}"/> with all fields populated.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="domainEvent"/> is <c>null</c>.</exception>
+    /// <param name="correlationId">
+    /// The flow's correlation identifier, or <see langword="null"/>. Must not be blank when set.
+    /// </param>
+    /// <param name="causationId">
+    /// The identifier of the command or event that caused this one, or <see langword="null"/>. Must not be blank
+    /// when set.
+    /// </param>
+    /// <returns>The envelope.</returns>
+    /// <remarks>
+    /// <b>Pitfall.</b> <paramref name="subject"/>, <paramref name="correlationId"/> and
+    /// <paramref name="causationId"/> are all optional strings. Pass them by name.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="integrationEvent"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="sourceService"/> is <c>null</c> or empty.
+    /// <typeparamref name="TEvent"/> is not the runtime type of <paramref name="integrationEvent"/>; the event's
+    /// <see cref="IIntegrationEvent.EventId"/> is empty or its <see cref="IIntegrationEvent.OccurredOn"/> is
+    /// <see langword="default"/>; or an argument breaks the rule stated for it.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="TEvent"/> has no valid <see cref="IntegrationEventAttribute"/>; see
+    /// <see cref="IntegrationEventDescriptor.For{TEvent}"/>.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// var envelope = EventEnvelope.Wrap(
+    ///     orderPlaced,
+    ///     source: "orders-service",
+    ///     subject: $"order/{orderPlaced.OrderId}",
+    ///     tenantId: tenantId,
+    ///     correlationId: Activity.Current?.TraceId.ToString());
+    /// </code>
+    /// </example>
     public static EventEnvelope<TEvent> Wrap<TEvent>(
-        TEvent domainEvent,
-        string sourceService,
+        TEvent integrationEvent,
+        string source,
+        string? subject = null,
+        Guid? tenantId = null,
         string? correlationId = null,
-        string? causationId = null,
-        Guid? tenantId = null)
-        where TEvent : IDomainEvent
+        string? causationId = null)
+        where TEvent : class, IIntegrationEvent
     {
-        ArgumentNullException.ThrowIfNull(domainEvent);
+        ArgumentNullException.ThrowIfNull(integrationEvent);
 
-        if (string.IsNullOrEmpty(sourceService))
-            throw new ArgumentException("SourceService must not be null or empty.", nameof(sourceService));
-
-        return new EventEnvelope<TEvent>
+        if (integrationEvent.GetType() != typeof(TEvent))
         {
-            EventId = domainEvent.Id,
-            OccurredOn = domainEvent.OccurredOn,
-            EventType = typeof(TEvent).Name,
-            EventVersion = DomainEventVersionHelper.GetVersion(typeof(TEvent)),
-            CorrelationId = correlationId,
-            CausationId = causationId,
-            TenantId = tenantId,
-            SourceService = sourceService,
-            Payload = domainEvent,
-        };
+            throw new ArgumentException(
+                $"Wrap the event as its runtime type '{integrationEvent.GetType().FullName}', not as "
+                + $"'{typeof(TEvent).FullName}'; otherwise its data would serialize without the runtime type's members.",
+                nameof(integrationEvent));
+        }
+
+        if (FindProblem(source, subject, tenantId, correlationId, causationId, integrationEvent) is { } problem)
+            throw new ArgumentException(problem.Message, problem.Parameter);
+
+        var descriptor = IntegrationEventDescriptor.For<TEvent>();
+
+        return EventEnvelope<TEvent>.Create(
+            integrationEvent, descriptor, source, subject, tenantId, correlationId, causationId);
+    }
+
+    internal static (string Parameter, string Message)? FindProblem(
+        string? source,
+        string? subject,
+        Guid? tenantId,
+        string? correlationId,
+        string? causationId,
+        IIntegrationEvent? data)
+    {
+        const int maxSourceLength = 256;
+
+        if (string.IsNullOrWhiteSpace(source))
+            return ("source", "Source must not be null or blank.");
+
+        if (source.Length > maxSourceLength || !Uri.TryCreate(source, UriKind.RelativeOrAbsolute, out _))
+            return ("source", $"Source must be a URI reference of at most {maxSourceLength} characters.");
+
+        if (subject is not null && string.IsNullOrWhiteSpace(subject))
+            return ("subject", "Subject must be null or not blank.");
+
+        if (tenantId == Guid.Empty)
+            return ("tenantId", "TenantId must be null or not Guid.Empty.");
+
+        if (correlationId is not null && string.IsNullOrWhiteSpace(correlationId))
+            return ("correlationId", "CorrelationId must be null or not blank.");
+
+        if (causationId is not null && string.IsNullOrWhiteSpace(causationId))
+            return ("causationId", "CausationId must be null or not blank.");
+
+        if (data is null)
+            return ("integrationEvent", "Data must not be null.");
+
+        if (data.EventId == Guid.Empty)
+            return ("integrationEvent", "The event's EventId must not be Guid.Empty.");
+
+        if (data.OccurredOn == default)
+            return ("integrationEvent", "The event's OccurredOn must not be default.");
+
+        return null;
     }
 }

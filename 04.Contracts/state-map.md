@@ -31,12 +31,15 @@
 | `SK.04.Tests` | Tests | All tasks in Phase: Tests are `●` |
 | `SK.04.Docs` | Docs | All tasks in Phase: Docs are `●` |
 | `SK.04.Published` | Published | All tasks in Phase: Published are `●` |
+| `SK.04.P543` | P-543 Contracts: `SharedKernel.Contracts` Pre-First-Publish Redesign (BREAKING) | All tasks in Phase: P-543 are `●` |
 
 ---
 
 ## Active Work
 
-_Nothing in progress — all phases in `04.Contracts` are complete._
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| P-09 Publish `SharedKernel.Contracts` to GitHub Packages | SK.04.P543 | SharedKernel.Contracts | `○` |
 
 <!--
 Format when active — replace placeholder with table:
@@ -64,7 +67,7 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Contracts` | Published | `●` | Currently shipped: `SharedKernel.Contracts 2.0.0` packed to `nupkgs/` (`.nupkg`+`.snupkg`). WO-052 (P-328/P-331/P-332) fully shipped: breaking `Envelope`→`Envelopes` namespace rename, additive `EventEnvelope<TEvent>.TenantId`, additive `CursorPagedList<T>`. `consumer-verify` covers 7 surfaces (PagedList, Envelope, IIntegrationEvent, EventEnvelope.Wrap incl. TenantId, STJ round-trips, CursorPagedList, ResultEnvelopeExtensions); 87 tests green. |
+| `SharedKernel.Contracts` | P-543 | `◐` | Redesigned before its first feed publish (P-543): CloudEvents `EventEnvelope<TEvent>` over `IIntegrationEvent` with required `[IntegrationEvent]`; `Envelope`/`ResultEnvelopeExtensions`/serializer context and the `03.Domain` reference removed; `long` totals; `PageRequest`/`CursorPageRequest`/`PageCursor` added. Public API tracked; 105 tests; packed locally as `1.0.0-alpha.0.924` with a single `SharedKernel.Primitives` dependency and `ConsumerVerify` 5/5 against the pack. Not yet published to the feed. |
 
 ---
 
@@ -72,6 +75,7 @@ Format when blocked — replace placeholder with table:
 
 | This Phase Key | Needs From Domain | What | Status |
 |---------------|------------------|------|--------|
+| `SK.04.P543` | `01.Core` | `SharedKernel.Primitives` on the feed at the version `SharedKernel.Contracts` is published with | Republish Primitives from the same commit first (feed has `.923`) |
 | `SK.04.Scaffold` | `01.Core` | `SharedKernel.Primitives` ProjectReference (`Result<T>`, `Error`) | Available |
 | `SK.04.Scaffold` | `03.Domain` | `SharedKernel.Domain` ProjectReference (`IDomainEvent`, `DomainEventVersionHelper`) | Available (P-053 complete) |
 | `SK.04.Core` | `03.Domain` | `DomainEventVersionHelper.GetVersion(Type)` for `EventEnvelope<TEvent>.EventVersion` | Available (P-053 complete) |
@@ -189,6 +193,39 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-543 — Contracts: `SharedKernel.Contracts` Pre-First-Publish Redesign (BREAKING) <!-- phase-key: SK.04.P543 -->
+
+> **Origin:** user-directed, not dispatched by `arch-lead`: review the package for bad practice and missing features, put every design choice to the user, and finalize it before its first feed publish. Nothing had reached a feed, so breaking changes were free.
+> **DEFECTS, each confirmed by executing a probe before the change:**
+>
+> 1. JSON bypassed every factory: `{"isSuccess":false}` produced an `Envelope` whose `ToResult()` threw `ArgumentNullException`; a success could carry an error; a `PagedList` could have `items: null`.
+> 2. `PagedList.Create` accepted 50 items for a page size of 2.
+> 3. `PagedList`/`CursorPagedList` record equality compared the item list by reference.
+> 4. `CursorPagedList` allowed `HasMore: true` with a null cursor, and `with { Items = null }` bypassed the guard.
+> 5. `EventEnvelope<TEvent>` had public `init` properties: an envelope with `EventVersion = -5` and a null payload compiled; only an architecture rule stood in the way.
+> 6. `EventType = typeof(TEvent).Name`: two `OrderPlaced` classes in different namespaces collided, a generic event became ``Gen`1``, and a class rename silently changed the wire contract.
+> 7. The shipped `ContractsSerializerDefaults.TypeInfoResolver` threw for `Envelope<string>` and every other generic instantiation, ignored its own camelCase setting through a resolver chain, and registered the undeserializable `EventEnvelope<DomainEvent>`.
+> 8. `Wrap` accepted a whitespace `sourceService`.
+> 9. Domain events went on the wire: the envelope required `IDomainEvent` (MassTransit rejected anything else at runtime), leaking internal fields into consumers and coupling them to the producer's domain assembly.
+> 10. `Envelope<T>` never crossed a service boundary: servers returned raw bodies or ProblemDetails, and the REST client built an `Envelope` locally only to call `ToResult()`.
+> **DECISIONS, ruled by the user:** integration events only (`IIntegrationEvent`), `03.Domain` reference removed; `Envelope`/`Envelope<T>`/`ResultEnvelopeExtensions` removed; required `[IntegrationEvent(name, Version)]`; CloudEvents 1.0 structured JSON; paging helpers and requests; opaque unsigned validated cursor codec; `TotalCount` as `long`; no money DTO.
+> **FOUND BY EXECUTION, NOT BY READING:** STJ propagates a `[JsonConstructor]`'s `ArgumentException` unwrapped, so constructors throw `JsonException` themselves; semicolons break Mermaid sequence messages; `PagedList` must not check items against `TotalCount`, because the count and page queries race under concurrent writes; a MassTransit consume-metrics test is timing-flaky (fails once in three full runs, passes alone), unrelated to this change.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-11 | Audit all source, trace every consumer across the repo, execute a probe of suspected defects, and put design choices to the user in two rounds | SharedKernel.Contracts | `●` |
+| C-11 | Events: `IIntegrationEvent`; `IntegrationEventAttribute`; `IntegrationEventDescriptor` (validated, cached, name+version uniqueness); `EventEnvelope<TEvent>` CloudEvents record with internal constructors and validating deserialization; `EventEnvelope.Wrap`; `CloudEventAttributeNames` | SharedKernel.Contracts | `●` |
+| C-12 | Pagination: `PagedList<T>` (`long` totals, snapshot, value equality, `Map`, `Empty`, validating JSON); `CursorPagedList<T>` (derived `HasMore`, `FromLookahead`); `PageRequest`; `CursorPageRequest`; `PageCursor` + `CursorPosition<TKey, TId>`; `PaginationErrorCodes` | SharedKernel.Contracts | `●` |
+| C-13 | Removals and packaging: `Envelope`, `Envelope<T>`, `ResultEnvelopeExtensions`, serializer context, `InternalsVisibleTo`, `03.Domain` reference; PublicApiAnalyzers (138 entries), `nullable`/`CS1591`/RS00xx as errors, XML docs shipped, description and `First release.` notes | SharedKernel.Contracts | `●` |
+| C-14 | Cross-domain migration: `07.Messaging` (`IEventPublisher` constraint, `PublishContext.WithSubject`, reflection bridge removed); `15.Integration` (routing by descriptor name, attributes on its events); `06.Persistence` (`LongCountAsync`, `CreatePage`); `09.Search` (overflow guard and `TotalHitsOverflow` removed); `11.Communication` (`ReadResultAsync<T>`, GraphQL `long`); `14.Presentation` unused Contracts reference removed; `16.Testing` doubles; `00.Governance` rules (construction rule removed, `ContractsReferencesOnlyCore`, purity rules fixed against the real assembly) and analyzers SK0038/SK0039 | 06/07/09/11/14/15/16/00 | `●` |
+| T-11 | 105 unit tests covering every factory path and JSON path; test project no longer references `16.Testing` | SharedKernel.Contracts | `●` |
+| DO-12 | XML contract on every public member; package README (quick start, decision guide, walkthrough, reference, pitfalls, AI quick reference) with outputs produced by running the snippets; folder landing page with three rendered Mermaid diagrams; brain rewritten with history preserved; other domain brains and root `CLAUDE.md` rows updated | SharedKernel.Contracts | `●` |
+| V-02 | `Platform.SharedKernel.slnx -c Release` → 0 errors; Contracts 105, Messaging.Abstractions 59, MassTransit 195, Webhooks 115, Persistence.Abstractions 64, EfCore 461, PostgreSQL 53, Search.Abstractions 173, Rest 78, GraphQL 47, WebApi 192, Presentation.Grpc 36, ArchitectureTests 301, Analyzers 322, Testing.SelfTests 1,274 | All | `●` |
+| V-03 | Pack Primitives and Contracts locally (`1.0.0-alpha.0.924`); nuspec has one dependency (`SharedKernel.Primitives`), README and XML docs; `SharedKernel.Contracts.ConsumerVerify` (replacing the console `consumer-verify`) 5/5 against the pack | SharedKernel.Contracts | `●` |
+| P-09 | Publish `SharedKernel.Contracts` to GitHub Packages, republishing `SharedKernel.Primitives` from the same commit first; run `ConsumerVerify` against the feed | SharedKernel.Contracts | `○` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -201,6 +238,7 @@ Format when blocked — replace placeholder with table:
 | `SK.04.Tests` | Tests | 10 | 10 | 0 | `●` |
 | `SK.04.Docs` | Docs | 11 | 11 | 0 | `●` |
 | `SK.04.Published` | Published | 8 | 8 | 0 | `●` |
+| `SK.04.P543` | P-543 Pre-First-Publish Redesign | 10 | 9 | 1 | `◐` |
 
 ---
 
@@ -228,3 +266,4 @@ Format when blocked — replace placeholder with table:
 - [2026-07-31] C-08/C-09/C-10 → ● in SK.04.Core — namespace rename `SharedKernel.Contracts.Envelope` → `.Envelopes` completed (Envelope.cs/EnvelopeT.cs, `ResultEnvelopeExtensions`' `EnvelopeNs` alias dropped in favor of a direct using, `ContractsJsonContext`); `EventEnvelope<TEvent>.TenantId` (`Guid?`) added plus `Wrap`'s trailing optional `tenantId` parameter; `CursorPagedList<T>` fully implemented (`Create` factory, `[JsonConstructor]`+`[SetsRequiredMembers]` internal ctor, registered in `ContractsJsonContext`). Fixed a cascading break in `16.Testing/SharedKernel.Testing/Contracts/EnvelopeAssertions.cs`(+Tests) — the platform-wide `SharedKernel.Testing` package every `.Tests` project references — since it still used the old `EnvelopeNs` alias; this was `16.Testing`'s own pre-planned, fully-specified C-101/T-65 task, applied here as a minimal mechanical fix to keep `dotnet test` green (16.Testing's own state-map/CLAUDE.md left untouched — out of this domain's jurisdiction to formally close). New tests added for `TenantId` and `CursorPagedList<T>` (STJ round-trip, guard clauses, equality). `dotnet build`/`dotnet test` on `SharedKernel.Contracts.Tests`: 87/87 green (was 72). `SharedKernel.Testing`/`SharedKernel.Testing.SelfTests`: 0 build errors, 768/768 non-container tests green, zero regressions. SK.04.Core now 10/10 `●`, propagating to root (state-map-phase)
 - [2026-07-31] DO-09/DO-10/DO-11 → ● in SK.04.Docs — verified the shipped XML docs on `Envelope`/`Envelope<T>` (already `Envelopes` namespace, no stale `<seealso>` crefs anywhere in the package's `.cs` files), `EventEnvelope<TEvent>.TenantId`/`Wrap`'s `tenantId` param, and `CursorPagedList<T>` already fully matched each task's acceptance criteria from the Core-phase pass; the only remaining gap was `README.md`, which was updated with: an explicit `using SharedKernel.Contracts.Envelopes;` + namespace note on the Envelope examples (DO-09), a new "Populating `TenantId`" subsection in the `EventEnvelope<TEvent>` composition-pattern section with a bridging-`IMessageHeaderPropagator` example (DO-10), and a new `CursorPagedList<T>` Quick-Start section with a `PagedList<T>` vs `CursorPagedList<T>` decision table (DO-11); also added a `CursorPagedList<T>` bullet to the "What belongs here" list, which had been missing entirely. Confirmed `04.Contracts/consumer-verify/Program.cs`'s stale `using SharedKernel.Contracts.Envelope;` is intentionally out of scope here — it is P-06's job in the Published phase. `dotnet build` 0 errors; `dotnet test` 87/87 green, zero regressions. SK.04.Docs now 11/11 `●`, propagating to root (state-map-phase)
 - [2026-07-31] P-06/P-07/P-08 → ● in SK.04.Published — `SharedKernel.Contracts.csproj` bumped `Version`/`PackageVersion` to `2.0.0`; added a `PackageReleaseNotes` block explicitly calling out the breaking `Envelope`→`Envelopes` namespace rename plus the additive `TenantId`/`CursorPagedList<T>` changes; `dotnet pack` produced `SharedKernel.Contracts.2.0.0.nupkg`+`.snupkg` in root `nupkgs/`. `consumer-verify/Program.cs`'s stale `using SharedKernel.Contracts.Envelope;` fixed to `.Envelopes`; extended with `EventEnvelope.Wrap` with/without `tenantId` (Surface 4) plus matching STJ round-trips, and a new Surface 6 constructing/round-tripping `CursorPagedList<string>` (populated + terminal-page cases) through the merged `TypeInfoResolverChain`, registered in `ConsumerVerifyJsonContext`. `dotnet build`/`dotnet test` on `SharedKernel.Contracts`+`.Tests`: 0 errors, 87/87 green; `consumer-verify` run: all 7 surfaces PASS. GOVERNANCE FINDING (empirically verified via a throwaway harness in the session scratchpad — never committed — referencing the real compiled `SharedKernel.Contracts.dll` and `00.Governance`'s real `SharedKernel.ArchitectureTests.dll` directly, since `00.Governance`'s own `ContractsPurityRulesTests.cs` was confirmed by direct read to exercise only contrived in-memory fixtures, never the real assembly, at any prior version): `CursorPagedList<T>` passes `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` and `ContractsAssembliesHaveNoResultTypeOnPublicSurface` cleanly with zero exemption — identical to its sibling `PagedList<T>` — satisfying P-08's "zero exemption" acceptance criterion. However, `ContractsAssembliesHaveNoNonTrivialMethods` FAILS against the real assembly for essentially every type carrying a static factory or extension method (`PagedList<T>.Create`, `Envelope.Ok`/`.Fail`, `Envelope<T>.Ok`/`.Fail`, `EventEnvelope.Wrap`, `ResultEnvelopeExtensions`'s four methods, `CursorPagedList<T>.Create`) — a pre-existing `00.Governance` predicate gap (its documented "trivial method" allowlist never included factory/extension methods) that has been true since `PagedList<T>.Create` first shipped in 1.0.0 and was simply never previously caught because the rule was never run against the real assembly; `CursorPagedList<T>` inherits this identical, pre-existing false positive, it does not introduce a new one. Separately found: `ContractsAssembliesHaveNoDomainTypeOnPublicSurface`'s exemption only excludes the generic record `EventEnvelope\`1` by name — the sibling non-generic static `EventEnvelope` class (holding `Wrap<TEvent>`, which also carries a `where TEvent : IDomainEvent` constraint) is not exempted and independently fails the same rule, also pre-existing since WO-011. Both are `00.Governance`'s `ContractsPurityRules`/`NoNonTrivialMethodsPredicate` implementation gaps, out of this domain's jurisdiction to fix — recorded as a candidate follow-up work order for `00.Governance` (governance-arch-planner/governance-phase-implementer), no `00.Governance` file touched. Package Board updated to `2.0.0`. SK.04.Published now 8/8 `●` — all six phase keys for `04.Contracts` are `●`, propagating to root (state-map-phase)
+- [2026-09-15] SK.04.P543 opened and implemented (9/10 ●; P-09 publish pending) — pre-first-publish redesign by user ruling: 10 execution-confirmed defects, integration-event CloudEvents envelope with required `[IntegrationEvent]`, `Envelope`/mapping/serializer context and the `03.Domain` reference removed, `long` totals, page requests and cursor codec added; public API tracked; 105 tests; cross-domain migration in 06/07/09/11/14/15/16/00 with analyzers SK0038/SK0039; solution 0 errors and 15 affected suites green (coordinator)

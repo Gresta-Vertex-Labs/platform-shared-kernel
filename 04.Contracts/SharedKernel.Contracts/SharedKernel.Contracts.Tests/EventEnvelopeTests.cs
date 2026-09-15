@@ -1,302 +1,175 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SharedKernel.Contracts.Events;
-using SharedKernel.Contracts.Serialization;
-using SharedKernel.Domain.Events;
 
 namespace SharedKernel.Contracts.Tests;
 
-// Test domain events — internal to this test assembly
-
-internal sealed record TestOrderCreatedEvent : DomainEvent
-{
-    public required Guid OrderId { get; init; }
-}
-
-[DomainEventVersion(3)]
-internal sealed record TestOrderCancelledEvent : DomainEvent
-{
-    public required string Reason { get; init; }
-}
-
 public sealed class EventEnvelopeTests
 {
-    private static readonly string SourceService = "order-service";
-    private static readonly string CorrelationId = "corr-123";
-    private static readonly string CausationId = "cause-456";
-
-    private static TestOrderCreatedEvent CreateOrderEvent()
-        => new() { OccurredOn = new DateTimeOffset(2026, 5, 30, 10, 0, 0, TimeSpan.Zero), OrderId = Guid.NewGuid() };
-
-    // ─── Wrap factory ─────────────────────────────────────────────────────────
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Pascal = new();
 
     [Fact]
-    public void Wrap_PopulatesEventId_FromDomainEvent()
+    public void Wrap_TakesIdentityAndTimeFromTheEventAndNameFromTheAttribute()
     {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
+        var evt = OrderPlaced.New();
+        var tenantId = Guid.NewGuid();
 
-        envelope.EventId.Should().Be(domainEvent.Id);
+        var envelope = EventEnvelope.Wrap(
+            evt, "orders-service", subject: $"order/{evt.OrderId}", tenantId: tenantId, correlationId: "corr", causationId: "cause");
+
+        envelope.SpecVersion.Should().Be("1.0");
+        envelope.Id.Should().Be(evt.EventId);
+        envelope.Time.Should().Be(evt.OccurredOn);
+        envelope.Type.Should().Be("orders.order-placed");
+        envelope.DataVersion.Should().Be(2);
+        envelope.Source.Should().Be("orders-service");
+        envelope.Subject.Should().Be($"order/{evt.OrderId}");
+        envelope.DataContentType.Should().Be("application/json");
+        envelope.TenantId.Should().Be(tenantId);
+        envelope.CorrelationId.Should().Be("corr");
+        envelope.CausationId.Should().Be("cause");
+        envelope.Data.Should().BeSameAs(evt);
     }
 
     [Fact]
-    public void Wrap_PopulatesOccurredOn_FromDomainEvent()
+    public void Wrap_OptionalMetadataDefaultsToNull()
     {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
+        var envelope = EventEnvelope.Wrap(OrderPlaced.New(), "orders-service");
 
-        envelope.OccurredOn.Should().Be(domainEvent.OccurredOn);
-    }
-
-    [Fact]
-    public void Wrap_PopulatesEventType_AsTypeNameOfTEvent()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
-        envelope.EventType.Should().Be(typeof(TestOrderCreatedEvent).Name);
-    }
-
-    [Fact]
-    public void Wrap_PopulatesSourceService_AsProvided()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
-        envelope.SourceService.Should().Be(SourceService);
-    }
-
-    [Fact]
-    public void Wrap_PopulatesPayload_AsProvidedDomainEvent()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
-        envelope.Payload.Should().Be(domainEvent);
-    }
-
-    [Fact]
-    public void Wrap_PopulatesCorrelationId_WhenProvided()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, correlationId: CorrelationId);
-
-        envelope.CorrelationId.Should().Be(CorrelationId);
-    }
-
-    [Fact]
-    public void Wrap_PopulatesCausationId_WhenProvided()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, causationId: CausationId);
-
-        envelope.CausationId.Should().Be(CausationId);
-    }
-
-    [Fact]
-    public void Wrap_CorrelationId_IsNullByDefault()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
+        envelope.Subject.Should().BeNull();
+        envelope.TenantId.Should().BeNull();
         envelope.CorrelationId.Should().BeNull();
-    }
-
-    [Fact]
-    public void Wrap_CausationId_IsNullByDefault()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
         envelope.CausationId.Should().BeNull();
     }
 
-    // ─── EventVersion ─────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData(null, "source")]
+    [InlineData("", "source")]
+    [InlineData("   ", "source")]
+    [InlineData("http://[::1", "source")]
+    public void Wrap_RejectsAnInvalidSource(string? source, string parameter) =>
+        FluentActions.Invoking(() => EventEnvelope.Wrap(OrderPlaced.New(), source!))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be(parameter);
 
     [Fact]
-    public void Wrap_EventVersion_DefaultsToOne_WhenAttributeAbsent()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
+    public void Wrap_RejectsASourceLongerThan256Characters() =>
+        FluentActions.Invoking(() => EventEnvelope.Wrap(OrderPlaced.New(), new string('s', 257)))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("source");
 
-        envelope.EventVersion.Should().Be(1);
+    [Fact]
+    public void Wrap_RejectsBlankOptionalStringsAndAnEmptyTenant()
+    {
+        var evt = OrderPlaced.New();
+
+        FluentActions.Invoking(() => EventEnvelope.Wrap(evt, "s", subject: " "))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("subject");
+        FluentActions.Invoking(() => EventEnvelope.Wrap(evt, "s", tenantId: Guid.Empty))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("tenantId");
+        FluentActions.Invoking(() => EventEnvelope.Wrap(evt, "s", correlationId: ""))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("correlationId");
+        FluentActions.Invoking(() => EventEnvelope.Wrap(evt, "s", causationId: "\t"))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("causationId");
     }
 
     [Fact]
-    public void Wrap_EventVersion_UsesDeclaredVersion_WhenAttributePresent()
+    public void Wrap_RejectsAnEventWithoutIdentityOrTime()
     {
-        var domainEvent = new TestOrderCancelledEvent
+        FluentActions.Invoking(() => EventEnvelope.Wrap(OrderPlaced.New() with { EventId = Guid.Empty }, "s"))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("integrationEvent");
+        FluentActions.Invoking(() => EventEnvelope.Wrap(OrderPlaced.New() with { OccurredOn = default }, "s"))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("integrationEvent");
+    }
+
+    [Fact]
+    public void Wrap_Null_Throws() =>
+        FluentActions.Invoking(() => EventEnvelope.Wrap<OrderPlaced>(null!, "s")).Should().Throw<ArgumentNullException>();
+
+    [Fact]
+    public void Wrap_EventWithoutAttribute_Throws() =>
+        FluentActions.Invoking(() => EventEnvelope.Wrap(new Unnamed(Guid.NewGuid(), DateTimeOffset.UtcNow), "s"))
+            .Should().Throw<InvalidOperationException>();
+
+    [Fact]
+    public void Wrap_AsABaseType_Throws()
+    {
+        BaseEvent evt = new DerivedWithoutAttribute(Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        FluentActions.Invoking(() => EventEnvelope.Wrap(evt, "s"))
+            .Should().Throw<ArgumentException>().WithMessage("*runtime type*");
+    }
+
+    [Fact]
+    public void Json_IsACloudEventsStructuredDocument_WhateverTheNamingPolicy()
+    {
+        var evt = OrderPlaced.New();
+        var envelope = EventEnvelope.Wrap(evt, "orders-service", tenantId: Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
+        foreach (var options in new[] { Web, Pascal })
         {
-            OccurredOn = DateTimeOffset.UtcNow,
-            Reason = "customer request"
-        };
+            var json = JsonNode.Parse(JsonSerializer.Serialize(envelope, options))!.AsObject();
 
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
-
-        envelope.EventVersion.Should().Be(3);
+            json.Select(p => p.Key).Should().Equal(
+                "specversion", "id", "source", "type", "dataversion", "time", "datacontenttype", "tenantid", "data");
+            json["specversion"]!.GetValue<string>().Should().Be("1.0");
+            json["type"]!.GetValue<string>().Should().Be("orders.order-placed");
+            json["dataversion"]!.GetValue<int>().Should().Be(2);
+            json["tenantid"]!.GetValue<string>().Should().Be("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+        }
     }
 
-    // ─── Guard clauses ────────────────────────────────────────────────────────
-
     [Fact]
-    public void Wrap_NullDomainEvent_ThrowsArgumentNullException()
+    public void Json_RoundTrips()
     {
-        var act = () => EventEnvelope.Wrap<TestOrderCreatedEvent>(null!, SourceService);
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("domainEvent");
+        var envelope = EventEnvelope.Wrap(
+            OrderPlaced.New(), "orders-service", subject: "order/1", tenantId: Guid.NewGuid(), correlationId: "c", causationId: "k");
+
+        var roundTripped = JsonSerializer.Deserialize<EventEnvelope<OrderPlaced>>(JsonSerializer.Serialize(envelope, Web), Web);
+
+        roundTripped.Should().Be(envelope);
     }
 
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    public void Wrap_NullOrEmptySourceService_ThrowsArgumentException(string? invalidSourceService)
+    [InlineData("specversion", "\"0.3\"")]
+    [InlineData("type", "\"orders.order-shipped\"")]
+    [InlineData("id", "\"00000000-0000-0000-0000-000000000001\"")]
+    [InlineData("time", "\"2020-01-01T00:00:00+00:00\"")]
+    [InlineData("dataversion", "0")]
+    [InlineData("datacontenttype", "\"text/plain\"")]
+    [InlineData("source", "\"\"")]
+    [InlineData("tenantid", "\"00000000-0000-0000-0000-000000000000\"")]
+    [InlineData("data", "null")]
+    public void Json_RejectsAnInconsistentDocument(string member, string value)
     {
-        var domainEvent = CreateOrderEvent();
-        var act = () => EventEnvelope.Wrap(domainEvent, invalidSourceService!);
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("sourceService");
+        var json = JsonNode.Parse(JsonSerializer.Serialize(EventEnvelope.Wrap(OrderPlaced.New(), "orders-service"), Web))!.AsObject();
+        json[member] = JsonNode.Parse(value);
+
+        var act = () => JsonSerializer.Deserialize<EventEnvelope<OrderPlaced>>(json.ToJsonString(), Web);
+
+        act.Should().Throw<JsonException>();
     }
 
-    // ─── TenantId (WO-052/P-331) ──────────────────────────────────────────────
-
-    [Fact]
-    public void Wrap_TenantId_IsNullByDefault()
+    [Theory]
+    [InlineData("application/json; charset=utf-8")]
+    [InlineData("application/cloudevents+json")]
+    public void Json_AcceptsJsonMediaTypesWithParametersOrSuffix(string mediaType)
     {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
+        var json = JsonNode.Parse(JsonSerializer.Serialize(EventEnvelope.Wrap(OrderPlaced.New(), "orders-service"), Web))!.AsObject();
+        json["datacontenttype"] = mediaType;
 
-        envelope.TenantId.Should().BeNull();
-    }
-
-    [Fact]
-    public void Wrap_PopulatesTenantId_WhenProvided()
-    {
-        var tenantId = Guid.NewGuid();
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: tenantId);
-
-        envelope.TenantId.Should().Be(tenantId);
-    }
-
-    [Fact]
-    public void Wrap_WithoutTenantIdArgument_StillCompiles_AndDefaultsToNull()
-    {
-        // Regression: existing call sites with no tenantId argument must remain source-compatible
-        // after the trailing optional parameter was added (WO-052/P-331).
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
-
-        envelope.TenantId.Should().BeNull();
+        JsonSerializer.Deserialize<EventEnvelope<OrderPlaced>>(json.ToJsonString(), Web)!.DataContentType.Should().Be(mediaType);
     }
 
     [Fact]
-    public void TwoEnvelopes_WithDifferentTenantId_AreNotEqual()
-    {
-        var domainEvent = CreateOrderEvent();
-        var a = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: Guid.NewGuid());
-        var b = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: Guid.NewGuid());
-
-        a.Should().NotBe(b);
-    }
+    public void Json_MissingRequiredMembers_Throws() =>
+        FluentActions.Invoking(() => JsonSerializer.Deserialize<EventEnvelope<OrderPlaced>>("{}", Web)).Should().Throw<JsonException>();
 
     [Fact]
-    public void TwoEnvelopes_WithSameTenantId_AreEqual()
+    public void Equality_IsByValue()
     {
-        var tenantId = Guid.NewGuid();
-        var domainEvent = CreateOrderEvent();
-        var a = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
-        var b = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
+        var evt = OrderPlaced.New();
 
-        a.Should().Be(b);
-    }
-
-    [Fact]
-    public void Wrap_TenantId_SerjDeserj_RoundTrips_WhenNull()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
-
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
-        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
-
-        var json = JsonSerializer.Serialize(envelope, options);
-
-        // The test-level JsonSerializerOptions only sets PropertyNamingPolicy (matching the
-        // established pattern) — DefaultIgnoreCondition is not applied here, so a null TenantId
-        // round-trips as a literal JSON null rather than being omitted.
-        json.Should().Contain("\"tenantId\":null");
-
-        var deserialized = JsonSerializer.Deserialize<EventEnvelope<TestOrderCreatedEvent>>(json, options);
-        deserialized.Should().NotBeNull();
-        deserialized!.TenantId.Should().BeNull();
-    }
-
-    [Fact]
-    public void Wrap_TenantId_SerjDeserj_RoundTrips_WhenPopulated()
-    {
-        var tenantId = Guid.NewGuid();
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
-
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
-        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
-
-        var json = JsonSerializer.Serialize(envelope, options);
-
-        json.Should().Contain("\"tenantId\":");
-        json.Should().Contain(tenantId.ToString());
-    }
-
-    // ─── EventId is not a new envelope identity ───────────────────────────────
-
-    [Fact]
-    public void Wrap_EventId_IsCopiedFromDomainEvent_NotNewGuid()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope1 = EventEnvelope.Wrap(domainEvent, SourceService);
-        var envelope2 = EventEnvelope.Wrap(domainEvent, SourceService);
-
-        // Both envelopes wrapping the same domain event must share the same EventId (copied from domain event)
-        envelope1.EventId.Should().Be(envelope2.EventId);
-        envelope1.EventId.Should().Be(domainEvent.Id);
-    }
-
-    // ─── Record structural equality ───────────────────────────────────────────
-
-    [Fact]
-    public void TwoEnvelopes_WrappingSameDomainEvent_AreEqual()
-    {
-        var domainEvent = CreateOrderEvent();
-        var a = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
-        var b = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
-
-        a.Should().Be(b);
-    }
-
-    // ─── STJ round-trip ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void Wrap_SerjDeserj_RoundTrips_ViaSourceGeneratedContext()
-    {
-        var domainEvent = CreateOrderEvent();
-        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
-
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
-        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
-
-        // The ContractsJsonContext covers EventEnvelope<DomainEvent> (abstract base).
-        // Verify serialization infrastructure produces output with expected field names.
-        var json = JsonSerializer.Serialize(envelope, options);
-
-        json.Should().Contain("\"eventType\":");
-        json.Should().Contain("\"eventVersion\":");
-        json.Should().Contain("\"sourceService\":");
-        json.Should().Contain("\"correlationId\":");
-        json.Should().Contain("\"causationId\":");
-        json.Should().Contain(SourceService);
-        json.Should().Contain(CorrelationId);
-        json.Should().Contain(CausationId);
+        EventEnvelope.Wrap(evt, "s", subject: "order/1").Should().Be(EventEnvelope.Wrap(evt, "s", subject: "order/1"));
+        EventEnvelope.Wrap(evt, "s", correlationId: "a").Should().NotBe(EventEnvelope.Wrap(evt, "s", correlationId: "b"));
     }
 }

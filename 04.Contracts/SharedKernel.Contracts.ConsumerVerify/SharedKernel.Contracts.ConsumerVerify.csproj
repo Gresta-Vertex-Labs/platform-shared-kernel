@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <!--
+    Consumer verification: resolves SharedKernel.Contracts as a package, never as a project, to confirm the packed
+    dependency graph and public API work for a real consumer. Point restore at the feed under test, and pin the
+    version with -p:SharedKernelPackageVersion=<version>.
+  -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Contracts" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

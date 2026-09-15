@@ -1,0 +1,140 @@
+#nullable enable
+SharedKernel.Contracts.Events.CloudEventAttributeNames
+SharedKernel.Contracts.Events.EventEnvelope
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.CausationId.get -> string?
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.CorrelationId.get -> string?
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Data.get -> TEvent!
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.DataContentType.get -> string!
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.DataVersion.get -> int
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Id.get -> System.Guid
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Source.get -> string!
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.SpecVersion.get -> string!
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Subject.get -> string?
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.TenantId.get -> System.Guid?
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Time.get -> System.DateTimeOffset
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Type.get -> string!
+SharedKernel.Contracts.Events.IIntegrationEvent
+SharedKernel.Contracts.Events.IIntegrationEvent.EventId.get -> System.Guid
+SharedKernel.Contracts.Events.IIntegrationEvent.OccurredOn.get -> System.DateTimeOffset
+SharedKernel.Contracts.Events.IntegrationEventAttribute
+SharedKernel.Contracts.Events.IntegrationEventAttribute.IntegrationEventAttribute(string! name) -> void
+SharedKernel.Contracts.Events.IntegrationEventAttribute.Name.get -> string!
+SharedKernel.Contracts.Events.IntegrationEventAttribute.Version.get -> int
+SharedKernel.Contracts.Events.IntegrationEventAttribute.Version.init -> void
+SharedKernel.Contracts.Events.IntegrationEventDescriptor
+SharedKernel.Contracts.Events.IntegrationEventDescriptor.EventType.get -> System.Type!
+SharedKernel.Contracts.Events.IntegrationEventDescriptor.Name.get -> string!
+SharedKernel.Contracts.Events.IntegrationEventDescriptor.Version.get -> int
+SharedKernel.Contracts.Pagination.CursorPageRequest
+SharedKernel.Contracts.Pagination.CursorPageRequest.<Clone>$() -> SharedKernel.Contracts.Pagination.CursorPageRequest!
+SharedKernel.Contracts.Pagination.CursorPageRequest.Cursor.get -> string?
+SharedKernel.Contracts.Pagination.CursorPageRequest.Equals(SharedKernel.Contracts.Pagination.CursorPageRequest? other) -> bool
+SharedKernel.Contracts.Pagination.CursorPageRequest.IsFirstPage.get -> bool
+SharedKernel.Contracts.Pagination.CursorPageRequest.Limit.get -> int
+SharedKernel.Contracts.Pagination.CursorPagedList<T>
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.<Clone>$() -> SharedKernel.Contracts.Pagination.CursorPagedList<T>!
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.Equals(SharedKernel.Contracts.Pagination.CursorPagedList<T>? other) -> bool
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.HasMore.get -> bool
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.Items.get -> System.Collections.Generic.IReadOnlyList<T>!
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.Map<TResult>(System.Func<T, TResult>! selector) -> SharedKernel.Contracts.Pagination.CursorPagedList<TResult>!
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.NextCursor.get -> string?
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.CursorPosition() -> void
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.CursorPosition(TKey Key, TId Id) -> void
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Deconstruct(out TKey Key, out TId Id) -> void
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Equals(SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId> other) -> bool
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Id.get -> TId
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Id.init -> void
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Key.get -> TKey
+SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Key.init -> void
+SharedKernel.Contracts.Pagination.PageCursor
+SharedKernel.Contracts.Pagination.PageRequest
+SharedKernel.Contracts.Pagination.PageRequest.<Clone>$() -> SharedKernel.Contracts.Pagination.PageRequest!
+SharedKernel.Contracts.Pagination.PageRequest.Equals(SharedKernel.Contracts.Pagination.PageRequest? other) -> bool
+SharedKernel.Contracts.Pagination.PageRequest.Offset.get -> int
+SharedKernel.Contracts.Pagination.PageRequest.Page.get -> int
+SharedKernel.Contracts.Pagination.PageRequest.PageSize.get -> int
+SharedKernel.Contracts.Pagination.PagedList<T>
+SharedKernel.Contracts.Pagination.PagedList<T>.<Clone>$() -> SharedKernel.Contracts.Pagination.PagedList<T>!
+SharedKernel.Contracts.Pagination.PagedList<T>.Equals(SharedKernel.Contracts.Pagination.PagedList<T>? other) -> bool
+SharedKernel.Contracts.Pagination.PagedList<T>.HasNextPage.get -> bool
+SharedKernel.Contracts.Pagination.PagedList<T>.HasPreviousPage.get -> bool
+SharedKernel.Contracts.Pagination.PagedList<T>.Items.get -> System.Collections.Generic.IReadOnlyList<T>!
+SharedKernel.Contracts.Pagination.PagedList<T>.Map<TResult>(System.Func<T, TResult>! selector) -> SharedKernel.Contracts.Pagination.PagedList<TResult>!
+SharedKernel.Contracts.Pagination.PagedList<T>.Page.get -> int
+SharedKernel.Contracts.Pagination.PagedList<T>.PageSize.get -> int
+SharedKernel.Contracts.Pagination.PagedList<T>.TotalCount.get -> long
+SharedKernel.Contracts.Pagination.PagedList<T>.TotalPages.get -> long
+SharedKernel.Contracts.Pagination.PaginationErrorCodes
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.CausationId = "causationid" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.CorrelationId = "correlationid" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Data = "data" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.DataContentType = "datacontenttype" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.DataVersion = "dataversion" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Id = "id" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Source = "source" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.SpecVersion = "specversion" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Subject = "subject" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.TenantId = "tenantid" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Time = "time" -> string!
+const SharedKernel.Contracts.Events.CloudEventAttributeNames.Type = "type" -> string!
+const SharedKernel.Contracts.Events.EventEnvelope.CloudEventsSpecVersion = "1.0" -> string!
+const SharedKernel.Contracts.Events.EventEnvelope.JsonContentType = "application/json" -> string!
+const SharedKernel.Contracts.Pagination.CursorPageRequest.DefaultLimit = 20 -> int
+const SharedKernel.Contracts.Pagination.CursorPageRequest.MaxLimit = 1000 -> int
+const SharedKernel.Contracts.Pagination.PageCursor.MaxLength = 512 -> int
+const SharedKernel.Contracts.Pagination.PageRequest.DefaultPageSize = 20 -> int
+const SharedKernel.Contracts.Pagination.PageRequest.MaxPageSize = 1000 -> int
+const SharedKernel.Contracts.Pagination.PaginationErrorCodes.CursorInvalid = "pagination.cursor.invalid" -> string!
+const SharedKernel.Contracts.Pagination.PaginationErrorCodes.LimitOutOfRange = "pagination.limit.out_of_range" -> string!
+const SharedKernel.Contracts.Pagination.PaginationErrorCodes.PageOutOfRange = "pagination.page.out_of_range" -> string!
+const SharedKernel.Contracts.Pagination.PaginationErrorCodes.PageSizeOutOfRange = "pagination.page_size.out_of_range" -> string!
+override SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Equals(object? obj) -> bool
+override SharedKernel.Contracts.Events.EventEnvelope<TEvent>.GetHashCode() -> int
+override SharedKernel.Contracts.Events.EventEnvelope<TEvent>.ToString() -> string!
+override SharedKernel.Contracts.Events.IntegrationEventDescriptor.ToString() -> string!
+override SharedKernel.Contracts.Pagination.CursorPageRequest.Equals(object? obj) -> bool
+override SharedKernel.Contracts.Pagination.CursorPageRequest.GetHashCode() -> int
+override SharedKernel.Contracts.Pagination.CursorPageRequest.ToString() -> string!
+override SharedKernel.Contracts.Pagination.CursorPagedList<T>.Equals(object? obj) -> bool
+override SharedKernel.Contracts.Pagination.CursorPagedList<T>.GetHashCode() -> int
+override SharedKernel.Contracts.Pagination.CursorPagedList<T>.ToString() -> string!
+override SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.GetHashCode() -> int
+override SharedKernel.Contracts.Pagination.PageRequest.Equals(object? obj) -> bool
+override SharedKernel.Contracts.Pagination.PageRequest.GetHashCode() -> int
+override SharedKernel.Contracts.Pagination.PageRequest.ToString() -> string!
+override SharedKernel.Contracts.Pagination.PagedList<T>.Equals(object? obj) -> bool
+override SharedKernel.Contracts.Pagination.PagedList<T>.GetHashCode() -> int
+override SharedKernel.Contracts.Pagination.PagedList<T>.ToString() -> string!
+static SharedKernel.Contracts.Events.EventEnvelope.Wrap<TEvent>(TEvent! integrationEvent, string! source, string? subject = null, System.Guid? tenantId = null, string? correlationId = null, string? causationId = null) -> SharedKernel.Contracts.Events.EventEnvelope<TEvent!>!
+static SharedKernel.Contracts.Events.IntegrationEventDescriptor.For(System.Type! eventType) -> SharedKernel.Contracts.Events.IntegrationEventDescriptor!
+static SharedKernel.Contracts.Events.IntegrationEventDescriptor.For<TEvent>() -> SharedKernel.Contracts.Events.IntegrationEventDescriptor!
+static SharedKernel.Contracts.Pagination.CursorPageRequest.Create(string? cursor = null, int? limit = null, int maxLimit = 1000) -> SharedKernel.Primitives.Results.ValidationResult<SharedKernel.Contracts.Pagination.CursorPageRequest!>!
+static SharedKernel.Contracts.Pagination.CursorPageRequest.First.get -> SharedKernel.Contracts.Pagination.CursorPageRequest!
+static SharedKernel.Contracts.Pagination.CursorPageRequest.operator !=(SharedKernel.Contracts.Pagination.CursorPageRequest? left, SharedKernel.Contracts.Pagination.CursorPageRequest? right) -> bool
+static SharedKernel.Contracts.Pagination.CursorPageRequest.operator ==(SharedKernel.Contracts.Pagination.CursorPageRequest? left, SharedKernel.Contracts.Pagination.CursorPageRequest? right) -> bool
+static SharedKernel.Contracts.Pagination.CursorPagedList<T>.Create(System.Collections.Generic.IReadOnlyList<T>! items, string? nextCursor) -> SharedKernel.Contracts.Pagination.CursorPagedList<T>!
+static SharedKernel.Contracts.Pagination.CursorPagedList<T>.Empty() -> SharedKernel.Contracts.Pagination.CursorPagedList<T>!
+static SharedKernel.Contracts.Pagination.CursorPagedList<T>.FromLookahead(System.Collections.Generic.IReadOnlyList<T>! fetched, int limit, System.Func<T, string!>! cursorFor) -> SharedKernel.Contracts.Pagination.CursorPagedList<T>!
+static SharedKernel.Contracts.Pagination.CursorPagedList<T>.operator !=(SharedKernel.Contracts.Pagination.CursorPagedList<T>? left, SharedKernel.Contracts.Pagination.CursorPagedList<T>? right) -> bool
+static SharedKernel.Contracts.Pagination.CursorPagedList<T>.operator ==(SharedKernel.Contracts.Pagination.CursorPagedList<T>? left, SharedKernel.Contracts.Pagination.CursorPagedList<T>? right) -> bool
+static SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.operator !=(SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId> left, SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId> right) -> bool
+static SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.operator ==(SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId> left, SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId> right) -> bool
+static SharedKernel.Contracts.Pagination.PageCursor.Decode<TKey, TId>(string? cursor, System.Text.Json.JsonSerializerOptions? options = null) -> SharedKernel.Primitives.Results.Result<SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>>!
+static SharedKernel.Contracts.Pagination.PageCursor.Encode<TKey, TId>(TKey key, TId id, System.Text.Json.JsonSerializerOptions? options = null) -> string!
+static SharedKernel.Contracts.Pagination.PageRequest.Create(int? page = null, int? pageSize = null, int maxPageSize = 1000) -> SharedKernel.Primitives.Results.ValidationResult<SharedKernel.Contracts.Pagination.PageRequest!>!
+static SharedKernel.Contracts.Pagination.PageRequest.First.get -> SharedKernel.Contracts.Pagination.PageRequest!
+static SharedKernel.Contracts.Pagination.PageRequest.operator !=(SharedKernel.Contracts.Pagination.PageRequest? left, SharedKernel.Contracts.Pagination.PageRequest? right) -> bool
+static SharedKernel.Contracts.Pagination.PageRequest.operator ==(SharedKernel.Contracts.Pagination.PageRequest? left, SharedKernel.Contracts.Pagination.PageRequest? right) -> bool
+static SharedKernel.Contracts.Pagination.PagedList<T>.Create(System.Collections.Generic.IReadOnlyList<T>! items, SharedKernel.Contracts.Pagination.PageRequest! request, long totalCount) -> SharedKernel.Contracts.Pagination.PagedList<T>!
+static SharedKernel.Contracts.Pagination.PagedList<T>.Create(System.Collections.Generic.IReadOnlyList<T>! items, int page, int pageSize, long totalCount) -> SharedKernel.Contracts.Pagination.PagedList<T>!
+static SharedKernel.Contracts.Pagination.PagedList<T>.Empty(SharedKernel.Contracts.Pagination.PageRequest! request) -> SharedKernel.Contracts.Pagination.PagedList<T>!
+static SharedKernel.Contracts.Pagination.PagedList<T>.operator !=(SharedKernel.Contracts.Pagination.PagedList<T>? left, SharedKernel.Contracts.Pagination.PagedList<T>? right) -> bool
+static SharedKernel.Contracts.Pagination.PagedList<T>.operator ==(SharedKernel.Contracts.Pagination.PagedList<T>? left, SharedKernel.Contracts.Pagination.PagedList<T>? right) -> bool
+~SharedKernel.Contracts.Events.EventEnvelope<TEvent>.<Clone>$() -> SharedKernel.Contracts.Events.EventEnvelope<TEvent>!
+~SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Equals(SharedKernel.Contracts.Events.EventEnvelope<TEvent>? other) -> bool
+~override SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.Equals(object obj) -> bool
+~override SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>.ToString() -> string
+~static SharedKernel.Contracts.Events.EventEnvelope<TEvent>.operator !=(SharedKernel.Contracts.Events.EventEnvelope<TEvent>? left, SharedKernel.Contracts.Events.EventEnvelope<TEvent>? right) -> bool
+~static SharedKernel.Contracts.Events.EventEnvelope<TEvent>.operator ==(SharedKernel.Contracts.Events.EventEnvelope<TEvent>? left, SharedKernel.Contracts.Events.EventEnvelope<TEvent>? right) -> bool

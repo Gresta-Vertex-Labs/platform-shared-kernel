@@ -4,7 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Contracts.csproj" />
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

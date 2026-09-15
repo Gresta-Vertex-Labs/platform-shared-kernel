@@ -1,122 +1,116 @@
 using System.Text.Json;
 using SharedKernel.Contracts.Pagination;
-using SharedKernel.Contracts.Serialization;
 
 namespace SharedKernel.Contracts.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="CursorPagedList{T}"/> (WO-052/P-332).
-/// </summary>
 public sealed class CursorPagedListTests
 {
-    // ─── Create factory guard clause ──────────────────────────────────────────
+    private static readonly JsonSerializerOptions Pascal = new();
 
     [Fact]
-    public void Create_NullItems_ThrowsArgumentNullException()
+    public void HasMore_FollowsTheCursor()
     {
-        var act = () => CursorPagedList<string>.Create(null!, "cursor-1", true);
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("items");
-    }
-
-    // ─── HasMore / NextCursor combinations ────────────────────────────────────
-
-    [Fact]
-    public void Create_HasMoreTrue_WithPopulatedNextCursor_SetsBothCorrectly()
-    {
-        var list = CursorPagedList<string>.Create(["a", "b"], "cursor-2", true);
-
-        list.HasMore.Should().BeTrue();
-        list.NextCursor.Should().Be("cursor-2");
+        CursorPagedList<int>.Create([1], "v1.abc").HasMore.Should().BeTrue();
+        CursorPagedList<int>.Create([1], null).HasMore.Should().BeFalse();
+        CursorPagedList<int>.Empty().Should().Be(CursorPagedList<int>.Create([], null));
     }
 
     [Fact]
-    public void Create_HasMoreFalse_WithNullNextCursor_IsTerminalPage()
+    public void Create_RejectsInvalidArguments()
     {
-        var list = CursorPagedList<string>.Create(["a", "b"], null, false);
-
-        list.HasMore.Should().BeFalse();
-        list.NextCursor.Should().BeNull();
+        FluentActions.Invoking(() => CursorPagedList<int>.Create(null!, null)).Should().Throw<ArgumentNullException>();
+        FluentActions.Invoking(() => CursorPagedList<int>.Create([], " ")).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => CursorPagedList<int>.Create([], new string('c', PageCursor.MaxLength + 1)))
+            .Should().Throw<ArgumentException>();
     }
 
     [Fact]
-    public void Create_EmptyItems_WithHasMoreFalse_IsValid()
+    public void Create_CopiesTheItems()
     {
-        var list = CursorPagedList<string>.Create([], null, false);
+        var source = new List<int> { 1 };
+        var page = CursorPagedList<int>.Create(source, null);
 
-        list.Items.Should().BeEmpty();
-        list.HasMore.Should().BeFalse();
-        list.NextCursor.Should().BeNull();
+        source.Add(2);
+
+        page.Items.Should().Equal(1);
     }
 
-    // ─── Structural equality ───────────────────────────────────────────────────
+    [Fact]
+    public void FromLookahead_ExtraItemMeansAnotherPage()
+    {
+        string? cursorBuiltFrom = null;
+
+        var page = CursorPagedList<int>.FromLookahead([10, 20, 30], 2, last =>
+        {
+            cursorBuiltFrom = last.ToString();
+            return PageCursor.Encode(last, last);
+        });
+
+        page.Items.Should().Equal(10, 20);
+        page.HasMore.Should().BeTrue();
+        cursorBuiltFrom.Should().Be("20");
+    }
+
+    [Theory]
+    [InlineData(new int[0])]
+    [InlineData(new[] { 10 })]
+    [InlineData(new[] { 10, 20 })]
+    public void FromLookahead_NoExtraItemMeansLastPage(int[] fetched)
+    {
+        var page = CursorPagedList<int>.FromLookahead(fetched, 2, _ => throw new InvalidOperationException("not called"));
+
+        page.Items.Should().Equal(fetched);
+        page.NextCursor.Should().BeNull();
+    }
 
     [Fact]
-    public void TwoInstancesWithSameFields_AreEqual()
+    public void FromLookahead_RejectsInvalidArguments()
     {
-        IReadOnlyList<string> items = ["x", "y"];
-        var a = CursorPagedList<string>.Create(items, "cursor-3", true);
-        var b = CursorPagedList<string>.Create(items, "cursor-3", true);
+        FluentActions.Invoking(() => CursorPagedList<int>.FromLookahead([1, 2, 3, 4], 2, _ => "c"))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("fetched");
+        FluentActions.Invoking(() => CursorPagedList<int>.FromLookahead([1], 0, _ => "c"))
+            .Should().Throw<ArgumentOutOfRangeException>();
+        FluentActions.Invoking(() => CursorPagedList<int>.FromLookahead([1, 2], 1, _ => ""))
+            .Should().Throw<ArgumentException>().Which.ParamName.Should().Be("cursorFor");
+        FluentActions.Invoking(() => CursorPagedList<int>.FromLookahead([1], 1, null!))
+            .Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Map_KeepsTheCursor() =>
+        CursorPagedList<int>.Create([1, 2], "v1.x").Map(i => i * 10)
+            .Should().Be(CursorPagedList<int>.Create([10, 20], "v1.x"));
+
+    [Fact]
+    public void Equality_ComparesItemsByValue()
+    {
+        var a = CursorPagedList<string>.Create(new List<string> { "a" }, "v1.x");
+        var b = CursorPagedList<string>.Create(new[] { "a" }, "v1.x");
 
         a.Should().Be(b);
-        (a == b).Should().BeTrue();
+        a.GetHashCode().Should().Be(b.GetHashCode());
+        a.Should().NotBe(CursorPagedList<string>.Create(["a"], null));
     }
 
     [Fact]
-    public void TwoInstancesWithDifferentNextCursor_AreNotEqual()
+    public void Json_HasFixedNamesAndRoundTrips()
     {
-        IReadOnlyList<string> items = ["x"];
-        var a = CursorPagedList<string>.Create(items, "cursor-a", true);
-        var b = CursorPagedList<string>.Create(items, "cursor-b", true);
+        var page = CursorPagedList<int>.Create([1], "v1.x");
 
-        a.Should().NotBe(b);
+        var json = JsonSerializer.Serialize(page, Pascal);
+
+        json.Should().Be("""{"items":[1],"nextCursor":"v1.x","hasMore":true}""");
+        JsonSerializer.Deserialize<CursorPagedList<int>>(json, Pascal).Should().Be(page);
     }
 
-    // ─── STJ round-trip ────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData("""{"nextCursor":null}""")]
+    [InlineData("""{"items":[],"nextCursor":"  "}""")]
+    public void Json_RejectsInvalidDocuments(string json) =>
+        FluentActions.Invoking(() => JsonSerializer.Deserialize<CursorPagedList<int>>(json, Pascal)).Should().Throw<JsonException>();
 
     [Fact]
-    public void SerjDeserj_CursorPagedListOfString_RoundTripsCorrectly()
-    {
-        var original = CursorPagedList<string>.Create(["hello", "world"], "cursor-42", true);
-
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
-        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
-
-        var json = JsonSerializer.Serialize(original, options);
-        json.Should().Contain("\"nextCursor\":\"cursor-42\"");
-        json.Should().Contain("\"hasMore\":true");
-        json.Should().Contain("\"items\":");
-        json.Should().Contain("hello");
-        json.Should().Contain("world");
-
-        var deserialized = JsonSerializer.Deserialize<CursorPagedList<string>>(json, options);
-        deserialized.Should().NotBeNull();
-        deserialized!.NextCursor.Should().Be(original.NextCursor);
-        deserialized.HasMore.Should().Be(original.HasMore);
-        deserialized.Items.Should().BeEquivalentTo(original.Items);
-    }
-
-    [Fact]
-    public void SerjDeserj_TerminalPage_NullNextCursor_RoundTripsCorrectly()
-    {
-        var original = CursorPagedList<string>.Create(["last"], null, false);
-
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
-        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
-
-        var json = JsonSerializer.Serialize(original, options);
-
-        // The test-level JsonSerializerOptions only sets PropertyNamingPolicy (matching the
-        // established pattern) — DefaultIgnoreCondition is not applied here, so a null NextCursor
-        // round-trips as a literal JSON null rather than being omitted.
-        json.Should().Contain("\"nextCursor\":null");
-        json.Should().Contain("\"hasMore\":false");
-
-        var deserialized = JsonSerializer.Deserialize<CursorPagedList<string>>(json, options);
-        deserialized.Should().NotBeNull();
-        deserialized!.NextCursor.Should().BeNull();
-        deserialized.HasMore.Should().BeFalse();
-    }
+    public void Json_IgnoresAnIncomingHasMore() =>
+        JsonSerializer.Deserialize<CursorPagedList<int>>("""{"items":[],"nextCursor":null,"hasMore":true}""", Pascal)!
+            .HasMore.Should().BeFalse();
 }

@@ -56,7 +56,6 @@
   <Folder Name="/04.Contracts/">
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.csproj" />
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj" />
-    <Project Path="04.Contracts/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/05.Application/">
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />
