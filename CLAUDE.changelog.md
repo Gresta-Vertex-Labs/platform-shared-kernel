@@ -112,3 +112,6 @@
 - [2026-09-14] WO-084: ServiceDefaults split into dependency-free base + 13 integration packages (agent)
 - [2026-09-14] P-538: SharedKernel.Core pre-publish hardening; 10 defects fixed, API locked by PublicApiAnalyzers (agent)
 - [2026-09-14] P-539: SharedKernel.Configuration brought to the first-publish bar; opt-in OptionsStrictness, SectionName guard, API locked (agent)
+- [2026-09-15] P-540: SharedKernel.Domain finalized for first publish; 14 defects fixed, clock attached on load, validation reports every error, API locked (agent)
+- [2026-09-15] P-541: EF Core attaches the domain clock to loaded aggregates through one shared materialization interceptor; Version persisted (agent)
+- [2026-09-15] P-542: IAggregateFactory architecture rule and SK0037 EnsureValid analyzer (agent)

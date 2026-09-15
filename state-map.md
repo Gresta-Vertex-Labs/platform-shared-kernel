@@ -2302,6 +2302,51 @@ Measured in a real host: a misspelled section path or key started the service si
 
 ---
 
+### P-540 — Domain: `SharedKernel.Domain` Pre-First-Publish Gold-Standard Pass (BREAKING API + BEHAVIOUR CHANGES)
+
+**Status:** `◐` In progress — 12/13 tasks `●`; only the publish (P-13) remains
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 03.Domain (with migration edits in 05.Application, 06.Persistence, 16.Testing, samples)
+**Depends on:** P-538
+
+#### What is needed
+Finalize `SharedKernel.Domain` before its first feed publish: fix every defect, remove bad practice, add the features worth shipping, and put every design choice to the user. Full evidence and task list in [`03.Domain/state-map.md`](03.Domain/state-map.md) under `SK.03.P540`.
+
+#### Why this is needed
+A probe program confirmed 14 defects, among them: aggregates loaded by an ORM stamped `0001-01-01` on every event and soft delete; `AddCriteria` silently replaced earlier criteria, including the tenant condition the platform's own guidance adds; `TryCreate` let guard violations escape and dropped all but one validation error; domain event ids changed on deserialization, breaking deduplication; and keyset pages sorted the Id tiebreak against `06.Persistence`'s seek predicate, skipping or repeating rows under descending keys. The user ruled on the design: required per-rule codes, explicit `EnsureValid()`, `ValidationResult<T>` from `TryCreate`, attach-on-load clocks, explicit conversions, AOT dropped as a constraint, and keeping every existing abstraction.
+
+---
+
+### P-541 — Persistence: Attach the Domain Clock on Load and Persist the Event Sequence
+
+**Status:** `●` Complete — 7/7 tasks `●` (2026-09-15). Shipped a shared `DomainClockMaterializationInterceptor` and the `Version` column; stamping published events with `Version` deferred (no hook in `IDomainEvent`/`EventEnvelope`)
+**Work Order:** — (follow-up raised by P-540)
+**Domain:** 06.Persistence
+**Depends on:** P-540
+
+#### What is needed
+An EF Core materialization interceptor, registered by the persistence builder, that resolves `IClock` and calls `IHasClock.AttachClock` on every materialized aggregate; a column mapping for `IHasVersion.Version`, with outgoing events stamped with it; and an integration test paging a descending keyset over rows that share a sort key.
+
+#### Why this is needed
+Since P-540 an aggregate without a clock throws instead of recording a year-0001 timestamp. Without this interceptor, every aggregate loaded through EF Core throws the first time it raises a timestamped event or soft-deletes. No existing persistence test loads an aggregate and then mutates it, so the suites stayed green and would not have caught it.
+
+---
+
+### P-542 — Governance: Enforce `IAggregateFactory` and `EnsureValid`
+
+**Status:** `●` Complete — 6/6 tasks `●` (2026-09-15). Shipped `DomainGoldStandardRules.AggregateFactoriesMustCreateValidationResults` and analyzer SK0037
+**Work Order:** — (follow-up raised by P-540)
+**Domain:** 00.Governance
+**Depends on:** P-540
+
+#### What is needed
+An architecture rule that `IAggregateFactory<,>` implementors live in a domain assembly and create through a `ValidationResult`-returning `Create`; and an analyzer flagging a `ValueObject` subclass whose constructor never calls `EnsureValid()`.
+
+#### Why this is needed
+The user kept `IAggregateFactory` on condition that it gets a real job. And explicit validation's one remaining trap is a value object that forgets `EnsureValid()` and is silently never validated; only a static check can close it.
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
