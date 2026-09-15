@@ -1,4 +1,4 @@
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 using SharedKernel.Testing.Domain;
 
 namespace SharedKernel.Testing.SelfTests.Domain;

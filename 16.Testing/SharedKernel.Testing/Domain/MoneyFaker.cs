@@ -1,5 +1,5 @@
 using Bogus;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 
 namespace SharedKernel.Testing.Domain;
 
@@ -64,10 +64,10 @@ public sealed class MoneyFaker
         var resolvedAmount = amount ?? _faker.Random.Decimal(0.01m, 10_000m);
 
         var result = Money.Create(resolvedAmount, resolvedCurrency);
-        return result.IsSuccess
+        return result.IsValid
             ? result.Value
             : throw new InvalidOperationException(
-                $"MoneyFaker produced an invalid Money value: {result.Error.Message}");
+                $"MoneyFaker produced an invalid Money value: {string.Join(" ", result.Errors.Select(e => e.Message))}");
     }
 
     /// <summary>Generates <paramref name="count"/> deterministic <see cref="Money"/> values.</summary>

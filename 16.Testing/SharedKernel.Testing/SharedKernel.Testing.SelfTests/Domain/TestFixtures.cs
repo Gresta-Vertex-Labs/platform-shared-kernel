@@ -27,6 +27,7 @@ public sealed class TestAggregate : AggregateRoot<Guid>
 
 public sealed class AlwaysBrokenRule : IBusinessRule
 {
+    public string Code => "test.rule";
     public string Message => "Always broken.";
 
     public bool IsBroken() => true;
@@ -34,6 +35,7 @@ public sealed class AlwaysBrokenRule : IBusinessRule
 
 public sealed class NeverBrokenRule : IBusinessRule
 {
+    public string Code => "test.rule";
     public string Message => "Never broken.";
 
     public bool IsBroken() => false;

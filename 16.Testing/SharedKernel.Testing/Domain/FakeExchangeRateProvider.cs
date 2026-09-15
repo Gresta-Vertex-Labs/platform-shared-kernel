@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using SharedKernel.Domain.ValueObjects.Money;
+using SharedKernel.Domain.Monetary;
 // NOTE: Result<T>/Error are deliberately NEVER `using`-imported bare in this file — this project's
 // HotChocolate.Data reference pulls in a global `using GreenDonut;`, and GreenDonut.Result<TValue>
 // collides with SharedKernel.Primitives.Results.Result<T> (CS0104). Every use below is fully
