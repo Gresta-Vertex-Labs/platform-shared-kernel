@@ -64,7 +64,7 @@ Read the input carefully. Extract:
 - **Risks and constraints**:
   - Does the change introduce a project reference from `SharedKernel.Application` or `SharedKernel.Application.Behaviors` to `06.Persistence` or `07.Messaging`? (hard violation — layering runs the other direction)
   - Does it add a `SharedKernel.Caching.Abstractions` reference to `SharedKernel.Application` itself rather than `.Behaviors`? (hard violation — that reference is `.Behaviors`-only)
-  - Does a planned handler or behavior return `Envelope`/`Envelope<T>` instead of `Result`/`Result<T>`? (hard violation — `Envelope` is a presentation-boundary type only)
+  - Does a planned handler or behavior return a wire/HTTP response shape (an `{isSuccess, value, error}` wrapper, `IResult`, `ProblemDetails`, a paged HTTP body built at the boundary) instead of `Result`/`Result<T>`? (hard violation — there is no response envelope on this platform; `14.Presentation`'s `ResultHttpExtensions` maps `Result`/`Result<T>` to the success body or RFC 9457 ProblemDetails at the HTTP boundary)
   - Does it call `services.AddMediatR(...)` from inside `AddSharedKernelApplication()` or `AddSharedKernelApplicationBehaviors()`? (hard violation — the consuming service owns MediatR registration and assembly scanning)
   - Does it register `IDomainEventHandler<TEvent>` implementations via assembly scanning or reflection instead of the closed-generic `AddDomainEventHandler<TDomainEvent, THandler>()` pattern? (hard violation)
   - Does it apply `TransactionBehavior` to a query, or `CachingBehavior` to a command? (hard violation — each is constrained to its own request shape; they are mutually exclusive by design)
@@ -121,7 +121,7 @@ Before writing any file, verify internally:
 1. `05.Application/CLAUDE.md` has been read in full this session.
 2. `SharedKernel.Application` introduces **no reference** to `06.Persistence`, `07.Messaging`, or `SharedKernel.Caching.Abstractions` — it may only reference `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain`, and `MediatR`.
 3. `SharedKernel.Application.Behaviors` references `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, and `FluentValidation` — never `06.Persistence` or `07.Messaging`.
-4. No planned handler or behavior returns `Envelope`/`Envelope<T>` — `Result`/`Result<T>` only.
+4. No planned handler or behavior returns a wire/HTTP response shape — `Result`/`Result<T>` only; HTTP mapping stays in `14.Presentation`'s `ResultHttpExtensions`.
 5. No planned type calls `services.AddMediatR(...)` internally — MediatR registration remains the consuming service's responsibility.
 6. No planned `IDomainEventHandler<TEvent>` registration path uses assembly scanning or reflection — only the closed-generic `AddDomainEventHandler<TDomainEvent, THandler>()` pattern, one call per event type.
 7. `TransactionBehavior` remains constrained to `ICommandBase` (commands only); `CachingBehavior` remains constrained to `ICacheableQuery<TResponse>` (queries only) — no plan blurs this boundary or makes the two behaviors apply to the same request shape.

@@ -133,7 +133,7 @@ After all implementation files are written:
 - `SearchQueryBuilder<TDocument>`: immutable (every method returns a new instance, source unmutated); repeated `Where(...)` **AND**s rather than replaces; `Build()` rejects each provider-independent invariant violation.
 - `TenantScope.Of` throws on null/whitespace; `TenantScope.None` is `string.Empty`.
 - `SearchIndexDefinition.Fingerprint` is stable across field **declaration order** and changes when any field name, kind, role, `TenantField`, or ceiling changes.
-- `ToPagedList()` fails with `TotalHitsNotExact`/`TotalHitsOverflow`/`InvalidSearchRequest` per guard, succeeds only for an `Exact` in-range result.
+- `ToPagedList()` fails with `TotalHitsNotExact` when accuracy is not `Exact`, and with `InvalidSearchRequest` for a negative total, an invalid page/page size, or more hits than `PageSize`; it succeeds only for an `Exact`, consistent result. There is no overflow guard — `PagedList<T>.TotalCount` is `long`.
 - Reflection-based `ContractShapeTests` lock `EnumerateAsync`'s `IAsyncEnumerable<TDocument>` return shape and the mandatory non-defaulted `SearchWriteConsistency`/`TenantScope` parameters against silent regression.
 
 **Both provider test projects** — **real engine container required via `16.Testing`**
