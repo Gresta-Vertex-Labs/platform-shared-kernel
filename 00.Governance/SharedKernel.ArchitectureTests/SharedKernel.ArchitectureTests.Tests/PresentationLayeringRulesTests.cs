@@ -472,8 +472,7 @@ public class PresentationLayeringRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             because: "no type in the real SharedKernel.Presentation.Grpc assembly actually uses a " +
-                     "SharedKernel.Contracts type today, despite the assembly's transitive " +
-                     "reference chain through SharedKernel.Presentation.WebApi");
+                     "SharedKernel.Contracts type; neither it nor SharedKernel.Presentation.WebApi references Contracts");
     }
 
     // ---------------------------------------------------------------------------

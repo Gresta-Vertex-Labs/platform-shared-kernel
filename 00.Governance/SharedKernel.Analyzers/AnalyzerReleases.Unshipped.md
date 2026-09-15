@@ -1,3 +1,10 @@
 ; Unshipped analyzer release
 ; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
 SK0037 | Design | Warning | ValueObjectMissingEnsureValid
+SK0038 | Design | Warning | IntegrationEventMissingAttribute
+SK0039 | Design | Warning | InvalidIntegrationEventAttribute

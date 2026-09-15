@@ -12,20 +12,20 @@ using Xunit;
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Tests for the caller-supplied anchor-type validation on the three rules that no longer bind
+/// Tests for the caller-supplied anchor-type validation on the rules that no longer bind
 /// to a SharedKernel assembly directly, and for
 /// <see cref="ArchitectureRuleBase.AssertRule"/>'s assertion-library-free failure path.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The three rules below select the types they judge via <c>.ImplementInterface(anchor)</c> /
+/// The rules below select the types they judge via <c>.ImplementInterface(anchor)</c> /
 /// <c>.Inherit(anchor)</c>. Passing a wrong-shaped <see cref="Type"/> would select zero types
 /// and make the rule pass VACUOUSLY — the exact hazard WO-082/P-508 found when Mono.Cecil's
 /// empty nested-type <c>Namespace</c> silently excluded every guard type. These tests prove the
 /// validation converts that silent false-pass into a loud <see cref="ArgumentException"/>.
 /// </para>
 /// <para>
-/// T-343 (fire path): a non-interface anchor is rejected on each of the three rules.
+/// T-343 (fire path): a non-interface anchor is rejected on each anchored rule.
 /// T-344 (fire path): a null anchor/assembly is rejected.
 /// T-345 (fire path): a sealed or non-class inheritance target is rejected.
 /// T-346 (pass path): the real anchors are accepted, so validation is not over-strict.
@@ -89,6 +89,21 @@ public class RuleAnchorValidationTests
             .WithParameterName("integrationEventInterface");
     }
 
+    /// <summary>
+    /// T-343: same guard on the integration-event no-behaviour rule's interface anchor.
+    /// </summary>
+    [Fact]
+    public void IntegrationEventsHaveNoNonTrivialMethods_NonInterfaceAnchor_Throws()
+    {
+        var act = () => ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods(
+            ThisAssembly,
+            typeof(string));
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("integrationEventInterface");
+    }
+
     // ---------------------------------------------------------------------------
     // T-344 — Fire path: null arguments are rejected
     // ---------------------------------------------------------------------------
@@ -124,6 +139,20 @@ public class RuleAnchorValidationTests
     public void IntegrationEventImplementationsMustBeSealed_NullAssembly_Throws()
     {
         var act = () => ContractsPurityRules.IntegrationEventImplementationsMustBeSealed(
+            null!,
+            typeof(IIntegrationEvent));
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("contractsAssembly");
+    }
+
+    /// <summary>
+    /// T-344: a null contracts assembly must throw <see cref="ArgumentNullException"/> on the
+    /// integration-event no-behaviour rule as well.
+    /// </summary>
+    [Fact]
+    public void IntegrationEventsHaveNoNonTrivialMethods_NullAssembly_Throws()
+    {
+        var act = () => ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods(
             null!,
             typeof(IIntegrationEvent));
 
@@ -179,7 +208,7 @@ public class RuleAnchorValidationTests
     /// wrong shapes, and that each rule still passes against its real shipped assembly.
     /// </summary>
     [Fact]
-    public void AllThreeRules_RealAnchors_AreAccepted()
+    public void AllAnchoredRules_RealAnchors_AreAccepted()
     {
         var guard = GuardPurityRules.GuardAgainstMethodsMustNotThrow(
             typeof(IGuardClause).Assembly,
@@ -194,12 +223,18 @@ public class RuleAnchorValidationTests
             typeof(IIntegrationEvent).Assembly,
             typeof(IIntegrationEvent));
 
+        var contractsBehaviour = ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods(
+            typeof(IIntegrationEvent).Assembly,
+            typeof(IIntegrationEvent));
+
         guard.GetResult().IsSuccessful.Should().BeTrue(
             because: "the real guard clauses are pure on the functional path");
         domain.GetResult().IsSuccessful.Should().BeTrue(
             because: "SharedKernel.Domain has no direct IDomainService implementor");
         contracts.GetResult().IsSuccessful.Should().BeTrue(
             because: "every shipped integration event is sealed");
+        contractsBehaviour.GetResult().IsSuccessful.Should().BeTrue(
+            because: "no shipped integration event carries behaviour");
     }
 
     // ---------------------------------------------------------------------------

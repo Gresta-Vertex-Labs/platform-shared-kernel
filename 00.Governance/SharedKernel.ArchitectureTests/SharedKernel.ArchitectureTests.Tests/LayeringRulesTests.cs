@@ -14,6 +14,109 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// </summary>
 public class LayeringRulesTests
 {
+    // ---------------------------------------------------------------------------
+    // ContractsReferencesOnlyCore — 04.Contracts reaches nothing but 01.Core
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fire path: a contracts-shaped assembly that depends on <c>SharedKernel.Domain</c> fails
+    /// <see cref="SharedKernelLayeringRules.ContractsReferencesOnlyCore"/> — 03.Domain is no longer a
+    /// permitted dependency of 04.Contracts.
+    /// </summary>
+    [Fact]
+    public void ContractsReferencesOnlyCore_DomainDependency_RuleFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Domain
+            {
+                public interface IDomainEvent { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public sealed class OrderPlacedDto
+                {
+                    public SharedKernel.Domain.IDomainEvent? Source { get; set; }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ContractsDomainViolation", violationSource);
+
+        var result = SharedKernelLayeringRules.ContractsReferencesOnlyCore(violationAssembly).GetResult();
+
+        result.IsSuccessful.Should().BeFalse(because: "OrderPlacedDto references SharedKernel.Domain");
+    }
+
+    /// <summary>
+    /// Fire path: a contracts-shaped assembly that depends on an infrastructure layer still fails.
+    /// </summary>
+    [Fact]
+    public void ContractsReferencesOnlyCore_PersistenceDependency_RuleFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Persistence
+            {
+                public interface IRepository { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public sealed class LeakyDto
+                {
+                    public SharedKernel.Persistence.IRepository? Repository { get; set; }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ContractsPersistenceViolation", violationSource);
+
+        var result = SharedKernelLayeringRules.ContractsReferencesOnlyCore(violationAssembly).GetResult();
+
+        result.IsSuccessful.Should().BeFalse(because: "LeakyDto references SharedKernel.Persistence");
+    }
+
+    /// <summary>
+    /// Pass path: a contracts-shaped assembly that depends only on <c>SharedKernel.Primitives</c> passes.
+    /// </summary>
+    [Fact]
+    public void ContractsReferencesOnlyCore_PrimitivesDependencyOnly_RulePasses()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Primitives
+            {
+                public sealed class Error { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public sealed class PageRequest
+                {
+                    public static SharedKernel.Primitives.Error? Validate(int page) => page < 1 ? new SharedKernel.Primitives.Error() : null;
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("ContractsClean", cleanSource);
+
+        var result = SharedKernelLayeringRules.ContractsReferencesOnlyCore(cleanAssembly).GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "PageRequest depends only on SharedKernel.Primitives");
+    }
+
+    /// <summary>
+    /// Pass path: the real <c>SharedKernel.Contracts</c> assembly references nothing but 01.Core.
+    /// </summary>
+    [Fact]
+    public void ContractsReferencesOnlyCore_RealContractsAssembly_RulePasses()
+    {
+        var contractsAssembly = typeof(SharedKernel.Contracts.Events.EventEnvelope).Assembly;
+
+        var result = SharedKernelLayeringRules.ContractsReferencesOnlyCore(contractsAssembly).GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Contracts references only SharedKernel.Primitives");
+    }
+
     /// <summary>
     /// T-12 (fire path): an assembly whose domain type depends on SharedKernel.Persistence
     /// must cause the rule to fail.

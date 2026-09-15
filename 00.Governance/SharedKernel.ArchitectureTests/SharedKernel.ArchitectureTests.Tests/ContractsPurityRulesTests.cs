@@ -5,31 +5,38 @@ using Microsoft.CodeAnalysis.CSharp;
 using Mono.Cecil;
 using SharedKernel.ArchitectureTests.Predicates;
 using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Contracts.Events;
+using SharedKernel.Primitives.Results;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Tests for <see cref="ContractsPurityRules"/> and <see cref="NoNonTrivialMethodsPredicate"/>.
+/// Tests for <see cref="ContractsPurityRules"/>, <see cref="NoNonTrivialMethodsPredicate"/> and
+/// <see cref="NoResultTypedPublicMemberPredicate"/>.
 /// </summary>
 /// <remarks>
-/// T-40/T-41: Rule 1 — NoNonTrivialMethods
-/// T-42: Rule 2 — NoDomainTypeOnPublicSurface
-/// T-43: Rule 3 — NoResultTypeOnPublicSurface
-/// T-44/T-45: Rule 4 — IntegrationEventImplementationsMustBeSealed
+/// Every rule is proven both ways: it fails on a contrived violation fixture, and it passes against the real
+/// <c>SharedKernel.Contracts</c> assembly. The real-assembly tests exist because these rules were once only
+/// ever run against fixtures, and failed the moment they met the real package.
 /// </remarks>
 public class ContractsPurityRulesTests
 {
+    private static readonly Assembly RealContractsAssembly = typeof(EventEnvelope).Assembly;
+
+    private static readonly string ContractsLocation = typeof(IIntegrationEvent).Assembly.Location;
+
+    private static readonly string PrimitivesLocation = typeof(ValidationResult).Assembly.Location;
+
     // ---------------------------------------------------------------------------
-    // T-40 — Rule 1 fire path: type with non-trivial method fails
+    // Integration events have no non-trivial methods
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-40: A contracts type with a non-trivial method (e.g., <c>Validate()</c>) must fail
-    /// <see cref="ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods"/>.
+    /// The predicate itself flags a type with a non-trivial method (e.g. <c>IsExpired()</c>).
     /// </summary>
     [Fact]
-    public void ContractsAssembliesHaveNoNonTrivialMethods_TypeWithNonTrivialMethod_RuleFails()
+    public void NoNonTrivialMethodsPredicate_TypeWithNonTrivialMethod_ReturnsFalse()
     {
         const string source = """
             using System;
@@ -40,64 +47,109 @@ public class ContractsPurityRulesTests
                     public Guid Id { get; set; }
                     public DateTime Deadline { get; set; }
 
-                    // Non-trivial method — domain logic in a DTO
+                    // Non-trivial method — logic in a DTO
                     public bool IsExpired() => Deadline < DateTime.UtcNow;
                 }
             }
             """;
 
         var assembly = CompileInMemory("NonTrivialMethodViolation", source);
-        var tempPath = assembly.Location;
-        using var cecilAssembly = AssemblyDefinition.ReadAssembly(tempPath);
+        using var cecilAssembly = AssemblyDefinition.ReadAssembly(assembly.Location);
 
         var typeDefinition = cecilAssembly.MainModule.Types
             .Single(t => t.Name == "OrderDto");
 
-        var predicate = new NoNonTrivialMethodsPredicate();
-        predicate.MeetsRule(typeDefinition).Should().BeFalse(
+        new NoNonTrivialMethodsPredicate().MeetsRule(typeDefinition).Should().BeFalse(
             because: "OrderDto.IsExpired() is a non-trivial method — it contains conditional logic");
     }
 
-    // ---------------------------------------------------------------------------
-    // T-41 — Rule 1 pass path: pure DTO passes
-    // ---------------------------------------------------------------------------
-
     /// <summary>
-    /// T-41: A pure DTO contracts assembly with only constructors and properties must pass
-    /// <see cref="ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods"/>.
+    /// An integration event carrying a non-trivial method fails
+    /// <see cref="ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods"/>.
     /// </summary>
     [Fact]
-    public void ContractsAssembliesHaveNoNonTrivialMethods_PureDtoAssembly_RulePasses()
+    public void IntegrationEventsHaveNoNonTrivialMethods_EventWithMethod_RuleFails()
     {
         const string source = """
             using System;
-            namespace SharedKernel.Contracts
+            using SharedKernel.Contracts.Events;
+            namespace MyContracts
             {
-                public record OrderDto(Guid Id, string Status);
+                [IntegrationEvent("tests.architecture.order-placed")]
+                public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, DateTimeOffset Deadline)
+                    : IIntegrationEvent
+                {
+                    public bool IsExpired() => Deadline < DateTimeOffset.UtcNow;
+                }
             }
             """;
 
-        var assembly = CompileInMemory("PureDtoAssembly", source);
+        var assembly = CompileInMemory("EventWithMethod", source, ContractsLocation);
+
         var result = ContractsPurityRules
-            .ContractsAssembliesHaveNoNonTrivialMethods(assembly)
+            .IntegrationEventsHaveNoNonTrivialMethods(assembly, typeof(IIntegrationEvent))
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(because: "OrderPlaced.IsExpired() is behaviour on an integration event");
+        result.FailingTypeNames.Should().ContainSingle().Which.Should().Be("MyContracts.OrderPlaced");
+    }
+
+    /// <summary>
+    /// A pure event record passes, and a non-event contract type with a factory in the same assembly is not
+    /// judged by this rule.
+    /// </summary>
+    [Fact]
+    public void IntegrationEventsHaveNoNonTrivialMethods_PureEventAndDtoWithFactory_RulePasses()
+    {
+        const string source = """
+            using System;
+            using SharedKernel.Contracts.Events;
+            namespace MyContracts
+            {
+                [IntegrationEvent("tests.architecture.order-shipped")]
+                public sealed record OrderShipped(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId)
+                    : IIntegrationEvent;
+
+                public sealed record OrderQuery(int Page)
+                {
+                    public static OrderQuery Create(int? page) => new(page ?? 1);
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("PureEventAssembly", source, ContractsLocation);
+
+        var result = ContractsPurityRules
+            .IntegrationEventsHaveNoNonTrivialMethods(assembly, typeof(IIntegrationEvent))
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "OrderDto is a pure record with no non-trivial methods");
+            because: "OrderShipped is pure data and OrderQuery is not an integration event");
+    }
+
+    /// <summary>The rule passes against the real <c>SharedKernel.Contracts</c> assembly.</summary>
+    [Fact]
+    public void IntegrationEventsHaveNoNonTrivialMethods_RealContractsAssembly_RulePasses()
+    {
+        var result = ContractsPurityRules
+            .IntegrationEventsHaveNoNonTrivialMethods(RealContractsAssembly, typeof(IIntegrationEvent))
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "SharedKernel.Contracts ships no integration event with behaviour");
     }
 
     // ---------------------------------------------------------------------------
-    // T-42 — Rule 2 fire path: domain type on public surface fails
+    // No domain type on the public surface
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-42: A contracts type with a property of a domain type causes a domain assembly
-    /// dependency, which Rule 2 must detect.
+    /// A contracts type with a property of a domain type causes a domain assembly dependency, which the rule
+    /// must detect.
     /// </summary>
     [Fact]
     public void ContractsAssembliesHaveNoDomainTypeOnPublicSurface_DomainTypeExposed_RuleFails()
     {
-        // Arrange — compile a fixture where the contracts type references SharedKernel.Domain
         const string source = """
             namespace SharedKernel.Domain
             {
@@ -122,17 +174,54 @@ public class ContractsPurityRulesTests
             because: "OrderSummaryDto exposes AggregateRoot (a domain type) on its public surface");
     }
 
+    /// <summary>
+    /// A generic envelope constrained to a domain interface is no longer exempt: the rule fails on it like
+    /// any other type.
+    /// </summary>
+    [Fact]
+    public void ContractsAssembliesHaveNoDomainTypeOnPublicSurface_EnvelopeConstrainedToDomainType_RuleFails()
+    {
+        const string source = """
+            namespace SharedKernel.Domain
+            {
+                public interface IDomainEvent { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public sealed record EventEnvelope<TEvent>(TEvent Payload)
+                    where TEvent : SharedKernel.Domain.IDomainEvent;
+            }
+            """;
+
+        var assembly = CompileInMemory("EnvelopeDomainConstraint", source);
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "EventEnvelope`1 is constrained to a domain type and no type is exempt any more");
+    }
+
+    /// <summary>The rule passes against the real <c>SharedKernel.Contracts</c> assembly.</summary>
+    [Fact]
+    public void ContractsAssembliesHaveNoDomainTypeOnPublicSurface_RealContractsAssembly_RulePasses()
+    {
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(RealContractsAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Contracts does not reference SharedKernel.Domain");
+    }
+
     // ---------------------------------------------------------------------------
-    // T-43 — Rule 3 fire path: Result<T> on public surface fails
+    // No Result type on the public surface
     // ---------------------------------------------------------------------------
 
-    /// <summary>
-    /// T-43: A contracts type with a <c>Result&lt;T&gt;</c> property must fail Rule 3.
-    /// </summary>
+    /// <summary>A contracts type with a <c>Result&lt;T&gt;</c> property fails the rule.</summary>
     [Fact]
     public void ContractsAssembliesHaveNoResultTypeOnPublicSurface_ResultTypeExposed_RuleFails()
     {
-        // Arrange — compile a fixture with SharedKernel.Primitives Result type
         const string source = """
             namespace SharedKernel.Primitives
             {
@@ -159,29 +248,114 @@ public class ContractsPurityRulesTests
 
         result.IsSuccessful.Should().BeFalse(
             because: "CreateOrderResponse exposes Result<Guid> which belongs to SharedKernel.Primitives");
+        result.FailingTypeNames.Should().ContainSingle().Which.Should().Be("SharedKernel.Contracts.CreateOrderResponse");
+    }
+
+    /// <summary>
+    /// The real outcome types are caught when wrapped in a nullable, a collection or an array, and through a
+    /// public field.
+    /// </summary>
+    [Fact]
+    public void ContractsAssembliesHaveNoResultTypeOnPublicSurface_WrappedRealOutcomeTypes_RuleFails()
+    {
+        const string source = """
+            using System;
+            using System.Collections.Generic;
+            using SharedKernel.Primitives.Results;
+            namespace MyContracts
+            {
+                public sealed record NullableStructResponse(Result? Outcome);
+
+                public sealed record ListResponse(IReadOnlyList<ValidationResult<Guid>> Outcomes);
+
+                public sealed class FieldResponse
+                {
+                    public ValidationResult[] Outcomes = [];
+                }
+
+                public sealed record CleanResponse(Guid OrderId);
+            }
+            """;
+
+        var assembly = CompileInMemory("WrappedResultLeakage", source, PrimitivesLocation);
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoResultTypeOnPublicSurface(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse();
+        result.FailingTypeNames.Should().BeEquivalentTo(
+            "MyContracts.NullableStructResponse",
+            "MyContracts.ListResponse",
+            "MyContracts.FieldResponse");
+    }
+
+    /// <summary>
+    /// A static factory returning <c>ValidationResult&lt;T&gt;</c> and a codec returning <c>Result&lt;T&gt;</c>
+    /// are allowed, as is referencing <c>Error</c>.
+    /// </summary>
+    [Fact]
+    public void ContractsAssembliesHaveNoResultTypeOnPublicSurface_FactoryMethodsReturningOutcomes_RulePasses()
+    {
+        const string source = """
+            using SharedKernel.Primitives.Errors;
+            using SharedKernel.Primitives.Results;
+            namespace MyContracts
+            {
+                public sealed record PageQuery
+                {
+                    private PageQuery(int page) => Page = page;
+
+                    public int Page { get; }
+
+                    public static ValidationResult<PageQuery> Create(int page) =>
+                        page < 1
+                            ? ValidationResult<PageQuery>.Failure([Error.Validation("page.out_of_range", "Page must be at least 1.")])
+                            : ValidationResult<PageQuery>.Success(new PageQuery(page));
+                }
+
+                public static class QueryCursor
+                {
+                    public static Result<int> Decode(string cursor) =>
+                        int.TryParse(cursor, out var value)
+                            ? Result<int>.Success(value)
+                            : Result<int>.Failure(Error.Validation("cursor.invalid", "Bad cursor."));
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("OutcomeFactories", source, PrimitivesLocation);
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoResultTypeOnPublicSurface(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "outcome types appear only as method return types");
+    }
+
+    /// <summary>
+    /// The rule passes against the real <c>SharedKernel.Contracts</c> assembly, whose <c>PageRequest.Create</c>,
+    /// <c>CursorPageRequest.Create</c> and <c>PageCursor.Decode</c> return outcome types.
+    /// </summary>
+    [Fact]
+    public void ContractsAssembliesHaveNoResultTypeOnPublicSurface_RealContractsAssembly_RulePasses()
+    {
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoResultTypeOnPublicSurface(RealContractsAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "SharedKernel.Contracts returns outcome types only from factory methods, never through a property or field");
     }
 
     // ---------------------------------------------------------------------------
-    // T-44 — Rule 4 fire path: non-sealed IIntegrationEvent fails
+    // Integration events are sealed
     // ---------------------------------------------------------------------------
 
-    /// <summary>
-    /// T-44: A non-sealed class implementing <c>IIntegrationEvent</c> must fail Rule 4.
-    /// </summary>
+    /// <summary>A non-sealed class implementing <c>IIntegrationEvent</c> fails the rule.</summary>
     [Fact]
     public void IntegrationEventImplementationsMustBeSealed_NonSealedImplementation_RuleFails()
     {
         const string source = """
             using System;
-            namespace SharedKernel.Contracts.Events
-            {
-                public interface IIntegrationEvent
-                {
-                    Guid EventId { get; }
-                    DateTimeOffset OccurredOn { get; }
-                }
-            }
-
             namespace MyContracts
             {
                 // Non-sealed class — violation
@@ -193,42 +367,21 @@ public class ContractsPurityRulesTests
             }
             """;
 
-        var assembly = CompileInMemory(
-            "NonSealedIntegrationEvent",
-            source,
-            extraReferences: new[] { typeof(SharedKernel.Contracts.Events.IIntegrationEvent).Assembly.Location });
+        var assembly = CompileInMemory("NonSealedIntegrationEvent", source, ContractsLocation);
 
         var result = ContractsPurityRules
-            .IntegrationEventImplementationsMustBeSealed(
-                assembly,
-                typeof(SharedKernel.Contracts.Events.IIntegrationEvent))
+            .IntegrationEventImplementationsMustBeSealed(assembly, typeof(IIntegrationEvent))
             .GetResult();
 
-        result.IsSuccessful.Should().BeFalse(
-            because: "OrderCreatedEvent is not sealed");
+        result.IsSuccessful.Should().BeFalse(because: "OrderCreatedEvent is not sealed");
     }
 
-    // ---------------------------------------------------------------------------
-    // T-45 — Rule 4 pass path: sealed IIntegrationEvent passes
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// T-45: When all <c>IIntegrationEvent</c> implementations are sealed, Rule 4 passes.
-    /// </summary>
+    /// <summary>When all <c>IIntegrationEvent</c> implementations are sealed, the rule passes.</summary>
     [Fact]
     public void IntegrationEventImplementationsMustBeSealed_SealedImplementation_RulePasses()
     {
         const string source = """
             using System;
-            namespace SharedKernel.Contracts.Events
-            {
-                public interface IIntegrationEvent
-                {
-                    Guid EventId { get; }
-                    DateTimeOffset OccurredOn { get; }
-                }
-            }
-
             namespace MyContracts
             {
                 // Sealed record — compliant
@@ -239,19 +392,24 @@ public class ContractsPurityRulesTests
             }
             """;
 
-        var assembly = CompileInMemory(
-            "SealedIntegrationEvent",
-            source,
-            extraReferences: new[] { typeof(SharedKernel.Contracts.Events.IIntegrationEvent).Assembly.Location });
+        var assembly = CompileInMemory("SealedIntegrationEvent", source, ContractsLocation);
 
         var result = ContractsPurityRules
-            .IntegrationEventImplementationsMustBeSealed(
-                assembly,
-                typeof(SharedKernel.Contracts.Events.IIntegrationEvent))
+            .IntegrationEventImplementationsMustBeSealed(assembly, typeof(IIntegrationEvent))
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(
-            because: "OrderCreatedEvent is a sealed record");
+        result.IsSuccessful.Should().BeTrue(because: "OrderCreatedEvent is a sealed record");
+    }
+
+    /// <summary>The rule passes against the real <c>SharedKernel.Contracts</c> assembly.</summary>
+    [Fact]
+    public void IntegrationEventImplementationsMustBeSealed_RealContractsAssembly_RulePasses()
+    {
+        var result = ContractsPurityRules
+            .IntegrationEventImplementationsMustBeSealed(RealContractsAssembly, typeof(IIntegrationEvent))
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Contracts ships no non-sealed integration event");
     }
 
     // ---------------------------------------------------------------------------
@@ -261,45 +419,42 @@ public class ContractsPurityRulesTests
     private static Assembly CompileInMemory(
         string assemblyName,
         string source,
-        string[]? extraReferences = null)
+        params string[] extraReferences)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
-        var refList = new System.Collections.Generic.List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
-        };
+        var trustedPlatformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator);
 
-        if (extraReferences is not null)
-        {
-            foreach (var refPath in extraReferences)
-                refList.Add(MetadataReference.CreateFromFile(refPath));
-        }
+        var refList = trustedPlatformAssemblies
+            .Where(path => Path.GetFileName(path).StartsWith("System.", StringComparison.Ordinal)
+                || Path.GetFileName(path) is "mscorlib.dll" or "netstandard.dll")
+            .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+            .ToList();
+
+        foreach (var refPath in extraReferences)
+            refList.Add(MetadataReference.CreateFromFile(refPath));
 
         var compilation = CSharpCompilation.Create(
             assemblyName,
             syntaxTrees: new[] { syntaxTree },
             references: refList,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-        );
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 
-        var tempPath = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            $"{assemblyName}_{System.Guid.NewGuid():N}.dll");
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{assemblyName}_{Guid.NewGuid():N}.dll");
 
-        using (var fs = System.IO.File.OpenWrite(tempPath))
+        using (var fs = File.OpenWrite(tempPath))
         {
             var emitResult = compilation.Emit(fs);
             if (!emitResult.Success)
             {
                 var errors = string.Join(
-                    System.Environment.NewLine,
+                    Environment.NewLine,
                     emitResult.Diagnostics
                         .Where(d => d.Severity == DiagnosticSeverity.Error)
                         .Select(d => d.ToString()));
                 throw new InvalidOperationException(
-                    $"Fixture '{assemblyName}' failed to compile:{System.Environment.NewLine}{errors}");
+                    $"Fixture '{assemblyName}' failed to compile:{Environment.NewLine}{errors}");
             }
         }
 

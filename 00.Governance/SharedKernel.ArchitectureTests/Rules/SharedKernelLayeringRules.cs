@@ -87,16 +87,25 @@ public static class SharedKernelLayeringRules
             .NotHaveDependencyOn(MessagingNamespace);
 
     /// <summary>
-    /// 04.Contracts — may reference 01.Core and 03.Domain only. Must not reference infrastructure.
+    /// 04.Contracts — may reference 01.Core only. Must not reference 03.Domain, Caching, or any
+    /// infrastructure layer.
     /// </summary>
+    /// <remarks>
+    /// <c>SharedKernel.Domain</c> is forbidden because a wire contract is an independent, versioned
+    /// projection of a domain model, never the model itself: a contract that references domain types
+    /// changes shape whenever the model does, and drags the domain package into every consumer.
+    /// <c>SharedKernel.Primitives</c> (<c>Error</c>, <c>ValidationResult&lt;T&gt;</c>) stays permitted.
+    /// </remarks>
     /// <param name="assembly">The Contracts assembly to evaluate.</param>
-    /// <returns>A <see cref="ConditionList"/> asserting Contracts types do not reference infrastructure layers.</returns>
-    public static ConditionList ContractsReferencesOnlyCoreAndDomain(Assembly assembly) =>
+    /// <returns>A <see cref="ConditionList"/> asserting Contracts types reference no layer other than Core.</returns>
+    public static ConditionList ContractsReferencesOnlyCore(Assembly assembly) =>
         Types
             .InAssembly(assembly)
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
+            .NotHaveDependencyOn(DomainNamespace)
+            .And()
             .NotHaveDependencyOn(CachingNamespace)
             .And()
             .NotHaveDependencyOn(PersistenceNamespace)

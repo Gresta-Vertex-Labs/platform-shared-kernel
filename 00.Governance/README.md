@@ -48,7 +48,7 @@ None of these packages adds a runtime dependency to your service or to any packa
 
 | Package | What it provides | Reference it from | Documentation |
 |---|---|---|---|
-| **SharedKernel.Analyzers** | 41 Roslyn analyzers for platform conventions, security and data privacy | Every production project | [Rule reference](#analyzer-rules) on this page · [package README](SharedKernel.Analyzers/README.md) |
+| **SharedKernel.Analyzers** | 44 Roslyn analyzer rules for platform conventions, security and data privacy | Every production project | [Rule reference](#analyzer-rules) on this page · [package README](SharedKernel.Analyzers/README.md) |
 | **SharedKernel.ArchitectureTests** | 80+ ready-made NetArchTest rules and IL-level assertions | Your architecture test project | [Package README](SharedKernel.ArchitectureTests/README.md) |
 | **SharedKernel.Linter** | A CSharpier format gate for CI and the platform's shared `.editorconfig` | Every project, or once in `Directory.Build.props` | [Package README](SharedKernel.Linter/README.md) |
 | SharedKernel.Benchmarks | Standard BenchmarkDotNet configuration | Internal only, not published | [Benchmarks](#benchmarks) |
@@ -168,7 +168,7 @@ Prefer either over disabling a rule in `.editorconfig`. A per-site suppression r
 
 ## Analyzer rules
 
-`SharedKernel.Analyzers` contains 41 rules. Every diagnostic's help link in the IDE opens that rule's section below.
+`SharedKernel.Analyzers` contains 44 rules. Every diagnostic's help link in the IDE opens that rule's section below.
 
 **Which rules will you actually see?** Most rules only apply to code that already uses the technology they govern. The rules that apply to almost any C# project are `SK0001` (clock access), `SK0003`–`SK0005` (exception and error shape), `SK0011` (GUID formatting), `SK0016` (type-name collisions), `SK0020`–`SK0021` (log authoring), `SK0022` (magic strings), `SK0030` (discarded results) and `SK0033` (reflection-based mappers).
 
@@ -193,6 +193,8 @@ Primitives, domain modelling and error handling.
 | [SK0010](#sk0010-specificationorderingconflict) | A specification applying two primary orderings | One primary ordering, then `ApplyThenBy` |
 | [SK0011](#sk0011-guidformatcodemisuse) | `Guid.ToString` with a non-canonical format | `ToString()` or `ToString("D")` |
 | [SK0037](#sk0037-valueobjectmissingensurevalid) | A value object whose constructor never calls `EnsureValid()` | Call `EnsureValid()` last in every constructor |
+| [SK0038](#sk0038-integrationeventmissingattribute) | An integration event without a wire name and version | Add `[IntegrationEvent("context.event-name", Version = n)]` |
+| [SK0039](#sk0039-invalidintegrationeventattribute) | An `[IntegrationEvent]` literal name that breaks the name rule, or a `Version` below 1 | Lowercase segments such as `orders.order-placed`; versions start at 1 |
 
 #### Application and communication
 
@@ -2455,6 +2457,103 @@ public sealed class DateRange : ValueObject
 
 ```text
 warning SK0037: 'DateRange' derives from ValueObject but a constructor completes without calling EnsureValid(), so the rules in Validate() never run. Call EnsureValid() as the last statement of every constructor.
+```
+
+---
+
+<a id="sk0038-integrationeventmissingattribute"></a>
+### SK0038 — IntegrationEventMissingAttribute
+
+**Category:** Design · **Default severity:** Warning
+
+Declare a wire name and schema version on every concrete type that implements `IIntegrationEvent`.
+
+#### Why it matters
+
+An integration event's wire name is what brokers route on, subscriptions filter on and consumers branch on. `SharedKernel.Contracts` never derives it from the class name, because a rename or a namespace move would then silently break every consumer. Instead `[IntegrationEvent(name, Version = n)]` declares it once, and it becomes the CloudEvents `type` and `dataversion` of the envelope.
+
+`EventEnvelope.Wrap` and `IntegrationEventDescriptor.For` throw `InvalidOperationException` for an event without the attribute — but only at run time, the first time the event is published or consumed. This rule reports it at compile time.
+
+#### What it flags
+
+- A non-abstract `class` or `record` whose own base list names `IIntegrationEvent` (simple or qualified name) and that carries no attribute named `IntegrationEvent` or `IntegrationEventAttribute`.
+- Matching is by name only, so any interface called `IIntegrationEvent` and any attribute called `IntegrationEvent` count.
+- Each partial declaration is checked on its own: the part that lists `IIntegrationEvent` must carry the attribute.
+
+#### What it does not flag
+
+- Abstract classes and records.
+- Types that implement `IIntegrationEvent` only through a base type.
+- Structs and record structs.
+
+#### Example
+
+```csharp
+// Flagged: SK0038
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+```
+
+```csharp
+// Compliant
+[IntegrationEvent("orders.order-placed", Version = 1)]
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+```
+
+For a breaking change to the event's shape, keep the name and increment the version, publishing both versions until every consumer has moved.
+
+#### Diagnostic
+
+```text
+warning SK0038: Type 'OrderPlaced' implements IIntegrationEvent but has no [IntegrationEvent] attribute, so publishing or consuming it throws at run time — add [IntegrationEvent("context.event-name", Version = N)] to declare its wire name and schema version
+```
+
+---
+
+<a id="sk0039-invalidintegrationeventattribute"></a>
+### SK0039 — InvalidIntegrationEventAttribute
+
+**Category:** Design · **Default severity:** Warning
+
+Give an `[IntegrationEvent]` attribute a valid wire name and a version of at least 1.
+
+#### Why it matters
+
+`IntegrationEventDescriptor` rejects an invalid name or version with `InvalidOperationException` the first time the event type is used. A typo in a name literal therefore ships and fails in production on the first publish. This rule applies the same rule to literals at compile time.
+
+#### What it flags
+
+On a type that SK0038 would check (a non-abstract `class` or `record` listing `IIntegrationEvent`) and that carries the attribute:
+
+- A string-literal name, passed first or as `name: "..."`, that is empty, longer than 128 characters, or not made of lowercase ASCII letters and digits in segments separated by a single `.`, `-` or `_` with no leading or trailing separator. `Orders.OrderPlaced`, `orders..placed` and `orders.` are all flagged.
+- A `Version = n` integer literal below 1, including a negative literal.
+
+The diagnostic is reported on the offending argument; a bad name and a bad version on one attribute are reported separately.
+
+#### What it does not flag
+
+- A name or version given as a constant, `nameof`, an interpolated string or any other non-literal expression. The run-time check still covers these.
+- Types SK0038 does not check.
+- Uniqueness: two types declaring the same name and version are only detected at run time, by `IntegrationEventDescriptor`.
+
+#### Example
+
+```csharp
+// Flagged: SK0039 (twice)
+[IntegrationEvent("Orders.OrderPlaced", Version = 0)]
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+```
+
+```csharp
+// Compliant
+[IntegrationEvent("orders.order-placed", Version = 1)]
+public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+```
+
+#### Diagnostic
+
+```text
+warning SK0039: Type 'OrderPlaced' has an invalid [IntegrationEvent] attribute: the name 'Orders.OrderPlaced' is invalid — a name is 1 to 128 lowercase ASCII letters and digits, in segments separated by a single '.', '-' or '_', such as 'orders.order-placed'
+warning SK0039: Type 'OrderPlaced' has an invalid [IntegrationEvent] attribute: Version is 0, but versions start at 1
 ```
 
 ---

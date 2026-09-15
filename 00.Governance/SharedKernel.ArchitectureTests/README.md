@@ -91,7 +91,7 @@ are marked `[]` in the catalog below.
 
 ## Caller-supplied anchor types
 
-Three rules select the types they judge by interface or base class. Those anchors are **passed in
+Four rules select the types they judge by interface or base class. Those anchors are **passed in
 by you**, not hard-bound here, so this package declares no dependency on any other SharedKernel
 package:
 
@@ -104,6 +104,9 @@ DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(
 
 ContractsPurityRules.IntegrationEventImplementationsMustBeSealed(
     contractsAssembly, typeof(IIntegrationEvent));
+
+ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods(
+    contractsAssembly, typeof(IIntegrationEvent));
 ```
 
 Anchors are validated: passing a class where an interface is required throws `ArgumentException`
@@ -111,7 +114,7 @@ rather than silently selecting zero types and reporting a **vacuous pass**. That
 the one worth guarding against — a rule that inspects nothing looks identical to a rule that
 found nothing wrong.
 
-Because the anchor is yours, these three rules also work against your own equivalents — your own
+Because the anchor is yours, these rules also work against your own equivalents — your own
 guard-clause marker, your own domain-service base.
 
 ---
@@ -161,7 +164,7 @@ references flow downward only.
 | `CoreReferencesNothing` | `01.Core` depends on no other SharedKernel domain |
 | `CachingReferencesOnlyCore` | `02.Caching` reaches nothing but `01.Core` |
 | `DomainReferencesOnlyCore` | `03.Domain` reaches nothing but `01.Core` |
-| `ContractsReferencesOnlyCoreAndDomain` | `04.Contracts` reaches only `01.Core` and `03.Domain` |
+| `ContractsReferencesOnlyCore` | `04.Contracts` reaches nothing but `01.Core` — not even `03.Domain` |
 | `SearchReferencesOnlyCoreAndContracts` `[]` | `09.Search` reaches only `01.Core` and `04.Contracts` |
 | `IntelligenceReferencesOnlyCoreAndContracts` `[]` | `10.Intelligence` reaches only `01.Core` and `04.Contracts` |
 | `WorkflowsReferencesOnlyCoreContractsAndApplication` `[]` | `17.Workflows` reaches only `01.Core`, `04.Contracts`, `05.Application` |
@@ -186,11 +189,14 @@ references flow downward only.
 
 | Rule | Enforces |
 |---|---|
-| `ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods` | Contracts stay DTOs — no behaviour |
+| `ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods` | Integration events are data only — no behaviour (other contract types may carry factories and projections) |
 | `ContractsPurityRules.ContractsAssembliesHaveNoDomainTypeOnPublicSurface` | No domain type leaks onto a wire contract |
-| `ContractsPurityRules.ContractsAssembliesHaveNoResultTypeOnPublicSurface` | `Result`/`Result<T>` never crosses a service boundary |
+| `ContractsPurityRules.ContractsAssembliesHaveNoResultTypeOnPublicSurface` | No public property or field exposes `Result`/`Result<T>`/`ValidationResult`; a static factory may still return one |
 | `ContractsPurityRules.IntegrationEventImplementationsMustBeSealed` | Every integration event is sealed |
-| `ContractsLayeringRules.NoDirectEventEnvelopeConstructionOutsideContracts` | Envelopes are built through the factory, never a raw constructor |
+
+Every Contracts rule is tested against the real `SharedKernel.Contracts` assembly as well as violation
+fixtures. There is no envelope-construction rule: `EventEnvelope<TEvent>` has no public constructor, so
+building one outside `EventEnvelope.Wrap` no longer compiles.
 
 ### Application pipeline
 

@@ -1485,7 +1485,55 @@ SK0036  RawRpcExceptionConstruction
                 documented, intentional scope limit shared with every construction-path rule in
                 this registry (SK0013, P-199's inline-ProblemDetails rule).
 
-SK0037 is the next available sequential Roslyn-analyzer ID.
+SK0037  ValueObjectMissingEnsureValid
+    Category  : Design
+    Severity  : Warning
+    Trigger   : Semantic-model analyzer: a concrete class deriving from
+                SharedKernel.Domain.ValueObjects.ValueObject (matched by fully qualified name) where no
+                class in the source-declared chain down to ValueObject has every instance constructor
+                either call EnsureValid() or delegate with : this(...). Reported on the class name.
+    Fix       : Call EnsureValid() as the last statement of each constructor, after assigning members
+    Exempt    : Abstract classes; SingleValueObject<TValue> subclasses (the base calls it); a class whose
+                effective Validate() declares no rules ([], null, default, Array.Empty/Enumerable.Empty,
+                or only yield break); generated code
+    Note      : ValueObject does not validate in its base constructor, so an omitted call compiles and
+                silently produces unvalidated values. Paired with 03.Domain explicit-validation model.
+
+SK0038  IntegrationEventMissingAttribute
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A non-abstract class or record whose own base list names IIntegrationEvent
+                carries no attribute simply named IntegrationEvent or
+                IntegrationEventAttribute. Reported on the type name.
+    Fix       : Add [IntegrationEvent("context.event-name", Version = N)] to declare the
+                event's wire name and schema version
+    Exempt    : Abstract types, structs, and types that implement IIntegrationEvent only
+                through a base type
+    Note      : Moves a run-time failure to compile time — SharedKernel.Contracts'
+                EventEnvelope.Wrap and IntegrationEventDescriptor.For both refuse an event type
+                whose attribute is missing or invalid, but only the first time it is published
+                or consumed. Syntax-only and name-based, like SK0009: no semantic model, so a
+                test fixture or consuming service may declare its own local IIntegrationEvent
+                and IntegrationEventAttribute. Each partial declaration is checked on its own —
+                the part that lists IIntegrationEvent must carry the attribute. Implemented with
+                SK0039 in one analyzer class, IntegrationEventAttributeAnalyzer
+                (Diagnostics/SK0038_IntegrationEventAttributeAnalyzer.cs).
+
+SK0039  InvalidIntegrationEventAttribute
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A type covered by SK0038 whose [IntegrationEvent] attribute declares, as a
+                literal, a wire name that breaks the name rule (1 to 128 lowercase ASCII letters
+                and digits, in segments separated by a single '.', '-' or '_', no leading or
+                trailing separator) or a Version below 1. Reported on the offending argument.
+    Fix       : Use a valid name such as "orders.order-placed"; versions start at 1
+    Limitation: A name or version supplied as anything other than a literal (a constant,
+                nameof, an interpolated string) is not evaluated; the run-time check in
+                IntegrationEventDescriptor still covers it.
+    Note      : The name rule mirrors IntegrationEventDescriptor's own validation exactly —
+                change the two together.
+
+SK0040 is the next available sequential Roslyn-analyzer ID.
 ```
 
 ---
@@ -1511,7 +1559,12 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .CoreReferencesNothing(Assembly)                → ConditionList
     .CachingReferencesOnlyCore(Assembly)            → ConditionList
     .DomainReferencesOnlyCore(Assembly)             → ConditionList
-    .ContractsReferencesOnlyCoreAndDomain(Assembly) → ConditionList
+    .ContractsReferencesOnlyCore(Assembly)          → ConditionList
+        04.Contracts may reference 01.Core only. Forbids SharedKernel.Domain as well as
+        caching and every infrastructure layer: a wire contract is an independent, versioned
+        projection of a domain model, never the model itself. SharedKernel.Primitives (Error,
+        ValidationResult<T>) stays permitted. Proven against the real SharedKernel.Contracts
+        assembly as well as contrived fixtures.
     .DomainNeverReferencesPersistence(Assembly)     → ConditionList  (hard rule)
     .DomainNeverReferencesMessaging(Assembly)       → ConditionList  (hard rule)
     .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
@@ -1524,7 +1577,7 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
         Added to this EXISTING class rather than a new dedicated class, mirroring the
         precedent that a single new layering-BOUNDARY check on an existing numbered domain
         belongs alongside its siblings (CoreReferencesNothing,
-        ContractsReferencesOnlyCoreAndDomain, etc.), while TOPOLOGY-INTERNAL checks
+        ContractsReferencesOnlyCore, etc.), while TOPOLOGY-INTERNAL checks
         (sibling-package non-reference, third-party-dependency purity) live in the
         domain's own dedicated *TopologyRules class (SearchTopologyRules, documented
         below). Asserts that the supplied 09.Search assembly has no dependency on any of
@@ -1984,29 +2037,41 @@ DomainGoldStandardRules  (static class — domain convention enforcement predica
         Specification constructors must not call both ApplyOrderBy and ApplyOrderByDescending.
 
 ContractsPurityRules  (static class — contracts layer purity predicates)
-    All factory methods accept Assembly contractsAssembly and return ConditionList.
+    All factory methods accept Assembly contractsAssembly and return ConditionList. The two
+    integration-event rules also take the IIntegrationEvent marker interface as a caller-supplied
+    Type anchor (typeof(SharedKernel.Contracts.Events.IIntegrationEvent)), so this package declares
+    no dependency on SharedKernel.Contracts; RuleAnchor rejects a null assembly and a non-interface
+    anchor, which would otherwise select zero types and pass vacuously.
+    Every rule is proven both ways — fails on a contrived violation fixture, passes against the
+    real SharedKernel.Contracts assembly (ContractsPurityRulesTests). The real-assembly tests
+    exist because these rules were once only ever run against fixtures.
 
-    .ContractsAssembliesHaveNoNonTrivialMethods(Assembly)  → ConditionList
-        Asserts no type in the contracts assembly contains a non-trivial method — defined as
-        any method that is not a constructor, property getter/setter, static operator
-        (IsSpecialName and name starts with "op_"), or one of ToString/Equals/GetHashCode.
-        Uses NoNonTrivialMethodsPredicate (ICustomRule — see below). Failure message
-        includes the offending type name and first non-trivial method name.
+    Contract types versus integration events: a contracts assembly legitimately carries behaviour
+    on some types — validating factories (PageRequest.Create), projections (PagedList<T>.Map),
+    codecs (PageCursor.Encode). The rules therefore judge what reaches the wire (public
+    properties and fields), and the "no behaviour" rule applies only to integration events.
 
-        Rationale: DTOs and event payloads carry state, not behaviour. Any non-trivial method
-        in 04.Contracts signals domain logic leakage into the contracts layer.
-        Offending pattern: public class OrderDto { public bool IsExpired() => Deadline < DateTime.UtcNow; }
-        Compliant pattern: public record OrderDto(Guid Id, DateTimeOffset Deadline);
+    .IntegrationEventsHaveNoNonTrivialMethods(Assembly contractsAssembly, Type integrationEventInterface)  → ConditionList
+        Asserts no type implementing integrationEventInterface contains a non-trivial method.
+        A method is trivial if it is a constructor, property getter/setter, static operator
+        (IsSpecialName and name starts with "op_"), one of ToString/Equals/GetHashCode, or a
+        compiler-generated record member (Deconstruct, PrintMembers, <Clone>$). Uses
+        NoNonTrivialMethodsPredicate (ICustomRule — see below). Non-event contract types in the
+        same assembly are not judged.
+
+        Rationale: an integration event is a published fact — data only. A method on one is
+        logic every consumer would have to reimplement, and a reason to change the event that is
+        not a schema change.
+        Offending pattern: [IntegrationEvent("orders.order-placed")]
+            public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, DateTimeOffset Deadline)
+                : IIntegrationEvent { public bool IsExpired() => Deadline < DateTimeOffset.UtcNow; }
+        Compliant pattern: the same record with no method body.
 
     .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(Assembly)  → ConditionList
         Asserts no public type in the contracts assembly has a dependency on
-        "SharedKernel.Domain" (the domain assembly). Uses
-        .Should().NotHaveDependencyOn("SharedKernel.Domain") scoped to public types.
-        Exemption: EventEnvelope<TEvent> where TEvent : IDomainEvent — the generic
-        constraint references IDomainEvent; if NetArchTest picks this up as a dependency,
-        EventEnvelope must be explicitly excluded from the scan or the constraint must be
-        defined against a marker interface in SharedKernel.Primitives instead of SharedKernel.Domain.
-        Document the resolution in this CLAUDE.md if the exemption is applied.
+        "SharedKernel.Domain". Uses .Should().NotHaveDependencyOn("SharedKernel.Domain") scoped
+        to public types. No type is exempt — EventEnvelope<TEvent> is constrained to
+        IIntegrationEvent (SharedKernel.Contracts), not IDomainEvent, so it needs none.
 
         Rationale: Integration events and DTOs must be independent projections. Exposing
         Entity<TId>, AggregateRoot<TId>, ValueObject, or Specification<T> on a contracts
@@ -2015,32 +2080,42 @@ ContractsPurityRules  (static class — contracts layer purity predicates)
         Compliant pattern: public record OrderSummaryDto(Guid OrderId, string Status);
 
     .ContractsAssembliesHaveNoResultTypeOnPublicSurface(Assembly)  → ConditionList
-        Asserts no public type in the contracts assembly has a dependency on
-        "SharedKernel.Primitives" (where Result<T> and Result live). Uses
-        .Should().NotHaveDependencyOn("SharedKernel.Primitives") scoped to public types.
-        Failure message must include the specific offending type name from
-        .GetResult().FailingTypeNames.
+        Asserts no public type in the contracts assembly exposes Result, Result<T>,
+        ValidationResult or ValidationResult<T> (SharedKernel.Primitives) through a public
+        property or field. Uses NoResultTypedPublicMemberPredicate (ICustomRule — see below).
+        Public METHODS may still return these types: a validating factory
+        (PageRequest.Create → ValidationResult<PageRequest>) or a codec (PageCursor.Decode →
+        Result<T>) runs inside the service and never reaches the wire. Referencing
+        SharedKernel.Primitives for Error is likewise allowed — a dependency-level check cannot
+        tell a property from a factory, which is why this is a member-level rule.
 
-        Rationale: Result<T> is an intra-service discriminated union. Envelope<T> is the
-        cross-service HTTP wrapper. Exposing Result<T> in a serialized response payload causes
-        deserialization failures in any JSON client that does not share the SharedKernel.Primitives
-        assembly, breaking the polyglot contract model.
+        Rationale: Result<T> is an intra-service outcome type. Putting one in a serialized
+        payload causes deserialization failures in any JSON client that does not share the
+        SharedKernel.Primitives assembly. Map the outcome to a success payload or an RFC 9457
+        problem response at the boundary instead.
         Offending pattern: public class CreateOrderResponse { public Result<Guid> OrderId { get; set; } }
         Compliant pattern: public record CreateOrderResponse(Guid OrderId);
 
-    .IntegrationEventImplementationsMustBeSealed(Assembly)  → ConditionList
-        Asserts every non-abstract type implementing IIntegrationEvent is sealed.
-        Uses: Types.InAssembly(assembly).That().ImplementInterface(typeof(IIntegrationEvent))
+    .IntegrationEventImplementationsMustBeSealed(Assembly contractsAssembly, Type integrationEventInterface)  → ConditionList
+        Asserts every non-abstract type implementing integrationEventInterface is sealed.
+        Uses: Types.InAssembly(assembly).That().ImplementInterface(integrationEventInterface)
             .And().AreNotAbstract().Should().BeSealed()
-        If .BeSealed() is not available in NetArchTest.eNt 1.3.2, fall back to a custom
-        ICustomRule that inspects TypeDefinition.IsSealed (records are IsSealed in IL).
         Failure message names the offending type.
 
         Rationale: Non-sealed integration events are an inheritance trap. A sub-event changes
-        the wire format without incrementing [DomainEventVersion], causing silent schema drift.
-        sealed or record ensures the wire contract is closed.
+        the wire format without a new [IntegrationEvent(..., Version = n)], causing silent schema
+        drift. sealed ensures the wire contract is closed.
         Offending pattern: public class OrderCreatedEvent : IIntegrationEvent { ... }
         Compliant pattern: public sealed record OrderCreatedEvent : IIntegrationEvent { ... }
+
+    SK0038/SK0039 companion rules — documented in Diagnostic Rule Registry above:
+        Every non-abstract IIntegrationEvent implementor must carry a valid
+        [IntegrationEvent("name", Version = n)] attribute.
+
+    Removed: ContractsLayeringRules.NoDirectEventEnvelopeConstructionOutsideContracts and its
+        NoDirectEventEnvelopeConstructionPredicate. EventEnvelope<TEvent> has no public
+        constructor or setter, so construction outside EventEnvelope.Wrap no longer compiles and
+        the IL scan had nothing left to catch.
 
     Rule 5 (documentation-only — not a NetArchTest rule):
         Microservices must not reference SharedKernel.Domain directly unless they implement
@@ -2054,9 +2129,21 @@ NoNonTrivialMethodsPredicate  (class : ICustomRule — internal predicate)
     Inspects TypeDefinition.Methods for each type. A method is non-trivial if all of the
     following are false: IsConstructor, IsGetter, IsSetter, (IsSpecialName and Name starts
     with "op_"), Name is "ToString" or "Equals" or "GetHashCode".
+    Record members are also trivial: any method carrying [CompilerGenerated], any name starting
+    with "<" (e.g. <Clone>$), and Deconstruct/PrintMembers.
     Returns false (rule violated) for the first non-trivial method found; failure message
     includes the declaring type name and the method name. Lives in Predicates/ folder.
-    Used by ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods.
+    Used by ContractsPurityRules.IntegrationEventsHaveNoNonTrivialMethods.
+
+NoResultTypedPublicMemberPredicate  (class : ICustomRule — Mono.Cecil predicate)
+    Fails a type exposing a public property (public getter or setter) or public field whose
+    type is, or contains, Result / Result`1 / ValidationResult / ValidationResult`1 declared in
+    SharedKernel.Primitives or a child namespace (matched on the outermost declaring type's
+    namespace, so the check does not depend on which sub-namespace the outcome types live in).
+    The member type is inspected recursively — generic arguments and TypeSpecification element
+    types — so Result<Guid>?, Result[] and IReadOnlyList<ValidationResult<T>> are all caught.
+    Method return types and parameters are deliberately NOT inspected. Lives in Predicates/.
+    Used by ContractsPurityRules.ContractsAssembliesHaveNoResultTypeOnPublicSurface.
 
 PersistenceLayerProtectionRules  (static class — EF Core persistence layer contract predicates)
     All factory methods accept Assembly as their parameter and return ConditionList.
@@ -2515,7 +2602,7 @@ CoreArchitectureRules  (static class — 01.Core-domain conventions; the platfor
     Note: Introduced in WO-083 P-523 (SK.00.CoreDiRegistrationConventionLock). Lives in
     SharedKernel.ArchitectureTests/Rules/CoreArchitectureRules.cs. Reuses the existing
     Mono.Cecil >= 0.11.5 and NetArchTest.eNt references — no new NuGet dependency, no new SK
-    diagnostic ID (SK0037 remains next available).
+    diagnostic ID.
 
 NoPlainServiceCollectionRegistrationPredicate  (class : ICustomRule — internal predicate)
     For every method body declared on a scanned type, flags a Call/Callvirt instruction
@@ -2927,7 +3014,7 @@ CommunicationLayeringRules  (static class — Communication layer boundary enfor
         Offending pattern: SharedKernel.Communication.Rest referencing IDistributedCache
             (from 02.Caching) to cache response payloads
         Compliant pattern: SharedKernel.Communication.Rest referencing only SharedKernel.Core
-            types for primitive extensions and SharedKernel.Contracts for envelope types
+            types for primitive extensions and SharedKernel.Contracts for pagination types
 
     .CommunicationInternalNeverReferencesOtherCommunicationPackages(Assembly internalAssembly) → ConditionList[]
         Asserts that SharedKernel.Communication.Internal has no dependency on any of:
@@ -2996,7 +3083,7 @@ CommunicationLayeringRules  (static class — Communication layer boundary enfor
         SharedKernel.Contracts namespace. Single Types.InAssembly(grpcAssembly).Should()
         .NotHaveDependencyOn("SharedKernel.Contracts") call.
         Rationale: SharedKernel.Communication.Grpc is a protocol adapter. The cross-service
-        DTO layer (SharedKernel.Contracts — PagedList, Envelope, integration event payloads)
+        DTO layer (SharedKernel.Contracts — pagination types, integration event payloads)
         must not flow into gRPC transport code; the dependency was introduced as a dead import
         in P-163 and was removed in the same PR. This rule mechanically prevents re-introduction.
         Failure message: "SharedKernel.Communication.Grpc has a dependency on
@@ -3079,9 +3166,8 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         Rationale: hand-rolled ProblemDetails construction outside the WebApi package bypasses the
         platform's single error-shape mapping (ErrorTypeStatusCodeMap, traceId population,
         Detail-suppression-outside-Development) and reintroduces the inconsistent error-body problem
-        14.Presentation exists to close. Mirrors the precedent set by SK0013 (raw HttpClient) and
-        the WO-026 Result/Envelope inline-mapping prohibition — mechanical enforcement, not
-        documentation-only guidance.
+        14.Presentation exists to close. Mirrors the precedent set by SK0013 (raw HttpClient) —
+        mechanical enforcement, not documentation-only guidance.
         Offending pattern: return Results.Problem(new ProblemDetails { Title = "Bad request",
             Status = 400 }); inside a microservice endpoint
         Compliant pattern: return error.ToProblemDetails() routed through Results.Problem(...), or
@@ -3110,11 +3196,9 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         inline IsSuccess/IsFailure branching before an HTTP response."
         Rationale: inline "if (result.IsSuccess) ... else ..." branching immediately before
         returning an HTTP response type duplicates the platform's Result→HTTP mapping logic at every
-        call site, exactly the precedent already closed for Result<T>→Envelope<T> boundary mapping
-        (WO-026 P-166/167's documented backlog item — this phase is the SK0xxx-style mechanical
-        closure of that backlog note, implemented as a NetArchTest rule rather than a Roslyn
-        analyzer because the detection surface is IL-level method-body co-occurrence, consistent
-        with how SK0301-style domain/application misuse rules are implemented).
+        call site. Implemented as a NetArchTest rule rather than a Roslyn analyzer because the
+        detection surface is IL-level method-body co-occurrence, consistent with how SK0301-style
+        domain/application misuse rules are implemented.
         Offending pattern: if (result.IsSuccess) return Results.Ok(result.Value); else return
             Results.Problem(...); inside a Minimal API endpoint delegate or controller action
         Compliant pattern: return result.ToProblemDetailsResult(value => Results.Ok(value));
@@ -3129,12 +3213,12 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         never reference 04.Contracts." SharedKernel.Presentation.Grpc takes a deliberate
         ProjectReference on SharedKernel.Presentation.WebApi (to reuse RequireRoleAttribute/
         RequirePermissionAttribute/RequireFreshAuthenticationAttribute/
-        RequireAuthenticationMethodAttribute verbatim, D-73/D-74), and SharedKernel.Presentation.
-        WebApi itself references 04.Contracts — .NET project references flow transitively, so
-        SharedKernel.Contracts.dll is genuinely present in SharedKernel.Presentation.Grpc's own
-        reference closure and a developer CAN write "using SharedKernel.Contracts;" inside a gRPC
-        service method and have it compile. NotHaveDependencyOn is the correct, sufficient
-        mechanism anyway: it inspects each scanned type's ACTUAL Mono.Cecil-observed dependency
+        RequireAuthenticationMethodAttribute verbatim, D-73/D-74). SharedKernel.Presentation.WebApi
+        no longer references 04.Contracts (the reference was unused and has been removed), so
+        SharedKernel.Contracts.dll is no longer in SharedKernel.Presentation.Grpc's reference
+        closure through WebApi at all; this rule now guards against a direct or transitive
+        reference being reintroduced and used. NotHaveDependencyOn is the correct, sufficient
+        mechanism either way: it inspects each scanned type's ACTUAL Mono.Cecil-observed dependency
         namespaces, never the assembly-level reference list a ProjectReference populates — a type
         merely being reachable via the reference closure does not fail this check, only an actual
         SharedKernel.Contracts.* type USE inside a SharedKernel.Presentation.Grpc type does.
@@ -4420,8 +4504,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     correctly reports the gap rather than passing — mirroring `SK.00.CorsWildcardCredentialsGuard`'s
     validator-vs-throw design/reality-mismatch lesson applied pre-emptively here rather than
     retroactively.
-    No new SK diagnostic ID — SK0033 remains the next available sequential Roslyn-analyzer ID, not
-    consumed here.
+    No new SK diagnostic ID is consumed here.
     <para>
     <strong>Real-assembly status (Technique A/B — `SK.00.CacheEncryptionAndRedisValidationLock`/WO-065/
     P-437).</strong> CORRECTED AT IMPLEMENTATION TIME (2026-08-24) — this phase's own authoring-time
@@ -4549,7 +4632,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     Recorded here as a candidate follow-up phase for a future work order, not silently dropped.
     No new SK diagnostic ID — this is a real-assembly regression-lock on an already-designed
     (not-yet-implemented) guard's structure, not a source-level anti-pattern a Roslyn analyzer should
-    catch. SK0037 remains the next available sequential Roslyn-analyzer ID, not consumed here.
+    catch. No SK diagnostic ID is consumed here.
 
     Eleventh real-world application/self-repair, 2026-09-09, triggered by `01.Core`'s WO-083 P-524
     (key-material zeroization) — a SECOND governance lock disturbed by a domain change in the same
@@ -4954,125 +5037,6 @@ IntelligenceTopologyRules  (static class — 10.Intelligence package topology en
     established "annotate, never silently rewrite" convention (see SK0025's/StorageTopologyRules's/
     SearchTopologyRules's own CORRECTED notes for precedent).
 
-ContractsLayeringRules  (static class — 04.Contracts wire-format construction-path enforcement predicates; WO-054 P-350)
-    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
-
-    .NoDirectEventEnvelopeConstructionOutsideContracts(params Assembly[] assemblies) → ConditionList
-        Asserts that no type in the supplied assemblies directly instantiates
-        SharedKernel.Contracts.Events.EventEnvelope<TEvent> via its compiler-generated
-        parameterless (object-initializer) constructor. Uses
-        NoDirectEventEnvelopeConstructionPredicate (ICustomRule — see below). The caller
-        supplies every assembly to be checked EXCEPT SharedKernel.Contracts itself — there is
-        no internal namespace exemption inside the predicate; exclusion is achieved by the
-        caller never passing that assembly, identical in mechanism to
-        PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi's
-        WebApi-package exclusion (WO-031 P-199).
-        Failure message: "{TypeDefinition.FullName}.{method} directly constructs
-        EventEnvelope<TEvent> via object-initializer syntax. Use EventEnvelope.Wrap<TEvent>()
-        from SharedKernel.Contracts instead."
-        Rationale: EventEnvelope<TEvent> is the platform's one cross-service event wire format;
-        its own XML doc states "EventEnvelope.Wrap<TEvent> is the only permitted construction
-        path. Do not construct instances directly," and 04.Contracts/CLAUDE.md repeats the same
-        claim ("The Wrap factory is the only permitted construction path for outbound events").
-        This WO-054 review found the platform's own shipped MassTransitEventPublisher
-        (07.Messaging/SharedKernel.Messaging.MassTransit) violating that exact,
-        documentation-only contract — constructing the envelope via a raw object initializer and
-        never populating the TenantId field 04.Contracts shipped specifically for cross-service
-        tenant routing (WO-052/P-331) — proof that a documented-only convention is not sufficient
-        for a contract this consequential. Mirrors the precedent set by SK0013 (raw HttpClient),
-        SK0020/SK0021 (ad hoc logging), and PresentationLayeringRules (inline ProblemDetails) —
-        mechanical enforcement, not documentation-only guidance, closes the gap for good, here
-        and for any future consumer of EventEnvelope<TEvent>.
-        Offending pattern (the real, motivating defect — 07.Messaging's
-        MassTransitEventPublisher.PublishEnvelope<TEvent> before its P-340 fix):
-            var envelope = new EventEnvelope<TEvent> {
-                EventId = domainEvent.Id, OccurredOn = domainEvent.OccurredOn,
-                EventType = typeof(TEvent).Name, EventVersion = version,
-                SourceService = sourceService, Payload = domainEvent };
-        Compliant pattern: var envelope = EventEnvelope.Wrap(domainEvent, sourceService,
-            correlationId, causationId, tenantId);
-
-    Permitted exemption list:
-        - SharedKernel.Contracts — never passed to the factory method by the caller; there is
-          no internal namespace-prefix exemption inside the predicate. EventEnvelope.Wrap<TEvent>
-          is the sole legitimate construction site and lives in this assembly
-          (Events/EventEnvelope.cs). Any future legitimate exception must be documented here
-          before being added — until then, exclusion is achieved exclusively by caller choice of
-          which assemblies to pass, identical in spirit to RedisTopologyRules's/
-          PresentationLayeringRules's caller-supplied assembly lists.
-        - A caller that legitimately invokes EventEnvelope.Wrap<TEvent>() needs no exemption at
-          all — its own compiled IL contains only a Call/Callvirt to EventEnvelope.Wrap, never a
-          Newobj targeting EventEnvelope<TEvent>. The newobj instruction that actually constructs
-          the record lives inside SharedKernel.Contracts.dll's own Wrap<TEvent> method body — a
-          different assembly entirely from any caller's. This is a structural, not
-          policy-based, non-detection — a different mechanism from (but the same class of
-          self-exemption as) the compiler's Expression<TDelegate>-lowering that structurally
-          exempts NoDirectEfPropertyUsagePredicate's one legitimate call shape: here it is
-          cross-assembly IL locality, there it is expression-tree lowering.
-
-    Note: Introduced in WO-054 P-350. No new SK diagnostic ID assigned — pure NetArchTest
-    ConditionList predicate over Mono.Cecil IL inspection, following the same "boundary-mapping
-    prohibition via architecture test, not Roslyn analyzer" precedent already established for
-    SK-less rules in this domain (RedisTopologyRules, CompositionRootExclusivityRules,
-    GrpcNeverReferencesContracts, PresentationLayeringRules, EfCorePackageHygieneRules's fourth
-    predicate) — chosen over the phase input's own cited SK0013/SK0020 Roslyn-analyzer
-    precedents because PresentationLayeringRules.NoDirectProblemDetailsConstructionPredicate is
-    the closer structural analog (a sealed/record wire-format type with exactly one legitimate
-    construction site elsewhere in the platform, no compiler-lowering ambiguity to resolve,
-    detected via Newobj IL-opcode presence) and because the phase's own acceptance criteria
-    require verification against "real compiled assemblies" — this domain's established idiom
-    for the IL/Mono.Cecil technique, distinct from the "real-source audit" idiom used for Roslyn
-    analyzers (e.g. SK0030's real-source audit). A NEW class (ContractsLayeringRules), not a
-    fifth predicate on the existing ContractsPurityRules, was chosen deliberately —
-    ContractsPurityRules governs 04.Contracts's OWN internal purity (no domain types on its
-    public surface, no non-trivial methods, sealed integration events, no Result-type on public
-    surface); this rule governs how OTHER assemblies must construct one of 04.Contracts's types —
-    the same "protect this domain's boundary from outside misuse" direction
-    PresentationLayeringRules/CommunicationLayeringRules/MessagingArchitectureRules already
-    established under a `{Domain}LayeringRules` name. Folding it into ContractsPurityRules would
-    have conflated two structurally different rule shapes that only coincidentally share a domain
-    number. Lives in SharedKernel.ArchitectureTests/Rules/ContractsLayeringRules.cs.
-
-NoDirectEventEnvelopeConstructionPredicate  (class : ICustomRule — internal predicate)
-    For each type (no namespace exemption — see ContractsLayeringRules note above), walks
-    TypeDefinition.Methods.Body.Instructions for Newobj opcodes. For each Newobj instruction,
-    checks THREE conditions, all of which must hold:
-      (1) MethodReference.DeclaringType.Namespace == "SharedKernel.Contracts.Events" (exact)
-      (2) MethodReference.DeclaringType.Name == "EventEnvelope`1" (exact — Mono.Cecil's
-          TypeReference.Name for a GenericInstanceType returns the simple name including the
-          backtick-arity suffix, undecorated by the substituted closed type argument; the same
-          generic-Newobj-target technique family as
-          NoDirectEncryptedValueConverterInstantiationPredicate's
-          DeclaringType.Name.Contains("EncryptedValueConverter") match, refined here to an exact
-          Namespace+Name match rather than a bare Name substring, because "EventEnvelope" alone
-          is a more collision-prone simple name than "EncryptedValueConverter")
-      (3) MethodReference.Parameters.Count == 0 (the compiler-generated public parameterless
-          constructor a record with only `required ... { get; init; }` properties and no
-          positional parameter list synthesizes, used by object-initializer construction syntax
-          `new EventEnvelope<TEvent> { ... }`; deliberately excludes the record's separate
-          one-parameter copy constructor — `.ctor(EventEnvelope<TEvent>)` — used by `with`
-          expressions, so `envelope with { CorrelationId = "..." }` on an already-Wrap-
-          constructed instance is NOT flagged, a deliberate scope decision: a `with` expression
-          mutates an existing legitimately-constructed envelope rather than fabricating new
-          envelope identity/routing metadata from scratch)
-    Returns false (rule violated) on the first Newobj matching all three conditions, with
-    failure message naming the offending type, method, and the compliant
-    EventEnvelope.Wrap<TEvent>() alternative. This THREE-condition Namespace+Name+ParameterCount
-    match is a new refinement over every prior generic-Newobj predicate in this domain — the
-    parameter-count discriminator in particular has no direct precedent (every prior Newobj
-    predicate in this domain matches on DeclaringType alone, since none of their target types
-    carries a second, differently-shaped legitimate constructor the rule must avoid flagging).
-    Both the namespace/name pair and the zero-parameters discriminator MUST be confirmed
-    empirically against real compiled IL during implementation (compile a fixture calling
-    EventEnvelope.Wrap<TEvent>() and a fixture using a `with` expression, inspect the emitted IL
-    directly), not merely assumed from this design's prose — per this domain's established
-    "confirmed empirically, not assumed" discipline (see SK0025's/StorageTopologyRules's/
-    SearchTopologyRules's/NoDirectEfPropertyUsagePredicate's own precedent). Reuses the
-    established Mono.Cecil Newobj-walk pattern from
-    NoDirectEncryptedValueConverterInstantiationPredicate/
-    NoDirectProblemDetailsConstructionPredicate. Lives in Predicates/ folder. Used by
-    ContractsLayeringRules.NoDirectEventEnvelopeConstructionOutsideContracts.
-
 SecurityArchitectureRules  (static class — 12.Security hard-rule enforcement predicates; WO-057 P-373)
     .DomainNeverReferencesTenantProvider(Assembly domainAssembly)  → ConditionList
         Asserts that no type in the supplied 03.Domain assembly has a field, constructor/method
@@ -5342,8 +5306,10 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0008 `AggregateRootDispatchCouplingAnalyzer` checks `ConstructorDeclarationSyntax` parameter types — not `ObjectCreationExpression` or field declarations. The type name check for `IAggregateRoot` uses `SimpleNameSyntax` or `GenericNameSyntax` identifier text (not the full `ToString()`). Dispatch-context check applies to both the class name and all ancestor `NamespaceDeclarationSyntax` / `FileScopedNamespaceDeclarationSyntax` names via the established parent walk pattern. No semantic model required.
 - SK0009 `DomainEventMissingVersionAttributeAnalyzer` operates on both `ClassDeclarationSyntax` and `RecordDeclarationSyntax`. The base list check is a simple name match — `BaseList.Types` iterated for any `SimpleNameSyntax` or `IdentifierNameSyntax` whose identifier text is `"IDomainEvent"`. Abstract types are excluded via `Modifiers.Any(SyntaxKind.AbstractKeyword)`. No semantic model required.
 - SK0010 `SpecificationOrderingConflictAnalyzer` collects `InvocationExpressionSyntax` nodes from the constructor body. The method name is extracted from `MemberAccessExpressionSyntax.Name.Identifier.Text` or, for simple invocations, directly from `IdentifierNameSyntax.Identifier.Text`. Both `"ApplyOrderBy"` and `"ApplyOrderByDescending"` must appear for SK0010 to fire. No semantic model required.
-- `ContractsPurityRules.ContractsAssembliesHaveNoDomainTypeOnPublicSurface` — if NetArchTest's dependency scanner picks up the `EventEnvelope<TEvent> where TEvent : IDomainEvent` generic constraint as a dependency on `SharedKernel.Domain`, the `EventEnvelope` type must be explicitly excluded from the scan using `.And().DoNotHaveName("EventEnvelope")` before the `.Should()` clause. Document the exclusion in the architecture test fixture.
-- `ContractsPurityRules.IntegrationEventImplementationsMustBeSealed` — if `.BeSealed()` is not exposed by `NetArchTest.eNt` 1.3.2, implement a `SealedTypePredicate` ICustomRule that checks `TypeDefinition.IsSealed`. Record the API surface check result in `00.Governance/CLAUDE.md` once confirmed.
+- `ContractsPurityRules.ContractsAssembliesHaveNoDomainTypeOnPublicSurface` carries no exemption. `EventEnvelope<TEvent>` is constrained to `IIntegrationEvent` (declared in `SharedKernel.Contracts` itself), so nothing in the real contracts assembly depends on `SharedKernel.Domain`; a fixture whose envelope-shaped type is constrained to a domain type fails the rule, and that is the intended behaviour.
+- Every `ContractsPurityRules` factory method and `SharedKernelLayeringRules.ContractsReferencesOnlyCore` must keep a pass-path test against the real `SharedKernel.Contracts` assembly (`typeof(EventEnvelope).Assembly`) alongside its contrived fixtures. The earlier rule set was proven only on fixtures and failed the first time it met the real package.
+- `ContractsPurityRules` judges wire surface, not behaviour, except on integration events: a factory, projection or codec method on a non-event contract type (`PageRequest.Create`, `PagedList<T>.Map`, `PageCursor.Decode`) is legitimate and may return `Result`/`ValidationResult`. Never widen `IntegrationEventsHaveNoNonTrivialMethods` back to every type, and never turn `NoResultTypedPublicMemberPredicate` into a dependency-level check — both would fail the real package.
+- `ContractsPurityRules.IntegrationEventImplementationsMustBeSealed` uses NetArchTest's own `.BeSealed()` — no custom `SealedTypePredicate` is needed.
 - `PersistenceLayerProtectionRules.OnlyEfUnitOfWorkMayCallSaveChanges` — the namespace exemption (`TypeDefinition.Namespace.StartsWith("SharedKernel.Persistence.EfCore")`) is evaluated as the first guard inside `NoDirectSaveChangesPredicate`. Do not apply the exemption at the `PersistenceLayerProtectionRules` call site — it belongs inside the predicate so the rule correctly self-documents the single permitted caller.
 - `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable` — the `"IRepository"` prefix check on `TypeDefinition.Interfaces` is intentionally broad: it covers `IRepository<T,TId>`, `IReadRepository<T,TId>`, and any sub-interface. `IQueryable` is matched by `ReturnType.Name == "IQueryable"` (non-generic) or `ReturnType.FullName.Contains("IQueryable")` (generic). Both checks are required to cover the IL representation of `IQueryable<T>`.
 - `PersistenceLayerProtectionRules.DomainAssembliesNeverReferencePersistenceStack` is additive with `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure` — both rules may run in the same test suite. They are not duplicates: the latter covers broad infra terms; this rule adds Npgsql and `SharedKernel.Persistence.*` as a WO-013-scoped gate. Never remove either in favour of the other.
@@ -5422,7 +5388,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `NoBareHealthCheckLiteralWhereConstantsExistPredicate` and `HealthCheckConstantsUsageRules` must **never** contain a concrete constants-class name (e.g. `"HealthCheckTags"`, `"HealthCheckNames"`) as a string literal anywhere in the implementation. This is the acceptance-critical generality requirement from WO-028 P-178 — the rule must generalize unmodified to any future domain's constants class. Code review must reject any PR that adds a name-specific check to this rule; if a domain needs name-specific enforcement, that belongs in a new, separately-scoped rule, not a special case bolted onto this one.
 - **Confirmed declaring-type names** (verified by direct Mono.Cecil inspection of the .NET 10 `Microsoft.AspNetCore.App.Ref` reference assemblies, package `Microsoft.Extensions.Diagnostics.HealthChecks` / `.Abstractions`): `Add(HealthCheckRegistration)` is declared on both the interface `Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder` and the concrete `Microsoft.Extensions.DependencyInjection.HealthChecksBuilder`. `AddCheck` overloads are declared across two extension-method host classes — `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderAddCheckExtensions` and `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderDelegateExtensions` — both matched by `NoBareHealthCheckLiteralWhereConstantsExistPredicate` via a `declaringTypeName.StartsWith("HealthChecksBuilder")` check rather than an exact-name list, so it also covers any future extension-method host class following the same naming convention. The `HealthCheckRegistration` constructor is `Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration::.ctor`. Verified against package version shipped with the .NET 10 SDK (`Microsoft.AspNetCore.App.Ref` 10.0.7) — re-verify if the platform ever pins an explicit `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet version that diverges from the SDK-bundled one.
 - `StringConstantsClassDetector` resolves literal *values*, not names — the predicate compares the bare literal's string value against the resolved constant value set, never against a field or class name. This is the design choice that lets the rule fire correctly regardless of what the constants class or its fields are named, and is what makes the rule catch the exact P-177 incident shape (a literal that happens to equal an existing constant's value) without requiring any naming convention from the consuming domain.
-- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — both rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔`Envelope`, now `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. Neither predicate carries an internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. Document any future internal exemption here before adding one to either predicate.
+- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — both rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. Neither predicate carries an internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. Document any future internal exemption here before adding one to either predicate.
 - `NoDirectProblemDetailsConstructionPredicate` matches on `MethodReference.DeclaringType.FullName` exact string equality against `"Microsoft.AspNetCore.Mvc.ProblemDetails"` and `"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"` — both are concrete framework types, so a `newobj` opcode is always the construction site (no factory-method indirection to account for, unlike `EncryptedValueConverter<T>`). Reuses the `Newobj`-walk pattern from `NoDirectEncryptedValueConverterInstantiationPredicate` — no new NuGet dependency.
 - `NoInlineResultBranchBeforeHttpResultPredicate` is a **method-level co-occurrence check, not a control-flow analysis**. It does not verify that the `IsSuccess`/`IsFailure` read occurs immediately before the `IResult`/`ActionResult` return — it only verifies that both signals appear somewhere in the same method body and that no `ToProblemDetailsResult` call also appears in that body. This is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique) — a method that reads `IsSuccess` for an unrelated logging decision and separately returns an `IResult` for an unrelated reason would also be flagged. If this produces real false positives in practice, narrow the check to control-flow adjacency in a follow-up phase; do not narrow it speculatively now.
 - `NoInlineResultBranchBeforeHttpResultPredicate`'s `Result`/`Result<T>` type-name match (`"Result"` exact or `"Result\`1"` prefix for the IL generic-arity-suffixed name) targets `SharedKernel.Primitives.Result`/`Result<T>` specifically. If a consuming assembly defines an unrelated type also named `Result` with its own `IsSuccess`/`IsFailure` properties, this predicate cannot distinguish them without a `DeclaringType.Namespace` check — add a namespace guard (`"SharedKernel.Primitives"`) if this false-positive risk is ever confirmed in practice; it is not added pre-emptively because no such collision is known to exist in this platform's codebase today.
@@ -5469,7 +5435,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0024 is the platform's first refactor-safety/`nameof()`-encouragement rule, distinct in INTENT from SK0022's cross-cutting-wire-contract magic-string prohibition even though both share the identical literal-vs-reference syntax-shape discriminator (`LiteralExpressionSyntax` of kind `StringLiteralExpression`, declaring-class-agnostic — a domain-local field-constants class satisfies the rule exactly as well as an inline `nameof(...)`). Do not merge SK0024 into SK0022's four call-site shapes or attempt to generalize SK0022 to cover it — SK0022 fires on genuinely cross-cutting/wire-contract literals (HTTP headers, OTel baggage, config sections, claim types), while SK0024's motivating hazard is the Meilisearch-visible/ElasticSearch-silent asymmetry specific to `09.Search`'s two-provider query surface, a different rationale that this file's own SK0022 entry does not and should not reference.
 - SK0024's eleven recognized call-site shapes (six on `IQueryBuilder<TDocument>`/`SearchQueryBuilder<TDocument>`, five on `SearchFilter`'s static factories) are resolved via `SemanticModel.GetSymbolInfo` against `SharedKernel.Search.Abstractions`'s exact declaring types. CONFIRMED at implementation time (2026-07-24) directly against the real shipped source: `IQueryBuilder<TDocument>` lives at `SharedKernel.Search.Abstractions.Querying.IQueryBuilder` (`Querying/IQueryBuilder.cs`) and `SearchFilter` at `SharedKernel.Search.Abstractions.Models.SearchFilter` (`Models/SearchFilter.cs`) — both namespaces match the analyzer's hardcoded `QueryBuilderInterfaceFullName`/`SearchFilterFullName` constants exactly; `SearchQueryBuilder<TDocument>` (the concrete sealed implementor, `Querying/SearchQueryBuilder.cs`) is matched by name (`SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder`) though no test fixture exercises it directly since application code invokes these methods through the `IQueryBuilder<TDocument>` interface returned by `SearchQuery.For<TDocument>()`, never through the concrete type. For the four `params string[]` shapes (`SearchingIn`, `Faceting`, `WithNumericFacetStats`, `Returning`), the analyzer walks every argument expression at that parameter position individually — both the multi-argument call form and any array/collection-expression form (`ArrayCreationExpressionSyntax`, `ImplicitArrayCreationExpressionSyntax`, and `CollectionExpressionSyntax` are all handled).
 - `SearchTopologyRules` (WO-044 P-278) mirrors `StorageTopologyRules`'s structure and its documented `NotHaveDependencyOn` matching contract exactly (namespace `StartsWith`, no trailing dot, self-collision awareness) but is scoped to `09.Search`'s two SIBLING provider packages (`SharedKernel.Search.Meilisearch`/`.ElasticSearch`, mirroring `08.Storage`'s `.S3`/`.Obs` sibling-not-`.Core`-split precedent exactly, per `09.Search/CLAUDE.md`'s own explicit rejection of a `SharedKernel.Search.Core`). `.AbstractionsHasNoThirdPartyDependencies` carries a SIXTH forbidden term (`"Microsoft.Extensions"`) beyond `StorageTopologyRules`'s five-term analog, because `09.Search/CLAUDE.md` documents `SharedKernel.Search.Abstractions` as having a stricter dependency posture than `SharedKernel.Storage.Abstractions` — zero `PackageReference` of any kind, not even `Microsoft.Extensions.DependencyInjection.Abstractions` (which `SharedKernel.Caching.Abstractions` IS permitted). No new Mono.Cecil technique and no new `ICustomRule` — pure `NetArchTest` checks, zero new NuGet dependency.
-- `SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts` (WO-044 P-278) is the first method on `SharedKernelLayeringRules` to return `ConditionList[]` instead of a single `ConditionList` — every sibling method on that class (`CoreReferencesNothing`, `ContractsReferencesOnlyCoreAndDomain`, etc.) predates the newer domain-boundary-rule-class convention (`RedisTopologyRules`/`CommunicationLayeringRules`/`StorageTopologyRules`) of returning one `ConditionList` per forbidden term for per-term failure-message granularity; this method deliberately follows that newer convention rather than the older single-`ConditionList` shape of its own siblings, because it is the first `SharedKernelLayeringRules` method checking against more than two or three forbidden terms (fifteen, one per every OTHER numbered domain's package family). Document any future simplification to a single `.NotHaveDependencyOnAny(string[])` call here before applying it — see the method's own entry above for the exact fallback condition.
+- `SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts` (WO-044 P-278) is the first method on `SharedKernelLayeringRules` to return `ConditionList[]` instead of a single `ConditionList` — every sibling method on that class (`CoreReferencesNothing`, `ContractsReferencesOnlyCore`, etc.) predates the newer domain-boundary-rule-class convention (`RedisTopologyRules`/`CommunicationLayeringRules`/`StorageTopologyRules`) of returning one `ConditionList` per forbidden term for per-term failure-message granularity; this method deliberately follows that newer convention rather than the older single-`ConditionList` shape of its own siblings, because it is the first `SharedKernelLayeringRules` method checking against more than two or three forbidden terms (fifteen, one per every OTHER numbered domain's package family). Document any future simplification to a single `.NotHaveDependencyOnAny(string[])` call here before applying it — see the method's own entry above for the exact fallback condition.
 - The fifteen-term forbidden list inside `SearchReferencesOnlyCoreAndContracts` is an EXPLICIT enumeration, not a derived/reflective one — per this file's own long-standing Implementation Rule ("Architecture tests in `SharedKernelLayeringRules` must mirror the layering table in the root `CLAUDE.md` exactly. If a new domain (folder XX) is added, the layering rules must be updated in the same PR"), a future `18.NewDomain` addition to the root `CLAUDE.md` Folder Map MUST append its package-family namespace term to this list in the SAME PR that adds the new domain, or this rule will silently under-enforce against the new domain the way it would against any of the fourteen domains already listed if one were accidentally omitted today. `"SharedKernel.AI"` (not `"SharedKernel.Intelligence"`) is the correct term for `10.Intelligence` — confirmed against the root `CLAUDE.md` Abstractions table (`SharedKernel.AI.Abstractions` / `.VectorDb`), a package-family-name-vs-folder-name mismatch worth flagging explicitly since it is the one term in the list that does not match its folder name.
 - **Real-assembly status for `SK0024`/`SK0025`/`SearchTopologyRules`/`SearchReferencesOnlyCoreAndContracts` — CORRECTED at implementation closeout (2026-07-24).** At this phase's authoring (2026-07-19), `09.Search`'s own `state-map.md` showed the entire Design phase (D-01 through D-28, covering P-272/P-273/P-274) at `○` and only bare `.csproj` skeletons existed on disk for all three packages, so the phase spec instructed CONTRIVED-fixtures-only design. By the time this phase was implemented (2026-07-24), `09.Search` had independently reached Published — 139/139 tasks `●` across all six phases — and `SharedKernel.Search.Abstractions`/`.Meilisearch`/`.ElasticSearch` exist as real, buildable assemblies. Real-assembly verification was therefore wired in THIS phase per the phase's own GATING acceptance criterion, exactly mirroring the `SK.00.StorageTopology` precedent for the identical class of dependency-resolved-before-implementation finding: `SharedKernel.ArchitectureTests.Tests.csproj` gained three test-only `ProjectReference`s (`PrivateAssets="all"`) to the real `09.Search` assemblies, and `SearchTopologyRulesTests.cs` carries two `Real*`-suffixed tests confirming both `SearchTopologyRules` factory methods pass against the shipped packages — no discrepancy from the design-time contrived-fixture behavior was found. The six contrived-fixture fire/pass-path tests (T-208–T-211, plus one extra `Microsoft.Extensions`-specific fire-path case) remain the primary red/green proof, per the phase spec's own instruction that they "remain the primary red/green proof" even when real-assembly verification becomes possible.
 - **SK0025 implementation-time correction (discovered while writing T-205/T-206, 2026-07-24).** The design-time Trigger prose (see the SK0025 diagnostic-registry entry's own correction note for the full account) additionally named `QualifiedNameSyntax`/`UsingDirectiveSyntax` as registered syntax kinds and did not anticipate two genuine false-positive sources: (1) a NAMESPACE symbol (the bare `"Nest"` segment of a `using` directive, or the left-hand side of a qualified name) ALSO carries a `ContainingAssembly.Name` equal to the deprecated package's assembly name in Roslyn's symbol model — an `ITypeSymbol` filter is required, or the rule fires on every `using` directive and qualified-name prefix in addition to the real type reference; (2) the `"var"` contextual keyword in an implicitly-typed local declaration is itself an `IdentifierNameSyntax` whose `GetSymbolInfo` resolves to the INFERRED type — an explicit `Identifier.ValueText == "var"` guard is required, or the rule double-fires on every `var client = new ElasticClient();`-shaped statement. `SK0025_ObsoleteElasticsearchClientUsageAnalyzerTests.cs` is the first analyzer test file in this project needing a genuinely separate compiled reference assembly with a specific `AssemblyName` (via `Microsoft.CodeAnalysis.Testing.SolutionState.AdditionalProjects`, keyed by an assembly name of literally `"NEST"`/`"Elasticsearch.Net"`/`"Elastic.Clients.Elasticsearch"`) rather than the established in-compilation-stub technique (SK0013/SK0017/SK0020-22/SK0024) — an in-compilation stub resolves to the TEST ASSEMBLY's own name, never to the literal deprecated-package assembly name `SK0025`'s `ContainingAssembly.Name` check actually compares against. `Microsoft.CodeAnalysis.Testing.ProjectState`'s `AssemblyName` property is read-only and always equals its `Name` constructor argument — confirmed empirically via a scratch reflection probe before use, not assumed from undocumented API shape.
@@ -5498,12 +5464,6 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0030 deliberately does NOT register on `ObjectCreationExpressionSyntax` (`Result`/`Result<T>` in this platform are produced exclusively via static factory methods — `Result.Success()`/`Result<T>.Failure(...)` — never a public constructor call) or on `ConditionalAccessExpressionSyntax` (`maybeService?.ReturnsResult();`). Both are documented, deliberate scope limitations for this phase — accepted false-negative risk, mirroring this domain's established `SK0708`/`HealthCheckTagIntegrityRules`/`NoTaskDelayOutsideResilienceBehaviorPredicate` "document the limitation, revisit only on a real finding" discipline — not oversights.
 - SK0030 has NO `SharedKernel.ArchitectureTests` counterpart, the first single-analyzer phase in this file where that is explicitly by design rather than a pending gap. Unlike every `*TopologyRules`-style phase, a bare-statement `Result` discard is inherently a per-syntax-tree, per-compilation-unit concern the Roslyn analyzer already resolves completely inside each consuming project's own build — there is no assembly-dependency-graph or IL-level aspect to this rule an `ICustomRule`/`ConditionList` predicate could usefully add.
 - SK0030 is the platform's first analyzer whose "GATING, not deferred" verification pass audits ALREADY-SHIPPED code across other domains (`05.Application.Behaviors`, `06.Persistence.EfCore`, `07.Messaging.MassTransit`, `17.Workflows.Temporal` — all four already Published as of this phase's authoring, 2026-07-27) rather than waiting on a not-yet-implemented dependency, unlike every `*TopologyRules` "designed ahead of a pending phase" precedent in this file (`SearchTopologyRules`, `IntelligenceTopologyRules`, `WorkflowTopologyRules`). Because this domain's own Test Rules forbid compiling real source files directly ("never test analyzers by compiling real source files manually" — `CSharpAnalyzerTest`/inline-markup only), the audit is executed as a manual/tool-assisted review: grep/read each domain's shipped `Result`/`Result<T>`-consuming call sites, catalog every DISTINCT real consumption shape encountered, then encode each shape as a representative (paraphrased, not literally copy-pasted) pass-path fixture. If the audit finds a real call site structurally matching SK0030's fire condition, that is a genuine, previously-invisible defect in the OWNING domain's shipped code, not a false positive to "fix" by weakening the rule — record it as a new finding and as a candidate follow-up work order in the owning domain, per this agent's jurisdiction boundary (`00.Governance` never implements another domain's production code).
-- `ContractsLayeringRules.NoDirectEventEnvelopeConstructionOutsideContracts` (WO-054 P-350) is a NEW static class, not a fifth predicate folded onto the existing `ContractsPurityRules` — `ContractsPurityRules` governs `04.Contracts`'s OWN internal purity (no domain types on its public surface, no non-trivial methods, sealed integration events, no `Result`-type on public surface), while this rule governs how OTHER assemblies must construct one of `04.Contracts`'s types. This is the same "protect this domain's boundary from outside misuse" direction `PresentationLayeringRules`/`CommunicationLayeringRules`/`MessagingArchitectureRules` already established under a `{Domain}LayeringRules` name — folding it into `ContractsPurityRules` would have conflated two structurally different rule shapes that only coincidentally share a domain number.
-- `NoDirectEventEnvelopeConstructionPredicate` matches a `Newobj` IL opcode on a THREE-condition test — `DeclaringType.Namespace == "SharedKernel.Contracts.Events"`, DeclaringType.Name == "EventEnvelope\`1" (Mono.Cecil's generic-arity-suffixed simple name, undecorated by the closed type argument — the same generic-Newobj-target technique family as `NoDirectEncryptedValueConverterInstantiationPredicate`'s `.Name.Contains("EncryptedValueConverter")` match, refined here to an exact Namespace+Name pair since "EventEnvelope" alone is a more collision-prone simple name than "EncryptedValueConverter"), and `Parameters.Count == 0`.
-- The `Parameters.Count == 0` condition is this domain's FIRST constructor-arity discriminator on a generic-`Newobj` predicate. Every prior generic-`Newobj` predicate in this domain (`NoDirectEncryptedValueConverterInstantiationPredicate`, `NoDirectProblemDetailsConstructionPredicate`) matches on `DeclaringType` alone, because none of their target types carries a second, differently-shaped legitimate constructor to avoid flagging. `EventEnvelope<TEvent>` (a `sealed record` with only `required ... { get; init; }` properties and no positional parameter list) synthesizes a public PARAMETERLESS constructor — used by `new EventEnvelope<TEvent> { ... }` object-initializer syntax, this rule's fire condition — AND a separate ONE-parameter copy constructor — used by `with` expressions on an already-`Wrap`-constructed instance, deliberately excluded, since a `with` expression mutates an existing legitimately-constructed envelope rather than fabricating new envelope identity/routing metadata from scratch.
-- `ContractsLayeringRules` carries no internal namespace exemption — exclusion of `SharedKernel.Contracts` is achieved entirely by the caller never passing that assembly to the factory method, the same caller-controlled-exclusion convention already established by `PresentationLayeringRules`/`CompositionRootExclusivityRules`/`StorageTopologyRules`. A caller that legitimately invokes `EventEnvelope.Wrap<TEvent>()` needs no exemption at all — its own compiled IL contains only a `Call`/`Callvirt` to `EventEnvelope.Wrap`, never a `Newobj` targeting `EventEnvelope<TEvent>`; the `newobj` instruction that actually constructs the record lives inside `SharedKernel.Contracts.dll`'s own `Wrap<TEvent>` method body, a different assembly entirely. This is a structural (cross-assembly IL locality), not policy-based, non-detection.
-- Real-assembly status for this rule is SPLIT, unlike every prior `*TopologyRules`/`*PackageHygiene` GATING precedent in this file: the FIRE-path check against the CURRENT, not-yet-corrected real `SharedKernel.Messaging.MassTransit` assembly is NON-GATING and runs immediately — `07.Messaging`'s own P-340 (`SK.07.EnvelopeTenancy`, `ET-04`) is planned but not yet implemented as of this phase's authoring (2026-08-04), so `MassTransitEventPublisher.PublishEnvelope<TEvent>` still contains the exact raw object-initializer violation this rule exists to catch. The PASS-path check against the P-340-corrected assembly IS GATING on that phase shipping — mirroring the `SK.00.EfPropertyUsageGuard`/`SK.00.SearchTopology`/`SK.00.IntelligenceTopology`/`SK.00.WorkflowTopology` precedent for a not-yet-implemented dependency, but for the first time in this file, only one half of the real-assembly proof needs to wait.
-  **STALE-DEPENDENCY CORRECTION (2026-08-07, `SK.00.EventEnvelopeConstructionGuard` closeout — same class of finding as `SK.00.StorageTopology`/`SK.00.SearchTopology`/`SK.00.IntelligenceTopology`/`SK.00.WorkflowTopology`/`SK.00.EfPropertyUsageGuard`):** by the time this phase was implemented, `07.Messaging`'s P-340 (`SK.07.EnvelopeTenancy`, ET-04) had already shipped — confirmed on disk, not assumed: `07.Messaging/state-map.md` shows ET-01 through ET-09 all `●` Complete, dated 2026-08-05 (one day AFTER this phase's own authoring date but before its implementation session), and `MassTransitEventPublisher.cs`'s own source (read directly) confirms `PublishEnvelope<TEvent>` now constructs the envelope exclusively via `EventEnvelope.Wrap(integrationEvent, sourceService, correlationId, causationId, tenantId)` — the raw object-initializer violation is gone. The NON-GATING fire-path check (T-279) is therefore UNSATISFIABLE AS ORIGINALLY WRITTEN — there is no longer a live violation in the real assembly to reproduce. Per this domain's established "verify empirically, correct in place, never manufacture a false fire" discipline, T-279 was NOT force-failed and the predicate was NOT weakened to invent one; the contrived fire-path fixture (T-275, mirroring the exact real, historical object-initializer shape `MassTransitEventPublisher.PublishEnvelope<TEvent>` used to exhibit) is the PRIMARY red proof instead, exactly as every prior contrived-fixture-plus-real-assembly phase in this file already does. The GATING pass-path check (T-280) is DONE, not deferred: `SharedKernel.ArchitectureTests.Tests.csproj` already carried a test-only `ProjectReference` to `SharedKernel.Messaging.MassTransit` (added for `RedisTopologyRulesTests`, WO-023) — no csproj change was needed — and `ContractsLayeringRulesTests.NoDirectEventEnvelopeConstructionOutsideContracts_RealMassTransitAssembly_RulePasses` confirms zero violations against the real, corrected assembly, discharging both T-279's and T-280's real-assembly obligations in a single test. This is the first phase in this file where a real-assembly dependency resolved not merely "before implementation" but between the phase's own authoring date and its implementer session — see `ContractsLayeringRulesTests`' own class-level remarks for the full record.
 
 - SK0033 `ReflectionBasedObjectMapperUsageAnalyzer` (WO-079 P-486) is a REDIRECT, not a straight accept, of the proposal that prompted it — `arch-lead` declined to ship a `SharedKernel.Mapping` package (wrapping Mapperly, a compile-time source generator, behind a kernel-owned runtime interface would defeat the entire reason to choose it over AutoMapper) and instead asked this domain to mechanize only the platform-wide prohibition half of the decision. It resolves all three trigger shapes by `ContainingAssembly.Name == "AutoMapper"` exact match (SK0025's technique), never a syntax-only simple-name check, because "Profile" is common enough elsewhere in this codebase (and in consuming services) to make a bare BaseList name match unsafe. Mapster is explicitly NOT enforced — its runtime and source-generated adapter call syntax is indistinguishable, and this domain's established convention is to narrow scope rather than ship a rule with an uncontrolled false-positive rate (see the SK0033 diagnostic entry's own Limitation). No new `SharedKernel.Mapping`/`.Mapper` package exists anywhere in this repo as a result of this phase, per its own acceptance criteria. Ungated — needs no compiled reference to any not-yet-shipped SharedKernel package, only a test-only `PackageReference` to the real `AutoMapper`(`15.1.1`, patched past the disclosed GHSA-rvv3-g6hj-g44x DoS advisory)/`Riok.Mapperly`(`3.6.0`) NuGet packages for fixture compilation — all five tests run against the real compiled packages (see the net10.0-real-assembly-reference Implementation Rules entry above for the technique this required).
 - SK0034 `AmountCurrencyPairAdvisoryAnalyzer` (WO-066 P-442) introduces this registry's first ADVISORY category — a rule with NO escalation path to Error, ever, by design, distinct from SK0006/SK0007's "Warning pending future escalation to Error" shape. This is a deliberate judgment call, not a mechanical default: the phase input itself framed the rule as inherently heuristic and asked for it to ship advisory-only, and this domain's own review found the detection technique (a closed suffix-list co-occurrence check on ONE type's direct members) narrow enough to be worth shipping rather than declining outright — unlike the four capabilities `arch-lead` itself already declined earlier this session on non-mechanical-detectability grounds. The suffix list (`Amount`/`Price`/`Total`/`Balance` for the decimal side, `Currency`/`CurrencyCode` for the string side) is syntax-only (`PredefinedTypeSyntax` match) — no SemanticModel needed, since `decimal`/`string` are BCL keyword types resolvable from syntax alone. Implementation empirically validated the false-positive rate (T-350) via a raw `CSharpCompilation`+`WithAnalyzers` scan of every `.cs` file in this repository's numbered domains (excluding test/sample/generated paths) — ZERO diagnostics, no genuine false positive, so the suffix list ships UNNARROWED exactly as specified; see the SK0034 diagnostic entry's own Limitation for the full result and the re-run instruction. Depends on `03.Domain` P-439 (`Money`) only for the REMEDIATION MESSAGE to name a real, shipped type — the detection logic itself references no compiled `SharedKernel.Domain` type and ran against this repo's sources (predating `Money`'s own shape check) without needing it.
@@ -5518,8 +5478,10 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 
 ### Cross-Service DTO Boundary Mapping
 
-- `Result<T>` → `Envelope<T>` boundary mapping: `04.Contracts/SharedKernel.Contracts` via `ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()`. These are pure static extension methods on `Result<T>` and `Envelope<T>`; they carry no cross-layer dependency cost because `SharedKernel.Contracts` already references `SharedKernel.Primitives`.
-- **Platform violation — inline mapping forbidden:** Writing `if (result.IsSuccess) Envelope<T>.Ok(result.Value) else Envelope<T>.Fail(result.Error)` at service controller or endpoint boundaries is a platform violation. Always use `result.ToEnvelope()` from `SharedKernel.Contracts.Mapping`. Inline mapping diverges from the platform convention, duplicates the error-projection logic, and is undetectable by the current architecture test suite. A future Roslyn analyzer (next available ID in the general-purpose SK block after SK0013) is tracked as a backlog item to mechanically enforce this rule — no ID is assigned until that phase is planned.
+- **There is no response-wrapper DTO.** `04.Contracts` ships no success/error envelope for HTTP or service-to-service results. An HTTP success body is the value itself; an HTTP failure body is always RFC 9457 `ProblemDetails`. A `Result<T>` never crosses a process boundary as a serialized object — `ContractsPurityRules.ContractsAssembliesHaveNoResultTypeOnPublicSurface` keeps it off every public property and field of a contracts assembly.
+- **Inbound (producing service):** `Result<T>` → HTTP goes through `14.Presentation`'s `ResultHttpExtensions` (`ToProblemDetailsResult`/`ToActionResult`) only. Inline `IsSuccess`/`IsFailure` branching before returning an HTTP result type outside `SharedKernel.Presentation.WebApi` is a platform violation, mechanically enforced by `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi`; hand-rolled `ProblemDetails` construction is caught by `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi`.
+- **Outbound (calling service):** a response is mapped back to `Result<T>` through `11.Communication.Rest`'s `ReadResultAsync<T>`, which reads the value on success and the `ProblemDetails` body on failure. Never deserialize a response into an ad hoc `{ isSuccess, value, error }` shape — a second format would break `ReadResultAsync<T>` for every other caller.
+- **Integration events:** the one cross-service event wire format is `04.Contracts`' `EventEnvelope<TEvent>` (CloudEvents 1.0), created only through `EventEnvelope.Wrap(...)` — it has no public constructor or setter, so the compiler enforces this and no architecture test is needed. Each concrete event carries `[IntegrationEvent("name", Version = n)]`, checked at compile time by SK0038/SK0039.
 
 ### GraphQL Paged Response
 
@@ -5666,3 +5628,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-09] Phase `SK.00.CoreDiRegistrationConventionLock` added and shipped end to end — 11/11 tasks (D-82, C-143, T-366–T-372, DO-54), mechanizing root P-523 (WO-083, depends on `01.Core` P-518, which was CONFIRMED ALREADY SHIPPED on disk before this phase began — direct grep across every production `.cs` file in `01.Core` found zero plain `Add*` registration call sites remaining). New `CoreArchitectureRules` (the platform's FIRST `01.Core`-domain architecture-rule class) + `NoPlainServiceCollectionRegistrationPredicate`, documented above. Root P-523's own naive reading ("always use TryAdd") was corrected before any code was written by reading `01.Core`'s own P-518 design record: `SharedKernel.Validation.AddNationalIdValidator<TValidator>()` and `SharedKernel.Cryptography.KeyVault.Azure`'s `IValidateOptions<T>` registration both deliberately use `TryAddEnumerable`, not `TryAddSingleton` — the rule therefore asserts absence of the forbidden `Add*` verbs only, never presence of one particular compliant verb, needing no per-service-type exemption list. `SharedKernel.FeatureManagement`'s deliberately-untouched third-party `AddFeatureManagement(...)` call was also verified (not assumed) to need no exemption — different method name, different declaring type, structurally unreachable by the predicate. Non-vacuous verification deliberately never touched `01.Core` (per this session's explicit instruction): three contrived fixtures (one per forbidden verb) plus a standalone read-only Mono.Cecil inspection of the real, compiled `SharedKernel.Cryptography.dll` confirming nine genuine `TryAddSingleton`/`TryAddKeyedSingleton` calls in `AddSharedKernelCryptography`'s real IL. `SharedKernel.ArchitectureTests.Tests`: 266/266 pass (259 baseline + 7 new), 0 build warnings/errors. No new SK diagnostic ID — SK0037 remains next available. ROOT PROPAGATION DELIBERATELY WITHHELD per this session's explicit operating instructions — the coordinator owns the root Phase Backlog `### P-523` status flip (governance-phase-implementer, state-map-phase)
 - [2026-09-10] Root Phase Backlog P-508/WO-082 implemented — `01.Core`'s P-505 merged `SharedKernel.Guards` into `SharedKernel.Core` (namespace `SharedKernel.Guards.*` preserved); this domain's two `ProjectReference`s to the now-deleted project (`SharedKernel.ArchitectureTests.csproj`, `.Tests.csproj`) re-pointed to `SharedKernel.Core.csproj`. Re-scoped `GuardPurityRules`/`DoesNotContainThrowIlPredicate` to the `SharedKernel.Guards` namespace specifically, not the whole (now much larger) hosting assembly — see both classes' updated Architecture Test Contracts and Implementation Rules entries above for the full mechanism, including the confirmed pitfall that NetArchTest's built-in `ResideInNamespaceStartingWith` would have silently excluded every guard type (Mono.Cecil leaves `TypeDefinition.Namespace` empty on nested types) and made the rule vacuously pass; fixed via a `GetEffectiveNamespace` walk-up-to-outermost-enclosing-type helper embedded inside the predicate, mirroring this domain's established namespace-exemption-inside-the-predicate convention (`PersistenceLayerProtectionRules`). Non-vacuity proven in both directions via contrived fixtures against the real `GuardPurityRules.GuardAgainstMethodsMustNotThrow(Assembly)` overload, plus two temporary in-session perturb-and-revert probes of the governance-owned predicate file itself (never `01.Core`) confirming both the new namespace guard and the pre-existing throw-detection are genuinely load-bearing. SK0006 (`GuardClauseThrowAnalyzer`) and its tests needed no change — the analyzer already resolves `IGuardClause` by fully-qualified metadata name, never by assembly, and its tests are fully self-contained via an inline fixture. `SharedKernel.ArchitectureTests.Tests`: 268/268 pass (266 baseline + 2 new); `SharedKernel.Analyzers.Tests`: 267/267 pass (unchanged). Full-solution build clean. Full details and the exact non-vacuity record are in `00.Governance/state-map.md`'s own P-508 changelog entry. ROOT PROPAGATION DELIBERATELY WITHHELD per this session's explicit operating instructions ("Do not touch ... root `state-map.md`") — the root Phase Backlog `### P-508` entry still needs its own status flip by the coordinator (governance-phase-implementer, sync-brain)
 - [2026-09-14] WO-084/P-535: ServiceDefaults layering-grant and forwarded-header tests re-pointed at the split integration packages (agent)
+- [2026-09-15] Contracts redesign: removed `ContractsLayeringRules`/`NoDirectEventEnvelopeConstructionPredicate` (construction outside `EventEnvelope.Wrap` no longer compiles); `ContractsReferencesOnlyCoreAndDomain` renamed `ContractsReferencesOnlyCore` and now forbids `SharedKernel.Domain`; `ContractsPurityRules` rewritten — `IntegrationEventsHaveNoNonTrivialMethods` judges only `IIntegrationEvent` types, no `EventEnvelope` exemption, new `NoResultTypedPublicMemberPredicate`, every rule proven against the real `SharedKernel.Contracts` assembly; SK0038/SK0039 `IntegrationEventAttributeAnalyzer` added to the registry (SK0040 next); Cross-Service DTO Boundary Mapping rewritten without `Envelope<T>` (coordinator)
+- [2026-09-15] SK0037 `ValueObjectMissingEnsureValid` added to the Diagnostic Rule Registry, which previously jumped from SK0036 to SK0038 (coordinator)

@@ -1,6 +1,6 @@
 # SharedKernel.Analyzers
 
-41 Roslyn analyzers that enforce the Platform.SharedKernel conventions **at compile time**, inside your
+44 Roslyn analyzer rules that enforce the Platform.SharedKernel conventions **at compile time**, inside your
 own build, so they hold without depending on a reviewer noticing.
 
 Each rule encodes a decision that is otherwise unenforceable prose: inject `IClock` rather than reading
@@ -175,6 +175,8 @@ Named constants, provider clients, security and data privacy.
 | [`SK0035`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or PII data passed unmasked to a `[LoggerMessage]` parameter | Route it through the matching `PiiMasking.*` helper |
 | [`SK0036`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0036-rawrpcexceptionconstruction) | `RpcException`/`Status` constructed outside the gRPC presentation layer | `GrpcResultExtensions` |
 | [`SK0037`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0037-valueobjectmissingensurevalid) | A `ValueObject` subclass whose constructor completes without calling `EnsureValid()` | Call `EnsureValid()` as the last statement of every constructor |
+| [`SK0038`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0038-integrationeventmissingattribute) | A non-abstract `IIntegrationEvent` type with no `[IntegrationEvent]` attribute | Add `[IntegrationEvent("context.event-name", Version = N)]` |
+| [`SK0039`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0039-invalidintegrationeventattribute) | An `[IntegrationEvent]` literal name that breaks the name rule, or a `Version` literal below 1 | Lowercase segments separated by `.`, `-` or `_`, such as `orders.order-placed`; versions start at 1 |
 
 ### Persistence
 

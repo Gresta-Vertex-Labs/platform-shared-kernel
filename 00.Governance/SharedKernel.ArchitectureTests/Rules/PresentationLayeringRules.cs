@@ -53,8 +53,7 @@ public static class PresentationLayeringRules
     /// (<c>ErrorTypeStatusCodeMap</c>, <c>traceId</c> population, <c>Detail</c>-suppression
     /// outside <c>Development</c>) and reintroduces the inconsistent error-body problem
     /// <c>14.Presentation</c> exists to close. Mirrors the precedent set by SK0013 (raw
-    /// <c>HttpClient</c>) and the Result/Envelope inline-mapping prohibition — mechanical
-    /// enforcement, not documentation-only guidance.
+    /// <c>HttpClient</c>) — mechanical enforcement, not documentation-only guidance.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>
@@ -105,9 +104,8 @@ public static class PresentationLayeringRules
     /// <para>
     /// <strong>Rationale:</strong> inline <c>if (result.IsSuccess) ... else ...</c> branching
     /// immediately before returning an HTTP response type duplicates the platform's
-    /// <c>Result</c>→HTTP mapping logic at every call site — exactly the precedent already
-    /// closed for <c>Result&lt;T&gt;</c>→<c>Envelope&lt;T&gt;</c> boundary mapping, where the
-    /// same inline-branching habit was prohibited for the same reason.
+    /// <c>Result</c>→HTTP mapping logic at every call site, and each copy drifts from the single
+    /// <c>ResultHttpExtensions</c> mapping to RFC 9457 <c>ProblemDetails</c>.
     /// </para>
     /// <para>
     /// This is a coarser, method-level co-occurrence check — not a full control-flow analysis of
@@ -173,22 +171,20 @@ public static class PresentationLayeringRules
     /// are this package's only wire-contract surface, never <c>SharedKernel.Contracts</c> DTOs.
     /// </para>
     /// <para>
-    /// <strong>Why this closes a real, not merely theoretical, gap.</strong>
+    /// <strong>Why a rule and not just the project graph.</strong>
     /// <c>SharedKernel.Presentation.Grpc</c> takes a deliberate <c>ProjectReference</c> on
     /// <c>SharedKernel.Presentation.WebApi</c> (to reuse
     /// <c>RequireRoleAttribute</c>/<c>RequirePermissionAttribute</c>/
     /// <c>RequireFreshAuthenticationAttribute</c>/<c>RequireAuthenticationMethodAttribute</c>
-    /// verbatim — D-73/D-74, see <c>14.Presentation/CLAUDE.md</c>, "Why .Grpc references .WebApi"),
-    /// and <c>SharedKernel.Presentation.WebApi</c> itself references <c>04.Contracts</c>. .NET
-    /// project references flow transitively, so <c>SharedKernel.Contracts.dll</c> is genuinely
-    /// present in <c>SharedKernel.Presentation.Grpc</c>'s own build output and reference closure —
-    /// a developer CAN write <c>using SharedKernel.Contracts;</c> inside a gRPC service method and
-    /// it will compile. The Hard rule as stated ("never reference <c>04.Contracts</c>") was
-    /// satisfied only at the direct-<c>ProjectReference</c> level, not the reachable-type level,
-    /// before this rule existed.
+    /// verbatim — see <c>14.Presentation/CLAUDE.md</c>, "Why .Grpc references .WebApi"). Today
+    /// neither package references <c>04.Contracts</c>, so no Contracts type is reachable, but any
+    /// future reference added to <c>SharedKernel.Presentation.WebApi</c> would flow transitively into
+    /// the gRPC package and a <c>using SharedKernel.Contracts;</c> inside a gRPC service method would
+    /// compile. The Hard rule ("never reference <c>04.Contracts</c>") must hold at the type-use level,
+    /// not only at the direct-<c>ProjectReference</c> level.
     /// </para>
     /// <para>
-    /// <strong>Why <c>NotHaveDependencyOn</c> is the correct, sufficient mechanism despite that
+    /// <strong>Why <c>NotHaveDependencyOn</c> is the correct, sufficient mechanism even with a
     /// transitive reference.</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> inspects each
     /// scanned type's ACTUAL Mono.Cecil-observed dependency namespaces (fields, method
     /// parameters/return types/bodies) — never the assembly-level reference list a
