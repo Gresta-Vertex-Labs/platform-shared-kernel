@@ -11,6 +11,7 @@ EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platfor
 - `EfRepository<TAggregate,TId>` / `EfReadRepository<TAggregate,TId>` — abstract bases consuming services extend per aggregate
 - `EfUnitOfWork` / `EfTransactionalUnitOfWork` — the `IUnitOfWork.SaveChangesAsync` save boundary and explicit-transaction support
 - `AuditInterceptor` / `SoftDeleteInterceptor` / `ConcurrencyInterceptor` — the platform three, always composed first
+- `DomainClockMaterializationInterceptor` — registered automatically; gives every aggregate loaded from the database the application `IClock`, so a loaded aggregate can raise timestamped events and soft-delete. `EntityTypeConfigurationBase` also maps each aggregate's `Version` event sequence number as a column (existing databases need a migration adding it)
 - `SpecificationEvaluator<T>` — criteria → keyset seek → includes → split-query → ordering → distinct → tracking → paging → projection, in that fixed order
 - `EntityTypeConfigurationBase<TEntity,TId>`, `StronglyTypedIdValueConverter<TId,TValue>` — EF Core configuration building blocks
 - `EncryptedValueConverter`, `.Encrypt()` extension, `EncryptionModelConvention` — transparent field-level AES-256-GCM column encryption

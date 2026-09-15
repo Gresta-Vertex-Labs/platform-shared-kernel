@@ -718,6 +718,19 @@ SoftDeleteInterceptor  (sealed class, implements ISaveChangesInterceptor)
     — Non-ISoftDeletable entities pass through without modification.
     — Constructor injection: IUserContext (scoped DI), IClock.
 
+DomainClockMaterializationInterceptor  (sealed class, implements IMaterializationInterceptor — P-541, shipped 2026-09-15)
+    — On InitializedInstance: calls IHasClock.AttachClock on every materialized aggregate that has no clock yet,
+      for tracking and no-tracking queries. Without it a loaded aggregate throws InvalidOperationException the
+      first time it raises a timestamped event or soft-deletes (03.Domain P-540 removed the NullClock sentinel).
+    — Registered automatically by SharedKernelDbContext.OnConfiguring and the pooled registration, as ONE shared
+      static instance (DomainClockMaterializationInterceptor.FromContext) that reads the clock from the context
+      performing the materialization (SharedKernelDbContext.Clock → AuditInterceptor.Clock).
+    — NEVER create a new instance per context: EF Core treats materialization interceptors as singleton
+      interceptors that key its internal service provider, so a per-context instance builds a new internal
+      provider for every context (measured: it also split the InMemory store in AuditTrailTests). Pinned by
+      ContextsShareOneInternalServiceProvider. The public (IClock) constructor is for a DbContext not derived from
+      SharedKernelDbContext; register that instance once for the application's lifetime.
+
 ConcurrencyInterceptor  (sealed class, implements ISaveChangesInterceptor)
     — On SaveChangesFailed/SaveChangesFailedAsync: catches DbUpdateConcurrencyException for IHasConcurrency entries;
       rethrows as typed ConcurrencyException carrying Error.Conflict(...) from SharedKernel.Primitives.
@@ -882,6 +895,10 @@ EntityTypeConfigurationBase<TEntity, TId>  (abstract class, implements IEntityTy
           for IHasCreatedAudit
         • Additionally ModifiedBy (nullable string) and ModifiedOn (nullable DateTimeOffset) for IHasAudit
         • TenantId column (Guid, not null) + tenant index for IHasTenant entities
+        • Version column (int, not null, NOT a concurrency token) for IHasVersion entities — the aggregate's
+          persisted event sequence number, so a loaded aggregate continues numbering (P-541). Existing databases
+          need a migration adding the column. Stamping published events with it is deferred: IDomainEvent has no
+          sequence member and EventEnvelope no aggregate-version field, so there is no hook yet.
     NOTE: Concrete configurations must call base.Configure(builder) first, then add entity-specific mappings.
           CONCURRENCY TOKEN CORRECTION (WO-051/P-315): the previous XML doc on this class claimed a
           "ConcurrencyTokenConvention" existed that would override .IsRowVersion() with ".UseXminAsConcurrencyToken()"
@@ -899,14 +916,14 @@ EntityTypeConfigurationBase<TEntity, TId>  (abstract class, implements IEntityTy
 
 StronglyTypedIdValueConverter<TStronglyTypedId, TValue>  (sealed class, extends ValueConverter<TStronglyTypedId, TValue>)
     — Converts StronglyTypedId<TValue> to/from its primitive TValue for EF Core column mapping.
-    — Uses implicit operator TValue for to-provider direction — no Activator.CreateInstance, no reflection.
+    — To-provider reads `.Value` (StronglyTypedId has only an explicit conversion since P-540) — no Activator.CreateInstance, no reflection.
     — Companion ModelConfigurationBuilder extension auto-registers the converter for all IStronglyTypedId<TValue>
       types, eliminating per-aggregate manual converter registration.
 
 CurrencyValueConverter  (sealed class, extends ValueConverter<Currency, string> — SHIPPED, P-440/WO-066)
     — Converts 03.Domain's Currency (a SingleValueObject<string>) to/from its ISO 4217 code string.
-    — To-provider: Currency's existing implicit operator to string — (string)currency, zero reflection.
-    — From-provider: the PUBLIC Currency.Create(code) → Result<Currency> factory (P-310), unwrapping .Value —
+    — To-provider: `currency.Code` (Currency has only an explicit conversion since P-540), zero reflection.
+    — From-provider: the PUBLIC Currency.Create(code) → ValidationResult<Currency> factory (P-540), unwrapping .Value —
       NEVER StronglyTypedIdValueConverter's reflection-located-constructor technique, which exists only
       because StronglyTypedId<TValue> (a different base hierarchy) has no public Create factory. A stored,
       unreconstructible code throws InvalidOperationException (data assumed already-validated at write time).
@@ -2327,7 +2344,7 @@ DapperReadService  (abstract class)
 - `ConcurrencyInterceptor` swallowing non-concurrency exceptions — only `DbUpdateConcurrencyException` for `IHasConcurrency` entities is caught and rethrown.
 - `SpecificationEvaluator<T>` applying paging (`Skip`/`Take`) before ordering — paging is always the final operation.
 - String interpolation in any SQL inside `DapperReadService` subclasses — parameterized queries only (SQL injection risk).
-- Using `Activator.CreateInstance` or reflection in `StronglyTypedIdValueConverter` — use the `implicit operator TValue` (a static method call).
+- Using `Activator.CreateInstance` or reflection in `StronglyTypedIdValueConverter` — read `.Value`.
 - Using reflection in `SmartEnumTypeHandler` — use `SmartEnum<TEnum,TValue>.TryFromValue`.
 - Adding messaging concerns (`IMessageBus`, `IEventPublisher`) to this domain — outbox message writes are the persistence boundary; dispatching belongs in `07.Messaging`.
 - Adding domain logic to any type in this domain — this layer is pure data-access plumbing.
@@ -2818,7 +2835,7 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 
 - `IRepository<TAggregate, TId>`, `IReadRepository<TAggregate, TId>`, `IUnitOfWork`, `IDbConnectionFactory`, `ISpecificationEvaluator<T>` are interfaces — AOT-safe by definition.
 - `SpecificationEvaluator<T>` applies `Expression<Func<T, bool>>` expression trees to `IQueryable<T>` — expression trees on `IQueryable` are AOT-safe when lambda bodies do not reference runtime-only reflection APIs.
-- `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` uses the `implicit operator` (a static method) — no reflection, AOT-safe.
+- `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` reads `.Value` for the to-provider direction — no reflection.
 - `SmartEnumTypeHandler<TEnum,TValue>` uses `SmartEnum<TEnum,TValue>.TryFromValue` — no reflection in the hot path, AOT-safe.
 - `AuditInterceptor` and `SoftDeleteInterceptor` access EF Core shadow properties by string key — shadow property access via `CurrentValues[name]` is AOT-safe (no reflection on CLR types).
 - `TenantedDbContext.OnModelCreating` global filter is built with expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) — no `GetMethod`/`MakeGenericMethod`/`Invoke` calls; fully AOT-safe.
@@ -2862,7 +2879,7 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 - `EfRepository<TAggregate,TId>.RestoreAsync` (WO-053/P-337) uses only the already-AOT-safe `ChangeTracker.Entry(entity).CurrentValues[propertyName]` shadow-property-style access (identical reasoning already established for `AuditInterceptor`/`SoftDeleteInterceptor`) plus a plain `is ISoftDeletable` runtime type check — no reflection. `EfCorePersistenceBuilder.WithCommandTimeout` (WO-053/P-337) is a plain method call on `DbContextOptionsBuilder` — AOT-safe.
 - `EfCorePersistenceBuilder.WithReadReplica`/`IReadReplicaContextAccessor<TContext>` (WO-053/P-338) use `ActivatorUtilities.CreateInstance<TContext>(serviceProvider, replicaOptions)` — a `Microsoft.Extensions.DependencyInjection` API that DOES use reflection internally to match `TContext`'s constructor against DI-resolvable services, the same well-established ASP.NET Core "construct via DI with one overridden argument" idiom used platform-wide for typed-client/handler construction; invoked ONCE per DI scope (lazy, cached thereafter), never per-call — a startup/first-access-time cost, not a hot-path one, the same class of accepted exception already documented for `ValueObjectOwnershipBuilder`/`EncryptedEntityBatchProcessorRegistry`.
 - `VectorOrderingExpressions.ByDistance<TAggregate>` (WO-053/P-339) builds an `Expression<Func<TAggregate,object>>` via `Expression.Call` referencing `Pgvector.EntityFrameworkCore.VectorExtensions.CosineDistance`/`.L2Distance`'s `MethodInfo` through a statically-typed delegate cast (`((Func<Vector,Vector,double>)VectorExtensions.CosineDistance).Method`) — resolved entirely by the C# compiler at compile time, zero `Type.GetMethod`/`MakeGenericMethod` at runtime. Expression trees on `IQueryable` are AOT-safe, the same reasoning already established for every other specification ordering expression on this platform.
-- **(P-440/WO-066, shipped)** `CurrencyValueConverter` uses `Currency`'s `implicit operator string` (to-provider) and the public `Currency.Create(code)` factory (from-provider) — zero reflection, same class of AOT-safety as `StronglyTypedIdValueConverter`'s implicit-operator direction, but with NO reflection-located-constructor step at all on the from-provider side (an improvement, not merely parity). `MoneyValueConverter`/`.OwnsMoney` ship the D-106 packed-string FALLBACK, not the originally-preferred reflection-located-constructor owned-type path — that path was confirmed unreachable via any public EF Core 10 API (see the Conversions/ section above), so this package carries ZERO reflection for Money/Currency mapping, an improvement over even the fallback's own original framing.
+- **(P-440/WO-066, shipped)** `CurrencyValueConverter` uses `Currency.Code` (to-provider) and the public `Currency.Create(code)` factory (from-provider) — zero reflection, same class of AOT-safety as `StronglyTypedIdValueConverter`'s implicit-operator direction, but with NO reflection-located-constructor step at all on the from-provider side (an improvement, not merely parity). `MoneyValueConverter`/`.OwnsMoney` ship the D-106 packed-string FALLBACK, not the originally-preferred reflection-located-constructor owned-type path — that path was confirmed unreachable via any public EF Core 10 API (see the Conversions/ section above), so this package carries ZERO reflection for Money/Currency mapping, an improvement over even the fallback's own original framing.
 - **(P-448/WO-068, shipped 2026-09-03, BREAKING)** `EncryptionOptionsKeyProvider`'s migrated `GetCurrentKeyAsync`/`GetKeyAsync` wrap the existing synchronous, reflection-free logic (`IOptionsMonitor.CurrentValue` property read, `Dictionary` lookup, `EncryptionKeyByteCache.GetOrDecode`) in `new ValueTask<T>(value)` — ordinary BCL async plumbing, zero reflection, AOT-safe. `EncryptedValueConverter`'s simplified `Decrypt` inspects `Result<byte[]>.Error?.Code` (a plain property read/equality comparison against `CryptographyErrorCodes.UnknownKeyId`) — no reflection, AOT-safe.
 - **(P-456/P-457, WO-071, shipped)** `AuditRecord`/`AuditEntry`/`AuditChainVerificationResult` are plain `sealed record`s with BCL-typed (`Guid`/`string`/`DateTimeOffset`/`int`/`bool`) properties — AOT-safe by definition. `AuditResourceHistorySpecification`/`AuditActorActionsSpecification` build their `Criteria`/keyset key-selector expressions the SAME way every other `KeysetSpecification<T,TKey>` subclass on this platform already does — `Expression<Func<T,...>>` construction via ordinary C# lambda syntax, compiled by the C# compiler, no runtime reflection. **CORRECTION:** the internal `AuditRecordHasher` helper (shared by `EfAuditTrailWriter`/`EfAuditQueryService`, so write-time and verify-time hashing can never drift) calls `01.Core`'s `IContentHasher.ComputeHash(byte[])` — NOT a `ComputeHashHex` member, which does not exist on the real shipped `IContentHasher` — then hexes the digest itself via the plain BCL static `Convert.ToHexStringLower(byte[])`; both are reflection-free. `AuditRecordImmutabilityInterceptor` inspects `ChangeTracker.Entries<AuditRecord>()`'s `EntityState` — a generic, AOT-safe EF Core API, the same class already established for `EfUnitOfWork`'s domain-event dispatch. `Guid.CreateVersion7()` is a plain BCL static method — AOT-safe, though see the Implementation Rules/Known Limitations note on same-millisecond `Guid.CreateVersion7()` ordering below (a correctness, not AOT, caveat).
 
