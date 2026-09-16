@@ -1,0 +1,353 @@
+#nullable enable
+SharedKernel.Cryptography.CryptographyErrorCodes
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey.Dispose() -> void
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey.EnvelopeDataKey(System.ReadOnlySpan<byte> plaintextKey, System.ReadOnlySpan<byte> wrappedKey, string! masterKeyId) -> void
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey.MasterKeyId.get -> string!
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey.PlaintextKey.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.EnvelopeDataKey.WrappedKey.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.EnvelopeEncryptionService
+SharedKernel.Cryptography.Envelope.EnvelopeEncryptionService.DecryptAsync(SharedKernel.Cryptography.Envelope.EnvelopePayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.Envelope.EnvelopeEncryptionService.EncryptAsync(System.ReadOnlyMemory<byte> plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Envelope.EnvelopePayload!>
+SharedKernel.Cryptography.Envelope.EnvelopeEncryptionService.EnvelopeEncryptionService(SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionProvider! provider) -> void
+SharedKernel.Cryptography.Envelope.EnvelopePayload
+SharedKernel.Cryptography.Envelope.EnvelopePayload.Ciphertext.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.EnvelopePayload.EnvelopePayload(string! masterKeyId, System.ReadOnlySpan<byte> wrappedKey, System.ReadOnlySpan<byte> nonce, System.ReadOnlySpan<byte> ciphertext, System.ReadOnlySpan<byte> tag) -> void
+SharedKernel.Cryptography.Envelope.EnvelopePayload.MasterKeyId.get -> string!
+SharedKernel.Cryptography.Envelope.EnvelopePayload.Nonce.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.EnvelopePayload.Tag.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.EnvelopePayload.ToBytes() -> byte[]!
+SharedKernel.Cryptography.Envelope.EnvelopePayload.WrappedKey.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionProvider
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionProvider.GenerateDataKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Envelope.EnvelopeDataKey!>
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionProvider.UnwrapDataKeyAsync(System.ReadOnlyMemory<byte> wrappedKey, string! masterKeyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionService
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionService.DecryptAsync(SharedKernel.Cryptography.Envelope.EnvelopePayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.Envelope.IEnvelopeEncryptionService.EncryptAsync(System.ReadOnlyMemory<byte> plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Envelope.EnvelopePayload!>
+SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions
+SharedKernel.Cryptography.Extensions.ICryptographyBuilder
+SharedKernel.Cryptography.Extensions.ICryptographyBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Cryptography.FixedTimeComparison
+SharedKernel.Cryptography.Hashing.ContentHasherExtensions
+SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.HashVerificationResult.Failed = 0 -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.HashVerificationResult.Success = 1 -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.HashVerificationResult.SuccessRehashNeeded = 2 -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.IContentHasher
+SharedKernel.Cryptography.Hashing.IContentHasher.ComputeHash(System.IO.Stream! content) -> byte[]!
+SharedKernel.Cryptography.Hashing.IContentHasher.ComputeHash(System.ReadOnlySpan<byte> content) -> byte[]!
+SharedKernel.Cryptography.Hashing.IContentHasher.ComputeHashAsync(System.IO.Stream! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm
+SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm.AlgorithmId.get -> string!
+SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm.Hash(System.ReadOnlySpan<byte> secret) -> SharedKernel.Cryptography.Hashing.PhcHashString!
+SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm.RequiresRehash(SharedKernel.Cryptography.Hashing.PhcHashString! hash) -> bool
+SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm.Verify(SharedKernel.Cryptography.Hashing.PhcHashString! hash, System.ReadOnlySpan<byte> secret) -> bool
+SharedKernel.Cryptography.Hashing.IOneWayHasher
+SharedKernel.Cryptography.Hashing.IOneWayHasher.Hash(string! secret) -> string!
+SharedKernel.Cryptography.Hashing.IOneWayHasher.Verify(string! hash, string! secret) -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.OneWayHasher
+SharedKernel.Cryptography.Hashing.OneWayHasher.Hash(string! secret) -> string!
+SharedKernel.Cryptography.Hashing.OneWayHasher.OneWayHasher(System.Collections.Generic.IEnumerable<SharedKernel.Cryptography.Hashing.IOneWayHashAlgorithm!>! algorithms, Microsoft.Extensions.Options.IOptionsMonitor<SharedKernel.Cryptography.Options.CryptographyOptions!>! options) -> void
+SharedKernel.Cryptography.Hashing.OneWayHasher.Verify(string! hash, string! secret) -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.AlgorithmId.get -> string!
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.Hash(System.ReadOnlySpan<byte> secret) -> SharedKernel.Cryptography.Hashing.PhcHashString!
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.Pbkdf2OneWayHashAlgorithm(Microsoft.Extensions.Options.IOptionsMonitor<SharedKernel.Cryptography.Options.Pbkdf2Options!>! options) -> void
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.RequiresRehash(SharedKernel.Cryptography.Hashing.PhcHashString! hash) -> bool
+SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.Verify(SharedKernel.Cryptography.Hashing.PhcHashString! hash, System.ReadOnlySpan<byte> secret) -> bool
+SharedKernel.Cryptography.Hashing.PhcHashString
+SharedKernel.Cryptography.Hashing.PhcHashString.AlgorithmId.get -> string!
+SharedKernel.Cryptography.Hashing.PhcHashString.Hash.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Hashing.PhcHashString.Parameters.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, string!>>!
+SharedKernel.Cryptography.Hashing.PhcHashString.PhcHashString(string! algorithmId, int? version, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, string!>>! parameters, System.ReadOnlySpan<byte> salt, System.ReadOnlySpan<byte> hash) -> void
+SharedKernel.Cryptography.Hashing.PhcHashString.Salt.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Hashing.PhcHashString.TryGetInt32Parameter(string! name, out int value) -> bool
+SharedKernel.Cryptography.Hashing.PhcHashString.TryGetParameter(string! name, out string? value) -> bool
+SharedKernel.Cryptography.Hashing.PhcHashString.Version.get -> int?
+SharedKernel.Cryptography.Hashing.PhcHashString.WithParameter(string! name, string! value) -> SharedKernel.Cryptography.Hashing.PhcHashString!
+SharedKernel.Cryptography.Hashing.PhcHashString.WithoutParameter(string! name) -> SharedKernel.Cryptography.Hashing.PhcHashString!
+SharedKernel.Cryptography.Hashing.Sha256ContentHasher
+SharedKernel.Cryptography.Hashing.Sha256ContentHasher.ComputeHash(System.IO.Stream! content) -> byte[]!
+SharedKernel.Cryptography.Hashing.Sha256ContentHasher.ComputeHash(System.ReadOnlySpan<byte> content) -> byte[]!
+SharedKernel.Cryptography.Hashing.Sha256ContentHasher.ComputeHashAsync(System.IO.Stream! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Hashing.Sha256ContentHasher.Sha256ContentHasher() -> void
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundEncryptionKeyProvider
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundEncryptionKeyProvider.PurposeBoundEncryptionKeyProvider(SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! inner, string! purpose, System.ReadOnlySpan<byte> context) -> void
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundKeyProviderExtensions
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundSynchronousEncryptionKeyProvider
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundSynchronousEncryptionKeyProvider.GetCurrentKey() -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundSynchronousEncryptionKeyProvider.GetKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey?
+SharedKernel.Cryptography.KeyDerivation.PurposeBoundSynchronousEncryptionKeyProvider.PurposeBoundSynchronousEncryptionKeyProvider(SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider! inner, string! purpose, System.ReadOnlySpan<byte> context) -> void
+SharedKernel.Cryptography.KeyDerivation.SubkeyDerivation
+SharedKernel.Cryptography.Options.CryptographyOptions
+SharedKernel.Cryptography.Options.CryptographyOptions.CryptographyOptions() -> void
+SharedKernel.Cryptography.Options.CryptographyOptions.OneWayHashing.get -> SharedKernel.Cryptography.Options.OneWayHashingOptions!
+SharedKernel.Cryptography.Options.CryptographyOptions.OneWayHashing.set -> void
+SharedKernel.Cryptography.Options.OneWayHashingOptions
+SharedKernel.Cryptography.Options.OneWayHashingOptions.Algorithm.get -> string!
+SharedKernel.Cryptography.Options.OneWayHashingOptions.Algorithm.set -> void
+SharedKernel.Cryptography.Options.OneWayHashingOptions.CurrentPepperId.get -> string?
+SharedKernel.Cryptography.Options.OneWayHashingOptions.CurrentPepperId.set -> void
+SharedKernel.Cryptography.Options.OneWayHashingOptions.OneWayHashingOptions() -> void
+SharedKernel.Cryptography.Options.OneWayHashingOptions.Peppers.get -> System.Collections.Generic.Dictionary<string!, string!>!
+SharedKernel.Cryptography.Options.OneWayHashingOptions.Peppers.set -> void
+SharedKernel.Cryptography.Options.Pbkdf2Options
+SharedKernel.Cryptography.Options.Pbkdf2Options.Iterations.get -> int
+SharedKernel.Cryptography.Options.Pbkdf2Options.Iterations.set -> void
+SharedKernel.Cryptography.Options.Pbkdf2Options.Pbkdf2Options() -> void
+SharedKernel.Cryptography.Random.ISecureRandomGenerator
+SharedKernel.Cryptography.Random.ISecureRandomGenerator.Fill(System.Span<byte> destination) -> void
+SharedKernel.Cryptography.Random.ISecureRandomGenerator.GetBytes(int length) -> byte[]!
+SharedKernel.Cryptography.Random.ISecureRandomGenerator.GetInt32(int toExclusive) -> int
+SharedKernel.Cryptography.Random.ISecureRandomGenerator.GetString(System.ReadOnlySpan<char> alphabet, int length) -> string!
+SharedKernel.Cryptography.Random.ISecureRandomGenerator.GetToken(int byteCount = 32) -> string!
+SharedKernel.Cryptography.Random.SecureRandomGenerator
+SharedKernel.Cryptography.Random.SecureRandomGenerator.Fill(System.Span<byte> destination) -> void
+SharedKernel.Cryptography.Random.SecureRandomGenerator.GetBytes(int length) -> byte[]!
+SharedKernel.Cryptography.Random.SecureRandomGenerator.GetInt32(int toExclusive) -> int
+SharedKernel.Cryptography.Random.SecureRandomGenerator.GetString(System.ReadOnlySpan<char> alphabet, int length) -> string!
+SharedKernel.Cryptography.Random.SecureRandomGenerator.GetToken(int byteCount = 32) -> string!
+SharedKernel.Cryptography.Random.SecureRandomGenerator.SecureRandomGenerator() -> void
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.AsymmetricSignatureService(SharedKernel.Cryptography.Signing.ISigningKeyProvider! keyProvider) -> void
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.GetAlgorithmAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SignatureAlgorithm>
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.SignAsync(System.IO.Stream! data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.SignAsync(System.ReadOnlyMemory<byte> data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.VerifyAsync(System.IO.Stream! data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Signing.AsymmetricSignatureService.VerifyAsync(System.ReadOnlyMemory<byte> data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Signing.HmacSha256Signer
+SharedKernel.Cryptography.Signing.HmacSha256Signer.HmacSha256Signer() -> void
+SharedKernel.Cryptography.Signing.HmacSha256Signer.Sign(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> key) -> byte[]!
+SharedKernel.Cryptography.Signing.HmacSha256Signer.Verify(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> signature, System.ReadOnlySpan<byte> key) -> bool
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService.GetAlgorithmAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SignatureAlgorithm>
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService.SignAsync(System.IO.Stream! data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService.SignAsync(System.ReadOnlyMemory<byte> data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService.VerifyAsync(System.IO.Stream! data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Signing.IAsymmetricSignatureService.VerifyAsync(System.ReadOnlyMemory<byte> data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Signing.IHmacSigner
+SharedKernel.Cryptography.Signing.IHmacSigner.Sign(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> key) -> byte[]!
+SharedKernel.Cryptography.Signing.IHmacSigner.Verify(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> signature, System.ReadOnlySpan<byte> key) -> bool
+SharedKernel.Cryptography.Signing.ISigningKeyProvider
+SharedKernel.Cryptography.Signing.ISigningKeyProvider.GetSigningKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SigningKey?>
+SharedKernel.Cryptography.Signing.InMemorySigningKeyProvider
+SharedKernel.Cryptography.Signing.InMemorySigningKeyProvider.Dispose() -> void
+SharedKernel.Cryptography.Signing.InMemorySigningKeyProvider.GetSigningKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SigningKey?>
+SharedKernel.Cryptography.Signing.InMemorySigningKeyProvider.InMemorySigningKeyProvider(System.Collections.Generic.IEnumerable<SharedKernel.Cryptography.Signing.SigningKey!>! keys) -> void
+SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.ES256 = 7 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.ES384 = 8 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.ES512 = 9 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.PS256 = 1 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.PS384 = 2 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.PS512 = 3 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.RS256 = 4 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.RS384 = 5 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SignatureAlgorithm.RS512 = 6 -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SigningKey
+SharedKernel.Cryptography.Signing.SigningKey.Algorithm.get -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Cryptography.Signing.SigningKey.Dispose() -> void
+SharedKernel.Cryptography.Signing.SigningKey.EnsureHashLength(System.ReadOnlySpan<byte> hash) -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Signing.SigningKey.HashAlgorithm.get -> System.Security.Cryptography.HashAlgorithmName
+SharedKernel.Cryptography.Signing.SigningKey.KeyId.get -> string!
+SharedKernel.Cryptography.Signing.SigningKey.SigningKey(string! keyId, SharedKernel.Cryptography.Signing.SignatureAlgorithm algorithm) -> void
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.AesGcmEncryptionService(SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! keyProvider) -> void
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.DecryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.DecryptToStringAsync(string! encoded, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<string!>!>
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.EncryptAsync(System.ReadOnlyMemory<byte> plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.EncryptToStringAsync(string! plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.IsEncryptedWithCurrentKeyAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService.ReEncryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!>
+SharedKernel.Cryptography.Symmetric.CachedEncryptionKeyProvider
+SharedKernel.Cryptography.Symmetric.CachedEncryptionKeyProvider.CachedEncryptionKeyProvider(SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! inner, System.TimeProvider! timeProvider, System.TimeSpan timeToLive, int maxEntries = 1024) -> void
+SharedKernel.Cryptography.Symmetric.CachedEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Cryptography.Symmetric.CachedEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Cryptography.Symmetric.CryptographicKey
+SharedKernel.Cryptography.Symmetric.CryptographicKey.CryptographicKey(string! id, System.ReadOnlySpan<byte> material) -> void
+SharedKernel.Cryptography.Symmetric.CryptographicKey.Id.get -> string!
+SharedKernel.Cryptography.Symmetric.CryptographicKey.Material.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Symmetric.EncryptedPayload
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.Ciphertext.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.EncryptedPayload(string! keyId, System.ReadOnlySpan<byte> nonce, System.ReadOnlySpan<byte> ciphertext, System.ReadOnlySpan<byte> tag) -> void
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.KeyId.get -> string!
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.Nonce.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.Tag.get -> System.ReadOnlySpan<byte>
+SharedKernel.Cryptography.Symmetric.EncryptedPayload.ToBytes() -> byte[]!
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.<Clone>$() -> SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth!
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Deconstruct(out bool IsHealthy, out string? Description) -> void
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Description.get -> string?
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Description.init -> void
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.EncryptionKeyProviderHealth(bool IsHealthy, string? Description) -> void
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Equals(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? other) -> bool
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.IsHealthy.get -> bool
+SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.IsHealthy.init -> void
+SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider
+SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Cryptography.Symmetric.IEncryptionKeyProviderProbe
+SharedKernel.Cryptography.Symmetric.IEncryptionKeyProviderProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth!>!
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.DecryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.DecryptToStringAsync(string! encoded, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<string!>!>
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.EncryptAsync(System.ReadOnlyMemory<byte> plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.EncryptToStringAsync(string! plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.IsEncryptedWithCurrentKeyAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.ReEncryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!>
+SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider
+SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider.GetCurrentKey() -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider.GetKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey?
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.Decrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.DecryptToString(string! encoded, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<string!>!
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.Encrypt(System.ReadOnlySpan<byte> plaintext, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Cryptography.Symmetric.EncryptedPayload!
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.EncryptToString(string! plaintext, System.ReadOnlySpan<byte> associatedData) -> string!
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.IsEncryptedWithCurrentKey(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload) -> bool
+SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService.ReEncrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider.GetCurrentKey() -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider.GetKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey?
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Cryptography.Symmetric.StaticEncryptionKeyProvider.StaticEncryptionKeyProvider(string! currentKeyId, System.Collections.Generic.IEnumerable<SharedKernel.Cryptography.Symmetric.CryptographicKey!>! keys) -> void
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.Decrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.DecryptToString(string! encoded, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<string!>!
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.Encrypt(System.ReadOnlySpan<byte> plaintext, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Cryptography.Symmetric.EncryptedPayload!
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.EncryptToString(string! plaintext, System.ReadOnlySpan<byte> associatedData) -> string!
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.IsEncryptedWithCurrentKey(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload) -> bool
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.ReEncrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!
+SharedKernel.Cryptography.Symmetric.SynchronousAesGcmEncryptionService.SynchronousAesGcmEncryptionService(SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider! keyProvider) -> void
+SharedKernel.Cryptography.Totp.Base32
+SharedKernel.Cryptography.Totp.HotpAlgorithm
+SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha1 = 0 -> SharedKernel.Cryptography.Totp.HotpAlgorithm
+SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha256 = 1 -> SharedKernel.Cryptography.Totp.HotpAlgorithm
+SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha512 = 2 -> SharedKernel.Cryptography.Totp.HotpAlgorithm
+SharedKernel.Cryptography.Totp.HotpGenerator
+SharedKernel.Cryptography.Totp.HotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, long counter, int digits = 6, SharedKernel.Cryptography.Totp.HotpAlgorithm algorithm = SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha1) -> string!
+SharedKernel.Cryptography.Totp.HotpGenerator.HotpGenerator() -> void
+SharedKernel.Cryptography.Totp.HotpGenerator.ValidateCode(System.ReadOnlySpan<byte> secret, string! code, long counter, int digits = 6, SharedKernel.Cryptography.Totp.HotpAlgorithm algorithm = SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha1) -> bool
+SharedKernel.Cryptography.Totp.IHotpGenerator
+SharedKernel.Cryptography.Totp.IHotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, long counter, int digits = 6, SharedKernel.Cryptography.Totp.HotpAlgorithm algorithm = SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha1) -> string!
+SharedKernel.Cryptography.Totp.IHotpGenerator.ValidateCode(System.ReadOnlySpan<byte> secret, string! code, long counter, int digits = 6, SharedKernel.Cryptography.Totp.HotpAlgorithm algorithm = SharedKernel.Cryptography.Totp.HotpAlgorithm.Sha1) -> bool
+SharedKernel.Cryptography.Totp.IRecoveryCodeGenerator
+SharedKernel.Cryptography.Totp.IRecoveryCodeGenerator.GenerateCodes(int count = 10) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Cryptography.Totp.ITotpAttemptThrottle
+SharedKernel.Cryptography.Totp.ITotpAttemptThrottle.IsThrottledAsync(string! identityKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Totp.ITotpAttemptThrottle.RecordAttemptAsync(string! identityKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Cryptography.Totp.ITotpGenerator
+SharedKernel.Cryptography.Totp.ITotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> string!
+SharedKernel.Cryptography.Totp.ITotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, System.DateTimeOffset timestamp, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> string!
+SharedKernel.Cryptography.Totp.ITotpGenerator.TryValidateCode(System.ReadOnlySpan<byte> secret, string! code, System.DateTimeOffset timestamp, out long timeStep, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> bool
+SharedKernel.Cryptography.Totp.ITotpGenerator.TryValidateCode(System.ReadOnlySpan<byte> secret, string! code, out long timeStep, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> bool
+SharedKernel.Cryptography.Totp.ITotpReplayGuard
+SharedKernel.Cryptography.Totp.ITotpReplayGuard.TryAcceptTimeStepAsync(string! identityKey, long timeStep, System.TimeSpan retention, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Cryptography.Totp.ITotpVerifier
+SharedKernel.Cryptography.Totp.ITotpVerifier.VerifyAsync(string! identityKey, System.ReadOnlyMemory<byte> secret, string! code, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Totp.TotpVerificationResult>
+SharedKernel.Cryptography.Totp.RecoveryCodeGenerator
+SharedKernel.Cryptography.Totp.RecoveryCodeGenerator.GenerateCodes(int count = 10) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Cryptography.Totp.RecoveryCodeGenerator.RecoveryCodeGenerator(SharedKernel.Cryptography.Random.ISecureRandomGenerator! random) -> void
+SharedKernel.Cryptography.Totp.TotpGenerator
+SharedKernel.Cryptography.Totp.TotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> string!
+SharedKernel.Cryptography.Totp.TotpGenerator.GenerateCode(System.ReadOnlySpan<byte> secret, System.DateTimeOffset timestamp, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> string!
+SharedKernel.Cryptography.Totp.TotpGenerator.TotpGenerator(SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Cryptography.Totp.TotpGenerator.TryValidateCode(System.ReadOnlySpan<byte> secret, string! code, System.DateTimeOffset timestamp, out long timeStep, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> bool
+SharedKernel.Cryptography.Totp.TotpGenerator.TryValidateCode(System.ReadOnlySpan<byte> secret, string! code, out long timeStep, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> bool
+SharedKernel.Cryptography.Totp.TotpParameters
+SharedKernel.Cryptography.Totp.TotpParameters.<Clone>$() -> SharedKernel.Cryptography.Totp.TotpParameters!
+SharedKernel.Cryptography.Totp.TotpParameters.Algorithm.get -> SharedKernel.Cryptography.Totp.HotpAlgorithm
+SharedKernel.Cryptography.Totp.TotpParameters.Algorithm.init -> void
+SharedKernel.Cryptography.Totp.TotpParameters.Digits.get -> int
+SharedKernel.Cryptography.Totp.TotpParameters.Digits.init -> void
+SharedKernel.Cryptography.Totp.TotpParameters.DriftSteps.get -> int
+SharedKernel.Cryptography.Totp.TotpParameters.DriftSteps.init -> void
+SharedKernel.Cryptography.Totp.TotpParameters.Equals(SharedKernel.Cryptography.Totp.TotpParameters? other) -> bool
+SharedKernel.Cryptography.Totp.TotpParameters.StepSeconds.get -> int
+SharedKernel.Cryptography.Totp.TotpParameters.StepSeconds.init -> void
+SharedKernel.Cryptography.Totp.TotpParameters.TotpParameters() -> void
+SharedKernel.Cryptography.Totp.TotpParameters.ValidityWindow.get -> System.TimeSpan
+SharedKernel.Cryptography.Totp.TotpProvisioningUri
+SharedKernel.Cryptography.Totp.TotpSecret
+SharedKernel.Cryptography.Totp.TotpVerificationResult
+SharedKernel.Cryptography.Totp.TotpVerificationResult.Invalid = 0 -> SharedKernel.Cryptography.Totp.TotpVerificationResult
+SharedKernel.Cryptography.Totp.TotpVerificationResult.Replayed = 2 -> SharedKernel.Cryptography.Totp.TotpVerificationResult
+SharedKernel.Cryptography.Totp.TotpVerificationResult.Valid = 1 -> SharedKernel.Cryptography.Totp.TotpVerificationResult
+SharedKernel.Cryptography.Totp.TotpVerifier
+SharedKernel.Cryptography.Totp.TotpVerifier.TotpVerifier(SharedKernel.Cryptography.Totp.ITotpGenerator! generator, SharedKernel.Cryptography.Totp.ITotpReplayGuard! replayGuard) -> void
+SharedKernel.Cryptography.Totp.TotpVerifier.VerifyAsync(string! identityKey, System.ReadOnlyMemory<byte> secret, string! code, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Totp.TotpVerificationResult>
+abstract SharedKernel.Cryptography.Signing.SigningKey.SignHashAsync(System.ReadOnlyMemory<byte> hash, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+abstract SharedKernel.Cryptography.Signing.SigningKey.VerifyHashAsync(System.ReadOnlyMemory<byte> hash, System.ReadOnlyMemory<byte> signature, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+const SharedKernel.Cryptography.CryptographyErrorCodes.DataKeyUnwrapFailed = "cryptography.data_key_unwrap_failed" -> string!
+const SharedKernel.Cryptography.CryptographyErrorCodes.DecryptionFailed = "cryptography.decryption_failed" -> string!
+const SharedKernel.Cryptography.CryptographyErrorCodes.InvalidBase32Encoding = "cryptography.invalid_base32_encoding" -> string!
+const SharedKernel.Cryptography.CryptographyErrorCodes.MalformedPayload = "cryptography.malformed_payload" -> string!
+const SharedKernel.Cryptography.CryptographyErrorCodes.UnknownKeyId = "cryptography.unknown_key_id" -> string!
+const SharedKernel.Cryptography.Envelope.EnvelopePayload.MaxWrappedKeyLength = 4096 -> int
+const SharedKernel.Cryptography.Hashing.Pbkdf2OneWayHashAlgorithm.Id = "pbkdf2-sha256" -> string!
+const SharedKernel.Cryptography.Hashing.PhcHashString.MaxLength = 1024 -> int
+const SharedKernel.Cryptography.KeyDerivation.SubkeyDerivation.MinimumRootKeyLength = 32 -> int
+const SharedKernel.Cryptography.Options.OneWayHashingOptions.MinimumPepperBytes = 32 -> int
+const SharedKernel.Cryptography.Options.Pbkdf2Options.MaximumIterations = 2000000 -> int
+const SharedKernel.Cryptography.Options.Pbkdf2Options.MinimumIterations = 100000 -> int
+const SharedKernel.Cryptography.Random.SecureRandomGenerator.MinimumTokenBytes = 16 -> int
+const SharedKernel.Cryptography.Signing.HmacSha256Signer.MinimumKeyLength = 32 -> int
+const SharedKernel.Cryptography.Signing.SigningKey.MinimumRsaKeySize = 2048 -> int
+const SharedKernel.Cryptography.Symmetric.CachedEncryptionKeyProvider.DefaultMaxEntries = 1024 -> int
+const SharedKernel.Cryptography.Symmetric.CryptographicKey.MaxIdLength = 255 -> int
+const SharedKernel.Cryptography.Symmetric.EncryptedPayload.NonceSize = 12 -> int
+const SharedKernel.Cryptography.Symmetric.EncryptedPayload.TagSize = 16 -> int
+const SharedKernel.Cryptography.Totp.HotpGenerator.MaximumDigits = 8 -> int
+const SharedKernel.Cryptography.Totp.HotpGenerator.MinimumDigits = 6 -> int
+const SharedKernel.Cryptography.Totp.HotpGenerator.MinimumSecretLength = 16 -> int
+const SharedKernel.Cryptography.Totp.TotpSecret.DefaultLength = 20 -> int
+override SharedKernel.Cryptography.Envelope.EnvelopePayload.ToString() -> string!
+override SharedKernel.Cryptography.Hashing.PhcHashString.ToString() -> string!
+override SharedKernel.Cryptography.Symmetric.CryptographicKey.ToString() -> string!
+override SharedKernel.Cryptography.Symmetric.EncryptedPayload.ToString() -> string!
+override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Equals(object? obj) -> bool
+override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.GetHashCode() -> int
+override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.ToString() -> string!
+override SharedKernel.Cryptography.Totp.TotpParameters.Equals(object? obj) -> bool
+override SharedKernel.Cryptography.Totp.TotpParameters.GetHashCode() -> int
+override SharedKernel.Cryptography.Totp.TotpParameters.ToString() -> string!
+static SharedKernel.Cryptography.Envelope.EnvelopePayload.TryParse(System.ReadOnlySpan<byte> data, out SharedKernel.Cryptography.Envelope.EnvelopePayload? payload) -> bool
+static SharedKernel.Cryptography.Envelope.EnvelopePayload.TryParse(string? encoded, out SharedKernel.Cryptography.Envelope.EnvelopePayload? payload) -> bool
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddAsymmetricSigning(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddEnvelopeEncryption(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddOneWayHashAlgorithm<TAlgorithm>(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddSharedKernelCryptography(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddSymmetricEncryption(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddSynchronousSymmetricEncryption(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions.AddTotpVerification(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.FixedTimeComparison.AreEqual(System.ReadOnlySpan<byte> left, System.ReadOnlySpan<byte> right) -> bool
+static SharedKernel.Cryptography.FixedTimeComparison.AreEqual(string! left, string! right) -> bool
+static SharedKernel.Cryptography.FixedTimeComparison.AreEqualToAny(string! candidate, System.Collections.Generic.IEnumerable<string!>! expectedValues) -> bool
+static SharedKernel.Cryptography.Hashing.ContentHasherExtensions.ComputeHashBase64(this SharedKernel.Cryptography.Hashing.IContentHasher! hasher, System.ReadOnlySpan<byte> content) -> string!
+static SharedKernel.Cryptography.Hashing.ContentHasherExtensions.ComputeHashHex(this SharedKernel.Cryptography.Hashing.IContentHasher! hasher, System.ReadOnlySpan<byte> content) -> string!
+static SharedKernel.Cryptography.Hashing.PhcHashString.TryParse(string? value, out SharedKernel.Cryptography.Hashing.PhcHashString? result) -> bool
+static SharedKernel.Cryptography.KeyDerivation.PurposeBoundKeyProviderExtensions.ForPurpose(this SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! provider, string! purpose, System.ReadOnlySpan<byte> context = default(System.ReadOnlySpan<byte>)) -> SharedKernel.Cryptography.KeyDerivation.PurposeBoundEncryptionKeyProvider!
+static SharedKernel.Cryptography.KeyDerivation.PurposeBoundKeyProviderExtensions.ForPurposeSynchronous(this SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider! provider, string! purpose, System.ReadOnlySpan<byte> context = default(System.ReadOnlySpan<byte>)) -> SharedKernel.Cryptography.KeyDerivation.PurposeBoundSynchronousEncryptionKeyProvider!
+static SharedKernel.Cryptography.KeyDerivation.SubkeyDerivation.DeriveKey(System.ReadOnlySpan<byte> rootKey, string! purpose, System.ReadOnlySpan<byte> context, System.Span<byte> destination) -> void
+static SharedKernel.Cryptography.KeyDerivation.SubkeyDerivation.DeriveKey(System.ReadOnlySpan<byte> rootKey, string! purpose, System.ReadOnlySpan<byte> context, int length = 32) -> byte[]!
+static SharedKernel.Cryptography.Options.CryptographyOptions.SectionName.get -> string!
+static SharedKernel.Cryptography.Options.Pbkdf2Options.SectionName.get -> string!
+static SharedKernel.Cryptography.Signing.SigningKey.FromECDsa(string! keyId, System.Security.Cryptography.ECDsa! ecdsa, System.Security.Cryptography.DSASignatureFormat signatureFormat = System.Security.Cryptography.DSASignatureFormat.IeeeP1363FixedFieldConcatenation, bool ownsKey = true) -> SharedKernel.Cryptography.Signing.SigningKey!
+static SharedKernel.Cryptography.Signing.SigningKey.FromRsa(string! keyId, System.Security.Cryptography.RSA! rsa, SharedKernel.Cryptography.Signing.SignatureAlgorithm algorithm, bool ownsKey = true) -> SharedKernel.Cryptography.Signing.SigningKey!
+static SharedKernel.Cryptography.Signing.SigningKey.GetEcdsaAlgorithm(System.Security.Cryptography.ECCurve curve) -> SharedKernel.Cryptography.Signing.SignatureAlgorithm?
+static SharedKernel.Cryptography.Signing.SigningKey.GetHashAlgorithm(SharedKernel.Cryptography.Signing.SignatureAlgorithm algorithm) -> System.Security.Cryptography.HashAlgorithmName
+static SharedKernel.Cryptography.Symmetric.EncryptedPayload.TryParse(System.ReadOnlySpan<byte> data, out SharedKernel.Cryptography.Symmetric.EncryptedPayload? payload) -> bool
+static SharedKernel.Cryptography.Symmetric.EncryptedPayload.TryParse(string? encoded, out SharedKernel.Cryptography.Symmetric.EncryptedPayload? payload) -> bool
+static SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.operator !=(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? left, SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? right) -> bool
+static SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.operator ==(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? left, SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? right) -> bool
+static SharedKernel.Cryptography.Totp.Base32.Decode(string! text) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+static SharedKernel.Cryptography.Totp.Base32.Encode(System.ReadOnlySpan<byte> data) -> string!
+static SharedKernel.Cryptography.Totp.RecoveryCodeGenerator.Normalize(string! code) -> string!
+static SharedKernel.Cryptography.Totp.TotpParameters.Default.get -> SharedKernel.Cryptography.Totp.TotpParameters!
+static SharedKernel.Cryptography.Totp.TotpParameters.operator !=(SharedKernel.Cryptography.Totp.TotpParameters? left, SharedKernel.Cryptography.Totp.TotpParameters? right) -> bool
+static SharedKernel.Cryptography.Totp.TotpParameters.operator ==(SharedKernel.Cryptography.Totp.TotpParameters? left, SharedKernel.Cryptography.Totp.TotpParameters? right) -> bool
+static SharedKernel.Cryptography.Totp.TotpProvisioningUri.Build(string! issuer, string! accountName, System.ReadOnlySpan<byte> secret, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null) -> System.Uri!
+static SharedKernel.Cryptography.Totp.TotpSecret.Generate(SharedKernel.Cryptography.Random.ISecureRandomGenerator! random, int length = 20) -> byte[]!
+virtual SharedKernel.Cryptography.Signing.SigningKey.Dispose(bool disposing) -> void
