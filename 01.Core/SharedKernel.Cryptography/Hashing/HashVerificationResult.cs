@@ -1,24 +1,17 @@
 namespace SharedKernel.Cryptography.Hashing;
 
-/// <summary>
-/// Describes the outcome of verifying a plaintext secret against a previously stored hash.
-/// </summary>
+/// <summary>The outcome of verifying a secret against a stored hash.</summary>
 public enum HashVerificationResult
 {
-    /// <summary>The supplied secret does not match the stored hash.</summary>
-    Failed,
+    /// <summary>The secret does not match, or the stored hash is malformed or uses an unknown algorithm or pepper.</summary>
+    Failed = 0,
+
+    /// <summary>The secret matches and the hash uses the current algorithm, cost and pepper.</summary>
+    Success = 1,
 
     /// <summary>
-    /// The supplied secret matches the stored hash, and the hash was produced with the
-    /// current algorithm version and iteration count.
+    /// The secret matches, but the hash uses an older algorithm, cost, pepper or storage format. Hash the secret
+    /// again with <see cref="IOneWayHasher.Hash"/> and replace the stored hash.
     /// </summary>
-    Success,
-
-    /// <summary>
-    /// The supplied secret matches the stored hash, but the hash was produced with an older
-    /// iteration count or algorithm version than the one currently configured. The caller
-    /// should re-hash the secret with <see cref="IOneWayHasher.Hash(string)"/> and persist
-    /// the new value.
-    /// </summary>
-    SuccessRehashNeeded,
+    SuccessRehashNeeded = 2,
 }

@@ -1,40 +1,27 @@
 namespace SharedKernel.Cryptography.Hashing;
 
-/// <summary>
-/// Convenience string-encoding extension methods for <see cref="IContentHasher"/>.
-/// </summary>
-/// <remarks>
-/// Both methods are built on <see cref="IContentHasher.ComputeHash(byte[])"/> — they add encoding
-/// only, never a second hashing strategy. As with <see cref="IContentHasher"/> itself, never use
-/// these for secrets; use <see cref="IOneWayHasher"/> instead.
-/// </remarks>
+/// <summary>Encodes <see cref="IContentHasher"/> digests as text.</summary>
 public static class ContentHasherExtensions
 {
-    /// <summary>
-    /// Computes the digest of <paramref name="content"/> and encodes it as lowercase hexadecimal.
-    /// </summary>
+    /// <summary>Computes the digest of <paramref name="content"/> as lowercase hexadecimal.</summary>
     /// <param name="hasher">The content hasher.</param>
-    /// <param name="content">The content to hash. Never a secret.</param>
-    /// <returns>The digest as a lowercase hex-encoded string.</returns>
-    public static string ComputeHashHex(this IContentHasher hasher, byte[] content)
+    /// <param name="content">The content to hash.</param>
+    /// <returns>A 64-character lowercase hexadecimal string.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hasher"/> is <see langword="null"/>.</exception>
+    public static string ComputeHashHex(this IContentHasher hasher, ReadOnlySpan<byte> content)
     {
         ArgumentNullException.ThrowIfNull(hasher);
-
-        byte[] digest = hasher.ComputeHash(content);
-        return Convert.ToHexStringLower(digest);
+        return Convert.ToHexStringLower(hasher.ComputeHash(content));
     }
 
-    /// <summary>
-    /// Computes the digest of <paramref name="content"/> and encodes it as Base64.
-    /// </summary>
+    /// <summary>Computes the digest of <paramref name="content"/> as standard padded Base64.</summary>
     /// <param name="hasher">The content hasher.</param>
-    /// <param name="content">The content to hash. Never a secret.</param>
-    /// <returns>The digest as a Base64-encoded string.</returns>
-    public static string ComputeHashBase64(this IContentHasher hasher, byte[] content)
+    /// <param name="content">The content to hash.</param>
+    /// <returns>A 44-character Base64 string.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hasher"/> is <see langword="null"/>.</exception>
+    public static string ComputeHashBase64(this IContentHasher hasher, ReadOnlySpan<byte> content)
     {
         ArgumentNullException.ThrowIfNull(hasher);
-
-        byte[] digest = hasher.ComputeHash(content);
-        return Convert.ToBase64String(digest);
+        return Convert.ToBase64String(hasher.ComputeHash(content));
     }
 }
