@@ -1,380 +1,495 @@
 # SharedKernel.Application.Behaviors
 
-Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, Caching, Resilience, Idempotency, Transaction, and Cache Invalidation for unary requests — plus five parallel behaviors for the streaming query pipeline, a fire-and-forget dispatcher, and a zero-prerequisite onboarding preset. Everything is composed in a fixed canonical order via `ApplicationBehaviorsBuilder`. References `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation`, and a Polly v8 resilience pipeline — never `06.Persistence`, `07.Messaging`, or `12.Security`.
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![MediatR 12.4.1](https://img.shields.io/badge/MediatR-12.4.1%20(MIT)-5c6bc0)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-This package ships **no MediatR registration of its own** — the consuming service already registers MediatR; `ApplicationBehaviorsBuilder` only appends behaviors to the already-registered pipeline.
+**The cross-cutting half of a request: tracing, logging, metrics, authorization, validation, idempotency,
+transactions and auditing — composed in one fixed order, each opted into explicitly.**
 
-## Canonical pipeline order (non-negotiable, twelve named slots)
+A handler decides business outcomes. Everything around that decision lives here, so adding an audit trail or
+an idempotency guard later changes a marker interface on a command, never a handler body. The order the
+behaviors run in is fixed by this package rather than by your registration order, because the order is a
+correctness property: authorization has to precede validation, a commit has to precede a cache eviction.
 
-```text
-1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/approval/resilience failures
-2.  MetricsBehavior             ← records sharedkernel.application.request.duration, tagged with an outcome
-3.  TracingBehavior             ← starts/disposes the request-traversal Activity regardless of outcome
-4.  ValidationBehavior          ← throws ValidationException before any handler, auth, approval, cache, or retry work happens
-5.  AuthorizationBehavior       ← commands AND queries (IAuthorizeRequest)
-6.  DualApprovalBehavior        ← commands only (ICommandBase, IRequiresDualApproval); rejects before cache/mutation
-7.  CachingBehavior              ← queries only (ICacheableQuery<TResponse>)
-8.  ResilienceBehavior          ← commands only in practice (IRetryableRequest); wraps Idempotency + Auditing + Transaction
-9.  IdempotentCommandBehavior   ← commands only (ICommandBase, IIdempotentRequest)
-10. AuditingBehavior            ← commands only (ICommandBase, IAuditableRequest<TResponse>); writes just inside Transaction, before its commit
-11. TransactionBehavior         ← commands only (ICommandBase); wraps handler + commit
-12. CacheInvalidationBehavior   ← commands only (ICommandBase, IInvalidatesCache); innermost — after commit
-```
+| You get | So that |
+| --- | --- |
+| A fixed five-stage pipeline you opt into per behavior | Two services compose the same request the same way, and the order can't drift |
+| Expected failures as `Result` values | A denial or an invalid field returns an error the caller handles — exceptions stay for genuine faults |
+| Fail-closed authorization | A request that declares no permissions is denied, not waved through |
+| Commit only on success, only once | A handler that returns a failure persists nothing, and a nested command joins the outer transaction |
+| `ICommandScope.OnCompleted` | Work that must follow a commit — publish, evict, notify — runs after it, or not at all |
+| Idempotency with a request fingerprint | A retried submission replays its original response; the same key with a different body is rejected |
+| Error-aware telemetry | Spans, metrics and logs all carry the error type and code, so a dashboard can alert on *what* failed |
+| `AddBehavior(type, stage)` | Your own behavior lands in the canonical order instead of wherever it was registered |
 
-`ApplicationBehaviorsBuilder.Build()` always registers behaviors so this canonical temporal order results, regardless of the order `.AddXBehavior()` was called in. Step 6 and step 7 are mutually exclusive with each other and with {8, 9, 10, 11, 12} at the request-type level — a query never satisfies `ICommandBase`, and a command never satisfies `ICacheableQuery<TResponse>` — so a single request only ever actually traverses one of {7} or {6, 8, 9, 10, 11, 12}. `DualApprovalBehavior` (step 6) is distinct from `AuthorizationBehavior` (step 5): Authorization answers "is this identity permitted to attempt this kind of action at all" (a static permission/policy question); DualApproval answers "has a second, distinct identity signed off on this exact pending instance of the action" (a per-instance maker-checker gate). The two are orthogonal and independently opt-in.
+**Dependencies:** `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation`, and
+first-party `Microsoft.Extensions.*` packages. **No cache, no Polly, no hosting, no `SharedKernel.Core`** —
+caching behaviors live in the separate
+[`SharedKernel.Application.Behaviors.Caching`](../SharedKernel.Application.Behaviors.Caching/README.md).
 
-> **Physical DI registration order vs. the canonical step order above.** MediatR wraps `IPipelineBehavior<,>` instances so the *first-registered* behavior is outermost — its post-`next()` code runs *last*, after every later-registered (more-inner) behavior's post-`next()` code has already run. Two pairs of behaviors deliberately invert relative to the step numbers above, because each behavior's meaningful side effect happens *after* `next()` returns: `AuditingBehavior`'s write must observably complete *before* `TransactionBehavior`'s own commit executes ("just inside Transaction"), so `AuditingBehavior` is registered internally *after* `TransactionBehavior` — even though Auditing is step 10 and Transaction is step 11 above. `CacheInvalidationBehavior`'s eviction must observably follow *after* `TransactionBehavior`'s own commit, so `CacheInvalidationBehavior` is registered internally *before* `TransactionBehavior` — even though CacheInvalidation is step 12 and Transaction is step 11 above. `ApplicationBehaviorsBuilder` handles both internally — callers only ever see the twelve-step temporal order documented above, never the underlying registration-list order.
+## Contents
 
-## The local-seam bridging pattern
-
-`TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), `IdempotentCommandBehavior` (`IIdempotencyKeyStore`), `DualApprovalBehavior` (`IDualApprovalStore`, plus `IAuthorizationContextIdentity` as an additive sibling capability on `IAuthorizationContext`), and `AuditingBehavior` (`IAuditTrailWriter`) each define a **minimal interface owned by this package** — never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging`, `06.Persistence` respectively, none of which this package may reference). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied five times, not five different patterns.
+- [Install](#install)
+- [Quick start](#quick-start)
+- [The pipeline](#the-pipeline)
+- [What each behavior does](#what-each-behavior-does)
+- [What happens when something fails](#what-happens-when-something-fails)
+- [Seams you must register](#seams-you-must-register)
+- [Nested commands and `ICommandScope`](#nested-commands-and-icommandscope)
+- [Extending the pipeline](#extending-the-pipeline)
+- [Telemetry reference](#telemetry-reference)
+- [Pitfalls](#pitfalls)
+- [Testing](#testing)
+- [Package](#package)
 
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+<PackageReference Include="SharedKernel.Application.Behaviors" Version="*" />
 ```
 
-Or, once published, reference the NuGet package `SharedKernel.Application.Behaviors`.
+## Quick start
 
-## Quick Start — the zero-prerequisite preset
-
-For a new service with no infrastructure bridges wired up yet, `AddDefaultBehaviors()` registers exactly the four behaviors that carry no `Build()`-time missing-dependency guard (Logging, Metrics, Tracing, Validation):
+The zero-prerequisite preset. These four behaviors need nothing registered beyond MediatR itself:
 
 ```csharp
-services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-services.AddValidatorsFromAssemblyContaining<Program>();
+using SharedKernel.Application.Behaviors.Extensions;
 
-services
-    .AddSharedKernelApplicationBehaviors()
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
+builder.Services.AddSharedKernelApplication();
+
+builder.Services.AddSharedKernelApplicationBehaviors()
+    .AddDefaultBehaviors()     // Tracing, Logging, Metrics, Validation
+    .Build();                  // ← Build() is not optional: nothing is registered until you call it
+```
+
+Everything else is a deliberate opt-in, because each one needs a seam you have to provide:
+
+```csharp
+builder.Services.AddScoped<IRequestContext, UserRequestContext>();
+builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EfUnitOfWork>());
+builder.Services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
+builder.Services.AddScoped<IAuditTrailWriter, EfAuditTrailWriterAdapter>();
+
+builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
+    .AddAuthorizationBehavior()
+    .AddIdempotencyBehavior()
+    .AddTransactionBehavior()
+    .AddAuditingBehavior()
     .Build();
 ```
 
-This is provably equivalent to calling `.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()` individually — it is a convenience preset, not a different code path. Every other behavior below requires its own registered local-seam/infrastructure bridge and remains a deliberate, individual opt-in; none may ever be folded into this preset.
+`Build()` fails fast: opting into a behavior whose seam is missing throws `InvalidOperationException` naming
+both, at startup. It also refuses a second call on the same builder, which would otherwise register every
+behavior twice.
 
-## Quick Start — full twelve-named-slot registration
+## The pipeline
 
-```csharp
-services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-services.AddValidatorsFromAssemblyContaining<Program>();   // FluentValidation's own scanning, not ours
+Five stages, always in this order, regardless of the order you called the `Add…` methods:
 
-services.AddSharedKernelApplication();   // 05.Application's domain-event bridge
+| # | Stage | Behavior | Applies to | Opt-in |
+| --- | --- | --- | --- | --- |
+| 1 | Observability | `TracingBehavior` | every request | `AddTracingBehavior()` |
+| 2 | Observability | `LoggingBehavior` | every request | `AddLoggingBehavior()` |
+| 3 | Observability | `MetricsBehavior` | every request | `AddMetricsBehavior()` |
+| 4 | Authorization | `AuthorizationBehavior` | requests implementing `IAuthorizeRequest` | `AddAuthorizationBehavior()` |
+| 5 | Validation | `ValidationBehavior` | every request with a registered validator | `AddValidationBehavior()` |
+| 6 | Query | *(yours, or `CachingBehavior`)* | queries | `AddBehavior(…, PipelineStage.Query)` |
+| 7 | Command | command scope | commands | automatic when any command behavior is on |
+| 8 | Command | `IdempotencyBehavior` | commands implementing `IIdempotentRequest` | `AddIdempotencyBehavior()` |
+| 9 | Command | `TransactionBehavior` | commands | `AddTransactionBehavior()` |
+| 10 | Command | `AuditingBehavior` | commands implementing `IAuditableRequest<T>` | `AddAuditingBehavior()` |
+| 11 | Command | *(yours, or `CacheInvalidationBehavior`)* | commands | `AddBehavior(…, PipelineStage.Command)` |
 
-// Opt-in pipeline behaviors — fixed execution order regardless of call order
-services
-    .AddSharedKernelApplicationBehaviors()
-    .AddLoggingBehavior()
-    .AddMetricsBehavior()
-    .AddTracingBehavior()           // no missing-dependency guard (BCL ActivitySource)
-    .AddValidationBehavior()
-    .AddAuthorizationBehavior()     // requires IAuthorizationContext registered (see below)
-    .AddDualApprovalBehavior()      // requires IAuthorizationContext (with IAuthorizationContextIdentity) AND IDualApprovalStore registered (see below)
-    .AddCachingBehavior()           // requires SharedKernel.Caching.Abstractions.ICacheService registered
-    .AddCacheInvalidationBehavior() // reuses the ICacheService guard above
-    .AddResilienceBehavior()        // requires a ResiliencePipelineProvider registered
-    .AddIdempotencyBehavior()       // requires IIdempotencyKeyStore registered (see below)
-    .AddAuditingBehavior()          // requires SharedKernel.Application.Behaviors.IAuditTrailWriter registered (see below)
-    .AddTransactionBehavior()       // requires SharedKernel.Application.Behaviors.IUnitOfWork registered (see below)
-    .AddFireAndForgetDispatch(opts => opts.Capacity = 500)  // opt-in; see Fire-and-forget dispatch below
-    .AddStreamingBehaviors()        // opt-in; see Streaming behaviors below
-    .Build();
+Tracing is outermost so every log line below it carries the trace id. **Authorization precedes validation**
+deliberately: a caller who may not perform an operation should not learn its validation rules, and validators
+often hit the database.
+
+Here is one successful command, end to end:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Caller
+    participant Tracing
+    participant Logging as Logging + Metrics
+    participant Authz as Authorization
+    participant Valid as Validation
+    participant Scope as Command scope
+    participant Idem as Idempotency
+    participant Tx as Transaction
+    participant Audit as Auditing
+    participant Handler
+
+    Caller->>Tracing: Send(command)
+    Tracing->>Logging: span started
+    Logging->>Authz: timer started
+    Authz->>Valid: permissions satisfied
+    Valid->>Scope: no validation errors
+    Scope->>Idem: scope entered, depth 1
+    Idem->>Tx: key reserved, token issued
+    Tx->>Audit: (commit happens on the way back)
+    Audit->>Handler: (audit is written on the way back)
+    Handler-->>Audit: Result.Success
+    Audit-->>Tx: audit entry recorded
+    Tx-->>Idem: SaveChangesAsync committed
+    Idem-->>Scope: key completed with the response
+    Note over Scope: OnCompleted callbacks run here, after the commit
+    Scope-->>Caller: Result.Success
 ```
 
-`Build()` throws `InvalidOperationException` at registration time if `.AddTransactionBehavior()`, `.AddCachingBehavior()`/`.AddCacheInvalidationBehavior()`, `.AddAuthorizationBehavior()`, `.AddDualApprovalBehavior()`, `.AddIdempotencyBehavior()`, `.AddAuditingBehavior()`, or `.AddResilienceBehavior()` was called without its required dependency already registered in `IServiceCollection`. `.AddDualApprovalBehavior()` is this package's first **two**-dependency guard — it throws a distinct message naming whichever of `IAuthorizationContext`/`IDualApprovalStore` is missing (or both).
+Read the arrows down as "before the handler" and up as "after it". The audit write lands **inside** the
+transaction, the idempotency key is completed **after** the commit, and post-commit callbacks run last of all.
 
-## Bridging the local seams at the composition root
+## Which markers do I implement?
 
-```csharp
-// IUnitOfWork — bridge this package's minimal interface to 06.Persistence's concrete IUnitOfWork.
-// Never reference 06.Persistence directly from inside SharedKernel.Application.Behaviors itself.
-services.AddScoped<SharedKernel.Application.Behaviors.IUnitOfWork>(sp =>
-    new EfUnitOfWorkAdapter(sp.GetRequiredService<SharedKernel.Persistence.Abstractions.IUnitOfWork>()));
+Tracing, logging, metrics and validation apply to every request once you opt in — a request declares nothing.
+The other four are opt-in **per request**, through a marker it implements:
 
-// IAuthorizationContext — bridge to 12.Security's real IUserContext/ITenantProvider.
-// Additionally implementing IAuthorizationContextIdentity lets DualApprovalBehavior resolve "who is
-// calling right now" from the SAME bridge AuthorizationBehavior already uses — no second registration.
-services.AddScoped<SharedKernel.Application.Behaviors.IAuthorizationContext>(sp =>
-    new UserContextAuthorizationAdapter(sp.GetRequiredService<SharedKernel.Security.Abstractions.IUserContext>()));
-// public sealed class UserContextAuthorizationAdapter : IAuthorizationContext, IAuthorizationContextIdentity
-// {
-//     public Task<string> GetCurrentIdentityAsync(CancellationToken ct) => Task.FromResult(_userContext.UserId);
-//     // ... IAuthorizationContext members unchanged ...
-// }
+```mermaid
+flowchart TD
+    Start["A request"]
+    Start --> P{"Does the caller<br/>need a permission?"}
+    P -- yes --> P1["IAuthorizeRequest<br/>RequiredPermissions + PermissionMatch"]
+    P -- no --> D
 
-// IDualApprovalStore — the consuming service supplies its own implementation (e.g. a dedicated
-// approvals table or a distributed cache key). Never a 06.Persistence/07.Messaging/12.Security
-// reference from this package itself.
-services.AddScoped<SharedKernel.Application.Behaviors.IDualApprovalStore, SqlDualApprovalStore>();
+    P1 --> D{"Is it a command<br/>that must not run twice?"}
+    D -- yes --> D1["IIdempotentRequest<br/>IdempotencyKey + Fingerprint"]
+    D -- no --> A
 
-// IIdempotencyKeyStore — the consuming service supplies its own implementation
-// (e.g. backed by the same distributed store 07.Messaging's IIdempotencyStore uses,
-// or a dedicated table/cache key). Never a 07.Messaging reference from this package.
-// Additionally implementing IIdempotencyResponseStore opts the store in to response replay (see below).
-services.AddScoped<SharedKernel.Application.Behaviors.IIdempotencyKeyStore, RedisIdempotencyKeyStore>();
+    D1 --> A{"Is it a command whose<br/>attempt must be recorded?"}
+    A -- yes --> A1["IAuditableRequest&lt;TResponse&gt;<br/>Action, ResourceType, ResourceId, snapshots"]
+    A -- no --> L
 
-// IAuditTrailWriter — bridge this package's minimal local interface to 06.Persistence's real,
-// richer IAuditTrailWriter (SharedKernel.Persistence.Abstractions). Never reference
-// 06.Persistence directly from inside SharedKernel.Application.Behaviors itself.
-services.AddScoped<SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter>(sp =>
-    new PersistenceAuditTrailWriterAdapter(
-        sp.GetRequiredService<SharedKernel.Persistence.Abstractions.IAuditTrailWriter>()));
-// public sealed class PersistenceAuditTrailWriterAdapter(
-//     SharedKernel.Persistence.Abstractions.IAuditTrailWriter realWriter)
-//     : SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter
-// {
-//     public async Task RecordAsync(
-//         SharedKernel.Application.Behaviors.Auditing.AuditEntry entry, CancellationToken ct = default)
-//     {
-//         // Actor identity, tenant identity, timestamp, and hash-chain linkage are all resolved
-//         // internally by the real writer — this adapter only maps the smaller local shape onto the
-//         // richer one, and discards the returned persisted record (this local seam never needs it back).
-//         await realWriter.RecordAsync(new SharedKernel.Persistence.Abstractions.AuditEntry(
-//             entry.Action, entry.ResourceType, entry.ResourceId,
-//             entry.BeforeSnapshot, entry.AfterSnapshot, CorrelationId: null, entry.ApprovalId), ct);
-//     }
-// }
+    A1 --> L{"Should some of its fields<br/>reach the logs?"}
+    L -- yes --> L1["ILoggableRequest&lt;TResponse&gt;<br/>the fields you choose, never a reflection walk"]
+    L -- no --> Done["Done"]
+    L1 --> Done
+
+    style P1 fill:#ede7f6
+    style D1 fill:#ede7f6
+    style A1 fill:#ede7f6
+    style L1 fill:#ede7f6
 ```
 
-## Declaring requests that opt into a behavior
+They compose: a refund command can be all four at once. Caching markers live in the
+[caching package](../SharedKernel.Application.Behaviors.Caching/README.md).
+
+## What each behavior does
+
+### `TracingBehavior`
+
+Starts an `Activity` named after the request type (`PlaceOrderCommand`), tagged `request.type` (full name)
+and `request.kind` (`command`/`query`/`request`). On a failed `Result` it sets the span status to `Error`
+with `error.type` and `error.code`; on an exception it sets `Error`, records the exception as a span event,
+and rethrows. No listener registered means no allocation.
+
+### `LoggingBehavior`
+
+`Debug` on entry, then one completion line: `Information` on success, `Warning` when the elapsed time crosses
+`SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, and
+`Error` with the exception on a throw. Payloads are never logged unless the request opts in by implementing
+`ILoggableRequest<TResponse>`, which supplies exactly the fields it considers safe:
 
 ```csharp
-// A cacheable query — the read-side half of the caching pair
-public sealed record GetOrderByIdQuery(Guid OrderId)
-    : IQuery<OrderDto>, ICacheableQuery<Result<OrderDto>>
+public sealed record PlaceOrderCommand(string Customer, string CardNumber, decimal Amount)
+    : ICommand<Guid>, ILoggableRequest<Result<Guid>>
 {
-    public CachePolicy CachePolicy => CachePolicy.Default;
-    public string CacheKey => $"orders:{OrderId:D}";
-}
+    public IReadOnlyDictionary<string, object?> LoggableRequestFields =>
+        new Dictionary<string, object?> { ["Customer"] = Customer, ["Amount"] = Amount };   // never CardNumber
 
-// A command implementing IAuthorizeRequest's multi-requirement (AllOf/AnyOf) shape and IIdempotentRequest
-public sealed record PlaceOrderCommand(string IdempotencyKey, Guid CustomerId, decimal Total)
-    : ICommand<Guid>, IAuthorizeRequest, IIdempotentRequest
-{
-    // AllOf: caller must have BOTH "orders:create" AND "orders:write" to proceed.
-    public IReadOnlyCollection<string> AllOfRequirements => ["orders:create", "orders:write"];
-    // AnyOf: at least one of these must pass (OR composition) — empty here, so it is a no-op.
-    public IReadOnlyCollection<string> AnyOfRequirements => [];
-}
-```
-
-Requests that do not implement `ICacheableQuery<TResponse>` / `IAuthorizeRequest` / `IIdempotentRequest` / etc. simply never resolve the corresponding behavior into their pipeline — this is a DI-level fact, not a runtime branch.
-
-## Read/write caching pairing — `ICacheableQuery<TResponse>` + `IInvalidatesCache`
-
-`ICacheableQuery<TResponse>` (queries) and `IInvalidatesCache` (commands) are the two halves of one caching story. A command that mutates the same data a cached query reads should invalidate that query's cache key on success:
-
-```csharp
-public sealed record UpdateOrderTotalCommand(Guid OrderId, decimal NewTotal)
-    : ICommand, IInvalidatesCache
-{
-    // Same key format GetOrderByIdQuery.CacheKey above computes for the same OrderId.
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId:D}"];
-}
-```
-
-`CacheInvalidationBehavior` runs innermost, only after `TransactionBehavior` confirms a commit — by default it evicts on any non-throwing outcome (including `Result.Failure`, mirroring `TransactionBehavior`'s "don't inspect `Result.IsSuccess`" stance); set `InvalidateOnlyOnSuccess = true` on its options to additionally gate eviction on `IHasSuccessFlag.IsSuccess`. A type can never implement both `ICacheableQuery<TResponse>` and `IInvalidatesCache` — queries don't mutate, commands aren't cached.
-
-## Combining retry with mutation safely — `IRetryableRequest` + `IIdempotentRequest`
-
-`ResilienceBehavior` wraps `IdempotentCommandBehavior` and `TransactionBehavior` in the pipeline specifically so a Polly-driven retry re-runs the *full* duplicate-check-then-commit unit on every attempt, never a bare second commit. This resolves the retry-after-partial-commit hazard — but only if the command declares both markers:
-
-```csharp
-public sealed record UpdateOrderTotalCommand(string IdempotencyKey, Guid OrderId, decimal NewTotal)
-    : ICommand, IIdempotentRequest, IRetryableRequest, IInvalidatesCache
-{
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId:D}"];
+    public IReadOnlyDictionary<string, object?>? GetLoggableResponseFields(Result<Guid> response) =>
+        response.IsSuccess ? new Dictionary<string, object?> { ["OrderId"] = response.Value } : null;
 }
 ```
 
-A command implementing `IRetryableRequest` **without** also implementing `IIdempotentRequest` is a documented misuse — there is no compile-time way to enforce "interface A implies interface B" across two independent marker interfaces in C#, so code review must catch this; the compiler will not. Queries may implement `IRetryableRequest` alone (a read is always safe to retry).
+Configure the threshold with `services.Configure<ApplicationLoggingOptions>(…)`. It is validated at startup
+and must be greater than zero.
 
-## Dual-control / maker-checker approval — `IRequiresDualApproval` + `IDualApprovalStore`
+### `MetricsBehavior`
 
-Maker-checker (four-eyes) controls — one identity initiates a privileged action, a distinct second identity must approve it before it executes — are a baseline requirement (SOX, banking regulation, PCI-DSS) for high-value operations: large payment approval, credit-limit changes, signing-key rotation, production configuration changes. `DualApprovalBehavior` is a pipeline-behavior authorization gate structurally identical to `AuthorizationBehavior`, gated by a new marker a high-risk command implements:
+Records one histogram measurement per request — `sharedkernel.application.request.duration`, **in seconds**,
+from an `IMeterFactory` meter named `SharedKernel.Application`. Tags: `request.type`, `request.kind`,
+`outcome` (`success`/`failure`/`exception`), and `error.type` when not successful. Recorded in a `finally`,
+so a throw is measured too.
+
+### `AuthorizationBehavior`
+
+Applies to requests implementing `IAuthorizeRequest`:
 
 ```csharp
-// A high-risk command opts in via IRequiresDualApproval:
-public sealed record RotateSigningKeyCommand(Guid KeyId) : ICommand, IRequiresDualApproval
+public sealed record RefundOrderCommand(Guid OrderId, decimal Amount) : ICommand, IAuthorizeRequest
 {
-    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+    public IReadOnlyCollection<string> RequiredPermissions => ["orders.refund"];
+    // PermissionMatch.All by default; PermissionMatch.Any when one of several is enough.
 }
+```
 
-// A SEPARATE admin/approval command an approver (a DISTINCT identity from the initiator) dispatches — its
-// handler is the ONLY place IDualApprovalStore.RecordApprovalAsync is ever called; DualApprovalBehavior
-// itself only ever reads:
-public sealed record ApproveKeyRotationCommand(Guid KeyId) : ICommand
+| Situation | Result |
+| --- | --- |
+| `IRequestContext.IsAuthenticated` is false | `Error.Unauthorized("authorization.unauthenticated")` → 401 |
+| `RequiredPermissions` is empty | `Error.Forbidden("authorization.no_permissions_declared")` → 403 |
+| A required permission is missing | `Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission)` → 403 |
+
+It never throws, and it never echoes permission names into the message a caller sees. An empty list being a
+denial is the point: a marker that means "authorize me" must never be satisfiable by declaring nothing.
+
+### `ValidationBehavior`
+
+Runs every registered `IValidator<TRequest>` **sequentially** — not in parallel, because two async validators
+sharing a scoped `DbContext` would throw — collects every failure, and returns
+`Error.Validation(errors)`: one error with code `validation.failed` carrying each field failure in
+`Error.Details`. It does not throw. At the HTTP boundary `14.Presentation` renders that as a 400 with a
+per-field `errors` map; `11.Communication.Rest` rebuilds the same detail on the calling side.
+
+### `IdempotencyBehavior`
+
+Applies to commands implementing `IIdempotentRequest`. It reserves the key through `IRequestIdempotencyStore`
+before the handler runs, and settles it afterwards:
+
+| `TryBeginAsync` returns | The behavior |
+| --- | --- |
+| `Started` | Runs the handler. On success: `CompleteAsync` with the serialized response. On a failed `Result`: `ReleaseAsync`, so the caller may retry with the same key. On an exception: `ReleaseAsync`, then rethrows |
+| `Completed` | Returns the stored response — the original outcome, not a fresh conflict |
+| `InProgress` | `Error.Conflict("idempotency.in_progress")` |
+| `FingerprintMismatch` | `Error.Conflict("idempotency.key_reused")` |
+
+The fingerprint defaults to a SHA-256 hash of the serialized request. **Set `Fingerprint` explicitly on any
+command you expect to be retried across a deploy**, because the automatic hash changes the moment the command
+type gains a property, and never matches itself when the command carries a timestamp or a generated id:
+
+```csharp
+public sealed record TransferMoney(Guid From, Guid To, decimal Amount, DateTimeOffset RequestedAt, string IdempotencyKey)
+    : ICommand, IIdempotentRequest
 {
-    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+    public string? Fingerprint => $"{From}:{To}:{Amount}";   // RequestedAt deliberately excluded
 }
+```
 
-public sealed class ApproveKeyRotationCommandHandler(
-    IDualApprovalStore store, IAuthorizationContextIdentity identity) : ICommandHandler<ApproveKeyRotationCommand>
+A nested command skips this behavior entirely — the outermost command owns the key.
+
+### `TransactionBehavior`
+
+Calls `IUnitOfWork.SaveChangesAsync` after the handler returns, **only for the outermost command**, and
+**only when the response is successful**. A failed `Result` commits nothing, so a handler that mutated an
+aggregate before deciding to fail leaves no trace. A thrown exception never reaches the commit.
+
+### `AuditingBehavior`
+
+Applies to commands implementing `IAuditableRequest<TResponse>`, which supplies its own opaque,
+pre-serialized snapshots — this package never reflects over your command:
+
+```csharp
+public sealed record UpdateLimitCommand(Guid CustomerId, decimal NewLimit, string? BeforeSnapshot)
+    : ICommand, IAuditableRequest<Result>
 {
-    public async Task<Result> Handle(ApproveKeyRotationCommand request, CancellationToken ct)
+    public string Action => "customer.limit.update";
+    public string ResourceType => "Customer";
+    public string ResourceId => CustomerId.ToString("D");
+    public string? GetAfterSnapshot(Result response) => response.IsSuccess ? $"{{\"limit\":{NewLimit}}}" : null;
+}
+```
+
+An entry is written for **all three outcomes** — success, business failure, and a handler that throws —
+because a rejected high-risk attempt is usually the compliance-relevant event. `AuditEntry.Succeeded` and
+`ErrorCode` carry which it was: the error code on a business failure, the exception type name on a fault. The
+write sits inside the transaction, so a failed audit write blocks the commit. If the audit write itself
+throws while handling an exception, the **original** exception still propagates and the audit failure is
+logged.
+
+## What happens when something fails
+
+```mermaid
+flowchart TD
+    R{"How did the request end?"}
+    R -- "invalid input" --> V["Error.Validation with every field<br/>handler never ran"]
+    R -- "denied" --> A["Error.Unauthorized 401<br/>or Error.Forbidden 403"]
+    R -- "handler returned a failure" --> F["the failure, unchanged"]
+    R -- "handler threw" --> E["the exception, rethrown"]
+    R -- "success" --> S["the value"]
+
+    V --> N1["no commit · no audit · key released"]
+    A --> N2["no commit · no audit · key released"]
+    F --> N3["no commit · audit written · key released"]
+    E --> N4["no commit · audit written · key released"]
+    S --> N5["commit · audit written · key completed<br/>then OnCompleted callbacks"]
+
+    style S fill:#e8f5e9
+    style N5 fill:#e8f5e9
+    style E fill:#ffebee
+    style N4 fill:#ffebee
+```
+
+The rule in one sentence: **only a successful outcome persists anything.** The exception is the audit trail,
+which records the attempt either way.
+
+## Seams you must register
+
+Each is a small local interface this package owns, bridged at your composition root to whatever really
+implements it. That is what keeps `05.Application` from referencing persistence, security or a cache.
+
+| Seam | Needed by | Typically bridged to |
+| --- | --- | --- |
+| `IRequestContext` (in `SharedKernel.Application`) | Authorization | `12.Security`'s `IUserContext`/`ITenantProvider`, or the shipped `SystemRequestContext` |
+| `IUnitOfWork` | Transaction | `06.Persistence`'s `EfUnitOfWork`, which implements this interface directly |
+| `IRequestIdempotencyStore` | Idempotency | `18.Idempotency`'s Redis or EF Core store |
+| `IAuditTrailWriter` | Auditing | `06.Persistence`'s append-only, hash-chained audit trail |
+
+`IUnitOfWork` here is **not** `06.Persistence`'s same-named interface — it is a one-method local seam, and
+the persistence type satisfies both.
+
+## Nested commands and `ICommandScope`
+
+A handler that sends another command creates a nested command in the same DI scope. `ICommandScope` tracks
+that so the inner one does not open a second transaction or consume its own idempotency key:
+
+| | Outermost command | Nested command |
+| --- | --- | --- |
+| `TransactionBehavior` | Commits | Joins the outer transaction — no commit of its own |
+| `IdempotencyBehavior` | Reserves and settles the key | Skipped entirely |
+| `AuditingBehavior` | Writes an entry | Writes its own entry |
+
+Handlers can use the same scope to queue work that must happen **after** the commit:
+
+```csharp
+public sealed class PlaceOrderHandler(IOrderRepository repository, ICommandScope scope, IEventPublisher events)
+    : ICommandHandler<PlaceOrderCommand, Guid>
+{
+    public async Task<Result<Guid>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken)
     {
-        var approverId = await identity.GetCurrentIdentityAsync(ct);
-        await store.RecordApprovalAsync(request.ApprovalKey, approverId, ct);
-        return Result.Success();
+        var order = Order.Place(command.Customer, command.Amount);
+        await repository.AddAsync(order, cancellationToken);
+
+        scope.OnCompleted(ct => events.PublishAsync(new OrderPlaced(order.Id.Value), ct));
+
+        return Result<Guid>.Success(order.Id.Value);
     }
 }
 ```
 
-The retry-after-approval flow:
+Callbacks run once, after the outermost command commits, in registration order. A nested command's callbacks
+merge into the outer command's and run with them; if the nested command fails, its callbacks are discarded.
+A callback that throws is logged and does not change the response — the work is already committed. Calling
+`OnCompleted` outside a command throws.
 
-1. Alice dispatches `RotateSigningKeyCommand` → no approval recorded yet → `Result.Failure(Error.Forbidden(...))` — "awaiting a second approver." Handler never invoked.
-2. Bob (a DISTINCT identity) dispatches `ApproveKeyRotationCommand` for the same `KeyId` → `IDualApprovalStore.RecordApprovalAsync("rotate-signing-key:{KeyId}", "bob", ct)`.
-3. Alice dispatches `RotateSigningKeyCommand` a SECOND time (same command/key) → approval record found, recorded identity `"bob"` != initiator identity `"alice"` → `next()` is called → handler executes.
-4. If Alice had instead recorded her OWN approval in step 2 (self-approval), step 3 would STILL short-circuit with `Result.Failure(Error.Forbidden(...))` — self-approval is structurally impossible: `DualApprovalBehavior` checks the recorded approver's identity against the resolved initiator's identity unconditionally whenever a record exists, so there is no code path that calls `next()` when the two identities match, regardless of how the record was created.
+## Extending the pipeline
 
-`DualApprovalBehavior` never calls `next()` unless BOTH "an approval record exists" AND "the recorded approver differs from the current initiator" hold — and it never throws for the awaiting-approval or self-approval cases, since both are foreseeable, expected outcomes (the same never-throw contract `AuthorizationBehavior` follows). It also never clears, consumes, or expires the approval record itself — that lifecycle (one-time-use invalidation, expiry, re-approval-on-command-change) is the consuming service's own approval-recording workflow's responsibility.
-
-## Explicit audit-trail writes — `IAuditableRequest<TResponse>` + `IAuditTrailWriter`
-
-Auditing is **never** fed automatically off `SaveChanges`/the existing EF Core `AuditInterceptor` — it is always an explicit, opt-in act. A command opts in by implementing `IAuditableRequest<TResponse>`, mirroring `ILoggableRequest<TResponse>`'s exact self-supplied-field shape:
+Your own behavior goes into a named stage instead of wherever it happened to be registered:
 
 ```csharp
-// A plain audited command — no dual-approval — records exactly one entry, ApprovalId always null:
-public sealed record UpdateCustomerAddressCommand(Guid CustomerId, string NewAddress, string OldAddressSnapshot)
-    : ICommand, IAuditableRequest<Result>
-{
-    public string Action => "customer.address.update";
-    public string ResourceType => "Customer";
-    public string ResourceId => CustomerId.ToString("D");
-    public string? BeforeSnapshot => OldAddressSnapshot; // caller pre-serializes; this package never parses it
-    public string? GetAfterSnapshot(Result response) => response.IsSuccess ? NewAddress : null;
-}
-
-// A command combining BOTH capabilities — the recorded audit entry's ApprovalId is automatically
-// populated from IRequiresDualApproval.ApprovalKey, linking the two without either interface
-// referencing the other:
-public sealed record RotateSigningKeyCommand(Guid KeyId)
-    : ICommand, IRequiresDualApproval, IAuditableRequest<Result>
-{
-    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
-    public string Action => "signing-key.rotate";
-    public string ResourceType => "SigningKey";
-    public string ResourceId => KeyId.ToString("D");
-    public string? BeforeSnapshot => null; // no meaningful "before" state for a key rotation
-    public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "rotated" : "rejected";
-}
-// The recorded AuditEntry for a successful dispatch of RotateSigningKeyCommand carries
-// ApprovalId == "rotate-signing-key:{KeyId}" — AuditingBehavior populates it automatically via an
-// `is IRequiresDualApproval` check, never a manual field the command author has to remember to set.
-```
-
-`AuditingBehavior<TRequest,TResponse>` calls `next()` first, then unconditionally calls `IAuditTrailWriter.RecordAsync(...)` for BOTH a `Result.Success` and a `Result.Failure` outcome — a rejected high-risk attempt is itself often the compliance-relevant event, not just a successful one — but never on a thrown exception (there is no response to project). It never catches an exception thrown by `RecordAsync` itself: a failed audit write propagates and blocks `TransactionBehavior`'s own commit (fail closed), consistent with this package's "log/audit failures are never silently swallowed" convention.
-
-`IAuditTrailWriter` (`Auditing/IAuditTrailWriter.cs`) is a local seam deliberately smaller than the real, richer `06.Persistence.Abstractions.IAuditTrailWriter` — it never resolves actor identity, tenant identity, timestamp, or hash-chain linkage; the composition-root bridge maps this package's `AuditEntry` onto the real contract (see "Bridging the local seams" above). This is the fifth instance of the local-seam-bridging pattern in this package, not a sixth different one.
-
-## Fire-and-forget dispatch
-
-```csharp
-services
-    .AddSharedKernelApplicationBehaviors()
-    .AddLoggingBehavior()
-    // ...
-    .AddFireAndForgetDispatch(opts =>
-    {
-        opts.Capacity = 1000;                                   // bounded channel capacity (default 1000)
-        opts.RejectionPolicy = FireAndForgetRejectionPolicy.DropAndLog;  // or .Block
-    })
+builder.Services.AddSharedKernelApplicationBehaviors()
+    .AddDefaultBehaviors()
+    .AddBehavior(typeof(FeatureFlagBehavior<,>), PipelineStage.Authorization, typeof(IFeatureManager))
     .Build();
 ```
 
-This registers `IFireAndForgetDispatcher` (backed by a bounded `Channel<IFireAndForgetCommand>`), the `FireAndForgetBackgroundConsumer` hosted service that dequeues and executes commands via a fresh `IServiceScope` per item, and `FireAndForgetGuardBehavior<,>`, which rejects any direct `ISender.Send(IFireAndForgetCommand)` call with a descriptive `InvalidOperationException` — always dispatch via `IFireAndForgetDispatcher.EnqueueAsync(...)` instead (declared in `SharedKernel.Application` — see that package's README).
+The trailing types are required services: `Build()` throws if one is missing, the same way the built-in
+opt-ins do. Built-ins run first within a stage, then your behaviors in the order you added them.
+`Build()` also verifies the type is an open generic implementing `IPipelineBehavior<,>`, and rejects an
+undefined stage value.
 
-## Streaming behaviors
+## Telemetry reference
 
-`IStreamQuery<TResponse>` (declared in `SharedKernel.Application`) uses MediatR's separate `IStreamRequest<TResponse>` hierarchy, so none of the ten unary behaviors above apply to it. Five dedicated `IStreamPipelineBehavior<,>` implementations cover the streaming path instead:
-
-```csharp
-services
-    .AddSharedKernelApplicationBehaviors()
-    .AddStreamingBehaviors()   // registers Logging -> Metrics -> Tracing -> Validation -> Authorization, in that order
-    .Build();
-```
-
-`AddStreamingBehaviors()` is independent of `AddDefaultBehaviors()`/the unary `.AddXBehavior()` calls — call it alongside them if a service needs both unary and streaming request handling. It guards on `IAuthorizationContext` being registered if the streaming Authorization behavior is to function against `IAuthorizeRequest`-marked stream queries.
-
-### Behaviors deliberately not offered for streaming
-
-| Unary behavior | Why it does not apply to `IStreamQuery<TResponse>` |
-| --- | --- |
-| `TransactionBehavior` | Constrained to `ICommandBase`; streaming queries are read-only by contract and never implement it. |
-| `CachingBehavior` | Materialising an `IAsyncEnumerable<TResponse>` to cache it defeats the constant-memory streaming guarantee. |
-| `CacheInvalidationBehavior` | Constrained to `ICommandBase`; there is no streaming command shape to invalidate a cache from. |
-| `IdempotentCommandBehavior` | Constrained to `ICommandBase`; duplicate-submission protection has no meaning for a read-only stream. |
-| `AuditingBehavior` | Constrained to `ICommandBase`; there is no streaming command shape to audit a mutation from. |
-| `ResilienceBehavior` | Retrying a partially-consumed stream has undefined semantics — the stream position cannot be rewound. |
-
-## Idempotency response replay (opt-in)
-
-A store implementing `IIdempotencyKeyStore` may additionally implement `IIdempotencyResponseStore` to opt in to replaying the original response on a genuine duplicate submission, instead of always returning a fresh `Error.Conflict`:
-
-```csharp
-public sealed class RedisIdempotencyKeyStore : IIdempotencyKeyStore, IIdempotencyResponseStore
-{
-    // HasProcessedAsync / MarkProcessedAsync — required, as before.
-    // TryGetStoredResponseAsync / StoreResponseAsync — additive; enables replay.
-}
-```
-
-`IdempotentCommandBehavior` detects the extra capability via a plain `is IIdempotencyResponseStore` check on the already-injected `IIdempotencyKeyStore` instance — no second DI registration needed. When replay is supported and a stored response exists for the duplicate key, the *original* outcome (success or failure) is returned verbatim. A store implementing only `IIdempotencyKeyStore` continues to behave exactly as before (`Error.Conflict` on every duplicate) — this is purely additive and backward-compatible.
-
-## Opt-in structured request/response payload logging — `ILoggableRequest<TResponse>`
-
-`LoggingBehavior<,>` never logs request or response payloads by default — command/query parameters routinely carry PII, and reflecting over arbitrary properties to redact them is exactly the kind of platform-wide reflection this domain forbids. A request that needs specific, hand-picked fields in its log lines opts in explicitly by implementing `ILoggableRequest<TResponse>`:
-
-```csharp
-public sealed record PlaceOrderCommand(Guid CustomerId, string CreditCardNumber, decimal Total)
-    : ICommand<Guid>, ILoggableRequest<Result<Guid>>
-{
-    // Only the fields YOU decide are safe to log — never the whole request.
-    public IReadOnlyDictionary<string, object?> LoggableRequestFields => new Dictionary<string, object?>
-    {
-        ["CustomerId"] = CustomerId,
-        ["Total"] = Total,
-        // CreditCardNumber is deliberately omitted — never log secrets, PII, or credentials here.
-    };
-
-    public IReadOnlyDictionary<string, object?>? GetLoggableResponseFields(Result<Guid> response) =>
-        response.IsSuccess
-            ? new Dictionary<string, object?> { ["OrderId"] = response.Value }
-            : null; // opt out of response-side logging on failure — nothing useful to attach here
-}
-```
-
-`LoggingBehavior<,>` attaches `LoggableRequestFields` to the entry-log line (and the fault-path `Error` log, if the handler throws) via `ILogger.BeginScope`, and attaches `GetLoggableResponseFields(response)` to the completion-log line — but only when `next()` returns normally, never on a thrown exception. Both are skipped entirely when the returned dictionary is null or empty, so an opted-in request with nothing to say for a given call costs nothing extra.
-
-> **Warning — never include PII, secrets, or credentials in the returned field set.** `LoggableRequestFields`/`GetLoggableResponseFields` are logged verbatim to whatever sink `ILogger<TRequest>` is wired to (console, file, a centralized log aggregator). Passwords, tokens, card numbers, government IDs, and full free-text user input must never appear in these dictionaries — log only identifiers (`OrderId`, `CustomerId`) and coarse-grained outcome fields (`Total`, `Status`). A request that does not implement `ILoggableRequest<TResponse>` is unaffected — its logging behavior is byte-for-byte identical to a platform without this capability.
-
-## Logging authoring standard and EventId allocation
-
-Every production log statement in this package is authored via the source-generated `[LoggerMessage]` partial-method pattern (`Microsoft.Extensions.Logging.Abstractions`) — never a direct `ILogger.LogInformation/LogWarning/LogError(...)` extension-method call, and never a hand-written `LoggerMessage.Define<>()` delegate. This is the platform-wide logging standard (root `CLAUDE.md`'s "Logging Conventions" section), mechanically enforced by `00.Governance`'s `LoggingAuthoringStyleAnalyzer`/architecture tests.
-
-Every `[LoggerMessage]` method carries an explicit `EventId` drawn from this domain's reserved block in `01.Core`'s `SharedKernel.Primitives.Logging.LoggingEventIdRanges` registry — never a bare numeric literal or compiler-auto-numbered id. `05.Application`'s domain range is `5000`-`5999`, sub-divided one 100-wide block per package in declaration order:
-
-| Package | Range | Status |
+| Signal | Name | Detail |
 | --- | --- | --- |
-| `SharedKernel.Application` | `5000`-`5099` | Reserved, currently unused (zero `ILogger` call sites in that package) |
-| `SharedKernel.Application.Behaviors` | `5100`-`5199` | Ten allocated EventIds (below); `5104`-`5109`/`5112`-`5119`/`5124`-`5129` reserved headroom |
+| Activity source | `SharedKernel.Application` | Span name = request type short name, kind Internal |
+| Span tags | | `request.type`, `request.kind`, plus `error.type`/`error.code` on failure |
+| Meter | `SharedKernel.Application` | via `IMeterFactory` |
+| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind`, `outcome`, `error.type` |
 
-| EventId | Method | File | Level | Message |
-| --- | --- | --- | --- | --- |
-| 5100 | `LogHandling` | `Logging/LoggingBehavior.cs` | Information | `Handling {RequestName}` |
-| 5101 | `LogHandledSuccess` | `Logging/LoggingBehavior.cs` | Information | `Handled {RequestName} in {ElapsedMilliseconds}ms` |
-| 5102 | `LogHandledFailure` | `Logging/LoggingBehavior.cs` | Warning | `Handled {RequestName} with failure in {ElapsedMilliseconds}ms` |
-| 5103 | `LogHandlingFailed` | `Logging/LoggingBehavior.cs` | Error | `Handling {RequestName} failed after {ElapsedMilliseconds}ms` |
-| 5110 | `LogChannelFull` | `FireAndForget/ChannelFireAndForgetDispatcher.cs` | Warning | `Fire-and-forget channel is full (capacity={Capacity}). Command {CommandType} was dropped and will not be executed.` |
-| 5111 | `LogCommandFaulted` | `FireAndForget/FireAndForgetBackgroundConsumer.cs` | Error | `Fire-and-forget command {CommandType} faulted and its result was discarded.` |
-| 5120 | `LogStreamStarted` | `Streaming/StreamLoggingBehavior.cs` | Information | `Streaming {RequestName} started.` |
-| 5121 | `LogFirstItem` | `Streaming/StreamLoggingBehavior.cs` | Debug | `Streaming {RequestName} produced first item in {ElapsedMilliseconds}ms.` |
-| 5122 | `LogStreamCompleted` | `Streaming/StreamLoggingBehavior.cs` | Information | `Streaming {RequestName} completed in {ElapsedMilliseconds}ms.` |
-| 5123 | `LogStreamFaulted` | `Streaming/StreamLoggingBehavior.cs` | Warning | `Streaming {RequestName} faulted after {ElapsedMilliseconds}ms.` |
+| EventId | Level | Emitted when |
+| --- | --- | --- |
+| 5100 | Debug | A request enters the pipeline |
+| 5101 | Information | A request completed successfully |
+| 5102 | Warning | A successful request crossed `SlowRequestThreshold` |
+| 5103 | Warning | A request returned a failed `Result` (carries error type and code) |
+| 5104 | Error | A request threw |
+| 5110 | Error | A post-commit `OnCompleted` callback threw |
+| 5120 | Warning | `CompleteAsync` reported the idempotency reservation was lost |
+| 5130 | Error | The audit write failed while handling a handler exception |
 
-The constants live in `Shared/ApplicationBehaviorsLoggingEventIds.cs` (`internal static class`, ten `const int` fields, each computed as `LoggingEventIdRanges.Application + offset`) — never a bare numeric literal disconnected from the registry. Message templates use PascalCase named placeholders (`{RequestName}`, `{ElapsedMilliseconds}`) that match the call's named arguments; correlation/trace/tenant context is never passed as an explicit placeholder — it flows ambiently through the OpenTelemetry logging pipeline (`13.ServiceDefaults`). See `05.Application/CLAUDE.md`'s "Logging EventId Allocation" section for the full narrative (WO-041, P-253).
+Wire the meter and activity source into a host with `13.ServiceDefaults`' `WithApplicationTelemetry()`, which
+also registers the seconds-based bucket boundaries this histogram needs.
+
+## Pitfalls
+
+**Forgetting `Build()`.** The `Add…` calls only set flags. Without `Build()` nothing is registered and every
+request runs bare — the failure is silence, not an error. (The platform's own sample shipped this bug.)
+
+**A response type that is not `Result`/`Result<T>`.** Authorization and idempotency short-circuit by
+*constructing* a failed response. Any other response type throws `InvalidOperationException` at the first
+denial. Analyzer `SK0040` catches this at build time.
+
+**Assuming registration order matters.** It does not. The stage decides the order; `AddAuditingBehavior()`
+first and `AddTracingBehavior()` last compose identically.
+
+**Expecting a failed `Result` to roll back.** Nothing is rolled back, because nothing was committed — the
+commit simply never happens. If your handler wrote through a second store directly, that write is yours to
+undo.
+
+**Reusing an idempotency key after a business failure.** The key is released on failure, so the same key is
+accepted again. That is intentional: a rejected command should be correctable and resubmitted.
+
+**Letting the automatic fingerprint ride.** Adding a property to a command changes it, and every in-flight
+retry across the deploy comes back as `idempotency.key_reused`. Set `Fingerprint` on commands that matter.
+
+**Calling `ICommandScope.OnCompleted` from a query handler.** It throws — no command is active. Post-commit
+work only makes sense where there is a commit.
+
+**Registering `IRequestContext` as a singleton over a scoped identity.** The first request's caller would be
+frozen in for the lifetime of the process. Register it scoped.
+
+## Testing
+
+`16.Testing`'s `ApplicationPipelineTestHarness` composes a real MediatR pipeline with real behaviors:
+
+```csharp
+using var harness = new ApplicationPipelineTestHarness();
+
+harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders.refund"] });
+harness.Services.AddScoped<IUnitOfWork, FakeUnitOfWork>();
+harness.Services.AddSingleton<IRequestHandler<RefundOrderCommand, Result>, RefundOrderHandler>();
+harness.AddBehaviors().AddAuthorizationBehavior().AddTransactionBehavior().Build();
+harness.Build<RefundOrderCommandTests>();
+
+var result = await harness.SendAsync(new RefundOrderCommand(orderId, 10m));
+
+Assert.True(result.IsSuccess);
+```
+
+Useful assertions from there:
+
+```csharp
+// A denial, not an exception:
+harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = [] });
+Assert.Equal(ErrorType.Forbidden, result.Error.Type);
+
+// A failed command commits nothing:
+Assert.Equal(0, fakeUnitOfWork.SaveChangesCallCount);
+
+// What the pipeline emitted:
+harness.WithActivityCapture();
+Assert.Contains(harness.CapturedActivities, a => a.DisplayName == "RefundOrderCommand");
+Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedkernel.application.request.duration");
+```
+
+`AddFakeApplicationBehaviorServices()` registers `IRequestContext`, `IUnitOfWork` and
+`IRequestIdempotencyStore` fakes in one call. `FakeRequestIdempotencyStore` implements the real reservation
+protocol, including rejecting a stale token, so an idempotency test exercises the same states the Redis and
+EF Core stores produce.
 
 ## Package
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [05.Application/CLAUDE.md](../CLAUDE.md) for the full interface contracts, hard violations, the reusable pipeline test harness, and AOT notes.
+| | |
+| --- | --- |
+| **Depends on** | `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR` 12.4.1, `FluentValidation`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Diagnostics, Logging, Logging.Abstractions, Options, Options.DataAnnotations}` |
+| **Does not depend on** | Any cache, Polly, hosting, or `SharedKernel.Core` — enforced by an architecture test |
+| **Target** | `net10.0` |
+| **Public API** | Tracked; an unrecorded change fails the build |
+| **EventId range** | 5100–5199, within `01.Core`'s `05.Application` block |
+
+Maintainer rules live in [`05.Application/CLAUDE.md`](../CLAUDE.md); the layer overview, including the
+pipeline and commit diagrams, is in [`05.Application/README.md`](../README.md).

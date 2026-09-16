@@ -1,141 +1,388 @@
 # SharedKernel.Application
 
-MediatR-based CQRS vocabulary for Platform.SharedKernel microservices. Defines `ICommand` / `ICommand<TResponse>` / `IQuery<TResponse>`, the streaming query vocabulary (`IStreamQuery<TResponse>`), the handler-alias interfaces, the fire-and-forget command marker, and the domain-event-to-MediatR bridge. References only `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain`, and `MediatR` — never `06.Persistence`, `07.Messaging`, `12.Security`, or `SharedKernel.Caching.Abstractions`.
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![MediatR 12.4.1](https://img.shields.io/badge/MediatR-12.4.1%20(MIT)-5c6bc0)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-This package ships **no MediatR registration of its own**. The consuming service owns `services.AddMediatR(...)` and its assembly scanning; this package only adds platform vocabulary on top.
+**The CQRS vocabulary every service in the platform speaks: commands, queries, their handlers, the caller
+behind a request, and the bridge that turns a domain event into a MediatR notification.**
 
-## Included Types
+This package is deliberately small. It declares *shapes*, runs almost no logic, and performs no I/O — so
+the layer that defines what a request is stays free of the concerns that act on one. The behaviors that
+log, authorize, validate, commit and audit those requests live in
+[`SharedKernel.Application.Behaviors`](../SharedKernel.Application.Behaviors/README.md).
 
-- `ICommandBase` — zero-member marker implemented by both command shapes; never by `IQuery<TResponse>`
-- `ICommand` / `ICommand<TResponse>` — MediatR `IRequest<Result>` / `IRequest<Result<TResponse>>` aliases
-- `IQuery<TResponse>` — MediatR `IRequest<Result<TResponse>>` alias; does not implement `ICommandBase`
-- `ICommandHandler<TCommand>` / `ICommandHandler<TCommand, TResponse>` / `IQueryHandler<TQuery, TResponse>` — pure `IRequestHandler<,>` aliases that let a handler class self-document its CQRS role
-- `IStreamQuery<TResponse>` / `IStreamQueryHandler<TQuery, TResponse>` — streaming-query aliases over MediatR's own `IStreamRequest<TResponse>` / `IStreamRequestHandler<,>`; yields raw `TResponse` items, deliberately **not** wrapped in `Result<TResponse>` (errors terminate the stream via a thrown exception — standard `IAsyncEnumerable` semantics)
-- `IFireAndForgetCommand` — marker extending `ICommand` that identifies a command intended for enqueue-and-forget dispatch via `SharedKernel.Application.Behaviors`' `IFireAndForgetDispatcher`, never direct `ISender.Send()`
-- `IDomainEventHandler<TDomainEvent>` — the contract consuming services implement to react to a `03.Domain` domain event
-- `DomainEventNotification<TDomainEvent>` — the `INotification` wrapper that lets a plain `IDomainEvent` travel through MediatR's `IPublisher`
-- `MediatRDomainEventDispatcher` + `MediatRDomainEventDispatcherOptions` — `IDomainEventDispatcher` (from `03.Domain`) implementation bridging domain events to MediatR notifications; serial by default, with an opt-in parallel-dispatch mode
-- `AddSharedKernelApplication` / `AddDomainEventHandler<TDomainEvent, THandler>` — DI extensions
+| You get | So that |
+| --- | --- |
+| `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>` | A request's *intent* is visible in its declaration, and the pipeline can treat writes and reads differently |
+| `ICommandBase` / `IQueryBase` markers | A behavior constrains to "any command" or "any query" once, and the container simply never resolves it for the other kind |
+| Handler aliases (`ICommandHandler<>`, `IQueryHandler<,>`) | A handler class says what it is, instead of `IRequestHandler<PlaceOrder, Result<Guid>>` |
+| Every handler returns `Result`/`Result<T>` | An expected failure is a value the caller must handle, not an exception thrown past it |
+| `IRequestContext` (+ `SystemRequestContext`, `AnonymousRequestContext`) | The pipeline can ask who is calling without this layer knowing anything about HTTP or JWTs |
+| `IStreamQuery<TResponse>` and its handler alias | A large read streams item by item instead of materializing in memory |
+| The domain-event → MediatR bridge | `03.Domain` raises events with zero NuGet dependencies, and this layer absorbs MediatR on its behalf |
+
+**Dependencies:** `SharedKernel.Primitives`, `SharedKernel.Domain`, `MediatR`,
+`Microsoft.Extensions.DependencyInjection.Abstractions`. Nothing else — no HTTP, no persistence, no security
+stack, no cache.
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Which interface do I implement?](#which-interface-do-i-implement)
+- [Walkthrough](#walkthrough)
+  - [1. A command that changes state](#1-a-command-that-changes-state)
+  - [2. A query that reads](#2-a-query-that-reads)
+  - [3. Who is calling — `IRequestContext`](#3-who-is-calling--irequestcontext)
+  - [4. Handling a domain event](#4-handling-a-domain-event)
+  - [5. Streaming a large read](#5-streaming-a-large-read)
+- [Reference](#reference)
+- [Pitfalls](#pitfalls)
+- [Testing](#testing)
+- [Package](#package)
 
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.Application\SharedKernel.Application.csproj" />
+<PackageReference Include="SharedKernel.Application" Version="*" />
 ```
 
-Or, once published, reference the NuGet package `SharedKernel.Application`.
+```csharp
+using SharedKernel.Application.Extensions;
 
-## Quick Start
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
+builder.Services.AddSharedKernelApplication();
+```
+
+`AddSharedKernelApplication()` registers **one** thing: `IDomainEventDispatcher` → `MediatRDomainEventDispatcher`
+(scoped). It deliberately does **not** call `AddMediatR` — your service owns which assemblies get scanned.
+
+## Quick start
 
 ```csharp
-// Composition root — MediatR registration is NOT this package's responsibility
-services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
+using MediatR;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Primitives.Results;
 
-// Domain-event-to-MediatR bridge (serial dispatch, the default)
-services.AddSharedKernelApplication();   // IDomainEventDispatcher -> MediatRDomainEventDispatcher (scoped)
-services.AddDomainEventHandler<OrderPlacedDomainEvent, OrderPlacedDomainEventHandler>();
+// 1. The command: what the caller wants, and what it gets back on success.
+public sealed record PlaceOrderCommand(string Customer, decimal Amount) : ICommand<Guid>;
 
-// A command
-public sealed record PlaceOrderCommand(Guid CustomerId, decimal Total) : ICommand<Guid>;
-
-public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand, Guid>
+// 2. The handler: business decisions only. No logging, no try/catch, no SaveChanges.
+public sealed class PlaceOrderHandler(IOrderRepository repository, IClock clock)
+    : ICommandHandler<PlaceOrderCommand, Guid>
 {
-    public async Task<Result<Guid>> Handle(PlaceOrderCommand request, CancellationToken ct)
+    public async Task<Result<Guid>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken)
     {
-        // Stage mutations via injected repositories only.
-        return Result<Guid>.Success(orderId);
+        var order = Order.Place(command.Customer, command.Amount, clock);
+        if (order.IsFailure)
+            return Result<Guid>.Failure(order.Error);   // an expected outcome, not an exception
+
+        await repository.AddAsync(order.Value, cancellationToken);
+        return Result<Guid>.Success(order.Value.Id.Value);
     }
 }
 
-// A query
-public sealed record GetOrderByIdQuery(Guid OrderId) : IQuery<OrderDto>;
-
-public sealed class GetOrderByIdQueryHandler : IQueryHandler<GetOrderByIdQuery, OrderDto>
-{
-    public Task<Result<OrderDto>> Handle(GetOrderByIdQuery request, CancellationToken ct) { /* ... */ }
-}
-
-// A domain event handler (consuming service) — the seam into integration events
-public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPlacedDomainEvent>
-{
-    private readonly IEventPublisher _eventPublisher; // SharedKernel.Messaging.Abstractions (07.Messaging)
-
-    public OrderPlacedDomainEventHandler(IEventPublisher eventPublisher) => _eventPublisher = eventPublisher;
-
-    public Task Handle(OrderPlacedDomainEvent domainEvent, CancellationToken ct)
-        => _eventPublisher.PublishAsync(
-            new OrderPlacedIntegrationEvent(domainEvent.Payload.OrderId), ct);
-}
+// 3. The endpoint: map the Result to HTTP and stop thinking about it.
+app.MapPost("/orders", async (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
+    (await sender.Send(command, ct)).ToProblemDetailsResult());
 ```
 
-Handlers return `Result` / `Result<T>` exclusively and never shape a wire response: the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions` (`14.Presentation`), and the REST client maps it back to a `Result<T>` with `ReadResultAsync` (`11.Communication`).
+Three properties hold from here on, and they are what the rest of the platform builds on:
 
-## Streaming queries
+- **The handler never throws for an expected failure.** A blocked customer, a missing order, a rule
+  violation — each is a `Result.Failure` carrying an `Error`.
+- **The handler never performs cross-cutting work.** Commit, retry, cache, audit and log are the pipeline's
+  job, and adding one later changes no handler.
+- **The response type is `Result` or `Result<T>`.** Several behaviors short-circuit by *constructing* a
+  failed response, which only those types can express.
 
-`IStreamQuery<TResponse>` is the platform-vocabulary counterpart to `IQuery<TResponse>` for constant-memory streaming reads. It is a **deliberate, documented deviation** from the `Result<T>` railway used everywhere else: items are yielded raw, and a fault terminates the stream via a thrown exception rather than a per-item or terminal `Result` wrapper.
+## Which interface do I implement?
+
+```mermaid
+flowchart TD
+    Start{"Does it change state?"}
+    Start -- "yes" --> C{"Does the caller need a value back?"}
+    Start -- "no" --> Q{"One response, or a stream?"}
+
+    C -- "no, just success or failure" --> C1["ICommand<br/>handler returns Result"]
+    C -- "yes, an id or a projection" --> C2["ICommand&lt;TResponse&gt;<br/>handler returns Result&lt;TResponse&gt;"]
+
+    Q -- "one response" --> Q1["IQuery&lt;TResponse&gt;<br/>handler returns Result&lt;TResponse&gt;"]
+    Q -- "a stream of items" --> Q2["IStreamQuery&lt;TResponse&gt;<br/>handler returns IAsyncEnumerable&lt;TResponse&gt;"]
+
+    style C1 fill:#ede7f6
+    style C2 fill:#ede7f6
+    style Q1 fill:#e3f2fd
+    style Q2 fill:#e3f2fd
+```
+
+| Request type | Handler alias | Handler returns | Transaction, idempotency, auditing apply? |
+| --- | --- | --- | --- |
+| `ICommand` | `ICommandHandler<TCommand>` | `Result` | Yes — it is a command |
+| `ICommand<TResponse>` | `ICommandHandler<TCommand,TResponse>` | `Result<TResponse>` | Yes |
+| `IQuery<TResponse>` | `IQueryHandler<TQuery,TResponse>` | `Result<TResponse>` | No — those behaviors constrain to `ICommandBase` |
+| `IStreamQuery<TResponse>` | `IStreamQueryHandler<TQuery,TResponse>` | `IAsyncEnumerable<TResponse>` | No — no pipeline behavior applies at all |
+
+`ICommandBase` and `IQueryBase` carry no members. They exist so a behavior can be written once against "a
+command" — the container then resolves that behavior for commands and silently skips it for everything else.
+That is a registration-time fact, not an `if` inside the behavior.
+
+## Walkthrough
+
+### 1. A command that changes state
 
 ```csharp
-public sealed record ExportOrdersStreamQuery(DateOnly From, DateOnly To) : IStreamQuery<OrderRow>;
+public sealed record CancelOrderCommand(Guid OrderId, string Reason) : ICommand;
 
-public sealed class ExportOrdersStreamQueryHandler : IStreamQueryHandler<ExportOrdersStreamQuery, OrderRow>
+public sealed class CancelOrderHandler(IOrderRepository repository)
+    : ICommandHandler<CancelOrderCommand>
 {
-    public async IAsyncEnumerable<OrderRow> Handle(
-        ExportOrdersStreamQuery request, [EnumeratorCancellation] CancellationToken ct)
+    public async Task<Result> Handle(CancelOrderCommand command, CancellationToken cancellationToken)
     {
-        // yield return rows one at a time — constant-memory streaming, no Result<T> wrapper per item.
+        var order = await repository.GetAsync(new OrderId(command.OrderId), cancellationToken);
+        if (order is null)
+            return Result.Failure(Error.NotFound("order.not_found", "The order does not exist."));
+
+        return order.Cancel(command.Reason);   // the aggregate returns Result
     }
 }
-
-// var stream = sender.CreateStream(new ExportOrdersStreamQuery(from, to), ct);
-// await foreach (var row in stream) { ... }
 ```
 
-None of `SharedKernel.Application.Behaviors`' ten unary pipeline behaviors apply to this shape — see that package's README for the five dedicated `IStreamPipelineBehavior<,>` implementations.
+`ICommand` binds the response to the non-generic `Result`, so a caller still branches on `IsSuccess` without
+an exception and without an unused return value.
 
-## Parallel domain event dispatch
-
-`MediatRDomainEventDispatcher` dispatches serially by default — the safe choice when events share an ordering dependency. Opt in to concurrent dispatch only for independently-observable events with no ordering dependency between them:
-
-```csharp
-services.AddSharedKernelApplication(opts => opts.ParallelDispatch = true);
-```
-
-When `ParallelDispatch` is `true`, all events from a single `DispatchAsync` call are published concurrently via `Task.WhenAll`; every event is dispatched even if earlier ones fault, and any exceptions are collected into a single `AggregateException` rethrown after all dispatches complete.
-
-## Fire-and-forget commands
-
-`IFireAndForgetCommand` marks a command that must be dispatched via `SharedKernel.Application.Behaviors`' `IFireAndForgetDispatcher.EnqueueAsync(...)` — never `ISender.Send()` directly (a registered guard behavior rejects direct `Send` calls with a descriptive error).
+### 2. A query that reads
 
 ```csharp
-// Declared here, in SharedKernel.Application, alongside the rest of the command vocabulary
-public sealed record SendWelcomeEmailCommand(Guid UserId) : IFireAndForgetCommand;
+public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
-public sealed class SendWelcomeEmailCommandHandler : ICommandHandler<SendWelcomeEmailCommand>
+public sealed class GetOrderHandler(IOrderReadService reads) : IQueryHandler<GetOrderQuery, OrderDto>
 {
-    public async Task<Result> Handle(SendWelcomeEmailCommand request, CancellationToken ct)
+    public async Task<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken cancellationToken)
     {
-        // Background execution — caller has already received its HTTP response.
-        return Result.Success();
+        var dto = await reads.FindAsync(query.OrderId, cancellationToken);
+        return dto is null
+            ? Result<OrderDto>.Failure(Error.NotFound("order.not_found", "The order does not exist."))
+            : Result<OrderDto>.Success(dto);
     }
 }
+```
 
-// Enqueue from any application code holding IFireAndForgetDispatcher (SharedKernel.Application.Behaviors)
-public sealed class UserRegisteredDomainEventHandler : IDomainEventHandler<UserRegisteredDomainEvent>
+A query never implements `ICommandBase`, so `TransactionBehavior`, `IdempotencyBehavior` and
+`AuditingBehavior` are simply absent from its pipeline. Nothing is skipped at runtime — they never resolve.
+
+### 3. Who is calling — `IRequestContext`
+
+`AuthorizationBehavior` needs an identity, but this layer must not reference `12.Security`. `IRequestContext`
+is the seam in between:
+
+```csharp
+namespace SharedKernel.Application.Context;
+
+public interface IRequestContext
 {
-    private readonly IFireAndForgetDispatcher _dispatcher;
-    public UserRegisteredDomainEventHandler(IFireAndForgetDispatcher dispatcher) => _dispatcher = dispatcher;
-
-    public ValueTask Handle(UserRegisteredDomainEvent domainEvent, CancellationToken ct)
-        => _dispatcher.EnqueueAsync(new SendWelcomeEmailCommand(domainEvent.UserId), ct);
+    bool IsAuthenticated { get; }
+    string? UserId { get; }
+    Guid? TenantId { get; }
+    ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken);
 }
 ```
 
-`IFireAndForgetDispatcher`, its bounded-channel dispatcher, and the background consumer that executes enqueued commands are registered via `ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()` in `SharedKernel.Application.Behaviors` — see that package's README for the registration example.
+A service with real callers implements it over whatever it already has — typically `12.Security`'s
+`IUserContext`/`ITenantProvider`:
 
-## Opting into pipeline behaviors
+```csharp
+public sealed class UserRequestContext(IUserContext user, ITenantProvider tenants) : IRequestContext
+{
+    public bool IsAuthenticated => user.IsAuthenticated;
+    public string? UserId => user.IsAuthenticated ? user.UserId.ToString("D") : null;
+    public Guid? TenantId => tenants.TenantId == Guid.Empty ? null : tenants.TenantId;
 
-Cross-cutting concerns (validation, logging, metrics, tracing, transactions, caching, cache invalidation, authorization, idempotency, resilience, fire-and-forget dispatch, streaming behaviors) are **not** in this package — they live in the separate, opt-in `SharedKernel.Application.Behaviors` package. Reference it only when adopting one or more platform behaviors.
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(user.HasPermission(permission) || user.HasRole(permission));
+}
+
+builder.Services.AddScoped<IRequestContext, UserRequestContext>();
+```
+
+Two implementations ship for callers that have no HTTP request at all:
+
+```csharp
+// A Temporal activity or a scheduled job: a named identity with exactly the permissions it needs.
+services.AddScoped<IRequestContext>(_ => new SystemRequestContext(
+    permissions: ["orders.expire", "invoices.issue"],
+    identity: "billing-worker"));
+
+// An unauthenticated path: authenticated false, no user, no tenant, no permissions.
+services.AddScoped<IRequestContext>(_ => AnonymousRequestContext.Instance);
+```
+
+`SystemRequestContext` takes an explicit permission list on purpose. There is no "system bypasses
+authorization" mode, because a worker that can do everything is indistinguishable from a bug that does
+everything.
+
+### 4. Handling a domain event
+
+`03.Domain` has no NuGet dependencies, so `IDomainEvent` cannot implement MediatR's `INotification`. This
+package bridges the two: `DomainEventNotification<TDomainEvent>` wraps the raw event, and
+`MediatRDomainEventDispatcher` publishes it.
+
+```csharp
+public sealed class SendOrderConfirmation(IEmailSender email) : IDomainEventHandler<OrderPlaced>
+{
+    public Task Handle(OrderPlaced domainEvent, CancellationToken cancellationToken) =>
+        email.SendAsync(domainEvent.CustomerEmail, cancellationToken);
+}
+
+// One registration per event type — no assembly scanning, no MakeGenericType at startup.
+builder.Services.AddDomainEventHandler<OrderPlaced, SendOrderConfirmation>();
+```
+
+You implement `IDomainEventHandler<TDomainEvent>` against the **raw domain event** — never MediatR's
+`INotificationHandler<>`. The wrapper is an implementation detail you should not have to name.
+
+**When events are dispatched.** `06.Persistence`'s `EfUnitOfWork.SaveChangesAsync` writes to the database
+**first**, then collects the events from tracked aggregates, dispatches them, and clears them. Two
+consequences worth internalising:
+
+- **Dispatch is serial**, in list order, one handler chain at a time. There is no parallel mode: concurrent
+  handlers would share one `DbContext`, which is not thread-safe.
+- **A handler exception propagates out of `SaveChangesAsync` after the write already committed.** The
+  exception fails the request, but it does not undo the row that was saved. A handler that must not be able
+  to fail the request — sending mail, calling another service — belongs behind an integration event
+  (`04.Contracts` + `07.Messaging`), not a domain-event handler.
+
+### 5. Streaming a large read
+
+```csharp
+public sealed record ExportOrdersQuery(DateOnly From) : IStreamQuery<OrderRow>;
+
+public sealed class ExportOrdersHandler(IOrderReadService reads)
+    : IStreamQueryHandler<ExportOrdersQuery, OrderRow>
+{
+    public IAsyncEnumerable<OrderRow> Handle(ExportOrdersQuery query, CancellationToken cancellationToken) =>
+        reads.StreamAsync(query.From, cancellationToken);
+}
+
+await foreach (var row in sender.CreateStream(query, ct))
+    await writer.WriteAsync(row, ct);
+```
+
+Two deliberate differences from every other request here:
+
+- **Items are not wrapped in `Result<T>`.** A stream's natural error channel is an exception that ends
+  enumeration. Wrapping each item would force every consumer to unwrap on every iteration, and a single
+  terminal `Result` cannot say "the stream opened fine, then item 4,000 failed."
+- **No pipeline behavior applies.** MediatR routes streams through a separate interface
+  (`IStreamPipelineBehavior<,>`), and this platform ships none. Logging, validation and authorization for a
+  stream are the handler's own responsibility.
+
+## Reference
+
+### Namespaces
+
+| Namespace | Holds |
+| --- | --- |
+| `SharedKernel.Application.Messaging` | `ICommandBase`, `ICommand`, `ICommand<TResponse>`, `IQueryBase`, `IQuery<TResponse>`, and the three handler aliases |
+| `SharedKernel.Application.Context` | `IRequestContext`, `SystemRequestContext`, `AnonymousRequestContext` |
+| `SharedKernel.Application.Streaming` | `IStreamQuery<TResponse>`, `IStreamQueryHandler<TQuery,TResponse>` |
+| `SharedKernel.Application.DomainEvents` | `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` |
+| `SharedKernel.Application.Extensions` | `AddSharedKernelApplication()`, `AddDomainEventHandler<TDomainEvent,THandler>()` |
+
+### Messaging vocabulary
+
+| Type | Shape |
+| --- | --- |
+| `ICommandBase` | Marker. Implemented by both command interfaces, never by a query |
+| `ICommand` | `ICommandBase`, `IRequest<Result>` |
+| `ICommand<TResponse>` | `ICommandBase`, `IRequest<Result<TResponse>>` |
+| `IQueryBase` | Marker. Implemented by `IQuery<TResponse>` |
+| `IQuery<TResponse>` | `IQueryBase`, `IRequest<Result<TResponse>>` |
+| `ICommandHandler<TCommand>` | `IRequestHandler<TCommand, Result>` |
+| `ICommandHandler<TCommand,TResponse>` | `IRequestHandler<TCommand, Result<TResponse>>` |
+| `IQueryHandler<TQuery,TResponse>` | `IRequestHandler<TQuery, Result<TResponse>>` |
+| `IStreamQuery<TResponse>` | `IStreamRequest<TResponse>` |
+| `IStreamQueryHandler<TQuery,TResponse>` | `IStreamRequestHandler<TQuery, TResponse>` |
+
+The handler aliases add no members. They exist so a class declaration states its role.
+
+### Request context
+
+| Member | Meaning |
+| --- | --- |
+| `IsAuthenticated` | Whether a caller was identified at all. `AuthorizationBehavior` returns `Error.Unauthorized` (401) when false |
+| `UserId` | The caller's opaque id, or `null` when anonymous. This package never parses or interprets it |
+| `TenantId` | The tenant, or `null` when the request has none. Used for tenant-scoped cache keys |
+| `HasPermissionAsync` | Whether the caller holds one permission. The string is opaque here — the implementation decides whether it is a scope, a role or a policy name |
+
+Correlation id is deliberately absent: it flows ambiently through `Activity`/baggage, and repeating it on
+every seam would invite two sources of truth.
+
+| Implementation | `IsAuthenticated` | `UserId` | Permissions |
+| --- | --- | --- | --- |
+| `SystemRequestContext(permissions, identity = "system", tenantId = null)` | `true` | the supplied identity | exactly the supplied set |
+| `AnonymousRequestContext.Instance` | `false` | `null` | none |
+
+### DI extensions
+
+| Call | Registers |
+| --- | --- |
+| `AddSharedKernelApplication()` | `IDomainEventDispatcher` → `MediatRDomainEventDispatcher` (scoped) |
+| `AddDomainEventHandler<TDomainEvent,THandler>()` | `THandler` as `IDomainEventHandler<TDomainEvent>` (scoped), plus the internal adapter MediatR resolves (scoped) |
+
+## Pitfalls
+
+**A handler that throws for an expected failure.** Throwing skips the failure path the rest of the platform
+is built on: the pipeline records an exception outcome instead of an error code, the transaction is not
+committed *and* no `Result` reaches the caller to say why. Return `Result.Failure(error)`.
+
+**A request whose response is not `Result`/`Result<T>`.** `IRequest<OrderDto>` compiles, and authorization or
+idempotency on it throws at the first short-circuit, in production. Analyzer `SK0040` flags this at build
+time — do not suppress it.
+
+**Implementing `INotificationHandler<DomainEventNotification<T>>` yourself.** That is the adapter's job.
+Implement `IDomainEventHandler<T>` and register it with `AddDomainEventHandler<,>`.
+
+**Expecting behaviors to run for a stream.** They do not. `IStreamQuery<TResponse>` goes through MediatR's
+separate streaming pipeline, and this platform registers nothing there.
+
+**A `SystemRequestContext` with every permission.** It takes an explicit list so a worker's blast radius is
+written down. Granting it everything makes the authorization behavior decorative.
+
+**Calling `AddSharedKernelApplication()` and expecting behaviors.** It registers the domain-event dispatcher
+only. Behaviors come from
+[`SharedKernel.Application.Behaviors`](../SharedKernel.Application.Behaviors/README.md).
+
+## Testing
+
+`16.Testing`'s `SharedKernel.Testing` ships doubles for every seam here.
+
+```csharp
+var context = new FakeRequestContext { Permissions = ["orders.place"], TenantId = tenantId };
+
+var result = await new PlaceOrderHandler(repository, new FakeClock()).Handle(command, default);
+
+Assert.True(result.IsSuccess);
+```
+
+A handler needs no harness: it is a class returning a `Result`. To test the composed pipeline instead, use
+`ApplicationPipelineTestHarness` — see the
+[behaviors README](../SharedKernel.Application.Behaviors/README.md#testing).
 
 ## Package
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [05.Application/CLAUDE.md](../CLAUDE.md) for the full interface contracts, implementation rules, and pipeline composition order.
+| | |
+| --- | --- |
+| **Depends on** | `SharedKernel.Primitives`, `SharedKernel.Domain`, `MediatR` 12.4.1, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| **Target** | `net10.0` |
+| **Public API** | Tracked in `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`; an unrecorded change fails the build |
+| **Versioning** | One version across every package in the repo, from a single git tag (MinVer) |
+
+**Why MediatR 12.4.1 specifically.** It is the last MIT-licensed release; v13 and later are commercial. The
+version is pinned deliberately, and our interfaces inherit MediatR's, so it is part of this package's public
+surface — a consuming service resolves the same 12.4.1.
+
+Maintainer rules live in [`05.Application/CLAUDE.md`](../CLAUDE.md); the layer overview is in
+[`05.Application/README.md`](../README.md).
