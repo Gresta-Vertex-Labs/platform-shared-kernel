@@ -250,6 +250,21 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
 }
 ```
 
+### What `CommandActivity<TCommand>` means for the application pipeline
+
+- **The command is an outermost command.** Each activity execution runs in its own DI scope, so for
+  `SharedKernel.Application.Behaviors`' `ICommandScope` the command is outermost: `TransactionBehavior`
+  commits once when it succeeds, and `ICommandScope.OnCompleted` callbacks run before the activity
+  returns. A callback that throws is logged and never fails the activity.
+- **Failures come back as a `Result`.** Validation and authorization failures (`ErrorType.Validation`,
+  `Unauthorized`, `Forbidden`) are returned, not thrown, so they become non-retryable Temporal failures.
+- **Authorization needs a system identity.** A worker has no HTTP caller. If the service opts into
+  `AuthorizationBehavior`, register `SharedKernel.Application.Context.SystemRequestContext` — naming the
+  worker and listing exactly the permissions its activities need — or every guarded command fails closed
+  with `Error.Unauthorized`.
+- **Retries re-send the command.** A command with side effects outside its unit of work should
+  implement `IIdempotentRequest` with a key derived from the workflow id.
+
 ---
 
 ## `[LoggerMessage]` EventId table (17000–17012)

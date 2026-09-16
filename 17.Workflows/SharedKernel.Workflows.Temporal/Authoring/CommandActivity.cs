@@ -8,12 +8,30 @@ namespace SharedKernel.Workflows.Temporal.Authoring;
 
 /// <summary>
 /// The sole <c>05.Application</c> bridge: a closed-generic activity base that resolves
-/// <see cref="ISender"/>, sends <typeparamref name="TCommand"/> through the full MediatR pipeline
-/// (validation, authorization, transaction, logging, metrics), and maps the resulting
-/// <see cref="Result"/> through <see cref="Failures.WorkflowFailureMapper"/>.
+/// <see cref="ISender"/>, sends <typeparamref name="TCommand"/> through the consuming service's
+/// MediatR pipeline, and maps the resulting <see cref="Result"/> through
+/// <see cref="Failures.WorkflowFailureMapper"/>.
 /// </summary>
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
+/// <para>
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Behaviors</c> stages the service
+/// registered apply unchanged. Validation and authorization failures arrive as a failed
+/// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
+/// <c>ErrorType.Forbidden</c>), never as a thrown exception, so they map to non-retryable Temporal
+/// failures. Authorization reads <c>IRequestContext</c>, which a worker has no HTTP caller to fill:
+/// register an implementation that represents the worker's system identity, or the behavior fails
+/// closed.
+/// </para>
+/// <para>
+/// <b>The command is an outermost command.</b> Each activity execution runs in its own DI scope, so
+/// the command sent here is the outermost command of that scope as far as <c>ICommandScope</c> is
+/// concerned: <c>TransactionBehavior</c> commits its unit of work when it succeeds, and callbacks
+/// registered through <c>ICommandScope.OnCompleted</c> run before this method returns. A callback
+/// that throws is logged and does not fail the activity, so Temporal never retries it. A retried
+/// activity sends the command again, so a command with side effects outside its unit of work should
+/// implement <c>IIdempotentRequest</c> with a key derived from the workflow id.
+/// </para>
 /// <para>
 /// This is a closed generic per command — no reflection, no <c>MakeGenericType</c>, no polymorphic
 /// payload deserialisation. The rejected alternative — a single non-generic "dispatch any command"

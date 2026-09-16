@@ -253,9 +253,9 @@ CommandActivity<TCommand, TResult>     where TCommand : ICommand<TResult>
     .ExecuteAsync(TCommand command, CancellationToken ct)               → Task  /  Task<TResult>
 
     NOTE (THE 05.Application BRIDGE, AND THE ONLY REASON THIS PACKAGE REFERENCES 05.Application): a
-          sealed, per-command generic base that resolves ISender, sends the command through the full
-          MediatR pipeline (validation, authorization, transaction, logging, metrics — all of it), and
-          maps the resulting Result/Result<T> through WorkflowFailureMapper. A consuming service
+          sealed, per-command generic base that resolves ISender, sends the command through the
+          consuming service's full MediatR pipeline (every SharedKernel.Application.Behaviors stage it
+          registered), and maps the resulting Result/Result<T> through WorkflowFailureMapper. A consuming service
           writes `sealed class ApproveOrderActivity : CommandActivity<ApproveOrderCommand>` plus one
           explicitly-named `[Activity]` override (see the next NOTE — this is not literally zero
           extra code). This is a CLOSED GENERIC per command — no reflection, no MakeGenericType, no
@@ -283,6 +283,18 @@ CommandActivity<TCommand, TResult>     where TCommand : ICommand<TResult>
           surface, reflection-dependent, AOT-hostile, and a versioning trap the moment a command's
           shape changes while old histories still replay. The closed-generic-per-command form costs
           one five-line class per command and has none of those properties.
+
+    NOTE (THE COMMAND IS AN OUTERMOST COMMAND): each activity execution runs in its own DI scope, so
+          the command CommandActivity<> sends is the outermost command of that scope for
+          05.Application.Behaviors' ICommandScope — TransactionBehavior commits its unit of work once on
+          success, and ICommandScope.OnCompleted callbacks run before ExecuteAsync returns (a callback
+          that throws is logged by the pipeline and never fails the activity). Validation and
+          authorization failures come back as a failed Result (Validation/Unauthorized/Forbidden), so
+          WorkflowFailureMapper makes them non-retryable. A worker has no HTTP caller: a service that
+          opts into AuthorizationBehavior must register an IRequestContext representing the worker's
+          system identity, or every guarded command fails closed. A retried activity re-sends the
+          command — a command with side effects outside its unit of work implements IIdempotentRequest
+          with a key derived from the workflow id.
 ```
 
 #### Worker hosting (`Hosting/`)
