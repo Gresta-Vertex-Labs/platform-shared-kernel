@@ -1,13 +1,12 @@
 namespace SharedKernel.Idempotency.Redis.Internal;
 
 /// <summary>
-/// The sentinel value written by the initial reservation <c>SET key &lt;sentinel&gt; NX PX</c>
-/// (D-04). Chosen so it can never collide with real <see cref="System.Text.Json.JsonSerializer"/>
-/// output: every value that type produces for a response payload starts with one of
-/// <c>{ [ " -</c> or a digit, or the literals <c>true</c>/<c>false</c>/<c>null</c>. This sentinel
-/// starts with <c>~</c>, a character JSON never emits as the first character of a serialized
-/// payload, so a stored value equal to this constant unambiguously means "reserved, no response
-/// written yet" rather than a real (if unlikely) response body.
+/// The sentinel value written by <see cref="MessageStore.RedisIdempotencyMessageStore"/>'s
+/// reservation <c>SET key &lt;sentinel&gt; NX PX</c>. <see cref="KeyStore.RedisRequestIdempotencyStore"/>
+/// does not use this sentinel — its entries are Redis hashes with an explicit <c>status</c> field,
+/// so "reserved, no response yet" is represented directly rather than inferred from a placeholder
+/// value. Chosen so it can never collide with real message-store content, though the message store
+/// never actually reads this value back — it exists only because <c>SET</c> requires some value.
 /// </summary>
 internal static class RedisIdempotencyResponseSentinel
 {

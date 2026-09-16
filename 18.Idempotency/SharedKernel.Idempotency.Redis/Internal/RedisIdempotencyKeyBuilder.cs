@@ -24,7 +24,7 @@ internal static class RedisIdempotencyKeyBuilder
     /// </summary>
     internal const string NonTenantSegment = "no-tenant";
 
-    /// <summary>Builds the Redis key for a key-store entry (<see cref="KeyStore.RedisIdempotencyKeyStore"/>).</summary>
+    /// <summary>Builds the Redis key for a key-store entry (<see cref="KeyStore.RedisRequestIdempotencyStore"/>).</summary>
     public static string BuildKeyStoreKey(Guid? tenantId, string idempotencyKey) =>
         $"{Prefix}:{TenantSegment(tenantId)}:{KeyStoreKind}:{idempotencyKey}";
 

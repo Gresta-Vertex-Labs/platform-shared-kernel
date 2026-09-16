@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace SharedKernel.Idempotency.Redis.Options;
 
 /// <summary>
-/// Configuration options for <see cref="SharedKernel.Idempotency.Redis.KeyStore.RedisIdempotencyKeyStore"/>.
+/// Configuration options for <see cref="SharedKernel.Idempotency.Redis.KeyStore.RedisRequestIdempotencyStore"/>.
 /// </summary>
 /// <remarks>
 /// Registered via <c>AddSharedKernelRedisIdempotency</c>, which validates this options instance

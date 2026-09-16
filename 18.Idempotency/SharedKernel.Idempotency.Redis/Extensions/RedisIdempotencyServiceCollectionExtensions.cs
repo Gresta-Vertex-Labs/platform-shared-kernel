@@ -18,9 +18,8 @@ namespace SharedKernel.Idempotency.Redis.Extensions;
 public static class RedisIdempotencyServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="RedisIdempotencyKeyStore"/> as both <see cref="IIdempotencyKeyStore"/>
-    /// and <see cref="IIdempotencyResponseStore"/> (same instance per scope), and
-    /// <see cref="RedisIdempotencyMessageStore"/> as <see cref="IIdempotencyStore"/>.
+    /// Registers <see cref="RedisRequestIdempotencyStore"/> as <see cref="IRequestIdempotencyStore"/>,
+    /// and <see cref="RedisIdempotencyMessageStore"/> as <see cref="IIdempotencyStore"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">
@@ -71,9 +70,7 @@ public static class RedisIdempotencyServiceCollectionExtensions
         // is left untouched.
         services.AddOptions<IdempotencyOptions>();
 
-        services.AddScoped<RedisIdempotencyKeyStore>();
-        services.AddScoped<IIdempotencyKeyStore>(sp => sp.GetRequiredService<RedisIdempotencyKeyStore>());
-        services.AddScoped<IIdempotencyResponseStore>(sp => sp.GetRequiredService<RedisIdempotencyKeyStore>());
+        services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
         services.AddScoped<IIdempotencyStore, RedisIdempotencyMessageStore>();
 
         services.TryAddEnumerable(

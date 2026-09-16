@@ -16,20 +16,20 @@ namespace SharedKernel.Idempotency.Redis.MessageStore;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A separate physical class from <see cref="KeyStore.RedisIdempotencyKeyStore"/> (Domain
-/// Invariant 7 / D-01) — <see cref="IIdempotencyStore"/> carries no response-replay capability, so
-/// there is no reason to fold it into the key-store class.
+/// A separate physical class from <see cref="KeyStore.RedisRequestIdempotencyStore"/> —
+/// <see cref="IIdempotencyStore"/> is a distinct, simpler two-method contract with no fingerprint or
+/// response-replay concept, so there is no reason to fold it into the request-idempotency store
+/// class. It keeps the original <c>SET key &lt;sentinel&gt; NX PX</c> reservation shape unchanged.
 /// </para>
 /// <para>
-/// Uses the same reservation protocol as <see cref="KeyStore.RedisIdempotencyKeyStore"/> (D-04),
-/// keyed under a distinct <c>msg</c> namespace segment (<see cref="Internal.RedisIdempotencyKeyBuilder"/>)
+/// Keyed under a distinct <c>msg</c> namespace segment (<see cref="Internal.RedisIdempotencyKeyBuilder"/>)
 /// so a message id can never collide with an unrelated idempotency key string. The in-flight TTL
 /// comes from <see cref="RedisIdempotencyOptions.InFlightTtl"/>; the full-retention window comes
 /// from <see cref="IdempotencyOptions.ExpiryWindow"/> (<c>07.Messaging.Abstractions</c>'s existing
 /// advisory hint) rather than duplicating a second retention knob (D-08).
 /// </para>
 /// <para>
-/// Registered <c>Scoped</c> — see <see cref="KeyStore.RedisIdempotencyKeyStore"/>'s remarks for why.
+/// Registered <c>Scoped</c> — see <see cref="KeyStore.RedisRequestIdempotencyStore"/>'s remarks for why.
 /// </para>
 /// </remarks>
 public sealed class RedisIdempotencyMessageStore : IIdempotencyStore

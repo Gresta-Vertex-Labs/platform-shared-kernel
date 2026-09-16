@@ -1,8 +1,8 @@
 # SharedKernel.Idempotency.Redis
 
-Atomic, tenant-scoped, Redis-backed implementation of the platform's three idempotency contracts:
+Atomic, tenant-scoped, Redis-backed implementation of the platform's two idempotency contracts:
 
-- `IIdempotencyKeyStore` + `IIdempotencyResponseStore` (`SharedKernel.Application.Behaviors`) — one class, `RedisIdempotencyKeyStore`.
+- `IRequestIdempotencyStore` (`SharedKernel.Application.Behaviors`) — `RedisRequestIdempotencyStore`.
 - `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `RedisIdempotencyMessageStore`.
 
 This package ships no new interface — it implements two other domains' existing contracts. See the
@@ -19,7 +19,7 @@ services.AddSharedKernelRedisIdempotency(o =>
 });
 
 // Required: bridge this platform's tenant identity source. ITenantContextAccessor lives in
-// 07.Messaging.Abstractions and is reused here rather than reinvented (Design D-02).
+// 07.Messaging.Abstractions and is reused here rather than reinvented.
 services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
 ```
 
@@ -33,34 +33,60 @@ public sealed class MyTenantContextAccessor(ITenantProvider tenantProvider) : IT
 Omitting the `ITenantContextAccessor` registration throws `InvalidOperationException` at
 `IHost.StartAsync()` — not at first store call.
 
-## Atomicity
+## Contract
 
-`HasProcessedAsync` performs a single `SET key <sentinel> NX PX <InFlightTtl>` — success (key was
-absent) means a fresh reservation was created (not yet processed, returns `false`); failure (key
-already existed) means an entry is already in-flight or confirmed (returns `true`). No
-`SELECT`/`EXISTS`-then-`SET` window ever exists.
+`IRequestIdempotencyStore.TryBeginAsync(key, requestFingerprint, ct)` atomically reserves a new key
+and records the caller's request fingerprint, or reports the key's existing state:
 
-`MarkProcessedAsync` extends the reservation's TTL to `RetentionWindow` via `PEXPIRE` — it never
-rewrites the key's value, so it can never clobber a response `StoreResponseAsync` already wrote,
-regardless of call order.
+| Existing state | Same fingerprint | Different fingerprint |
+|---|---|---|
+| No entry | `Started` — a new reservation was created | (not applicable) |
+| Reserved, not completed | `InProgress` | `FingerprintMismatch` |
+| Completed | `Completed`, with the stored response | `FingerprintMismatch` |
 
-`StoreResponseAsync` uses a three-line Lua script (`if EXISTS then SET ... KEEPTTL`) — the only Lua
-use in this package.
+A winning `Started` result carries a `ReservationToken` — an opaque string the caller must pass back
+to `CompleteAsync`/`ReleaseAsync`. `CompleteAsync(key, reservationToken, serializedResponse, ct)`
+marks the key completed, stores the response, and extends the entry's TTL to `RetentionWindow`, but
+only when `reservationToken` still owns the row **and** it is still `InProgress` — otherwise it
+returns `false` and touches nothing. `ReleaseAsync(key, reservationToken, ct)` deletes the
+reservation under the same guard — **only** while it is still `InProgress`; a completed entry is
+never deleted by `ReleaseAsync`. Both return `true` only when the token still owned the reservation
+and the operation actually applied; `false` — never an exception — means the reservation was already
+lost: expired and reclaimed by someone else, already completed or released, or a foreign token. A
+reservation that is never completed or released self-expires once `InFlightTtl` elapses, so a
+crashed caller can never permanently wedge a key.
+
+## Storage shape and atomicity
+
+Each entry is a single Redis hash (`status`, `fingerprint`, `token`, and — once completed —
+`response`), keyed as `sk:idempotency:{tenant}:key:{rawKey}`. `TryBeginAsync`, `CompleteAsync` and
+`ReleaseAsync` are each a single Lua script — one atomic Redis round trip, comparing fingerprint/
+token/status and mutating the hash in the same call. No `WATCH`/`MULTI` retry loop and no
+check-then-act window ever exists.
+
+**Reservation token — this store keeps none of its own.** Every winning `TryBeginAsync` call
+generates a fresh token, writes it into the hash, and returns it as `ReservationToken`. The caller —
+not this store — is responsible for passing that exact token back to `CompleteAsync`/`ReleaseAsync`.
+Those calls mutate the row only when the supplied token still matches what is stored there and the
+row is still `InProgress`; this makes the store itself genuinely stateless (no per-instance "who won
+which reservation" tracking) and turns a slow caller's late confirm/release — arriving after its own
+reservation already expired and a different caller has since re-reserved the same key — into a safe,
+detectable `false` instead of corrupting that other caller's entry.
 
 ## Fault vs. failure
 
-A thrown exception from the guarded call never reaches `MarkProcessedAsync` — the reservation's
-short `InFlightTtl` expires on its own, and the key becomes retryable with no action from this
-package (self-healing). A returned business failure **does** consume the key; see
-`IIdempotencyKeyStore.MarkProcessedAsync`'s own XML docs for the full fault-vs-failure contract
-this package honors but does not restate.
+A thrown exception from the guarded call never reaches `CompleteAsync` — the reservation's short
+`InFlightTtl` expires on its own, and the key becomes retryable with no action from this package
+(self-healing). A returned business failure calls `ReleaseAsync` instead, which also frees the key
+immediately. See `IRequestIdempotencyStore`'s own XML docs for the full contract this package
+honors.
 
 ## Fail-closed by default
 
 When the Redis connection is unreachable, every store call throws by default — the guarded command
-or consumer is blocked rather than allowed to run unprotected. Set
-`RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable = true` to instead let the call proceed as
-"not yet processed" during an outage.
+is blocked rather than allowed to run unprotected. Set
+`RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable = true` to instead let `TryBeginAsync`
+proceed as `Started` during an outage.
 
 > **ENABLING `AllowExecutionOnStoreUnavailable` INCREASES DUPLICATE-EXECUTION RISK.** While the
 > store is unreachable, every call — including genuine duplicates — is treated as novel. Only
@@ -90,7 +116,6 @@ var host = Host.CreateDefaultBuilder()
 await host.StartAsync(); // throws InvalidOperationException here if ITenantContextAccessor is missing
 
 using var scope = host.Services.CreateScope();
-var keyStore = scope.ServiceProvider.GetRequiredService<IIdempotencyKeyStore>();
-var responseStore = keyStore as IIdempotencyResponseStore; // non-null — same instance
+var requestStore = scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>();
 var messageStore = scope.ServiceProvider.GetRequiredService<IIdempotencyStore>();
 ```
