@@ -65,7 +65,7 @@ Targets `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Every test sub-
 >
 > **Why not `SharedKernel.Communication.Rest`:** That package's `AddRestClient<TClient>()` is the platform's typed-client convention for *inter-service* REST calls, and `11.Communication` sits outside this domain's allowed layering. Webhook delivery targets arbitrary, often third-party, externally-configured URLs — not a typed, service-discovery-resolved client — so the typed-client model doesn't fit even ignoring the layering constraint. Going directly through `IHttpClientFactory` is not a violation of the platform-wide "no raw `HttpClient` in a production constructor" rule (P-159): the factory itself is what's injected; `HttpClient` instances are created per-call via `CreateClient(...)` and never stored as injected state.
 >
-> **Why no persistence here:** Subscription records (URL, secret, active event types) and any delivery-history ledger are ordinary application data owned by the consuming microservice, modeled with that service's own `06.Persistence` stack. This package only defines the read seam (`IWebhookSubscriptionStore`) and an optional observation seam (`IWebhookDeliveryObserver`) that the consuming service implements against its own storage. The same reasoning extends to notifications (WO-072, shipped): per-tenant sender identity/reply-to is ordinary application configuration, not something `SharedKernel.Integration.Notifications.Abstractions` resolves itself — it defines `INotificationSenderIdentityResolver` as the seam, bridged at the consuming service's own composition root, mirroring `05.Application`'s `IAuthorizationContext` bridge pattern.
+> **Why no persistence here:** Subscription records (URL, secret, active event types) and any delivery-history ledger are ordinary application data owned by the consuming microservice, modeled with that service's own `06.Persistence` stack. This package only defines the read seam (`IWebhookSubscriptionStore`) and an optional observation seam (`IWebhookDeliveryObserver`) that the consuming service implements against its own storage. The same reasoning extends to notifications (WO-072, shipped): per-tenant sender identity/reply-to is ordinary application configuration, not something `SharedKernel.Integration.Notifications.Abstractions` resolves itself — it defines `INotificationSenderIdentityResolver` as the seam, bridged at the consuming service's own composition root, mirroring `05.Application`'s `IRequestContext` bridge pattern.
 
 ---
 
@@ -478,7 +478,7 @@ INotificationSenderIdentityResolver  (interface)
     .ResolveAsync(NotificationChannel channel, CancellationToken ct) → Task<NotificationSenderIdentity>
     NOTE: Bridged at the consuming service's own composition root against its own tenant catalog/config —
           never a direct persistence/13.ServiceDefaults reference from this package, mirroring
-          05.Application's IAuthorizationContext bridge pattern.
+          05.Application's IRequestContext bridge pattern.
 
 NotificationSenderIdentity  (sealed record)
     .FromAddress   → string    (the "from" email address, or SMS sender number/short-code/alphanumeric ID)

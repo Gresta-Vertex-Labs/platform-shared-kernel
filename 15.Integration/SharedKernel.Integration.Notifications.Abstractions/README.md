@@ -59,7 +59,7 @@ public sealed class TenantNotificationSenderIdentityResolver(ITenantCatalog tena
 }
 ```
 
-This mirrors `05.Application`'s `IAuthorizationContext` bridge pattern — this package never reaches
+This mirrors `05.Application`'s `IRequestContext` bridge pattern — this package never reaches
 into a persistence store or `13.ServiceDefaults` directly; the consuming service bridges its own
 real identity source at its own composition root.
 

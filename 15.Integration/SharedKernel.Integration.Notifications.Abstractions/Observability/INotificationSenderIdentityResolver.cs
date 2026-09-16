@@ -10,7 +10,7 @@ namespace SharedKernel.Integration.Notifications.Abstractions.Observability;
 /// <c>AddSharedKernelNotifications</c> deliberately does not register one. Bridged at the consuming
 /// service's own composition root against its own tenant catalog/config — never a direct
 /// persistence/<c>13.ServiceDefaults</c> reference from this package, mirroring
-/// <c>05.Application</c>'s <c>IAuthorizationContext</c> bridge pattern.
+/// <c>05.Application</c>'s <c>IRequestContext</c> bridge pattern.
 /// </remarks>
 public interface INotificationSenderIdentityResolver
 {
