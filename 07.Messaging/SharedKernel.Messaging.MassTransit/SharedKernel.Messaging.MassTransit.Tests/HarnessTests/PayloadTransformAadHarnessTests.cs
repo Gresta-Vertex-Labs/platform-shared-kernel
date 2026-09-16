@@ -41,10 +41,10 @@ public sealed class PayloadTransformAadHarnessTests
     {
         PayloadTransformAadHarnessTracker.Reset();
 
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         await using var provider = new ServiceCollection()
-            .AddSingleton<ISymmetricEncryptionService>(encryptionService)
+            .AddSingleton<ISynchronousSymmetricEncryptionService>(encryptionService)
             .AddMassTransitTestHarness(cfg =>
             {
                 cfg.AddConsumer<PayloadTransformAadHarnessConsumer>();

@@ -25,7 +25,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 /// Exercises <see cref="MessagingBusBuilder.ConfigurePayloadTransform"/> directly against a
 /// <c>UsingInMemory</c> test bus (mirroring the pattern established for idempotency/header-propagation
 /// tests) with a genuinely real <see cref="BrotliPayloadCompressor"/> and AES-GCM
-/// <see cref="AesGcmEncryptionService"/> — proving an end-to-end compress-then-encrypt /
+/// <see cref="SynchronousAesGcmEncryptionService"/> — proving an end-to-end compress-then-encrypt /
 /// decrypt-then-decompress round trip through MassTransit's actual serialization pipeline, not merely
 /// that the wiring delegates somewhere.
 /// </remarks>
@@ -37,11 +37,11 @@ public sealed class PayloadTransformRoundTripTests
         PayloadTransformRoundTripTracker.Reset();
 
         var compressor = new BrotliPayloadCompressor(Microsoft.Extensions.Options.Options.Create(new CompressionOptions()));
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         await using var provider = new ServiceCollection()
             .AddSingleton<IPayloadCompressor>(compressor)
-            .AddSingleton<ISymmetricEncryptionService>(encryptionService)
+            .AddSingleton<ISynchronousSymmetricEncryptionService>(encryptionService)
             .AddMassTransitTestHarness(cfg =>
             {
                 cfg.AddConsumer<PayloadTransformRecordingConsumer>();

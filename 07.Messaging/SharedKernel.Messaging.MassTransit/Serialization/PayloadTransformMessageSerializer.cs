@@ -19,18 +19,19 @@ namespace SharedKernel.Messaging.MassTransit.Serialization;
 /// serializer's <see cref="MessageBody"/> is returned unchanged.
 /// </para>
 /// <para>
-/// <b>(P-499/WO-081)</b> When <see cref="PayloadTransformOptions.EnableEncryption"/> is set, the
-/// serialized bytes are encrypted under associated data (AAD) derived from the message's own CLR
-/// type name (<c>typeof(T).FullName ?? typeof(T).Name</c>), and that same string is written into
-/// the <see cref="PayloadTransformHeaders.MessageTypeAad"/> transport header so the consume-side
+/// When <see cref="PayloadTransformOptions.EnableEncryption"/> is set, the serialized bytes are
+/// encrypted under associated data (AAD) derived from the message's own CLR type name
+/// (<c>typeof(T).FullName ?? typeof(T).Name</c>), and that same string is written into the
+/// <see cref="PayloadTransformHeaders.MessageTypeAad"/> transport header so the consume-side
 /// <see cref="PayloadTransformMessageDeserializer"/> — which has no generic <c>T</c> of its own —
-/// can reproduce byte-identical AAD before attempting decryption. This still calls the
-/// <b>synchronous</b> <see cref="ISymmetricEncryptionService.Encrypt(byte[], byte[])"/> member:
-/// MassTransit's <see cref="IMessageSerializer.GetMessageBody{T}(SendContext{T})"/> is a hard-
-/// synchronous interface member with no async overload anywhere in MassTransit 9.1.2, so this
-/// pipeline stage is structurally dependent on the registered <c>IEncryptionKeyProvider</c>
-/// genuinely never blocking — see <see cref="Extensions.MessagingBusBuilder.WithPayloadTransform"/>'s
-/// remarks for the <c>Build()</c>-time best-effort guard and its guaranteed runtime backstop.
+/// can reproduce byte-identical AAD before attempting decryption. The message body is the
+/// <see cref="EncryptedPayload"/> storage format (<see cref="EncryptedPayload.ToBytes"/>).
+/// </para>
+/// <para>
+/// Encryption goes through <see cref="ISynchronousSymmetricEncryptionService"/>: MassTransit's
+/// <see cref="IMessageSerializer.GetMessageBody{T}(SendContext{T})"/> is a hard-synchronous
+/// interface member with no async overload anywhere in MassTransit 9.1.2, so this pipeline stage
+/// can only use keys an <see cref="ISynchronousEncryptionKeyProvider"/> holds in memory.
 /// </para>
 /// </remarks>
 internal sealed class PayloadTransformMessageSerializer : IMessageSerializer
@@ -38,13 +39,13 @@ internal sealed class PayloadTransformMessageSerializer : IMessageSerializer
     private readonly IMessageSerializer _inner;
     private readonly PayloadTransformOptions _options;
     private readonly IPayloadCompressor? _compressor;
-    private readonly ISymmetricEncryptionService? _encryptionService;
+    private readonly ISynchronousSymmetricEncryptionService? _encryptionService;
 
     internal PayloadTransformMessageSerializer(
         IMessageSerializer inner,
         PayloadTransformOptions options,
         IPayloadCompressor? compressor,
-        ISymmetricEncryptionService? encryptionService)
+        ISynchronousSymmetricEncryptionService? encryptionService)
     {
         _inner = inner;
         _options = options;
@@ -71,15 +72,13 @@ internal sealed class PayloadTransformMessageSerializer : IMessageSerializer
 
         if (_options.EnableEncryption)
         {
-            // PA-01/PA-03/PA-06 (P-499): AAD source is the message's own CLR type name, written
-            // into a transport header so the consume side (no generic T of its own) can reproduce
-            // it byte-for-byte before attempting decryption.
+            // AAD source is the message's own CLR type name, written into a transport header so the
+            // consume side (no generic T of its own) can reproduce it byte-for-byte before decrypting.
             string aad = typeof(T).FullName ?? typeof(T).Name;
             context.Headers.Set(PayloadTransformHeaders.MessageTypeAad, aad);
 
-            byte[] aadBytes = Encoding.UTF8.GetBytes(aad);
-            EncryptedPayload encrypted = _encryptionService!.Encrypt(bytes, aadBytes);
-            bytes = EncryptedPayloadWireCodec.Encode(encrypted);
+            EncryptedPayload encrypted = _encryptionService!.Encrypt(bytes, Encoding.UTF8.GetBytes(aad));
+            bytes = encrypted.ToBytes();
         }
 
         return new BytesMessageBody(bytes);

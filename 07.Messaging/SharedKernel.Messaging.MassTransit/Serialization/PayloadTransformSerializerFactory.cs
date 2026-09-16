@@ -23,13 +23,13 @@ internal sealed class PayloadTransformSerializerFactory : ISerializerFactory
     private readonly ISerializerFactory _inner;
     private readonly PayloadTransformOptions _options;
     private readonly IPayloadCompressor? _compressor;
-    private readonly ISymmetricEncryptionService? _encryptionService;
+    private readonly ISynchronousSymmetricEncryptionService? _encryptionService;
 
     internal PayloadTransformSerializerFactory(
         ISerializerFactory inner,
         PayloadTransformOptions options,
         IPayloadCompressor? compressor,
-        ISymmetricEncryptionService? encryptionService)
+        ISynchronousSymmetricEncryptionService? encryptionService)
     {
         _inner = inner;
         _options = options;

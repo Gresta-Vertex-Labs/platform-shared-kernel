@@ -16,7 +16,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.SerializationTests;
 /// <summary>
 /// PA-11/PA-12/PA-13 (P-499): unit-level proof of the AAD derivation/reconciliation rule inside
 /// <see cref="PayloadTransformMessageSerializer"/>/<see cref="PayloadTransformMessageDeserializer"/>,
-/// exercised directly against a real <see cref="AesGcmEncryptionService"/> and a substitute
+/// exercised directly against a real <see cref="SynchronousAesGcmEncryptionService"/> and a substitute
 /// <see cref="SendContext{T}"/> carrying a real <c>DictionarySendHeaders</c> (which implements both
 /// <c>SendHeaders</c> and <c>Headers</c>, so the exact same instance is usable to simulate the
 /// header traveling from publish to consume). The full transport-header-really-crosses-the-wire
@@ -28,7 +28,7 @@ public sealed class PayloadTransformAadTests
     [Fact]
     public void RoundTrip_EncryptionEnabled_HeaderCarriesTypeDerivedAad_DecryptsSuccessfully()
     {
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var serializer = new PayloadTransformMessageSerializer(
@@ -63,7 +63,7 @@ public sealed class PayloadTransformAadTests
     [Fact]
     public void Deserialize_HeaderSwappedToADifferentTypesAad_FailsAuthentication_ThrowsMismatchException()
     {
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var serializer = new PayloadTransformMessageSerializer(
@@ -92,40 +92,59 @@ public sealed class PayloadTransformAadTests
             "authentication rather than silently decrypt under the wrong context");
     }
 
+
     [Fact]
-    public void Deserialize_NoAadHeaderPresent_FallsBackToEmptyAad_DecryptsSuccessfully()
+    public void GetMessageBody_EncryptionEnabled_BodyIsEncryptedPayloadStorageFormat()
     {
-        // Simulates a message published by a pre-PA-* producer: the real MassTransit envelope
-        // bytes, encrypted with empty AAD (exactly what the pre-P-499 single-argument
-        // Encrypt(bytes) call produced) and no AAD transport header set at all.
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider("messaging-v1"));
+        var options = new PayloadTransformOptions { EnableEncryption = true };
+
+        var serializer = new PayloadTransformMessageSerializer(
+            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer(),
+            options, compressor: null, encryptionService);
+
+        var headers = new MtDictionarySendHeaders();
+        var sendContext = Substitute.For<SendContext<PayloadTransformAadTestMessage>>();
+        sendContext.Headers.Returns(headers);
+        sendContext.Message.Returns(new PayloadTransformAadTestMessage("storage format", 4));
+        sendContext.SupportedMessageTypes.Returns([MessageUrn.ForTypeString<PayloadTransformAadTestMessage>()]);
+
+        byte[] body = serializer.GetMessageBody(sendContext).GetBytes();
+
+        EncryptedPayload.TryParse(body, out EncryptedPayload? payload).Should().BeTrue(
+            "the message body is the EncryptedPayload storage format");
+        payload!.KeyId.Should().Be("messaging-v1");
+        encryptionService
+            .Decrypt(payload, System.Text.Encoding.UTF8.GetBytes(typeof(PayloadTransformAadTestMessage).FullName!))
+            .IsSuccess.Should().BeTrue("the ciphertext is bound to the message type name");
+    }
+
+    [Fact]
+    public void Deserialize_NoAadHeaderPresent_ThrowsMismatchException()
+    {
+        // A body encrypted with empty associated data and sent without the AAD header must not decrypt:
+        // the consumer never guesses the associated data.
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var innerSerializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer();
-        var legacySendContext = Substitute.For<SendContext<PayloadTransformAadTestMessage>>();
-        legacySendContext.Message.Returns(new PayloadTransformAadTestMessage("legacy producer", 3));
-        legacySendContext.SupportedMessageTypes.Returns([MessageUrn.ForTypeString<PayloadTransformAadTestMessage>()]);
-        byte[] envelopeBytes = innerSerializer.GetMessageBody(legacySendContext).GetBytes();
+        var sendContext = Substitute.For<SendContext<PayloadTransformAadTestMessage>>();
+        sendContext.Message.Returns(new PayloadTransformAadTestMessage("no header", 3));
+        sendContext.SupportedMessageTypes.Returns([MessageUrn.ForTypeString<PayloadTransformAadTestMessage>()]);
+        byte[] envelopeBytes = innerSerializer.GetMessageBody(sendContext).GetBytes();
 
-        EncryptedPayload encrypted = encryptionService.Encrypt(envelopeBytes, []);
-        byte[] wireBytes = EncryptedPayloadWireCodec.Encode(encrypted);
+        byte[] wireBytes = encryptionService.Encrypt(envelopeBytes, []).ToBytes();
 
-        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
         var deserializer = new PayloadTransformMessageDeserializer(
-            innerDeserializer, options, compressor: null, encryptionService);
+            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer(),
+            options, compressor: null, encryptionService);
 
-        var noAadHeaders = new MtDictionarySendHeaders(); // no MessageTypeAad key set — header-absent case.
+        var act = () => deserializer.Deserialize(
+            new BytesMessageBody(wireBytes), new MtDictionarySendHeaders(), new Uri("loopback://localhost/test"));
 
-        SerializerContext? serializerContext = null;
-        var act = () => serializerContext = deserializer.Deserialize(
-            new BytesMessageBody(wireBytes), noAadHeaders, new Uri("loopback://localhost/test"));
-
-        act.Should().NotThrow(
-            "a header-absent message must fall back to Array.Empty<byte>() AAD, matching what a " +
-            "pre-PA-* producer implicitly used, so rolling deploys stay safe old-producer/new-consumer");
-
-        serializerContext!.TryGetMessage<PayloadTransformAadTestMessage>(out var message).Should().BeTrue();
-        message.Should().BeEquivalentTo(new PayloadTransformAadTestMessage("legacy producer", 3));
+        act.Should().Throw<PayloadTransformMismatchException>()
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage($"*{PayloadTransformHeaders.MessageTypeAad}*");
     }
 }
 

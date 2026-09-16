@@ -42,14 +42,17 @@ public sealed class PayloadTransformOptions
     /// <summary>
     /// Gets or sets whether the serialized (and, if <see cref="EnableCompression"/> is also set,
     /// already-compressed) message payload is encrypted via <c>SharedKernel.Cryptography</c>'s
-    /// <c>ISymmetricEncryptionService</c> before it reaches the transport.
+    /// <c>ISynchronousSymmetricEncryptionService</c> before it reaches the transport.
     /// Default is <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// Requires an <c>ISymmetricEncryptionService</c> to already be registered in DI (via
-    /// <c>SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography()</c>) —
+    /// Requires <c>ISynchronousSymmetricEncryptionService</c> to already be registered in DI (via
+    /// <c>SharedKernel.Cryptography</c>'s
+    /// <c>AddSharedKernelCryptography(configuration).AddSynchronousSymmetricEncryption()</c>) together
+    /// with an in-memory <c>ISynchronousEncryptionKeyProvider</c> —
     /// <see cref="Extensions.MessagingBusBuilder.Build"/> throws <see cref="InvalidOperationException"/>
-    /// at build time if this flag is set and none is registered.
+    /// at build time if this flag is set and the service is not registered, and bus configuration
+    /// fails at startup if its key provider cannot be resolved.
     /// </remarks>
     public bool EnableEncryption { get; set; }
 }

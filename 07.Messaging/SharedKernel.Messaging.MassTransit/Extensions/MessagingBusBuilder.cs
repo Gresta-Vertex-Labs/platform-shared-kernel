@@ -976,8 +976,8 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <see cref="IPayloadCompressor"/> is registered (via <c>SharedKernel.Compression</c>'s
     /// <c>AddSharedKernelCompression()</c>), or if
     /// <see cref="PayloadTransformOptions.EnableEncryption"/> is set and no
-    /// <see cref="ISymmetricEncryptionService"/> is registered (via <c>SharedKernel.Cryptography</c>'s
-    /// <c>AddSharedKernelCryptography()</c>).
+    /// <see cref="ISynchronousSymmetricEncryptionService"/> is registered (via <c>SharedKernel.Cryptography</c>'s
+    /// <c>AddSharedKernelCryptography(configuration).AddSynchronousSymmetricEncryption()</c>).
     /// </para>
     /// <para>
     /// <strong>This changes the wire format</strong> of every message published on this bus once
@@ -989,31 +989,21 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// payload.
     /// </para>
     /// <para>
-    /// <b>(P-499/WO-081) STRUCTURAL LIMITATION — KMS/HSM-BACKED KEY PROVIDERS ARE INCOMPATIBLE
-    /// WITH <see cref="PayloadTransformOptions.EnableEncryption"/>.</b> MassTransit's
+    /// <b>STRUCTURAL LIMITATION — KMS/HSM-BACKED KEY PROVIDERS CANNOT BE USED WITH
+    /// <see cref="PayloadTransformOptions.EnableEncryption"/>.</b> MassTransit's
     /// <c>IMessageSerializer.GetMessageBody&lt;T&gt;</c>/<c>IMessageDeserializer.Deserialize</c>
-    /// pipeline stage exposes no async member anywhere in MassTransit 9.1.2, so this feature calls
-    /// the <b>synchronous</b> <c>ISymmetricEncryptionService.Encrypt</c>/<c>Decrypt</c> members,
-    /// which themselves require a registered <c>IEncryptionKeyProvider</c> that implements
-    /// <c>ISynchronousEncryptionKeyProvider</c> — never a KMS/HSM-backed provider (Azure Key
-    /// Vault, AWS KMS, HashiCorp Vault), which can incur a genuine network/IPC round trip.
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> eagerly when the
-    /// registered <c>IEncryptionKeyProvider</c> is statically provable NOT to implement that
-    /// marker (registered via <c>ImplementationInstance</c> or <c>ImplementationType</c>). When
-    /// the provider is registered via <c>ImplementationFactory</c> — not statically inspectable
-    /// without invoking it, which <see cref="Build"/> must never do — this eager check is skipped,
-    /// and the guaranteed backstop is a structural <see cref="NotSupportedException"/> thrown by
-    /// the encryption service itself on the first actual <c>Encrypt</c>/<c>Decrypt</c> call.
+    /// pipeline stage exposes no async member anywhere in MassTransit 9.1.2, so this feature uses
+    /// <see cref="ISynchronousSymmetricEncryptionService"/>, which needs an
+    /// <see cref="ISynchronousEncryptionKeyProvider"/> holding its keys in memory (for example
+    /// <see cref="StaticEncryptionKeyProvider"/>) — never a KMS/HSM-backed provider (Azure Key
+    /// Vault, AWS KMS, HashiCorp Vault), which can only resolve keys asynchronously. A missing
+    /// <see cref="ISynchronousEncryptionKeyProvider"/> fails when the bus is configured at startup,
+    /// with a message naming the required registrations.
     /// </para>
     /// <para>
-    /// <b>ROLLING-DEPLOY REQUIREMENT.</b> Once encryption is enabled, associated data (AAD)
-    /// derived from the message's own CLR type name authenticates every ciphertext. A message
-    /// from an old, pre-P-499 producer (no AAD header, empty AAD) remains decryptable by a new
-    /// consumer. The reverse is NOT true: a message from a new producer (non-empty AAD) CANNOT be
-    /// decrypted by an old consumer still calling the pre-P-499 single-argument
-    /// <c>Decrypt(payload)</c> overload — that is a genuine AEAD authentication failure, not a
-    /// bug. CONSUMERS OF AN ENCRYPTED PAYLOAD-TRANSFORM TOPIC/QUEUE MUST BE UPGRADED TO THIS
-    /// VERSION BEFORE PRODUCERS ARE.
+    /// Once encryption is enabled, associated data (AAD) derived from the message's own CLR type
+    /// name authenticates every ciphertext; the consumer reads it back from a transport header, and
+    /// a message without that header fails with <see cref="PayloadTransformMismatchException"/>.
     /// </para>
     /// </remarks>
     public MessagingBusBuilder WithPayloadTransform(Action<PayloadTransformOptions>? configure = null)
@@ -1088,51 +1078,14 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     "Call services.AddSharedKernelCompression(configuration) before calling WithPayloadTransform().");
             }
 
+            // MassTransit serializers are synchronous, so encryption needs the synchronous service.
+            // Its key provider is resolved at startup, where a missing one fails with the same guidance.
             if (_payloadTransformOptions.EnableEncryption
-                && Services.FirstOrDefault(d => d.ServiceType == typeof(ISymmetricEncryptionService)) is null)
+                && Services.FirstOrDefault(d => d.ServiceType == typeof(ISynchronousSymmetricEncryptionService)) is null)
             {
                 throw new InvalidOperationException(
-                    "PayloadTransformOptions.EnableEncryption is set but no ISymmetricEncryptionService is registered. " +
-                    "Call services.AddSharedKernelCryptography(configuration) before calling WithPayloadTransform().");
-            }
-
-            // PA-05/PA-10 (P-499): best-effort eager check that the registered IEncryptionKeyProvider
-            // is genuinely synchronous. This is a STATIC, provable-without-invoking-DI check only —
-            // it never calls Services.BuildServiceProvider() (the established anti-pattern this
-            // builder already avoids, see C-21/C-22). When the descriptor is registered via
-            // ImplementationInstance or ImplementationType, provability is immediate. When it is
-            // registered via ImplementationFactory, this check cannot be performed without invoking
-            // the factory — so it is skipped, and SK.01.P492's own AesGcmEncryptionService-level
-            // NotSupportedException remains the guaranteed backstop, firing on the first actual
-            // Encrypt/Decrypt call instead of at Build() time.
-            if (_payloadTransformOptions.EnableEncryption)
-            {
-                var keyProviderDescriptor = Services.FirstOrDefault(
-                    d => d.ServiceType == typeof(IEncryptionKeyProvider));
-
-                bool? isGenuinelySynchronous = keyProviderDescriptor switch
-                {
-                    null => null,
-                    { ImplementationInstance: ISynchronousEncryptionKeyProvider } => true,
-                    { ImplementationInstance: not null } => false,
-                    { ImplementationType: not null } d =>
-                        typeof(ISynchronousEncryptionKeyProvider).IsAssignableFrom(d.ImplementationType),
-                    _ => null, // ImplementationFactory — not statically provable; defer to the runtime backstop.
-                };
-
-                if (isGenuinelySynchronous == false)
-                {
-                    throw new InvalidOperationException(
-                        "PayloadTransformOptions.EnableEncryption is set, but the registered " +
-                        "IEncryptionKeyProvider does not implement ISynchronousEncryptionKeyProvider. " +
-                        "The payload-transform pipeline calls the synchronous " +
-                        "ISymmetricEncryptionService.Encrypt/Decrypt members (MassTransit's " +
-                        "IMessageSerializer/IMessageDeserializer expose no async overload), which " +
-                        "requires a genuinely non-blocking key provider. Register a provider that " +
-                        "implements ISynchronousEncryptionKeyProvider (e.g. a config-backed provider), " +
-                        "or do not enable payload-transform encryption alongside a KMS/HSM-backed " +
-                        "provider such as AzureKeyVaultEncryptionKeyProvider.");
-                }
+                    "PayloadTransformOptions.EnableEncryption is set but no ISynchronousSymmetricEncryptionService is registered. " +
+                    MissingSynchronousEncryptionGuidance);
             }
         }
 
@@ -1486,8 +1439,8 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             ? ctx.GetRequiredService<IPayloadCompressor>()
             : null;
 
-        ISymmetricEncryptionService? encryptionService = options.EnableEncryption
-            ? ctx.GetRequiredService<ISymmetricEncryptionService>()
+        ISynchronousSymmetricEncryptionService? encryptionService = options.EnableEncryption
+            ? ResolveSynchronousEncryptionService(ctx)
             : null;
 
         // MassTransit's own default JSON (de)serializer, freshly constructed with default options —
@@ -1509,6 +1462,34 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         busCfg.ClearSerialization();
         busCfg.AddSerializer(factory, isSerializer: true);
         busCfg.AddDeserializer(factory, isDefault: true);
+    }
+
+    private const string MissingSynchronousEncryptionGuidance =
+        "Payload-transform encryption runs inside MassTransit's synchronous serializers, so it needs keys held in memory: " +
+        "register an ISynchronousEncryptionKeyProvider (for example StaticEncryptionKeyProvider) and call " +
+        "services.AddSharedKernelCryptography(configuration).AddSynchronousSymmetricEncryption(). " +
+        "KMS/HSM-backed providers such as AzureKeyVaultEncryptionKeyProvider cannot be used here.";
+
+    private static ISynchronousSymmetricEncryptionService ResolveSynchronousEncryptionService(IServiceProvider services)
+    {
+        object? service;
+        try
+        {
+            service = services.GetService(typeof(ISynchronousSymmetricEncryptionService));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The container found the service but not its dependency, typically ISynchronousEncryptionKeyProvider.
+            throw new InvalidOperationException(
+                "PayloadTransformOptions.EnableEncryption is set but ISynchronousSymmetricEncryptionService could not be resolved. " +
+                MissingSynchronousEncryptionGuidance,
+                ex);
+        }
+
+        return service as ISynchronousSymmetricEncryptionService
+            ?? throw new InvalidOperationException(
+                "PayloadTransformOptions.EnableEncryption is set but no ISynchronousSymmetricEncryptionService is registered. " +
+                MissingSynchronousEncryptionGuidance);
     }
 
     private static void ValidateAzureServiceBusOptions(AzureServiceBusOptions opts)

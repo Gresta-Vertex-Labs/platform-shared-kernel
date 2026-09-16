@@ -11,7 +11,7 @@
         SharedKernel.Messaging.Abstractions — IMessageBus, IEventPublisher, IMessagingBuilder, MessagingOptions
         SharedKernel.Contracts             — EventEnvelope<TEvent> used by MassTransitEventPublisher
         SharedKernel.Compression           — IPayloadCompressor, used by WithPayloadTransform() (P-346)
-        SharedKernel.Cryptography          — ISymmetricEncryptionService, used by WithPayloadTransform() (P-346)
+        SharedKernel.Cryptography          — ISynchronousSymmetricEncryptionService, used by WithPayloadTransform() (P-346)
       Both SharedKernel.Compression and SharedKernel.Cryptography are 01.Core packages, already
       permitted by the root layering rule ("07.Messaging may reference 01-04").
       NO reference to any 06.Persistence.* package is permitted.

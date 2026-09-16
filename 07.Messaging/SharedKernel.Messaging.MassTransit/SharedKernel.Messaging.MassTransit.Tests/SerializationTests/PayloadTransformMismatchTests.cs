@@ -32,12 +32,12 @@ public sealed class PayloadTransformMismatchTests
     {
         // Arrange: bytes as if a publisher had compressed-then-encrypted them.
         var compressor = new BrotliPayloadCompressor(Microsoft.Extensions.Options.Options.Create(new CompressionOptions()));
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         byte[] plainBytes = "{\"hello\":\"world\"}"u8.ToArray();
         byte[] compressed = compressor.Compress(plainBytes);
         EncryptedPayload encrypted = encryptionService.Encrypt(compressed, []);
-        byte[] wireBytes = EncryptedPayloadWireCodec.Encode(encrypted);
+        byte[] wireBytes = encrypted.ToBytes();
 
         var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
 
@@ -63,7 +63,7 @@ public sealed class PayloadTransformMismatchTests
         byte[] plainBytes = "{\"hello\":\"world\"}"u8.ToArray();
 
         var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         // Consumer expects the payload to have been encrypted.
         var deserializer = new PayloadTransformMessageDeserializer(
@@ -74,10 +74,14 @@ public sealed class PayloadTransformMismatchTests
 
         var body = new BytesMessageBody(plainBytes);
 
-        var act = () => deserializer.Deserialize(body, new MtEmptyHeaders(), new Uri("loopback://localhost/test"));
+        // The AAD header is present, so the failure comes from the body not being an encrypted payload.
+        var headers = new MtEmptyHeaders();
+        headers.Set(PayloadTransformHeaders.MessageTypeAad, "Some.Message.Type");
+
+        var act = () => deserializer.Deserialize(body, headers, new Uri("loopback://localhost/test"));
 
         act.Should().Throw<PayloadTransformMismatchException>()
-            .WithInnerException<Exception>();
+            .WithInnerException<FormatException>();
     }
 
     [Fact]
