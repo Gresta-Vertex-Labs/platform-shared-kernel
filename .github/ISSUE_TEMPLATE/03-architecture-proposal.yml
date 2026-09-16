@@ -1,0 +1,140 @@
+name: 🏛️ Architecture proposal (RFC)
+description: Propose a significant change — a new package or domain, a new dependency, a layering exception, or a breaking redesign.
+title: "[RFC]: "
+labels: ["type: rfc", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An RFC is a design discussion **before** code is written. It is reviewed against the platform's principles:
+        **capability-oriented**, **downward-only dependencies**, **AOT-preferred**, **Kubernetes-native**, and **permissively licensed dependencies only**.
+
+        Read the [layering rules](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/CLAUDE.md#layering-rules-dependency-direction) first — most rejected proposals fail there.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I read the layering rules and the "What goes where" guide.
+          required: true
+        - label: I searched existing issues and discussions for a similar proposal.
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph. What changes, in plain words?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: The concrete problem, who has it, and why it belongs in the shared kernel rather than in a consuming service.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Affected domains
+      description: Select every domain this touches.
+      multiple: true
+      options:
+        - 00.Governance — analyzers, architecture tests
+        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 02.Caching — FusionCache, Redis
+        - 03.Domain — DDD building blocks, Money
+        - 04.Contracts — integration events, paging
+        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 06.Persistence — EF Core, PostgreSQL, Dapper
+        - 07.Messaging — MassTransit
+        - 08.Storage — S3, MinIO, Huawei OBS
+        - 09.Search — Meilisearch, Elasticsearch
+        - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
+        - 11.Communication — REST, gRPC, GraphQL
+        - 12.Security — OIDC, API keys, mTLS, TOTP
+        - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
+        - 14.Presentation — Web API, SignalR
+        - 15.Integration — webhooks, email, SMS
+        - 16.Testing — fakes, Testcontainers fixtures
+        - 17.Workflows — Temporal
+        - 18.Idempotency — Redis and EF Core stores
+        - 19.Scheduling — recurring and deferred jobs
+        - 20.Reporting — CSV, spreadsheet, PDF exports
+        - Build, CI or packaging
+        - A new domain
+    validations:
+      required: true
+
+  - type: textarea
+    id: design
+    attributes:
+      label: Detailed design
+      description: |
+        Packages, public types and their responsibilities, DI registration, configuration, and how a consuming service uses it.
+        Diagrams and code are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layering
+    attributes:
+      label: Layering impact
+      options:
+        - Stays within the existing layering rules
+        - Needs a new, named layering exception
+        - Adds a new package to an existing domain
+        - Adds a new numbered domain
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: New third-party dependencies
+      description: |
+        For each: package, version, **license**, maintenance health, and AOT/trimming compatibility.
+        Copyleft, non-commercial and revenue-gated licenses (for example AGPL, PolyForm Noncommercial) are not accepted.
+      placeholder: |
+        - ClosedXML 0.105.0 — MIT — active, monthly releases — not trim-safe (reflection), acceptable behind an abstraction
+        - None
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Breaking changes and migration
+      description: What breaks for existing consumers, and the exact steps to migrate. Write "None" if purely additive.
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and tenant isolation
+      description: Effects on secrets, cryptography, authentication, authorization, tenant scoping, or what reaches logs. Write "None" if not applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other designs, existing libraries, or doing nothing — and why each was rejected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: drawbacks
+    attributes:
+      label: Drawbacks and risks
+      description: Maintenance cost, added complexity, performance, operational burden.
+
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: What still needs deciding?

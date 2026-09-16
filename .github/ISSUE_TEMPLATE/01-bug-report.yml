@@ -1,0 +1,159 @@
+name: 🐛 Bug report
+description: A package behaves incorrectly, throws unexpectedly, or does not match its documentation.
+title: "[Bug]: "
+labels: ["type: bug", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. A precise report with a small reproduction gets fixed fastest.
+
+        > [!CAUTION]
+        > **Found a security vulnerability?** Do not file it here. Report it privately — see [SECURITY.md](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/SECURITY.md).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched [existing issues](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/issues?q=is%3Aissue) and this has not been reported yet.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I reproduced this on the latest published release.
+          required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Affected domain
+      description: The numbered folder the package lives in. Used to route the issue automatically.
+      options:
+        - 00.Governance — analyzers, architecture tests
+        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 02.Caching — FusionCache, Redis
+        - 03.Domain — DDD building blocks, Money
+        - 04.Contracts — integration events, paging
+        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 06.Persistence — EF Core, PostgreSQL, Dapper
+        - 07.Messaging — MassTransit
+        - 08.Storage — S3, MinIO, Huawei OBS
+        - 09.Search — Meilisearch, Elasticsearch
+        - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
+        - 11.Communication — REST, gRPC, GraphQL
+        - 12.Security — OIDC, API keys, mTLS, TOTP
+        - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
+        - 14.Presentation — Web API, SignalR
+        - 15.Integration — webhooks, email, SMS
+        - 16.Testing — fakes, Testcontainers fixtures
+        - 17.Workflows — Temporal
+        - 18.Idempotency — Redis and EF Core stores
+        - 19.Scheduling — recurring and deferred jobs
+        - 20.Reporting — CSV, spreadsheet, PDF exports
+        - Build, CI or packaging
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: The exact NuGet package ID.
+      placeholder: SharedKernel.Caching.FusionCache
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: All packages share one version. Find it in your project file or `dotnet list package`.
+      placeholder: 1.0.0-alpha.0.935
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Describe the incorrect behavior. Include the exception type and message if one was thrown.
+      placeholder: Calling GetOrSetAsync with a tenant-scoped key returns a value cached for a different tenant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: Each tenant should only ever see its own cached entry.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        The smallest code that shows the problem — ideally a failing xUnit test or a short `Program.cs`.
+        Include the DI registration and configuration it depends on. A link to a repository also works.
+      render: csharp
+      placeholder: |
+        var services = new ServiceCollection();
+        services.AddSharedKernelCaching();
+
+        var cache = services.BuildServiceProvider().GetRequiredService<ITenantCacheService>();
+        // Steps that trigger the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and stack trace
+      description: |
+        Paste relevant output. **Remove secrets, connection strings, tokens and personal data first.**
+      render: text
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      options:
+        - "No — it never worked"
+        - "Yes — it worked in an earlier version"
+        - "I don't know"
+    validations:
+      required: true
+
+  - type: input
+    id: last-working-version
+    attributes:
+      label: Last working version
+      description: Only if this is a regression.
+      placeholder: 1.0.0-alpha.0.901
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - .NET SDK / runtime:
+        - OS:
+        - Hosting (Kubernetes, container, IIS, …):
+        - Infrastructure versions (PostgreSQL, Redis, RabbitMQ, …):
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Workarounds you found, related issues, screenshots.
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to submit a pull request that fixes this.

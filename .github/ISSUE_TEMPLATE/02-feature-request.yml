@@ -1,0 +1,105 @@
+name: ✨ Feature or capability request
+description: Suggest a new capability, an improvement to an existing package, or a new provider.
+title: "[Feature]: "
+labels: ["type: feature", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good requests start from the **problem**, not the solution. Tell us what you are trying to do and why the current packages make it hard.
+
+        > [!TIP]
+        > Proposing something large — a new package, a new domain, a breaking change, or a new third-party dependency? Use the **🏛️ Architecture proposal (RFC)** form instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched [existing issues](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/issues?q=is%3Aissue) and [discussions](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/discussions) for this request.
+          required: true
+        - label: I checked the ["What goes where" guide](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/CLAUDE.md) — this capability does not already exist.
+          required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Affected domain
+      description: Where do you think this belongs? Pick "Not sure" if you don't know — that's fine.
+      options:
+        - 00.Governance — analyzers, architecture tests
+        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 02.Caching — FusionCache, Redis
+        - 03.Domain — DDD building blocks, Money
+        - 04.Contracts — integration events, paging
+        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 06.Persistence — EF Core, PostgreSQL, Dapper
+        - 07.Messaging — MassTransit
+        - 08.Storage — S3, MinIO, Huawei OBS
+        - 09.Search — Meilisearch, Elasticsearch
+        - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
+        - 11.Communication — REST, gRPC, GraphQL
+        - 12.Security — OIDC, API keys, mTLS, TOTP
+        - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
+        - 14.Presentation — Web API, SignalR
+        - 15.Integration — webhooks, email, SMS
+        - 16.Testing — fakes, Testcontainers fixtures
+        - 17.Workflows — Temporal
+        - 18.Idempotency — Redis and EF Core stores
+        - 19.Scheduling — recurring and deferred jobs
+        - 20.Reporting — CSV, spreadsheet, PDF exports
+        - Build, CI or packaging
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to achieve, and what gets in the way today?
+      placeholder: Our services export month-end statements with millions of rows. Today we load everything into memory before writing the file, and pods get OOM-killed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Describe the behavior, not only the API.
+    validations:
+      required: true
+
+  - type: textarea
+    id: api
+    attributes:
+      label: API sketch
+      description: Optional. How calling code would look.
+      render: csharp
+      placeholder: |
+        // Illustrative only — how you would like calling code to read.
+        await exporter.ExportAsync(rows, destination, cancellationToken);
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use today, other libraries, or other designs you ruled out — and why.
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Would this break existing consumers?
+      options:
+        - "No — purely additive"
+        - "Yes — it changes existing public API or behavior"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to implement this myself, with guidance.

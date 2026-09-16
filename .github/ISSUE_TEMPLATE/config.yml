@@ -1,0 +1,14 @@
+# Issue template chooser. Blank issues are disabled: everyone without write access must pick one of
+# the forms in this folder. Maintainers still see a "Blank issue" option for triage work.
+blank_issues_enabled: false
+
+contact_links:
+  - name: 💬 Ask a question
+    url: https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/discussions
+    about: How do I…? Which package should I use? Please ask in Discussions — issues are for actionable work.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/security/advisories/new
+    about: Never open a public issue for a vulnerability. Report it privately — see SECURITY.md.
+  - name: 🧭 Architecture and layering rules
+    url: https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/CLAUDE.md
+    about: The domain map, dependency rules and "What goes where" guide. Worth a look before proposing a feature.

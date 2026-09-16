@@ -1,0 +1,40 @@
+name: Issue Triage
+
+# Adds "area: …" labels from the "Affected domain(s)" answer of an issue form. Issue forms can only
+# apply fixed labels, so the selected dropdown option is read back out of the issue body by
+# .github/scripts/issue-triage.cjs. Labels are only added, never removed.
+#
+# The issue body is untrusted input: it is only parsed as text inside JavaScript, never interpolated
+# into a shell command or a `${{ }}` expression.
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions: {}
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    name: Label by affected domain
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the triage script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Add area labels
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { run } = require('./.github/scripts/issue-triage.cjs');
+            await run({ github, context, core });

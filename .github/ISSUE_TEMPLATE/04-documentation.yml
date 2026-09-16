@@ -1,0 +1,82 @@
+name: 📝 Documentation problem
+description: Missing, wrong, unclear or outdated documentation, XML docs, or samples.
+title: "[Docs]: "
+labels: ["type: docs", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation that disagrees with the code is a bug too. Thanks for pointing it out.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem?
+      options:
+        - Missing — something is not documented
+        - Incorrect — the documentation does not match the behavior
+        - Unclear — hard to understand or follow
+        - Outdated — describes an older version
+        - Broken sample, snippet or link
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Affected domain
+      options:
+        - 00.Governance — analyzers, architecture tests
+        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 02.Caching — FusionCache, Redis
+        - 03.Domain — DDD building blocks, Money
+        - 04.Contracts — integration events, paging
+        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 06.Persistence — EF Core, PostgreSQL, Dapper
+        - 07.Messaging — MassTransit
+        - 08.Storage — S3, MinIO, Huawei OBS
+        - 09.Search — Meilisearch, Elasticsearch
+        - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
+        - 11.Communication — REST, gRPC, GraphQL
+        - 12.Security — OIDC, API keys, mTLS, TOTP
+        - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
+        - 14.Presentation — Web API, SignalR
+        - 15.Integration — webhooks, email, SMS
+        - 16.Testing — fakes, Testcontainers fixtures
+        - 17.Workflows — Temporal
+        - 18.Idempotency — Redis and EF Core stores
+        - 19.Scheduling — recurring and deferred jobs
+        - 20.Reporting — CSV, spreadsheet, PDF exports
+        - Build, CI or packaging
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Where is it?
+      description: A link, file path, or type/member name.
+      placeholder: 02.Caching/SharedKernel.Caching.FusionCache/README.md — or — ICacheService.GetOrSetAsync XML docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Optional. Proposed wording, or what you expected to find.
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to submit a pull request with the fix.

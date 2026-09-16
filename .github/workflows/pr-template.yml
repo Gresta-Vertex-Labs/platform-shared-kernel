@@ -1,0 +1,58 @@
+name: PR Template
+
+# Enforces .github/pull_request_template.md. GitHub can pre-fill a PR template but cannot require
+# it, so this check fails until every required section is filled in and posts one self-updating bot
+# comment listing what is missing. Make "PR template" a required status check in the main-branch
+# ruleset (.github/rulesets/main-branch.json) for it to block merging.
+#
+# Standing design decisions:
+#   - Separate from ci.yml on purpose: ci.yml ignores Markdown-only changes, but every PR needs a
+#     description check, including docs-only PRs.
+#   - pull_request_target, so the check can comment and label on PRs from forks. This is safe here
+#     because nothing from the PR is ever checked out or executed: the checker script comes from the
+#     default branch, and the PR title/body are only parsed as text inside JavaScript — never
+#     interpolated into a shell command or a `${{ }}` expression.
+#   - `edited` re-runs the check when the description or title changes; `synchronize` re-reports it
+#     on each new head commit, because a required check must pass on the latest commit.
+#   - `labeled`/`unlabeled` let a maintainer skip the check with the "template: exempt" label.
+#   - Bot PRs (Dependabot and similar) are skipped inside the script, not with a job `if:`, so the
+#     required check still reports success instead of staying pending.
+#   - merge_group is listed so the required check also reports inside a merge queue; it passes
+#     immediately there because the description was validated on the pull request.
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] -- no PR code is checked out or run; see header
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: pr-template-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  template:
+    name: PR template
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Check out the checker script (default branch only)
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Validate the pull request description
+        if: github.event_name == 'pull_request_target'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { run } = require('./.github/scripts/pr-template-check.cjs');
+            await run({ github, context, core });

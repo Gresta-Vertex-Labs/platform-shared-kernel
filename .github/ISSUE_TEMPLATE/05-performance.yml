@@ -1,0 +1,114 @@
+name: ⚡ Performance problem
+description: Slow code paths, excessive allocations, memory growth, or a performance regression between versions.
+title: "[Perf]: "
+labels: ["type: performance", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Performance reports are only actionable with **numbers**. A [BenchmarkDotNet](https://benchmarkdotnet.org/) result with `[MemoryDiagnoser]` is ideal —
+        `00.Governance/SharedKernel.Benchmarks` shows the project's benchmark conventions.
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Affected domain
+      options:
+        - 00.Governance — analyzers, architecture tests
+        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 02.Caching — FusionCache, Redis
+        - 03.Domain — DDD building blocks, Money
+        - 04.Contracts — integration events, paging
+        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 06.Persistence — EF Core, PostgreSQL, Dapper
+        - 07.Messaging — MassTransit
+        - 08.Storage — S3, MinIO, Huawei OBS
+        - 09.Search — Meilisearch, Elasticsearch
+        - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
+        - 11.Communication — REST, gRPC, GraphQL
+        - 12.Security — OIDC, API keys, mTLS, TOTP
+        - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
+        - 14.Presentation — Web API, SignalR
+        - 15.Integration — webhooks, email, SMS
+        - 16.Testing — fakes, Testcontainers fixtures
+        - 17.Workflows — Temporal
+        - 18.Idempotency — Redis and EF Core stores
+        - 19.Scheduling — recurring and deferred jobs
+        - 20.Reporting — CSV, spreadsheet, PDF exports
+        - Build, CI or packaging
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package and version
+      placeholder: SharedKernel.Persistence.EfCore 1.0.0-alpha.0.935
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: What operation is slow, at what scale (rows, requests per second, payload size), and how you noticed.
+      placeholder: ListPagedProjectedAsync over a 5M-row table with a keyset specification takes 900 ms per page at p95.
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: Benchmark output, profiler summary, or before/after timings and allocations.
+      render: text
+      placeholder: |
+        | Method        | Mean     | Allocated |
+        |-------------- |---------:|----------:|
+        | GetOrSetAsync | 412.3 ns |     312 B |
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected performance
+      description: What would be acceptable, and why (an earlier version, a comparable library, a latency budget)?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      options:
+        - "No — it has always been this slow"
+        - "Yes — an earlier version was faster"
+        - "I don't know"
+    validations:
+      required: true
+
+  - type: input
+    id: fast-version
+    attributes:
+      label: Last fast version
+      description: Only if this is a regression.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - .NET runtime:
+        - OS and CPU / container limits:
+        - Build configuration (Release? Server GC? Native AOT?):
+        - Infrastructure versions (PostgreSQL, Redis, …):
+    validations:
+      required: true
+
+  - type: upload
+    id: trace
+    attributes:
+      label: Profiler trace or benchmark artifacts
+      description: Optional. A `.nettrace`, `.speedscope.json`, dotMemory snapshot summary, or zipped BenchmarkDotNet results. Remove any sensitive data first.
