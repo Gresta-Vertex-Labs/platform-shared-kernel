@@ -58,9 +58,8 @@ public sealed class EncryptionRotationLoggingTests
 
         services.AddSingleton<ILogger<EncryptionRotationService<RotationTestDbContext>>>(logger);
 
-        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
-        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
-        // registration needed or wanted anymore.
+        // .WithEncryption() builds its own keyed-DI-isolated synchronous encryption service — no
+        // consumer-side registration is needed.
         var provider = services.BuildServiceProvider();
         return new RotationLoggingTestHost { Provider = provider, Connection = connection };
     }

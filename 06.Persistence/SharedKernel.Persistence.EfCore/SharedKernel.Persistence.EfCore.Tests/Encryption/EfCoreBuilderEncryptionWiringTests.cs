@@ -7,6 +7,7 @@ using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
+using SharedKernel.Testing.Cryptography;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
@@ -154,40 +155,83 @@ public sealed class EfCoreBuilderEncryptionWiringTests
             "default PersistenceServiceOptions.ServiceName must be 'system' for backward compatibility");
     }
 
+
     // -------------------------------------------------------------------------
-    // T-146 (P-498/WO-081, D-131): keyed-DI structural isolation — an unrelated ambient (unkeyed)
-    // IEncryptionKeyProvider registration must have ZERO effect on .WithEncryption()'s own resolved
-    // provider, in either mode.
+    // WithEncryption builds a synchronous encryption service over a synchronous key provider,
+    // under this package's own keyed-DI slots.
     // -------------------------------------------------------------------------
 
-    // A stand-in for an unrelated general-purpose provider a consumer might separately register
-    // unkeyed — e.g. simulating 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider, or a plain
-    // AddSharedKernelCryptography() call paired with the consumer's own IEncryptionKeyProvider.
-    private sealed class UnrelatedAmbientProvider : IEncryptionKeyProvider
+    [Fact]
+    public void WithEncryption_RegistersSynchronousServiceOverConfigBackedProvider_AsSingletons()
     {
-        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
-            throw new InvalidOperationException(
-                "UnrelatedAmbientProvider must never be reached by .WithEncryption()'s own " +
-                "persistence-scoped pipeline — if this throws during a test, the keyed-DI " +
-                "isolation this phase adds has regressed.");
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v1";
+                enc.Keys["v1"] = ValidBase64Key();
+            })
+            .Build();
 
-        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-            throw new InvalidOperationException(
-                "UnrelatedAmbientProvider must never be reached by .WithEncryption()'s own " +
-                "persistence-scoped pipeline — if this throws during a test, the keyed-DI " +
-                "isolation this phase adds has regressed.");
+        using var provider = services.BuildServiceProvider();
+
+        var keyProvider = provider.GetRequiredKeyedService<ISynchronousEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey);
+        var service1 = provider.GetRequiredKeyedService<ISynchronousSymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey);
+        var service2 = provider.GetRequiredKeyedService<ISynchronousSymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey);
+
+        keyProvider.Should().BeOfType<EncryptionOptionsKeyProvider>();
+        service1.Should().BeOfType<SynchronousAesGcmEncryptionService>();
+        service1.Should().BeSameAs(service2);
+
+        var associatedData = "public.t.c"u8.ToArray();
+        var payload = service1.Encrypt("round-trip"u8, associatedData);
+        payload.KeyId.Should().Be("v1");
+        service1.Decrypt(payload, associatedData).Value.Should().Equal("round-trip"u8.ToArray());
     }
 
     [Fact]
-    public void ConfigBackedDefault_UnrelatedUnkeyedProvider_HasZeroEffect_OnResolvedKeyedProvider()
+    public void WithEncryption_DoesNotRequireAddSharedKernelCryptography()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v1";
+                enc.Keys["v1"] = ValidBase64Key();
+            })
+            .Build();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
+
+        provider.GetService<ISymmetricEncryptionService>().Should().BeNull(
+            "no ambient encryption service is registered or needed");
+        provider.GetRequiredKeyedService<ISynchronousSymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey).Should().NotBeNull();
+    }
+
+    // -------------------------------------------------------------------------
+    // Keyed-DI structural isolation — unrelated ambient (unkeyed) key provider and encryption service
+    // registrations must have ZERO effect on .WithEncryption()'s own resolved provider, in either mode.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ConfigBackedDefault_UnrelatedUnkeyedRegistrations_HaveZeroEffect_OnResolvedKeyedProvider()
     {
         var services = new ServiceCollection();
 
-        // Simulates an unrelated registration elsewhere in the SAME container — e.g.
-        // 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider — registered BEFORE .WithEncryption().
-        services.AddSingleton<IEncryptionKeyProvider, UnrelatedAmbientProvider>();
-        services.AddSingleton<ISymmetricEncryptionService>(sp =>
-            new AesGcmEncryptionService(sp.GetRequiredService<IEncryptionKeyProvider>()));
+        // Simulates unrelated general-purpose crypto registered elsewhere in the SAME container,
+        // BEFORE .WithEncryption() — including an ambient synchronous service over different keys.
+        var unrelatedKeys = new FakeEncryptionKeyProvider("unrelated");
+        services.AddSingleton<IEncryptionKeyProvider>(unrelatedKeys);
+        services.AddSingleton<ISynchronousEncryptionKeyProvider>(unrelatedKeys);
+        services.AddSingleton<ISynchronousSymmetricEncryptionService>(new SynchronousAesGcmEncryptionService(unrelatedKeys));
 
         services
             .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
@@ -199,19 +243,16 @@ public sealed class EfCoreBuilderEncryptionWiringTests
             })
             .Build();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
-        var resolvedKeyProvider = provider.GetRequiredKeyedService<IEncryptionKeyProvider>(
-            PersistenceEncryptionKeys.EncryptionKeyProviderKey);
+        provider.GetRequiredKeyedService<ISynchronousEncryptionKeyProvider>(PersistenceEncryptionKeys.EncryptionKeyProviderKey)
+            .Should().BeOfType<EncryptionOptionsKeyProvider>();
+        provider.GetRequiredKeyedService<ISynchronousSymmetricEncryptionService>(PersistenceEncryptionKeys.SymmetricEncryptionServiceKey)
+            .Encrypt("x"u8, []).KeyId.Should().Be("v1", "the persistence pipeline encrypts with its own configured key");
 
-        resolvedKeyProvider.Should().BeOfType<EncryptionOptionsKeyProvider>(
-            "the config-backed default must resolve EncryptionOptionsKeyProvider under this " +
-            "package's own keyed-DI slot, completely unaffected by the unrelated unkeyed " +
-            "registration made elsewhere in the same container");
-
-        // The ambient unkeyed slot itself is left exactly as the consumer registered it — this
-        // package never touches or overwrites it.
-        provider.GetRequiredService<IEncryptionKeyProvider>().Should().BeOfType<UnrelatedAmbientProvider>();
+        // The ambient unkeyed slots are left exactly as the consumer registered them.
+        provider.GetRequiredService<IEncryptionKeyProvider>().Should().BeSameAs(unrelatedKeys);
+        provider.GetRequiredService<ISynchronousSymmetricEncryptionService>().Encrypt("x"u8, []).KeyId.Should().Be("unrelated");
     }
 
     [Fact]
@@ -219,13 +260,11 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
 
-        services.AddSingleton<IEncryptionKeyProvider, UnrelatedAmbientProvider>();
+        services.AddSingleton<IEncryptionKeyProvider>(new FakeEncryptionKeyProvider("unrelated"));
 
-        // The consumer's OWN unkeyed registration of the type WithExternalEncryptionKeyProvider will
-        // resolve — deliberately a DIFFERENT concrete type than UnrelatedAmbientProvider, proving
-        // the external path resolves ITS type-argument specifically, not "whatever IEncryptionKeyProvider
-        // happens to be ambient."
-        services.AddSingleton<FakeExternalKmsProvider>();
+        // The consumer's OWN registration of the type WithExternalEncryptionKeyProvider resolves —
+        // deliberately a DIFFERENT concrete type than the unrelated ambient provider.
+        services.AddSingleton<FakeRemoteEncryptionKeyProvider>();
 
         services
             .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
@@ -235,32 +274,20 @@ public sealed class EfCoreBuilderEncryptionWiringTests
                 enc.CurrentVersion = "v1";
                 enc.Keys["v1"] = ValidBase64Key();
             })
-            .WithExternalEncryptionKeyProvider<FakeExternalKmsProvider>()
+            .WithExternalEncryptionKeyProvider<FakeRemoteEncryptionKeyProvider>()
             .Build();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
-        var resolvedKeyProvider = provider.GetRequiredKeyedService<IEncryptionKeyProvider>(
+        var resolvedKeyProvider = provider.GetRequiredKeyedService<ISynchronousEncryptionKeyProvider>(
             PersistenceEncryptionKeys.EncryptionKeyProviderKey);
 
         resolvedKeyProvider.Should().BeOfType<PreWarmedEncryptionKeyProvider>(
             "WithExternalEncryptionKeyProvider<TProvider>() must resolve under the SAME keyed slot, " +
-            "superseding the config-backed default's registration (last-registered-wins) — the " +
-            "unrelated ambient UnrelatedAmbientProvider registration has zero effect either way");
+            "superseding the config-backed default's registration (last-registered-wins)");
 
-        ((PreWarmedEncryptionKeyProvider)resolvedKeyProvider).Inner.Should().BeOfType<FakeExternalKmsProvider>(
+        ((PreWarmedEncryptionKeyProvider)resolvedKeyProvider).Inner.Should().BeOfType<FakeRemoteEncryptionKeyProvider>(
             "the external mode must wrap the explicitly type-argument-selected TProvider, never the " +
             "unrelated ambient registration");
-    }
-
-    // A second, distinct fake IEncryptionKeyProvider — genuinely different from UnrelatedAmbientProvider —
-    // standing in for a real KMS-backed provider a consumer registers for WithExternalEncryptionKeyProvider.
-    private sealed class FakeExternalKmsProvider : IEncryptionKeyProvider
-    {
-        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
-            new(new CryptographicKey("v1", new byte[32]));
-
-        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-            new((CryptographicKey?)null);
     }
 }

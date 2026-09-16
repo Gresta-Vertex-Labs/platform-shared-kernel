@@ -13,6 +13,7 @@ using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Cryptography;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
@@ -32,24 +33,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         public IDisposable? OnChange(Action<EncryptionOptions, string?> listener) => null;
     }
 
-    // A call-counting IEncryptionKeyProvider standing in for a KMS-backed provider — every call
-    // here would, in production, be a billed/latency-bearing Key Vault round trip.
-    private sealed class CallCountingInnerProvider : IEncryptionKeyProvider
-    {
-        private readonly byte[] _material = new byte[32];
-        public int GetCurrentKeyAsyncCallCount { get; private set; }
-
-        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default)
-        {
-            GetCurrentKeyAsyncCallCount++;
-            return new ValueTask<CryptographicKey>(new CryptographicKey("v1", _material));
-        }
-
-        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-            new(keyId == "v1" ? new CryptographicKey("v1", _material) : null);
-    }
-
-    private static (WarmingTestDbContext Context, CallCountingInnerProvider Inner) CreateContext()
+    private static (WarmingTestDbContext Context, FakeRemoteEncryptionKeyProvider Inner) CreateContext()
     {
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -63,7 +47,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         {
             Enabled = true,
             CurrentVersion = "v1",
-            Keys = { ["v1"] = Convert.ToBase64String(new byte[32]) } // unused — CallCountingInnerProvider supplies material
+            Keys = { ["v1"] = Convert.ToBase64String(new byte[32]) } // unused — the remote provider supplies material
         };
         var monitor = new FixedOptionsMonitor(options);
 
@@ -74,9 +58,9 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         // capture) leak into another's, corrupting the call-counting assertions below.
         var versionOverride = new EncryptionVersionOverride();
 
-        var inner = new CallCountingInnerProvider();
+        var inner = new FakeRemoteEncryptionKeyProvider("v1");
         var preWarmed = new PreWarmedEncryptionKeyProvider(inner, versionOverride);
-        var encryptionService = new AesGcmEncryptionService(preWarmed);
+        var encryptionService = new SynchronousAesGcmEncryptionService(preWarmed);
         var warmingInterceptor = new EncryptionKeyPreWarmingInterceptor(preWarmed);
 
         var dbOptions = new DbContextOptionsBuilder<WarmingTestDbContext>()
@@ -109,7 +93,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
 
         await ctx.SaveChangesAsync();
 
-        inner.GetCurrentKeyAsyncCallCount.Should().Be(1,
+        inner.CurrentKeyCallCount.Should().Be(1,
             "a single SaveChangesAsync batch touching N encrypted-property entities must warm " +
             "EXACTLY ONCE, not N times");
     }
@@ -131,7 +115,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         var softDelete = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
         var concurrency = new ConcurrencyInterceptor();
 
-        var inner = new CallCountingInnerProvider();
+        var inner = new FakeRemoteEncryptionKeyProvider("v1");
         var preWarmed = new PreWarmedEncryptionKeyProvider(inner, new EncryptionVersionOverride());
         var warmingInterceptor = new EncryptionKeyPreWarmingInterceptor(preWarmed);
 
@@ -146,7 +130,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         ctx.PlainEntities.Add(new WarmingPlainEntity(WarmingId.New(), "not-secret"));
         await ctx.SaveChangesAsync();
 
-        inner.GetCurrentKeyAsyncCallCount.Should().Be(0,
+        inner.CurrentKeyCallCount.Should().Be(0,
             "a model with no encrypted property anywhere must never warm — neither hook has " +
             "anything to warm for, so the (potentially billed) inner provider is never touched");
     }
@@ -171,7 +155,7 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         }
         await ctx.SaveChangesAsync();
 
-        inner.GetCurrentKeyAsyncCallCount.Should().BeLessThanOrEqualTo(1,
+        inner.CurrentKeyCallCount.Should().BeLessThanOrEqualTo(1,
             "even across 10 plain-entity inserts sharing one SaveChangesAsync batch, the warm " +
             "provider must be touched AT MOST once — proving SavingChangesAsync's own " +
             "HasEncryptedChanges gate never fires for a plain-only batch, and even the coarse " +
@@ -200,12 +184,12 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         // which must still be exactly 1 (the save above already warmed it; the read must observe
         // the warm cache and perform ZERO further calls) — proven separately below with a
         // read-only assertion using a fresh provider/context pair that never writes first.
-        var beforeRead = inner.GetCurrentKeyAsyncCallCount;
+        var beforeRead = inner.CurrentKeyCallCount;
 
         var all = await ctx.EncryptedEntities.ToListAsync();
 
         all.Should().HaveCount(500);
-        inner.GetCurrentKeyAsyncCallCount.Should().Be(beforeRead,
+        inner.CurrentKeyCallCount.Should().Be(beforeRead,
             "reading 500 rows sharing the current encryption version must perform ZERO additional " +
             "warm calls beyond whatever the prior write already performed — the warm cache is " +
             "already hot");
@@ -240,9 +224,9 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         };
         var readerMonitor = new FixedOptionsMonitor(readerOptions);
         var readerVersionOverride = new EncryptionVersionOverride();
-        var readerInner = new CallCountingInnerProvider();
+        var readerInner = new FakeRemoteEncryptionKeyProvider("v1");
         var readerPreWarmed = new PreWarmedEncryptionKeyProvider(readerInner, readerVersionOverride);
-        var readerEncryptionService = new AesGcmEncryptionService(readerPreWarmed);
+        var readerEncryptionService = new SynchronousAesGcmEncryptionService(readerPreWarmed);
         var readerWarmingInterceptor = new EncryptionKeyPreWarmingInterceptor(readerPreWarmed);
 
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
@@ -274,13 +258,13 @@ public sealed class EncryptionKeyPreWarmingInterceptorTests
         await readerCtx.SaveChangesAsync();
         readerCtx.ChangeTracker.Clear();
 
-        var writeWarmCalls = readerInner.GetCurrentKeyAsyncCallCount;
+        var writeWarmCalls = readerInner.CurrentKeyCallCount;
         writeWarmCalls.Should().Be(1, "sanity: the seeding write itself warmed exactly once");
 
         var all = await readerCtx.EncryptedEntities.ToListAsync();
 
         all.Should().HaveCount(500);
-        readerInner.GetCurrentKeyAsyncCallCount.Should().Be(writeWarmCalls,
+        readerInner.CurrentKeyCallCount.Should().Be(writeWarmCalls,
             "the read (ReaderExecutingAsync) observes the already-warm cache and performs ZERO " +
             "further Key-Vault-shaped calls, regardless of row count");
     }
@@ -352,7 +336,7 @@ internal sealed class WarmingTestDbContext : SharedKernelDbContext
         IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions,
         IEncryptionVersionOverride? encryptionVersionOverride,
-        ISymmetricEncryptionService? symmetricEncryptionService)
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService)
         : base(options, audit, softDelete, concurrency, additionalInterceptors, encryptionOptions,
                encryptionVersionOverride, symmetricEncryptionService)
     {

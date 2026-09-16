@@ -45,9 +45,8 @@ public sealed class AssociatedDataTests
     private static EncryptedValueConverter MakeConverter(byte[] associatedData)
     {
         var monitor = new FixedOptionsMonitor(EnabledOptions());
-        var keyProvider = new EncryptionOptionsKeyProvider(
-            monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
-        var encryptionService = new AesGcmEncryptionService(keyProvider);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+        var encryptionService = new SynchronousAesGcmEncryptionService(keyProvider);
         return new EncryptedValueConverter(monitor, encryptionService, associatedData);
     }
 
@@ -110,9 +109,8 @@ public sealed class AssociatedDataTests
         const string stableOverride = "Customer.Ssn";
         var beforeRename = new EncryptedValueConverter(
             new FixedOptionsMonitor(EnabledOptions()),
-            new AesGcmEncryptionService(new EncryptionOptionsKeyProvider(
-                new FixedOptionsMonitor(EnabledOptions()), EncryptionVersionOverride.NoOp,
-                new EncryptionKeyByteCache(new FixedOptionsMonitor(EnabledOptions())))),
+            new SynchronousAesGcmEncryptionService(new EncryptionOptionsKeyProvider(
+                new FixedOptionsMonitor(EnabledOptions()), EncryptionVersionOverride.NoOp)),
             System.Text.Encoding.UTF8.GetBytes(stableOverride));
 
         // Re-derive from the SAME override string as if the table/column had since been renamed —
@@ -168,9 +166,8 @@ public sealed class AssociatedDataTests
         var concurrency = new ConcurrencyInterceptor();
 
         var monitor = new FixedOptionsMonitor(EnabledOptions());
-        var keyProvider = new EncryptionOptionsKeyProvider(
-            monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
-        var encryptionService = new AesGcmEncryptionService(keyProvider);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+        var encryptionService = new SynchronousAesGcmEncryptionService(keyProvider);
 
         var dbOptions = new DbContextOptionsBuilder<AadTwoColumnDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
@@ -178,7 +175,7 @@ public sealed class AssociatedDataTests
             .Options;
 
         await using var ctx = new AadTwoColumnDbContext(
-            dbOptions, audit, softDelete, concurrency, monitor, EncryptionVersionOverride.NoOp, encryptionService, keyProvider);
+            dbOptions, audit, softDelete, concurrency, monitor, EncryptionVersionOverride.NoOp, encryptionService);
         await ctx.Database.EnsureCreatedAsync();
 
         var id = AadTwoColumnId.New();
@@ -256,10 +253,9 @@ internal sealed class AadTwoColumnDbContext : SharedKernelDbContext
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null)
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null)
         : base(options, audit, softDelete, concurrency, null, encryptionOptions,
-               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
+               encryptionVersionOverride, symmetricEncryptionService)
     {
     }
 

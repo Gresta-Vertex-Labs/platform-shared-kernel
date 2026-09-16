@@ -14,6 +14,7 @@ using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
@@ -51,9 +52,8 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
-        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
-        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
-        // registration needed or wanted anymore.
+        // .WithEncryption() builds its own keyed-DI-isolated synchronous encryption service — no
+        // consumer-side registration is needed.
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 
@@ -69,9 +69,8 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
-        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
-        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
-        // registration needed or wanted anymore.
+        // .WithEncryption() builds its own keyed-DI-isolated synchronous encryption service — no
+        // consumer-side registration is needed.
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 
@@ -137,9 +136,9 @@ public sealed class EncryptionRotationExtendedTests
     {
         // Documents the explicit design decision: fromVersion is retained for API stability and
         // audit/logging but does NOT filter which rows are rewritten. Even if the stored ciphertext
-        // carries a different version prefix (e.g., "v1:"), passing fromVersion="99" still causes
+        // records a different key id (e.g., "1"), passing fromVersion="99" still causes
         // all rows to be re-encrypted with toVersion. This is because EF Core materializes the
-        // decrypted CLR value — the raw "v{version}:" prefix is not observable post-materialization.
+        // decrypted CLR value — the stored key id is not observable post-materialization.
         var (v1, v2) = MakeKeys();
         using var host = BuildSingleEntityHost(enc =>
         {
@@ -199,12 +198,12 @@ public sealed class EncryptionRotationExtendedTests
             var cRaw = await ctx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers2")
                 .ToListAsync();
-            cRaw.Should().ContainSingle().Which.Should().StartWith("v1:");
+            StoredPayload.KeyIdOf(cRaw.Should().ContainSingle().Which).Should().Be("1");
 
             var oRaw = await ctx.Database
                 .SqlQueryRaw<string>("SELECT note FROM rotation_orders")
                 .ToListAsync();
-            oRaw.Should().ContainSingle().Which.Should().StartWith("v1:");
+            StoredPayload.KeyIdOf(oRaw.Should().ContainSingle().Which).Should().Be("1");
         }
 
         var svc = ActivatorUtilities.CreateInstance<MultiEntityRotationService>(host.Provider);
@@ -220,12 +219,12 @@ public sealed class EncryptionRotationExtendedTests
             var cRaw = await ctx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers2")
                 .ToListAsync();
-            cRaw.Should().ContainSingle().Which.Should().StartWith("v2:");
+            StoredPayload.KeyIdOf(cRaw.Should().ContainSingle().Which).Should().Be("2");
 
             var oRaw = await ctx.Database
                 .SqlQueryRaw<string>("SELECT note FROM rotation_orders")
                 .ToListAsync();
-            oRaw.Should().ContainSingle().Which.Should().StartWith("v2:");
+            StoredPayload.KeyIdOf(oRaw.Should().ContainSingle().Which).Should().Be("2");
         }
     }
 
@@ -305,7 +304,7 @@ public sealed class EncryptionRotationExtendedTests
             var raw = await rawCtx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers")
                 .ToListAsync();
-            raw.Should().ContainSingle().Which.Should().StartWith("v2:",
+            StoredPayload.KeyIdOf(raw.Should().ContainSingle().Which).Should().Be("2",
                 "RotateAsync must re-encrypt with toVersion ('2'), not CurrentVersion ('1')");
         }
     }
@@ -414,7 +413,7 @@ public sealed class EncryptionRotationExtendedTests
                 .ToListAsync();
 
             // The newly inserted row must use CurrentVersion = "1", not "2"
-            raws.Should().Contain(v => v.StartsWith("v1:"),
+            raws.Should().Contain(v => StoredPayload.KeyIdOf(v) == "1",
                 "new inserts after rotation must use CurrentVersion ('1'), not the rotation's toVersion ('2')");
         }
     }
@@ -531,10 +530,9 @@ internal sealed class MultiEntityRotationDbContext : SharedKernelDbContext
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService? symmetricEncryptionService = null,
-        SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider? encryptionKeyProvider = null)
+        SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null)
         : base(options, audit, softDelete, concurrency, null, encryptionOptions,
-               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
+               encryptionVersionOverride, symmetricEncryptionService)
     {
     }
 

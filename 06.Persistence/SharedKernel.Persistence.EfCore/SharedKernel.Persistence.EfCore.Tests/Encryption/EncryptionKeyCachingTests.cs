@@ -6,207 +6,158 @@ using SharedKernel.Persistence.EfCore.Options;
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
 /// <summary>
-/// WO-051/P-323 (T-92): <see cref="EncryptionOptionsKeyProvider"/>/<see cref="EncryptionKeyByteCache"/>
-/// decode-once-per-config-value caching tests.
+/// <see cref="EncryptionOptionsKeyProvider"/> decode-once-per-config-value caching tests.
 /// </summary>
 public sealed class EncryptionKeyCachingTests
 {
-    /// <summary>
-    /// A monitor whose <see cref="OnChange"/> captures the listener registered by
-    /// <see cref="EncryptionKeyByteCache"/>'s constructor, so tests can simulate a config/rotation
-    /// reload by invoking <see cref="SimulateReload"/> directly — unlike the fixed/no-op monitors
-    /// used elsewhere in this test project, which never actually invoke the listener.
-    /// </summary>
-    private sealed class ReloadCapableOptionsMonitor(EncryptionOptions value) : IOptionsMonitor<EncryptionOptions>
+    /// <summary>A monitor whose current value a test can replace, as a configuration reload does.</summary>
+    private sealed class ReloadableOptionsMonitor(EncryptionOptions value) : IOptionsMonitor<EncryptionOptions>
     {
-        private Action<EncryptionOptions, string?>? _listener;
-
         public EncryptionOptions CurrentValue { get; private set; } = value;
 
         public EncryptionOptions Get(string? name) => CurrentValue;
 
-        public IDisposable? OnChange(Action<EncryptionOptions, string?> listener)
-        {
-            _listener = listener;
-            return null;
-        }
+        public IDisposable? OnChange(Action<EncryptionOptions, string?> listener) => null;
 
-        public void SimulateReload(EncryptionOptions newValue)
-        {
-            CurrentValue = newValue;
-            _listener?.Invoke(newValue, null);
-        }
+        public void SimulateReload(EncryptionOptions newValue) => CurrentValue = newValue;
     }
 
-    private static byte[] MakeKeyBytes(byte fill)
+    private static string Key(byte fill)
     {
         var bytes = new byte[32];
         Array.Fill(bytes, fill);
-        return bytes;
+        return Convert.ToBase64String(bytes);
     }
 
-    // -------------------------------------------------------------------------
-    // EncryptionKeyByteCache — decode-once-per-version proof via reference equality. Convert.
-    // FromBase64String always allocates a NEW array on every call, so the cache returning the SAME
-    // array instance across repeated calls is direct proof the Base64 value was decoded exactly
-    // once (a re-decode would necessarily produce a different, non-reference-equal array).
-    // -------------------------------------------------------------------------
+    private static byte[] KeyBytes(byte fill) => Convert.FromBase64String(Key(fill));
 
     [Fact]
-    public void GetOrDecode_RepeatedCallsForSameVersion_ReturnsSameArrayInstance_DecodedOnce()
+    public void GetCurrentKey_RepeatedCalls_ReturnsSameCachedKeyInstance()
     {
-        var monitor = new ReloadCapableOptionsMonitor(new EncryptionOptions());
-        var cache = new EncryptionKeyByteCache(monitor);
-        var base64 = Convert.ToBase64String(MakeKeyBytes(0x01));
-
-        var first = cache.GetOrDecode("v1", base64);
-        var second = cache.GetOrDecode("v1", base64);
-        var third = cache.GetOrDecode("v1", base64);
-
-        ReferenceEquals(first, second).Should().BeTrue(
-            "the cache must decode the Base64 value only once per version and reuse the same byte[] instance");
-        ReferenceEquals(second, third).Should().BeTrue();
-        first.Should().Equal(MakeKeyBytes(0x01));
-    }
-
-    [Fact]
-    public void GetOrDecode_DifferentVersions_DecodedIndependently_ReturnsDistinctArrays()
-    {
-        var monitor = new ReloadCapableOptionsMonitor(new EncryptionOptions());
-        var cache = new EncryptionKeyByteCache(monitor);
-
-        var v1 = cache.GetOrDecode("v1", Convert.ToBase64String(MakeKeyBytes(0x01)));
-        var v2 = cache.GetOrDecode("v2", Convert.ToBase64String(MakeKeyBytes(0x02)));
-
-        v1.Should().Equal(MakeKeyBytes(0x01));
-        v2.Should().Equal(MakeKeyBytes(0x02));
-        ReferenceEquals(v1, v2).Should().BeFalse();
-    }
-
-    [Fact]
-    public void GetOrDecode_AfterSimulatedOptionsReload_CacheCleared_NextCallReflectsUpdatedValue()
-    {
-        // Arrange — initial key material for v1.
-        var initialOptions = new EncryptionOptions
+        var monitor = new ReloadableOptionsMonitor(new EncryptionOptions
         {
             Enabled = true,
             CurrentVersion = "v1",
-            Keys = { ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x01)) },
-        };
-        var monitor = new ReloadCapableOptionsMonitor(initialOptions);
-        var cache = new EncryptionKeyByteCache(monitor);
+            Keys = { ["v1"] = Key(0x11) },
+        });
+        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
 
-        var before = cache.GetOrDecode("v1", initialOptions.Keys["v1"]);
-        before.Should().Equal(MakeKeyBytes(0x01));
-
-        // Act — simulate a rotation-driven reload that changes v1's key material (and adds v2).
-        var reloadedOptions = new EncryptionOptions
-        {
-            Enabled = true,
-            CurrentVersion = "v1",
-            Keys =
-            {
-                ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x02)),
-                ["v2"] = Convert.ToBase64String(MakeKeyBytes(0x03)),
-            },
-        };
-        monitor.SimulateReload(reloadedOptions);
-
-        var afterV1 = cache.GetOrDecode("v1", reloadedOptions.Keys["v1"]);
-        var afterV2 = cache.GetOrDecode("v2", reloadedOptions.Keys["v2"]);
-
-        // Assert — the cache was cleared on reload, so the NEW v1 bytes are decoded (not the stale
-        // cached ones), and the newly-added v2 version resolves correctly.
-        afterV1.Should().Equal(MakeKeyBytes(0x02));
-        afterV1.Should().NotEqual(before, "a stale cached value must not survive a reload");
-        afterV2.Should().Equal(MakeKeyBytes(0x03));
-    }
-
-    // -------------------------------------------------------------------------
-    // EncryptionOptionsKeyProvider.GetCurrentKeyAsync()/GetKeyAsync() — repeated calls reuse the
-    // cached bytes (D-110/P-448: migrated to the async IEncryptionKeyProvider shape).
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task GetCurrentKeyAsync_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
-    {
-        var opts = new EncryptionOptions
-        {
-            Enabled = true,
-            CurrentVersion = "v1",
-            Keys = { ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x11)) },
-        };
-        var monitor = new ReloadCapableOptionsMonitor(opts);
-        var byteCache = new EncryptionKeyByteCache(monitor);
-        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
-
-        var key1 = await provider.GetCurrentKeyAsync();
-        var key2 = await provider.GetCurrentKeyAsync();
+        var key1 = provider.GetCurrentKey();
+        var key2 = provider.GetCurrentKey();
 
         key1.Id.Should().Be("v1");
-        ReferenceEquals(key1.Material, key2.Material).Should().BeTrue(
-            "repeated GetCurrentKeyAsync calls for the same version must reuse the cached decoded key bytes, " +
-            "not re-decode Base64 on every call");
+        key1.Should().BeSameAs(key2,
+            "repeated calls for an unchanged configured value must reuse the decoded key, not re-decode Base64");
     }
 
     [Fact]
-    public async Task GetKeyAsync_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
+    public void GetKey_RepeatedCalls_ReturnsSameCachedKeyInstance()
     {
-        var opts = new EncryptionOptions
+        var monitor = new ReloadableOptionsMonitor(new EncryptionOptions
         {
             Enabled = true,
             CurrentVersion = "v1",
-            Keys =
-            {
-                ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x11)),
-                ["v2"] = Convert.ToBase64String(MakeKeyBytes(0x22)),
-            },
-        };
-        var monitor = new ReloadCapableOptionsMonitor(opts);
-        var byteCache = new EncryptionKeyByteCache(monitor);
-        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
+            Keys = { ["v1"] = Key(0x11), ["v2"] = Key(0x22) },
+        });
+        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
 
-        var key1 = await provider.GetKeyAsync("v2");
-        var key2 = await provider.GetKeyAsync("v2");
+        var key1 = provider.GetKey("v2");
+        var key2 = provider.GetKey("v2");
 
         key1.Should().NotBeNull();
-        key2.Should().NotBeNull();
-        ReferenceEquals(key1!.Material, key2!.Material).Should().BeTrue(
-            "repeated GetKeyAsync calls for the same version must reuse the cached decoded key bytes");
+        key1.Should().BeSameAs(key2);
+        key1!.Material.ToArray().Should().Equal(KeyBytes(0x22));
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_AfterSimulatedRotationReload_ReflectsNewKeyVersion()
+    public void Reload_ChangingKeyMaterialForSameVersion_IsReflected_NoStaleKey()
     {
-        // A rotation adding a new key version and switching CurrentVersion must be reflected on the
-        // next GetCurrentKeyAsync call — proving the cache clear does not stale-lock key resolution.
-        var opts = new EncryptionOptions
+        var monitor = new ReloadableOptionsMonitor(new EncryptionOptions
         {
             Enabled = true,
             CurrentVersion = "v1",
-            Keys = { ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x11)) },
+            Keys = { ["v1"] = Key(0x01) },
+        });
+        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+
+        var before = provider.GetCurrentKey();
+        before.Material.ToArray().Should().Equal(KeyBytes(0x01));
+
+        monitor.SimulateReload(new EncryptionOptions
+        {
+            Enabled = true,
+            CurrentVersion = "v1",
+            Keys = { ["v1"] = Key(0x02), ["v2"] = Key(0x03) },
+        });
+
+        provider.GetCurrentKey().Material.ToArray().Should().Equal(KeyBytes(0x02),
+            "a stale cached key must not survive a change to the configured value");
+        provider.GetKey("v2")!.Material.ToArray().Should().Equal(KeyBytes(0x03));
+    }
+
+    [Fact]
+    public void InPlaceMutationOfKeyValue_IsReflected_WithoutAnyChangeNotification()
+    {
+        // The cache is validated against the configured Base64 string on every call, so it needs no
+        // IOptionsMonitor.OnChange subscription to stay correct.
+        var options = new EncryptionOptions
+        {
+            Enabled = true,
+            CurrentVersion = "v1",
+            Keys = { ["v1"] = Key(0x01) },
         };
-        var monitor = new ReloadCapableOptionsMonitor(opts);
-        var byteCache = new EncryptionKeyByteCache(monitor);
-        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
+        var provider = new EncryptionOptionsKeyProvider(new ReloadableOptionsMonitor(options), EncryptionVersionOverride.NoOp);
 
-        var before = await provider.GetCurrentKeyAsync();
-        before.Id.Should().Be("v1");
+        _ = provider.GetCurrentKey();
+        options.Keys["v1"] = Key(0x09);
 
-        var reloaded = new EncryptionOptions
+        provider.GetCurrentKey().Material.ToArray().Should().Equal(KeyBytes(0x09));
+    }
+
+    [Fact]
+    public void Reload_AddingVersionAndSwitchingCurrent_ReflectsNewKeyVersion()
+    {
+        var monitor = new ReloadableOptionsMonitor(new EncryptionOptions
+        {
+            Enabled = true,
+            CurrentVersion = "v1",
+            Keys = { ["v1"] = Key(0x11) },
+        });
+        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+
+        provider.GetCurrentKey().Id.Should().Be("v1");
+
+        monitor.SimulateReload(new EncryptionOptions
         {
             Enabled = true,
             CurrentVersion = "v2",
-            Keys =
-            {
-                ["v1"] = Convert.ToBase64String(MakeKeyBytes(0x11)),
-                ["v2"] = Convert.ToBase64String(MakeKeyBytes(0x22)),
-            },
-        };
-        monitor.SimulateReload(reloaded);
+            Keys = { ["v1"] = Key(0x11), ["v2"] = Key(0x22) },
+        });
 
-        var after = await provider.GetCurrentKeyAsync();
+        var after = provider.GetCurrentKey();
         after.Id.Should().Be("v2");
-        after.Material.Should().Equal(MakeKeyBytes(0x22));
+        after.Material.ToArray().Should().Equal(KeyBytes(0x22));
+    }
+
+    [Fact]
+    public void Reload_RemovingVersion_GetKeyReturnsNull()
+    {
+        var monitor = new ReloadableOptionsMonitor(new EncryptionOptions
+        {
+            Enabled = true,
+            CurrentVersion = "v2",
+            Keys = { ["v1"] = Key(0x11), ["v2"] = Key(0x22) },
+        });
+        var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+        provider.GetKey("v1").Should().NotBeNull();
+
+        monitor.SimulateReload(new EncryptionOptions
+        {
+            Enabled = true,
+            CurrentVersion = "v2",
+            Keys = { ["v2"] = Key(0x22) },
+        });
+
+        provider.GetKey("v1").Should().BeNull("a retired version must not be served from the cache");
     }
 }

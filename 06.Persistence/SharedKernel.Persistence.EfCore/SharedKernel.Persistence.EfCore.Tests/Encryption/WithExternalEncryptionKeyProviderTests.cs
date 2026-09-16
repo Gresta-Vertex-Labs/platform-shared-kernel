@@ -13,61 +13,26 @@ using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
-using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Cryptography;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
 /// <summary>
-/// T-145 (P-498/WO-081): <c>.WithExternalEncryptionKeyProvider&lt;TProvider&gt;()</c> end-to-end
-/// tests — the KMS-backed opt-in path, exercised through the REAL DI builder pipeline (not
-/// hand-constructed converters).
+/// <c>.WithExternalEncryptionKeyProvider&lt;TProvider&gt;()</c> end-to-end tests — an asynchronous-only
+/// (KMS-shaped) key provider driving the synchronous EF Core value converter through pre-warming, exercised
+/// through the REAL DI builder pipeline (not hand-constructed converters).
 /// </summary>
 public sealed class WithExternalEncryptionKeyProviderTests
 {
-    // A call-counting external IEncryptionKeyProvider — genuinely async (mirrors
-    // 16.Testing's FakeRemoteEncryptionKeyProvider shape), deliberately never implementing
-    // ISynchronousEncryptionKeyProvider, with call counts exposed for the non-blocking proof below.
-    private sealed class CallCountingExternalProvider : IEncryptionKeyProvider
-    {
-        private readonly Dictionary<string, byte[]> _keys = new();
-
-        public string CurrentKeyId { get; set; } = "v1";
-        public int GetKeyAsyncCallCount { get; private set; }
-        public int GetCurrentKeyAsyncCallCount { get; private set; }
-
-        public void AddKey(string keyId, byte fill)
-        {
-            var material = new byte[32];
-            Array.Fill(material, fill);
-            _keys[keyId] = material;
-        }
-
-        public async ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default)
-        {
-            await Task.Yield(); // genuinely asynchronous, like a real KMS round trip
-            GetCurrentKeyAsyncCallCount++;
-            return new CryptographicKey(CurrentKeyId, _keys[CurrentKeyId]);
-        }
-
-        public async ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default)
-        {
-            await Task.Yield();
-            GetKeyAsyncCallCount++;
-            return _keys.TryGetValue(keyId, out var material) ? new CryptographicKey(keyId, material) : null;
-        }
-    }
-
-    private static async Task<(ServiceProvider Provider, CallCountingExternalProvider External)> BuildHostAsync()
+    private static async Task<(ServiceProvider Provider, FakeRemoteEncryptionKeyProvider External)> BuildHostAsync()
     {
         var services = new ServiceCollection();
 
-        var external = new CallCountingExternalProvider();
-        external.AddKey("v1", 0x11);
-        // Registered UNKEYED — mirroring a consumer's own general-purpose provider registration
-        // (e.g. 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider). WithExternalEncryptionKeyProvider
-        // resolves it from this ambient slot; this package never registers it there itself.
+        // FakeRemoteEncryptionKeyProvider only completes asynchronously and deliberately does not implement
+        // ISynchronousEncryptionKeyProvider — the shape of a real KMS-backed provider. Registered as itself,
+        // exactly as a consumer registers the provider type it passes to WithExternalEncryptionKeyProvider.
+        var external = new FakeRemoteEncryptionKeyProvider("v1");
         services.AddSingleton(external);
 
         services
@@ -80,7 +45,7 @@ public sealed class WithExternalEncryptionKeyProviderTests
                 enc.CurrentVersion = "v1";
                 enc.Keys["v1"] = Convert.ToBase64String(new byte[32]); // unused — external provider supplies real material
             })
-            .WithExternalEncryptionKeyProvider<CallCountingExternalProvider>()
+            .WithExternalEncryptionKeyProvider<FakeRemoteEncryptionKeyProvider>()
             .WithDbContextFactory()
             .Build();
 
@@ -98,7 +63,7 @@ public sealed class WithExternalEncryptionKeyProviderTests
     }
 
     [Fact]
-    public async Task EncryptNewRow_CurrentKeyAlreadyWarmedByHostedService_Succeeds()
+    public async Task EncryptAndReadRow_WithAsyncOnlyProvider_RoundTripsThroughPreWarming()
     {
         var (provider, external) = await BuildHostAsync();
         await using var scope = provider.CreateAsyncScope();
@@ -121,26 +86,87 @@ public sealed class WithExternalEncryptionKeyProviderTests
 
         await using (var ctx = await factory.CreateDbContextAsync())
         {
+            var raw = await ctx.Database
+                .SqlQueryRaw<string>("SELECT Secret AS Value FROM external_provider_test_entities")
+                .ToListAsync();
+            EncryptedPayload.TryParse(raw.Single(), out var payload).Should().BeTrue(
+                "the column stores the canonical EncryptedPayload encoding");
+            payload!.KeyId.Should().Be("v1", "the payload records the external provider's current key id");
+
             var loaded = await ctx.Entities.FirstOrDefaultAsync(e => e.Id == id);
             loaded.Should().NotBeNull();
             loaded!.Secret.Should().Be("secret-value");
         }
 
-        provider.Dispose();
+        external.CurrentKeyCallCount.Should().Be(1,
+            "the external provider is consulted once, asynchronously, at warm-up — never per row");
+
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ResolvedEncryptionService_IsSynchronous_OverThePreWarmedProvider()
+    {
+        var (provider, _) = await BuildHostAsync();
+
+        var keyProvider = provider.GetRequiredKeyedService<ISynchronousEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey);
+        var service = provider.GetRequiredKeyedService<ISynchronousSymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey);
+
+        keyProvider.Should().BeOfType<PreWarmedEncryptionKeyProvider>();
+        service.Should().BeOfType<SynchronousAesGcmEncryptionService>();
+
+        var associatedData = "public.t.c"u8.ToArray();
+        var payload = service.Encrypt("hello"u8, associatedData);
+        payload.KeyId.Should().Be("v1");
+        service.Decrypt(payload, associatedData).Value.Should().Equal("hello"u8.ToArray());
+
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task UnregisteredProviderType_FailsHostStartup()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<ExternalProviderTestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v1";
+                enc.Keys["v1"] = Convert.ToBase64String(new byte[32]);
+            })
+            .WithExternalEncryptionKeyProvider<FakeRemoteEncryptionKeyProvider>() // never registered
+            .Build();
+
+        await using var provider = services.BuildServiceProvider();
+
+        var act = async () =>
+        {
+            foreach (var hostedService in provider.GetServices<IHostedService>())
+            {
+                await hostedService.StartAsync(CancellationToken.None);
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{nameof(FakeRemoteEncryptionKeyProvider)}*");
     }
 
     [Fact]
     public async Task DecryptOlderExplicitlyPreWarmedHistoricalVersion_Succeeds()
     {
         var (provider, external) = await BuildHostAsync();
-        external.AddKey("v2", 0x22);
+        external.AddKey("v2");
 
         var preWarmed = provider.GetRequiredService<PreWarmedEncryptionKeyProvider>();
         var versionOverride = provider.GetRequiredService<IEncryptionVersionOverride>();
 
-        // Explicitly pre-warm the historical version — proving the sanctioned path for decrypting
-        // an older version rather than relying on the coarse ReaderExecutingAsync/SavingChangesAsync
-        // hooks (which only ever warm the CURRENT version).
+        // Explicitly pre-warm the historical version — the sanctioned path for decrypting an older
+        // version, since the interceptor hooks only ever warm the CURRENT version.
         await preWarmed.WarmVersionAsync("v2");
 
         var factory = provider.GetRequiredService<IDbContextFactory<ExternalProviderTestDbContext>>();
@@ -151,8 +177,7 @@ public sealed class WithExternalEncryptionKeyProviderTests
 
         var id = ExternalProviderTestId.New();
 
-        // Also warm v2 as the CURRENT tag momentarily so GetCurrentKeyAsync (used by encrypt) can
-        // resolve it via the override precedence rule.
+        // Encrypt with v2 through the override precedence rule.
         versionOverride.OverrideVersion = "v2";
         try
         {
@@ -172,15 +197,15 @@ public sealed class WithExternalEncryptionKeyProviderTests
         loaded!.Secret.Should().Be("rotated-secret",
             "the explicitly pre-warmed v2 version must decrypt correctly");
 
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
-    public async Task DecryptUnwarmedHistoricalVersion_SurfacesExistingEncryptionKeyNotFoundException_NeverTouchesExternalProvider()
+    public async Task DecryptUnwarmedHistoricalVersion_FailsWithoutBlocking_ThenWarmsInBackground()
     {
         var (provider, external) = await BuildHostAsync();
         // "v3" exists on the external provider but is NEVER warmed on this process.
-        external.AddKey("v3", 0x33);
+        external.AddKey("v3");
 
         var factory = provider.GetRequiredService<IDbContextFactory<ExternalProviderTestDbContext>>();
         await using var ctx = await factory.CreateDbContextAsync();
@@ -191,11 +216,10 @@ public sealed class WithExternalEncryptionKeyProviderTests
             .FindProperty(nameof(ExternalProviderTestEntity.Secret))!
             .GetValueConverter()!;
 
-        var callsBefore = external.GetKeyAsyncCallCount;
+        var callsBefore = external.KeyCallCount;
 
-        // A ciphertext claiming version "v3" — well-formed length so the converter's own length
-        // guard doesn't short-circuit before ever reaching Decrypt.
-        var storedWithV3 = "vv3:" + Convert.ToBase64String(new byte[28]);
+        // A well-formed payload claiming key id "v3".
+        var storedWithV3 = new EncryptedPayload("v3", new byte[12], new byte[8], new byte[16]).ToString();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
         var act = () => fromProvider(storedWithV3);
@@ -203,11 +227,15 @@ public sealed class WithExternalEncryptionKeyProviderTests
         act.Should().Throw<EncryptionKeyNotFoundException>()
             .Which.Version.Should().Be("v3");
 
-        external.GetKeyAsyncCallCount.Should().Be(callsBefore,
-            "PreWarmedEncryptionKeyProvider.GetKeyAsync fails closed on a cache miss — it never " +
-            "touches the external provider, so this failure is non-blocking, not a hidden KMS call");
+        // The miss never awaited the key service; it scheduled a background warm of "v3".
+        var preWarmed = provider.GetRequiredService<PreWarmedEncryptionKeyProvider>();
+        await preWarmed.WaitForPendingWarmsAsync();
+        external.KeyCallCount.Should().Be(callsBefore + 1, "exactly one background lookup of the missing key id");
 
-        provider.Dispose();
+        // v3 is now warm, so this forged all-zero payload reaches authentication and fails closed.
+        act.Should().Throw<System.Security.Cryptography.CryptographicException>();
+
+        await provider.DisposeAsync();
     }
 }
 
@@ -255,11 +283,10 @@ internal sealed class ExternalProviderTestDbContext : SharedKernelDbContext
         IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null,
         Microsoft.Extensions.Options.IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null)
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null)
         : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor,
                additionalInterceptors, encryptionOptions, encryptionVersionOverride,
-               symmetricEncryptionService, encryptionKeyProvider)
+               symmetricEncryptionService)
     {
     }
 

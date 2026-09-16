@@ -77,22 +77,19 @@ public sealed class EncryptionModelConventionExtendedTests
         // Pass a unique versionOverride instance (or a new NoOp-style override) so the EF Core
         // model cache key (context type + override reference) is unique per test.
         var override_ = versionOverride ?? new EncryptionVersionOverride();
-        ISymmetricEncryptionService? encryptionService = null;
-        IEncryptionKeyProvider? keyProvider = null;
+        ISynchronousSymmetricEncryptionService? encryptionService = null;
 
         if (monitor is not null)
         {
-            // P-227: Wire up real crypto delegation when options are provided.
-            keyProvider = new EncryptionOptionsKeyProvider(monitor, override_, new EncryptionKeyByteCache(monitor));
-            encryptionService = new AesGcmEncryptionService(keyProvider);
+            // Wire up real crypto delegation when options are provided.
+            encryptionService = new SynchronousAesGcmEncryptionService(new EncryptionOptionsKeyProvider(monitor, override_));
         }
 
         return new MultiPropDbContext(
             dbOptions, audit, softDelete, concurrency,
             monitor,
             override_,
-            encryptionService,
-            keyProvider);
+            encryptionService);
     }
 
     // -------------------------------------------------------------------------
@@ -191,8 +188,8 @@ public sealed class EncryptionModelConventionExtendedTests
             .ToListAsync();
 
         rawRows.Should().ContainSingle();
-        rawRows[0].email.Should().StartWith("v",
-            "encrypted Email must have 'v{version}:' prefix in the database");
+        StoredPayload.KeyIdOf(rawRows[0].email).Should().Be("v1",
+            "encrypted Email must be stored as an encrypted payload recording its key id");
         rawRows[0].name.Should().Be(name,
             "non-encrypted Name must be stored as-is");
     }
@@ -277,10 +274,9 @@ internal sealed class MultiPropDbContext : SharedKernelDbContext
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null)
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null)
         : base(options, audit, softDelete, concurrency, null, encryptionOptions,
-               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
+               encryptionVersionOverride, symmetricEncryptionService)
     {
     }
 

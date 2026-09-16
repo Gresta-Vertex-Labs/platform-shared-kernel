@@ -20,9 +20,8 @@ namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 /// Integration tests for <see cref="EncryptionModelConvention"/> and the
 /// <c>.Encrypt()</c> extension method — verifies convention wires the converter correctly and
 /// that encrypted properties round-trip through EF Core with SQLite.
-/// After P-227 the convention requires <see cref="ISymmetricEncryptionService"/> and
-/// <see cref="IEncryptionKeyProvider"/>; tests use the real <see cref="AesGcmEncryptionService"/>
-/// wired via <see cref="EncryptionOptionsKeyProvider"/>.
+/// Tests use the real <see cref="SynchronousAesGcmEncryptionService"/> wired via
+/// <see cref="EncryptionOptionsKeyProvider"/>.
 /// </summary>
 public sealed class EncryptionModelConventionTests
 {
@@ -48,9 +47,8 @@ public sealed class EncryptionModelConventionTests
     }
 
     /// <summary>
-    /// Creates a fully-wired <see cref="EncryptedTestDbContext"/> using the real P-227
-    /// delegation chain: EncryptionOptionsKeyProvider → AesGcmEncryptionService →
-    /// SharedKernelDbContext(encryptionService, keyProvider).
+    /// Creates a fully-wired <see cref="EncryptedTestDbContext"/> using the real delegation chain:
+    /// EncryptionOptionsKeyProvider → SynchronousAesGcmEncryptionService → SharedKernelDbContext(encryptionService).
     /// </summary>
     private static EncryptedTestDbContext MakeContext(
         DbContextOptions<EncryptedTestDbContext> dbOptions,
@@ -61,9 +59,9 @@ public sealed class EncryptionModelConventionTests
         IEncryptionVersionOverride? versionOverride = null)
     {
         var monitor = MakeMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
-        var encryptionService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor, encryptionService, keyProvider, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var encryptionService = new SynchronousAesGcmEncryptionService(keyProvider);
+        return new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor, encryptionService, versionOverride);
     }
 
     [Fact]
@@ -108,6 +106,43 @@ public sealed class EncryptionModelConventionTests
             loaded.Should().NotBeNull();
             loaded!.Email.Should().Be(email, "encrypted property should decrypt to original value");
         }
+    }
+
+    [Fact]
+    public async Task PlaintextPlantedInEncryptedColumn_FailsClosedOnRead_NamingThePropertyNotTheValue()
+    {
+        var opts = EnabledOptions();
+        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
+        var audit = new AuditInterceptor(userCtx, clock, svcOpts);
+        var softDelete = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
+        var concurrency = new ConcurrencyInterceptor();
+
+        var dbOptions = new DbContextOptionsBuilder<EncryptedTestDbContext>()
+            .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
+
+        await using var ctx = MakeContext(dbOptions, audit, softDelete, concurrency, opts);
+        ctx.Database.EnsureCreated();
+        ctx.Customers.Add(new EncryptedTestCustomer(EncryptedTestId.New(), "real@example.com", clock));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        // Simulate an attacker with database write access replacing the ciphertext with plaintext.
+        var entityType = ctx.Model.FindEntityType(typeof(EncryptedTestCustomer))!;
+        var table = entityType.GetTableName();
+        var column = entityType.FindProperty(nameof(EncryptedTestCustomer.Email))!.GetColumnName();
+#pragma warning disable EF1002 // identifiers come from the model, not user input
+        await ctx.Database.ExecuteSqlRawAsync($"UPDATE \"{table}\" SET \"{column}\" = 'planted@attacker.example'");
+#pragma warning restore EF1002
+
+        var act = async () => await ctx.Customers.ToListAsync();
+
+        var exception = (await act.Should().ThrowAsync<System.Security.Cryptography.CryptographicException>()).Which;
+        exception.Message.Should().Contain("EncryptedTestCustomer.Email");
+        exception.Message.Should().NotContain("planted@attacker.example");
     }
 
     [Fact]
@@ -223,11 +258,10 @@ internal sealed class EncryptedTestDbContext : SharedKernelDbContext
         SoftDeleteInterceptor softDelete,
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null,
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null,
         IEncryptionVersionOverride? versionOverride = null)
         : base(options, audit, softDelete, concurrency, null, encryptionOptions,
-               versionOverride, symmetricEncryptionService, encryptionKeyProvider)
+               versionOverride, symmetricEncryptionService)
     {
     }
 

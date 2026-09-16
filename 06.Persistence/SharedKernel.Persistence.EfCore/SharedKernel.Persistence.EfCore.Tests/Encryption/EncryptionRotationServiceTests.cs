@@ -14,6 +14,7 @@ using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
@@ -65,14 +66,8 @@ public sealed class EncryptionRotationServiceTests
             .WithDbContextFactory()
             .Build();
 
-        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
-        // ISymmetricEncryptionService internally (registered under a package-internal keyed-DI
-        // slot, resolved automatically by SharedKernelDbContext's constructor via
-        // CoreOptionsExtension.ApplicationServiceProvider) — no consumer-side unkeyed registration
-        // is needed (or wanted) anymore. Previously this test had to register
-        // ISymmetricEncryptionService/AesGcmEncryptionService itself; that step is now obsolete and
-        // would actively collide with the fix this phase makes (an ambient unkeyed registration must
-        // never be able to influence this package's own encryption wiring).
+        // .WithEncryption() builds its own keyed-DI-isolated synchronous encryption service, resolved
+        // automatically by SharedKernelDbContext's constructor — no consumer-side registration is needed.
         var provider = services.BuildServiceProvider();
         return new RotationTestHost { Provider = provider, Connection = connection };
     }
@@ -262,14 +257,14 @@ public sealed class EncryptionRotationServiceTests
             await ctx.SaveChangesAsync();
         }
 
-        // Confirm rows are stored with the "v1:" prefix before rotation.
+        // Confirm rows are stored with key id "1" before rotation.
         await using (var rawCtx = await factory.CreateDbContextAsync())
         {
             var raw = await rawCtx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers ORDER BY email")
                 .ToListAsync();
             raw.Should().HaveCount(2);
-            raw.Should().AllSatisfy(v => v.Should().StartWith("v1:"));
+            raw.Should().AllSatisfy(v => StoredPayload.KeyIdOf(v).Should().Be("1"));
         }
 
         var rotationService = ActivatorUtilities.CreateInstance<TestEncryptionRotationService>(host.Provider);
@@ -281,13 +276,13 @@ public sealed class EncryptionRotationServiceTests
         result.RowsFailed.Should().Be(0);
         result.Errors.Should().BeEmpty();
 
-        // Confirm rows are now stored with the "v2:" prefix.
+        // Confirm rows are now stored with key id "2".
         await using (var rawCtx = await factory.CreateDbContextAsync())
         {
             var raw = await rawCtx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers ORDER BY email")
                 .ToListAsync();
-            raw.Should().AllSatisfy(v => v.Should().StartWith("v2:"));
+            raw.Should().AllSatisfy(v => StoredPayload.KeyIdOf(v).Should().Be("2"));
         }
 
         // Confirm values decrypt to the original plaintext after rotation.
@@ -402,7 +397,7 @@ public sealed class EncryptionRotationServiceTests
             var raw = await rawCtx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers")
                 .ToListAsync();
-            raw.Should().ContainSingle().Which.Should().StartWith("v1:");
+            StoredPayload.KeyIdOf(raw.Should().ContainSingle().Which).Should().Be("1");
         }
 
         // Directly mark the property modified and override the encryption version, without going
@@ -438,7 +433,7 @@ public sealed class EncryptionRotationServiceTests
             var raw = await rawCtx.Database
                 .SqlQueryRaw<string>("SELECT email FROM rotation_customers")
                 .ToListAsync();
-            raw.Should().ContainSingle().Which.Should().StartWith("v2:");
+            StoredPayload.KeyIdOf(raw.Should().ContainSingle().Which).Should().Be("2");
         }
     }
 
@@ -528,10 +523,9 @@ internal sealed class RotationTestDbContext : SharedKernelDbContext
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService? symmetricEncryptionService = null,
-        SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider? encryptionKeyProvider = null)
+        SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null)
         : base(options, audit, softDelete, concurrency, null, encryptionOptions,
-               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
+               encryptionVersionOverride, symmetricEncryptionService)
     {
     }
 

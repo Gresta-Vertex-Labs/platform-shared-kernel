@@ -3,14 +3,15 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
 /// <summary>
 /// Unit tests for <see cref="EncryptedValueConverter"/> — verifies AES-256-GCM round-trip,
 /// pass-through mode, legacy plaintext handling, and key-not-found exception.
-/// After P-227 the converter delegates crypto to <see cref="ISymmetricEncryptionService"/>;
-/// tests use the real <see cref="AesGcmEncryptionService"/> with <see cref="EncryptionOptionsKeyProvider"/>.
+/// The converter delegates crypto to <see cref="ISynchronousSymmetricEncryptionService"/>;
+/// tests use the real <see cref="SynchronousAesGcmEncryptionService"/> with <see cref="EncryptionOptionsKeyProvider"/>.
 /// </summary>
 public sealed class EncryptedValueConverterTests
 {
@@ -39,19 +40,20 @@ public sealed class EncryptedValueConverterTests
     }
 
     /// <summary>
-    /// Builds a fully-wired <see cref="EncryptedValueConverter"/> using the real P-227 delegation chain:
-    /// EncryptionOptionsKeyProvider → AesGcmEncryptionService → EncryptedValueConverter.
+    /// Builds a fully-wired <see cref="EncryptedValueConverter"/> using the real delegation chain:
+    /// EncryptionOptionsKeyProvider → SynchronousAesGcmEncryptionService → EncryptedValueConverter.
     /// </summary>
     private static readonly byte[] TestAssociatedData = System.Text.Encoding.UTF8.GetBytes("public.test_table.test_column");
 
     private static EncryptedValueConverter MakeConverter(
         EncryptionOptions options,
-        IEncryptionVersionOverride? versionOverride = null)
+        IEncryptionVersionOverride? versionOverride = null,
+        string? propertyName = null)
     {
         var monitor = MakeMonitor(options);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
-        var encryptionService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedValueConverter(monitor, encryptionService, TestAssociatedData, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var encryptionService = new SynchronousAesGcmEncryptionService(keyProvider);
+        return new EncryptedValueConverter(monitor, encryptionService, TestAssociatedData, versionOverride, propertyName);
     }
 
     [Fact]
@@ -67,8 +69,9 @@ public sealed class EncryptedValueConverterTests
         var decrypted = converter.ConvertFromProviderExpression.Compile()(encrypted);
 
         // Assert
-        // Format: "v{version}:{payload}" — for version "v1" the prefix is "vv1:"
-        encrypted.Should().StartWith("vv1:", "ciphertext must have 'v{version}:' prefix");
+        // Stored format: the canonical EncryptedPayload encoding, recording the key id.
+        StoredPayload.KeyIdOf(encrypted).Should().Be("v1");
+        encrypted.Should().NotContain(plaintext);
         decrypted.Should().Be(plaintext);
     }
 
@@ -119,20 +122,77 @@ public sealed class EncryptedValueConverterTests
         result.Should().Be(value);
     }
 
-    [Fact]
-    public void Decrypt_LegacyPlaintext_NoVersionPrefix_ReturnsAsIs()
+    [Theory]
+    [InlineData("old-unencrypted-data")]
+    [InlineData("plaintext")]
+    [InlineData("hello world")]
+    [InlineData("a")]
+    [InlineData("x=y")]
+    [InlineData("user@example.com")]
+    [InlineData("")]
+    public void Decrypt_NotAnEncryptedPayload_FailsClosed_ByDefault(string storedValue)
     {
-        // Arrange — stored value has no "v" prefix → legacy plaintext path
-        var converter = MakeConverter(EnabledOptions());
+        // Fail closed: a value planted directly in the database must never be read as if it had been decrypted.
+        var converter = MakeConverter(EnabledOptions(), propertyName: "Customer.Email");
+
+        var act = () => converter.ConvertFromProviderExpression.Compile()(storedValue);
+
+        var exception = act.Should().Throw<System.Security.Cryptography.CryptographicException>().Which;
+        exception.Message.Should().Contain("Customer.Email", "the message names the property");
+        if (storedValue.Length > 3)
+        {
+            exception.Message.Should().NotContain(storedValue, "the message must never include the stored value");
+        }
+    }
+
+    [Fact]
+    public void Decrypt_TruncatedPayload_FailsClosed_ByDefault()
+    {
+        var converter = MakeConverter(EnabledOptions(), propertyName: "Customer.Email");
+        var toProvider = converter.ConvertToProviderExpression.Compile();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
+        var encrypted = toProvider("a value long enough to truncate");
 
-        const string legacyValue = "old-unencrypted-data";
+        // Every truncation — whether it still parses (and fails authentication) or no longer parses — throws.
+        foreach (var length in new[] { encrypted.Length - 1, encrypted.Length / 2, 10, 1 })
+        {
+            var truncated = encrypted[..length];
+            var act = () => fromProvider(truncated);
+            act.Should().Throw<System.Security.Cryptography.CryptographicException>($"truncated to {length} characters");
+        }
+    }
 
-        // Act
-        var result = fromProvider(legacyValue);
+    [Theory]
+    [InlineData("old-unencrypted-data")]
+    [InlineData("hello world")]
+    [InlineData("")]
+    public void Decrypt_NotAnEncryptedPayload_WithAllowUnencryptedValues_ReturnsAsIs(string legacyValue)
+    {
+        var options = EnabledOptions();
+        options.AllowUnencryptedValues = true;
+        var converter = MakeConverter(options);
 
-        // Assert
-        result.Should().Be(legacyValue);
+        converter.ConvertFromProviderExpression.Compile()(legacyValue).Should().Be(legacyValue);
+    }
+
+    [Fact]
+    public void AllowUnencryptedValues_StillEncryptsWrites_AndStillRejectsTamperedPayloads()
+    {
+        var options = EnabledOptions();
+        options.AllowUnencryptedValues = true;
+        var converter = MakeConverter(options);
+        var encrypted = converter.ConvertToProviderExpression.Compile()("secret");
+
+        StoredPayload.KeyIdOf(encrypted).Should().Be("v1", "the migration setting never disables encryption of writes");
+
+        var payload = StoredPayload.Parse(encrypted);
+        var ciphertext = payload.Ciphertext.ToArray();
+        ciphertext[0] ^= 0x01;
+        var tampered = new EncryptedPayload(payload.KeyId, payload.Nonce, ciphertext, payload.Tag).ToString();
+
+        var act = () => converter.ConvertFromProviderExpression.Compile()(tampered);
+        act.Should().Throw<System.Security.Cryptography.CryptographicException>(
+            "a well-formed payload that fails authentication always throws, even during a migration");
     }
 
     [Fact]
@@ -150,13 +210,9 @@ public sealed class EncryptedValueConverterTests
         var converter = MakeConverter(options);
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
-        // A ciphertext that was created with "v1" (which is now removed).
-        // Format: "v{version}:{payload}" — version "v1" would be stored as "vv1:...".
-        // D-108/P-448: there is no more pre-check short-circuiting before length validation, so the
-        // payload must be a well-formed length (>= 12-byte nonce + 16-byte tag = 28 bytes) — the
-        // converter must actually reach ISymmetricEncryptionService.Decrypt for this to prove the
-        // Error.Code == CryptographyErrorCodes.UnknownKeyId mapping, not merely the length guard.
-        var storedWithV1 = "vv1:" + Convert.ToBase64String(new byte[28]);
+        // A well-formed payload recording key id "v1" (which is now removed), so the converter reaches
+        // Decrypt and maps Error.Code == CryptographyErrorCodes.UnknownKeyId.
+        var storedWithV1 = StoredPayload.ForKeyId("v1");
 
         // Act
         var act = () => fromProvider(storedWithV1);
@@ -176,20 +232,17 @@ public sealed class EncryptedValueConverterTests
 
         var encrypted = toProvider("original-value");
 
-        // Tamper: flip the last character of the base64 payload
-        var colonIdx = encrypted.IndexOf(':');
-        var base64Part = encrypted[(colonIdx + 1)..];
-        var chars = base64Part.ToCharArray();
-        chars[^1] = chars[^1] == 'A' ? 'B' : 'A';
-        var tampered = encrypted[..(colonIdx + 1)] + new string(chars);
+        // Tamper: flip one ciphertext bit while keeping the payload well-formed
+        var payload = StoredPayload.Parse(encrypted);
+        var ciphertext = payload.Ciphertext.ToArray();
+        ciphertext[0] ^= 0x01;
+        var tampered = new EncryptedPayload(payload.KeyId, payload.Nonce, ciphertext, payload.Tag).ToString();
 
         // Act
         var act = () => fromProvider(tampered);
 
-        // Assert (T-126) — a tamper/wrong-key decrypt failure (Error.Code != UnknownKeyId) still
-        // surfaces as the existing generic CryptographicException, unchanged from before D-108 —
-        // asserted against the concrete type, not merely `Exception`, so this test actually proves
-        // the "still the generic CryptographicException" claim rather than any thrown exception.
+        // Assert (T-126) — a tamper/wrong-key decrypt failure (Error.Code != UnknownKeyId) surfaces
+        // as the generic CryptographicException, asserted against the concrete type.
         act.Should().Throw<System.Security.Cryptography.CryptographicException>(
             "tampered ciphertext fails AES-GCM authentication tag check and the key id IS known " +
             "(only the auth tag is corrupted), so the converter must map this to the generic " +
@@ -223,7 +276,7 @@ public sealed class EncryptedValueConverterTests
         var decrypted = fromProvider(encrypted);
 
         // Assert
-        encrypted.Should().StartWith("vv1:", "format is 'v{version}:' so version 'v1' produces 'vv1:'");
+        StoredPayload.KeyIdOf(encrypted).Should().Be("v1");
         decrypted.Should().Be(plaintext);
     }
 
