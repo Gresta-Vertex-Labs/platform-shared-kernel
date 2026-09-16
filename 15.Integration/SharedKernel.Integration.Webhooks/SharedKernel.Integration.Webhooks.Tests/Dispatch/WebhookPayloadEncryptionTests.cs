@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
@@ -24,7 +25,8 @@ public sealed class WebhookPayloadEncryptionTests
         const string secret = "signing-secret";
         var subscription = Subscription(secret);
         var store = new FakeWebhookSubscriptionStore([subscription]);
-        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+        var encryptionKeyProvider = new FakeEncryptionKeyProvider();
+        var encryptionService = new AesGcmEncryptionService(encryptionKeyProvider);
 
         string? capturedWireBody = null;
         string? capturedSignature = null;
@@ -57,6 +59,10 @@ public sealed class WebhookPayloadEncryptionTests
         // The transmitted body is not readable plaintext JSON — it was encrypted before signing.
         capturedWireBody.Should().NotBeNullOrEmpty();
         capturedWireBody.Should().NotContain(integrationEvent.OrderId.ToString());
+
+        // The wire body is the canonical EncryptedPayload encoding, never a hand-rolled format.
+        EncryptedPayload.TryParse(capturedWireBody, out var parsedPayload).Should().BeTrue();
+        parsedPayload!.KeyId.Should().Be(encryptionKeyProvider.CurrentKeyId);
 
         // The signature verifies against the ciphertext that was actually transmitted...
         var signatureIsValid = WebhookSignatureVerifier.Verify(capturedWireBody, capturedTimestamp, capturedSignature, secret);
@@ -109,6 +115,7 @@ public sealed class WebhookPayloadEncryptionTests
         var wrongSubscriptionAssociatedData = WebhookPayloadAssociatedData.Build(Guid.NewGuid(), result.DeliveryId);
         var decryptedWithWrongSubscription = await encryptionService.DecryptToStringAsync(capturedWireBody!, wrongSubscriptionAssociatedData);
         decryptedWithWrongSubscription.IsSuccess.Should().BeFalse();
+        decryptedWithWrongSubscription.Error.Code.Should().Be(CryptographyErrorCodes.DecryptionFailed);
 
         // The correct subscription id, paired with the correct delivery id, still succeeds.
         var correctAssociatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, result.DeliveryId);

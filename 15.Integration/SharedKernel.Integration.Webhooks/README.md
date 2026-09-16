@@ -163,11 +163,17 @@ confidentiality — this is defense-in-depth for subscribers who want payload-le
 independent of their own TLS termination boundary.
 
 ```csharp
-builder.Services.AddSharedKernelCryptography(); // 01.Core/SharedKernel.Cryptography
 builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
+builder.Services.AddSharedKernelCryptography(builder.Configuration) // 01.Core/SharedKernel.Cryptography
+    .AddSymmetricEncryption();
 
 builder.Services.AddSharedKernelWebhooks(options => options.EncryptPayload = true);
 ```
+
+The transmitted body is the ciphertext in `SharedKernel.Cryptography`'s canonical format:
+`EncryptedPayload.ToString()`, unpadded Base64Url of
+`[version 0x01][key id length][key id][nonce][tag][ciphertext]`. A subscriber on the platform reads it back
+with `DecryptToStringAsync` (below) or `EncryptedPayload.TryParse`.
 
 ### Deriving the associated data (AAD)
 

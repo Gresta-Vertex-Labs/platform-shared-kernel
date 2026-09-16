@@ -190,14 +190,15 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         }
 
         // P-427: opt-in encrypt-then-sign — the HMAC signature always covers the transmitted bytes.
+        // The wire body is EncryptedPayload's canonical Base64Url encoding (EncryptToStringAsync).
         var wireBody = plainPayloadJson;
         if (_options.EncryptPayload)
         {
             var encryptionService = _serviceProvider.GetService<ISymmetricEncryptionService>()
                 ?? throw new InvalidOperationException(
                     "WebhookDeliveryOptions.EncryptPayload is enabled but no ISymmetricEncryptionService is " +
-                    "registered. Call SharedKernel.Cryptography's AddSharedKernelCryptography() and register " +
-                    "an IEncryptionKeyProvider before resolving IWebhookDispatcher.");
+                    "registered. Register an IEncryptionKeyProvider and call SharedKernel.Cryptography's " +
+                    "AddSharedKernelCryptography(configuration).AddSymmetricEncryption() before resolving IWebhookDispatcher.");
             wireBody = await encryptionService.EncryptToStringAsync(
                 plainPayloadJson,
                 WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId),
