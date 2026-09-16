@@ -393,6 +393,10 @@ if (!validation.IsValid)
         Console.WriteLine(e.Message);
 }
 
+// Returning the whole set through the Result railway: one Error carrying every field failure
+// in Error.Details, which 14.Presentation renders as the ProblemDetails "errors" map.
+Result<Order> failed = Result<Order>.Failure(Error.Validation(validation.Errors));
+
 // Generic: validation that also produces a parsed/transformed value
 ValidationResult<ParsedAddress> result = ParseAddress(rawInput);
 if (result.IsValid)

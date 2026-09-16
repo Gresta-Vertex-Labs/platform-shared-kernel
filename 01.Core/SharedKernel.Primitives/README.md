@@ -130,6 +130,17 @@ ValidationResult<IReadOnlyList<LineItem>> lines = ResultCombine.Combine(cmd.Line
 
 Both types **snapshot** the errors you pass, so continuing to mutate your own list afterwards cannot change the result, and both compare **by value**, so two results built from equal errors are equal. `Failure` rejects an empty sequence and a `null` element.
 
+When the failure has to travel as a `Result` or `Result<T>`, fold the errors into one `Error`:
+
+```csharp
+return Result<OrderDraft>.Failure(Error.Validation(validation.Errors));
+// Code "validation.failed", Type Validation, and every field error in Error.Details.
+```
+
+`Details` is empty for every other factory, and survives a round trip through `System.Text.Json`, so the
+list crosses a process boundary intact: `14.Presentation` maps it to the ProblemDetails `errors` map, and
+`11.Communication.Rest` rebuilds it on the calling side.
+
 ### The three result interfaces
 
 These exist so a MediatR pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**

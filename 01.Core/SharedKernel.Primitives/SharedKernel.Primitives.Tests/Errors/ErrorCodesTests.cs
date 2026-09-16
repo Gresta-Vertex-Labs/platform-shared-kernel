@@ -35,6 +35,7 @@ public sealed class ErrorCodesTests
             ErrorCodes.Validation.InvalidFormat,
             ErrorCodes.Validation.MaxLength,
             ErrorCodes.Validation.MinLength,
+            ErrorCodes.Validation.Failed,
             ErrorCodes.NotFound.Default,
             ErrorCodes.Conflict.Default,
             ErrorCodes.Conflict.Duplicate,

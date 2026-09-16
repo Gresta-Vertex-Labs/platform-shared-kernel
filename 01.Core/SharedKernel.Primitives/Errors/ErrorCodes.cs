@@ -54,6 +54,12 @@ public static class ErrorCodes
 
         /// <summary>A value is below the minimum permitted length.</summary>
         public const string MinLength = "validation.min_length";
+
+        /// <summary>
+        /// One or more validation failures, carried in <see cref="Error.Details"/>. Used by
+        /// <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>.
+        /// </summary>
+        public const string Failed = "validation.failed";
     }
 
     /// <summary>Codes for resource-not-found failures.</summary>
