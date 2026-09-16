@@ -7,36 +7,25 @@ namespace SharedKernel.Application.Behaviors.Idempotency;
 
 /// <summary>
 /// Serializes and deserializes pipeline responses (<see cref="Result"/> / <see cref="Result{T}"/>)
-/// for <see cref="IIdempotencyResponseStore"/>-backed idempotency response replay (WO-039, P-242).
+/// for <see cref="IRequestIdempotencyStore"/>-backed response replay.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This class owns the (de)serialization; a store implementing <see cref="IIdempotencyResponseStore"/>
-/// persists whatever opaque string it is handed and never needs to parse or interpret it.
-/// </para>
-/// <para>
-/// <see cref="Result"/> and <see cref="Result{T}"/> both have private constructors and throw on
-/// wrong-state member access (<c>Value</c> on a failure, <c>Error</c> on a success), so neither
-/// round-trips through <see cref="System.Text.Json"/>'s default reflection-based contract. Two small
-/// custom converters (<see cref="ResultJsonConverter"/>, <see cref="ResultOfTJsonConverterFactory"/>)
-/// bridge this — the same <see cref="JsonConverterFactory"/> pattern already used by
-/// <c>03.Domain</c>'s <c>StronglyTypedIdJsonConverterFactory</c> for an equivalent open-generic-type
-/// serialization problem, not a new or ad hoc mechanism.
-/// </para>
+/// This class owns the (de)serialization; a store persists whatever opaque string it is handed and
+/// never needs to parse or interpret it. <see cref="Result"/> and <see cref="Result{T}"/> both have
+/// private constructors and throw on wrong-state member access, so neither round-trips through
+/// <see cref="System.Text.Json"/>'s default reflection-based contract — two small custom converters
+/// bridge this. <see cref="Error"/> itself (including its <see cref="Error.Details"/> child-error
+/// list) round-trips through STJ's default record support with no custom converter needed.
 /// </remarks>
 internal static class IdempotencyResponseSerializer
 {
     private static readonly JsonSerializerOptions Options = CreateOptions();
 
     /// <summary>Serializes <paramref name="response"/> (a closed <see cref="Result"/>/<see cref="Result{T}"/>) to a string.</summary>
-    /// <typeparam name="TResponse">The response type, statically known only as <c>IRequest&lt;TResponse&gt;</c>'s response.</typeparam>
-    /// <param name="response">The response instance to serialize.</param>
     internal static string Serialize<TResponse>(TResponse response)
         => JsonSerializer.Serialize(response, typeof(TResponse), Options);
 
     /// <summary>Deserializes a previously-<see cref="Serialize{TResponse}"/>d response.</summary>
-    /// <typeparam name="TResponse">The response type to deserialize into.</typeparam>
-    /// <param name="serializedResponse">The string produced by a prior <see cref="Serialize{TResponse}"/> call.</param>
     internal static TResponse Deserialize<TResponse>(string serializedResponse)
         => (TResponse)JsonSerializer.Deserialize(serializedResponse, typeof(TResponse), Options)!;
 
@@ -102,8 +91,7 @@ internal static class IdempotencyResponseSerializer
     }
 
     // Open-generic factory resolving ResultOfTJsonConverter<T> for whichever closed Result<T> STJ
-    // asks to convert — the standard System.Text.Json extension point for open-generic types,
-    // already established in this platform by 03.Domain's StronglyTypedIdJsonConverterFactory.
+    // asks to convert — the standard System.Text.Json extension point for open-generic types.
     private sealed class ResultOfTJsonConverterFactory : JsonConverterFactory
     {
         public override bool CanConvert(Type typeToConvert)
