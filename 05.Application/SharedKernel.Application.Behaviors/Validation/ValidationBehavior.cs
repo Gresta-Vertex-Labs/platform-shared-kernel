@@ -1,7 +1,7 @@
 using FluentValidation;
 using MediatR;
+using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Primitives.Errors;
-using ValidationException = SharedKernel.Core.Exceptions.ValidationException;
 
 namespace SharedKernel.Application.Behaviors.Validation;
 
@@ -12,16 +12,17 @@ namespace SharedKernel.Application.Behaviors.Validation;
 /// <typeparam name="TRequest">The request type being validated.</typeparam>
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
-/// Aggregates every failure across every validator into <see cref="IReadOnlyList{Error}"/> via
-/// <see cref="Error.Validation"/>, then — if the aggregate is non-empty — throws
-/// <see cref="ValidationException"/> without calling <c>next()</c>. This is the platform's
-/// existing <c>ValidationResult</c>-to-exception bridge (<c>01.Core</c>), not a new mechanism;
-/// the presentation layer's global exception handler converts it into a single multi-error
-/// <c>ProblemDetails</c> response. When zero validators are registered for
-/// <typeparamref name="TRequest"/>, <c>next()</c> is called immediately —
+/// Runs every registered validator <b>sequentially</b> — not <c>Task.WhenAll</c> — since a
+/// validator may use a scoped resource (e.g. a <c>DbContext</c>) that is not safe for concurrent
+/// use. Every failure across every validator is collected and aggregated into a single
+/// <c>Error.Validation(errors)</c> via <see cref="Error.Validation(string, string)"/> per failure,
+/// grouped by <c>failure.PropertyName</c> — the field-name key <c>14.Presentation</c> uses to build
+/// the <c>ProblemDetails</c> <c>errors</c> map. The aggregate is returned as a
+/// <c>Result.Failure</c>/<c>Result&lt;T&gt;.Failure</c> — <b>never thrown</b>. When zero validators
+/// are registered for <typeparamref name="TRequest"/>, <c>next()</c> is called immediately —
 /// <see cref="IEnumerable{IValidator}"/> is empty (never null) by DI convention, so this is a
-/// zero-cost no-op, not a missing-registration error. Applies to <b>both</b> commands and
-/// queries — <typeparamref name="TRequest"/> is constrained only to <see cref="IRequest{TResponse}"/>.
+/// zero-cost no-op, not a missing-registration error. Applies to <b>both</b> commands and queries —
+/// <typeparamref name="TRequest"/> is constrained only to <see cref="IRequest{TResponse}"/>.
 /// </remarks>
 public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
     : IPipelineBehavior<TRequest, TResponse>
@@ -33,22 +34,26 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        // Single enumeration only — no .Any() pre-check to avoid double-enumeration of the
-        // IEnumerable<IValidator<TRequest>>. Task.WhenAll on an empty sequence returns
-        // Task.FromResult(Array.Empty<ValidationResult>()), so the loop body is a no-op when
-        // zero validators are registered; DI convention guarantees the collection is never null.
-        var validationResults = await Task.WhenAll(
-                validators.Select(validator => validator.ValidateAsync(request, cancellationToken)))
-            .ConfigureAwait(false);
+        List<Error>? errors = null;
 
-        var errors = validationResults
-            .SelectMany(result => result.Errors)
-            .Where(failure => failure is not null)
-            .Select(failure => Error.Validation(failure.PropertyName, failure.ErrorMessage))
-            .ToList();
+        foreach (var validator in validators)
+        {
+            var validationResult = await validator.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
+            if (validationResult.IsValid)
+                continue;
 
-        if (errors.Count > 0)
-            throw new ValidationException(errors);
+            errors ??= [];
+            foreach (var failure in validationResult.Errors)
+            {
+                if (failure is null)
+                    continue;
+
+                errors.Add(Error.Validation(failure.PropertyName, failure.ErrorMessage));
+            }
+        }
+
+        if (errors is { Count: > 0 })
+            return FailureResponse.Create<TResponse>(Error.Validation(errors));
 
         return await next().ConfigureAwait(false);
     }
