@@ -1,0 +1,87 @@
+# Path-based PR labels, applied by .github/workflows/pr-labeler.yml (actions/labeler).
+# Every label used here must also exist in .github/labels.yml.
+
+"area: 00-governance":
+  - changed-files:
+      - any-glob-to-any-file: "00.Governance/**"
+"area: 01-core":
+  - changed-files:
+      - any-glob-to-any-file: "01.Core/**"
+"area: 02-caching":
+  - changed-files:
+      - any-glob-to-any-file: "02.Caching/**"
+"area: 03-domain":
+  - changed-files:
+      - any-glob-to-any-file: "03.Domain/**"
+"area: 04-contracts":
+  - changed-files:
+      - any-glob-to-any-file: "04.Contracts/**"
+"area: 05-application":
+  - changed-files:
+      - any-glob-to-any-file: "05.Application/**"
+"area: 06-persistence":
+  - changed-files:
+      - any-glob-to-any-file: "06.Persistence/**"
+"area: 07-messaging":
+  - changed-files:
+      - any-glob-to-any-file: "07.Messaging/**"
+"area: 08-storage":
+  - changed-files:
+      - any-glob-to-any-file: "08.Storage/**"
+"area: 09-search":
+  - changed-files:
+      - any-glob-to-any-file: "09.Search/**"
+"area: 10-intelligence":
+  - changed-files:
+      - any-glob-to-any-file: "10.Intelligence/**"
+"area: 11-communication":
+  - changed-files:
+      - any-glob-to-any-file: "11.Communication/**"
+"area: 12-security":
+  - changed-files:
+      - any-glob-to-any-file: "12.Security/**"
+"area: 13-servicedefaults":
+  - changed-files:
+      - any-glob-to-any-file: "13.ServiceDefaults/**"
+"area: 14-presentation":
+  - changed-files:
+      - any-glob-to-any-file: "14.Presentation/**"
+"area: 15-integration":
+  - changed-files:
+      - any-glob-to-any-file: "15.Integration/**"
+"area: 16-testing":
+  - changed-files:
+      - any-glob-to-any-file: "16.Testing/**"
+"area: 17-workflows":
+  - changed-files:
+      - any-glob-to-any-file: "17.Workflows/**"
+"area: 18-idempotency":
+  - changed-files:
+      - any-glob-to-any-file: "18.Idempotency/**"
+"area: 19-scheduling":
+  - changed-files:
+      - any-glob-to-any-file: "19.Scheduling/**"
+"area: 20-reporting":
+  - changed-files:
+      - any-glob-to-any-file: "20.Reporting/**"
+"area: build-ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "eng/**"
+          - "Directory.Build.props"
+          - "Directory.Build.targets"
+          - "Directory.Packages.props"
+          - "global.json"
+          - "NuGet.Config"
+          - "*.slnx"
+          - "*.slnf"
+"area: samples":
+  - changed-files:
+      - any-glob-to-any-file: "samples/**"
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file: "Directory.Packages.props"
+"type: docs":
+  - changed-files:
+      - all-globs-to-all-files: "**/*.md"

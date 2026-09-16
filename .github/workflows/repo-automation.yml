@@ -1,0 +1,72 @@
+name: Repository Automation
+
+# Tests the issue/PR automation and keeps repository labels in sync with .github/labels.yml.
+#
+#   - test:  runs the Node tests in .github/scripts (node:test, no npm install). They also verify
+#            that every label used by an issue form, labeler.yml or the PR template check exists.
+#   - labels: on pull requests, a dry run that only reports what would change; on main, applies it.
+#            Labels missing from labels.yml are deleted, so add a label there before using it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/labels.yml'
+      - '.github/labeler.yml'
+      - '.github/scripts/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
+      - '.github/workflows/repo-automation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/labels.yml'
+      - '.github/labeler.yml'
+      - '.github/scripts/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
+      - '.github/workflows/repo-automation.yml'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: repo-automation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Test automation scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run tests
+        run: node --test .github/scripts/*.test.cjs
+
+  labels:
+    name: Sync labels
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sync labels from .github/labels.yml
+        uses: crazy-max/ghaction-github-labeler@548a7c3603594ec17c819e1239f281a3b801ab4d # v6.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          yaml-file: .github/labels.yml
+          dry-run: ${{ github.event_name == 'pull_request' }}
