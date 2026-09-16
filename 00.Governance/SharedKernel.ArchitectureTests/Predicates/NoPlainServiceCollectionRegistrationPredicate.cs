@@ -21,7 +21,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <c>01.Core</c>'s own registration call sites used the plain <c>Add*</c> verb. This meant
 /// <c>AddSharedKernelCryptography()</c> called twice (a realistic shape for a consuming service
 /// composed from more than one internal extension method, each of which happens to also pull in
-/// cryptography) silently double-registered every one of its nine services, and a consumer
+/// cryptography) silently double-registered every one of its services, and a consumer
 /// registering its own <c>ISymmetricEncryptionService</c> implementation BEFORE calling
 /// <c>AddSharedKernelCryptography()</c> would have that registration silently overwritten instead
 /// of honored — the opposite of the "first registration wins" override convention library code is
@@ -81,11 +81,11 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Offending pattern:</strong>
-/// <code>services.AddSingleton&lt;IOneWayHasher, Pbkdf2OneWayHasher&gt;();</code>
+/// <code>services.AddSingleton&lt;IHmacSigner, HmacSha256Signer&gt;();</code>
 /// </para>
 /// <para>
 /// <strong>Compliant pattern:</strong>
-/// <code>services.TryAddSingleton&lt;IOneWayHasher, Pbkdf2OneWayHasher&gt;();</code>
+/// <code>services.TryAddSingleton&lt;IHmacSigner, HmacSha256Signer&gt;();</code>
 /// </para>
 /// </remarks>
 public sealed class NoPlainServiceCollectionRegistrationPredicate : ICustomRule

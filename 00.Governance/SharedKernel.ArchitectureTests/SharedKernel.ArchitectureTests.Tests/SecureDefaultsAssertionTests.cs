@@ -5,6 +5,8 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Cryptography.Hashing;
+using SharedKernel.Cryptography.Options;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
 using Xunit;
@@ -125,6 +127,19 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// was found during a routine full-solution build, not by this file's own suite, which stayed green
 /// throughout. T-337 is re-pointed at the real, current architecture — see its own remarks for the
 /// full detail — rather than merely patched to compile against the old one.
+/// </para>
+/// <para>
+/// <strong>Cryptography re-locked against the P-545 redesign.</strong> The redesigned
+/// <c>SharedKernel.Cryptography</c> removed the runtime synchronous-provider gates
+/// (<c>EncryptionKeyProviderCapabilities</c>/<c>AsymmetricKeyProviderCapabilities</c>, the constructor
+/// capability checks and the <see cref="NotSupportedException"/> guards on
+/// <c>AesGcmEncryptionService</c>/<c>RsaSignatureService</c>/<c>EcdsaSignatureService</c>), so the two
+/// real-assembly tests that located those call sites (T-362/T-363) are gone. The secure defaults they
+/// protected, and the ones the redesign added, are locked by four real-assembly tests instead: synchronous
+/// encryption requires an <c>ISynchronousEncryptionKeyProvider</c> by constructor type; RSA signing keys
+/// below 2048 bits are rejected; HMAC keys below 32 bytes are rejected; and stored PBKDF2/Argon2id hash
+/// costs are bounded before any derivation. T-360/T-361's contrived fixtures remain, re-themed, as the
+/// file's coverage of <c>.ctor</c> resolution.
 /// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
@@ -1620,12 +1635,12 @@ public class SecureDefaultsAssertionTests
     /// FusionCacheService&gt;()</c>, a no-op once a registration already exists, so
     /// <c>AddCacheEncryption()</c>'s "wrap whatever <c>ICacheService</c> is currently registered"
     /// logic ends up wrapping the double directly — a clean interception point for exactly the
-    /// <c>EncryptedPayload</c> <c>EncryptedCacheService</c> hands to its inner store, with no
+    /// <c>EncryptedPayload.ToBytes()</c> output <c>EncryptedCacheService</c> hands to its inner store, with no
     /// FusionCache/MemoryCache storage semantics in the way.
     /// </para>
     /// <para>
     /// It writes a highly-compressible payload (8192 repeated characters) through the composed
-    /// pipeline and captures the intercepted <c>EncryptedPayload</c>'s stored-byte length. It
+    /// pipeline and captures the intercepted <c>EncryptedPayload</c> storage bytes' length. It
     /// separately encrypts the SAME plaintext JSON bytes a bare System.Text.Json serialization step
     /// would produce — using <c>JsonSerializerDefaults.Web</c>, the exact fallback
     /// <c>EncryptedCacheService</c> itself uses when no <c>CachingOptions.SerializerContext</c> is
@@ -1666,7 +1681,9 @@ public class SecureDefaultsAssertionTests
     {
         var services = new ServiceCollection();
 
-        var keyProvider = new FixtureEncryptionKeyProvider();
+        var keyProvider = new StaticEncryptionKeyProvider(
+            "secure-defaults-fixture-key",
+            [new CryptographicKey("secure-defaults-fixture-key", System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))]);
         var encryptionService = new AesGcmEncryptionService(keyProvider);
         services.AddSingleton<ISymmetricEncryptionService>(encryptionService);
 
@@ -1697,16 +1714,14 @@ public class SecureDefaultsAssertionTests
 
         await cache.SetAsync(key, payload, CachePolicy.Default);
 
-        EncryptedPayload? pipelinePayload = spyInnerCache.LastStoredPayload;
-        pipelinePayload.Should().NotBeNull(
-            because: "EncryptedCacheService.SetAsync must hand its inner ICacheService a real " +
-                     "EncryptedPayload");
+        byte[]? pipelineStoredBytes = spyInnerCache.LastStoredBytes;
+        pipelineStoredBytes.Should().NotBeNull(
+            because: "EncryptedCacheService.SetAsync must hand its inner ICacheService the " +
+                     "EncryptedPayload storage format (EncryptedPayload.ToBytes())");
+        EncryptedPayload.TryParse(pipelineStoredBytes, out _).Should().BeTrue(
+            because: "the bytes EncryptedCacheService stores must be a parseable EncryptedPayload");
 
-        var pipelineLength =
-            pipelinePayload!.Nonce.Length
-            + pipelinePayload.Tag.Length
-            + pipelinePayload.Ciphertext.Length
-            + System.Text.Encoding.UTF8.GetByteCount(pipelinePayload.KeyId);
+        var pipelineLength = pipelineStoredBytes!.Length;
 
         // Round-trip-correctness precondition (Implementation Rule 3).
         var roundTripped = await cache.GetAsync<string>(key);
@@ -1724,11 +1739,7 @@ public class SecureDefaultsAssertionTests
         var plaintextBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload, jsonOptions);
         var associatedData = System.Text.Encoding.UTF8.GetBytes(key);
         var baseline = await encryptionService.EncryptAsync(plaintextBytes, associatedData);
-        var baselineLength =
-            baseline.Nonce.Length
-            + baseline.Tag.Length
-            + baseline.Ciphertext.Length
-            + System.Text.Encoding.UTF8.GetByteCount(baseline.KeyId);
+        var baselineLength = baseline.ToBytes().Length;
 
         pipelineLength.Should().BeLessThan(
             baselineLength / 2,
@@ -1741,12 +1752,12 @@ public class SecureDefaultsAssertionTests
 
     /// <summary>
     /// Minimal in-memory <see cref="ICacheService"/> double used only by T-337 — stores whatever is
-    /// written under each key and exposes the most recently stored <see cref="EncryptedPayload"/>
-    /// (when the stored value is one) so the test can inspect exactly what
-    /// <c>EncryptedCacheService</c> hands to its wrapped inner cache. Deliberately local to this
-    /// file rather than a shared <c>16.Testing</c> fake, mirroring this file's own established
-    /// "governance test project supplies its own minimal fixture" convention for real-assembly
-    /// checks.
+    /// written under each key and exposes the most recently stored <see cref="T:byte[]"/> (the
+    /// <see cref="EncryptedPayload"/> storage format <c>EncryptedCacheService</c> writes) so the test
+    /// can inspect exactly what <c>EncryptedCacheService</c> hands to its wrapped inner cache.
+    /// Deliberately local to this file rather than a shared <c>16.Testing</c> fake, mirroring this
+    /// file's own established "governance test project supplies its own minimal fixture" convention
+    /// for real-assembly checks.
     /// </summary>
     private sealed class SpyInnerCacheService : ICacheService
     {
@@ -1754,9 +1765,9 @@ public class SecureDefaultsAssertionTests
 
         /// <summary>
         /// The most recently stored value across any <see cref="SetAsync{T}"/> call whose value was
-        /// an <see cref="EncryptedPayload"/> — <see langword="null"/> until one has been stored.
+        /// a <see cref="T:byte[]"/> — <see langword="null"/> until one has been stored.
         /// </summary>
-        public EncryptedPayload? LastStoredPayload { get; private set; }
+        public byte[]? LastStoredBytes { get; private set; }
 
         public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default) =>
             new(_store.TryGetValue(key, out object? value) ? (T?)value : default);
@@ -1765,8 +1776,8 @@ public class SecureDefaultsAssertionTests
         {
             _store[key] = value;
 
-            if (value is EncryptedPayload payload)
-                LastStoredPayload = payload;
+            if (value is byte[] bytes)
+                LastStoredBytes = bytes;
 
             return ValueTask.CompletedTask;
         }
@@ -2010,376 +2021,341 @@ public class SecureDefaultsAssertionTests
 
     // ---------------------------------------------------------------------------
     // T-360 — AssertMethodBodyInvokesMethod/AssertMethodBodyThrowsExceptionType contrived pass
-    // path: synchronous-provider gate present (WO-081 P-504, Technique A)
+    // path: constructor-evaluated check plus a private throw helper (WO-081 P-504, Technique A)
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-360 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): a fixture shaped
-    /// after the real, shipped <c>AesGcmEncryptionService</c>/<c>RsaSignatureService</c>/
-    /// <c>EcdsaSignatureService</c> synchronous-provider gate (P-492/P-493, confirmed against real
-    /// source before this fixture was written — see remarks) — constructor invokes a stand-in
-    /// capability-check method and caches the result; the gated member delegates to a private guard
-    /// helper that constructs-and-throws <see cref="NotSupportedException"/> — must pass both
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> and
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>.
+    /// T-360 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): a fixture whose
+    /// constructor invokes a check method and caches the result, and whose guarded member delegates
+    /// to a private helper that constructs-and-throws <see cref="NotSupportedException"/>, must pass
+    /// both <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> (including against
+    /// <c>.ctor</c>) and <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>.
     /// </summary>
     /// <remarks>
-    /// <strong>Shape corrected against real, shipped source.</strong> This phase's own
-    /// authoring-time Implementation Rule 2 assumed each gated member (<c>Encrypt</c>/<c>Decrypt</c>/
-    /// <c>EncryptToString</c>/<c>DecryptToString</c>/<c>Sign</c>/<c>Verify</c>) constructs-and-throws
-    /// <see cref="NotSupportedException"/> directly. Direct inspection of the real, shipped
-    /// <c>AesGcmEncryptionService</c>/<c>RsaSignatureService</c>/<c>EcdsaSignatureService</c> (all
-    /// three, once <c>01.Core</c>'s P-492/P-493 shipped past Design into Core) found the throw is
-    /// instead centralized in one private <c>ThrowIfNotGenuinelySynchronous(string)</c> helper each
-    /// gated member calls as its first statement — a single-throw-site design shared by every gated
-    /// member on a given type, not an independent throw per member. This fixture mirrors that REAL
-    /// shape rather than the phase's original assumption — see T-362/T-363's own remarks for the
-    /// full real-assembly confirmation.
+    /// This shape was first modelled on <c>SharedKernel.Cryptography</c>'s runtime synchronous-provider
+    /// gate. That gate no longer exists: the redesigned package (P-545) makes a synchronous service
+    /// require an <c>ISynchronousEncryptionKeyProvider</c> by constructor type instead, which
+    /// <see cref="SynchronousEncryption_RealTypes_RequireASynchronousKeyProviderByConstructorType"/>
+    /// locks. The fixture is kept because it is this file's only coverage of <c>.ctor</c> resolution
+    /// and of a throw centralized in a private helper.
     /// </remarks>
     [Fact]
-    public void SyncGateFixtures_CapabilityCheckAndGuardPresent_BothAssertionsPass()
+    public void ConstructorCheckFixtures_CheckAndGuardPresent_BothAssertionsPass()
     {
         const string source = """
-            namespace Fixture.SyncCryptoGate
+            namespace Fixture.ConstructorCheck
             {
-                public static class FixtureCapabilityCheck
+                public static class FixturePolicyCheck
                 {
-                    public static bool IsGenuinelySynchronous(object provider) => false;
+                    public static bool IsAllowed(object dependency) => false;
                 }
 
-                // Compliant: mirrors the real AesGcmEncryptionService/RsaSignatureService/
-                // EcdsaSignatureService shape — the constructor evaluates and caches the capability
-                // check, and the gated member delegates to a private guard helper that constructs
-                // and throws NotSupportedException.
-                public sealed class FixtureGatedServicePresent
+                // Compliant: the constructor evaluates and caches the check, and the guarded member
+                // delegates to a private helper that constructs and throws NotSupportedException.
+                public sealed class FixtureGuardedServicePresent
                 {
-                    private readonly bool _isGenuinelySynchronous;
+                    private readonly bool _isAllowed;
 
-                    public FixtureGatedServicePresent(object provider)
+                    public FixtureGuardedServicePresent(object dependency)
                     {
-                        _isGenuinelySynchronous = FixtureCapabilityCheck.IsGenuinelySynchronous(provider);
+                        _isAllowed = FixturePolicyCheck.IsAllowed(dependency);
                     }
 
-                    public void GatedMember()
+                    public void GuardedMember()
                     {
-                        ThrowIfNotGenuinelySynchronous();
+                        ThrowIfNotAllowed();
                     }
 
-                    private void ThrowIfNotGenuinelySynchronous()
+                    private void ThrowIfNotAllowed()
                     {
-                        if (!_isGenuinelySynchronous)
+                        if (!_isAllowed)
                         {
-                            throw new System.NotSupportedException("not genuinely synchronous");
+                            throw new System.NotSupportedException("not allowed");
                         }
                     }
                 }
             }
             """;
 
-        var assembly = CompileInMemory("SyncCryptoGatePresent", source);
-        var declaringType = assembly.GetType("Fixture.SyncCryptoGate.FixtureGatedServicePresent")!;
-        var capabilityCheckType = assembly.GetType("Fixture.SyncCryptoGate.FixtureCapabilityCheck")!;
+        var assembly = CompileInMemory("ConstructorCheckPresent", source);
+        var declaringType = assembly.GetType("Fixture.ConstructorCheck.FixtureGuardedServicePresent")!;
+        var checkType = assembly.GetType("Fixture.ConstructorCheck.FixturePolicyCheck")!;
 
-        var ctorInvokesCapabilityCheck = () =>
+        var ctorInvokesCheck = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(declaringType, ".ctor", checkType, "IsAllowed");
+
+        ctorInvokesCheck.Should().NotThrow(
+            because: "the fixture's constructor genuinely calls FixturePolicyCheck.IsAllowed");
+
+        var guardedMemberInvokesGuard = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, ".ctor", capabilityCheckType, "IsGenuinelySynchronous");
+                declaringType, "GuardedMember", declaringType, "ThrowIfNotAllowed");
 
-        ctorInvokesCapabilityCheck.Should().NotThrow(
-            because: "the fixture's constructor genuinely calls " +
-                     "FixtureCapabilityCheck.IsGenuinelySynchronous");
-
-        var gatedMemberInvokesGuard = () =>
-            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "GatedMember", declaringType, "ThrowIfNotGenuinelySynchronous");
-
-        gatedMemberInvokesGuard.Should().NotThrow(
-            because: "the fixture's GatedMember genuinely calls the ThrowIfNotGenuinelySynchronous " +
-                     "guard helper");
+        guardedMemberInvokesGuard.Should().NotThrow(
+            because: "the fixture's GuardedMember genuinely calls the ThrowIfNotAllowed guard helper");
 
         var guardThrowsNotSupported = () =>
             SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
-                declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
+                declaringType, "ThrowIfNotAllowed", typeof(NotSupportedException));
 
         guardThrowsNotSupported.Should().NotThrow(
-            because: "the fixture's ThrowIfNotGenuinelySynchronous guard genuinely constructs and " +
-                     "throws NotSupportedException");
+            because: "the fixture's ThrowIfNotAllowed guard genuinely constructs and throws " +
+                     "NotSupportedException");
     }
 
     // ---------------------------------------------------------------------------
-    // T-361 — AssertMethodBodyInvokesMethod contrived fire path: capability check call removed
+    // T-361 — AssertMethodBodyInvokesMethod contrived fire path: constructor check call removed
     // (WO-081 P-504, Technique A)
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-361 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): an otherwise-
-    /// identical fixture with the constructor's capability-check call removed — reproducing the
-    /// exact "sync gate silently deleted in a future edit, reverting to an unconditional
-    /// <c>.GetAwaiter().GetResult()</c> bridge" regression this check exists to prevent — must fail
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// T-361 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): an otherwise-identical
+    /// fixture with the constructor's check call removed must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against <c>.ctor</c>.
     /// </summary>
     [Fact]
-    public void SyncGateFixtures_CapabilityCheckCallRemoved_ThrowsNamingMethod()
+    public void ConstructorCheckFixtures_CheckCallRemoved_ThrowsNamingMethod()
     {
         const string source = """
-            namespace Fixture.SyncCryptoGate
+            namespace Fixture.ConstructorCheck
             {
-                public static class FixtureCapabilityCheck
+                public static class FixturePolicyCheck
                 {
-                    public static bool IsGenuinelySynchronous(object provider) => false;
+                    public static bool IsAllowed(object dependency) => false;
                 }
 
-                // Violation: the constructor no longer evaluates the capability check at all — a
-                // future well-intentioned refactor could plausibly delete this call while leaving
-                // the guard helper and its call site intact, silently defaulting
-                // _isGenuinelySynchronous to false (the C# default for bool) rather than genuinely
-                // deciding it. The guard still throws unconditionally here, but the point of this
-                // fixture is to prove the ABSENCE of the capability-check call site is itself
-                // detected, independent of whether the guard's own behavior happens to remain safe.
-                public sealed class FixtureGatedServiceCapabilityCheckRemoved
+                // Violation: the constructor no longer evaluates the check, silently leaving _isAllowed
+                // at its default. The guard still throws here; the point of this fixture is that the
+                // ABSENCE of the check call site is itself detected.
+                public sealed class FixtureGuardedServiceCheckRemoved
                 {
-                    private readonly bool _isGenuinelySynchronous;
+                    private readonly bool _isAllowed;
 
-                    public FixtureGatedServiceCapabilityCheckRemoved(object provider)
+                    public FixtureGuardedServiceCheckRemoved(object dependency)
                     {
                     }
 
-                    public void GatedMember()
+                    public void GuardedMember()
                     {
-                        ThrowIfNotGenuinelySynchronous();
+                        ThrowIfNotAllowed();
                     }
 
-                    private void ThrowIfNotGenuinelySynchronous()
+                    private void ThrowIfNotAllowed()
                     {
-                        if (!_isGenuinelySynchronous)
+                        if (!_isAllowed)
                         {
-                            throw new System.NotSupportedException("not genuinely synchronous");
+                            throw new System.NotSupportedException("not allowed");
                         }
                     }
                 }
             }
             """;
 
-        var assembly = CompileInMemory("SyncCryptoGateCapabilityCheckRemoved", source);
-        var declaringType =
-            assembly.GetType("Fixture.SyncCryptoGate.FixtureGatedServiceCapabilityCheckRemoved")!;
-        var capabilityCheckType = assembly.GetType("Fixture.SyncCryptoGate.FixtureCapabilityCheck")!;
+        var assembly = CompileInMemory("ConstructorCheckRemoved", source);
+        var declaringType = assembly.GetType("Fixture.ConstructorCheck.FixtureGuardedServiceCheckRemoved")!;
+        var checkType = assembly.GetType("Fixture.ConstructorCheck.FixturePolicyCheck")!;
 
         var act = () =>
-            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, ".ctor", capabilityCheckType, "IsGenuinelySynchronous");
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(declaringType, ".ctor", checkType, "IsAllowed");
 
         act.Should()
             .Throw<InvalidOperationException>(
-                because: "the fixture's constructor no longer calls " +
-                         "FixtureCapabilityCheck.IsGenuinelySynchronous — the capability-check call " +
-                         "site was removed")
+                because: "the fixture's constructor no longer calls FixturePolicyCheck.IsAllowed — the " +
+                         "check call site was removed")
             .WithMessage("*.ctor*")
-            .WithMessage("*IsGenuinelySynchronous*");
+            .WithMessage("*IsAllowed*");
     }
 
     // ---------------------------------------------------------------------------
-    // T-362 — Real-assembly verification (GATING): AesGcmEncryptionService's synchronous-provider
-    // gate (WO-081 P-504, Technique A)
+    // Real-assembly verification (GATING): SharedKernel.Cryptography secure defaults after the
+    // P-545 redesign
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-362 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): re-points
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>/
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> at the real, shipped
-    /// <c>AesGcmEncryptionService</c> and confirms its synchronous-provider gate (P-492/WO-081) is
-    /// genuinely wired end to end: the constructor invokes
-    /// <c>EncryptionKeyProviderCapabilities.IsGenuinelySynchronous</c>, each of the four retained
-    /// synchronous members (<c>Encrypt</c>/<c>Decrypt</c>/<c>EncryptToString</c>/
-    /// <c>DecryptToString</c>) invokes the private <c>ThrowIfNotGenuinelySynchronous</c> guard, and
-    /// that guard genuinely constructs and throws <see cref="NotSupportedException"/>.
+    /// Locks that synchronous encryption can only be built over a synchronous key provider, by type:
+    /// <see cref="SynchronousAesGcmEncryptionService"/>'s only constructor takes an
+    /// <see cref="ISynchronousEncryptionKeyProvider"/>, that interface is a separate contract rather than a
+    /// marker on <see cref="IEncryptionKeyProvider"/>, <see cref="ISymmetricEncryptionService"/> exposes no
+    /// synchronous member, and neither the key-service provider nor the caching decorator claims to be
+    /// synchronous.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>Cross-Domain Dependency resolved — earlier than this phase's own authoring
-    /// expected.</strong> This phase's own authoring-time prose recorded Technique A as "genuinely,
-    /// fully UNVERIFIABLE today — one level further removed than every prior 'designed against a
-    /// not-yet-shipped dependency' occurrence," since at authoring time <c>01.Core</c>'s P-492/P-493
-    /// were Design-locked only. CONFIRMED RESOLVED on disk before this test was written:
-    /// <c>01.Core</c> shipped <c>ISynchronousEncryptionKeyProvider</c>/
-    /// <c>EncryptionKeyProviderCapabilities</c> and <c>AesGcmEncryptionService</c>'s gated members
-    /// (the required <c>associatedData</c> parameter on every <c>ISymmetricEncryptionService</c>
-    /// member — P-491 — shipped in the same pass) before this phase's implementation session began,
-    /// mirroring this file's own now-repeated dependency-resolved-before-implementation pattern
-    /// (WO-061 onward). Wired directly here as a GATING test rather than deferred.
-    /// </para>
-    /// <para>
-    /// See T-360's own remarks for why this test proves gate-reachability
-    /// (<see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>, once per gated member)
-    /// plus the guard's own throw
-    /// (<see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>, once) rather than
-    /// a direct throw-presence check on each gated member — the real shape centralizes the throw in
-    /// one private helper.
-    /// </para>
-    /// <para>
-    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation — a
-    /// deliberately-wrong callee/exception-type expectation against each of the real call sites
-    /// below, confirmed to fail, then reverted before commit.
-    /// </para>
+    /// Replaces the retired runtime gate (a constructor capability check and a <see cref="NotSupportedException"/>
+    /// guard on every synchronous member). The guarantee it protected — a key-service provider is never
+    /// driven from a synchronous call by blocking on it — now holds at compile time, so this test locks the
+    /// type shapes that make it hold. Adding a synchronous overload to <see cref="ISymmetricEncryptionService"/>,
+    /// widening the constructor to <see cref="IEncryptionKeyProvider"/>, or making a remote provider implement
+    /// <see cref="ISynchronousEncryptionKeyProvider"/> each fails it.
     /// </remarks>
     [Fact]
-    public void SyncCryptoGate_RealAesGcmEncryptionService_ConstructionTimeGateGenuinelyWired()
+    public void SynchronousEncryption_RealTypes_RequireASynchronousKeyProviderByConstructorType()
     {
-        var declaringType = typeof(AesGcmEncryptionService);
-        var capabilitiesType = typeof(EncryptionKeyProviderCapabilities);
+        var constructors = typeof(SynchronousAesGcmEncryptionService).GetConstructors();
+        constructors.Should().ContainSingle(
+            because: "SynchronousAesGcmEncryptionService must offer exactly one way to be constructed");
+        constructors[0].GetParameters().Select(p => p.ParameterType).Should().Equal(
+            [typeof(ISynchronousEncryptionKeyProvider)],
+            because: "a synchronous encryption service must be built over a synchronous key provider, " +
+                     "never over an asynchronous one it would have to block on");
 
-        var ctorInvokesCapabilityCheck = () =>
-            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, ".ctor", capabilitiesType, "IsGenuinelySynchronous");
+        typeof(IEncryptionKeyProvider).IsAssignableFrom(typeof(ISynchronousEncryptionKeyProvider)).Should().BeFalse(
+            because: "ISynchronousEncryptionKeyProvider is a contract with its own members, not a marker " +
+                     "any asynchronous provider could claim");
 
-        ctorInvokesCapabilityCheck.Should().NotThrow(
-            because: "AesGcmEncryptionService's constructor must evaluate " +
-                     "EncryptionKeyProviderCapabilities.IsGenuinelySynchronous exactly once and " +
-                     "cache the result (P-492/WO-081)");
+        typeof(ISymmetricEncryptionService).GetMethods()
+            .Where(method => !IsValueTask(method.ReturnType))
+            .Select(method => method.Name)
+            .Should().BeEmpty(
+                because: "ISymmetricEncryptionService is asynchronous only; synchronous callers use " +
+                         "ISynchronousSymmetricEncryptionService");
 
-        // Signature disambiguation (parameterTypes) targets the PUBLIC overload of each gated
-        // member explicitly — in particular the public EncryptToString(string, byte[]), never the
-        // internal EncryptToString(string, byte[], Action<byte[]>?) testing seam P-524/WO-083 added
-        // alongside it (which would otherwise make AssertMethodBodyInvokesMethod's plain name
-        // resolution ambiguous). The public EncryptToString(string, byte[])'s own IL only forwards
-        // to that internal overload — it never calls ThrowIfNotGenuinelySynchronous directly — so
-        // this assertion is only genuinely, non-vacuously satisfied because
-        // AssertMethodBodyInvokesMethod also follows same-type sibling delegation transitively; see
-        // its own XML doc remarks.
-        var gatedMemberParameterTypes = new Dictionary<string, Type[]>
+        foreach (var remoteProvider in new[]
+                 {
+                     typeof(SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider),
+                     typeof(CachedEncryptionKeyProvider),
+                 })
         {
-            ["Encrypt"] = [typeof(byte[]), typeof(byte[])],
-            ["Decrypt"] = [typeof(EncryptedPayload), typeof(byte[])],
-            ["EncryptToString"] = [typeof(string), typeof(byte[])],
-            ["DecryptToString"] = [typeof(string), typeof(byte[])],
+            typeof(ISynchronousEncryptionKeyProvider).IsAssignableFrom(remoteProvider).Should().BeFalse(
+                because: $"{remoteProvider.Name} resolves keys asynchronously and must never be usable " +
+                         "by the synchronous encryption service");
+        }
+    }
+
+    /// <summary>
+    /// Locks the RSA key-size floor and the async-only signing surface: <see cref="SigningKey.FromRsa"/> rejects
+    /// any RSA key below <see cref="SigningKey.MinimumRsaKeySize"/> (2048) bits for every RSA algorithm, accepts
+    /// a 2048-bit key, and <see cref="IAsymmetricSignatureService"/> exposes no synchronous member.
+    /// </summary>
+    /// <remarks>
+    /// Executed rather than IL-inspected: the floor is a computed comparison against the key's own size, which
+    /// only running the factory proves. The retired per-service <c>EnsureMinimumKeySize</c> check moved into
+    /// this single construction path, so a key that passes it is the only kind any signing service can use.
+    /// </remarks>
+    [Fact]
+    public void AsymmetricSigning_RealSigningKey_RejectsRsaKeysBelow2048Bits()
+    {
+        SigningKey.MinimumRsaKeySize.Should().BeGreaterThanOrEqualTo(2048);
+
+        var rsaAlgorithms = new[]
+        {
+            SignatureAlgorithm.PS256, SignatureAlgorithm.PS384, SignatureAlgorithm.PS512,
+            SignatureAlgorithm.RS256, SignatureAlgorithm.RS384, SignatureAlgorithm.RS512,
         };
 
-        foreach (var gatedMemberName in new[] { "Encrypt", "Decrypt", "EncryptToString", "DecryptToString" })
+        using (var weak = System.Security.Cryptography.RSA.Create(1024))
         {
-            var gatedMemberInvokesGuard = () =>
-                SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                    declaringType,
-                    gatedMemberName,
-                    declaringType,
-                    "ThrowIfNotGenuinelySynchronous",
-                    gatedMemberParameterTypes[gatedMemberName]);
-
-            gatedMemberInvokesGuard.Should().NotThrow(
-                because: $"AesGcmEncryptionService.{gatedMemberName}(string, byte[]) must invoke the " +
-                         "ThrowIfNotGenuinelySynchronous guard (directly, or via same-type sibling " +
-                         "delegation) before bridging onto the registered IEncryptionKeyProvider " +
-                         "(P-492/WO-081)");
+            foreach (var algorithm in rsaAlgorithms)
+            {
+                var act = () => SigningKey.FromRsa("weak", weak, algorithm, ownsKey: false);
+                act.Should().Throw<ArgumentException>(
+                    because: $"a 1024-bit RSA key must be rejected for {algorithm}");
+            }
         }
 
-        var guardThrowsNotSupported = () =>
-            SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
-                declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
+        using (var strong = System.Security.Cryptography.RSA.Create(2048))
+        {
+            using var key = SigningKey.FromRsa("strong", strong, SignatureAlgorithm.PS256, ownsKey: false);
+            key.Algorithm.Should().Be(SignatureAlgorithm.PS256);
+        }
 
-        guardThrowsNotSupported.Should().NotThrow(
-            because: "the guard must construct and throw NotSupportedException when the " +
-                     "registered IEncryptionKeyProvider was not confirmed genuinely synchronous " +
-                     "(P-492/WO-081)");
+        typeof(IAsymmetricSignatureService).GetMethods()
+            .Where(method => !IsValueTask(method.ReturnType))
+            .Select(method => method.Name)
+            .Should().BeEmpty(because: "IAsymmetricSignatureService is asynchronous only");
     }
 
-    // ---------------------------------------------------------------------------
-    // T-363 — Real-assembly verification (GATING): RsaSignatureService/EcdsaSignatureService's
-    // synchronous-provider gate (WO-081 P-504, Technique A)
-    // ---------------------------------------------------------------------------
+    /// <summary>
+    /// Locks the HMAC key-length floor: <see cref="HmacSha256Signer"/> rejects keys shorter than
+    /// <see cref="HmacSha256Signer.MinimumKeyLength"/> (32 bytes, the SHA-256 output size) on both signing and
+    /// verification, and accepts a 32-byte key.
+    /// </summary>
+    [Fact]
+    public void HmacSigning_RealHmacSha256Signer_RejectsKeysShorterThan32Bytes()
+    {
+        HmacSha256Signer.MinimumKeyLength.Should().BeGreaterThanOrEqualTo(32);
+
+        var signer = new HmacSha256Signer();
+        byte[] data = "payload"u8.ToArray();
+        byte[] shortKey = new byte[HmacSha256Signer.MinimumKeyLength - 1];
+        byte[] minimumKey = new byte[HmacSha256Signer.MinimumKeyLength];
+
+        var sign = () => signer.Sign(data, shortKey);
+        var verify = () => signer.Verify(data, new byte[32], shortKey);
+
+        sign.Should().Throw<ArgumentException>(because: "a 31-byte HMAC key must be rejected when signing");
+        verify.Should().Throw<ArgumentException>(because: "a 31-byte HMAC key must be rejected when verifying");
+        signer.Verify(data, signer.Sign(data, minimumKey), minimumKey).Should().BeTrue();
+    }
 
     /// <summary>
-    /// T-363 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): the same technique
-    /// as T-362, re-pointed at the real, shipped <c>RsaSignatureService</c>/
-    /// <c>EcdsaSignatureService</c> — confirms each type's constructor invokes
-    /// <c>AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous</c>, each of its two retained
-    /// synchronous members (<c>Sign</c>/<c>Verify</c>) invokes the private
-    /// <c>ThrowIfNotGenuinelySynchronous</c> guard, and that guard genuinely constructs and throws
-    /// <see cref="NotSupportedException"/>.
+    /// Locks the one-way hashing cost bounds: <see cref="Pbkdf2Options"/> rejects an iteration count below its
+    /// floor, and both <see cref="Pbkdf2OneWayHashAlgorithm"/> and <c>Argon2idOneWayHashAlgorithm</c> refuse a
+    /// stored hash whose cost exceeds their ceiling before doing any work.
     /// </summary>
     /// <remarks>
-    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
-    /// additionally corrected WO-081/P-504's own stated "Depends on: P-492, P-495" line — the
-    /// asymmetric half of Technique A needs <c>01.Core</c>'s P-493 (not P-492, which only covers
-    /// <c>ISymmetricEncryptionService</c>). CONFIRMED RESOLVED on disk before this test was written:
-    /// <c>01.Core</c> shipped <c>ISynchronousAsymmetricKeyProvider</c>/
-    /// <c>AsymmetricKeyProviderCapabilities</c> and both <c>RsaSignatureService</c>'s/
-    /// <c>EcdsaSignatureService</c>'s gated members before this phase's implementation session began.
-    /// See T-362's own remarks for the shared non-vacuous-verification note.
+    /// A stored hash can be written by an attacker. The ceiling cases use costs no implementation could finish
+    /// (<see cref="int.MaxValue"/> PBKDF2 iterations; <see cref="int.MaxValue"/> KiB of Argon2 memory), so if a
+    /// ceiling were removed this test would hang or run out of memory rather than pass.
     /// </remarks>
     [Fact]
-    public void SyncCryptoGate_RealRsaAndEcdsaSignatureServices_ConstructionTimeGateGenuinelyWired()
+    public void OneWayHashing_RealAlgorithms_BoundStoredCostsBeforeDeriving()
     {
-        var capabilitiesType = typeof(AsymmetricKeyProviderCapabilities);
+        Pbkdf2Options.MinimumIterations.Should().BeGreaterThanOrEqualTo(100_000);
+        IsValid(new Pbkdf2Options { Iterations = Pbkdf2Options.MinimumIterations - 1 }).Should().BeFalse(
+            because: "an iteration count below the floor must fail options validation");
+        IsValid(new Pbkdf2Options()).Should().BeTrue(because: "the default iteration count must be valid");
 
-        foreach (var declaringType in new[] { typeof(RsaSignatureService), typeof(EcdsaSignatureService) })
+        byte[] salt = new byte[16];
+        byte[] hash = new byte[32];
+        byte[] secret = "secret"u8.ToArray();
+
+        var pbkdf2 = new Pbkdf2OneWayHashAlgorithm(new StaticOptionsMonitor<Pbkdf2Options>(new Pbkdf2Options()));
+        foreach (var iterations in new[] { Pbkdf2Options.MaximumIterations + 1, int.MaxValue })
         {
-            var ctorInvokesCapabilityCheck = () =>
-                SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                    declaringType, ".ctor", capabilitiesType, "IsGenuinelySynchronous");
+            var stored = new PhcHashString(
+                Pbkdf2OneWayHashAlgorithm.Id,
+                version: null,
+                [new("i", iterations.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+                salt,
+                hash);
 
-            ctorInvokesCapabilityCheck.Should().NotThrow(
-                because: $"{declaringType.Name}'s constructor must evaluate " +
-                         "AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous exactly once " +
-                         "and cache the result (P-493/WO-081)");
-
-            foreach (var gatedMemberName in new[] { "Sign", "Verify" })
-            {
-                var gatedMemberInvokesGuard = () =>
-                    SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                        declaringType, gatedMemberName, declaringType, "ThrowIfNotGenuinelySynchronous");
-
-                gatedMemberInvokesGuard.Should().NotThrow(
-                    because: $"{declaringType.Name}.{gatedMemberName} must invoke the " +
-                             "ThrowIfNotGenuinelySynchronous guard before bridging onto the " +
-                             "registered IAsymmetricKeyProvider (P-493/WO-081)");
-            }
-
-            var guardThrowsNotSupported = () =>
-                SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
-                    declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
-
-            guardThrowsNotSupported.Should().NotThrow(
-                because: $"{declaringType.Name}'s guard must construct and throw " +
-                         "NotSupportedException when the registered IAsymmetricKeyProvider was " +
-                         "not confirmed genuinely synchronous (P-493/WO-081)");
+            pbkdf2.Verify(stored, secret).Should().BeFalse(
+                because: $"a stored PBKDF2 hash claiming {iterations} iterations exceeds the verify ceiling");
         }
+
+        var argon2 = new SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm(
+            new StaticOptionsMonitor<SharedKernel.Cryptography.Argon2.Argon2Options>(
+                new SharedKernel.Cryptography.Argon2.Argon2Options()));
+        var argon2Stored = new PhcHashString(
+            SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.Id,
+            version: 19,
+            [new("m", int.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture)), new("t", "2"), new("p", "1")],
+            salt,
+            hash);
+
+        argon2.Verify(argon2Stored, secret).Should().BeFalse(
+            because: "a stored Argon2id hash claiming more memory than the ceiling must be refused before deriving");
     }
 
-    // ---------------------------------------------------------------------------
-    // T-337 fixture helper
-    // ---------------------------------------------------------------------------
+    private static bool IsValueTask(Type type) =>
+        type == typeof(ValueTask)
+        || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>));
 
-    /// <summary>
-    /// Minimal <see cref="IEncryptionKeyProvider"/> test double for T-337 — seeds one fresh
-    /// 32-byte AES-256 key, held in memory for the lifetime of the instance. Deliberately local to
-    /// this file rather than a shared <c>16.Testing</c> fake, mirroring this file's own established
-    /// "governance test project supplies its own minimal fixture" convention for real-assembly
-    /// checks.
-    /// </summary>
-    /// <remarks>
-    /// Implements <see cref="ISynchronousEncryptionKeyProvider"/> (P-492/WO-081) — an honest claim,
-    /// not a default: both members below resolve purely in-memory key material with no I/O of any
-    /// kind, satisfying that marker's "genuinely never performs a blocking network/IPC round trip"
-    /// contract exactly. This fixture no longer calls <c>AesGcmEncryptionService</c>'s synchronous
-    /// members directly (T-337 now uses <c>EncryptAsync</c> exclusively, matching how the real
-    /// <c>EncryptedCacheService</c> it exercises always calls the async crypto surface), but marking
-    /// it correctly keeps the fixture representative rather than silently relying on the sync gate
-    /// never actually being exercised.
-    /// </remarks>
-    private sealed class FixtureEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
+    private static bool IsValid(object options) =>
+        System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            options,
+            new System.ComponentModel.DataAnnotations.ValidationContext(options),
+            validationResults: null,
+            validateAllProperties: true);
+
+    /// <summary>An <see cref="Microsoft.Extensions.Options.IOptionsMonitor{TOptions}"/> that always returns one value.</summary>
+    private sealed class StaticOptionsMonitor<TOptions>(TOptions value) : Microsoft.Extensions.Options.IOptionsMonitor<TOptions>
     {
-        private readonly CryptographicKey _key;
+        public TOptions CurrentValue { get; } = value;
 
-        public FixtureEncryptionKeyProvider()
-        {
-            var material = new byte[32];
-            System.Security.Cryptography.RandomNumberGenerator.Fill(material);
-            _key = new CryptographicKey("secure-defaults-fixture-key", material);
-        }
+        public TOptions Get(string? name) => CurrentValue;
 
-        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
-            new(_key);
-
-        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-            new(string.Equals(keyId, _key.Id, StringComparison.Ordinal) ? _key : null);
+        public IDisposable? OnChange(Action<TOptions, string?> listener) => null;
     }
 
     // ---------------------------------------------------------------------------

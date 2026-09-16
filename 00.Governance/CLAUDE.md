@@ -2628,8 +2628,8 @@ CoreArchitectureRules  (static class — 01.Core-domain conventions; the platfor
         TryAddKeyedSingleton calls — proving the real-assembly pass-path test scans
         substantial real IL, not an empty method body.
         Failure message names the offending type/method and the forbidden verb.
-        Offending pattern: services.AddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
-        Compliant pattern: services.TryAddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
+        Offending pattern: services.AddSingleton<IHmacSigner, HmacSha256Signer>();
+        Compliant pattern: services.TryAddSingleton<IHmacSigner, HmacSha256Signer>();
 
     Note: Introduced in WO-083 P-523 (SK.00.CoreDiRegistrationConventionLock). Lives in
     SharedKernel.ArchitectureTests/Rules/CoreArchitectureRules.cs. Reuses the existing

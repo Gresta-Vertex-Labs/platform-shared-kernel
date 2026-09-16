@@ -41,11 +41,11 @@ public static class CoreArchitectureRules
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>
-    /// <code>services.AddSingleton&lt;IOneWayHasher, Pbkdf2OneWayHasher&gt;();</code>
+    /// <code>services.AddSingleton&lt;IHmacSigner, HmacSha256Signer&gt;();</code>
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong>
-    /// <code>services.TryAddSingleton&lt;IOneWayHasher, Pbkdf2OneWayHasher&gt;();</code>
+    /// <code>services.TryAddSingleton&lt;IHmacSigner, HmacSha256Signer&gt;();</code>
     /// </para>
     /// </remarks>
     /// <param name="assemblies">

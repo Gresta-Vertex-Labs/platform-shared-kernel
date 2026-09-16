@@ -36,8 +36,8 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// passing by construction. Separately, at implementation time, the real, compiled
 /// <c>SharedKernel.Cryptography.dll</c>'s <c>AddSharedKernelCryptography</c> method body was
 /// inspected directly via Mono.Cecil (read-only, against the build output — never the source) and
-/// confirmed to contain nine genuine <c>Call</c> instructions targeting <c>TryAddSingleton</c>/
-/// <c>TryAddKeyedSingleton</c> on <c>ServiceCollectionDescriptorExtensions</c> — proving T-7's pass
+/// confirmed to contain eight genuine <c>Call</c> instructions targeting <c>TryAddSingleton</c>/
+/// <c>TryAddEnumerable</c> on <c>ServiceCollectionDescriptorExtensions</c> — proving T-7's pass
 /// scans substantial, real IL content and correctly recognizes it as compliant, not "the scan ran
 /// and found nothing because the method body was empty." Editing any 01.Core source file, even
 /// temporarily, was deliberately avoided for this verification — a copy-and-patch-the-compiled-
@@ -277,8 +277,8 @@ public class CoreArchitectureRulesTests
             typeof(SharedKernel.Configuration.Extensions.OptionsExtensions).Assembly,
             typeof(SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions).Assembly,
             typeof(SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions).Assembly,
-            typeof(SharedKernel.Cryptography.Argon2.Extensions.Argon2CryptographyServiceCollectionExtensions).Assembly,
-            typeof(SharedKernel.Cryptography.KeyVault.Azure.Extensions.AzureKeyVaultCryptographyServiceCollectionExtensions).Assembly,
+            typeof(SharedKernel.Cryptography.Argon2.Argon2CryptographyBuilderExtensions).Assembly,
+            typeof(SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions).Assembly,
             typeof(SharedKernel.FeatureManagement.Extensions.FeatureManagementExtensions).Assembly,
             typeof(SharedKernel.Localization.LocalizationServiceCollectionExtensions).Assembly,
             typeof(SharedKernel.Validation.Extensions.ValidationServiceCollectionExtensions).Assembly,
