@@ -1,0 +1,45 @@
+#nullable enable
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.AzureKeyVaultEncryptionKeyProvider(Microsoft.Extensions.Options.IOptions<SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions!>! options, Azure.Security.KeyVault.Keys.KeyClient! keyClient, Azure.Security.KeyVault.Secrets.SecretClient! secretClient, SharedKernel.Cryptography.Random.ISecureRandomGenerator! random, System.TimeProvider! timeProvider) -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.GenerateDataKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Envelope.EnvelopeDataKey!>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth!>!
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.RotateDataKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionKeyProvider.UnwrapDataKeyAsync(System.ReadOnlyMemory<byte> wrappedKey, string! masterKeyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.AzureKeyVaultEncryptionOptions() -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.DataKeySecretName.get -> string?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.DataKeySecretName.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.MasterKeyName.get -> string?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.MasterKeyName.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.PreviousMasterKeyNames.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.PreviousMasterKeyNames.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.RefreshInterval.get -> System.TimeSpan
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.RefreshInterval.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.VaultUri.get -> System.Uri?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.VaultUri.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.Algorithm.get -> SharedKernel.Cryptography.Signing.SignatureAlgorithm?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.Algorithm.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.AzureKeyVaultSigningKeyOptions() -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.KeyName.get -> string?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.KeyName.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.KeyVersion.get -> string?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions.KeyVersion.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyProvider
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyProvider.AzureKeyVaultSigningKeyProvider(Microsoft.Extensions.Options.IOptions<SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions!>! options, Azure.Security.KeyVault.Keys.KeyClient! keyClient, System.TimeProvider! timeProvider) -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyProvider.GetSigningKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SigningKey?>
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.AzureKeyVaultSigningOptions() -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.Keys.get -> System.Collections.Generic.Dictionary<string!, SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningKeyOptions!>!
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.Keys.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.RefreshInterval.get -> System.TimeSpan
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.RefreshInterval.set -> void
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.VaultUri.get -> System.Uri?
+SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.VaultUri.set -> void
+static SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions.AddAzureKeyVaultEncryption(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions.AddAzureKeyVaultSigning(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultEncryptionOptions.SectionName.get -> string!
+static SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultSigningOptions.SectionName.get -> string!
