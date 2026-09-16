@@ -4,57 +4,44 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Persistence.EfCore.Encryption;
 
 /// <summary>
-/// No-op implementation of <see cref="ISymmetricEncryptionService"/> used when
+/// No-op implementation of <see cref="ISynchronousSymmetricEncryptionService"/> used when
 /// <c>EfCorePersistenceBuilder.WithEncryption()</c> was not called.
 /// Should never be invoked because <c>EncryptionOptions.Enabled</c> defaults to <see langword="false"/>,
 /// which causes <see cref="EncryptedValueConverter"/> to pass through without calling this service.
 /// </summary>
-/// <remarks>
-/// <b>P-491/WO-081:</b> every member below gained a required <c>associatedData</c> parameter when
-/// <c>01.Core</c>'s <see cref="ISymmetricEncryptionService"/> made AAD mandatory — this type never
-/// reaches its cryptographic core (every member throws unconditionally), so the new parameter is
-/// accepted and ignored, mirroring the pre-existing behavior exactly.
-/// </remarks>
-internal sealed class NullSymmetricEncryptionService : ISymmetricEncryptionService
+/// <remarks>Every member throws <see cref="InvalidOperationException"/>.</remarks>
+internal sealed class NullSymmetricEncryptionService : ISynchronousSymmetricEncryptionService
 {
     /// <summary>Gets the singleton instance.</summary>
     public static readonly NullSymmetricEncryptionService Instance = new();
 
+    private const string NotRegisteredMessage =
+        "Field-level encryption is not configured. Call EfCorePersistenceBuilder.WithEncryption(...) " +
+        "before enabling EncryptionOptions.Enabled.";
+
     private NullSymmetricEncryptionService() { }
 
-    private const string NotRegisteredMessage =
-        "ISymmetricEncryptionService is not registered. Call AddSharedKernelCryptography() " +
-        "before using field-level encryption.";
-
     /// <inheritdoc />
-    public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData) =>
+    public EncryptedPayload Encrypt(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> associatedData) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 
     /// <inheritdoc />
-    public ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) =>
+    public Result<byte[]> Decrypt(EncryptedPayload payload, ReadOnlySpan<byte> associatedData) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 
     /// <inheritdoc />
-    public Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData) =>
+    public string EncryptToString(string plaintext, ReadOnlySpan<byte> associatedData) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 
     /// <inheritdoc />
-    public ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) =>
+    public Result<string> DecryptToString(string encoded, ReadOnlySpan<byte> associatedData) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 
     /// <inheritdoc />
-    public string EncryptToString(string plaintext, byte[] associatedData) =>
+    public bool IsEncryptedWithCurrentKey(EncryptedPayload payload) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 
     /// <inheritdoc />
-    public ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) =>
-        throw new InvalidOperationException(NotRegisteredMessage);
-
-    /// <inheritdoc />
-    public Result<string> DecryptToString(string encoded, byte[] associatedData) =>
-        throw new InvalidOperationException(NotRegisteredMessage);
-
-    /// <inheritdoc />
-    public ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) =>
+    public Result<EncryptedPayload> ReEncrypt(EncryptedPayload payload, ReadOnlySpan<byte> associatedData) =>
         throw new InvalidOperationException(NotRegisteredMessage);
 }

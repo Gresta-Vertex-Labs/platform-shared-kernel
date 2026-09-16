@@ -48,6 +48,25 @@ public sealed class EncryptionOptions
     /// Old key versions must remain present until all rows encrypted with them have been rotated.
     /// </summary>
     public Dictionary<string, string> Keys { get; set; } = [];
+
+    /// <summary>
+    /// TEMPORARY MIGRATION SETTING. When <see langword="true"/>, a stored value in an encrypted column that is not
+    /// an encrypted payload is returned unchanged instead of throwing. Default is <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Enable this only while migrating a column that already holds unencrypted data: new and updated values are
+    /// still encrypted, and re-saving each row (for example with <c>IEncryptionRotationJob</c>) encrypts the rest.
+    /// Turn it off as soon as every row is encrypted.
+    /// </para>
+    /// <para>
+    /// <strong>SECURITY:</strong> while enabled, anyone who can write to the database can plant arbitrary
+    /// plaintext that the application reads as if it had been decrypted, bypassing AES-GCM integrity entirely.
+    /// With the default (<see langword="false"/>), such a value fails closed with a
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>.
+    /// </para>
+    /// </remarks>
+    public bool AllowUnencryptedValues { get; set; }
 }
 
 /// <summary>
@@ -79,6 +98,15 @@ internal sealed class EncryptionOptionsValidator : IValidateOptions<EncryptionOp
 
         foreach (var (version, base64Key) in options.Keys)
         {
+            // The version becomes the key id recorded in every stored payload.
+            if (string.IsNullOrWhiteSpace(version)
+                || System.Text.Encoding.UTF8.GetByteCount(version) > SharedKernel.Cryptography.Symmetric.CryptographicKey.MaxIdLength)
+            {
+                failures.Add(
+                    $"EncryptionOptions.Keys version '{version}' must be non-whitespace and at most " +
+                    $"{SharedKernel.Cryptography.Symmetric.CryptographicKey.MaxIdLength} UTF-8 bytes.");
+            }
+
             var buffer = new byte[64];
             if (!Convert.TryFromBase64String(base64Key, buffer, out var bytesWritten) || bytesWritten != 32)
             {

@@ -30,12 +30,9 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// Properties without the <c>"SharedKernel:Encrypt"</c> annotation are untouched.
 /// </para>
 /// <para>
-/// <strong>P-227, simplified per D-109/P-448:</strong> This convention resolves
-/// <see cref="ISymmetricEncryptionService"/> from DI alongside the existing
-/// <see cref="IEncryptionVersionOverride"/>, and passes both to each
-/// <see cref="EncryptedValueConverter"/> it constructs. It no longer resolves
-/// <see cref="IEncryptionKeyProvider"/> at all — <see cref="EncryptedValueConverter"/> stopped
-/// needing one directly (D-108).
+/// This convention passes the context's <see cref="ISynchronousSymmetricEncryptionService"/> and
+/// <see cref="IEncryptionVersionOverride"/> to each <see cref="EncryptedValueConverter"/> it constructs. It never
+/// resolves a key provider itself.
 /// </para>
 /// <para>
 /// <strong>Associated data (AAD) derivation, P-491/D-128/WO-081:</strong> for every
@@ -58,29 +55,25 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
 {
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly IEncryptionVersionOverride _versionOverride;
-    private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
+    private readonly ISynchronousSymmetricEncryptionService? _symmetricEncryptionService;
 
     /// <summary>
     /// Initialises a new <see cref="EncryptionModelConvention"/>.
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor supplied by DI or a null-object fallback.</param>
     /// <param name="symmetricEncryptionService">
-    /// The cryptographic service used by <see cref="EncryptedValueConverter"/> for AES-256-GCM operations
-    /// (P-227). May be <see langword="null"/> when <c>.WithEncryption()</c> was not called and the
-    /// converter operates in disabled pass-through mode.
+    /// The synchronous AES-256-GCM service used by every <see cref="EncryptedValueConverter"/>. May be
+    /// <see langword="null"/> when <c>.WithEncryption()</c> was not called and the converter operates in
+    /// disabled pass-through mode.
     /// </param>
     /// <param name="versionOverride">
-    /// Scoped rotation-target-version accessor, resolved via DI, or the shared no-op instance when
+    /// Rotation-target-version accessor, resolved via DI, or the shared no-op instance when
     /// <c>.WithEncryption()</c> was not called. Passed to every <see cref="EncryptedValueConverter"/>
     /// this convention constructs.
     /// </param>
-    /// <remarks>
-    /// <strong>D-109/P-448 (breaking):</strong> this constructor no longer takes an
-    /// <see cref="IEncryptionKeyProvider"/> parameter.
-    /// </remarks>
     public EncryptionModelConvention(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null,
         IEncryptionVersionOverride? versionOverride = null)
     {
         _optionsMonitor = optionsMonitor;
@@ -110,16 +103,17 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                 }
 
                 var associatedData = ResolveAssociatedData(property);
+                var propertyName = $"{entityType.ShortName()}.{property.Name}";
 
                 ValueConverter converter;
                 if (_symmetricEncryptionService is not null)
                 {
-                    // P-227, simplified per D-109: full delegation to ISymmetricEncryptionService.
                     converter = new EncryptedValueConverter(
                         _optionsMonitor,
                         _symmetricEncryptionService,
                         associatedData,
-                        _versionOverride);
+                        _versionOverride,
+                        propertyName);
                 }
                 else
                 {
@@ -130,7 +124,8 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                         _optionsMonitor,
                         NullSymmetricEncryptionService.Instance,
                         associatedData,
-                        _versionOverride);
+                        _versionOverride,
+                        propertyName);
                 }
 
                 property.SetValueConverter(converter);

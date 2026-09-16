@@ -50,7 +50,7 @@ public abstract class SharedKernelDbContext : DbContext
     private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor> _additionalInterceptors;
     private readonly IOptionsMonitor<EncryptionOptions> _encryptionOptions;
     private readonly IEncryptionVersionOverride _encryptionVersionOverride;
-    private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
+    private readonly ISynchronousSymmetricEncryptionService? _symmetricEncryptionService;
     private readonly bool _auditTrailEnabled;
 
     /// <summary>
@@ -78,18 +78,10 @@ public abstract class SharedKernelDbContext : DbContext
     /// <see cref="EncryptionOptions.CurrentVersion"/>.
     /// </param>
     /// <param name="symmetricEncryptionService">
-    /// Optional cryptographic service used by <see cref="EncryptedValueConverter"/> for AES-256-GCM
-    /// operations (P-227). Resolved from DI when <c>AddSharedKernelCryptography()</c> and
-    /// <c>.WithEncryption()</c> have been called. When <see langword="null"/>, the converter operates
-    /// in disabled pass-through mode.
-    /// </param>
-    /// <param name="encryptionKeyProvider">
-    /// Retained for constructor source-compatibility only (D-109/P-448) — as of P-448 this value is
-    /// no longer forwarded to <see cref="EncryptionModelConvention"/>, which stopped needing an
-    /// <see cref="IEncryptionKeyProvider"/> directly (D-108). Downstream contexts may keep declaring
-    /// and forwarding this parameter without any behavior change; <c>01.Core</c>'s
-    /// <c>AesGcmEncryptionService</c> still resolves <see cref="IEncryptionKeyProvider"/> from DI on
-    /// its own.
+    /// Optional synchronous AES-256-GCM service used by <see cref="EncryptedValueConverter"/>. When the context
+    /// is constructed by DI after <c>.WithEncryption()</c>, the service this package registers under its own
+    /// internal keyed-DI slot always takes precedence over this argument; the argument is the fallback for hand
+    /// construction (tests). When neither is available, the converter operates in disabled pass-through mode.
     /// </param>
     /// <param name="auditTrailMarker">
     /// WO-071/P-457. Optional marker resolved from DI — present only when
@@ -98,7 +90,7 @@ public abstract class SharedKernelDbContext : DbContext
     /// <see cref="AuditRecordEntityConfiguration"/> so <c>AuditRecord</c> becomes part of this
     /// context's model. A downstream context that wants the audit trail must declare this parameter
     /// in its own constructor and forward it to <c>base(...)</c>, exactly like
-    /// <paramref name="symmetricEncryptionService"/>/<paramref name="encryptionKeyProvider"/> already
+    /// <paramref name="encryptionOptions"/>/<paramref name="encryptionVersionOverride"/> already
     /// require for <c>.WithEncryption()</c>. Defaults to <see langword="null"/> — every existing
     /// downstream context is unaffected. See <see cref="AuditTrailFeatureMarker"/>'s remarks for why
     /// a marker type is used instead of a raw <see langword="bool"/> (DI cannot resolve a primitive
@@ -112,8 +104,7 @@ public abstract class SharedKernelDbContext : DbContext
         IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
-        ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null,
+        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null,
         AuditTrailFeatureMarker? auditTrailMarker = null)
         : base(options)
     {
@@ -123,20 +114,15 @@ public abstract class SharedKernelDbContext : DbContext
         _additionalInterceptors = additionalInterceptors?.ToList() ?? [];
         _encryptionOptions = encryptionOptions ?? NullOptionsMonitor<EncryptionOptions>.Instance;
         _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
-        // D-131/P-498/WO-081: this package's own persistence-scoped ISymmetricEncryptionService,
-        // registered by EfCorePersistenceBuilder.WithEncryption() under a package-internal keyed-DI
-        // slot (never the ambient unkeyed slot), ALWAYS wins over whatever this constructor
-        // parameter happens to carry when it is resolvable — a downstream context that mirrors this
-        // base constructor's full parameter list would otherwise have symmetricEncryptionService
-        // silently auto-populated by DI from an unrelated general-purpose
-        // AddSharedKernelCryptography() registration, reintroducing the exact registration-order
-        // collision this phase closes. The explicit parameter remains the fallback for hand
-        // construction (tests) and for the "no .WithEncryption() call at all" pass-through case,
-        // where no ApplicationServiceProvider/keyed registration exists at all.
+        // This package's own encryption service, registered by EfCorePersistenceBuilder.WithEncryption()
+        // under a package-internal keyed-DI slot (never the ambient unkeyed slot), ALWAYS wins over
+        // whatever this constructor parameter carries when it is resolvable — a downstream context that
+        // mirrors this base constructor's full parameter list would otherwise have
+        // symmetricEncryptionService silently auto-populated by DI from an unrelated general-purpose
+        // registration. The explicit parameter remains the fallback for hand construction (tests) and
+        // for the "no .WithEncryption() call at all" pass-through case.
         _symmetricEncryptionService =
             ResolveKeyedSymmetricEncryptionService(options) ?? symmetricEncryptionService;
-        // D-109/P-448: encryptionKeyProvider is intentionally not stored — it is retained on this
-        // constructor's signature only for source-compatibility (see the parameter's XML docs above).
         _auditTrailEnabled = auditTrailMarker is not null;
 
         // WO-051/P-322: initialised from AuditInterceptor's own constructor-captured IUserContext —
@@ -316,9 +302,8 @@ public abstract class SharedKernelDbContext : DbContext
     /// <inheritdoc />
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // P-227: Pass ISymmetricEncryptionService to the convention so EncryptedValueConverter uses
-        // the delegated crypto path. D-109/P-448: IEncryptionKeyProvider is no longer forwarded here
-        // — EncryptionModelConvention/EncryptedValueConverter stopped needing it directly (D-108).
+        // Pass the synchronous encryption service to the convention so every EncryptedValueConverter
+        // it builds delegates AES-256-GCM to it.
         configurationBuilder.Conventions.Add(
             _ => new EncryptionModelConvention(
                 _encryptionOptions,
@@ -328,19 +313,18 @@ public abstract class SharedKernelDbContext : DbContext
         base.ConfigureConventions(configurationBuilder);
     }
 
-    // D-131/P-498/WO-081: resolves this package's own persistence-scoped ISymmetricEncryptionService
-    // from the CURRENT DI scope's IServiceProvider — the same one AddDbContext<TContext> used to
-    // construct this instance — via the keyed-DI slot EfCorePersistenceBuilder.WithEncryption()
-    // registers (PersistenceEncryptionKeys.SymmetricEncryptionServiceKey). Never the ambient unkeyed
-    // ISymmetricEncryptionService slot. CoreOptionsExtension.ApplicationServiceProvider is EF Core's
-    // own public mechanism for a DbContext to reach the container that constructed it; it is null
-    // for a hand-built DbContextOptions (e.g. every existing unit test in this package that
-    // constructs a SharedKernelDbContext subclass directly), in which case this returns null and the
-    // caller falls back to whatever was explicitly passed to the constructor.
-    private static ISymmetricEncryptionService? ResolveKeyedSymmetricEncryptionService(DbContextOptions options)
+    // Resolves this package's own ISynchronousSymmetricEncryptionService from the DI scope's
+    // IServiceProvider — the same one AddDbContext<TContext> used to construct this instance — via the
+    // keyed-DI slot EfCorePersistenceBuilder.WithEncryption() registers
+    // (PersistenceEncryptionKeys.SymmetricEncryptionServiceKey). Never the ambient unkeyed slot.
+    // CoreOptionsExtension.ApplicationServiceProvider is EF Core's own public mechanism for a DbContext
+    // to reach the container that constructed it; it is null for a hand-built DbContextOptions (e.g.
+    // unit tests that construct a SharedKernelDbContext subclass directly), in which case this returns
+    // null and the caller falls back to whatever was explicitly passed to the constructor.
+    private static ISynchronousSymmetricEncryptionService? ResolveKeyedSymmetricEncryptionService(DbContextOptions options)
     {
         var applicationServiceProvider = options.FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider;
-        return applicationServiceProvider?.GetKeyedService<ISymmetricEncryptionService>(
+        return applicationServiceProvider?.GetKeyedService<ISynchronousSymmetricEncryptionService>(
             PersistenceEncryptionKeys.SymmetricEncryptionServiceKey);
     }
 }

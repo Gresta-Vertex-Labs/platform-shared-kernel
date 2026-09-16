@@ -26,7 +26,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 ///   <c>"SharedKernel:Encrypt"</c>-annotated property.</item>
 ///   <item>For each such entity type, load rows in batches of <see cref="BatchSize"/>.</item>
 ///   <item>For each row, mark every encrypted property as modified (the converter decrypts the
-///   existing value transparently on read, using whatever version prefix is actually stored).</item>
+///   existing value transparently on read, using whatever key id the stored payload records).</item>
 ///   <item>Save the batch with <see cref="IEncryptionVersionOverride"/> directing the converter to
 ///   re-encrypt with <paramref name="toVersion"/>, then update counters.</item>
 /// </list>
@@ -87,8 +87,8 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     /// <remarks>
     /// <para>
     /// <strong>Per-row detection limitation:</strong> <see cref="Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry.CurrentValue"/>
-    /// always reflects the <em>decrypted</em> (CLR-side) value — the stored ciphertext's
-    /// <c>"v{version}:"</c> prefix is not observable through any public EF Core API once the
+    /// always reflects the <em>decrypted</em> (CLR-side) value — the key id recorded in the stored
+    /// payload is not observable through any public EF Core API once the
     /// entity has been materialized. Consequently every row in every batch of every encrypted
     /// entity type is unconditionally marked as modified and re-encrypted with
     /// <paramref name="toVersion"/>. <paramref name="fromVersion"/> is retained for API
@@ -96,7 +96,7 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     /// </para>
     /// <para>
     /// This is safe to run repeatedly: <see cref="EncryptedValueConverter"/> decrypts using the
-    /// version prefix recorded in the existing ciphertext (looked up in
+    /// key id recorded in the existing payload (looked up in
     /// <c>EncryptionOptions.Keys</c>) regardless of <see cref="EncryptionOptions.CurrentVersion"/>,
     /// so plaintext round-trips correctly even when a row is rotated multiple times in a row.
     /// </para>
@@ -159,7 +159,7 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
                             var entry = batchContext.Entry(entity);
 
                             // CurrentValue reflects the decrypted (CLR-side) value — the stored
-                            // ciphertext's version prefix is not observable post-materialization.
+                            // payload's key id is not observable post-materialization.
                             // Unconditionally mark every encrypted property as modified so the
                             // ValueConverter re-encrypts with toVersion (via IEncryptionVersionOverride)
                             // on save, regardless of which version it was previously stored with.

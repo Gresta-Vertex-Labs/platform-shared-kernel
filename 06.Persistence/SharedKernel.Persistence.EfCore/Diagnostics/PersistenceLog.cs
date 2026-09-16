@@ -138,4 +138,24 @@ internal static partial class PersistenceLog
         Message = "Encryption rotation from version '{FromVersion}' to '{ToVersion}' completed: {RowsProcessed} processed, {RowsRotated} rotated, {RowsFailed} failed.")]
     internal static partial void EncryptionRotationCompleted(
         ILogger logger, string fromVersion, string toVersion, int rowsProcessed, int rowsRotated, int rowsFailed);
+
+    /// <summary>
+    /// Logged by <c>EncryptionKeyPreWarmingHostedService</c> when a periodic refresh of the current key from the
+    /// external key provider fails. The previously warmed keys stay in use. Never logs key material.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 11,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the current encryption key from the external key provider failed; the last warmed keys remain in use.")]
+    internal static partial void EncryptionKeyRefreshFailed(ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logged by <c>PreWarmedEncryptionKeyProvider</c> when a background warm of a key id that a stored payload
+    /// referenced fails. The key id is deliberately not logged: it is read from stored data, which may be forged.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 12,
+        Level = LogLevel.Warning,
+        Message = "Warming an encryption key referenced by a stored value failed; decrypting values that use it keeps failing until a warm succeeds.")]
+    internal static partial void EncryptionKeyOnDemandWarmFailed(ILogger logger, Exception exception);
 }

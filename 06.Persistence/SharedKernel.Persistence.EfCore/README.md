@@ -64,7 +64,11 @@ Consumer code injects `OrderDbContext` exactly as before — pooling and the per
 
 ## Field-level encryption
 
-**(P-498/WO-081) `.WithEncryption()` now builds its own persistence-scoped `ISymmetricEncryptionService` internally — `AddSharedKernelCryptography()` is NOT required for this config-backed default path.** It never resolves the ambient, unkeyed `IEncryptionKeyProvider`/`ISymmetricEncryptionService` slot, so an unrelated general-purpose `AddSharedKernelCryptography()` call (or a KMS-key-provider registration made for other purposes, e.g. `13.ServiceDefaults`'s `AddSharedKernelKeyVaultKeyProvider`) elsewhere in the same container can never silently win or lose this package's own encryption wiring.
+`.WithEncryption()` builds its own synchronous encryption pipeline — a `SynchronousAesGcmEncryptionService` over the config-backed key provider — because EF Core value converters have no asynchronous path. `AddSharedKernelCryptography()` is NOT required for this path. It never resolves the ambient, unkeyed key-provider or encryption-service slots, so an unrelated general-purpose crypto registration elsewhere in the same container can never silently win or lose this package's own encryption wiring.
+
+Each encrypted column stores the canonical `EncryptedPayload.ToString()` encoding (Base64Url, recording the key id). The `Keys` dictionary key is that key id. Reading fails closed: a stored value that is not a well-formed payload (plaintext written straight to the database, a truncated or altered value) throws `CryptographicException` naming the property, never the value; a payload whose key id is not configured throws `EncryptionKeyNotFoundException`; a payload that fails authentication throws `CryptographicException`.
+
+**Migrating a column that already holds unencrypted data:** set `EncryptionOptions.AllowUnencryptedValues = true` temporarily. Non-payload values are then returned unchanged while writes are still encrypted; re-save every row (for example with your `IEncryptionRotationJob`), then turn the setting off. While it is on, anyone with database write access can plant plaintext the application reads as if it were decrypted.
 
 ```csharp
 services
@@ -87,21 +91,26 @@ services
 
 ### KMS-backed field-level encryption (opt-in, `.WithExternalEncryptionKeyProvider<TProvider>()`)
 
-Directs the SAME field-level encryption pipeline at a KMS/HSM-backed `IEncryptionKeyProvider` (e.g. `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider`) instead of the config-backed default — the ONLY sanctioned way to do so; hand-wiring a raw KMS provider directly would either block a thread per encrypted-column read/write (EF Core's `ValueConverter` has no async path) or throw `NotSupportedException` outright once `01.Core`'s `ISynchronousEncryptionKeyProvider` capability gate is in effect.
+Directs the SAME field-level encryption pipeline at a KMS/HSM-backed `IEncryptionKeyProvider` (e.g. `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider`) instead of the config-backed default. Such a provider is asynchronous only, and the value converter needs an `ISynchronousEncryptionKeyProvider`; this method bridges the two by wrapping `TProvider` in a pre-warmed in-memory provider whose keys are loaded asynchronously ahead of time.
 
 ```csharp
-// The consumer registers TProvider itself — e.g. via 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider,
-// or any other unkeyed registration. This package resolves it by type, never assumes a specific source.
-services.AddSharedKernelKeyVaultKeyProvider(configuration);   // registers AzureKeyVaultEncryptionKeyProvider
+// The consumer registers TProvider itself; this package resolves it by type.
+services.AddSharedKernelCryptography(configuration)
+    .AddAzureKeyVaultEncryption(configuration);   // registers AzureKeyVaultEncryptionKeyProvider as itself
 
 services
     .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
     .WithEncryption(enc => enc.Enabled = true)                          // MUST come first
-    .WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>()
+    .WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>(refreshInterval: TimeSpan.FromMinutes(5))
     .Build();
 ```
 
-This additionally registers a startup readiness gate (`EncryptionKeyPreWarmingHostedService`) that warms the current key once, at boot, before the host accepts traffic — never a per-request blocking KMS call — and a fifth interceptor (`EncryptionKeyPreWarmingInterceptor`) that keeps the warm cache current across both writes (`SavingChangesAsync`) and reads (`ReaderExecutingAsync`, EF Core's genuine async pre-materialization hook — the piece that actually protects a query-only/read-replica service, which a write-only pre-warm hook would leave completely uncovered).
+This additionally registers:
+
+- **`EncryptionKeyPreWarmingHostedService`** — warms the current key at boot, before the host accepts traffic (a failure fails startup), then refreshes it every `refreshInterval` (default 5 minutes, allowed 1 second to 1 day) on a `PeriodicTimer` driven by the registered `TimeProvider`. A key rotated at the key service (e.g. `AzureKeyVaultEncryptionKeyProvider.RotateDataKeyAsync`) becomes current without a restart, and previously warmed keys are kept so existing rows still decrypt. A failed refresh is logged (EventId 6011) and the last warmed keys stay in use.
+- **`EncryptionKeyPreWarmingInterceptor`** — a fifth interceptor that warms before writes (`SavingChangesAsync`) and reads (`ReaderExecutingAsync`, EF Core's async pre-materialization hook — the piece that protects a query-only/read-replica service).
+
+A row encrypted under a key id that is not warm (an older key, or one another replica rotated in) throws `EncryptionKeyNotFoundException` on first read, never blocking on the key service, and schedules a background warm of that id so a later read succeeds. Because key ids come from stored data that could be forged, on-demand warms are deduplicated per id, capped at 64 distinct ids in flight, skipped for invalid key ids, and an id the key service reports as unknown is not looked up again for `refreshInterval`. A failed on-demand warm is logged (EventId 6012) without the key id.
 
 ## Configuration-section binding
 
@@ -203,7 +212,7 @@ services
     .Build();
 
 // AuditTrailFeatureMarker? must be declared on the DbContext's OWN constructor and forwarded to base(...) —
-// the same pattern .WithEncryption() already requires for ISymmetricEncryptionService?/IEncryptionKeyProvider?.
+// the same pattern .WithEncryption() already requires for its IOptionsMonitor<EncryptionOptions>?/IEncryptionVersionOverride? parameters.
 // A raw bool flag cannot do this: DI cannot auto-resolve a primitive constructor parameter, only a registered type.
 public sealed class OrderDbContext : SharedKernelDbContext
 {

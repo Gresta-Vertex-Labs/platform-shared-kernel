@@ -4,7 +4,7 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Persistence.EfCore.Encryption;
 
 /// <summary>
-/// Thrown by <see cref="EncryptedValueConverter"/> when the version prefix found in stored
+/// Thrown by <see cref="EncryptedValueConverter"/> when the key id recorded in a stored
 /// ciphertext is not present in <c>EncryptionOptions.Keys</c>.
 /// </summary>
 /// <remarks>

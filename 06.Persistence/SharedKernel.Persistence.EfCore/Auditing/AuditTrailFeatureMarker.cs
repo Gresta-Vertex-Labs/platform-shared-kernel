@@ -11,14 +11,14 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// by DI (present only when registered — a singleton, stateless class), to decide whether
 /// <c>OnModelCreating</c> applies <see cref="AuditRecordEntityConfiguration"/> to the model. A plain
 /// <see langword="bool"/> flag could not serve this purpose: DI cannot resolve a raw primitive
-/// parameter automatically, so a marker TYPE — resolvable the same way
-/// <c>ISymmetricEncryptionService?</c>/<c>IEncryptionKeyProvider?</c> already are for
+/// parameter automatically, so a marker TYPE — resolvable the same way the optional
+/// <c>IOptionsMonitor&lt;EncryptionOptions&gt;?</c>/<c>IEncryptionVersionOverride?</c> parameters already are for
 /// <c>.WithEncryption()</c> — is the mechanism this codebase already uses for "was this optional
 /// feature turned on" signals that must reach a DbContext's own constructor.
 /// </para>
 /// <para>
 /// A downstream context that wants the audit trail must declare this parameter in its own
-/// constructor and forward it to <c>base(...)</c> — exactly like the encryption services already
+/// constructor and forward it to <c>base(...)</c> — exactly like the encryption parameters already
 /// require.
 /// </para>
 /// </remarks>
