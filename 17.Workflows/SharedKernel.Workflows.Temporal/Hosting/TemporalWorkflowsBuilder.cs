@@ -243,13 +243,6 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
             ?? throw new InvalidOperationException(
                 WorkflowErrors.InvalidWorkflowRegistration($"{TemporalOptions.SectionName}:{nameof(TemporalOptions.Namespace)} is not configured").Message);
 
-        if (_payloadEncryption && string.IsNullOrWhiteSpace(_section[nameof(TemporalOptions.EncryptionKeyName)]))
-        {
-            throw new InvalidOperationException(
-                WorkflowErrors.PayloadCodecFailure(
-                    $"WithPayloadEncryption() requires {TemporalOptions.SectionName}:{nameof(TemporalOptions.EncryptionKeyName)} to be configured").Message);
-        }
-
         OptionsBuilder<TemporalClientConnectOptions> connectBuilder = _services.AddTemporalClient(targetHost, @namespace);
 
         bool enableOpenTelemetry = _openTelemetry;

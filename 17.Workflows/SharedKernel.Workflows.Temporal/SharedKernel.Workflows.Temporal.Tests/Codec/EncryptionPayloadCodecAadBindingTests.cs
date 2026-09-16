@@ -1,8 +1,6 @@
 using FluentAssertions;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Cryptography;
 using SharedKernel.Workflows.Temporal.Codec;
 using Temporalio.Api.Common.V1;
@@ -11,45 +9,12 @@ using Temporalio.Converters;
 namespace SharedKernel.Workflows.Temporal.Tests.Codec;
 
 /// <summary>
-/// T-17–T-20 (P-501/WO-081) — <see cref="EncryptionPayloadCodec"/>'s async migration and
-/// associated-data (AAD) binding to the resolved Temporal <c>WorkflowId</c>.
+/// T-18–T-20 (P-501/WO-081) — <see cref="EncryptionPayloadCodec"/>'s associated-data (AAD) binding
+/// to the resolved Temporal <c>WorkflowId</c>.
 /// </summary>
 public sealed class EncryptionPayloadCodecAadBindingTests
 {
     private const string Namespace = "test-namespace";
-
-    /// <summary>
-    /// A decorator whose synchronous <see cref="ISymmetricEncryptionService"/> members throw
-    /// unconditionally — simulating the post-P-492 state once a KMS-backed
-    /// <c>IEncryptionKeyProvider</c> is registered, where <c>AesGcmEncryptionService</c>'s retained
-    /// sync members throw <see cref="NotSupportedException"/> rather than silently blocking a
-    /// thread. Every async member delegates to the real inner service unchanged.
-    /// </summary>
-    private sealed class AsyncOnlyEncryptionService(ISymmetricEncryptionService inner) : ISymmetricEncryptionService
-    {
-        private static NotSupportedException SyncMemberCalled() =>
-            new("EncryptionPayloadCodec must never call a synchronous ISymmetricEncryptionService member.");
-
-        public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData) => throw SyncMemberCalled();
-
-        public Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData) => throw SyncMemberCalled();
-
-        public string EncryptToString(string plaintext, byte[] associatedData) => throw SyncMemberCalled();
-
-        public Result<string> DecryptToString(string encoded, byte[] associatedData) => throw SyncMemberCalled();
-
-        public ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) =>
-            inner.EncryptAsync(plaintext, associatedData, ct);
-
-        public ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) =>
-            inner.DecryptAsync(payload, associatedData, ct);
-
-        public ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) =>
-            inner.EncryptToStringAsync(plaintext, associatedData, ct);
-
-        public ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) =>
-            inner.DecryptToStringAsync(encoded, associatedData, ct);
-    }
 
     private static Payload PlaintextPayload(string text)
     {
@@ -57,22 +22,6 @@ public sealed class EncryptionPayloadCodecAadBindingTests
         payload.Metadata["encoding"] = ByteString.CopyFromUtf8("json/plain");
         payload.Data = ByteString.CopyFromUtf8($"\"{text}\"");
         return payload;
-    }
-
-    // T-17 — async-migration proof: a double whose sync Encrypt/Decrypt throw unconditionally must
-    // still round-trip successfully through EncodeAsync/DecodeAsync, proving the codec calls only the
-    // *Async members.
-    [Fact]
-    public async Task EncodeThenDecode_AgainstSyncThrowingEncryptionService_StillRoundTrips()
-    {
-        var syncThrowing = new AsyncOnlyEncryptionService(new FakeSymmetricEncryptionService());
-        var codec = new EncryptionPayloadCodec(syncThrowing, NullLogger<EncryptionPayloadCodec>.Instance);
-
-        Payload original = PlaintextPayload("async-only-round-trip");
-        IReadOnlyCollection<Payload> encoded = await codec.EncodeAsync([original]);
-        IReadOnlyCollection<Payload> decoded = await codec.DecodeAsync(encoded);
-
-        decoded.Single().Should().Be(original);
     }
 
     // T-18 (headline) — a payload encoded under one WorkflowId context must fail to decode under a

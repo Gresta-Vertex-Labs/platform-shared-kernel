@@ -164,7 +164,6 @@ workflow dispatch.
 | `DefaultActivityStartToCloseTimeoutSeconds` | No | `30` | The platform default `StartToCloseTimeout` applied by `WorkflowBase.ExecuteAsync` when the caller does not override it. Temporal's raw activity options have **no** default and reject the call at runtime without one. |
 | `DefaultWorkflowExecutionTimeoutSeconds` | No | `null` | The platform default workflow execution timeout. `null` means no execution-level timeout by default. |
 | `DefaultRetryMaximumAttempts` | No | `5` | The platform default maximum retry attempts for an activity. |
-| `EncryptionKeyName` | No | `null` | The key name resolved through `IEncryptionKeyProvider`, used by `EncryptionPayloadCodec` when `.WithPayloadEncryption()` is enabled. **Required** if `.WithPayloadEncryption()` is called — `.Build()` fails otherwise. |
 | `ValidateNamespaceOnStart` | No | `true` | Whether the configured namespace is validated against the live Temporal service at startup. |
 
 ---
@@ -369,8 +368,8 @@ Two costs that come with it, stated rather than hidden:
   are opaque ciphertext in the Temporal Web UI and CLI. Operators lose the ability to read workflow
   arguments while debugging directly through those tools unless a codec server is additionally deployed
   (out of scope for this package).
-- **A key-retention window measured in months, not days.** The encryption key version travels in the
-  encoded payload's own metadata, so key rotation follows the same versioned-ciphertext discipline
+- **A key-retention window measured in months, not days.** The encryption key id travels inside every
+  encoded payload, so key rotation follows the same versioned-ciphertext discipline
   `06.Persistence`'s `EncryptedValueConverter` uses for database columns — but the retention requirement
   is materially longer here. A workflow started under key `v1` will still replay under key `v1` on its
   **final** day, which for a long-running workflow (weeks or months after start) can be far longer than
@@ -380,7 +379,7 @@ Two costs that come with it, stated rather than hidden:
 
 A payload not carrying this codec's own encoding marker passes through unchanged on decode (the
 standard Temporal codec-chain convention, so multiple codecs can coexist). A payload that **does**
-carry the marker but fails to decrypt (tamper, wrong key, unknown key id, or a mismatched
+carry the marker but is malformed or fails to decrypt (tamper, wrong key, unknown key id, or a mismatched
 associated-data binding — see below) throws rather than silently passing the ciphertext through as
 plaintext, or silently returning ciphertext as if it had been decoded —
 `WorkflowErrors.PayloadCodecFailure` surfaces in every one of those failure directions, unchanged
@@ -413,16 +412,23 @@ all or supplies one whose `WorkflowId` is `null` (the SDK's own documented "stan
 shape). Either way the codec falls back to an empty associated-data binding rather than throwing or
 rendering the payload permanently undecodable outside that one execution's context.
 
-### Async migration (async members only, never the retained sync bridge)
+### Registration and payload format
 
-`EncodeAsync`/`DecodeAsync` call only `ISymmetricEncryptionService.EncryptAsync`/`DecryptAsync` —
-never the retained synchronous `Encrypt`/`Decrypt` members. This was a required fix, not a performance
-nicety: the sync members are gated behind `01.Core`'s `EncryptionKeyProviderCapabilities
-.IsGenuinelySynchronous` check and throw `NotSupportedException` outright against any
-`IEncryptionKeyProvider` not explicitly marked `ISynchronousEncryptionKeyProvider` — which a genuine
-KMS/HSM-backed provider must never claim. Before this migration the codec's `Encode`/`Decode` called
-the sync members wrapped in `Task.FromResult` with no genuine `await`; combined with a KMS-backed key
-provider, that path would fail unconditionally the moment such a provider was registered.
+`.WithPayloadEncryption()` resolves `ISymmetricEncryptionService` from DI, which is async-only, so a
+KMS/HSM-backed `IEncryptionKeyProvider` works unchanged. Register it alongside the key provider:
+
+```csharp
+builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
+builder.Services.AddSharedKernelCryptography(builder.Configuration)
+    .AddSymmetricEncryption();
+```
+
+An encoded payload carries exactly one metadata entry, `encoding: binary/encrypted-sk-v2`, and its
+`data` is `01.Core`'s canonical `EncryptedPayload.ToBytes()` layout —
+`[version 0x01][key id length][key id][nonce][tag][ciphertext]` — read back with
+`EncryptedPayload.TryParse`. A payload carrying the marker whose data does not parse throws
+`WorkflowErrors.PayloadCodecFailure`, like any other decode failure. The marker is versioned so a future
+layout change can never be misread as this one.
 
 ---
 

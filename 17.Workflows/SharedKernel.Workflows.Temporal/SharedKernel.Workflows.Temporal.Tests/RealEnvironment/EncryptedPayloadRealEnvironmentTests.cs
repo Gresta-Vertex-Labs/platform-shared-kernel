@@ -28,17 +28,6 @@ public sealed class EncryptedPayloadRealEnvironmentTests(TemporalTestFixture fix
     private const string EncryptedTaskQueue = "sk-workflows-tests-encrypted-queue";
     private const string PlainTaskQueue = "sk-workflows-tests-plain-queue";
 
-    private sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
-    {
-        private readonly CryptographicKey _key = new("v1", Enumerable.Repeat((byte)7, 32).ToArray());
-
-        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
-            new(_key);
-
-        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-            new(keyId == _key.Id ? _key : null);
-    }
-
     private ServiceProvider? _encryptedProvider;
     private ServiceProvider? _plainProvider;
     private List<IHostedService> _encryptedHostedServices = [];
@@ -51,15 +40,15 @@ public sealed class EncryptedPayloadRealEnvironmentTests(TemporalTestFixture fix
             {
                 ["Workflows:Temporal:TargetHost"] = fixture.Environment.Client.Connection.Options.TargetHost,
                 ["Workflows:Temporal:Namespace"] = fixture.Environment.Client.Options.Namespace,
-                ["Workflows:Temporal:EncryptionKeyName"] = "v1",
             })
             .Build();
 
         var encryptedServices = new ServiceCollection();
         encryptedServices.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         encryptedServices.AddSingleton<IClock>(new FakeClock());
-        encryptedServices.AddSharedKernelCryptography(BaseConfiguration());
-        encryptedServices.AddSingleton<IEncryptionKeyProvider, FakeEncryptionKeyProvider>();
+        encryptedServices.AddSingleton<IEncryptionKeyProvider>(
+            new StaticEncryptionKeyProvider("v1", [new CryptographicKey("v1", Enumerable.Repeat((byte)7, 32).ToArray())]));
+        encryptedServices.AddSharedKernelCryptography(BaseConfiguration()).AddSymmetricEncryption();
         encryptedServices
             .AddSharedKernelTemporalWorkflows(BaseConfiguration())
             .AddWorkflow<EchoWorkflow>()

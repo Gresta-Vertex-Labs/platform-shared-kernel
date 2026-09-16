@@ -4,10 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Hosting;
 using Temporalio.Activities;
+using Temporalio.Client;
 using Temporalio.Workflows;
 
 namespace SharedKernel.Workflows.Temporal.Tests.Hosting;
@@ -15,7 +17,7 @@ namespace SharedKernel.Workflows.Temporal.Tests.Hosting;
 /// <summary>
 /// T-08 — <see cref="ITemporalWorkflowsBuilder.Build"/> composition-validation tests. A worker with
 /// zero workflows and zero activities, a duplicate task queue, a non-<c>[Workflow]</c> type,
-/// <see cref="ITemporalWorkflowsBuilder.WithPayloadEncryption"/> with no key, and
+/// <see cref="ITemporalWorkflowsBuilder.WithPayloadEncryption"/> with no encryption service, and
 /// <see cref="ITemporalWorkflowsBuilder.AddWorkflow{TWorkflow}"/> after
 /// <see cref="ITemporalWorkflowsBuilder.AsClientOnly"/> each fail at <c>Build()</c>/startup with the
 /// named error. <see cref="ITemporalWorkflowsBuilder.AsClientOnly"/> registers no
@@ -53,8 +55,6 @@ public sealed class BuildCompositionValidationTests
             ["Workflows:Temporal:Namespace"] = "default",
         })
         .Build();
-
-    private static IConfiguration ValidConfigurationWithoutEncryptionKey() => ValidConfiguration();
 
     private static ServiceCollection NewServices()
     {
@@ -112,15 +112,17 @@ public sealed class BuildCompositionValidationTests
     }
 
     [Fact]
-    public void Build_WithPayloadEncryption_NoConfiguredKey_Throws()
+    public void Build_WithPayloadEncryption_WithoutEncryptionService_FailsWhenClientOptionsResolve()
     {
         ServiceCollection services = NewServices();
-        ITemporalWorkflowsBuilder builder = services
-            .AddSharedKernelTemporalWorkflows(ValidConfigurationWithoutEncryptionKey())
+        services
+            .AddSharedKernelTemporalWorkflows(ValidConfiguration())
             .AsClientOnly()
-            .WithPayloadEncryption();
+            .WithPayloadEncryption()
+            .Build();
 
-        Action act = () => builder.Build();
+        using ServiceProvider provider = services.BuildServiceProvider();
+        Action act = () => _ = provider.GetRequiredService<IOptions<TemporalClientConnectOptions>>().Value;
 
         act.Should().Throw<InvalidOperationException>();
     }

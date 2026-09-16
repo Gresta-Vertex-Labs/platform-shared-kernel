@@ -146,12 +146,47 @@ public sealed class EncryptionPayloadCodecTests
 
         Payload tampered = encoded.Single().Clone();
         byte[] corruptedData = tampered.Data.ToByteArray();
-        corruptedData[0] ^= 0xFF;
+
+        // Flip the last byte — part of the ciphertext, so the payload still parses and the failure is
+        // a genuine AES-GCM authentication failure rather than a malformed-layout rejection.
+        corruptedData[^1] ^= 0xFF;
         tampered.Data = ByteString.CopyFrom(corruptedData);
+        EncryptedPayload.TryParse(corruptedData, out _).Should().BeTrue();
 
         Func<Task> act = () => codec.DecodeAsync([tampered]);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Encode_ProducedPayload_CarriesTheCanonicalEncryptedPayloadLayoutAndOnlyTheVersionedMarker()
+    {
+        var keyProvider = new FakeEncryptionKeyProvider("v1", NewAes256Key(1));
+        var service = new AesGcmEncryptionService(keyProvider);
+        var codec = new EncryptionPayloadCodec(service, NullLogger<EncryptionPayloadCodec>.Instance);
+
+        IReadOnlyCollection<Payload> encoded = await codec.EncodeAsync([PlaintextPayload("layout-check")]);
+        Payload encodedPayload = encoded.Single();
+
+        encodedPayload.Metadata.Keys.Should().Equal("encoding");
+        encodedPayload.Metadata["encoding"].ToStringUtf8().Should().Be("binary/encrypted-sk-v2");
+        EncryptedPayload.TryParse(encodedPayload.Data.Span, out EncryptedPayload? parsed).Should().BeTrue();
+        parsed!.KeyId.Should().Be("v1");
+    }
+
+    [Fact]
+    public async Task Decode_PayloadCarryingTheMarkerWithMalformedData_ThrowsRatherThanPassingThrough()
+    {
+        var keyProvider = new FakeEncryptionKeyProvider("v1", NewAes256Key(1));
+        var codec = new EncryptionPayloadCodec(new AesGcmEncryptionService(keyProvider), NullLogger<EncryptionPayloadCodec>.Instance);
+
+        var malformed = new Payload { Data = ByteString.CopyFromUtf8("not an encrypted payload") };
+        malformed.Metadata["encoding"] = ByteString.CopyFromUtf8("binary/encrypted-sk-v2");
+
+        Func<Task> act = () => codec.DecodeAsync([malformed]);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().StartWith("The payload codec failed:");
     }
 
     [Fact]

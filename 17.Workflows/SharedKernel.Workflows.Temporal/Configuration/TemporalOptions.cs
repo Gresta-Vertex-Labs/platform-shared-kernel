@@ -55,12 +55,6 @@ public sealed class TemporalOptions
     public int DefaultRetryMaximumAttempts { get; set; } = 5;
 
     /// <summary>
-    /// Gets or sets the key name resolved through <c>IEncryptionKeyProvider</c> used by
-    /// <see cref="Codec.EncryptionPayloadCodec"/> when payload encryption is enabled.
-    /// </summary>
-    public string? EncryptionKeyName { get; set; }
-
-    /// <summary>
     /// Gets or sets a value indicating whether the configured namespace is validated against the
     /// live Temporal service at startup.
     /// </summary>

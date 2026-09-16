@@ -292,12 +292,12 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
         {
             ["Workflows:Temporal:TargetHost"] = environment.Client.Connection.Options.TargetHost,
             ["Workflows:Temporal:Namespace"] = environment.Client.Options.Namespace,
-            ["Workflows:Temporal:EncryptionKeyName"] = "v1",
         })
         .Build();
 
-    services.AddSharedKernelCryptography(configuration);
-    services.AddSingleton<IEncryptionKeyProvider, ConsumerVerifyEncryptionKeyProvider>();
+    services.AddSingleton<IEncryptionKeyProvider>(
+        new StaticEncryptionKeyProvider("v1", [new CryptographicKey("v1", Enumerable.Repeat((byte)7, 32).ToArray())]));
+    services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption();
 
     services
         .AddSharedKernelTemporalWorkflows(configuration)
@@ -346,6 +346,11 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
     Verify(
         !capturedAsLatin1.Contains(secretMarker, StringComparison.Ordinal),
         "the encrypted argument is genuinely opaque in the REAL captured Temporal history — the secret marker never appears as plaintext");
+
+    Verify(
+        EncryptedPayload.TryParse(capturedInputPayload.Data.Span, out EncryptedPayload? capturedEncryptedPayload)
+            && capturedEncryptedPayload.KeyId == "v1",
+        "the captured payload's data is SharedKernel.Cryptography's canonical EncryptedPayload layout, carrying the key id");
 
     // Reconstruct the codec directly (internal access — see the production csproj's narrowly-scoped
     // InternalsVisibleTo grant to this harness) using the SAME ISymmetricEncryptionService this
@@ -428,16 +433,4 @@ internal sealed class ConsumerVerifyEchoWorkflow : WorkflowBase
     [WorkflowRun]
     public Task<string> RunAsync(string input) =>
         ExecuteAsync<ConsumerVerifyEchoActivity, string, string>(input);
-}
-
-// A single-key IEncryptionKeyProvider standing in for a real KMS-backed one, used only by Surface 5 —
-// mirrors SharedKernel.Workflows.Temporal.Tests' own EncryptedPayloadRealEnvironmentTests fixture.
-internal sealed class ConsumerVerifyEncryptionKeyProvider : IEncryptionKeyProvider
-{
-    private readonly CryptographicKey _key = new("v1", Enumerable.Repeat((byte)7, 32).ToArray());
-
-    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(_key);
-
-    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(keyId == _key.Id ? _key : null);
 }

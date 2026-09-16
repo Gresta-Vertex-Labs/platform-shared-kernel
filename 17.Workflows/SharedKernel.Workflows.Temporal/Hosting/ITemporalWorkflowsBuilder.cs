@@ -51,8 +51,11 @@ public interface ITemporalWorkflowsBuilder
     /// activity argument, via <c>01.Core</c>'s <c>ISymmetricEncryptionService</c>.
     /// </summary>
     /// <remarks>
-    /// Requires <c>TemporalOptions.EncryptionKeyName</c> to be configured — fails at
-    /// <see cref="Build"/> otherwise.
+    /// Payloads are encrypted with the key provider's current key; each payload records its key id, so
+    /// rotation needs no configuration here. Requires an <c>ISymmetricEncryptionService</c> registration:
+    /// register an <c>IEncryptionKeyProvider</c> and call
+    /// <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c>. Without it, resolving the
+    /// Temporal client fails.
     /// </remarks>
     ITemporalWorkflowsBuilder WithPayloadEncryption();
 

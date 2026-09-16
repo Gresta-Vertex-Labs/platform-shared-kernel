@@ -442,43 +442,32 @@ EncryptionPayloadCodec   (internal sealed; Temporalio IPayloadCodec, IWithSerial
     NOTE (THE COST IS STATED, NOT HIDDEN): encrypted payloads are OPAQUE in the Temporal Web UI and
           CLI — operators lose the ability to read workflow inputs while debugging unless they run a
           codec server (out of scope for this package). Key rotation follows the versioned-ciphertext
-          discipline 06.Persistence's EncryptedValueConverter already established: the key VERSION
-          travels in the payload metadata, and an old key must remain configured until every history
+          discipline 06.Persistence's EncryptedValueConverter already established: the key id
+          travels inside every encoded payload, and an old key must remain configured until every history
           encrypted under it has aged past retention — which for workflows can be MONTHS longer than
           for database rows, because a workflow started under key v1 will still replay under key v1
           on its final day.
 
-    NOTE (VERIFIED CORE-PHASE MECHANISM — S-08 resolved): ISymmetricEncryptionService.Encrypt(byte[])
-          → EncryptedPayload(KeyId, Nonce, Ciphertext, Tag); .Decrypt(EncryptedPayload) → Result<byte[]>
-          (never throws CryptographicException directly, resolves the key internally via
-          IEncryptionKeyProvider keyed on EncryptedPayload.KeyId). The key version travels NATIVELY as
-          EncryptedPayload.KeyId — no separate versioning scheme was needed. The codec serialises the
-          ENTIRE original Temporal Payload proto (metadata + data) as the AES-256-GCM plaintext, wraps
-          the ciphertext plus KeyId/Nonce/Tag into a NEW Payload's own metadata under a private
-          encoding-marker key, and reconstructs the original Payload byte-for-byte on decode via
-          `Payload.Parser.ParseFrom` — preserving whatever encoding metadata the underlying
-          IPayloadConverter originally set. A payload not carrying this codec's own marker is passed
-          through unchanged on decode (the standard Temporal codec-chain convention letting multiple
-          codecs coexist) — never a violation, since it only applies to payloads this codec never
-          encoded; a payload that DOES carry the marker but fails to decrypt throws rather than
-          passing ciphertext through as plaintext.
-
-    NOTE (SHIPPED — WO-081/P-501, 2026-09-08: async migration was a REQUIRED fix, not a
-          throughput nicety, once 01.Core's breaking repack landed): 01.Core's WO-081 makes
-          `associatedData` a REQUIRED parameter on every ISymmetricEncryptionService member (P-491,
-          shipped) and gates the four retained SYNCHRONOUS members (Encrypt/Decrypt/EncryptToString/
-          DecryptToString) behind `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous`, throwing
-          NotSupportedException unconditionally when the registered IEncryptionKeyProvider is not
-          marked ISynchronousEncryptionKeyProvider (P-492, shipped) — a marker a KMS-backed provider
-          must NEVER claim. Re-verified directly on disk before implementing (never trusted the
-          "pending" status on faith): `ISymmetricEncryptionService.cs` genuinely requires
-          `associatedData` on all eight members. EncodeAsync/DecodeAsync now call ONLY
-          EncryptAsync/DecryptAsync, passing CancellationToken.None explicitly (IPayloadCodec's own
-          EncodeAsync/DecodeAsync supply no token to forward — confirmed against the real assembly, not
-          assumed), and preserve the payload count/order contract via Task.WhenAll over a materialized
-          payload array rather than the previous synchronous `.Select(...).ToList()`. Proven via T-17
-          (`SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService` wrapped in a decorator
-          whose SYNC members throw unconditionally — the codec still round-trips successfully).
+    NOTE (MECHANISM — rewritten for the P-545 SharedKernel.Cryptography redesign):
+          ISymmetricEncryptionService is async-only: EncryptAsync(ReadOnlyMemory<byte>, aad, ct) →
+          EncryptedPayload; DecryptAsync(EncryptedPayload, aad, ct) → Result<byte[]> (never throws for a
+          bad ciphertext; resolves the key via IEncryptionKeyProvider keyed on EncryptedPayload.KeyId).
+          The codec serialises the ENTIRE original Temporal Payload proto (metadata + data) as the
+          AES-256-GCM plaintext and writes a NEW Payload whose `data` is 01.Core's canonical
+          `EncryptedPayload.ToBytes()` layout ([version][key id length][key id][nonce][tag][ciphertext])
+          and whose ONLY metadata entry is `encoding: binary/encrypted-sk-v2`. Decode reads it back with
+          `EncryptedPayload.TryParse` and reconstructs the original Payload byte-for-byte via
+          `Payload.Parser.ParseFrom`. No hand-rolled payload packing: the earlier unversioned
+          `binary/encrypted-sk` marker (key id/nonce/tag as separate `sk-encryption-*` metadata entries)
+          was never published and is not read — the marker was renamed so the two layouts never mix.
+          A payload not carrying this codec's own marker is passed through unchanged on decode (the
+          standard Temporal codec-chain convention letting multiple codecs coexist); a payload that DOES
+          carry the marker but is malformed or fails to decrypt throws WorkflowErrors.PayloadCodecFailure
+          rather than passing ciphertext through as plaintext. EncodeAsync/DecodeAsync pass
+          CancellationToken.None explicitly (IPayloadCodec supplies no token) and preserve the payload
+          count/order contract via Task.WhenAll over a materialized array. Registration:
+          `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()` plus a consumer-supplied
+          IEncryptionKeyProvider; a KMS-backed provider works unchanged.
 
     NOTE (SHIPPED — WO-081/P-501: associated-data source, VERIFIED AGAINST THE REAL COMPILED Temporalio
           1.17.0 ASSEMBLY, not guessed): IPayloadCodec.EncodeAsync/DecodeAsync themselves carry NO
@@ -558,7 +547,7 @@ TemporalOptions   (sealed CLASS — mutable `{ get; set; }` properties, the idio
     .TargetHost (required) / .Namespace (required) / .TaskQueue /
     .Tls / .ApiKey / .IdentityPrefix /
     .DefaultActivityStartToCloseTimeoutSeconds (default 30) / .DefaultWorkflowExecutionTimeoutSeconds /
-    .DefaultRetryMaximumAttempts (default 5) / .EncryptionKeyName / .ValidateNamespaceOnStart (default true)
+    .DefaultRetryMaximumAttempts (default 5) / .ValidateNamespaceOnStart (default true)
 
     NOTE (CORRECTED at Docs phase, DO-06): there is no `.DefaultRetryPolicy` member — the shipped shape
           is `.DefaultRetryMaximumAttempts` (a plain `int`, DataAnnotations-`[Range(1, int.MaxValue)]`),

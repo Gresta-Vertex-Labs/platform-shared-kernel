@@ -25,8 +25,10 @@ namespace SharedKernel.Workflows.Temporal.Codec;
 /// <para>
 /// Each encoded payload carries the entire original <see cref="Payload"/> (data and metadata) as
 /// ciphertext, so decoding restores the original payload byte-for-byte — including whatever encoding
-/// metadata the underlying <see cref="IPayloadConverter"/> had set. The encryption key version
-/// travels in the encoded payload's own metadata via <see cref="EncryptedPayload.KeyId"/>, so an old
+/// metadata the underlying <see cref="IPayloadConverter"/> had set. The encoded payload's
+/// <see cref="Payload.Data"/> is <c>01.Core</c>'s canonical <see cref="EncryptedPayload.ToBytes"/> layout
+/// (format version, <see cref="EncryptedPayload.KeyId"/>, nonce, tag, ciphertext), and its only metadata
+/// entry is the <c>encoding</c> marker. The key id therefore travels with every payload, so an old
 /// key can remain configured for as long as any history encrypted under it might still replay — which
 /// for workflows can be months longer than the equivalent database-column case, because a workflow
 /// started under key v1 will still replay under key v1 on its final day.
@@ -34,8 +36,8 @@ namespace SharedKernel.Workflows.Temporal.Codec;
 /// <para>
 /// A payload not carrying this codec's encoding marker is passed through unchanged on decode — the
 /// standard Temporal payload-codec-chain convention, letting multiple codecs coexist. A payload that
-/// <em>does</em> carry the marker but fails to decrypt (tamper, wrong key, unknown key id, or a
-/// mismatched associated-data binding — see below) throws rather than silently passing the
+/// <em>does</em> carry the marker but is malformed or fails to decrypt (tamper, wrong key, unknown key id,
+/// or a mismatched associated-data binding — see below) throws rather than silently passing the
 /// ciphertext through as plaintext.
 /// </para>
 /// <para>
@@ -71,10 +73,13 @@ namespace SharedKernel.Workflows.Temporal.Codec;
 internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerializationContext<IPayloadCodec>
 {
     private const string EncodingMetadataKey = "encoding";
-    private const string EncodingMetadataValue = "binary/encrypted-sk";
-    private const string KeyIdMetadataKey = "sk-encryption-key-id";
-    private const string NonceMetadataKey = "sk-encryption-nonce";
-    private const string TagMetadataKey = "sk-encryption-tag";
+
+    /// <summary>
+    /// The encoding marker. Versioned: <c>-v2</c> payloads hold <see cref="EncryptedPayload.ToBytes"/> in
+    /// <see cref="Payload.Data"/>. The earlier unversioned <c>binary/encrypted-sk</c> layout (key id, nonce
+    /// and tag in separate metadata entries) was never published and is not read.
+    /// </summary>
+    private const string EncodingMetadataValue = "binary/encrypted-sk-v2";
 
     private readonly ISymmetricEncryptionService _encryptionService;
     private readonly byte[] _associatedData;
@@ -169,12 +174,9 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
 
         var result = new Payload
         {
-            Data = ByteString.CopyFrom(encrypted.Ciphertext),
+            Data = UnsafeByteOperations.UnsafeWrap(encrypted.ToBytes()),
         };
         result.Metadata[EncodingMetadataKey] = ByteString.CopyFromUtf8(EncodingMetadataValue);
-        result.Metadata[KeyIdMetadataKey] = ByteString.CopyFromUtf8(encrypted.KeyId);
-        result.Metadata[NonceMetadataKey] = ByteString.CopyFrom(encrypted.Nonce);
-        result.Metadata[TagMetadataKey] = ByteString.CopyFrom(encrypted.Tag);
         return result;
     }
 
@@ -187,19 +189,11 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
             return encoded;
         }
 
-        if (!encoded.Metadata.TryGetValue(KeyIdMetadataKey, out ByteString? keyIdBytes)
-            || !encoded.Metadata.TryGetValue(NonceMetadataKey, out ByteString? nonceBytes)
-            || !encoded.Metadata.TryGetValue(TagMetadataKey, out ByteString? tagBytes))
+        if (!EncryptedPayload.TryParse(encoded.Data.Span, out EncryptedPayload? encryptedPayload))
         {
             throw new InvalidOperationException(
-                WorkflowErrors.PayloadCodecFailure("encoded payload is missing required encryption metadata").Message);
+                WorkflowErrors.PayloadCodecFailure("encoded payload is not a well-formed encrypted payload").Message);
         }
-
-        var encryptedPayload = new EncryptedPayload(
-            keyIdBytes.ToStringUtf8(),
-            nonceBytes.ToByteArray(),
-            encoded.Data.ToByteArray(),
-            tagBytes.ToByteArray());
 
         Result<byte[]> decryptResult = await _encryptionService
             .DecryptAsync(encryptedPayload, _associatedData, CancellationToken.None)
