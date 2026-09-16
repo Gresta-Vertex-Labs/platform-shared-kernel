@@ -78,7 +78,8 @@ public sealed class ReadResultAsyncTests
     [Fact]
     public async Task ReadResultAsync_TypeInfo_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
-        var body = """{"type":"validation.required","title":"Validation Failed","detail":"Id is required","status":422}""";
+        // "type" is an RFC 9457 status URI, not the code — "title"/"errorCode" carry Error.Code.
+        var body = """{"type":"https://httpstatuses.io/422","title":"validation.required","errorCode":"validation.required","detail":"Id is required","status":422}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.UnprocessableEntity, body);
 
         var result = await response.ReadResultAsync(OrderDtoTypeInfo);
@@ -134,7 +135,8 @@ public sealed class ReadResultAsyncTests
     [Fact]
     public async Task ReadResultAsync_Options_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
-        var body = """{"type":"not.found","title":"Not Found","detail":"Order does not exist","status":404}""";
+        // "type" is an RFC 9457 status URI, not the code — "title"/"errorCode" carry Error.Code.
+        var body = """{"type":"https://httpstatuses.io/404","title":"not.found","errorCode":"not.found","detail":"Order does not exist","status":404}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.NotFound, body);
 
         var result = await response.ReadResultAsync<OrderDto>(options: null);

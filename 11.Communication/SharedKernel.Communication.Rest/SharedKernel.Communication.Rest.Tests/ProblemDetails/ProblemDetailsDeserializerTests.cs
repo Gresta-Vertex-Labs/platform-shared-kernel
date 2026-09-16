@@ -1,47 +1,213 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using SharedKernel.Communication.Rest.ProblemDetails;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Communication.Rest.Tests.ProblemDetails;
 
 public sealed class ProblemDetailsDeserializerTests
 {
-    [Fact]
-    public async Task DeserializeAsync_WithProblemJsonContentType_MapsTypeToCode()
+    // -----------------------------------------------------------------------
+    // Status -> ErrorType reverse mapping (mirrors 14.Presentation's ErrorTypeStatusCodeMap)
+    // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.Unauthorized, ErrorType.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden, ErrorType.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound, ErrorType.NotFound)]
+    [InlineData(HttpStatusCode.Conflict, ErrorType.Conflict)]
+    [InlineData(HttpStatusCode.UnprocessableEntity, ErrorType.BusinessRule)]
+    [InlineData(HttpStatusCode.InternalServerError, ErrorType.Unexpected)]
+    [InlineData(HttpStatusCode.BadGateway, ErrorType.Unexpected)]
+    public async Task DeserializeAsync_EachMappedStatusCode_ProducesExpectedErrorType(
+        HttpStatusCode statusCode,
+        ErrorType expectedType)
     {
-        // Arrange
+        // Arrange — the real 14.Presentation wire shape: "title"/"errorCode" carry Error.Code,
+        // "type" is an RFC 9457 status URI (never the code), "detail" carries Error.Message.
         var response = BuildProblemDetailsResponse(
-            statusCode: HttpStatusCode.UnprocessableEntity,
-            body: """{"type":"validation.required","title":"Validation Failed","detail":"Name is required","status":422}""");
+            statusCode,
+            body: $$"""
+                {"type":"https://httpstatuses.io/{{(int)statusCode}}","title":"some.code","errorCode":"some.code","detail":"some message","status":{{(int)statusCode}}}
+                """);
 
         // Act
         var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
         // Assert
-        error.Code.Should().Be("validation.required");
-        error.Message.Should().Be("Name is required");
+        error.Type.Should().Be(expectedType);
+        error.Code.Should().Be("some.code");
+        error.Message.Should().Be("some message");
     }
 
+    // -----------------------------------------------------------------------
+    // Code / message field resolution (errorCode / title / detail, never type)
+    // -----------------------------------------------------------------------
+
     [Fact]
-    public async Task DeserializeAsync_WithProblemJsonAndNoDetail_UsesTitleAsMessage()
+    public async Task DeserializeAsync_WithErrorCodeExtension_PrefersErrorCodeOverTitle()
     {
-        // Arrange
+        // Arrange — title and errorCode deliberately differ so precedence is unambiguous.
         var response = BuildProblemDetailsResponse(
             statusCode: HttpStatusCode.NotFound,
-            body: """{"type":"not.found","title":"Resource Not Found","status":404}""");
+            body: """{"type":"https://httpstatuses.io/404","title":"title.value","errorCode":"errorCode.value","detail":"Resource not found","status":404}""");
 
         // Act
         var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
         // Assert
-        error.Code.Should().Be("not.found");
-        error.Message.Should().Be("Resource Not Found");
+        error.Code.Should().Be("errorCode.value");
+        error.Message.Should().Be("Resource not found");
     }
 
     [Fact]
-    public async Task DeserializeAsync_WithNonProblemJsonContentType_ReturnsGenericError()
+    public async Task DeserializeAsync_WithNoErrorCodeExtension_UsesTitleAsCode()
+    {
+        // Arrange — this is the real shape: 14.Presentation always sets Title = Error.Code.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.NotFound,
+            body: """{"type":"https://httpstatuses.io/404","title":"order.not_found","detail":"Order 123 was not found","status":404}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Code.Should().Be("order.not_found");
+        error.Message.Should().Be("Order 123 was not found");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithNeitherErrorCodeNorTitle_UsesStatusCodeAsCode()
+    {
+        // Arrange
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.BadRequest,
+            body: """{"detail":"Some error","status":400}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Code.Should().Be("http.400");
+        error.Message.Should().Be("Some error");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithTypeCarryingAStatusUri_NeverUsesTypeAsCode()
+    {
+        // Arrange — "type" must never be read as the code, even when it looks code-shaped.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.NotFound,
+            body: """{"type":"looks.like.a.code","title":"order.not_found","detail":"Order not found","status":404}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Code.Should().Be("order.not_found");
+        error.Code.Should().NotBe("looks.like.a.code");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithNoDetail_FallsBackToStatusAwareMessage_NeverTitle()
+    {
+        // Arrange — Title carries the machine code, so it must never leak into Message as a fallback.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.NotFound,
+            body: """{"type":"https://httpstatuses.io/404","title":"order.not_found","status":404}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Code.Should().Be("order.not_found");
+        error.Message.Should().Be("HTTP 404 error");
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-field validation aggregate rebuild (the P-544 fidelity fix)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task DeserializeAsync_WithErrorsExtension_RebuildsEveryFieldIntoDetails()
+    {
+        // Arrange — mirrors LocalizedDetailResolver.BuildErrorsExtension's shape exactly: grouped by
+        // code, each value an array of messages.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.BadRequest,
+            body: """
+                {
+                  "type": "https://httpstatuses.io/400",
+                  "title": "validation.failed",
+                  "errorCode": "validation.failed",
+                  "detail": "2 validation errors occurred.",
+                  "status": 400,
+                  "errors": {
+                    "name.required": ["Name is required."],
+                    "email.invalid_format": ["Email is not a valid address.", "Email exceeds the maximum length."]
+                  }
+                }
+                """);
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert — one aggregate Validation error carrying every field failure, never the fallen-back
+        // single-error shape the pre-fix deserializer produced.
+        error.Type.Should().Be(ErrorType.Validation);
+        error.Code.Should().Be(ErrorCodes.Validation.Failed);
+        error.Details.Should().HaveCount(3);
+        error.Details.Should().ContainSingle(d => d.Code == "name.required" && d.Message == "Name is required.");
+        error.Details.Should().ContainSingle(d => d.Code == "email.invalid_format" && d.Message == "Email is not a valid address.");
+        error.Details.Should().ContainSingle(d => d.Code == "email.invalid_format" && d.Message == "Email exceeds the maximum length.");
+        error.Details.Should().OnlyContain(d => d.Type == ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithEmptyErrorsExtension_FallsBackToSingleError()
+    {
+        // Arrange — an "errors" object present but empty must not short-circuit into a zero-detail
+        // aggregate (Error.Validation(IReadOnlyList<Error>) rejects an empty list).
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.BadRequest,
+            body: """{"type":"https://httpstatuses.io/400","title":"validation.failed","errorCode":"validation.failed","detail":"Bad request","status":400,"errors":{}}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(ErrorType.Validation);
+        error.Code.Should().Be("validation.failed");
+        error.Message.Should().Be("Bad request");
+        error.Details.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithNoErrorsExtension_YieldsSingleError()
+    {
+        // Arrange — the ordinary, non-aggregate case: no "errors" member at all.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.Conflict,
+            body: """{"type":"https://httpstatuses.io/409","title":"order.already_shipped","errorCode":"order.already_shipped","detail":"Order has already shipped","status":409}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(ErrorType.Conflict);
+        error.Code.Should().Be("order.already_shipped");
+        error.Message.Should().Be("Order has already shipped");
+        error.Details.Should().BeEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Non-JSON / empty / malformed bodies — never throw, still status-aware
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task DeserializeAsync_WithNonProblemJsonContentType_ReturnsStatusAwareUnexpectedError()
     {
         // Arrange
         var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
@@ -53,28 +219,12 @@ public sealed class ProblemDetailsDeserializerTests
         var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
         // Assert
-        error.Should().NotBeNull();
-        error.Code.Should().NotBeNullOrEmpty();
+        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Code.Should().Be("http.500");
     }
 
     [Fact]
-    public async Task DeserializeAsync_WithProblemJsonAndNoType_UsesStatusCodeAsCode()
-    {
-        // Arrange
-        var response = BuildProblemDetailsResponse(
-            statusCode: HttpStatusCode.BadRequest,
-            body: """{"title":"Bad Request","detail":"Some error","status":400}""");
-
-        // Act
-        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
-
-        // Assert
-        error.Code.Should().Be("http.400");
-        error.Message.Should().Be("Some error");
-    }
-
-    [Fact]
-    public async Task DeserializeAsync_WithMalformedJson_DoesNotThrow()
+    public async Task DeserializeAsync_WithMalformedJson_DoesNotThrow_AndReturnsStatusAwareUnexpectedError()
     {
         // Arrange
         var response = BuildProblemDetailsResponse(
@@ -82,10 +232,47 @@ public sealed class ProblemDetailsDeserializerTests
             body: "{ not valid json }}}");
 
         // Act
-        Func<Task> act = () => ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+        Func<Task<Error>> act = () => ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
         // Assert
-        await act.Should().NotThrowAsync();
+        var error = await act.Should().NotThrowAsync();
+        error.Subject.Type.Should().Be(ErrorType.Unexpected);
+        error.Subject.Code.Should().Be("http.500");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithEmptyBody_DoesNotThrow_AndReturnsStatusAwareUnexpectedError()
+    {
+        // Arrange
+        var response = new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent(string.Empty)
+        };
+
+        // Act
+        Func<Task<Error>> act = () => ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        var error = await act.Should().NotThrowAsync();
+        error.Subject.Type.Should().Be(ErrorType.Unexpected);
+        error.Subject.Code.Should().Be("http.502");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithEmptyJsonObjectBody_NoRecognizableMembers_ReturnsStatusAwareUnexpectedError()
+    {
+        // Arrange — a well-formed JSON body that deserializes cleanly but carries none of the members
+        // this deserializer maps from.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.NotFound,
+            body: "{}");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Code.Should().Be("http.404");
     }
 
     [Fact]

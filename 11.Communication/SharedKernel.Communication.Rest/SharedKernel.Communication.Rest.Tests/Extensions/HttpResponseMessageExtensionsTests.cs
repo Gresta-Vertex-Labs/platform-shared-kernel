@@ -50,8 +50,9 @@ public sealed class HttpResponseMessageExtensionsTests
     [Fact]
     public async Task EnsureSuccessOrErrorAsync_OnProblemJsonResponse_MapsErrorFields()
     {
-        // Arrange
-        var body = """{"type":"validation.required","title":"Validation Failed","detail":"Name is required","status":422}""";
+        // Arrange — the real 14.Presentation shape: "type" is an RFC 9457 status URI, "title" and
+        // "errorCode" both carry Error.Code, "detail" carries Error.Message.
+        var body = """{"type":"https://httpstatuses.io/422","title":"validation.required","errorCode":"validation.required","detail":"Name is required","status":422}""";
         var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(ProblemDetailsDeserializer.ProblemDetailsContentType);
         var response = new HttpResponseMessage(HttpStatusCode.UnprocessableEntity) { Content = content };

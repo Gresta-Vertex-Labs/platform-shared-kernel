@@ -73,9 +73,22 @@ Result<OrderDto> order2 = await httpClient
     .Result.ReadResultAsync<OrderDto>(options: null, ct);
 ```
 
-Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` via `ProblemDetailsDeserializer`
-(`type` → `Error.Code`, `detail` ?? `title` → `Error.Message`). A 2xx response with an empty body, or
-one that deserializes to `null`, fails with the `http.empty-body` code.
+Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` via `ProblemDetailsDeserializer`,
+mirroring the real wire shape `SharedKernel.Presentation.WebApi` produces: `errorCode` (falling back to
+`title`) → `Error.Code` — never `type`, which is an RFC 9457 status URI such as
+`"https://httpstatuses.io/404"`, not a machine code — and `detail` → `Error.Message`. The response's
+HTTP status maps back to an `ErrorType` (400 → Validation, 401 → Unauthorized, 403 → Forbidden,
+404 → NotFound, 409 → Conflict, 422 → BusinessRule, everything else → Unexpected) via
+`HttpStatusErrorTypeMap`, the reverse of `SharedKernel.Presentation.WebApi`'s
+`ErrorTypeStatusCodeMap.Resolve` — duplicated here rather than shared, since `11.Communication` may
+never reference `14.Presentation`. When the body carries the `errors` extension (a multi-field
+validation failure, grouped by code with each value an array of messages), every field is rebuilt as
+its own `Error` and returned as one aggregate via `Error.Validation(IReadOnlyList<Error>)` — the same
+shape `ValidationException`/`Error.Details` produce on the server, round-tripping without losing any
+field. A non-JSON body, an empty body, or a body with none of these recognizable members still yields
+an `Error.Unexpected` carrying the response status in its code/message (`"http.{status}"`) — never an
+unclassified, status-blind fallback. A 2xx response with an empty body, or one that deserializes to
+`null`, fails with the `http.empty-body` code.
 
 This is the client half of the platform's error round trip: a handler returns `Result`/`Result<T>`,
 the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions`
