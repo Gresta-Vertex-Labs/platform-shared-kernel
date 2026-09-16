@@ -26,11 +26,12 @@ namespace SharedKernel.Application.Streaming;
 /// inconsistency with the rest of the domain is intentional and explicit, not an oversight.
 /// </para>
 /// <para>
-/// <b>No pipeline behavior coverage (explicit, not an oversight):</b> none of this domain's ten
-/// pipeline behaviors apply to <see cref="IStreamQuery{TResponse}"/> — MediatR treats unary and
-/// streaming requests as two separate generic hierarchies with no shared base. Extending any
-/// behavior to streaming is an explicit, deliberate future phase — never silently assumed to
-/// already work just because the unary behavior exists.
+/// <b>No pipeline behavior coverage (explicit, not an oversight):</b> none of
+/// <c>SharedKernel.Application.Behaviors</c>'s pipeline behaviors apply to
+/// <see cref="IStreamQuery{TResponse}"/> — MediatR treats unary and streaming requests as two
+/// separate generic hierarchies with no shared base. Extending any behavior to streaming is an
+/// explicit, deliberate future phase — never silently assumed to already work just because the
+/// unary behavior exists.
 /// </para>
 /// </remarks>
 public interface IStreamQuery<TResponse> : IStreamRequest<TResponse>;

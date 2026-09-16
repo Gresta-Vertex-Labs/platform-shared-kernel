@@ -12,48 +12,18 @@ namespace SharedKernel.Application.Extensions;
 public static class ApplicationServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the MediatR-based domain-event-to-notification bridge with default serial dispatch.
+    /// Registers the MediatR-based domain-event-to-notification bridge.
     /// </summary>
     /// <param name="services">The service collection to register against.</param>
     /// <returns>The same <see cref="IServiceCollection"/> instance, for chaining.</returns>
     /// <remarks>
     /// Registers <see cref="IDomainEventDispatcher"/> → <see cref="MediatRDomainEventDispatcher"/>
-    /// (scoped) with <see cref="MediatRDomainEventDispatcherOptions.ParallelDispatch"/> set to
-    /// <see langword="false"/> (serial dispatch, the safe default). Does <b>not</b> call
-    /// <c>services.AddMediatR(...)</c> — the consuming service owns MediatR registration and
-    /// assembly scanning (<c>RegisterServicesFromAssembly</c>). This extension only adds the
-    /// dispatcher bridge.
+    /// (scoped) only. Does <b>not</b> call <c>services.AddMediatR(...)</c> — the consuming service
+    /// owns MediatR registration and assembly scanning (<c>RegisterServicesFromAssembly</c>). This
+    /// extension only adds the dispatcher bridge.
     /// </remarks>
     public static IServiceCollection AddSharedKernelApplication(this IServiceCollection services)
-        => services.AddSharedKernelApplication(null);
-
-    /// <summary>
-    /// Registers the MediatR-based domain-event-to-notification bridge with optional parallel
-    /// dispatch configuration.
-    /// </summary>
-    /// <param name="services">The service collection to register against.</param>
-    /// <param name="configure">
-    /// An optional delegate to configure <see cref="MediatRDomainEventDispatcherOptions"/>.
-    /// Pass <see langword="null"/> or omit to retain the serial default (equivalent to the
-    /// parameterless overload — never breaks existing call sites).
-    /// </param>
-    /// <returns>The same <see cref="IServiceCollection"/> instance, for chaining.</returns>
-    /// <remarks>
-    /// Example — opt in to parallel dispatch:
-    /// <code>
-    /// services.AddSharedKernelApplication(opts => opts.ParallelDispatch = true);
-    /// </code>
-    /// Does <b>not</b> call <c>services.AddMediatR(...)</c> — the consuming service owns MediatR
-    /// registration and assembly scanning (<c>RegisterServicesFromAssembly</c>).
-    /// </remarks>
-    public static IServiceCollection AddSharedKernelApplication(
-        this IServiceCollection services,
-        Action<MediatRDomainEventDispatcherOptions>? configure)
     {
-        services.AddOptions<MediatRDomainEventDispatcherOptions>();
-        if (configure is not null)
-            services.Configure(configure);
-
         services.AddScoped<IDomainEventDispatcher, MediatRDomainEventDispatcher>();
         return services;
     }
@@ -75,8 +45,8 @@ public static class ApplicationServiceCollectionExtensions
     /// <see cref="INotificationHandler{TNotification}"/> for
     /// <see cref="DomainEventNotification{TDomainEvent}"/> (scoped) so MediatR's
     /// <see cref="IPublisher"/> can resolve it. One call per domain event type. No assembly
-    /// scanning, no <see cref="System.Type.MakeGenericType"/> at registration time — both type
-    /// arguments are supplied by the caller as ordinary closed generics.
+    /// scanning, no <see cref="Type.MakeGenericType"/> at registration time — both type arguments
+    /// are supplied by the caller as ordinary closed generics.
     /// </remarks>
     public static IServiceCollection AddDomainEventHandler<TDomainEvent, THandler>(this IServiceCollection services)
         where TDomainEvent : IDomainEvent
