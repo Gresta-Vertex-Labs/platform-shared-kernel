@@ -147,3 +147,30 @@ await test.RunAsync();
 https://github.com/gresta-vertex-labs/platform-shared-kernel/blob/main/00.Governance/README.md
 ```
 Anchor pattern: `#{lowercase-id}-{lowercase-rule-name}` e.g. `#sk0001-directdatetimeusage`
+
+Note: the SK diagnostic ID list above is stale (last updated around SK0013) — `00.Governance/CLAUDE.md`'s
+"Diagnostic Rule Registry" is the authoritative, kept-current source; always read it fresh rather than
+trusting this file's own ID enumeration.
+
+## HelpLinkReadmeAnchorTests enforces a real README anchor
+
+`SharedKernel.Analyzers.Tests/HelpLinkReadmeAnchorTests.cs` reflects over every `DiagnosticAnalyzer` in
+the assembly and fails the whole suite if any `HelpLinkUri` anchor has no matching explicit
+`<a id="...">` in `00.Governance/README.md`. A new rule is not done when the analyzer + its own tests
+pass — you must also add the TOC row, the `<a id="...">` anchor, and the full `### SKxxxx — Name`
+section to README.md, with the anchor string byte-for-byte matching `readmeAnchor` passed to
+`CreateDescriptor`. This is auto-discovered (no per-rule test-list edit needed) but will fail loudly if
+skipped.
+
+## Verify every candidate marker/trigger against real source, not just the ones a task flags for scrutiny
+
+When a phase spec lists several candidate marker interfaces/trigger shapes and asks you to verify only
+one of them against the real behavior source ("check X before including it"), still independently verify
+every other listed candidate too — read the actual consumer code, don't take the rest of the list at
+face value. On the SK0040 phase (WO P-544 companion), the spec named four markers and asked only to
+verify `ILoggableRequest<TResponse>` against `LoggingBehavior`'s source; reading `AuditingBehavior`'s
+source as well (not asked for) showed `IAuditableRequest<TResponse>` has the identical exclusion —
+neither behavior ever calls the `FailureResponse.Create<TResponse>()` helper the rule exists to guard,
+both only forward the response `next()` already produced through a gracefully-degrading outcome
+classifier. Grep the actual helper (`grep "FailureResponse.Create"` across the whole package) to get the
+authoritative caller list rather than trusting any prose description of "which behaviors do X."
