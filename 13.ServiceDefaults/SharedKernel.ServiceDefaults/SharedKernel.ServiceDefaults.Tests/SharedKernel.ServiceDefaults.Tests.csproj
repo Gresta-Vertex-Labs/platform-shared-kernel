@@ -54,10 +54,8 @@
       assemblies) that Microsoft.Extensions.Http.Resilience 10.7.0 — the real production
       dependency chain WithCommunicationTelemetry()'s Polly meter wiring targets — transitively
       pins Polly.Core/Polly.Extensions 8.4.2. This test project cannot pin that exact version
-      itself: SharedKernel.Testing -> SharedKernel.Application.Behaviors already floors
-      Polly.Core at >= 8.7.0 transitively, and NU1605 (treated as an error under
-      TreatWarningsAsErrors elsewhere in this solution) forbids downgrading below a floor set
-      elsewhere in the graph. 8.7.0 is a same-major (v8) release of the identical package this
+      itself: central package management (Directory.Packages.props) pins Polly.Core at 8.7.0
+      repo-wide. 8.7.0 is a same-major (v8) release of the identical package this
       finding targets — the "Polly"-named Meter this test proves against is a stable, documented
       public surface of Polly's own resilience telemetry, not a version-specific implementation
       detail.

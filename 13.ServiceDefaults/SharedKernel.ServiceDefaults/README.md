@@ -82,6 +82,12 @@ app.Run();
 Every `WithXTelemetry()` lives here rather than in an integration package because each wires its domain's
 instruments **by name** and references nothing — so none of them adds a dependency.
 
+`WithApplicationTelemetry()` additionally registers an explicit bucket view for
+`sharedkernel.application.request.duration`, which `05.Application` records **in seconds**: the SDK's
+default buckets assume milliseconds, so without the view every request would land in the first bucket.
+Calling it twice exports one metric stream, not two. A dashboard or alert built against the earlier
+millisecond values needs retuning.
+
 ## Migrating from before the split
 
 Before WO-084 this package contained every integration. The types have not moved namespace — only

@@ -6,7 +6,7 @@ namespace SharedKernel.MultiTenancy.Resolution;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A locally-owned opt-in seam — mirrors <c>05.Application</c>'s <c>IAuthorizationContext</c>/
+/// A locally-owned opt-in seam — mirrors <c>05.Application</c>'s <c>IRequestContext</c>/
 /// <c>IUnitOfWork</c> bridge pattern, never a direct reference to a specific persistence/cache
 /// technology. No default implementation ships; the consuming service bridges this interface to
 /// its own tenant directory/cache at its own composition root.

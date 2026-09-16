@@ -693,23 +693,25 @@ WithCachingTelemetry(this IHostApplicationBuilder builder)       → IHostApplic
     with the host's TracerProvider.
 
 WithApplicationTelemetry(this IHostApplicationBuilder builder)  → IHostApplicationBuilder
-    (P-247, WO-040). Wires the pre-existing "SharedKernel.Application" ActivitySource and Meter
-    (both version "1.0.0", owned by 05.Application.Behaviors' internal ApplicationDiagnostics
-    static class — WO-035/WO-036) into the host's TracerProvider/MeterProvider via
-    WithTracing(t => t.AddSource("SharedKernel.Application")) and
-    WithMetrics(m => m.AddMeter("SharedKernel.Application")), by string name only. Idempotent —
-    calling more than once registers no duplicate instruments, identical contract to
-    WithMessagingTelemetry/WithCachingTelemetry.
-    NOTE: The "SharedKernel.Application" ActivitySource/Meter pair is created and used inside
-          SharedKernel.Application.Behaviors — TracingBehavior<,> starts spans from the source,
-          MetricsBehavior<,> records the sharedkernel.application.request.duration histogram from
-          the meter. This method only wires that already-existing pair into the host's
+    (P-247, WO-040). Wires the "SharedKernel.Application" ActivitySource (a static field on
+    05.Application.Behaviors' internal Tracing.ApplicationDiagnostics) and Meter (created from
+    IMeterFactory by its internal DI-singleton Metrics.ApplicationMetrics) into the host's
+    TracerProvider/MeterProvider via WithTracing(t => t.AddSource("SharedKernel.Application")) and
+    WithMetrics(m => m.AddMeter("SharedKernel.Application").AddView(...)), by string name only.
+    Idempotent — calling more than once registers no duplicate instruments or metric streams,
+    identical contract to WithMessagingTelemetry/WithCachingTelemetry.
+    NOTE: TracingBehavior<,> starts one span per request, named after the request type's short
+          name (typeof(TRequest).Name), tagged request.type/request.kind and, on failure,
+          error.type/error.code. MetricsBehavior<,> records sharedkernel.application.request.duration
+          in SECONDS (unit "s"), tagged request.type/request.kind/outcome and, on a non-success,
+          error.type. Because the OpenTelemetry SDK's default histogram boundaries (0, 5, 10, 25 …
+          10000) assume milliseconds, this method adds an explicit-bucket view for that instrument
+          with the semantic-convention request-duration boundaries in seconds
+          (0.005 … 10). This method only wires the already-existing instruments into the host's
           TracerProvider/MeterProvider; 13.ServiceDefaults never creates an ActivitySource/Meter
-          itself. ApplicationDiagnostics is internal to its own assembly with no InternalsVisibleTo
-          grant to SharedKernel.ServiceDefaults, so string-name wiring is the only viable approach
-          (same situation as WithMessagingTelemetry's internal MessagingDiagnostics) — no new
+          itself. Both owning types are internal to their assembly with no InternalsVisibleTo grant
+          to SharedKernel.ServiceDefaults, so string-name wiring is the only viable approach — no
           ProjectReference to any SharedKernel.Application.* package is added or needed.
-          Closes 05.Application.Behaviors' documented forward reference to this domain.
 
 WithSearchTelemetry(this IHostApplicationBuilder builder)        → IHostApplicationBuilder
     (P-277, WO-044 — IMPLEMENTED and tested, closed 2026-07-24; state-map C-38/T-33/DO-07 all `●`.)
@@ -1469,7 +1471,7 @@ TenantResolutionOptionsValidator  (sealed class, implements IValidateOptions<Ten
 ```text
 ITenantStatusValidator
     .IsActiveAsync(Guid tenantId, CancellationToken ct)           → Task<bool>
-    NOTE: A locally-owned opt-in seam — mirrors 05.Application's IAuthorizationContext/
+    NOTE: A locally-owned opt-in seam — mirrors 05.Application's IRequestContext/
           IUnitOfWork bridge pattern, never a direct reference to a specific persistence/cache
           technology. No default implementation ships; the consuming service bridges it to its
           own tenant directory/cache at its own composition root. This domain resolves it as an
