@@ -1,9 +1,9 @@
 # SharedKernel.Idempotency.EfCore
 
-Atomic, tenant-scoped, PostgreSQL-backed implementation of the platform's three idempotency
+Atomic, tenant-scoped, PostgreSQL-backed implementation of the platform's two idempotency
 contracts:
 
-- `IIdempotencyKeyStore` + `IIdempotencyResponseStore` (`SharedKernel.Application.Behaviors`) — one class, `EfCoreIdempotencyKeyStore`.
+- `IRequestIdempotencyStore` (`SharedKernel.Application.Behaviors`) — `EfCoreRequestIdempotencyStore`.
 - `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `EfCoreIdempotencyMessageStore`.
 
 For services that run PostgreSQL and do not want to run Redis solely for deduplication. See the
@@ -22,50 +22,80 @@ services.AddSharedKernelEfCoreIdempotency(
     });
 
 // Required: bridge this platform's tenant identity source. ITenantContextAccessor lives in
-// 07.Messaging.Abstractions and is reused here rather than reinvented (Design D-02).
+// 07.Messaging.Abstractions and is reused here rather than reinvented.
 services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
 ```
 
 Omitting the `ITenantContextAccessor` registration throws `InvalidOperationException` at
 `IHost.StartAsync()` — not at first store call.
 
+## Contract
+
+`IRequestIdempotencyStore.TryBeginAsync(key, requestFingerprint, ct)` atomically reserves a new key
+and records the caller's request fingerprint, or reports the key's existing state:
+
+| Existing row | Same fingerprint | Different fingerprint |
+|---|---|---|
+| None, or expired | `Started` — a fresh or reclaimed reservation | (not applicable) |
+| Live, not completed | `InProgress` | `FingerprintMismatch` |
+| Live, completed | `Completed`, with the stored response | `FingerprintMismatch` |
+
+A winning `Started` result carries a `ReservationToken` — an opaque string the caller must pass back
+to `CompleteAsync`/`ReleaseAsync`. `CompleteAsync(key, reservationToken, serializedResponse, ct)`
+marks the key completed, stores the response, and extends `expires_at_utc` to `RetentionWindow`, but
+only when `reservationToken` still owns the row **and** it is still `InProgress` — otherwise it
+returns `false` and touches nothing. `ReleaseAsync(key, reservationToken, ct)` deletes the row under
+the same guard — **only** while it is still `InProgress`; a completed row is never deleted by
+`ReleaseAsync`. Both return `true` only when the token still owned the reservation and the operation
+actually applied; `false` — never an exception — means the reservation was already lost: expired and
+reclaimed by someone else, already completed or released, or a foreign/malformed token. A
+reservation that is never completed or released stays past its `InFlightTtl` until either the next
+`TryBeginAsync` for the same key reclaims it, or the documented cleanup recipe below deletes it —
+either way, it can never permanently block that key.
+
 ## Atomicity
 
-`HasProcessedAsync` performs a single raw-SQL upsert:
+`TryBeginAsync` performs a single raw-SQL upsert, executed directly against the context's own
+connection (not `ExecuteSqlInterpolatedAsync`, which discards `RETURNING` data):
 
 ```sql
-INSERT INTO idempotency_keys (tenant_id, "key", reserved_at_utc, expires_at_utc, response)
-VALUES (@tenantId, @key, @now, @expiresAt, NULL)
-ON CONFLICT (tenant_id, "key") DO UPDATE
-SET reserved_at_utc = EXCLUDED.reserved_at_utc,
-    expires_at_utc = EXCLUDED.expires_at_utc,
-    response = NULL
-WHERE idempotency_keys.expires_at_utc < @now
+INSERT INTO idempotency_keys (tenant_id, "key", fingerprint, status, reserved_at_utc, expires_at_utc, response, reservation_token)
+VALUES (@tenant_id, @key, @fingerprint, 'InProgress', @reserved_at_utc, @expires_at_utc, NULL, @token)
+ON CONFLICT (tenant_id, "key") DO UPDATE SET
+    fingerprint = CASE WHEN idempotency_keys.expires_at_utc <= @reserved_at_utc THEN EXCLUDED.fingerprint ELSE idempotency_keys.fingerprint END,
+    status = CASE WHEN idempotency_keys.expires_at_utc <= @reserved_at_utc THEN EXCLUDED.status ELSE idempotency_keys.status END,
+    -- ...reserved_at_utc / expires_at_utc / response / reservation_token follow the same CASE shape
+RETURNING fingerprint, status, response, reservation_token
 ```
 
-An affected-row count of `1` means a fresh row was inserted, or a genuinely expired row was
-reclaimed (both mean "not yet processed" — `false`). `0` means a live, unexpired row already
-exists ("already processed" — `true`). This single statement performs reservation AND
-expiry-reclaim atomically, in one round trip — no `SELECT` is ever issued for correctness, and no
-plain `DbSet.Add()` + caught `DbUpdateException` control flow is used anywhere.
+Every `SET` clause is a no-op unless the existing row is already expired, so a live conflicting row
+is returned completely unchanged. Comparing the row's *returned* `reservation_token` against the
+token this call generated is how the store learns whether it won the row (fresh insert or
+expired-row reclaim) versus merely observing an existing live one — one round trip, no separate
+`SELECT`, and no plain `DbSet.Add()` + caught `DbUpdateException` control flow anywhere. This store
+keeps none of that token for itself — it is returned to the caller as `ReservationToken` and never
+remembered here.
 
-`MarkProcessedAsync` extends `expires_at_utc` only, via `ExecuteUpdateAsync` — it never touches
-`response`, so it can never clobber a response `StoreResponseAsync` already wrote regardless of
-call order.
+`CompleteAsync`/`ReleaseAsync` only affect the row when the caller-supplied `reservationToken`
+still matches the row's current `reservation_token` **and** the row is still `InProgress` — this
+closes a race a slower confirm or release, arriving after its own reservation already expired and a
+different caller has since re-reserved the same key, could otherwise corrupt. A syntactically
+invalid (non-`Guid`) token is recognized as unable to match any real row without even a database
+round trip.
 
 ## Fault vs. failure
 
-A thrown exception from the guarded call never reaches `MarkProcessedAsync` — the reservation's
-short `InFlightTtl` expires on its own, and the next `HasProcessedAsync` call for the same key
-reclaims the expired row (self-healing, no action from this package). A returned business failure
-**does** consume the key; see `IIdempotencyKeyStore.MarkProcessedAsync`'s own XML docs for the full
-fault-vs-failure contract this package honors but does not restate.
+A thrown exception from the guarded call never reaches `CompleteAsync` — the reservation's short
+`InFlightTtl` window elapses, and the next `TryBeginAsync` for the same key reclaims the expired row
+(self-healing, no action from this package). A returned business failure calls `ReleaseAsync`
+instead, which deletes the row immediately. See `IRequestIdempotencyStore`'s own XML docs for the
+full contract this package honors.
 
 ## Fail-closed by default
 
 When PostgreSQL is unreachable, every store call throws by default. Set
-`EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable = true` to instead let the call proceed
-as "not yet processed" during an outage.
+`EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable = true` to instead let `TryBeginAsync`
+proceed as `Started` during an outage.
 
 > **ENABLING `AllowExecutionOnStoreUnavailable` INCREASES DUPLICATE-EXECUTION RISK.** While the
 > store is unreachable, every call — including genuine duplicates — is treated as novel. Only
@@ -94,8 +124,8 @@ project. The two tables (`idempotency_keys`, `idempotency_messages`) are snake_c
 
 ## Cleanup recipe (bounded retention)
 
-This package never starts a hidden background loop and never prunes rows itself (Domain
-Invariant 5). Register your own periodic cleanup — a plain `IHostedService`:
+This package never starts a hidden background loop and never prunes rows itself. Register your own
+periodic cleanup — a plain `IHostedService`:
 
 ```csharp
 public sealed class IdempotencyCleanupService(
@@ -140,7 +170,6 @@ var host = Host.CreateDefaultBuilder()
 await host.StartAsync(); // throws InvalidOperationException here if ITenantContextAccessor is missing
 
 using var scope = host.Services.CreateScope();
-var keyStore = scope.ServiceProvider.GetRequiredService<IIdempotencyKeyStore>();
-var responseStore = keyStore as IIdempotencyResponseStore; // non-null — same instance
+var requestStore = scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>();
 var messageStore = scope.ServiceProvider.GetRequiredService<IIdempotencyStore>();
 ```

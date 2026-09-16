@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace SharedKernel.Idempotency.EfCore.Options;
 
 /// <summary>
-/// Configuration options for <see cref="SharedKernel.Idempotency.EfCore.KeyStore.EfCoreIdempotencyKeyStore"/>.
+/// Configuration options for <see cref="SharedKernel.Idempotency.EfCore.KeyStore.EfCoreRequestIdempotencyStore"/>.
 /// </summary>
 /// <remarks>
 /// Registered via <c>AddSharedKernelEfCoreIdempotency</c>, which validates this options instance

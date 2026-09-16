@@ -18,12 +18,16 @@ namespace SharedKernel.Idempotency.EfCore.MessageStore;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A separate physical class from <see cref="KeyStore.EfCoreIdempotencyKeyStore"/> (Domain
-/// Invariant 7 / D-01) — <see cref="IIdempotencyStore"/> carries no response-replay capability.
+/// A separate physical class from <see cref="KeyStore.EfCoreRequestIdempotencyStore"/> —
+/// <see cref="IIdempotencyStore"/> is a distinct, simpler two-method contract with no fingerprint
+/// or response-replay concept, so there is no reason to fold it into the request-idempotency store
+/// class.
 /// </para>
 /// <para>
-/// Uses the same atomic-reservation protocol as <see cref="KeyStore.EfCoreIdempotencyKeyStore"/>
-/// (D-05) against its own <c>idempotency_messages</c> table, keyed on <c>(tenant_id, message_id)</c>.
+/// Uses the original atomic-reservation upsert shape (D-05) against its own
+/// <c>idempotency_messages</c> table, keyed on <c>(tenant_id, message_id)</c> — unaffected by the
+/// request-idempotency store's fingerprint/token redesign, since this contract never had a
+/// fingerprint or response-replay concept to begin with.
 /// The in-flight TTL comes from <see cref="EfCoreIdempotencyOptions.InFlightTtl"/>; the
 /// full-retention window comes from <see cref="IdempotencyOptions.ExpiryWindow"/>
 /// (<c>07.Messaging.Abstractions</c>'s existing advisory hint) rather than duplicating a second

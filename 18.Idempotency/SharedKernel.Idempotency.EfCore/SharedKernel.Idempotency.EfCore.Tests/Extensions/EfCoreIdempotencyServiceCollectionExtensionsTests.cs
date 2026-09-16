@@ -24,7 +24,7 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task Host_WithTenantContextAccessorRegistered_StartsSuccessfullyAndResolvesAllThreeContracts()
+    public async Task Host_WithTenantContextAccessorRegistered_StartsSuccessfullyAndResolvesBothContracts()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -38,15 +38,11 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
         await host.StartAsync();
 
         using var scope = host.Services.CreateScope();
-        var keyStore = scope.ServiceProvider.GetRequiredService<IIdempotencyKeyStore>();
-        var responseStore = scope.ServiceProvider.GetRequiredService<IIdempotencyResponseStore>();
+        var requestStore = scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>();
         var messageStore = scope.ServiceProvider.GetRequiredService<IIdempotencyStore>();
 
-        Assert.NotNull(keyStore);
+        Assert.NotNull(requestStore);
         Assert.NotNull(messageStore);
-        // Domain Invariant 7: IIdempotencyKeyStore and IIdempotencyResponseStore must be the same
-        // instance, so IdempotentCommandBehavior's `is IIdempotencyResponseStore` check succeeds.
-        Assert.Same(keyStore, responseStore);
 
         await host.StopAsync();
     }

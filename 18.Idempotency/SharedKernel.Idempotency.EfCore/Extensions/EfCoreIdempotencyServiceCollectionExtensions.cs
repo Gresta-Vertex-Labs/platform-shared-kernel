@@ -21,9 +21,8 @@ namespace SharedKernel.Idempotency.EfCore.Extensions;
 public static class EfCoreIdempotencyServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="IdempotencyDbContext"/>, <see cref="EfCoreIdempotencyKeyStore"/> as
-    /// both <see cref="IIdempotencyKeyStore"/> and <see cref="IIdempotencyResponseStore"/> (same
-    /// instance per scope), and <see cref="EfCoreIdempotencyMessageStore"/> as
+    /// Registers <see cref="IdempotencyDbContext"/>, <see cref="EfCoreRequestIdempotencyStore"/> as
+    /// <see cref="IRequestIdempotencyStore"/>, and <see cref="EfCoreIdempotencyMessageStore"/> as
     /// <see cref="IIdempotencyStore"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -77,9 +76,7 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
         // is left untouched.
         services.AddOptions<IdempotencyOptions>();
 
-        services.AddScoped<EfCoreIdempotencyKeyStore>();
-        services.AddScoped<IIdempotencyKeyStore>(sp => sp.GetRequiredService<EfCoreIdempotencyKeyStore>());
-        services.AddScoped<IIdempotencyResponseStore>(sp => sp.GetRequiredService<EfCoreIdempotencyKeyStore>());
+        services.AddScoped<IRequestIdempotencyStore, EfCoreRequestIdempotencyStore>();
         services.AddScoped<IIdempotencyStore, EfCoreIdempotencyMessageStore>();
 
         services.TryAddEnumerable(
