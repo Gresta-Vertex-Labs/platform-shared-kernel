@@ -18,7 +18,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <strong>Rationale (negative-space / regression-guard rule):</strong>
 /// The local-seam pattern (05.Application declares its own <c>IUnitOfWork</c>, bridged to
 /// 06.Persistence's <c>IUnitOfWork</c> at the composition root — the same pattern already
-/// proven for <c>IAuthorizationContext</c> and <c>IIdempotencyKeyStore</c>) only holds if the
+/// proven for <c>IRequestContext</c> and <c>IRequestIdempotencyStore</c>) only holds if the
 /// two interfaces stay genuinely independent. A future "simplification" that merges them or
 /// makes one inherit the other would silently reintroduce the <c>05.Application</c> →
 /// <c>06.Persistence</c> layering violation the local-seam pattern exists to prevent. Both

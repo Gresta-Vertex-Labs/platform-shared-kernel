@@ -173,6 +173,58 @@ public static class SharedKernelLayeringRules
             .NotHaveDependencyOn("SharedKernel.Search.ElasticSearch");
 
     /// <summary>
+    /// Hard rule (P-544): <c>SharedKernel.Application.Behaviors</c> must never reference
+    /// <c>SharedKernel.Caching</c> (bare prefix — including <c>.Abstractions</c>; that reference
+    /// belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// package), Polly, <c>Microsoft.Extensions.Hosting</c>, or <c>SharedKernel.Core</c> (the
+    /// guard-clause package, merged from the standalone <c>SharedKernel.Guards</c> by
+    /// WO-082/P-505).
+    /// </summary>
+    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors</c> assembly to evaluate.</param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting the Behaviors package stays free of these four
+    /// dependencies.
+    /// </returns>
+    public static ConditionList ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn(CachingNamespace)
+            .And()
+            .NotHaveDependencyOn("Polly")
+            .And()
+            .NotHaveDependencyOn("Microsoft.Extensions.Hosting")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Core");
+
+    /// <summary>
+    /// P-544: <c>SharedKernel.Application.Behaviors.Caching</c> — the sole package in
+    /// <c>05.Application</c> permitted to reference <c>SharedKernel.Caching.Abstractions</c> — may
+    /// reference <c>SharedKernel.Application.Behaviors</c> and <c>SharedKernel.Caching.Abstractions</c>
+    /// only; it must never reach a concrete persistence, messaging, or caching-provider package.
+    /// </summary>
+    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors.Caching</c> assembly to evaluate.</param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting the Caching package never references concrete
+    /// infrastructure.
+    /// </returns>
+    public static ConditionList ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn(PersistenceNamespace)
+            .And()
+            .NotHaveDependencyOn(MessagingNamespace)
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Caching.Redis")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Caching.FusionCache");
+
+    /// <summary>
     /// Hard rule: 16.Testing packages must never be referenced by production code.
     /// Testing helpers are dev/test-time only and must never appear as transitive dependencies.
     /// </summary>

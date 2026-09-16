@@ -15,7 +15,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// Used by
 /// <see cref="Rules.ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure"/>
 /// to enforce that the named pipeline behaviors (<c>TracingBehavior</c>,
-/// <c>ResilienceBehavior</c>, <c>CacheInvalidationBehavior</c>) reference only abstraction
+/// <c>CacheInvalidationBehavior</c>) reference only abstraction
 /// packages, mirroring the existing platform-wide
 /// <see cref="Rules.SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure"/>
 /// guarantee, made explicit and behavior-scoped.
@@ -59,7 +59,7 @@ public sealed class NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate :
     /// </summary>
     /// <param name="behaviorTypeNames">
     /// Exact simple type names that are in scope for this check (e.g.
-    /// <c>"TracingBehavior"</c>, <c>"ResilienceBehavior"</c>, <c>"CacheInvalidationBehavior"</c>).
+    /// <c>"TracingBehavior"</c>, <c>"CacheInvalidationBehavior"</c>).
     /// </param>
     /// <param name="forbiddenNamespacePrefixes">
     /// Namespace prefixes that in-scope types must not reference, excluding any namespace

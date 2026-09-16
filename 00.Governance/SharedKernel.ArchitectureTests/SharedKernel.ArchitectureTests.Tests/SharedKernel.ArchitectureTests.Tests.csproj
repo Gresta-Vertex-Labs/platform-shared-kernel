@@ -77,6 +77,11 @@
          ProjectReference — does not violate the "00.Governance references nothing" layering rule
          (production references only). -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" PrivateAssets="all" />
+    <!-- P-544: CacheInvalidationBehavior/CachingBehavior/IInvalidatesCache/ICacheableQuery moved
+         out of SharedKernel.Application.Behaviors into this sibling package. Required so
+         ApplicationBehaviorsCacheInvalidationOrderingLockTests can call the real
+         AddCachingBehaviors() against the real compiled assembly. -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors.Caching\SharedKernel.Application.Behaviors.Caching.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
          StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
          P-267 all shipped) before this phase's implementation session, so real-assembly

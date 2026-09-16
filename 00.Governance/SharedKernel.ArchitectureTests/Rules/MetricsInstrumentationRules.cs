@@ -16,14 +16,10 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// SK-less rules for tag/instrumentation completeness checks.
 /// </para>
 /// <para>
-/// <strong>Designed and tested against contrived in-memory fixtures ONLY for this phase.</strong>
-/// This rule is EXPECTED TO FAIL if pointed at the real <c>SharedKernel.Application.Behaviors</c>
-/// assembly until a companion <c>05.Application</c> phase retrofits the non-streaming
-/// <c>MetricsBehavior&lt;,&gt;</c> to emit the <c>"outcome"</c> tag on
-/// <c>RequestDuration</c>, matching <c>StreamMetricsBehavior</c>'s existing tag shape.
-/// Retrofitting <c>MetricsBehavior&lt;,&gt;</c> itself is <c>05.Application</c> production code and
-/// is explicitly out of scope for <c>00.Governance</c> — this domain writes no implementation
-/// files for other domains.
+/// <strong>Designed and tested against contrived in-memory fixtures.</strong> Real-assembly
+/// verification against <c>SharedKernel.Application.Behaviors</c>'s own
+/// <c>MetricsBehavior&lt;,&gt;</c> is <c>05.Application</c>'s responsibility — this domain writes
+/// no implementation files for other domains.
 /// </para>
 /// </remarks>
 public static class MetricsInstrumentationRules

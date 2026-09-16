@@ -182,6 +182,142 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore — P-544
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fire path: a Behaviors-shaped assembly that depends on <c>SharedKernel.Caching.Abstractions</c>
+    /// fails <see cref="SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore"/> —
+    /// that reference belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// package as of P-544.
+    /// </summary>
+    [Fact]
+    public void ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore_CachingAbstractionsDependency_RuleFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Caching.Abstractions
+            {
+                public interface ICacheService { }
+            }
+
+            namespace SharedKernel.Application.Behaviors
+            {
+                public sealed class LeakyBehavior
+                {
+                    public SharedKernel.Caching.Abstractions.ICacheService? Cache { get; set; }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("BehaviorsCachingViolation", violationSource);
+
+        var result = SharedKernelLayeringRules
+            .ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(violationAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "LeakyBehavior references SharedKernel.Caching.Abstractions, which now belongs " +
+                     "exclusively to SharedKernel.Application.Behaviors.Caching");
+    }
+
+    /// <summary>
+    /// Pass path: a Behaviors-shaped assembly with no dependency on Caching, Polly, Hosting, or
+    /// Core passes <see cref="SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore"/>.
+    /// </summary>
+    [Fact]
+    public void ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore_CleanAssembly_RulePasses()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Application.Behaviors
+            {
+                public sealed class CleanBehavior
+                {
+                    public string Name { get; } = string.Empty;
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("BehaviorsCachingClean", cleanSource);
+
+        var result = SharedKernelLayeringRules
+            .ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(cleanAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "CleanBehavior has no dependency on Caching, Polly, Hosting, or Core");
+    }
+
+    // ---------------------------------------------------------------------------
+    // ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure — P-544
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fire path: a Behaviors.Caching-shaped assembly that depends on
+    /// <c>SharedKernel.Caching.Redis</c> fails
+    /// <see cref="SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure"/>.
+    /// </summary>
+    [Fact]
+    public void ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure_RedisDependency_RuleFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Caching.Redis
+            {
+                public interface IConnectionMultiplexerAdapter { }
+            }
+
+            namespace SharedKernel.Application.Behaviors.Caching
+            {
+                public sealed class LeakyCachingBehavior
+                {
+                    public SharedKernel.Caching.Redis.IConnectionMultiplexerAdapter? Redis { get; set; }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("BehaviorsCachingRedisViolation", violationSource);
+
+        var result = SharedKernelLayeringRules
+            .ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(violationAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "LeakyCachingBehavior references the concrete SharedKernel.Caching.Redis package");
+    }
+
+    /// <summary>
+    /// Pass path: a Behaviors.Caching-shaped assembly depending only on
+    /// <c>SharedKernel.Caching.Abstractions</c> passes
+    /// <see cref="SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure"/>.
+    /// </summary>
+    [Fact]
+    public void ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure_AbstractionsOnly_RulePasses()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Caching.Abstractions
+            {
+                public interface ICacheService { }
+            }
+
+            namespace SharedKernel.Application.Behaviors.Caching
+            {
+                public sealed class CleanCachingBehavior
+                {
+                    public SharedKernel.Caching.Abstractions.ICacheService? Cache { get; set; }
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("BehaviorsCachingAbstractionsOnly", cleanSource);
+
+        var result = SharedKernelLayeringRules
+            .ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(cleanAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "CleanCachingBehavior depends only on SharedKernel.Caching.Abstractions");
+    }
+
+    // ---------------------------------------------------------------------------
     // T-212 — Fire path: contrived 09.Search-shaped fixture references a stubbed forbidden-domain
     // type
     // ---------------------------------------------------------------------------

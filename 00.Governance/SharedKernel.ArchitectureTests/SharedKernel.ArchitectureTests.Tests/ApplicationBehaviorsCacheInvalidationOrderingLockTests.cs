@@ -1,8 +1,11 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Behaviors.Caching.Extensions;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Messaging;
@@ -13,54 +16,51 @@ using Xunit;
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Root Phase Backlog P-489 (WO-080): a genuinely EXECUTED real-assembly lock — mirroring
-/// <c>SK.00.CacheEncryptionAndRedisValidationLock</c>'s T-337 "Technique A" precedent (the
-/// composed-pipeline test living directly in <c>SecureDefaultsAssertionTests.cs</c>) — proving,
-/// against the actual real, compiled <c>SharedKernel.Application.Behaviors</c> assembly's
-/// <see cref="ApplicationBehaviorsBuilder"/>, that <see cref="CacheInvalidationBehavior{TRequest,TResponse}"/>'s
-/// cache eviction executes only AFTER <see cref="IUnitOfWork.SaveChangesAsync"/>'s commit.
+/// Root Phase Backlog P-489 (WO-080), updated for P-544: a genuinely EXECUTED real-assembly lock —
+/// mirroring <c>SK.00.CacheEncryptionAndRedisValidationLock</c>'s T-337 "Technique A" precedent
+/// (the composed-pipeline test living directly in <c>SecureDefaultsAssertionTests.cs</c>) —
+/// proving, against the actual real, compiled <c>SharedKernel.Application.Behaviors</c> and
+/// <c>SharedKernel.Application.Behaviors.Caching</c> assemblies'
+/// <see cref="ApplicationBehaviorsBuilder"/> composition, that
+/// <see cref="CacheInvalidationBehavior{TRequest,TResponse}"/>'s cache eviction executes only
+/// AFTER <see cref="IUnitOfWork.SaveChangesAsync"/>'s commit.
 /// </summary>
 /// <remarks>
 /// <para>
+/// <strong>P-544 mechanism change (read before editing this file further).</strong> Prior to
+/// P-544, this guarantee depended on <c>CacheInvalidationBehavior</c> being registered CLOSER to
+/// the outer edge of the pipeline than <c>TransactionBehavior</c> — a fragile relative-registration-
+/// order fact. As of P-544, <c>CacheInvalidationBehavior</c> no longer evicts directly from its own
+/// post-<c>next()</c> code at all: it registers an <see cref="SharedKernel.Application.Behaviors.Commands.ICommandScope.OnCompleted"/>
+/// callback, and <c>CommandScopeBehavior</c> — always registered outermost among the command-stage
+/// behaviors by <see cref="ApplicationBehaviorsBuilder.Build"/> — runs every queued callback only
+/// after the OUTERMOST command's <c>next()</c> (which includes <c>TransactionBehavior</c>'s commit)
+/// has already returned. The eviction-follows-commit guarantee is therefore now structural,
+/// independent of where <c>CacheInvalidationBehavior</c> itself sits in the Command-stage
+/// registration order. This test still asserts the same OBSERVABLE outcome (eviction after commit)
+/// against the real, compiled assemblies — it now proves the <c>OnCompleted</c> mechanism works
+/// end to end, rather than a registration-order fact that no longer exists to break.
+/// </para>
+/// <para>
 /// <strong>Why this lives in 00.Governance, not only in 05.Application's own test suite.</strong>
-/// <c>05.Application/SharedKernel.Application.Behaviors.Tests/CacheInvalidation/
-/// CacheInvalidationTransactionOrderingTests.cs</c> already proves this exact fact in-domain
-/// (WO-080, P-488) — this test is a deliberately INDEPENDENT, cross-domain proof on top of it, not
-/// a duplicate. The root <c>state-map.md</c>'s own framing for P-489 is explicit about why: this
-/// defect class has now bitten the platform twice (<c>AuditingBehavior</c> during P-458,
-/// <c>CacheInvalidationBehavior</c> here), and both times a design document's canonical step
-/// numbering silently diverged from <see cref="ApplicationBehaviorsBuilder.Build"/>'s actual DI
-/// registration order with nothing mechanical catching it — "05.Application's own state-map showed
-/// every phase key ● Complete while this defect sat unshipped and untracked." A lock that lives
-/// only inside the domain whose own edit could reintroduce the defect is not an independent guard;
-/// this test survives even a future, well-intentioned edit to
-/// <c>CacheInvalidationTransactionOrderingTests.cs</c> itself (weakened, deleted, or silently
-/// broken) because it is owned by a different domain entirely and consumes the real, compiled
-/// <c>SharedKernel.Application.Behaviors.dll</c> via a test-only <c>ProjectReference</c>
+/// This is a deliberately INDEPENDENT, cross-domain proof on top of 05.Application's own in-domain
+/// regression tests — the whole point of P-489 is that a future well-intentioned edit inside
+/// <c>ApplicationBehaviorsBuilder</c>/<c>CommandScopeBehavior</c>/<c>CacheInvalidationBehavior</c>
+/// must fail a build even if that domain's own tests were ever weakened or deleted. This test
+/// consumes the real, compiled <c>SharedKernel.Application.Behaviors.dll</c> and
+/// <c>SharedKernel.Application.Behaviors.Caching.dll</c> via test-only <c>ProjectReference</c>s
 /// (<c>PrivateAssets="all"</c> — see <c>SharedKernel.ArchitectureTests.Tests.csproj</c>), never a
 /// source link or a hand-rolled substitute pipeline.
 /// </para>
 /// <para>
 /// <strong>Deliberate departure from this project's IL-only discipline</strong> — same class of
 /// departure as T-337/T-336: "eviction observably follows the commit" is an EMERGENT RUNTIME
-/// PROPERTY of MediatR's onion-wrapping order, not something a static Mono.Cecil IL walk over
-/// <see cref="ApplicationBehaviorsBuilder.Build"/>'s method body could honestly prove — the method
-/// body's own physical top-to-bottom statement order does not equal temporal execution order for a
-/// post-<c>next()</c> side effect (see that method's own extensive "DI-REGISTRATION-ORDER-TO-ONION-
-/// ORDER RELATIONSHIP" code comment). This test therefore genuinely builds a real
-/// <see cref="IServiceCollection"/>, calls the real <c>AddSharedKernelApplicationBehaviors()
-/// .AddCacheInvalidationBehavior().AddTransactionBehavior().Build()</c> chain, registers the real
-/// MediatR pipeline, and dispatches a real command through it end to end via <see cref="ISender"/>
-/// — never a hand-rolled substitute pipeline (P-489 acceptance criterion 1).
-/// </para>
-/// <para>
-/// <strong>Verified NON-VACUOUS</strong> (P-489 acceptance criterion 2), the same discipline
-/// P-490's <c>ServiceDefaultsWorkflowLayeringRulesTests</c> established: during implementation, the
-/// real <c>ApplicationBehaviorsBuilder.Build()</c> registration order was temporarily reverted to
-/// the pre-fix defect (<c>CacheInvalidationBehavior</c> registered AFTER, not BEFORE,
-/// <c>TransactionBehavior</c>) and this test was re-run — it genuinely failed (eviction observed
-/// BEFORE the commit) — then the file was reverted to its correct, shipped state before commit,
-/// confirmed via a clean <c>git status</c> on <c>05.Application</c>.
+/// PROPERTY of MediatR's onion-wrapping order and the <c>ICommandScope</c> callback-queue
+/// mechanism, not something a static Mono.Cecil IL walk could honestly prove. This test therefore
+/// genuinely builds a real <see cref="IServiceCollection"/>, calls the real
+/// <c>AddSharedKernelApplicationBehaviors().AddCachingBehaviors().AddTransactionBehavior().Build()</c>
+/// chain, registers the real MediatR pipeline, and dispatches a real command through it end to end
+/// via <see cref="ISender"/> — never a hand-rolled substitute pipeline.
 /// </para>
 /// <para>
 /// No new SK diagnostic ID and no new <c>Rules/</c>/<c>Predicates/</c> production class — mirroring
@@ -169,6 +169,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
     {
         var spy = new OrderRecordingSpy();
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ICacheService>(spy);
         services.AddSingleton<IUnitOfWork>(spy);
         services.AddSingleton<InvalidatingCommandHandler>();
@@ -177,7 +178,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
 
         services
             .AddSharedKernelApplicationBehaviors()
-            .AddCacheInvalidationBehavior()
+            .AddCachingBehaviors()
             .AddTransactionBehavior()
             .Build();
 
@@ -211,6 +212,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
     {
         var spy = new OrderRecordingSpy();
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ICacheService>(spy);
         services.AddSingleton<IUnitOfWork>(spy);
         services.AddSingleton<IAuditTrailWriter>(spy);
@@ -222,7 +224,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
             .AddSharedKernelApplicationBehaviors()
             .AddAuditingBehavior()
             .AddTransactionBehavior()
-            .AddCacheInvalidationBehavior()
+            .AddCachingBehaviors()
             .Build();
 
         services.AddMediatR(cfg =>

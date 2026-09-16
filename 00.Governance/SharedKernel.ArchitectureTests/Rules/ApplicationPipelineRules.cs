@@ -5,12 +5,10 @@ using SharedKernel.ArchitectureTests.Predicates;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Pre-built NetArchTest predicates that enforce the 05.Application extended-pipeline contract
-/// the three opt-in behaviors (<c>TracingBehavior</c>,
-/// <c>ResilienceBehavior</c>, <c>CacheInvalidationBehavior</c>) reference only abstraction
-/// packages, no existing behavior's <c>TRequest</c> constraint accidentally captures the
-/// streaming query vocabulary, and no type other than <c>ResilienceBehavior</c> hand-rolls a
-/// <c>Task.Delay</c>-based retry loop.
+/// Pre-built NetArchTest predicates that enforce the 05.Application extended-pipeline contract:
+/// the named behaviors (<c>TracingBehavior</c>, <c>CacheInvalidationBehavior</c>) reference only
+/// abstraction packages, and no existing behavior's <c>TRequest</c> constraint accidentally
+/// captures the streaming query vocabulary.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -29,18 +27,19 @@ public static class ApplicationPipelineRules
 {
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type named
-    /// <c>"TracingBehavior"</c>, <c>"ResilienceBehavior"</c>, or
-    /// <c>"CacheInvalidationBehavior"</c> (exact simple name match, caller-supplied — never
-    /// hardcoded inside the predicate) in <paramref name="assemblies"/> has a member, field, or
-    /// method-signature reference to a forbidden concrete-infrastructure namespace:
-    /// <c>SharedKernel.Caching.FusionCache</c>, <c>SharedKernel.Caching.Redis</c> (bare prefix —
-    /// matches Redis.Core and all four Redis capability packages), <c>SharedKernel.Persistence</c>
-    /// (excluding <c>SharedKernel.Persistence.Abstractions</c>), <c>SharedKernel.Messaging</c>
-    /// (excluding <c>SharedKernel.Messaging.Abstractions</c>).
+    /// <c>"TracingBehavior"</c> or <c>"CacheInvalidationBehavior"</c> (exact simple name match,
+    /// caller-supplied — never hardcoded inside the predicate) in <paramref name="assemblies"/>
+    /// has a member, field, or method-signature reference to a forbidden concrete-infrastructure
+    /// namespace: <c>SharedKernel.Caching.FusionCache</c>, <c>SharedKernel.Caching.Redis</c>
+    /// (bare prefix — matches Redis.Core and all four Redis capability packages),
+    /// <c>SharedKernel.Persistence</c> (excluding <c>SharedKernel.Persistence.Abstractions</c>),
+    /// <c>SharedKernel.Messaging</c> (excluding <c>SharedKernel.Messaging.Abstractions</c>).
     /// </summary>
     /// <param name="assemblies">
-    /// The assemblies to scan — typically <c>SharedKernel.Application.Behaviors</c>, or a
-    /// contrived fixture assembly shaped like it.
+    /// The assemblies to scan — typically <c>SharedKernel.Application.Behaviors</c> (for
+    /// <c>TracingBehavior</c>) and <c>SharedKernel.Application.Behaviors.Caching</c> (for
+    /// <c>CacheInvalidationBehavior</c>, which lives in that sibling package as of P-544), or a
+    /// contrived fixture assembly shaped like either.
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> — call <c>.GetResult()</c> to obtain pass/fail information.
@@ -50,7 +49,7 @@ public static class ApplicationPipelineRules
     /// <remarks>
     /// Mirrors the existing, already-enforced
     /// <see cref="SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure"/>
-    /// guarantee, made explicit and behavior-scoped for the three behaviors — the
+    /// guarantee, made explicit and behavior-scoped for the two behaviors — the
     /// same purity expectation <c>CachingBehavior</c> (<c>SharedKernel.Caching.Abstractions</c>
     /// only) already satisfies by construction. Abstractions-only references remain permitted;
     /// only concrete provider packages are forbidden.
@@ -61,7 +60,6 @@ public static class ApplicationPipelineRules
         var behaviorTypeNames = new HashSet<string>(StringComparer.Ordinal)
         {
             "TracingBehavior",
-            "ResilienceBehavior",
             "CacheInvalidationBehavior",
         };
 
@@ -117,40 +115,4 @@ public static class ApplicationPipelineRules
             .HaveNameStartingWith(string.Empty)
             .Should()
             .MeetCustomRule(new NoGenericConstraintMatchesStreamRequestPredicate());
-
-    /// <summary>
-    /// Returns a <see cref="ConditionList"/> asserting that no type other than exactly
-    /// <c>"ResilienceBehavior"</c> (exact simple name match) in
-    /// <paramref name="behaviorsAssembly"/> calls
-    /// <c>System.Threading.Tasks.Task.Delay</c> (any overload).
-    /// </summary>
-    /// <param name="behaviorsAssembly">
-    /// The <c>SharedKernel.Application.Behaviors</c> assembly, or a contrived fixture assembly
-    /// shaped like it.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ConditionList"/> — call <c>.GetResult()</c> to obtain pass/fail information.
-    /// When the rule fails, the predicate failure message names the offending type, method, and
-    /// the <c>Task.Delay</c> call site.
-    /// </returns>
-    /// <remarks>
-    /// This is a fingerprint heuristic, not a full retry-loop detector — <c>Task.Delay</c> is
-    /// the one IL-detectable signal common to virtually every hand-rolled retry/backoff loop; a
-    /// legitimate non-retry <c>Task.Delay</c> call elsewhere in 05.Application would also be
-    /// flagged (none is known to exist at the time of this phase). Extends
-    /// <c>05.Application/CLAUDE.md</c>'s existing prohibition on hand-rolled
-    /// <c>System.Random</c>/<c>DateTime.UtcNow</c> usage to retry/backoff specifically, now that
-    /// <c>ResilienceBehavior</c> exists as the platform-sanctioned alternative
-    /// (<c>IRetryableRequest</c> + <c>ApplicationBehaviorsBuilder.AddResilienceBehavior(...)</c>)
-    /// — documented as a Hard Violation in <c>05.Application/CLAUDE.md</c> but not previously
-    /// mechanically enforced.
-    /// </remarks>
-    public static ConditionList NoHandRolledRetryLoopOutsideResilienceBehavior(
-        Assembly behaviorsAssembly)
-        => Types
-            .InAssembly(behaviorsAssembly)
-            .That()
-            .HaveNameStartingWith(string.Empty)
-            .Should()
-            .MeetCustomRule(new NoTaskDelayOutsideResilienceBehaviorPredicate());
 }

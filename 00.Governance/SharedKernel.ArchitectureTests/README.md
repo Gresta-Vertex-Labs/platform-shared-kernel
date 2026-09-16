@@ -204,7 +204,8 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 |---|---|
 | `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` | Named pipeline behaviors depend on abstractions only |
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
-| `ApplicationPipelineRules.NoHandRolledRetryLoopOutsideResilienceBehavior` | No `Task.Delay` retry loop outside the one behavior that owns resilience |
+| `SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application.Behaviors` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
+| `SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
 | `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct` | The application and persistence `IUnitOfWork` seams are never merged |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
 

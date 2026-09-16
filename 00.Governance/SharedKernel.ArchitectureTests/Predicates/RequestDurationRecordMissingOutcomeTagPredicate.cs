@@ -12,10 +12,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <remarks>
 /// <para>
 /// Used by <see cref="Rules.MetricsInstrumentationRules"/> to enforce that every
-/// <c>RequestDuration</c> histogram recording call carries an <c>outcome</c> tag — the same shape
-/// <c>StreamMetricsBehavior</c> already emits. Without an <c>outcome</c> tag, dashboards
-/// cannot distinguish success/failure/exception/cached/duplicate/unauthorized outcomes for a
-/// given request duration measurement.
+/// <c>RequestDuration</c> histogram recording call carries an <c>outcome</c> tag. Without an
+/// <c>outcome</c> tag, dashboards cannot distinguish success/failure/exception/cached/duplicate/
+/// unauthorized outcomes for a given request duration measurement.
 /// </para>
 /// <para>
 /// <strong>Detection technique (IL-literal collection, not full data-flow analysis).</strong> This

@@ -26,12 +26,17 @@ namespace SharedKernel.ArchitectureTests;
 /// registry.
 /// </para>
 /// <para>
-/// <strong>The registry is not empty.</strong> Its first
-/// real entry covers <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s
-/// <c>PublishSingle</c> method — see the entry's own remarks in <see cref="AllowList"/>'s
-/// initializer for the full rationale, and the "Closure-free static-lambda naming" note below
-/// for why the registered type/method pair does not textually match the source-level
-/// <c>MediatRDomainEventDispatcher</c>/<c>PublishSingle</c> declaration.
+/// <strong>The registry is currently empty.</strong> Its one-time entry for
+/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s former
+/// <c>PublishSingle</c> method (WO-039/P-240) was retired at P-544: 05.Application's redesign
+/// rewrote the dispatcher's runtime-type-dispatch technique from a cached
+/// <c>MethodInfo.MakeGenericMethod</c> delegate to <see cref="Type.MakeGenericType"/> +
+/// <see cref="Activator.CreateInstance(Type, object?[])"/> (see <c>DispatchAsync</c>/
+/// <c>BuildNotification</c> in the current source) — a technique <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>
+/// does not match at all (it looks only for a call named exactly <c>"MakeGenericMethod"</c>), so
+/// no exemption is needed for the current implementation. The "Closure-free static-lambda naming"
+/// note below is kept as a reusable implementation note for the NEXT exemption request, not
+/// because a current entry depends on it.
 /// </para>
 /// <para>
 /// <strong>Closure-free static-lambda naming (reusable implementation note):</strong> when a
@@ -107,32 +112,12 @@ public static class ReflectionExemptionRegistry
     /// </remarks>
     private static readonly HashSet<(string TypeFullName, string MethodName)> AllowList = new()
     {
-        // ===== WO-039 Exemption: MediatRDomainEventDispatcher =====
-        // Rationale: SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.PublishSingle
-        // calls MethodInfo.MakeGenericMethod to build a cached, closed-generic MediatR publish
-        // delegate per concrete runtime IDomainEvent type — a documented, deliberate exception to
-        // the platform-wide SK0012 prohibition, explicitly modeled on the already-accepted
-        // 07.Messaging.MassTransitEventPublisher.BuildPublisher precedent (itself still unregistered
-        // in this allow-list — see the class-level "known open gap" remarks). The generic-method
-        // reference is captured once per closed IDomainEvent Type in a static
-        // ConcurrentDictionary<Type, Delegate> cache and invoked thereafter as a direct delegate
-        // call, never a per-dispatch MakeGenericMethod+Invoke pair — the platform-approved shape
-        // for "publish-by-runtime-type through a generic API."
-        //
-        // The registered pair below is NOT the source-level "MediatRDomainEventDispatcher"/
-        // "PublishSingle" text — PublishSingle's MakeGenericMethod call lives inside a closure-free
-        // `static` lambda passed to ConcurrentDictionary.GetOrAdd, which Roslyn compiles onto a
-        // compiler-generated `<>c` singleton nested type with a synthesized method name. The exact
-        // pair was verified empirically (red-then-green) against the real compiled
-        // SharedKernel.Application.dll — see 00.Governance/CLAUDE.md's SK0012 registry notes and
-        // ReflectionGuardRulesRealAssemblyTests for the verification procedure. Do not hand-edit
-        // this pair from a source-level reading; re-verify empirically if PublishSingle's lambda
-        // body or its position within the type changes.
-        //
-        // Approving work order: WO-039 (P-240 / SK.00.DomainEventDispatcherReflectionExemption).
-        // Approval date: 2026-07-06.
-        // Reviewing team member: governance-phase-implementer (00.Governance domain agent).
-        ("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0"),
+        // No entries currently registered. The former WO-039/P-240 entry for
+        // SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's PublishSingle
+        // method was retired at P-544 — the dispatcher no longer calls MakeGenericMethod at all
+        // (see this file's class-level remarks). Add a new entry here, with the full governance
+        // rationale documented per the "How to request an exception" steps above, the next time a
+        // genuine MakeGenericMethod use needs an exemption.
     };
 
     /// <summary>
