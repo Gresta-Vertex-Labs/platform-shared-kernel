@@ -9,12 +9,27 @@ namespace SharedKernel.Scheduling.Jobs;
 
 /// <summary>
 /// The sole <c>05.Application</c> bridge for this package: dispatches a
-/// <typeparamref name="TCommand"/> built by a registration-time factory through the full MediatR
-/// pipeline (validation, authorization, transaction, logging, metrics), and reports the resulting
-/// <see cref="Result"/> back to the hosted scheduling loop.
+/// <typeparamref name="TCommand"/> built by a registration-time factory through the consuming
+/// service's MediatR pipeline, and reports the resulting <see cref="Result"/> back to the hosted
+/// scheduling loop.
 /// </summary>
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
+/// <para>
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Behaviors</c> stages the service
+/// registered apply unchanged. Validation and authorization failures arrive as a failed
+/// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
+/// <c>ErrorType.Forbidden</c>) and are logged as a failed fire, never thrown. Authorization reads
+/// <c>IRequestContext</c>, which a scheduled job has no caller to fill: register an implementation
+/// that represents the service's system identity, or the behavior fails closed.
+/// </para>
+/// <para>
+/// <b>The command is an outermost command.</b> Each execution runs in its own DI scope, so the command
+/// sent here is the outermost command of that scope as far as <c>ICommandScope</c> is concerned:
+/// <c>TransactionBehavior</c> commits its unit of work when it succeeds, and callbacks registered
+/// through <c>ICommandScope.OnCompleted</c> run before <see cref="ExecuteAsync"/> returns. A callback
+/// that throws is logged by the pipeline and does not turn the fire into a failure.
+/// </para>
 /// <para>
 /// The scheduling-side counterpart to <c>17.Workflows</c>' <c>CommandActivity&lt;TCommand&gt;</c> — a
 /// closed generic per command, zero reflection (no <c>Type.GetMethod</c>/<c>MakeGenericMethod</c>/
