@@ -248,8 +248,8 @@ internal static class DpopProofValidator
     /// </para>
     /// <para>
     /// Computes <c>base64url(SHA-256(raw bearer access token))</c> and compares it CONSTANT-TIME (via
-    /// <c>System.Security.Cryptography.CryptographicOperations.FixedTimeEquals</c>, the same technique
-    /// <c>01.Core/SharedKernel.Cryptography</c>'s <c>HmacSha256Signer</c> uses) against
+    /// <c>System.Security.Cryptography.CryptographicOperations.FixedTimeEquals</c>, the same primitive
+    /// <c>01.Core/SharedKernel.Cryptography</c>'s <c>FixedTimeComparison</c> is built on) against
     /// <paramref name="proofJwt"/>'s own <c>ath</c> claim (WO-060, P-385).
     /// </para>
     /// </remarks>

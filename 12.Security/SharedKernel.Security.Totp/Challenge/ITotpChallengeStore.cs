@@ -15,7 +15,7 @@ namespace SharedKernel.Security.Totp.Challenge;
 /// </para>
 /// <para>
 /// <paramref name="identityKey">identityKey</paramref>-shaped parameters use the SAME
-/// <see cref="string"/> shape <c>01.Core</c>'s <c>TotpVerifier</c>/<c>ITotpReplayGuard</c> already key
+/// <see cref="string"/> shape <c>01.Core</c>'s <c>ITotpVerifier</c>/<c>ITotpReplayGuard</c> already key
 /// on — never a divergent <see cref="Guid"/>-keyed contract. A <see cref="Guid"/> user id is always
 /// formatted to this shape via the single internal helper this package reuses for both the writer
 /// (<see cref="TotpChallengeService"/>) and the reader (<c>TotpStepUpClaimsTransformation</c>).

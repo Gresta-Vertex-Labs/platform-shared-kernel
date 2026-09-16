@@ -72,7 +72,7 @@ services.AddMtlsAuthentication<PrivatePkiCertificateValidator>(options =>
 
 Several Open Banking/PSD2 regimes additionally require binding a bearer access token to the presenting client certificate (RFC 8705) — proving the caller holding the token is the same caller that terminated the TLS connection, on top of (or instead of) `SharedKernel.Security.Oidc`'s DPoP mechanism. When **both** a client certificate and a bearer token are presented on the same request:
 
-1. This package computes the SHA-256 thumbprint of the *actually-presented* certificate via `01.Core/SharedKernel.Cryptography`'s `IContentHasher`.
+1. This package computes the SHA-256 thumbprint of the *actually-presented* certificate via `01.Core/SharedKernel.Cryptography`'s `IContentHasher` — register it with `services.AddSharedKernelCryptography(configuration)`.
 2. It compares that thumbprint, constant-time, against the bearer principal's `cnf.x5t#S256` confirmation claim — read generically off the `ClaimsPrincipal` produced by whichever scheme validated the token. **This package never references `SharedKernel.Security.Oidc`** — the binding check is decoupled entirely through claims inspection, mirroring this domain's sibling-packages-never-reference-each-other rule.
 3. A mismatch rejects the request even when the underlying bearer token is otherwise fully valid. A request presenting *only* a certificate (no accompanying bearer token/`cnf` claim) skips this check entirely — there is nothing to bind against.
 
@@ -80,7 +80,7 @@ This is the FAPI 1.0-era sender-constraining mechanism several regional Open Ban
 
 ## Security notes
 
-- **Constant-time comparison** is used for the `cnf.x5t#S256` binding check — a `ConstantTimeThumbprintComparer` built on `01.Core/SharedKernel.Cryptography`'s `IHmacSigner`, never `string.Equals`/`==`/`SequenceEqual`, mirroring `.ApiKey`'s `ConstantTimeKeyComparer` technique exactly.
+- **Constant-time comparison** is used for the `cnf.x5t#S256` binding check — `01.Core/SharedKernel.Cryptography`'s `FixedTimeComparison.AreEqual`, never `string.Equals`/`==`/`SequenceEqual`, the same primitive `.ApiKey` uses.
 - `AllowedCertificateTypes`/`RevocationMode` default to `CertificateTypes.Chained`/`X509RevocationMode.Offline` (WO-060) — no weaker than plain ASP.NET Core's own `CertificateAuthenticationOptions` defaults, so the documented `AddMtlsAuthentication<TValidator>()` common path (no options override) never leaves a consumer less secure than using the framework directly. Overriding either to a more permissive value is an explicit, CAPS-documented opt-out (see above), never a default.
 - A rejected, absent, or validator-invalid certificate never resolves to an authenticated context — authentication fails outright.
 - This package does not attempt certificate issuance, CA management, or revocation checking (CRL/OCSP) — those remain the consuming service's own concern.

@@ -5,7 +5,7 @@ namespace SharedKernel.Security.Totp.Challenge;
 /// <summary>
 /// The single, shared conversion from a <see cref="Guid"/> user id to the
 /// <see cref="string"/>-shaped identity key <see cref="ITotpChallengeStore"/> and
-/// <c>01.Core</c>'s <c>TotpVerifier</c>/<c>ITotpReplayGuard</c> key on.
+/// <c>01.Core</c>'s <c>ITotpVerifier</c>/<c>ITotpReplayGuard</c> key on.
 /// </summary>
 /// <remarks>
 /// Reused by exactly two call sites — <see cref="TotpChallengeService"/> (writer) and

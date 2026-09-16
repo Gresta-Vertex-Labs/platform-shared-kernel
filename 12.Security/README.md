@@ -29,8 +29,10 @@ services.AddApiKeyAuthentication<MyDatabaseBackedApiKeyValidator>();
 services.AddMtlsAuthentication<MyCertificateWhitelistValidator>();
 
 // TOTP second-factor step-up — augments the OIDC-authenticated principal with an "otp" AMR claim
-// after a fresh successful TOTP challenge (requires AddSharedKernelCryptography too):
-services.AddTotpStepUp<MyTotpChallengeStore>();
+// after a fresh successful TOTP challenge. Chains onto 01.Core's cryptography builder and needs your own
+// ITotpReplayGuard:
+services.AddSingleton<ITotpReplayGuard, MyRedisTotpReplayGuard>();
+services.AddSharedKernelCryptography(configuration).AddTotpStepUp<MyTotpChallengeStore>();
 
 // In application code, inject the abstractions — never a concrete OIDC/ApiKey/Mtls/Totp type:
 public sealed class MyCommandHandler(IUserContext user, ITenantProvider tenant)
@@ -54,7 +56,7 @@ public sealed class MyCommandHandler(IUserContext user, ITenantProvider tenant)
 
 1. Call `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` first — it registers JWT Bearer authentication plus the scoped `IUserContext`/`ITenantProvider` factories. Both return a `SecurityAuthenticationBuilder` that can additionally chain `.RequireDpop<TReplayCache>()`/`.WithRevocationCheck<TCheck>()` — see `SharedKernel.Security.Oidc/README.md`'s Quick Starts.
 2. `AddApiKeyAuthentication<TValidator>()` and `AddMtlsAuthentication<TValidator>()` are both optional and additive, and may be combined. Call each *after* step 1 so its scheme-aware `IUserContext` factory can correctly delegate to whichever factory was already registered for a request authenticated on a different scheme.
-3. `AddTotpStepUp<TChallengeStore>()` is also optional and additive — call it after step 1 (so an authenticated JWT Bearer principal exists to transform) and after `01.Core`'s `AddSharedKernelCryptography` (so `ITotpGenerator`/`TotpVerifier` are already registered). Unlike `.ApiKey`/`.Mtls`, it never authenticates a new primary identity — it augments an already-authenticated principal's `AuthenticationMethods`, and composes only with `.Oidc`'s `OidcUserContext`.
+3. `AddTotpStepUp<TChallengeStore>()` is also optional and additive — call it after step 1 (so an authenticated JWT Bearer principal exists to transform) and chain it onto `01.Core`'s `AddSharedKernelCryptography(configuration)` builder, which supplies `ITotpGenerator`/`IRecoveryCodeGenerator`; it registers `ITotpVerifier` itself, and your service registers the `ITotpReplayGuard`. Unlike `.ApiKey`/`.Mtls`, it never authenticates a new primary identity — it augments an already-authenticated principal's `AuthenticationMethods`, and composes only with `.Oidc`'s `OidcUserContext`.
 4. Application code injects `IUserContext`/`ITenantProvider` — never `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext` directly. Those are infrastructure details this domain exists to hide.
 
 ## Packages

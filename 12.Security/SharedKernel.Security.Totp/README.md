@@ -2,19 +2,19 @@
 
 Second-factor (TOTP) enrollment and challenge orchestration for the SharedKernel, plus the ASP.NET Core-facing step-up wiring that makes a successful TOTP verification observable through `IUserContext.WasAuthenticatedWith`/`AuthenticationMethods` with **zero changes** to `SharedKernel.Security.Oidc` or `14.Presentation`'s `[RequireAuthenticationMethod]`. A fifth sibling provider package alongside `.Oidc`/`.ApiKey`/`.Mtls` — never a dependent of any of them, and never referenced by them.
 
-> **This package never reimplements RFC 6238/4226.** Every TOTP/HOTP primitive — secret generation, Base32 encoding, provisioning-URI construction, drift-windowed code validation, and replay protection — is delegated entirely to `01.Core/SharedKernel.Cryptography`'s `ITotpGenerator`/`TotpVerifier`/`Base32`/`TotpProvisioningUri`/`RecoveryCodeGenerator`. This package only orchestrates those primitives and wires the result into ASP.NET Core.
+> **This package never reimplements RFC 6238/4226.** Every TOTP/HOTP primitive — secret generation, Base32 encoding, provisioning-URI construction, drift-windowed code validation, and replay protection — is delegated entirely to `01.Core/SharedKernel.Cryptography`'s `ITotpGenerator`/`ITotpVerifier`/`TotpSecret`/`Base32`/`TotpProvisioningUri`/`IRecoveryCodeGenerator`. This package only orchestrates those primitives and wires the result into ASP.NET Core.
 
 ## Public Surface
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
-| `TotpEnrollment` | Sealed record | The secret, its encodings, and one-time recovery codes produced by a new enrollment |
+| `TotpEnrollment` | Sealed record | The secret, its encodings, the `TotpParameters` it was enrolled with, and one-time recovery codes produced by a new enrollment |
 | `TotpEnrollmentService` | Sealed class | Generates a new `TotpEnrollment` — synchronous, side-effect-free, never persists anything |
 | `ITotpChallengeStore` | Interface | The sole consumer-supplied extensibility point — tracks the most recent successful TOTP challenge per identity |
-| `TotpChallengeService` | Sealed class | Verifies a presented code (or records an out-of-band recovery-code step-up), composing `01.Core`'s `TotpVerifier` |
+| `TotpChallengeService` | Sealed class | Verifies a presented code (or records an out-of-band recovery-code step-up), composing `01.Core`'s `ITotpVerifier` and returning its `TotpVerificationResult` |
 | `TotpStepUpOptions` | Sealed class | The AMR claim type/value and freshness window applied by the step-up transformation |
 | `TotpStepUpClaimsTransformation` | `IClaimsTransformation` | Stamps the configured AMR claim onto the current principal after a fresh successful challenge |
-| `TotpServiceCollectionExtensions` | Static class | `AddTotpStepUp<TChallengeStore>` DI extension method |
+| `TotpServiceCollectionExtensions` | Static class | `AddTotpStepUp<TChallengeStore>` extension on `01.Core`'s `ICryptographyBuilder` |
 
 ## How the step-up mechanism works
 
@@ -51,25 +51,27 @@ public sealed class DatabaseTotpChallengeStore(ITotpChallengeRepository reposito
 }
 ```
 
-Register **after** `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` (so an authenticated JWT Bearer principal exists for the transformation to observe) and **after** `AddSharedKernelCryptography` (so `ITotpGenerator`/`TotpVerifier` are already registered — this method does not register them, and does not register `ITotpReplayGuard`, which your service must also supply):
+Register **after** `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` (so an authenticated JWT Bearer principal exists for the transformation to observe). `AddTotpStepUp<TChallengeStore>` chains onto the builder returned by `01.Core`'s `AddSharedKernelCryptography`, which registers `ITotpGenerator`/`IRecoveryCodeGenerator`/`ISecureRandomGenerator`; it adds `ITotpVerifier` itself (via `.AddTotpVerification()`). Your service supplies the `ITotpReplayGuard`, as a singleton over a store every replica shares:
 
 ```csharp
-services.AddSharedKernelCryptography(configuration);
 services.AddSharedKernelSecurity(configuration);
-services.AddTotpStepUp<DatabaseTotpChallengeStore>(options =>
-{
-    options.ChallengeFreshnessWindow = TimeSpan.FromMinutes(15); // default
-});
 
-// Your own ITotpReplayGuard — 01.Core ships no default implementation:
+// Your own ITotpReplayGuard — 01.Core ships no default implementation. It must compare-and-store the
+// accepted time step atomically (a Lua script, a conditional UPDATE); see ITotpReplayGuard's XML docs.
 services.AddSingleton<ITotpReplayGuard, RedisTotpReplayGuard>();
+
+services.AddSharedKernelCryptography(configuration)
+    .AddTotpStepUp<DatabaseTotpChallengeStore>(options =>
+    {
+        options.ChallengeFreshnessWindow = TimeSpan.FromMinutes(15); // default
+    });
 ```
 
-`AddTotpStepUp<TChallengeStore>` is **not** chained onto `SecurityAuthenticationBuilder` — that type is owned by `.Oidc`, and this package cannot reference `.Oidc` under the sibling-packages-never-reference-each-other rule. It is a plain `IServiceCollection` extension, mirroring `AddApiKeyAuthentication`/`AddMtlsAuthentication`'s own independent-extension shape.
+`AddTotpStepUp<TChallengeStore>` is **not** chained onto `SecurityAuthenticationBuilder` — that type is owned by `.Oidc`, and this package cannot reference `.Oidc` under the sibling-packages-never-reference-each-other rule. Chaining it onto `01.Core`'s `ICryptographyBuilder` instead makes the cryptography registration impossible to forget.
 
 ## Enrollment recipe
 
-`TotpEnrollmentService.GenerateEnrollment` returns everything needed to show a user a QR code and a one-time set of recovery codes — but **never persists any of it**. Encrypting the raw secret at rest and hashing each recovery code at rest is entirely your own responsibility:
+`TotpEnrollmentService.GenerateEnrollment` returns everything needed to show a user a QR code and a one-time set of recovery codes — but **never persists any of it**. Encrypting the raw secret at rest and hashing each recovery code at rest is entirely your own responsibility. Store `enrollment.Parameters` too when you enroll with anything other than `TotpParameters.Default`: authenticator apps keep generating codes with the digits, period and algorithm they scanned.
 
 ```csharp
 public sealed class EnrollUserInTotp(TotpEnrollmentService enrollmentService, ISymmetricEncryptionService encryption, IOneWayHasher hasher)
@@ -78,14 +80,18 @@ public sealed class EnrollUserInTotp(TotpEnrollmentService enrollmentService, IS
     {
         TotpEnrollment enrollment = enrollmentService.GenerateEnrollment(issuer: "Contoso", accountName: userEmail);
 
-        // Encrypt the raw secret before it ever reaches storage — never store it plaintext.
-        var encryptedSecret = await encryption.EncryptToStringAsync(enrollment.Secret, ct);
+        // Encrypt the raw secret before it ever reaches storage — never store it plaintext. Binding the user id
+        // as associated data stops one user's ciphertext being copied onto another user's row.
+        EncryptedPayload encryptedSecret = await encryption.EncryptAsync(enrollment.Secret, userId.ToByteArray(), ct);
 
-        // Hash each recovery code before it ever reaches storage — a recovery code IS a secret,
-        // exactly like a password or API key.
-        var hashedRecoveryCodes = enrollment.RecoveryCodes.Select(hasher.Hash).ToList();
+        // Hash each recovery code, in normalized form, before it ever reaches storage — a recovery code IS a
+        // secret, exactly like a password or API key. Normalizing lets "k7q2mxf4pa" match "K7Q2M-XF4PA" later.
+        var hashedRecoveryCodes = enrollment.RecoveryCodes
+            .Select(code => hasher.Hash(RecoveryCodeGenerator.Normalize(code)))
+            .ToList();
 
-        await SaveEnrollmentAsync(userId, encryptedSecret, hashedRecoveryCodes, ct); // your own storage
+        // Your own storage.
+        await SaveEnrollmentAsync(userId, encryptedSecret.ToString(), enrollment.Parameters, hashedRecoveryCodes, ct);
 
         // Show enrollment.ProvisioningUri as a QR code and enrollment.RecoveryCodes to the user
         // EXACTLY ONCE, here, in this response — never log them, never persist the plaintext forms.
@@ -99,22 +105,36 @@ public sealed class EnrollUserInTotp(TotpEnrollmentService enrollmentService, IS
 A worked, non-production reference implementation of both a primary-code challenge and a recovery-code fallback ships inside this package at `Samples/TotpChallengeRecipeSample.cs`, exercised by this package's own test suite — read it alongside this recipe rather than as a drop-in replacement for your own integration code.
 
 ```csharp
-public sealed class TotpChallengeEndpoint(TotpChallengeService challengeService, ITotpEnrollmentLookup enrollmentLookup)
+public sealed class TotpChallengeEndpoint(TotpChallengeService challengeService, ITotpEnrollmentLookup enrollmentLookup, ITotpAttemptThrottle throttle)
 {
-    public async Task<bool> VerifyPrimaryCodeAsync(Guid userId, string presentedCode, CancellationToken ct)
+    public async Task<IResult> VerifyPrimaryCodeAsync(Guid userId, string presentedCode, CancellationToken ct)
     {
-        byte[] decryptedSecret = await enrollmentLookup.GetDecryptedSecretAsync(userId, ct);
+        // RFC 4226 section 7.3 requires limiting attempts; neither TotpChallengeService nor ITotpVerifier does it.
+        string identityKey = userId.ToString("D");
+        if (await throttle.IsThrottledAsync(identityKey, ct))
+        {
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
 
-        // TotpChallengeService.VerifyAsync composes 01.Core's TotpVerifier (RFC 6238 validation plus
-        // replay protection) and, on success, records the challenge for the step-up transformation.
-        return await challengeService.VerifyAsync(userId, decryptedSecret, presentedCode, ct);
+        await throttle.RecordAttemptAsync(identityKey, ct);
+        (byte[] decryptedSecret, TotpParameters parameters) = await enrollmentLookup.GetDecryptedSecretAsync(userId, ct);
+
+        // TotpChallengeService.VerifyAsync composes 01.Core's ITotpVerifier (RFC 6238 validation plus
+        // time-step replay protection) and, on Valid, records the challenge for the step-up transformation.
+        return await challengeService.VerifyAsync(userId, decryptedSecret, presentedCode, parameters, ct) switch
+        {
+            TotpVerificationResult.Valid => Results.NoContent(),
+            TotpVerificationResult.Replayed => Results.Problem("This code was already used. Wait for the next one.", statusCode: 400),
+            _ => Results.Problem("The code is incorrect.", statusCode: 400),
+        };
     }
 
     public async Task<bool> VerifyRecoveryCodeAsync(Guid userId, string presentedRecoveryCode, CancellationToken ct)
     {
         // Recovery-code matching is ENTIRELY your own concern -- TotpChallengeService is never
         // involved in it, only in recording that a step-up occurred once you've verified it yourself
-        // (e.g. via IOneWayHasher.Verify against your own stored recovery-code hashes).
+        // (e.g. IOneWayHasher.Verify of RecoveryCodeGenerator.Normalize(presentedRecoveryCode) against
+        // your own stored hashes).
         bool matched = await enrollmentLookup.TryConsumeRecoveryCodeAsync(userId, presentedRecoveryCode, ct);
         if (!matched)
         {
@@ -129,7 +149,8 @@ public sealed class TotpChallengeEndpoint(TotpChallengeService challengeService,
 
 ## Security notes
 
-- `ITotpChallengeStore`/`ITotpReplayGuard` never dictate storage — the sole consumer-supplied extensibility points, mirroring `SharedKernel.Security.Oidc`'s `IDpopProofReplayCache`/`ITokenRevocationCheck` "never dictates storage" precedent exactly. This package never references `02.Caching` or `06.Persistence`.
+- `ITotpChallengeStore`/`ITotpReplayGuard`/`ITotpAttemptThrottle` never dictate storage — the consumer-supplied extensibility points, mirroring `SharedKernel.Security.Oidc`'s `IDpopProofReplayCache`/`ITokenRevocationCheck` "never dictates storage" precedent exactly. This package never references `02.Caching` or `06.Persistence`.
+- Replay protection is per time step, not per code: once a code is accepted, no code from the same or an earlier time step is accepted again for that user. `TotpChallengeService.VerifyAsync` reports such a code as `TotpVerificationResult.Replayed`, distinct from `Invalid`.
 - `TotpChallengeService.VerifyAsync`/`.RecordStepUpAsync` and `TotpStepUpClaimsTransformation.TransformAsync` both hard-reject `Guid.Empty`/an anonymous principal **before** any store or verifier call — an empty identity is never a valid step-up subject. This is also what structurally excludes `.ApiKey`/`.Mtls` machine-credential identities from ever triggering a lookup.
 - No log statement in this package ever includes a raw TOTP code, raw secret, or raw recovery code — only structured, safe fields (a failure-reason string, or nothing at all).
 - This package never persists an enrollment's secret or recovery codes — encrypting/hashing them at rest is entirely your own responsibility (see the enrollment recipe above).

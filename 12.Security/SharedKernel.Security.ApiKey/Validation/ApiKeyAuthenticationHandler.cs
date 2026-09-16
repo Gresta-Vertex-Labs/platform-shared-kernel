@@ -3,7 +3,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Cryptography.Signing;
+using SharedKernel.Cryptography;
 using SharedKernel.Security.ApiKey.Logging;
 using SharedKernel.Security.ApiKey.Options;
 
@@ -18,8 +18,8 @@ namespace SharedKernel.Security.ApiKey.Validation;
 /// The key is read from <see cref="ApiKeyAuthenticationOptions.HeaderName"/> and, when configured, the
 /// <see cref="ApiKeyAuthenticationOptions.QueryParameterName"/> query-string parameter. If both are
 /// present and their values differ, authentication fails outright — a possible credential-confusion
-/// attack — using a <b>constant-time comparison</b> (<see cref="ConstantTimeKeyComparer"/>, built on
-/// <c>SharedKernel.Cryptography</c>'s <see cref="IHmacSigner"/>) rather than <c>string.Equals</c>/<c>==</c>.
+/// attack — detected with <c>SharedKernel.Cryptography</c>'s <see cref="FixedTimeComparison.AreEqual(string, string)"/>,
+/// never <c>string.Equals</c>/<c>==</c>.
 /// </para>
 /// <para>
 /// On a successful <see cref="IApiKeyValidator.ValidateAsync"/> match, produces an authenticated
@@ -33,7 +33,6 @@ public sealed class ApiKeyAuthenticationHandler(
     ILoggerFactory loggerFactory,
     UrlEncoder encoder,
     IApiKeyValidator validator,
-    IHmacSigner hmacSigner,
     ILogger<ApiKeyAuthenticationHandler> auditLogger)
     : AuthenticationHandler<ApiKeyAuthenticationOptions>(options, loggerFactory, encoder)
 {
@@ -76,11 +75,11 @@ public sealed class ApiKeyAuthenticationHandler(
         return AuthenticateResult.Success(ticket);
     }
 
-    private bool TrySelectPresentedKey(string? headerValue, string? queryValue, out string? presentedKey)
+    private static bool TrySelectPresentedKey(string? headerValue, string? queryValue, out string? presentedKey)
     {
         if (!string.IsNullOrEmpty(headerValue) && !string.IsNullOrEmpty(queryValue))
         {
-            if (!ConstantTimeKeyComparer.AreEqual(hmacSigner, headerValue, queryValue))
+            if (!FixedTimeComparison.AreEqual(headerValue, queryValue))
             {
                 presentedKey = null;
                 return false;

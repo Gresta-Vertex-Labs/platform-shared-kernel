@@ -1,10 +1,11 @@
+using System.Buffers.Text;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Hashing;
-using SharedKernel.Cryptography.Signing;
 using SharedKernel.Security.Mtls.Logging;
 
 namespace SharedKernel.Security.Mtls.Validation;
@@ -16,9 +17,16 @@ namespace SharedKernel.Security.Mtls.Validation;
 /// certificate.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Wraps <c>Microsoft.AspNetCore.Authentication.Certificate</c>'s <see cref="CertificateAuthenticationEvents.OnCertificateValidated"/>
 /// event — this package performs no CA/chain/revocation validation of its own beyond what
 /// <see cref="IMtlsCertificateValidator"/> delegates to it (WO-058, P-377).
+/// </para>
+/// <para>
+/// The certificate-binding check hashes the presented certificate with the <see cref="IContentHasher"/>
+/// registered by <c>AddSharedKernelCryptography</c> and compares thumbprints with
+/// <see cref="FixedTimeComparison.AreEqual(string, string)"/>.
+/// </para>
 /// </remarks>
 internal static class MtlsAuthenticationHandler
 {
@@ -92,11 +100,10 @@ internal static class MtlsAuthenticationHandler
         }
 
         var contentHasher = services.GetRequiredService<IContentHasher>();
-        var actualThumbprintBytes = contentHasher.ComputeHash(context.ClientCertificate.RawData);
-        var actualThumbprint = ToBase64Url(actualThumbprintBytes);
+        var actualThumbprintBytes = contentHasher.ComputeHash(context.ClientCertificate.RawDataMemory.Span);
+        var actualThumbprint = Base64Url.EncodeToString(actualThumbprintBytes);
 
-        var hmacSigner = services.GetRequiredService<IHmacSigner>();
-        if (!ConstantTimeThumbprintComparer.AreEqual(hmacSigner, actualThumbprint, expectedThumbprint))
+        if (!FixedTimeComparison.AreEqual(actualThumbprint, expectedThumbprint))
         {
             failureReason = "CnfMismatch";
             return false;
@@ -104,9 +111,6 @@ internal static class MtlsAuthenticationHandler
 
         return true;
     }
-
-    private static string ToBase64Url(byte[] bytes) =>
-        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static IEnumerable<Claim> BuildClaims(MtlsValidationResult result)
     {

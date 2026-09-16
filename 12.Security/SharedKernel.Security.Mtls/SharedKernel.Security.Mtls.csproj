@@ -33,9 +33,9 @@
   <ItemGroup>
     <!--
       Grants SharedKernel.Security.Mtls.Tests direct access to internal types (MtlsAuthenticationHandler,
-      ConstantTimeThumbprintComparer, MtlsClaimTypes) so the certificate-validated event handler and the
+      MtlsClaimTypes) so the certificate-validated event handler and the
       RFC 8705 cnf.x5t#S256 binding check can be proven directly (WO-058, T-25/T-26) — mirrors
-      SharedKernel.Security.ApiKey's identical InternalsVisibleTo grant for ConstantTimeKeyComparer.
+      SharedKernel.Security.ApiKey's identical InternalsVisibleTo grant.
     -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Security.Mtls.Tests</_Parameter1>

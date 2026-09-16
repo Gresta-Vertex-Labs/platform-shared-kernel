@@ -8,7 +8,9 @@ namespace SharedKernel.Security.ApiKey.Validation;
 /// <remarks>
 /// Implementations should treat key comparison as security-sensitive: prefer a hashed lookup (e.g. via
 /// <c>01.Core/SharedKernel.Cryptography</c>'s <c>IOneWayHasher</c>) over storing keys in plaintext, and
-/// avoid early-exit string comparison of the raw presented key against secret material.
+/// never compare the raw presented key against secret material with an early-exit comparison — use
+/// <c>SharedKernel.Cryptography.FixedTimeComparison.AreEqual</c>, or <c>FixedTimeComparison.AreEqualToAny</c>
+/// when more than one key per client is active during a rotation window.
 /// </remarks>
 public interface IApiKeyValidator
 {

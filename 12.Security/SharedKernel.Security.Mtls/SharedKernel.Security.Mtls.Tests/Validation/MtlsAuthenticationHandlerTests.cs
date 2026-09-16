@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Hashing;
-using SharedKernel.Cryptography.Signing;
 using SharedKernel.Security.Abstractions.Abstractions;
 using SharedKernel.Security.Mtls.Validation;
 using Xunit;
@@ -55,7 +54,6 @@ public sealed class MtlsAuthenticationHandlerTests
         var services = new ServiceCollection();
         services.AddSingleton(validator);
         services.AddSingleton<IContentHasher, Sha256ContentHasher>();
-        services.AddSingleton<IHmacSigner, HmacSha256Signer>();
         httpContext.RequestServices = services.BuildServiceProvider();
 
         if (bearerPrincipal is not null)
@@ -145,6 +143,23 @@ public sealed class MtlsAuthenticationHandlerTests
 
         var validator = new TestValidator(MtlsValidationResult.Valid());
         var context = BuildContext(presentedCert, validator, bearerPrincipal);
+
+        await SharedKernel.Security.Mtls.Validation.MtlsAuthenticationHandler.HandleCertificateValidatedAsync(context);
+
+        Assert.Null(context.Principal);
+        Assert.False(context.Result?.Succeeded ?? false);
+    }
+
+    [Fact]
+    public async Task ThumbprintDifferingOnlyInLastCharacter_Rejects()
+    {
+        var cert = CreateSelfSignedCertificate();
+        var thumbprint = ToBase64Url(SHA256.HashData(cert.RawData));
+        var nearMiss = thumbprint[..^1] + (thumbprint[^1] == 'A' ? 'B' : 'A');
+        var cnfClaim = new Claim("cnf", $"{{\"x5t#S256\":\"{nearMiss}\"}}");
+        var bearerPrincipal = new ClaimsPrincipal(new ClaimsIdentity([cnfClaim], "Bearer"));
+
+        var context = BuildContext(cert, new TestValidator(MtlsValidationResult.Valid()), bearerPrincipal);
 
         await SharedKernel.Security.Mtls.Validation.MtlsAuthenticationHandler.HandleCertificateValidatedAsync(context);
 

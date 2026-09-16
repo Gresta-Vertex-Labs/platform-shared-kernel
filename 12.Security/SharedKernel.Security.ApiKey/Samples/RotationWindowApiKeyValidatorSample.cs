@@ -1,3 +1,4 @@
+using SharedKernel.Cryptography;
 using SharedKernel.Security.ApiKey.Validation;
 
 namespace SharedKernel.Security.ApiKey.Samples;
@@ -5,7 +6,7 @@ namespace SharedKernel.Security.ApiKey.Samples;
 /// <summary>
 /// A worked, NON-PRODUCTION example of an <see cref="IApiKeyValidator"/> that accepts more than one
 /// simultaneously-active key per client during a rotation window, using
-/// <see cref="ApiKeyRotationComparer.AnyMatch(string, IReadOnlyList{string})"/>.
+/// <see cref="FixedTimeComparison.AreEqualToAny(string, IEnumerable{string})"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,13 +20,11 @@ namespace SharedKernel.Security.ApiKey.Samples;
 /// </para>
 /// <para>
 /// <b>The pattern this sample demonstrates:</b> during a key-rotation grace window, a client may hold
-/// EITHER its current key or a not-yet-retired previous key. Looking up "the" single valid key for a
-/// client and comparing it with a single constant-time check (as
-/// <see cref="ApiKeyAuthenticationHandler"/>'s own internal <c>ConstantTimeKeyComparer</c> does for its
-/// unrelated header-vs-query ambiguity check) cannot express this — there are multiple simultaneously
-/// valid candidates. <see cref="ApiKeyRotationComparer.AnyMatch(string, IReadOnlyList{string})"/> is the
-/// sanctioned way to compare a presented key against every such candidate WITHOUT leaking, via elapsed
-/// comparison time, which candidate (or how many) matched (WO-060, P-389).
+/// EITHER its current key or a not-yet-retired previous key. A single comparison against "the" valid
+/// key cannot express this — there are multiple simultaneously valid candidates.
+/// <see cref="FixedTimeComparison.AreEqualToAny(string, IEnumerable{string})"/> compares the presented key
+/// against every candidate, whichever one matches, so elapsed comparison time never reveals which
+/// candidate (or how many) matched.
 /// </para>
 /// </remarks>
 internal sealed class RotationWindowApiKeyValidatorSample : IApiKeyValidator
@@ -63,7 +62,7 @@ internal sealed class RotationWindowApiKeyValidatorSample : IApiKeyValidator
         // set to the specific client being authenticated wherever possible.
         foreach (var (clientId, candidates) in _clientKeys)
         {
-            if (ApiKeyRotationComparer.AnyMatch(presentedKey, candidates))
+            if (FixedTimeComparison.AreEqualToAny(presentedKey, candidates))
             {
                 return Task.FromResult(ApiKeyValidationResult.Valid(clientId: clientId));
             }

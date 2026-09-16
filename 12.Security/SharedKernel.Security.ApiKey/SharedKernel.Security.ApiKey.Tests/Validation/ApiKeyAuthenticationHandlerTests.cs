@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SharedKernel.Cryptography.Signing;
 using SharedKernel.Security.ApiKey.Logging;
 using SharedKernel.Security.ApiKey.Options;
 using SharedKernel.Security.ApiKey.Validation;
@@ -24,7 +23,6 @@ public sealed class ApiKeyAuthenticationHandlerTests
             NullLoggerFactory.Instance,
             UrlEncoder.Default,
             validator,
-            new HmacSha256Signer(),
             logger);
 
         return (handler, new DefaultHttpContext(), logger);
@@ -145,6 +143,27 @@ public sealed class ApiKeyAuthenticationHandlerTests
         var record = logger.Records.ShouldHaveLogged(new EventId(12200), LogLevel.Warning);
         Assert.DoesNotContain("header-value", record.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("query-value", record.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("same-key-X", "same-key-Y")]
+    [InlineData("X-same-key", "Y-same-key")]
+    [InlineData("same-key", "same-key-but-longer")]
+    public async Task HeaderAndQueryDifferingAnywhere_FailsAsAmbiguous(string headerValue, string queryValue)
+    {
+        var validator = new StubApiKeyValidator
+        {
+            Result = ApiKeyValidationResult.Valid("client-1"),
+        };
+        var options = new ApiKeyAuthenticationOptions { QueryParameterName = "api_key" };
+        var (handler, httpContext, _) = CreateHandler(options, validator);
+        httpContext.Request.Headers["X-Api-Key"] = headerValue;
+        httpContext.Request.QueryString = QueryString.Create("api_key", queryValue);
+
+        var result = await AuthenticateAsync(handler, httpContext);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(0, validator.CallCount);
     }
 
     [Fact]

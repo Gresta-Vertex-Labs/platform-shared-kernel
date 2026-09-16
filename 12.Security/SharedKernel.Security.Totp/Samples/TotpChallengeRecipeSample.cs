@@ -1,4 +1,5 @@
 using SharedKernel.Cryptography.Hashing;
+using SharedKernel.Cryptography.Totp;
 using SharedKernel.Security.Totp.Challenge;
 
 namespace SharedKernel.Security.Totp.Samples;
@@ -19,31 +20,33 @@ namespace SharedKernel.Security.Totp.Samples;
 /// <b>The pattern this sample demonstrates:</b> <see cref="TotpChallengeService"/> never resolves a
 /// user's decrypted secret or recovery-code hashes itself — this package has zero persistence
 /// coupling by design. A real integration point (here, <see cref="_enrollmentLookup"/>) supplies the
-/// decrypted secret; a primary TOTP code goes through <see cref="TotpChallengeService.VerifyAsync"/>,
-/// while a recovery code is verified entirely by the consumer's OWN <see cref="IOneWayHasher.Verify"/>
-/// check against its own stored recovery-code hashes, then reported to the SAME freshness mechanism
-/// via <see cref="TotpChallengeService.RecordStepUpAsync"/>.
+/// decrypted secret and the parameters it was enrolled with; a primary TOTP code goes through
+/// <see cref="TotpChallengeService.VerifyAsync"/>, while a recovery code is verified entirely by the
+/// consumer's OWN <see cref="IOneWayHasher.Verify"/> check against its own stored hashes of
+/// <see cref="RecoveryCodeGenerator.Normalize"/>-normalized codes, then reported to the SAME freshness
+/// mechanism via <see cref="TotpChallengeService.RecordStepUpAsync"/>.
 /// </para>
 /// </remarks>
 internal sealed class TotpChallengeRecipeSample
 {
     // Stand-in for a real lookup (database, secret store, ...) returning the user's decrypted TOTP
-    // secret and the hashes of their still-unused recovery codes. A real implementation decrypts the
-    // secret via 01.Core/SharedKernel.Cryptography's ISymmetricEncryptionService immediately before
-    // use — never store or pass around a decrypted secret longer than necessary.
-    private readonly IReadOnlyDictionary<Guid, (byte[] Secret, IReadOnlyList<string> RecoveryCodeHashes)> _enrollmentLookup;
+    // secret, the parameters it was enrolled with, and the hashes of their still-unused recovery codes.
+    // A real implementation decrypts the secret via 01.Core/SharedKernel.Cryptography's
+    // ISymmetricEncryptionService immediately before use — never store or pass around a decrypted secret
+    // longer than necessary.
+    private readonly IReadOnlyDictionary<Guid, SampleEnrollment> _enrollmentLookup;
     private readonly TotpChallengeService _challengeService;
     private readonly IOneWayHasher _oneWayHasher;
 
     /// <summary>Initializes a new instance of <see cref="TotpChallengeRecipeSample"/> for demonstration purposes.</summary>
     /// <param name="enrollmentLookup">
-    /// A map of user id to that user's decrypted secret and recovery-code hashes. In a real
-    /// implementation this is loaded from the consuming service's own storage, never hardcoded.
+    /// A map of user id to that user's decrypted secret, enrollment parameters and recovery-code hashes. In a
+    /// real implementation this is loaded from the consuming service's own storage, never hardcoded.
     /// </param>
     /// <param name="challengeService">The real <see cref="TotpChallengeService"/> this sample composes.</param>
     /// <param name="oneWayHasher">The real <see cref="IOneWayHasher"/> this sample verifies recovery codes with.</param>
     internal TotpChallengeRecipeSample(
-        IReadOnlyDictionary<Guid, (byte[] Secret, IReadOnlyList<string> RecoveryCodeHashes)> enrollmentLookup,
+        IReadOnlyDictionary<Guid, SampleEnrollment> enrollmentLookup,
         TotpChallengeService challengeService,
         IOneWayHasher oneWayHasher)
     {
@@ -56,22 +59,38 @@ internal sealed class TotpChallengeRecipeSample
     }
 
     /// <summary>
+    /// Hashes a recovery code for storage at enrollment time, in the normalized form
+    /// <see cref="VerifyRecoveryCodeAsync"/> verifies against.
+    /// </summary>
+    /// <param name="oneWayHasher">The hasher.</param>
+    /// <param name="recoveryCode">A code from <c>TotpEnrollment.RecoveryCodes</c>.</param>
+    /// <returns>The hash to store.</returns>
+    internal static string HashRecoveryCode(IOneWayHasher oneWayHasher, string recoveryCode) =>
+        oneWayHasher.Hash(RecoveryCodeGenerator.Normalize(recoveryCode));
+
+    /// <summary>
     /// Verifies a primary TOTP code presented by <paramref name="userId"/>.
     /// </summary>
     /// <param name="userId">The user attempting the step-up.</param>
     /// <param name="presentedCode">The candidate TOTP code.</param>
     /// <param name="ct">A cancellation token.</param>
-    /// <returns><see langword="true"/> only for a fresh, valid, not-previously-used code for an enrolled user.</returns>
-    internal async Task<bool> VerifyPrimaryCodeAsync(Guid userId, string presentedCode, CancellationToken ct)
+    /// <returns>
+    /// The verification outcome; <see cref="TotpVerificationResult.Invalid"/> for an unenrolled user. A real
+    /// endpoint reports <see cref="TotpVerificationResult.Replayed"/> as "code already used, wait for the next
+    /// one" rather than as a wrong code.
+    /// </returns>
+    internal async Task<TotpVerificationResult> VerifyPrimaryCodeAsync(Guid userId, string presentedCode, CancellationToken ct)
     {
         if (!_enrollmentLookup.TryGetValue(userId, out var enrollment))
         {
-            return false;
+            return TotpVerificationResult.Invalid;
         }
 
         // TotpChallengeService.VerifyAsync itself records the successful challenge — no further
         // action needed here for the primary-code path.
-        return await _challengeService.VerifyAsync(userId, enrollment.Secret, presentedCode, ct).ConfigureAwait(false);
+        return await _challengeService
+            .VerifyAsync(userId, enrollment.Secret, presentedCode, enrollment.Parameters, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -80,7 +99,7 @@ internal sealed class TotpChallengeRecipeSample
     /// mechanism a primary TOTP code would.
     /// </summary>
     /// <param name="userId">The user attempting the step-up.</param>
-    /// <param name="presentedRecoveryCode">The candidate recovery code.</param>
+    /// <param name="presentedRecoveryCode">The candidate recovery code, as typed.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns><see langword="true"/> only when the presented code matches one of the user's stored recovery-code hashes.</returns>
     /// <remarks>
@@ -90,13 +109,25 @@ internal sealed class TotpChallengeRecipeSample
     /// </remarks>
     internal async Task<bool> VerifyRecoveryCodeAsync(Guid userId, string presentedRecoveryCode, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(presentedRecoveryCode);
+
         if (!_enrollmentLookup.TryGetValue(userId, out var enrollment))
         {
             return false;
         }
 
-        bool matched = enrollment.RecoveryCodeHashes.Any(hash =>
-            _oneWayHasher.Verify(hash, presentedRecoveryCode) is HashVerificationResult.Success or HashVerificationResult.SuccessRehashNeeded);
+        string normalized = RecoveryCodeGenerator.Normalize(presentedRecoveryCode);
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        // Every stored hash is checked, so the time taken does not reveal which code matched.
+        bool matched = false;
+        foreach (string hash in enrollment.RecoveryCodeHashes)
+        {
+            matched |= _oneWayHasher.Verify(hash, normalized) is HashVerificationResult.Success or HashVerificationResult.SuccessRehashNeeded;
+        }
 
         if (!matched)
         {
@@ -108,4 +139,10 @@ internal sealed class TotpChallengeRecipeSample
         await _challengeService.RecordStepUpAsync(userId, ct).ConfigureAwait(false);
         return true;
     }
+
+    /// <summary>A stand-in for one user's stored enrollment.</summary>
+    /// <param name="Secret">The decrypted TOTP secret.</param>
+    /// <param name="Parameters">The parameters the secret was enrolled with.</param>
+    /// <param name="RecoveryCodeHashes">Hashes of the still-unused, normalized recovery codes.</param>
+    internal sealed record SampleEnrollment(byte[] Secret, TotpParameters Parameters, IReadOnlyList<string> RecoveryCodeHashes);
 }

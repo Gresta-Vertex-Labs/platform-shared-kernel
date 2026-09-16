@@ -34,13 +34,13 @@ All five target `net10.0`. Test sub-folders live inside each project folder (nev
 | Claims parsing | `System.Security.Claims` (BCL — no NuGet) |
 | DI wiring | `Microsoft.Extensions.DependencyInjection.Abstractions` (transitive via ASP.NET Core) |
 | API key authentication *(WO-057)* | `Microsoft.AspNetCore.Authentication.Abstractions` (`AuthenticationHandler<TOptions>`, framework-provided, not a NuGet dependency) |
-| Constant-time key comparison *(WO-057)* | `01.Core/SharedKernel.Cryptography` existing primitives — never a bespoke comparison routine |
+| Constant-time key comparison *(WO-057)* | `01.Core/SharedKernel.Cryptography`'s `FixedTimeComparison` (`AreEqual`/`AreEqualToAny`) — never a bespoke comparison routine, and never `IHmacSigner` used as an equality check |
 | Structured security-audit logging *(WO-057)* | `Microsoft.Extensions.Logging.Abstractions` `[LoggerMessage]` source generator (already a transitive ASP.NET Core dependency in `.Oidc`/`.ApiKey`; never added to `.Abstractions`) |
 | DPoP proof JWT parsing/verification *(WO-058)* | `Microsoft.IdentityModel.JsonWebTokens`/`Microsoft.IdentityModel.Tokens` — already a transitive dependency of `Microsoft.AspNetCore.Authentication.JwtBearer`/`Microsoft.Identity.Web` in `.Oidc`; no new top-level NuGet reference. `JsonWebKey.ComputeJwkThumbprint()` (RFC 7638) and `Base64UrlEncoder` handle `jkt` computation/encoding — no hand-rolled crypto |
 | Mutual-TLS client-certificate authentication *(WO-058)* | `Microsoft.AspNetCore.Authentication.Certificate` — **CORRECTED at Core-phase implementation time**: this is a standalone NuGet `PackageReference` (pinned `10.0.0`, matching `.Oidc`'s `JwtBearer` pin), NOT part of the `Microsoft.AspNetCore.App` shared framework — verified directly against the installed shared-framework directories on disk (no `Certificate.dll` present in any of them). The original "framework-provided handler" framing was wrong; `SharedKernel.Security.Mtls.csproj` carries both the `PackageReference` and a `FrameworkReference` to `Microsoft.AspNetCore.App` (for `Http`/`DependencyInjection`/`Logging.Abstractions` only) |
-| Certificate/JWK thumbprinting *(WO-058)* | `01.Core/SharedKernel.Cryptography`'s `IContentHasher`/SHA-256 primitives — never a bespoke hashing routine, mirrors the constant-time-comparison precedent from `.ApiKey`. `SharedKernel.Security.Mtls` has no `Microsoft.IdentityModel` reference to source a base64url encoder from (unlike `.Oidc`), so it uses a small hand-rolled one (`Convert.ToBase64String(...).TrimEnd('=').Replace('+','-').Replace('/','_')`) |
+| Certificate/JWK thumbprinting *(WO-058)* | `01.Core/SharedKernel.Cryptography`'s `IContentHasher`/SHA-256 primitives — never a bespoke hashing routine, mirrors the constant-time-comparison precedent from `.ApiKey`. `SharedKernel.Security.Mtls` has no `Microsoft.IdentityModel` reference to source a base64url encoder from (unlike `.Oidc`), so it uses the BCL's `System.Buffers.Text.Base64Url` |
 | Token revocation/introspection transport (RFC 7662) *(WO-058)* | Consumer-supplied — this package ships only the `ITokenRevocationCheck` seam, never an HTTP client or store of its own |
-| TOTP/HOTP algorithm, Base32, provisioning URI, replay-verified challenge *(WO-069, P-452, SHIPPED)* | Delegated entirely to `01.Core/SharedKernel.Cryptography`'s `ITotpGenerator`/`TotpVerifier`/`Base32`/`TotpProvisioningUri`/`RecoveryCodeGenerator` (P-451) — `SharedKernel.Security.Totp` never reimplements any RFC 6238/4226 primitive, mirroring the "algorithm lives in `01.Core`, ASP.NET Core-facing wiring lives here" split already ratified for this WO |
+| TOTP/HOTP algorithm, Base32, provisioning URI, replay-verified challenge *(WO-069, P-452, SHIPPED)* | Delegated entirely to `01.Core/SharedKernel.Cryptography`'s `ITotpGenerator`/`ITotpVerifier`/`TotpSecret`/`Base32`/`TotpProvisioningUri`/`IRecoveryCodeGenerator` (P-451, redesigned P-545) — `SharedKernel.Security.Totp` never reimplements any RFC 6238/4226 primitive, mirroring the "algorithm lives in `01.Core`, ASP.NET Core-facing wiring lives here" split already ratified for this WO |
 | Step-up claim propagation *(WO-069, P-452, SHIPPED)* | `Microsoft.AspNetCore.Authentication.IClaimsTransformation` — genuinely framework-provided via a bare `<FrameworkReference Include="Microsoft.AspNetCore.App" />`, CONFIRMED by listing the installed shared-framework directory (`Microsoft.AspNetCore.Authentication.Abstractions.dll` is present) before writing the csproj — no separate `PackageReference` was needed this time, UNLIKE the `.Mtls`/`Microsoft.AspNetCore.Authentication.Certificate` correction (WO-058), where the identical "framework-provided" assumption turned out wrong. Two data points now exist in this domain for the same category of claim (once wrong, once right) — the lesson is to always verify directly against the installed SDK's shared-framework directory, never assume either way regardless of which way a prior case went. Scheme-agnostic, runs during `AuthenticateAsync` before any `IUserContext` DI factory first resolves |
 | TOTP challenge/step-up backing store *(WO-069, P-452, SHIPPED)* | Consumer-supplied — this package ships only the `ITotpChallengeStore` seam, never a Redis/database client or store of its own, mirroring `IDpopProofReplayCache`/`ITokenRevocationCheck`'s precedent exactly |
 
@@ -433,9 +433,8 @@ ApiKeyAuthenticationHandler  (AuthenticationHandler<ApiKeyAuthenticationOptions>
     — reads the presented key from the configured header/query parameter
     — CONSTANT-TIME COMPARISON SCOPE: when BOTH the header and the configured query parameter are
       present on the same request, the handler compares the two PRESENTED values against each other
-      (never a stored secret — this package holds none) via ConstantTimeKeyComparer, built on
-      SharedKernel.Cryptography's IHmacSigner (HMAC-based equality — never string.Equals/==/
-      SequenceEqual) — a mismatch fails authentication as a possible credential-confusion attack,
+      (never a stored secret — this package holds none) via SharedKernel.Cryptography's
+      FixedTimeComparison.AreEqual (never string.Equals/==/SequenceEqual) — a mismatch fails authentication as a possible credential-confusion attack,
       logged as "AmbiguousCredential". The actual secret-vs-stored-value comparison is entirely
       IApiKeyValidator's own concern, outside this package's visibility.
     — on a successful IApiKeyValidator match, produces an authenticated ClaimsPrincipal mappable to
@@ -443,31 +442,15 @@ ApiKeyAuthenticationHandler  (AuthenticationHandler<ApiKeyAuthenticationOptions>
     — on an invalid, absent, or ambiguous key, authentication fails — never falls through to an
       authenticated context
 
-ApiKeyRotationComparer.AnyMatch(string presented, IReadOnlyList<string> candidates)  → bool  (public)       [WO-060, P-389, SHIPPED]
-    NOTE: A NEW PUBLIC type, distinct from the existing INTERNAL ConstantTimeKeyComparer (which stays
-          internal — it is scoped to ApiKeyAuthenticationHandler's own header-vs-query ambiguity check
-          and is not meant for consumer use). ApiKeyRotationComparer is the sanctioned public entry
-          point for an IApiKeyValidator implementation — necessarily authored in the CONSUMING service's
-          own assembly, which has no access to this package's internal types — that needs to validate
-          against MORE THAN ONE currently-active key per client (a rotation grace window: issue a new
-          key, keep the old key valid for a bounded overlap period, then revoke it). Built on the SAME
-          IHmacSigner-based constant-time technique as the internal comparer. ALWAYS iterates and
-          compares EVERY candidate — never short-circuits on an early match — so elapsed comparison time
-          never correlates with which key, or how many keys, were checked. This package still never
-          dictates storage: the caller supplies the candidate key list from wherever it stores active
-          keys per client (a two-row table, a JSON array column, ...); AnyMatch only closes the "every
-          consuming team reinvents this and likely gets the timing side-channel wrong" gap.
-    SHIPPED (C-45) — builds its own internal HmacSha256Signer (zero constructor dependencies, so this
-    static helper needs no DI container), iterates every candidate via ConstantTimeKeyComparer.AreEqual
-    and accumulates with `matched |= isMatch` — never short-circuits. A worked, non-production
-    IApiKeyValidator sample demonstrating this pattern ships at
-    Samples/RotationWindowApiKeyValidatorSample.cs (internal, doc-flagged as a recipe, C-46).
-    SHIPPED (T-38, WO-060) — additionally gained an internal AnyMatch(string, IReadOnlyList<string>,
-    IHmacSigner) overload; the public overload above now delegates to it with a real HmacSha256Signer.
-    Purely a testability seam (reachable from SharedKernel.Security.ApiKey.Tests via the package's
-    existing InternalsVisibleTo grant) — the public contract, default behavior, and always-evaluate-
-    every-candidate guarantee are all unchanged. Added because the public-only signature offered no way
-    for a test to prove "never short-circuits" without either this seam or a flaky timing measurement.
+Rotation-window comparison (multiple simultaneously-active keys per client)                                [WO-060, P-389; P-545]
+    REMOVED with the P-545 SharedKernel.Cryptography redesign: ApiKeyRotationComparer and the internal
+          ConstantTimeKeyComparer. An IApiKeyValidator validating against more than one active key per client
+          calls SharedKernel.Cryptography.FixedTimeComparison.AreEqualToAny(presented, candidates) directly —
+          it ALWAYS compares every candidate (never short-circuits) and compares SHA-256 digests, so elapsed
+          time reveals neither which key matched nor any key's length. This package still never dictates
+          storage. A worked, non-production IApiKeyValidator sample ships at
+          Samples/RotationWindowApiKeyValidatorSample.cs (internal, doc-flagged as a recipe) and is exercised
+          by ApiKeyRotationComparisonTests.
 ```
 
 #### DI registration (`ApiKey/Extensions/`)
@@ -598,15 +581,17 @@ TotpEnrollment  (sealed record — SHIPPED, WO-069/P-452)
     .Secret                                                      → byte[]
     .SecretBase32                                                → string   (RFC 4648 Base32, unpadded — for manual entry)
     .ProvisioningUri                                             → Uri      (otpauth://totp/... "Key Uri Format")
+    .Parameters                                                  → TotpParameters   (store with the secret; pass back to VerifyAsync)
     .RecoveryCodes                                                → IReadOnlyList<string>   (plaintext, shown once)
 
 TotpEnrollmentService  (sealed class — SHIPPED, WO-069/P-452)
-    GenerateEnrollment(string issuer, string accountName, int secretLengthBytes = 20,
-                        int recoveryCodeCount = 10)               → TotpEnrollment
-    — SYNCHRONOUS, side-effect-free: composes 01.Core/SharedKernel.Cryptography's ISecureRandomGenerator
-      (secret bytes) + Base32.Encode + TotpProvisioningUri.Build + RecoveryCodeGenerator.GenerateCodes
-      (all P-451). NEVER persists anything — the raw secret must be encrypted at rest via 01.Core's
-      ISymmetricEncryptionService and each recovery code hashed at rest via 01.Core's IOneWayHasher,
+    ctor(ISecureRandomGenerator, IRecoveryCodeGenerator)
+    GenerateEnrollment(string issuer, string accountName, TotpParameters? parameters = null,
+                        int secretLengthBytes = TotpSecret.DefaultLength, int recoveryCodeCount = 10) → TotpEnrollment
+    — SYNCHRONOUS, side-effect-free: composes 01.Core/SharedKernel.Cryptography's TotpSecret.Generate
+      + Base32.Encode + TotpProvisioningUri.Build(issuer, account, secret, parameters)
+      + IRecoveryCodeGenerator.GenerateCodes. NEVER persists anything — the raw secret must be encrypted at rest via 01.Core's
+      ISymmetricEncryptionService and each RecoveryCodeGenerator.Normalize-normalized recovery code hashed at rest via 01.Core's IOneWayHasher,
       entirely the consuming service's own responsibility (documented as a README recipe, not shipped
       code — 12.Security has zero persistence coupling by design).
 ```
@@ -620,15 +605,20 @@ ITotpChallengeStore  (SHIPPED, WO-069/P-452)
     NOTE: The sole consumer-supplied extensibility point — mirrors IDpopProofReplayCache's/
           ITokenRevocationCheck's "never dictates storage" precedent exactly (in-memory for single-instance
           dev, Redis/database-backed for production multi-replica). identityKey uses the SAME string shape
-          01.Core's TotpVerifier/ITotpReplayGuard already key on — never a divergent Guid-keyed contract.
+          01.Core's ITotpVerifier/ITotpReplayGuard already key on — never a divergent Guid-keyed contract.
           This package NEVER references 02.Caching or 06.Persistence.
 
 TotpChallengeService  (sealed class — SHIPPED, WO-069/P-452)
-    VerifyAsync(Guid userId, byte[] secret, string code, CancellationToken ct = default)     → Task<bool>
-        Composes 01.Core's TotpVerifier.VerifyAsync (identityKey = a canonical string form of userId);
-        on a true result, additionally calls ITotpChallengeStore.RecordSuccessfulChallengeAsync so the
+    ctor(ITotpVerifier, ITotpChallengeStore, ILogger<TotpChallengeService>)
+    VerifyAsync(Guid userId, ReadOnlyMemory<byte> secret, string code, TotpParameters? parameters = null,
+                CancellationToken ct = default)                → Task<TotpVerificationResult>
+        Composes 01.Core's ITotpVerifier.VerifyAsync (identityKey = a canonical string form of userId) and
+        returns its Invalid/Valid/Replayed outcome unchanged (Replayed = a valid code whose time step, or a
+        later one, was already accepted — logged as "ReplayedCode", distinct from "InvalidCode");
+        on Valid only, additionally calls ITotpChallengeStore.RecordSuccessfulChallengeAsync so the
         step-up wiring below can observe it. Rejects userId == Guid.Empty BEFORE any store/verifier call —
-        never treats an empty identity as a valid step-up subject.
+        never treats an empty identity as a valid step-up subject (returns Invalid). Attempt limiting
+        (RFC 4226 section 7.3) is the caller's job via 01.Core's ITotpAttemptThrottle; this type does not do it.
     RecordStepUpAsync(Guid userId, CancellationToken ct = default)                            → Task
         Lets a consumer's OWN recovery-code verification (IOneWayHasher.Verify against its own stored
         hashes — not this package's concern) feed the SAME freshness mechanism without a live TOTP code.
@@ -637,9 +627,9 @@ TotpChallengeService  (sealed class — SHIPPED, WO-069/P-452)
           (TotpIdentityKeyFormatter, internal), reused by both this type (writer) and
           TotpStepUpClaimsTransformation (reader) below — never two independently-formatted conversions
           that could silently miss each other on lookup.
-    NOTE (SHIPPED): VerifyAsync/RecordStepUpAsync expose Task<bool>/Task even though 01.Core's
-          TotpVerifier.VerifyAsync itself returns ValueTask<bool> — a deliberate async-signature
-          normalization at this package's own public boundary, not a functional difference.
+    NOTE (SHIPPED): VerifyAsync/RecordStepUpAsync expose Task<TotpVerificationResult>/Task even though
+          01.Core's ITotpVerifier.VerifyAsync returns ValueTask<TotpVerificationResult> — a deliberate
+          async-signature normalization at this package's own public boundary, not a functional difference.
 ```
 
 #### Step-up wiring (`StepUp/`)
@@ -685,15 +675,17 @@ TotpStepUpClaimsTransformation  (sealed class, implements Microsoft.AspNetCore.A
 #### DI registration (`Extensions/`)
 
 ```text
-AddTotpStepUp<TChallengeStore>(Action<TotpStepUpOptions>? configureOptions = null)  →  IServiceCollection    [WO-069/P-452, SHIPPED]
+AddTotpStepUp<TChallengeStore>(this ICryptographyBuilder, Action<TotpStepUpOptions>? configureOptions = null)  →  ICryptographyBuilder    [WO-069/P-452; P-545]
     where TChallengeStore : class, ITotpChallengeStore
-    Registers TChallengeStore as scoped ITotpChallengeStore, TotpStepUpOptions, IClaimsTransformation →
+    Calls 01.Core's .AddTotpVerification() (ITotpVerifier → TotpVerifier), and registers TChallengeStore as scoped ITotpChallengeStore, TotpStepUpOptions, IClaimsTransformation →
     TotpStepUpClaimsTransformation, and TotpChallengeService/TotpEnrollmentService.
     NOT chained onto SecurityAuthenticationBuilder — that type is owned by .Oidc, and this package cannot
-    reference .Oidc under the sibling-packages-never-reference-each-other rule. A plain IServiceCollection
-    extension, mirroring AddApiKeyAuthentication/AddMtlsAuthentication's own independent-extension shape.
+    reference .Oidc under the sibling-packages-never-reference-each-other rule. Chained onto 01.Core's
+    ICryptographyBuilder (from AddSharedKernelCryptography) so the ITotpGenerator/IRecoveryCodeGenerator/
+    ISecureRandomGenerator it composes cannot be forgotten.
     NOTE: Call after AddSharedKernelSecurity/AddAzureB2CAuthentication (so a JWT Bearer principal exists to
-          transform) AND after AddSharedKernelCryptography (so TotpVerifier/ITotpGenerator are registered).
+          transform). The consuming service registers ITotpReplayGuard as a singleton; ITotpVerifier fails to
+          resolve without it.
 ```
 
 **Domain Invariants for this package** (see the dedicated `## Domain Invariants` section below for the
@@ -772,7 +764,7 @@ Rules (mirroring the platform's WO-041 logging convention):
 - **(WO-060, P-386)** `MtlsAuthenticationOptions` and any future machine-client-credential options type in this domain must default to a posture **no weaker than the equivalent ASP.NET Core framework default** — a shared-kernel library's own convenience wrapper must never be the reason a consumer ends up less secure than using the framework directly. Any deliberately permissive default (e.g. a private-PKI trust chain) is an explicit, separately-named opt-in, never the shipped default.
 - **(WO-060, P-387)** `SecurityOptions.Jwt.ValidAlgorithms`/`DpopOptions.ValidAlgorithms` allowlists are enforced **before** any signature or claim evaluation proceeds — an out-of-allowlist `alg` (including `"none"`) is a hard, early rejection, not a downstream validation failure. Defaults follow the FAPI 2.0 Security Profile baseline (PS256/ES256); widening the allowlist for a non-FAPI IdP (e.g. adding `"RS256"`) is the consuming service's own explicit, documented configuration choice.
 - **(WO-060, P-388)** The revocation-check caching seam (`IRevocationCheckCache`) must **never let a "revoked" outcome be masked by a stale cached "not revoked" entry** beyond `RevocationCheckCacheOptions.RevokedTtl` — a cache-lookup failure or an unreadable cache entry falls through to the inner `ITokenRevocationCheck`, inheriting its fail-closed contract; the cache must never itself become a new fail-open surface. This package never references `02.Caching` — the seam is consumer-implemented, mirroring `IDpopProofReplayCache`'s precedent.
-- **(WO-060, P-389)** A multi-candidate key/credential comparison (`ApiKeyRotationComparer.AnyMatch` and any future analogue) must **always evaluate every candidate** — never short-circuit on the first match — so elapsed comparison time never correlates with which, or how many, candidates matched. This is the same timing-attack discipline the single-key `ConstantTimeKeyComparer`/RFC 8705 thumbprint comparer already apply, extended to the N-candidate case. `ApiKeyRotationComparer` must be **public** — unlike the internal `ConstantTimeKeyComparer`, it is the sanctioned entry point for a consumer's own `IApiKeyValidator` implementation, necessarily authored outside this package's assembly.
+- **(WO-060, P-389; P-545)** A multi-candidate key/credential comparison must **always evaluate every candidate** — never short-circuit on the first match — so elapsed comparison time never correlates with which, or how many, candidates matched. Every constant-time comparison in this domain (header-vs-query API key, RFC 8705 thumbprint, rotation-window candidates) uses `01.Core`'s `FixedTimeComparison` (`AreEqual`/`AreEqualToAny`), which guarantees this; never a local comparer, and never `IHmacSigner` used as an equality check.
 - **(WO-069, P-452, SHIPPED)** `SharedKernel.Security.Totp` must never reimplement any RFC 6238/4226 primitive — the algorithm, Base32 codec, provisioning-URI builder, and replay-verified challenge composition all live in `01.Core/SharedKernel.Cryptography` (P-451); this package only orchestrates them and wires the result into ASP.NET Core.
 - **(WO-069, P-452, SHIPPED)** `ITotpChallengeStore` never dictates a storage mechanism — the sole consumer-supplied extensibility point, mirroring `IDpopProofReplayCache`/`ITokenRevocationCheck` exactly; this package never references `02.Caching` or `06.Persistence`.
 - **(WO-069, P-452, SHIPPED)** `TotpChallengeService.VerifyAsync`/`.RecordStepUpAsync` and `TotpStepUpClaimsTransformation` must **hard-reject `Guid.Empty`/an anonymous principal before any store or verifier call** — an empty identity or unauthenticated principal is never a valid step-up subject. This is also the mechanism that structurally excludes `.ApiKey`/`.Mtls` machine-credential identities (always `UserId = Guid.Empty`) from ever triggering a store lookup.
@@ -943,10 +935,9 @@ services.AddMtlsAuthentication<MyPrivatePkiCertificateValidator>(options =>
 });
 
 // Validating against multiple simultaneously-active API keys during a rotation window
-// (WO-060, P-389 — inside a consumer's own IApiKeyValidator implementation, in the
-// consumer's OWN assembly — ApiKeyRotationComparer is public precisely so this compiles there):
+// (WO-060, P-389 — inside a consumer's own IApiKeyValidator implementation):
 // var candidates = await _store.GetActiveKeysAsync(clientId, ct); // e.g. [oldKey, newKey]
-// return ApiKeyRotationComparer.AnyMatch(presentedKey, candidates)
+// return FixedTimeComparison.AreEqualToAny(presentedKey, candidates)
 //     ? ApiKeyValidationResult.Valid(clientId)
 //     : ApiKeyValidationResult.Invalid;
 
@@ -959,15 +950,17 @@ services.AddMtlsAuthentication<MyPrivatePkiCertificateValidator>(options =>
 // }
 
 // TOTP second-factor step-up (WO-069, P-452, SHIPPED).
-// Requires AddSharedKernelCryptography (for TotpVerifier/ITotpGenerator, 01.Core P-451) and
-// AddSharedKernelSecurity/AddAzureB2CAuthentication (for a principal to transform) to have run first:
-services.AddSharedKernelCryptography(configuration);
+// Chains onto 01.Core's AddSharedKernelCryptography builder (which supplies ITotpGenerator/
+// IRecoveryCodeGenerator) and needs AddSharedKernelSecurity/AddAzureB2CAuthentication (for a principal to
+// transform) plus the consuming service's own singleton ITotpReplayGuard:
 services
     .AddSharedKernelSecurity(configuration)
     .RequireDpop<MyDistributedDpopReplayCache>();
-services.AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
+services.AddSingleton<ITotpReplayGuard, MyRedisTotpReplayGuard>();
+services.AddSharedKernelCryptography(configuration)
+    .AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
 // After a caller's own challenge endpoint calls TotpChallengeService.VerifyAsync(...) and it returns
-// true, EVERY subsequent request from that principal (within TotpStepUpOptions.ChallengeFreshnessWindow)
+// TotpVerificationResult.Valid, EVERY subsequent request from that principal (within TotpStepUpOptions.ChallengeFreshnessWindow)
 // automatically resolves IUserContext.WasAuthenticatedWith("otp") == true — no 14.Presentation change,
 // no .Oidc change, required. [RequireAuthenticationMethod("otp")] on a 14.Presentation endpoint just works.
 ```
@@ -994,8 +987,8 @@ services.AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
 - The DPoP `ath` check (WO-060, P-385) computes a SHA-256 hash of the raw bearer token string via the BCL — no new AOT surface beyond what the existing `jkt`/RFC 8705 thumbprint checks already use.
 - `SecurityOptions.Jwt.ValidAlgorithms`/`DpopOptions.ValidAlgorithms` (WO-060, P-387) are `IReadOnlyCollection<string>` allowlists consulted via simple set-membership checks — AOT-safe, no reflection.
 - `IRevocationCheckCache`/`CachingTokenRevocationCheck` (WO-060, P-388) introduce no new AOT surface — a plain interface/decorator pair with no third-party cache dependency of their own.
-- `ApiKeyRotationComparer.AnyMatch` (WO-060, P-389) is a simple loop over the same technique the existing internal single-key comparer uses — no new AOT surface.
-- **(WO-069, P-452, SHIPPED)** `TotpEnrollmentService`/`TotpChallengeService` delegate every RFC 6238/4226-adjacent operation to `01.Core/SharedKernel.Cryptography` (`Base32`, `TotpProvisioningUri`, `RecoveryCodeGenerator`, `TotpVerifier`), already AOT-preferred per that domain's own notes — no new reflection surface introduced here.
+- Constant-time comparison (WO-060, P-389; P-545) is `01.Core`'s `FixedTimeComparison` — no reflection, no new AOT surface.
+- **(WO-069, P-452, SHIPPED)** `TotpEnrollmentService`/`TotpChallengeService` delegate every RFC 6238/4226-adjacent operation to `01.Core/SharedKernel.Cryptography` (`TotpSecret`, `Base32`, `TotpProvisioningUri`, `IRecoveryCodeGenerator`, `ITotpVerifier`), already AOT-preferred per that domain's own notes — no new reflection surface introduced here.
 - **(WO-069, P-452, SHIPPED)** `Microsoft.AspNetCore.Authentication.IClaimsTransformation` is a plain interface; `TotpStepUpClaimsTransformation`'s implementation is ordinary claims-collection manipulation — AOT-safe. CONFIRMED reachable purely via the bare `Microsoft.AspNetCore.App` `FrameworkReference` — no separate `PackageReference` needed, verified directly against the installed shared-framework directory (`Microsoft.AspNetCore.Authentication.Abstractions.dll` present) before writing the csproj, unlike the `.Mtls`/`Microsoft.AspNetCore.Authentication.Certificate` correction precedent (WO-058), where the identical "framework-provided" assumption was wrong. The lesson generalizes either way — always verify against the installed SDK, never assume.
 
 ---
@@ -1023,7 +1016,7 @@ services.AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
 - **Recommended pattern for a CONSUMING service's own test suites:** `16.Testing/SharedKernel.Testing`'s `SecurityTestContextBuilder` (`SharedKernel.Testing.Security`) produces both a `ClaimsPrincipal` (`.Build()`) and an `IUserContext` (`.BuildUserContext()`) from one fluent construction — the sanctioned alternative to hand-assembling a `ClaimsIdentity` by hand in a downstream service's own test project. `12.Security` sits *below* `16.Testing` in the layering order and cannot reference it, so this guidance is for consuming services' test projects, never for this domain's own fixtures — the hand-rolled `ClaimsPrincipal` patterns above remain how this domain's own `.Tests` projects construct fixtures.
 - **DI registration tests** use `IServiceCollection` / `ServiceCollection` directly with `BuildServiceProvider()` — no `WebApplicationFactory` or test host required for unit-level DI verification.
 - **`AddAzureB2CAuthentication` DI tests must additionally register `IConfiguration` directly in the `ServiceCollection`** (`services.AddSingleton<IConfiguration>(config)`) before calling `AddAzureB2CAuthentication(config)` — confirmed at WO-057/T-09 implementation time: `Microsoft.Identity.Web`'s `SetIdentityModelLogger` resolves `IConfiguration` from the container itself, not merely from the `configuration` parameter passed into the extension method. Every real ASP.NET Core host registers `IConfiguration` automatically via `WebApplicationBuilder`; a bare `ServiceCollection`-based unit test does not and must do so explicitly or `BuildServiceProvider()`/first options resolution throws `InvalidOperationException`.
-- **Testing `ConstantTimeKeyComparer` directly** (an `internal` type in `SharedKernel.Security.ApiKey`) requires `SharedKernel.Security.ApiKey.csproj` to declare `[assembly: InternalsVisibleTo("SharedKernel.Security.ApiKey.Tests")]` (via an `AssemblyAttribute` `ItemGroup`, mirroring the pattern already used across `02.Caching`/`04.Contracts`/`06.Persistence`/`07.Messaging`/`11.Communication`) — added WO-057/T-16 so the timing-safe compare path can be proven directly (via a hand-rolled `IHmacSigner` test double showing the outcome is dictated entirely by the injected `Verify` result, never an independent string-comparison shortcut) rather than only indirectly through `ApiKeyAuthenticationHandler`.
+- **`InternalsVisibleTo` for `.ApiKey`/`.Mtls`/`.Totp` tests**: each package's `.csproj` declares `[assembly: InternalsVisibleTo("<Package>.Tests")]` (via an `AssemblyAttribute` `ItemGroup`, mirroring `02.Caching`/`04.Contracts`/`06.Persistence`/`07.Messaging`/`11.Communication`) so internal types — `MtlsAuthenticationHandler`, `TotpIdentityKeyFormatter`, and the `Samples/` recipes — can be proven directly. The former `ConstantTimeKeyComparer`/`ConstantTimeThumbprintComparer` (and their hand-rolled `IHmacSigner` doubles) were removed in P-545; constant-time behavior is `FixedTimeComparison`'s guarantee, proven in `01.Core`'s own tests.
 - **`SharedKernel.Security.Oidc.Tests` references `16.Testing/SharedKernel.Testing`** (WO-057/T-17) — the first `12.Security` test project to do so — for `InMemoryLogger<TCategoryName>`/`LoggerAssertions` to prove `OidcUserContext`/`OidcTenantProvider`'s structured security-audit `[LoggerMessage]` events (`12100`/`12101`) fire at the correct level with no raw claim value in the rendered message. Adding this reference required bumping `Microsoft.Extensions.DependencyInjection`/`Microsoft.Extensions.Hosting` from `9.0.5` to `10.0.9` to avoid an `NU1605` downgrade (mirrors the identical pin already carried by `SharedKernel.Security.ApiKey.Tests`, which references `16.Testing` for the same reason).
 - Step-up authentication tests (WO-058, P-375): a multi-value `amr` claim (discrete claims AND a single space-delimited value) parses correctly into `AuthenticationMethods`; `WasAuthenticatedWith` matches case-insensitively; an absent/malformed `auth_time` claim yields `AuthTime = null` without throwing; `IsAuthenticationFresherThan` is tested by passing an explicit `now` value in the test (never relying on real wall-clock time) to prove both the fresh-accept and stale-reject branches deterministically.
 - DPoP tests (WO-058, P-376): a correctly-bound proof (valid `jwk` signature, matching `htm`/`htu`, fresh `iat`, unseen `jti` via a test double `IDpopProofReplayCache`) is accepted and resolves `IsSenderConstrained = true`; each failure mode (missing/malformed proof, `jkt` mismatch, expired `iat`, replayed `jti`) is tested independently; a non-opted-in host's existing bearer-only tests must be proven unaffected — run the pre-existing Oidc test suite unchanged against a host that never calls `RequireDpop<TReplayCache>()`.
@@ -1033,10 +1026,10 @@ services.AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
 - mTLS secure-default tests (WO-060, P-386, SHIPPED T-32/T-33): a default-constructed `MtlsAuthenticationOptions` rejects a self-signed certificate BEFORE `IMtlsCertificateValidator` ever runs (proves the framework-level pre-filter, not just the validator, now does real work); an explicitly opted-in options instance still accepts a self-signed certificate the validator approves, proving the opt-out path works. **Proving the ordering (not just the outcome) requires driving the REAL `Microsoft.AspNetCore.Authentication.Certificate` handler** — `MtlsAuthenticationHandler.HandleCertificateValidatedAsync` is only invoked from inside the framework's own `OnCertificateValidated` event, which never fires until the framework's `AllowedCertificateTypes`/chain-building pre-filter already passed; a test that calls `HandleCertificateValidatedAsync` directly (as `MtlsAuthenticationHandlerTests` does) *cannot* prove this ordering, since it bypasses the pre-filter entirely. The pattern that works, with no `TestServer`/Kestrel host needed: build a `ServiceCollection` via `AddMtlsAuthentication<TValidator>()` (overriding the registered validator afterward with a call-counting double — last DI registration wins), construct a bare `DefaultHttpContext`, set **`httpContext.Request.Scheme = "https"`** (the handler unconditionally `NoResult()`s a non-HTTPS request before it even inspects `Connection.ClientCertificate` — discovered empirically, not documented anywhere; omitting this makes a test pass for the WRONG reason since `AuthenticateResult.NoResult()` and `.Fail()` both read as `Succeeded == false`), assign `httpContext.Connection.ClientCertificate = cert` (the setter transparently creates and populates an `ITlsConnectionFeature`, so no live TLS handshake is needed), then call `httpContext.AuthenticateAsync(MtlsAuthenticationOptions.DefaultScheme)` directly — see `SharedKernel.Security.Mtls.Tests/Extensions/MtlsAuthenticationDefaultsTests.cs`.
 - Algorithm-allowlist tests (WO-060, P-387, SHIPPED T-34/T-35): a token/proof signed with an algorithm outside the default allowlist — including a crafted `alg: none` token — is rejected before any signature/claim evaluation proceeds, for BOTH the JWT Bearer path and the DPoP proof path; a PS256/ES256-signed token/proof is accepted unchanged (no regression for the FAPI-compliant default case). For the JWT Bearer path, clone the REAL `TokenValidationParameters` wired by `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` (extracted via `IOptionsMonitor<JwtBearerOptions>`), neutralize only `ValidateIssuer`/`ValidateAudience` (which need live OIDC discovery, unavailable in a unit test), and drive the clone through `JsonWebTokenHandler.ValidateTokenAsync` directly — proves the actual production wiring, not a reimplementation of the allowlist check. Assert on `result.Exception is SecurityTokenInvalidAlgorithmException or SecurityTokenSignatureKeyNotFoundException`, not a single exact type: `Microsoft.IdentityModel.Tokens` may reject an out-of-allowlist algorithm during signing-key resolution (no candidate key is considered valid for a disallowed `alg`) rather than during the explicit algorithm-validation step, depending on internal validation order — both outcomes equally prove the token never reached genuine HMAC/signature verification.
 - Revocation-caching tests (WO-060, P-388, SHIPPED T-36/T-37): a cached "not revoked" result avoids a second `IsRevokedAsync` call within `NotRevokedTtl`; a revoked result is cached under the shorter `RevokedTtl`, not the longer `NotRevokedTtl`, so it is never allowed to go as stale as a "not revoked" verdict; `WithRevocationCheckCaching<TCache>()` called before `WithRevocationCheck<TCheck>()` throws `InvalidOperationException` at registration time. Drive time via an injectable `Func<DateTimeOffset> now` closure captured by a hand-rolled `IRevocationCheckCache` double (mutate the closed-over variable between assertions) — never `Task.Delay` against a real clock.
-- API-key rotation tests (WO-060, P-389, SHIPPED T-38/T-39): `ApiKeyRotationComparer.AnyMatch` against a multi-candidate key set is proven not to leak timing correlated with which key, or how many keys, matched — mirrors T-16's `ConstantTimeKeyComparer` verification technique (a hand-rolled `IHmacSigner` double proving every candidate is always compared); a rotation-window scenario (old key still valid, new key valid, both simultaneously accepted) resolves correctly. Unlike `ConstantTimeKeyComparer`, `ApiKeyRotationComparer` is public — its test does not need an `InternalsVisibleTo` grant. **The shipped `AnyMatch(string, IReadOnlyList<string>)` public overload took no injectable `IHmacSigner`** (unlike the internal `ConstantTimeKeyComparer.AreEqual`), making the "always evaluate every candidate, never short-circuit" property structurally unverifiable by a test without either a flaky wall-clock timing measurement (explicitly disallowed) or a testability seam. Resolved by adding a minimal, additive `internal AnyMatch(string, IReadOnlyList<string>, IHmacSigner)` overload that the public method now delegates to (passing a real `HmacSha256Signer`) — reachable from `SharedKernel.Security.ApiKey.Tests` via the package's existing `InternalsVisibleTo` grant, zero change to the public contract or default behavior. **This is the sanctioned pattern going forward**: when a static/stateless security-critical comparator needs its internal iteration/timing behavior proven and hardcodes its own cryptographic primitive, add a package-`internal` overload accepting that primitive rather than leaving the property unverifiable or resorting to timing measurement.
+- API-key rotation tests (WO-060, P-389; rewritten P-545): `ApiKeyRotationComparisonTests` exercises `Samples/RotationWindowApiKeyValidatorSample` (built on `FixedTimeComparison.AreEqualToAny`) — old key still valid, new key valid, another client's key maps to that client, revoked and near-miss keys (one character changed, suffix added, truncated) rejected, empty candidate set rejects. That every candidate is always compared is `AreEqualToAny`'s own guarantee and is not re-proven here; the former `internal AnyMatch(..., IHmacSigner)` testability seam is gone with the type.
 - Unit tests for `SharedKernel.Security.Totp` live in `12.Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.Tests/` *(WO-069, P-452, SHIPPED)*.
-- Enrollment tests (WO-069, P-452, SHIPPED — T-40): `TotpEnrollmentService.GenerateEnrollment` produces a secret of the requested byte length, a `SecretBase32` that round-trips through `01.Core`'s `Base32.Decode`, a `ProvisioningUri` matching the expected `otpauth://totp/...` shape, and the requested count of unique recovery codes.
-- Challenge tests (WO-069, P-452, SHIPPED — T-41/T-42): a valid, freshly-generated TOTP code (via `01.Core`'s `ITotpGenerator.GenerateCode` explicit-timestamp overload, never real wall-clock time) succeeds and records a challenge; an invalid code fails and records nothing; a replayed code fails on its second submission via `TotpVerifier`'s own composed replay check (never reimplemented in this package's own tests); `Guid.Empty` is rejected before any store/verifier call, proven via a call-counting double.
+- Enrollment tests (WO-069, P-452; updated P-545 — T-40): `TotpEnrollmentService.GenerateEnrollment` produces a secret of the default (`TotpSecret.DefaultLength`) or requested byte length (out-of-range lengths throw), a `SecretBase32` that round-trips through `01.Core`'s `Base32.Decode`, a `ProvisioningUri` matching the expected `otpauth://totp/...` shape and encoding custom `TotpParameters` (digits/period/algorithm), `Parameters` defaulting to `TotpParameters.Default`, a secret that validates codes generated with the enrolled parameters, colon-containing issuer/account rejected, and the requested count of unique recovery codes that normalize stably via `RecoveryCodeGenerator.Normalize`.
+- Challenge tests (WO-069, P-452; updated P-545 — T-41/T-42): composed against the real `TotpGenerator(IClock)`/`TotpVerifier` and `16.Testing`'s `FakeTotpReplayGuard` (the package-local replay-guard fake was removed). A valid, freshly-generated TOTP code returns `Valid` and records a challenge; a wrong code returns `Invalid`, records nothing and logs `InvalidCode`; a resubmitted code returns `Replayed` (logged as `ReplayedCode`, never the code itself); an older code after a newer step was accepted returns `Replayed`; the same code is accepted for two different users; non-default `TotpParameters` are honored; `Guid.Empty` is rejected before any store/verifier call, proven via a call-counting double. `TotpChallengeRecipeSampleTests` exercises the challenge recipe end to end (enroll with 8 digits, hash normalized recovery codes, primary code Valid then Replayed, lowercase hyphen-less recovery code accepted, unknown/empty recovery code rejected).
 - Step-up tests (WO-069, P-452, SHIPPED — T-43–T-47): `TotpStepUpClaimsTransformation` skips an anonymous or `Guid.Empty`-subject principal without any store call; a principal with a fresh challenge gains the configured AMR claim, a stale or absent one does not; calling `TransformAsync` twice does not duplicate the claim (idempotency); the ORIGINAL `ClaimsIdentity` instance is proven unmutated — only the returned principal carries the new claim.
 - Cross-package interop test (WO-069, P-452, SHIPPED — T-46): a `ClaimsPrincipal` transformed by `TotpStepUpClaimsTransformation`, fed into `.Oidc`'s REAL `OidcUserContext` constructor, resolves `WasAuthenticatedWith("otp") == true`. **`SharedKernel.Security.Totp.Tests` may reference `SharedKernel.Security.Oidc` for this one test** — a documented, test-project-only exception to the sibling-packages-never-reference-each-other rule (which governs production code, not test-project references), mirroring how `SharedKernel.Security.Oidc.Tests` already references `16.Testing` for a cross-cutting concern the main `.Oidc` project itself does not need.
 

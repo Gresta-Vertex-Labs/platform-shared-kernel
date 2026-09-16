@@ -1,33 +1,62 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Cryptography.Random;
+using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Totp;
-using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Totp.Challenge;
 using SharedKernel.Security.Totp.Enrollment;
 using SharedKernel.Security.Totp.Extensions;
 using SharedKernel.Security.Totp.StepUp;
-using SharedKernel.Security.Totp.Tests.Challenge;
-using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Cryptography;
 using Xunit;
 
 namespace SharedKernel.Security.Totp.Tests.Extensions;
 
 public sealed class TotpServiceCollectionExtensionsTests
 {
+    private static ServiceCollection CreateServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        return services;
+    }
+
+    private static ICryptographyBuilder AddCryptography(IServiceCollection services) =>
+        services.AddSharedKernelCryptography(new ConfigurationBuilder().Build());
+
     [Fact]
-    public void AddTotpStepUp_NullServices_ThrowsArgumentNullException()
+    public void AddTotpStepUp_NullBuilder_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() =>
             TotpServiceCollectionExtensions.AddTotpStepUp<DummyChallengeStore>(null!));
     }
 
     [Fact]
+    public void AddTotpStepUp_ReturnsSameBuilder_ForChaining()
+    {
+        var builder = AddCryptography(CreateServices());
+
+        var result = builder.AddTotpStepUp<DummyChallengeStore>();
+
+        Assert.Same(builder, result);
+    }
+
+    [Fact]
+    public void AddTotpStepUp_RegistersITotpVerifier()
+    {
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
+
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(ITotpVerifier));
+
+        Assert.Equal(typeof(TotpVerifier), descriptor.ImplementationType);
+    }
+
+    [Fact]
     public void AddTotpStepUp_RegistersITotpChallengeStore_AsScoped()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddTotpStepUp<DummyChallengeStore>();
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
 
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ITotpChallengeStore));
 
@@ -39,9 +68,8 @@ public sealed class TotpServiceCollectionExtensionsTests
     [Fact]
     public void AddTotpStepUp_RegistersIClaimsTransformation_AsTotpStepUpClaimsTransformation()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddTotpStepUp<DummyChallengeStore>();
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
 
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IClaimsTransformation));
 
@@ -50,13 +78,12 @@ public sealed class TotpServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddTotpStepUp_RegistersTotpChallengeService_AndItResolves()
+    public void AddTotpStepUp_WithReplayGuard_TotpChallengeServiceResolves()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        RegisterFakeTotpPrimitives(services);
-        services.AddTotpStepUp<DummyChallengeStore>();
-        var provider = services.BuildServiceProvider();
+        var services = CreateServices();
+        services.AddSingleton<ITotpReplayGuard, FakeTotpReplayGuard>();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
         using var scope = provider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<TotpChallengeService>();
@@ -65,13 +92,23 @@ public sealed class TotpServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddTotpStepUp_RegistersTotpEnrollmentService_AndItResolves()
+    public void AddTotpStepUp_WithoutReplayGuard_TotpChallengeServiceFailsToResolve()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
-        services.AddTotpStepUp<DummyChallengeStore>();
-        var provider = services.BuildServiceProvider();
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
+        using var provider = services.BuildServiceProvider();
+
+        using var scope = provider.CreateScope();
+
+        Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<TotpChallengeService>());
+    }
+
+    [Fact]
+    public void AddTotpStepUp_TotpEnrollmentServiceResolves_WithoutAReplayGuard()
+    {
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>();
+        using var provider = services.BuildServiceProvider();
 
         var service = provider.GetRequiredService<TotpEnrollmentService>();
 
@@ -81,31 +118,18 @@ public sealed class TotpServiceCollectionExtensionsTests
     [Fact]
     public void AddTotpStepUp_ConfigureOptionsDelegate_IsApplied()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddTotpStepUp<DummyChallengeStore>(options =>
+        var services = CreateServices();
+        AddCryptography(services).AddTotpStepUp<DummyChallengeStore>(options =>
         {
             options.AmrValue = "custom-otp";
             options.ChallengeFreshnessWindow = TimeSpan.FromMinutes(5);
         });
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         var options = provider.GetRequiredService<TotpStepUpOptions>();
 
         Assert.Equal("custom-otp", options.AmrValue);
         Assert.Equal(TimeSpan.FromMinutes(5), options.ChallengeFreshnessWindow);
-    }
-
-    private static void RegisterFakeTotpPrimitives(IServiceCollection services)
-    {
-        // Mirrors 01.Core's AddSharedKernelCryptography's own TotpVerifier composition
-        // (IClock -> IHotpGenerator -> ITotpGenerator -> TotpVerifier), constructed directly here
-        // rather than pulling in a real IClock registration, since this test only proves DI shape.
-        services.AddSingleton<IClock>(new FakeClock());
-        services.AddSingleton<IHotpGenerator, HotpGenerator>();
-        services.AddSingleton<ITotpGenerator, TotpGenerator>();
-        services.AddSingleton<ITotpReplayGuard, FakeTotpReplayGuard>();
-        services.AddSingleton<TotpVerifier>();
     }
 
     private sealed class DummyChallengeStore : ITotpChallengeStore

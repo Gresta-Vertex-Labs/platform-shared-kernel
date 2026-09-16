@@ -66,7 +66,7 @@ services.AddApiKeyAuthentication<DatabaseApiKeyValidator>(fallbackAuthentication
 
 Rotating an API key without an outage requires a window during which **both** the old and the new key are simultaneously valid for the same client: issue the new key, keep the old key accepted for a bounded overlap period, then revoke the old key once every caller has migrated. A single-key `IApiKeyValidator` (comparing the presented key against exactly one stored value) cannot express this — there are multiple simultaneously-valid candidates, not one.
 
-`ApiKeyRotationComparer.AnyMatch(string presented, IReadOnlyList<string> candidates)` is the sanctioned way to validate against more than one active key per client. It is a **new public type**, deliberately distinct from the package-internal `ConstantTimeKeyComparer` used by `ApiKeyAuthenticationHandler`'s own header-vs-query ambiguity check — your `IApiKeyValidator` implementation lives in your own assembly and cannot reach an internal type, so this comparer is public specifically so it compiles there. It is built on the same `IHmacSigner`-based constant-time technique, and it **always evaluates every candidate — never short-circuits on the first match** — so elapsed comparison time never correlates with which key, or how many keys, matched.
+`01.Core/SharedKernel.Cryptography`'s `FixedTimeComparison.AreEqualToAny(string candidate, IEnumerable<string> expectedValues)` is the sanctioned way to validate against more than one active key per client — this package references `SharedKernel.Cryptography`, so it is already available to your `IApiKeyValidator`. It **always evaluates every expected value — never short-circuits on the first match** — and compares SHA-256 digests, so elapsed comparison time never correlates with which key, how many keys, or how long a key matched.
 
 ```csharp
 public sealed class RotationAwareApiKeyValidator(IActiveApiKeyStore store) : IApiKeyValidator
@@ -79,7 +79,7 @@ public sealed class RotationAwareApiKeyValidator(IActiveApiKeyStore store) : IAp
         // "{clientId}.{secret}" prefix) rather than scanning every client, as shown here for clarity.
         foreach (var (clientId, candidates) in await store.GetAllActiveKeysAsync(cancellationToken))
         {
-            if (ApiKeyRotationComparer.AnyMatch(presentedKey, candidates))
+            if (FixedTimeComparison.AreEqualToAny(presentedKey, candidates))
             {
                 return ApiKeyValidationResult.Valid(clientId: clientId);
             }
@@ -93,15 +93,15 @@ public sealed class RotationAwareApiKeyValidator(IActiveApiKeyStore store) : IAp
 The full rotation flow, entirely your own storage's concern — this package never dictates it:
 
 1. **Issue** a new key for the client; your store now returns `[oldKey, newKey]` for that client's active set. Both are accepted immediately — no coordinated cutover, no downtime for callers still using the old key.
-2. **Dual-valid window**: callers migrate to the new key at their own pace, bounded by whatever grace period your service's key-rotation policy defines. `AnyMatch` accepts either during this window.
+2. **Dual-valid window**: callers migrate to the new key at their own pace, bounded by whatever grace period your service's key-rotation policy defines. `AreEqualToAny` accepts either during this window.
 3. **Revoke** the old key by removing it from the store's active set for that client. Only the new key is accepted from that point on.
 
 A worked, non-production reference implementation of this exact pattern — backed by an in-memory stand-in for "your own storage" — ships inside this package at `Samples/RotationWindowApiKeyValidatorSample.cs`, exercised by this package's own test suite. It is not a shipped production type (it is `internal`); read it alongside this recipe rather than as a drop-in replacement for your own `IApiKeyValidator`.
 
-As with every other extensibility point in this package, `ApiKeyRotationComparer` **never dictates key storage** — it only closes the "every consuming team reinvents constant-time multi-candidate comparison and likely gets the timing side-channel wrong" gap. Where the keys themselves live (a two-row table, a JSON array column, a secret manager with versioned entries) remains entirely your own choice.
+This recipe **never dictates key storage** — `FixedTimeComparison` only closes the "every consuming team reinvents constant-time multi-candidate comparison and likely gets the timing side-channel wrong" gap. Where the keys themselves live (a two-row table, a JSON array column, a secret manager with versioned entries) remains entirely your own choice.
 
 ## Security notes
 
-- **Constant-time comparison** is used wherever this package genuinely holds both sides of a comparison: when a key is presented via *both* the configured header and query parameter on the same request, the two *presented* values are compared against each other (never a stored secret, which this package never holds) via a constant-time comparer built on `01.Core/SharedKernel.Cryptography`'s `IHmacSigner` — never `string.Equals`/`==`. A mismatch fails authentication as a possible credential-confusion attack.
+- **Constant-time comparison** is used wherever this package genuinely holds both sides of a comparison: when a key is presented via *both* the configured header and query parameter on the same request, the two *presented* values are compared against each other (never a stored secret, which this package never holds) via `01.Core/SharedKernel.Cryptography`'s `FixedTimeComparison.AreEqual` — never `string.Equals`/`==`. A mismatch fails authentication as a possible credential-confusion attack.
 - The actual presented-key-vs-stored-secret comparison is entirely `IApiKeyValidator`'s own concern, invisible to this package. Prefer a hashed lookup over plaintext key storage.
 - An invalid, absent, or ambiguous key never resolves to an authenticated context — authentication fails outright, it never falls through to `AnonymousUserContext` treated as "maybe authenticated."
