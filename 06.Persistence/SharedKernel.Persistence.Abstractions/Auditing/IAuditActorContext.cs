@@ -6,7 +6,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <remarks>
 /// <para>
 /// WO-071/P-456/D-116. A package-local seam, mirroring <c>05.Application</c>'s
-/// <c>IAuthorizationContext</c> bridge pattern in SHAPE — even though the two packages differ in WHY
+/// <c>IRequestContext</c> bridge pattern in SHAPE — even though the two packages differ in WHY
 /// they need one: <c>05.Application</c> has zero <c>SharedKernel.Security.Abstractions</c> access of
 /// any kind, whereas <c>SharedKernel.Persistence.EfCore</c> already holds an APPROVED, narrowly-scoped
 /// exception referencing <c>SharedKernel.Security.Abstractions</c> directly (P-078/WO-014) — but that

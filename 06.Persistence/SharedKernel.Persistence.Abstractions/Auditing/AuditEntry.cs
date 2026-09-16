@@ -39,8 +39,8 @@ public sealed record AuditEntry
     public string? CorrelationId { get; init; }
 
     /// <summary>
-    /// Gets the optional maker-checker approval linkage — the identifier of the
-    /// <c>IRequiresDualApproval</c> approval this action was gated behind, if any.
+    /// Gets the optional maker-checker approval linkage — the identifier, issued by the consuming
+    /// service's own approval flow, of the approval this action was gated behind, if any.
     /// </summary>
     public string? ApprovalId { get; init; }
 }

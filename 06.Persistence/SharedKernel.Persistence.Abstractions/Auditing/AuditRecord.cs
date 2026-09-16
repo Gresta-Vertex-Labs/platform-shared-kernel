@@ -34,7 +34,8 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <para>
 /// <strong><see cref="BeforeSnapshot"/>/<see cref="AfterSnapshot"/> are opaque:</strong> the caller
 /// pre-serializes these (to any format it chooses); this package never parses, validates, or diffs
-/// them — mirrors <c>IIdempotencyResponseStore</c>'s "store persists what it's handed" precedent.
+/// them — mirrors <c>IRequestIdempotencyStore.CompleteAsync</c>'s "store persists the serialized
+/// response it's handed" precedent.
 /// </para>
 /// </remarks>
 public sealed record AuditRecord
@@ -89,8 +90,8 @@ public sealed record AuditRecord
     public string? CorrelationId { get; init; }
 
     /// <summary>
-    /// Gets the optional maker-checker approval linkage — the identifier of the
-    /// <c>IRequiresDualApproval</c> approval this action was gated behind, if any.
+    /// Gets the optional maker-checker approval linkage — the identifier, issued by the consuming
+    /// service's own approval flow, of the approval this action was gated behind, if any.
     /// </summary>
     public string? ApprovalId { get; init; }
 

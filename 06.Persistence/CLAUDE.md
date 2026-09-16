@@ -291,7 +291,7 @@ AuditRecord  (sealed record — SHIPPED)
     .BeforeSnapshot        → string?         (OPAQUE — caller pre-serializes; this package never parses/diffs it)
     .AfterSnapshot         → string?         (OPAQUE, same rule)
     .CorrelationId         → string?
-    .ApprovalId            → string?         (optional maker-checker linkage to IRequiresDualApproval/P-380)
+    .ApprovalId            → string?         (optional maker-checker linkage, supplied by the consuming service's own approval flow)
     .RecordHash            → string          (hex SHA-256 via 01.Core's IContentHasher, computed by the writer)
     .PreviousRecordHash    → string?         (null only for the first record in its (TenantId,ResourceType) chain)
     NOTE: ALL properties init-only — no update/delete surface anywhere on the type, structurally not conventionally.
@@ -349,7 +349,7 @@ AuditChainVerificationResult  (sealed record — SHIPPED)
     .RecordsChecked        → int
 ```
 
-**`IAuditActorContext` vs. the P-078 exception:** `06.Persistence` already holds an approved, narrowly-scoped exception referencing `SharedKernel.Security.Abstractions` directly (P-078/WO-014, see the EfCore section below) — but that grant is scoped to `SharedKernel.Persistence.EfCore` specifically, **not** to `SharedKernel.Persistence.Abstractions`, where `IAuditTrailWriter`/`IAuditQueryService`/`IAuditActorContext` live. Extending the EfCore-only exception to Abstractions would be an unrecorded widening of a narrowly-granted exception — hence `IAuditActorContext` is a fresh local seam here, mirroring `05.Application`'s `IAuthorizationContext` bridge pattern in *shape* even though the two packages differ in *why* they need one (`05.Application` has zero `Security.Abstractions` access of any kind; `06.Persistence.Abstractions` specifically has never been granted the exception its own `.EfCore` sibling already has). `SharedKernel.Persistence.EfCore`'s implementation (P-457) ships a default `IAuditActorContext` (`EfCoreAuditActorContext`, registered by `.WithAuditTrail()` only when the consumer has not already registered their own) bridging the already-approved `IUserContext`/`ITenantProvider` — see `EfCoreAuditActorContext` below — an ergonomic advantage `05.Application`'s `IAuthorizationContext` structurally cannot offer, since that package has no comparable exception at all.
+**`IAuditActorContext` vs. the P-078 exception:** `06.Persistence` already holds an approved, narrowly-scoped exception referencing `SharedKernel.Security.Abstractions` directly (P-078/WO-014, see the EfCore section below) — but that grant is scoped to `SharedKernel.Persistence.EfCore` specifically, **not** to `SharedKernel.Persistence.Abstractions`, where `IAuditTrailWriter`/`IAuditQueryService`/`IAuditActorContext` live. Extending the EfCore-only exception to Abstractions would be an unrecorded widening of a narrowly-granted exception — hence `IAuditActorContext` is a fresh local seam here, mirroring `05.Application`'s `IRequestContext` bridge pattern in *shape* even though the two packages differ in *why* they need one (`05.Application` has zero `Security.Abstractions` access of any kind; `06.Persistence.Abstractions` specifically has never been granted the exception its own `.EfCore` sibling already has). `SharedKernel.Persistence.EfCore`'s implementation (P-457) ships a default `IAuditActorContext` (`EfCoreAuditActorContext`, registered by `.WithAuditTrail()` only when the consumer has not already registered their own) bridging the already-approved `IUserContext`/`ITenantProvider` — see `EfCoreAuditActorContext` below — an ergonomic advantage `05.Application`'s `IRequestContext` structurally cannot offer, since that package has no comparable exception at all.
 
 Retention/archival policy is explicitly out of scope for this capability — documented as a deferred follow-up, not silently unaddressed.
 
@@ -560,7 +560,7 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
 
 ```text
 EfUnitOfWork  (sealed class, implements SharedKernel.Persistence.Abstractions.IUnitOfWork,
-                                          SharedKernel.Application.Behaviors.IUnitOfWork)
+                                          SharedKernel.Application.Behaviors.Transaction.IUnitOfWork)
     constructor: EfUnitOfWork(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher = null)
     .SaveChangesAsync(CancellationToken ct)                    → Task<int>
     NOTE: Exactly one public constructor. IDomainEventDispatcher? is a nullable optional parameter resolved
@@ -577,15 +577,22 @@ EfUnitOfWork  (sealed class, implements SharedKernel.Persistence.Abstractions.IU
           Dispatcher is optional: consuming services opt in by registering IDomainEventDispatcher in DI.
           Dispatch failure does not roll back the already-committed transaction (document as known trade-off).
           DUAL-INTERFACE BRIDGE (P-228): EfUnitOfWork additionally implements
-          SharedKernel.Application.Behaviors.IUnitOfWork — the minimal local seam TransactionBehavior
-          depends on, declared in 05.Application because 05.Application cannot reference 06.Persistence.
+          SharedKernel.Application.Behaviors.Transaction.IUnitOfWork — the minimal local seam
+          TransactionBehavior depends on, declared in 05.Application because 05.Application cannot
+          reference 06.Persistence.
           Both interfaces declare a structurally compatible SaveChangesAsync(CancellationToken) →
           Task<int> member, so the single existing method body satisfies both contracts — no branching,
           no second method. Requires a direct ProjectReference from SharedKernel.Persistence.EfCore to
           SharedKernel.Application.Behaviors (legal: 06 may reference 01–05). Registration against the
           second interface is OPT-IN via EfCorePersistenceBuilder.WithApplicationTransactionBehavior()
           (see below) — omitting it leaves EfUnitOfWork registered only against
-          SharedKernel.Persistence.Abstractions.IUnitOfWork, exactly as before P-228.
+          SharedKernel.Persistence.Abstractions.IUnitOfWork.
+          WHEN TransactionBehavior CALLS IT: only for the outermost command in the DI scope
+          (ICommandScope.IsNested == false), and only when that command returns a success. A failed
+          Result or a thrown exception commits nothing; a command sent from inside another command's
+          handler shares the outer command's single SaveChangesAsync call. Post-commit work (e.g.
+          05.Application.Behaviors.Caching's cache eviction) runs through ICommandScope.OnCompleted
+          after this call returns, never before it.
 
 EfTransactionalUnitOfWork  (sealed class, implements ITransactionalUnitOfWork)
     .SaveChangesAsync(CancellationToken ct)                    → Task<int>      (inherited)
@@ -884,7 +891,7 @@ EfCoreAuditActorContext  (sealed class, implements IAuditActorContext — SHIPPE
       format AuditInterceptor already uses (P-091) — reuse, not a second convention. TenantId delegates
       straight to ITenantProvider.TenantId.
     — A genuine ergonomic advantage this package can offer that 05.Application's equivalent
-      IAuthorizationContext structurally cannot: that package has zero Security.Abstractions access of
+      IRequestContext structurally cannot: that package has zero Security.Abstractions access of
       any kind and can never ship a default bridge of its own — see "IAuditActorContext vs. the P-078
       exception" in the Abstractions Auditing subsection above for the full reasoning.
 ```
@@ -1555,12 +1562,14 @@ This correction must be reflected in C-82/C-83 (Core phase) and T-47 (Tests phas
 
 .WithApplicationTransactionBehavior()
     — Opt-in (P-228). Registers the same scoped EfUnitOfWork instance against
-      SharedKernel.Application.Behaviors.IUnitOfWork in addition to its existing registration against
-      SharedKernel.Persistence.Abstractions.IUnitOfWork — both registrations resolve the SAME scoped
-      EfUnitOfWork instance per DI scope (not two independent instances).
+      SharedKernel.Application.Behaviors.Transaction.IUnitOfWork in addition to its existing registration
+      against SharedKernel.Persistence.Abstractions.IUnitOfWork — both registrations resolve the SAME
+      scoped EfUnitOfWork instance per DI scope (not two independent instances).
       Enables 05.Application.Behaviors' TransactionBehavior to resolve a working unit-of-work without
-      a hand-written composition-root adapter.
-    — Optional. Omitting leaves SharedKernel.Application.Behaviors.IUnitOfWork unregistered — services
+      a hand-written composition-root adapter. The persistence builder's Build() must run before
+      AddSharedKernelApplicationBehaviors()...AddTransactionBehavior().Build(), whose Build() throws
+      when the seam is not yet registered.
+    — Optional. Omitting leaves SharedKernel.Application.Behaviors.Transaction.IUnitOfWork unregistered — services
       not using TransactionBehavior, or bridging a non-EF-Core IUnitOfWork implementation, are unaffected.
 
 .WithServiceName(string serviceName)
@@ -2420,7 +2429,7 @@ DapperReadService  (abstract class)
 - **(P-440/WO-066, shipped)** Calling `.OwnsMoney(...)` without first calling `ModelConfigurationBuilderExtensions.ConfigureMoney()` from `ConfigureConventions()` — crashes model building (EF Core auto-discovers `Money`/`Currency` as phantom navigation/entity types before any per-property `.HasConversion()` call ever runs). Reconstructing a `Currency` value from a stored column via reflection (a located constructor + `Expression.New`, mirroring `StronglyTypedIdValueConverter`) instead of the public `Currency.Create(code)` factory — `Currency`/`Money` derive from `ValueObject`/`SingleValueObject<TValue>`, which already expose a public `Create` factory (03.Domain P-310); the reflection technique exists only for `StronglyTypedId<TValue>`, a different base hierarchy with no such factory.
 - **(P-448/WO-068, shipped 2026-09-03, BREAKING)** Reintroducing a direct `IEncryptionKeyProvider` call — sync or `.GetAwaiter().GetResult()`-bridged — anywhere inside `EncryptedValueConverter`/`EncryptionModelConvention` or any other EF Core `ValueConverter`/model-finalizing convention in this package. The migrated design removes the dependency entirely rather than blocking on it; a future maintainer reaching for `IEncryptionKeyProvider` inside this package's synchronous pipeline has mis-diagnosed the problem — the fix is almost always to inspect `ISymmetricEncryptionService`'s `Result<T>.Error.Code` instead (see `EncryptedValueConverter`'s Decrypt path above).
 - **(P-456/P-457, WO-071, shipped)** Any update or delete code path reaching an `AuditRecord` row — through `IAuditTrailWriter` (no such member exists on the interface), through `IRepository<AuditRecord,...>`/`IUnitOfWork` (this type is never routed through the general write-side aggregate pipeline), or through a raw `DbSet<AuditRecord>` call bypassing `AuditRecordImmutabilityInterceptor`. The interceptor is the load-bearing structural guarantee — an audit contract that is only "immutable by convention" is not meaningfully different from the mutable `AuditInterceptor` columns this capability exists to replace.
-- **(P-456, WO-071, shipped)** Parsing, diffing, or otherwise inspecting `AuditRecord.BeforeSnapshot`/`AfterSnapshot` inside `SharedKernel.Persistence.Abstractions` or `SharedKernel.Persistence.EfCore` — these fields are OPAQUE, caller-pre-serialized values (mirrors `IIdempotencyResponseStore`'s "store persists what it's handed" pattern); this package's job is to store and hash-chain them, never to understand their content.
+- **(P-456, WO-071, shipped)** Parsing, diffing, or otherwise inspecting `AuditRecord.BeforeSnapshot`/`AfterSnapshot` inside `SharedKernel.Persistence.Abstractions` or `SharedKernel.Persistence.EfCore` — these fields are OPAQUE, caller-pre-serialized values (mirrors `IRequestIdempotencyStore.CompleteAsync`'s "store persists the serialized response it's handed" pattern); this package's job is to store and hash-chain them, never to understand their content.
 - **(P-456, WO-071, shipped)** Referencing `SharedKernel.Security.Abstractions.IUserContext` directly from `SharedKernel.Persistence.Abstractions` to resolve `IAuditActorContext`'s default behavior — the P-078 exception is scoped to `SharedKernel.Persistence.EfCore` only; `.Abstractions` gets a fresh local seam instead (see the Auditing contract block above).
 - **(P-457, WO-071, shipped)** Making `AuditRecord` implement `IAggregateRoot<Guid>` so `EfAuditQueryService` can reuse `IReadRepository<AuditRecord,Guid>` — forces an always-empty `IHasDomainEvents` collection onto a plain infrastructure record for no benefit; build directly on the unconstrained `ISpecificationEvaluator<AuditRecord>` instead. Also: calling `ISpecificationEvaluator<AuditRecord>.GetQuery(...)` instead of `.GetKeysetQuery(...)` for `AuditResourceHistorySpecification`/`AuditActorActionsSpecification` — `GetQuery` silently ignores the cursor and always returns the first page.
 - **(P-498/WO-081, SHIPPED)** Registering a hand-rolled `IEncryptionKeyProvider` for `.WithEncryption()`'s use that neither implements `ISynchronousEncryptionKeyProvider` (an honest, author-asserted, zero-I/O claim) NOR is wired via `.WithExternalEncryptionKeyProvider<TProvider>()` — this is caught by the D-132 startup fail-fast guard, but the correct fix is always to use one of the two sanctioned paths, never to bypass the builder to reach the ambient container directly.
@@ -2574,11 +2583,15 @@ services
 services
     .AddSharedKernelEfCore<OrderDbContext>(options =>
         options.UseNpgsql(connectionString))
-    .WithApplicationTransactionBehavior()   // registers EfUnitOfWork against SharedKernel.Application.Behaviors.IUnitOfWork too
+    .WithApplicationTransactionBehavior()   // registers EfUnitOfWork against SharedKernel.Application.Behaviors.Transaction.IUnitOfWork too
     .Build();
-// Application-layer registration (05.Application.Behaviors), unchanged:
-//   services.AddSharedKernelApplicationBehaviors(cfg => cfg.AddTransactionBehavior());
-// No manual adapter needed — TransactionBehavior resolves the same scoped EfUnitOfWork instance.
+// Application-layer registration (05.Application.Behaviors) — after the persistence builder, because
+// Build() throws when IUnitOfWork is not yet registered:
+services.AddSharedKernelApplicationBehaviors()
+    .AddTransactionBehavior()
+    .Build();
+// No manual adapter needed — TransactionBehavior resolves the same scoped EfUnitOfWork instance and
+// calls SaveChangesAsync once, after the outermost command succeeds.
 
 // Triggering key rotation — inject IEncryptionRotationJob in a Hangfire job / hosted service
 //   await rotationJob.RotateAsync(fromVersion: "v1", toVersion: "v2", ct);
@@ -2948,7 +2961,7 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 - `EncryptedValueConverter` wire-format regression tests (P-227): a ciphertext string produced by the OLD hand-rolled `AesGcm` implementation (fixture captured before the delegation refactor, same key material) decrypts correctly under the NEW `ISymmetricEncryptionService`-delegating converter — proves the wire format is byte-for-byte unchanged and no data migration is required for existing encrypted columns. Round-trip (encrypt then decrypt with the new converter), legacy-plaintext pass-through, and `Enabled == false` pass-through tests are re-run unmodified against the refactored converter.
 - `EncryptionOptionsKeyProvider` tests (P-227, method names updated to the async shape by P-448/D-110): `GetCurrentKeyAsync()` precedence (`OverrideVersion ?? CurrentVersion`) matches the pre-P-227 `EncryptedValueConverter.Encrypt` precedence exactly; `GetKeyAsync(keyId)` returns `null` (not a throw) for an unknown version; hot-reload via `IOptionsMonitor.CurrentValue` is observed on the next call without re-resolving the provider from DI; both members return an already-completed `ValueTask` (`IsCompletedSuccessfully == true`) for this config-based provider (P-448/D-110).
 - `EfUnitOfWork` dual-interface tests (P-228): resolving `SharedKernel.Persistence.Abstractions.IUnitOfWork` and `SharedKernel.Application.Behaviors.IUnitOfWork` from the same DI scope (after `.WithApplicationTransactionBehavior()`) returns the SAME instance by reference equality; `SaveChangesAsync` via either interface reference fires the identical interceptor chain and post-commit dispatch exactly once; omitting `.WithApplicationTransactionBehavior()` leaves `SharedKernel.Application.Behaviors.IUnitOfWork` unresolvable.
-- `TransactionBehavior` end-to-end consumer-verify test (P-228): a full MediatR pipeline test host wiring `AddSharedKernelEfCore<TestDbContext>(...).WithApplicationTransactionBehavior().Build()` alongside `05.Application.Behaviors`' `AddTransactionBehavior()` — dispatching a test command persists the staged mutation exactly once after the handler returns; a thrown handler exception prevents any persistence (no partial commit). This test supersedes the documentation-only adapter example previously carried only in `05.Application/CLAUDE.md`.
+- `TransactionBehavior` end-to-end consumer-verify test (P-228): a full MediatR pipeline test host wiring `AddSharedKernelEfCore<TestDbContext>(...).WithApplicationTransactionBehavior().Build()` alongside `05.Application.Behaviors`' `AddTransactionBehavior()` — dispatching a test command persists the staged mutation exactly once after the handler returns; a thrown handler exception prevents any persistence (no partial commit); a handler returning `Result.Failure` likewise persists nothing. This test supersedes the documentation-only adapter example previously carried only in `05.Application/CLAUDE.md`.
 - PostgreSQL concurrency-token tests (WO-051/P-315): a REAL PostgreSQL Testcontainers test — two `DbContext`s load the same `IHasConcurrency` row, both mutate different properties, the first `SaveChangesAsync` succeeds and `xmin` genuinely changes (verified by re-query), the second (stale `xmin`) throws `DbUpdateConcurrencyException` rethrown as `ConcurrencyException`/`Error.Conflict`; `XminRowVersionValueConverter` round-trip tests (boundary values `0`/`uint.MaxValue`); `XminConcurrencyTokenConvention` model-metadata test confirming `ColumnName == "xmin"`/`ColumnType == "xid"`/`ValueGenerated == ValueGenerated.OnAddOrUpdate` survives `SnakeCaseNamingConvention`; `ConcurrencyInterceptorTests.cs`'s two non-functional placeholder assertions replaced with a provider-neutral SQLite proof via a manually-forced stale `OriginalValues[nameof(RowVersion)]`.
 - `TenantedRepository` strongly-typed-ID server-side translation test (WO-051/P-316): mirrors `GetByIdsAsyncStronglyTypedIdTests.cs` — a tenanted aggregate keyed by `StronglyTypedId<Guid>`; `GetByIdForTenantAsync`/`GetByIdForTenantIncludingDeletedAsync` return the correct entity with no client-side-evaluation log entry; existing tenant-isolation assertions continue to pass unmodified.
 - Keyset pagination tests (WO-051/P-317): `GetKeysetQuery<TKey>` seek-predicate unit tests (first page applies no predicate; second page continues the sequence with no gap/overlap; `Descending` variant); `ListKeysetAsync<TKey>` full-walk correctness (repeatedly following `NextAfterKey`/`NextAfterId` visits every row exactly once, final page has `HasMore == false`); a correctness test under CONCURRENT INSERTS between page fetches proving no duplicated/skipped rows relative to an equivalent offset-paged scenario; strongly-typed-ID Id-tiebreaker server-side translation; `ContractShapeTests` for `ListKeysetAsync<TKey>`/`GetKeysetQuery<TKey>`/`KeysetPage<TAggregate,TKey>`; explicit regression proof that `ListPagedAsync`/`PagedSpecification<T>` remain unmodified.

@@ -62,7 +62,10 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// member, so the single existing method body satisfies both contracts — no branching, no second method.
 /// Registration against the second interface is opt-in via
 /// <c>EfCorePersistenceBuilder.WithApplicationTransactionBehavior()</c> — omitting it leaves
-/// <see cref="AppBehaviorsIUnitOfWork"/> unregistered.
+/// <see cref="AppBehaviorsIUnitOfWork"/> unregistered. <c>TransactionBehavior</c> calls
+/// <see cref="SaveChangesAsync"/> only for the outermost command in a DI scope and only when that
+/// command succeeds: a failed <c>Result</c> or a thrown exception commits nothing, and a command sent
+/// from inside another command's handler shares the outer command's single commit.
 /// </para>
 /// <para>
 /// <strong>Transient-fault retry-exhaustion logging (WO-053/P-333):</strong>

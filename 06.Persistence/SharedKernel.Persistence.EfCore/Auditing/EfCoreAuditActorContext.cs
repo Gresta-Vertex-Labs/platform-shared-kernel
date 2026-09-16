@@ -14,7 +14,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// WO-071/P-457/D-125. Registered by <c>EfCorePersistenceBuilder{TContext}.WithAuditTrail()</c> —
 /// a consuming service may override this default with its own <see cref="IAuditActorContext"/>
 /// registration. A genuine ergonomic advantage over <c>05.Application</c>'s equivalent
-/// <c>IAuthorizationContext</c>, whose owning package has no <c>Security.Abstractions</c> access at
+/// <c>IRequestContext</c>, whose owning package has no <c>Security.Abstractions</c> access at
 /// all and can never ship a default of its own.
 /// </para>
 /// <para>

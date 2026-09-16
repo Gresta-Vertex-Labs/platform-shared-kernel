@@ -284,6 +284,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// Services that do not use <c>TransactionBehavior</c>, or that bridge via a hand-written
     /// composition-root adapter, are unaffected.
     /// </para>
+    /// <para>
+    /// Call this builder's <c>Build()</c> before
+    /// <c>AddSharedKernelApplicationBehaviors().AddTransactionBehavior().Build()</c>: the application
+    /// builder checks that the seam is registered and throws when it is not.
+    /// </para>
     /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithApplicationTransactionBehavior()
     {

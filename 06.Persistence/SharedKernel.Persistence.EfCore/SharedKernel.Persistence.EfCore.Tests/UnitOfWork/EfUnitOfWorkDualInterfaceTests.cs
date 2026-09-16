@@ -9,6 +9,7 @@ using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 
@@ -157,6 +158,17 @@ public sealed class EfUnitOfWorkDualInterfaceTests
             => throw new InvalidOperationException("handler threw — no commit should happen");
     }
 
+    private sealed class FailingCommandHandler(TestDbContext dbContext, IClock clock)
+        : ICommandHandler<TestPersistCommand>
+    {
+        public Task<Result> Handle(TestPersistCommand request, CancellationToken cancellationToken)
+        {
+            // Stages the mutation, then reports an expected failure: the staged change must not commit.
+            dbContext.TestAggregates.Add(new TestAggregate(request.Id, request.Name, clock));
+            return Task.FromResult(Result.Failure(Error.Conflict("test.conflict", "rejected after staging")));
+        }
+    }
+
     [Fact]
     public async Task T60_TransactionBehavior_WithApplicationTransactionBehavior_PersistesMutationAfterHandler()
     {
@@ -169,6 +181,8 @@ public sealed class EfUnitOfWorkDualInterfaceTests
         connection.Open();
 
         var services = new ServiceCollection();
+        // CommandScopeBehavior logs a failed post-commit callback, so the pipeline needs ILogger<>.
+        services.AddLogging();
 
         // Register EF Core with the Application.Behaviors bridge
         services
@@ -233,6 +247,8 @@ public sealed class EfUnitOfWorkDualInterfaceTests
         connection.Open();
 
         var services = new ServiceCollection();
+        // CommandScopeBehavior logs a failed post-commit callback, so the pipeline needs ILogger<>.
+        services.AddLogging();
 
         services
             .AddSharedKernelEfCore<TestDbContext>(opts =>
@@ -260,7 +276,8 @@ public sealed class EfUnitOfWorkDualInterfaceTests
 
         // Act: handler throws → TransactionBehavior must not reach SaveChangesAsync
         var act = async () => await sender.Send(new TestPersistCommand(id, "ShouldNotPersist"));
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        // Match the handler's own message: a DI resolution failure is also an InvalidOperationException.
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handler threw*");
 
         // Assert: entity was NOT persisted
         var dbOptions = new DbContextOptionsBuilder<TestDbContext>()
@@ -279,6 +296,65 @@ public sealed class EfUnitOfWorkDualInterfaceTests
         var found = await freshCtx.TestAggregates.FindAsync(id);
         found.Should().BeNull(
             "entity must NOT be persisted when the handler throws (TransactionBehavior must not commit)");
+
+        connection.Close();
+    }
+
+    [Fact]
+    public async Task T60_TransactionBehavior_FailedResult_NoCommit()
+    {
+        // TransactionBehavior commits only on success: a handler that stages a mutation and then
+        // returns Result.Failure must leave nothing persisted.
+        var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var services = new ServiceCollection();
+        // CommandScopeBehavior logs a failed post-commit callback, so the pipeline needs ILogger<>.
+        services.AddLogging();
+
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite(connection)
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithApplicationTransactionBehavior()
+            .Build();
+
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(EfUnitOfWorkDualInterfaceTests).Assembly));
+        services.AddSharedKernelApplicationBehaviors()
+            .AddTransactionBehavior()
+            .Build();
+
+        services.AddScoped<IRequestHandler<TestPersistCommand, Result>, FailingCommandHandler>();
+
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var id = TestId.New();
+
+        var result = await sender.Send(new TestPersistCommand(id, "ShouldNotPersist"));
+
+        result.IsFailure.Should().BeTrue();
+
+        var dbOptions = new DbContextOptionsBuilder<TestDbContext>()
+            .UseSqlite(connection)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
+        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
+        await using var freshCtx = new TestDbContext(
+            dbOptions,
+            new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(userCtx, clock, svcOpts),
+            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(userCtx, clock, svcOpts),
+            new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor());
+
+        var found = await freshCtx.TestAggregates.FindAsync(id);
+        found.Should().BeNull(
+            "entity must NOT be persisted when the handler returns Result.Failure (TransactionBehavior commits only on success)");
 
         connection.Close();
     }

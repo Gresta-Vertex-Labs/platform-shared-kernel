@@ -9,7 +9,7 @@ EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platfor
 - `SharedKernelDbContext` — abstract base; registers the three platform interceptors; `CurrentUserContext`/`RefreshUserContext` support DbContext pooling
 - `TenantedDbContext` — multi-tenant base; installs an expression-tree global tenant query filter; `RefreshRequestContext` for pooling
 - `EfRepository<TAggregate,TId>` / `EfReadRepository<TAggregate,TId>` — abstract bases consuming services extend per aggregate
-- `EfUnitOfWork` / `EfTransactionalUnitOfWork` — the `IUnitOfWork.SaveChangesAsync` save boundary and explicit-transaction support
+- `EfUnitOfWork` / `EfTransactionalUnitOfWork` — the `IUnitOfWork.SaveChangesAsync` save boundary and explicit-transaction support. `EfUnitOfWork` satisfies both this domain's `IUnitOfWork` and `05.Application.Behaviors`' same-named seam, so `TransactionBehavior` commits through it — once per request, for the outermost command only, and only when the handler returns a successful `Result`
 - `AuditInterceptor` / `SoftDeleteInterceptor` / `ConcurrencyInterceptor` — the platform three, always composed first
 - `DomainClockMaterializationInterceptor` — registered automatically; gives every aggregate loaded from the database the application `IClock`, so a loaded aggregate can raise timestamped events and soft-delete. `EntityTypeConfigurationBase` also maps each aggregate's `Version` event sequence number as a column (existing databases need a migration adding it)
 - `SpecificationEvaluator<T>` — criteria → keyset seek → includes → split-query → ordering → distinct → tracking → paging → projection, in that fixed order
