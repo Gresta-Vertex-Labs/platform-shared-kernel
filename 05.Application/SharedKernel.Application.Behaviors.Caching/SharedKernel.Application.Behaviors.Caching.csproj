@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Two pipeline behaviors that put a cache around a query and evict it after the command that changed the data commits.
+
+A query implementing ICacheableQuery&lt;TResponse&gt; supplies its own key and policy, and is served from cache without the handler knowing a cache exists. A failed Result is never cached, so a transient NotFound is not pinned for the whole expiry window. A command implementing IInvalidatesCache declares the keys and tags it makes stale, and the eviction is deferred through ICommandScope until the outermost command's transaction has committed — so a concurrent reader can never repopulate the cache from pre-commit state, and a failed command evicts nothing. When an IRequestContext carrying a tenant is registered, keys and tags are prefixed per tenant, so one tenant can neither read nor invalidate another's entries.
+
+These behaviors are a separate package because SharedKernel.Application.Behaviors will not take a cache dependency on behalf of services that never cache anything. Register them into the same pipeline with AddCachingBehaviors(). Depends on SharedKernel.Application.Behaviors and SharedKernel.Caching.Abstractions.</Description>
+    <PackageReleaseNotes>First release.
+
+WHAT IS IN IT
+- CachingBehavior&lt;TRequest,TResponse&gt; over ICacheableQuery&lt;TResponse&gt;, in the Query stage.
+- CacheInvalidationBehavior&lt;TRequest,TResponse&gt; over IInvalidatesCache, in the Command stage.
+- AddCachingBehaviors(), which registers both in their correct stages and makes Build() fail at startup when no ICacheService is registered.
+
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- KNOWN LIMITATION: the behavior caches the whole Result&lt;T&gt;, which works in the in-process L1 cache but is expected to fail on a genuine Redis L2 round trip, because FusionCache's default serializer is reflection-based System.Text.Json and Result&lt;T&gt; has only private constructors. Keep the cache L1-only, or register a serializer that can read Result&lt;T&gt; back.
+- No stampede protection. The cache abstraction's GetOrSetAsync cannot say "do not cache this outcome", so the behavior does an explicit get-then-set. Never caching a failure was judged worth more than collapsing concurrent misses; for a genuinely hot key, call GetOrSetAsync inside the handler instead.
+- Declare the marker with the full response type — ICacheableQuery&lt;Result&lt;OrderDto&gt;&gt;, not ICacheableQuery&lt;OrderDto&gt;. The wrong one silently never matches the behavior's constraint.
+- The cache key must include everything the result depends on. Tenant scoping is applied automatically when a tenant is present, but it is not user scoping.
+- Eviction runs only when the command succeeded and the outermost command committed. A failed or throwing handler evicts nothing, because nothing was written.
+- SharedKernel.Analyzers' SK0017 and SK0018 flag a command implementing the query marker, and a query implementing the command marker.
+
+See the package README for the invalidation-ordering diagram and the full reference.</PackageReleaseNotes>
+    <PackageTags>cqrs;mediatr;pipeline-behavior;caching;cache-invalidation;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      The only package in 05.Application permitted to reference SharedKernel.Caching.Abstractions —
+      SharedKernel.Application and SharedKernel.Application.Behaviors must never take this reference.
+    -->
+    <ProjectReference Include="..\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Same MediatR ceiling as SharedKernel.Application — see that project's version-pin note. -->
+    <PackageReference Include="MediatR" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>
