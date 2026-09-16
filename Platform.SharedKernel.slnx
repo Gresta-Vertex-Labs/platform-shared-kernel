@@ -58,6 +58,8 @@
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj" />
   </Folder>
   <Folder Name="/05.Application/">
+    <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.csproj" />
+    <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.Tests/SharedKernel.Application.Behaviors.Caching.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.Tests/SharedKernel.Application.Behaviors.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application/SharedKernel.Application.csproj" />
