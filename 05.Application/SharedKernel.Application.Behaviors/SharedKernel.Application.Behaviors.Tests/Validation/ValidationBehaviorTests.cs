@@ -1,115 +1,126 @@
 using FluentAssertions;
 using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
-using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Behaviors.Validation;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
-using ValidationException = SharedKernel.Core.Exceptions.ValidationException;
 
 namespace SharedKernel.Application.Behaviors.Tests.Validation;
 
-/// <summary>
-/// Verifies <see cref="ValidationBehavior{TRequest,TResponse}"/> using a real, minimal MediatR
-/// pipeline rather than a hand-rolled <see cref="RequestHandlerDelegate{TResponse}"/> mock.
-/// </summary>
 public sealed class ValidationBehaviorTests
 {
-    private sealed record TestCommand(string Name) : IRequest<Result>;
+    private sealed record TestRequest(string Name) : IRequest<Result>;
 
-    private sealed class TestCommandHandler : IRequestHandler<TestCommand, Result>
+    private sealed class PassingValidator : AbstractValidator<TestRequest>;
+
+    private sealed class FailingValidator : AbstractValidator<TestRequest>
     {
-        public bool WasInvoked { get; private set; }
-
-        public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
+        public FailingValidator(string propertyName, string message)
         {
-            WasInvoked = true;
-            return Task.FromResult(Result.Success());
+            RuleFor(x => x.Name).Custom((_, context) => context.AddFailure(new ValidationFailure(propertyName, message)));
         }
     }
 
-    private sealed class AlwaysPassingValidator : AbstractValidator<TestCommand>
+    private sealed class SequentialOrderRecordingValidator : AbstractValidator<TestRequest>
     {
-        public AlwaysPassingValidator()
+        public SequentialOrderRecordingValidator(List<int> order, int id)
         {
-            RuleFor(x => x.Name).NotEmpty();
+            // If two validators ran concurrently (Task.WhenAll), their Task.Yield-interleaved
+            // start order would not reliably match registration order. Sequential execution
+            // guarantees this validator fully runs — including the yield — before the next one starts.
+            RuleFor(x => x.Name).CustomAsync(async (_, _, _) =>
+            {
+                order.Add(id);
+                await Task.Yield();
+            });
         }
     }
 
-    private sealed class AlwaysFailingValidator : AbstractValidator<TestCommand>
+    private sealed record TestGenericRequest : IRequest<Result<Guid>>;
+
+    private sealed class FailingGenericValidator : AbstractValidator<TestGenericRequest>
     {
-        public AlwaysFailingValidator()
+        public FailingGenericValidator()
         {
-            RuleFor(x => x.Name).Must(_ => false).WithMessage("always fails");
+            RuleFor(x => x).Custom((_, context) => context.AddFailure(new ValidationFailure("Id", "Invalid.")));
         }
-    }
-
-    private sealed class SecondFailingValidator : AbstractValidator<TestCommand>
-    {
-        public SecondFailingValidator()
-        {
-            RuleFor(x => x.Name).Must(_ => false).WithMessage("second failure");
-        }
-    }
-
-    private static ServiceProvider BuildProvider(TestCommandHandler handler, params IValidator<TestCommand>[] validators)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(handler);
-        services.AddSingleton<IRequestHandler<TestCommand, Result>>(sp => sp.GetRequiredService<TestCommandHandler>());
-
-        foreach (var validator in validators)
-            services.AddSingleton(validator);
-
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ValidationBehaviorTests>());
-
-        return services.BuildServiceProvider();
     }
 
     [Fact]
-    public async Task Handle_WithZeroRegisteredValidators_InvokesHandler()
+    public async Task Handle_NoValidatorsRegistered_InvokesNext()
     {
-        var handler = new TestCommandHandler();
-        var provider = BuildProvider(handler);
-        var sender = provider.GetRequiredService<ISender>();
+        var behavior = new ValidationBehavior<TestRequest, Result>([]);
+        var nextCalled = false;
 
-        var result = await sender.Send(new TestCommand("anything"));
+        var result = await behavior.Handle(new TestRequest("x"), () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(Result.Success());
+        }, CancellationToken.None);
 
-        handler.WasInvoked.Should().BeTrue();
+        nextCalled.Should().BeTrue();
         result.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
-    public async Task Handle_WithOneFailingValidator_ThrowsValidationExceptionAndNeverInvokesHandler()
+    public async Task Handle_OneFailingValidator_ReturnsFailureWithoutCallingNext()
     {
-        var handler = new TestCommandHandler();
-        var provider = BuildProvider(handler, new AlwaysFailingValidator());
-        var sender = provider.GetRequiredService<ISender>();
+        var behavior = new ValidationBehavior<TestRequest, Result>([new FailingValidator("Name", "Name is required.")]);
+        var nextCalled = false;
 
-        var act = async () => await sender.Send(new TestCommand("anything"));
+        var result = await behavior.Handle(new TestRequest(""), () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(Result.Success());
+        }, CancellationToken.None);
 
-        var thrown = await act.Should().ThrowAsync<ValidationException>();
-        thrown.Which.Errors.Should().ContainSingle(e => e.Message == "always fails");
-        handler.WasInvoked.Should().BeFalse();
+        nextCalled.Should().BeFalse();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.Error.Details.Should().ContainSingle(e => e.Code == "Name" && e.Message == "Name is required.");
     }
 
     [Fact]
-    public async Task Handle_WithMixedPassingAndFailingValidators_AggregatesOnlyFailingErrors()
+    public async Task Handle_MultipleValidatorsMixedPassFail_AggregatesOnlyFailingValidatorsErrors()
     {
-        var handler = new TestCommandHandler();
-        var provider = BuildProvider(
-            handler,
-            new AlwaysPassingValidator(),
-            new AlwaysFailingValidator(),
-            new SecondFailingValidator());
-        var sender = provider.GetRequiredService<ISender>();
+        var behavior = new ValidationBehavior<TestRequest, Result>(
+        [
+            new PassingValidator(),
+            new FailingValidator("Name", "Name is required."),
+            new FailingValidator("Age", "Age must be positive."),
+        ]);
 
-        var act = async () => await sender.Send(new TestCommand("anything"));
+        var result = await behavior.Handle(new TestRequest(""), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
-        var thrown = await act.Should().ThrowAsync<ValidationException>();
-        thrown.Which.Errors.Should().HaveCount(2);
-        thrown.Which.Errors.Should().Contain(e => e.Message == "always fails");
-        thrown.Which.Errors.Should().Contain(e => e.Message == "second failure");
-        handler.WasInvoked.Should().BeFalse();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Details.Should().HaveCount(2);
+        result.Error.Details.Select(e => e.Code).Should().BeEquivalentTo(["Name", "Age"]);
+    }
+
+    [Fact]
+    public async Task Handle_MultipleValidators_RunSequentiallyNotConcurrently()
+    {
+        var order = new List<int>();
+        var behavior = new ValidationBehavior<TestRequest, Result>(
+        [
+            new SequentialOrderRecordingValidator(order, 1),
+            new SequentialOrderRecordingValidator(order, 2),
+            new SequentialOrderRecordingValidator(order, 3),
+        ]);
+
+        await behavior.Handle(new TestRequest("x"), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        order.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task Handle_GenericResultResponse_ReturnsTypedFailure()
+    {
+        var behavior = new ValidationBehavior<TestGenericRequest, Result<Guid>>([new FailingGenericValidator()]);
+
+        var result = await behavior.Handle(new TestGenericRequest(), () => Task.FromResult(Result<Guid>.Success(Guid.NewGuid())), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
     }
 }

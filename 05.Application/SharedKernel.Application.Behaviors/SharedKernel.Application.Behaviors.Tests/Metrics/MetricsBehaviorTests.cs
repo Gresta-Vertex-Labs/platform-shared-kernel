@@ -2,144 +2,125 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Metrics;
+using SharedKernel.Application.Behaviors.Extensions;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Behaviors.Tests.Metrics;
 
 /// <summary>
-/// Verifies <see cref="MetricsBehavior{TRequest,TResponse}"/> records exactly one measurement per
-/// request, tagged with the request type name and — per WO-039 P-239 (T-38) — an <c>outcome</c>
-/// tag of <c>"success"</c>, <c>"failure"</c>, or <c>"exception"</c> reflecting how the inner
-/// pipeline terminated.
+/// <see cref="Behaviors.Metrics.MetricsBehavior{TRequest,TResponse}"/> and
+/// <see cref="Behaviors.Metrics.ApplicationMetrics"/> are internal, so this test drives them through
+/// a real composed <c>ServiceCollection</c> + <c>AddMediatR</c> + <see cref="ApplicationBehaviorsBuilder"/>
+/// dispatch and observes the published <c>"SharedKernel.Application"</c> meter directly via
+/// <see cref="MeterListener"/> — the same documented instrument name <c>13.ServiceDefaults</c>
+/// subscribes to at the host level.
 /// </summary>
 public sealed class MetricsBehaviorTests
 {
-    private sealed record TestCommand : IRequest<Result>;
+    private const string MeterName = "SharedKernel.Application";
+    private const string InstrumentName = "sharedkernel.application.request.duration";
 
-    private sealed class SucceedingHandler : IRequestHandler<TestCommand, Result>
+    private sealed record SucceedingCommand : ICommand;
+
+    private sealed class SucceedingCommandHandler : ICommandHandler<SucceedingCommand>
     {
-        public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
+        public Task<Result> Handle(SucceedingCommand request, CancellationToken cancellationToken)
             => Task.FromResult(Result.Success());
     }
 
-    private sealed class FailingHandler : IRequestHandler<TestCommand, Result>
+    private sealed record FailingQuery : IQuery<string>;
+
+    private sealed class FailingQueryHandler : IQueryHandler<FailingQuery, string>
     {
-        public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Failure(Error.Conflict("x", "failed")));
+        public Task<Result<string>> Handle(FailingQuery request, CancellationToken cancellationToken)
+            => Task.FromResult(Result<string>.Failure(Error.NotFound("test.not_found", "missing")));
     }
 
-    private sealed class ThrowingHandler : IRequestHandler<TestCommand, Result>
+    private sealed record ThrowingCommand : ICommand;
+
+    private sealed class ThrowingCommandHandler : ICommandHandler<ThrowingCommand>
     {
-        public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("handler blew up");
+        public Task<Result> Handle(ThrowingCommand request, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("boom");
     }
 
-    private static ServiceProvider BuildProvider<THandler>()
-        where THandler : class, IRequestHandler<TestCommand, Result>
+    private sealed record RecordedMeasurement(double Value, Dictionary<string, object?> Tags);
+
+    private static (MeterListener Listener, List<RecordedMeasurement> Records) Listen()
+    {
+        var records = new List<RecordedMeasurement>();
+        var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == MeterName && instrument.Name == InstrumentName)
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<double>((_, value, tags, _) =>
+        {
+            var dict = new Dictionary<string, object?>();
+            foreach (var tag in tags)
+                dict[tag.Key] = tag.Value;
+            records.Add(new RecordedMeasurement(value, dict));
+        });
+        listener.Start();
+        return (listener, records);
+    }
+
+    private static ServiceProvider BuildProvider()
     {
         var services = new ServiceCollection();
-        services.AddTransient<IRequestHandler<TestCommand, Result>, THandler>();
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<MetricsBehaviorTests>());
-
+        services.AddSharedKernelApplicationBehaviors().AddMetricsBehavior().Build();
         return services.BuildServiceProvider();
     }
 
-    private sealed class MeasurementCapture : IDisposable
+    [Fact]
+    public async Task Handle_Success_RecordsExactlyOneMeasurementWithSuccessOutcome()
     {
-        private readonly MeterListener _listener = new();
-        public List<(double Value, string? RequestName, string? Outcome)> Measurements { get; } = [];
+        var (listener, records) = Listen();
+        using var _ = listener;
+        using var provider = BuildProvider();
+        var sender = provider.GetRequiredService<ISender>();
 
-        public MeasurementCapture()
-        {
-            _listener.InstrumentPublished = (instrument, listener) =>
-            {
-                if (instrument.Meter.Name == "SharedKernel.Application"
-                    && instrument.Name == "sharedkernel.application.request.duration")
-                    listener.EnableMeasurementEvents(instrument);
-            };
+        await sender.Send(new SucceedingCommand());
 
-            _listener.SetMeasurementEventCallback<double>((_, measurement, tags, _) =>
-            {
-                string? requestName = null;
-                string? outcome = null;
-                foreach (var tag in tags)
-                {
-                    if (tag.Key == "request.name")
-                        requestName = tag.Value?.ToString();
-                    else if (tag.Key == "outcome")
-                        outcome = tag.Value?.ToString();
-                }
-
-                Measurements.Add((measurement, requestName, outcome));
-            });
-
-            _listener.Start();
-        }
-
-        public void Dispose() => _listener.Dispose();
+        records.Should().ContainSingle();
+        records[0].Tags["outcome"].Should().Be("success");
+        records[0].Tags["request.kind"].Should().Be("command");
+        records[0].Tags.Should().NotContainKey("error.type");
     }
 
     [Fact]
-    public async Task Handle_OnSuccess_RecordsExactlyOneMeasurementTaggedWithRequestName()
+    public async Task Handle_ResultFailure_RecordsFailureOutcomeWithErrorType()
     {
-        var expectedName = typeof(TestCommand).FullName ?? typeof(TestCommand).Name;
-        using var capture = new MeasurementCapture();
-        var provider = BuildProvider<SucceedingHandler>();
+        var (listener, records) = Listen();
+        using var _ = listener;
+        using var provider = BuildProvider();
         var sender = provider.GetRequiredService<ISender>();
 
-        await sender.Send(new TestCommand());
+        await sender.Send(new FailingQuery());
 
-        // Filter by request name to be resilient to concurrent tests recording to the same shared Meter.
-        var myMeasurements = capture.Measurements
-            .Where(m => m.RequestName == expectedName)
-            .ToList();
-
-        myMeasurements.Should().ContainSingle("exactly one measurement must be recorded for this request type");
-        myMeasurements[0].RequestName.Should().Be(expectedName);
-        myMeasurements[0].Outcome.Should().Be("success", "a successful response must be tagged outcome=\"success\" (WO-039 P-239)");
+        records.Should().ContainSingle();
+        records[0].Tags["outcome"].Should().Be("failure");
+        records[0].Tags["error.type"].Should().Be("NotFound");
+        records[0].Tags["request.kind"].Should().Be("query");
     }
 
     [Fact]
-    public async Task Handle_OnResultFailure_RecordsMeasurementTaggedOutcomeFailure()
+    public async Task Handle_ThrownException_RecordsExceptionOutcomeAndRethrows()
     {
-        var expectedName = typeof(TestCommand).FullName ?? typeof(TestCommand).Name;
-        using var capture = new MeasurementCapture();
-        var provider = BuildProvider<FailingHandler>();
+        var (listener, records) = Listen();
+        using var _ = listener;
+        using var provider = BuildProvider();
         var sender = provider.GetRequiredService<ISender>();
 
-        await sender.Send(new TestCommand());
+        var act = async () => await sender.Send(new ThrowingCommand());
 
-        var myMeasurements = capture.Measurements
-            .Where(m => m.RequestName == expectedName)
-            .ToList();
-
-        myMeasurements.Should().ContainSingle("exactly one measurement must be recorded for a Result.Failure response");
-        myMeasurements[0].Outcome.Should().Be("failure",
-            "a Result.Failure response must be tagged outcome=\"failure\" (WO-039 P-239)");
-    }
-
-    [Fact]
-    public async Task Handle_WhenHandlerThrows_StillRecordsExactlyOneMeasurement()
-    {
-        var expectedName = typeof(TestCommand).FullName ?? typeof(TestCommand).Name;
-        using var capture = new MeasurementCapture();
-        var provider = BuildProvider<ThrowingHandler>();
-        var sender = provider.GetRequiredService<ISender>();
-
-        var act = async () => await sender.Send(new TestCommand());
         await act.Should().ThrowAsync<InvalidOperationException>();
-
-        // Filter by request name to be resilient to concurrent tests recording to the same shared Meter.
-        var myMeasurements = capture.Measurements
-            .Where(m => m.RequestName == expectedName)
-            .ToList();
-
-        myMeasurements.Should().ContainSingle("exactly one measurement must be recorded even when the handler throws");
-        myMeasurements[0].RequestName.Should().Be(expectedName);
-        myMeasurements[0].Outcome.Should().Be("exception",
-            "a thrown exception must be tagged outcome=\"exception\" (WO-039 P-239)");
+        records.Should().ContainSingle();
+        records[0].Tags["outcome"].Should().Be("exception");
+        records[0].Tags["error.type"].Should().Be(typeof(InvalidOperationException).FullName);
     }
 }

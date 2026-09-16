@@ -1,138 +1,110 @@
 using FluentAssertions;
-using MediatR;
-using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Behaviors.Tests.Support;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Behaviors.Tests.Authorization;
 
-/// <summary>
-/// Verifies <see cref="AuthorizationBehavior{TRequest,TResponse}"/>'s short-circuit, pass-through,
-/// and no-marker-skip behavior, covering both the non-generic <see cref="Result"/> and the generic
-/// <see cref="Result{T}"/> response shapes to exercise both branches of
-/// <c>FailureResponseFactory</c>.
-/// </summary>
 public sealed class AuthorizationBehaviorTests
 {
-    private sealed record TestCommand : ICommand, IAuthorizeRequest
+    private sealed record NoPermissionsRequest : ICommand, IAuthorizeRequest
     {
-        public string Requirement => "orders:create";
+        public IReadOnlyCollection<string> RequiredPermissions => [];
     }
 
-    private sealed record TestQuery : IQuery<string>, IAuthorizeRequest
+    private sealed record AllOfRequest(params string[] Permissions) : ICommand, IAuthorizeRequest
     {
-        public string Requirement => "orders:view";
+        public IReadOnlyCollection<string> RequiredPermissions => Permissions;
     }
 
-    private sealed record PlainCommand : ICommand;
-
-    private sealed class TestCommandHandler : IRequestHandler<TestCommand, Result>
+    private sealed record AnyOfRequest(params string[] Permissions) : ICommand, IAuthorizeRequest
     {
-        public bool WasInvoked { get; private set; }
+        public IReadOnlyCollection<string> RequiredPermissions => Permissions;
+        public PermissionMatch PermissionMatch => PermissionMatch.Any;
+    }
 
-        public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
+    [Fact]
+    public async Task Handle_NotAuthenticated_ReturnsUnauthorizedWithoutCallingNext()
+    {
+        var behavior = new AuthorizationBehavior<AllOfRequest, Result>(new FakeRequestContext(isAuthenticated: false));
+        var nextCalled = false;
+
+        var result = await behavior.Handle(new AllOfRequest("orders.read"), () =>
         {
-            WasInvoked = true;
+            nextCalled = true;
             return Task.FromResult(Result.Success());
-        }
+        }, CancellationToken.None);
+
+        nextCalled.Should().BeFalse();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Unauthorized);
     }
 
-    private sealed class TestQueryHandler : IRequestHandler<TestQuery, Result<string>>
+    [Fact]
+    public async Task Handle_EmptyRequiredPermissions_FailsClosedWithForbidden()
     {
-        public bool WasInvoked { get; private set; }
+        var behavior = new AuthorizationBehavior<NoPermissionsRequest, Result>(new FakeRequestContext(isAuthenticated: true));
+        var nextCalled = false;
 
-        public Task<Result<string>> Handle(TestQuery request, CancellationToken cancellationToken)
+        var result = await behavior.Handle(new NoPermissionsRequest(), () =>
         {
-            WasInvoked = true;
-            return Task.FromResult(Result<string>.Success("ok"));
-        }
-    }
+            nextCalled = true;
+            return Task.FromResult(Result.Success());
+        }, CancellationToken.None);
 
-    private static ServiceProvider BuildCommandProvider(IAuthorizationContext context, TestCommandHandler handler)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(context);
-        services.AddSingleton(handler);
-        services.AddSingleton<IRequestHandler<TestCommand, Result>>(sp => sp.GetRequiredService<TestCommandHandler>());
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>));
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<AuthorizationBehaviorTests>());
-
-        return services.BuildServiceProvider();
-    }
-
-    private static ServiceProvider BuildQueryProvider(IAuthorizationContext context, TestQueryHandler handler)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(context);
-        services.AddSingleton(handler);
-        services.AddSingleton<IRequestHandler<TestQuery, Result<string>>>(sp => sp.GetRequiredService<TestQueryHandler>());
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>));
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<AuthorizationBehaviorTests>());
-
-        return services.BuildServiceProvider();
-    }
-
-    [Fact]
-    public async Task Handle_Unauthorized_NonGenericResult_HandlerNeverInvokedAndReturnsUnauthorizedFailure()
-    {
-        var context = Substitute.For<IAuthorizationContext>();
-        context.IsAuthorizedAsync("orders:create", Arg.Any<CancellationToken>()).Returns(false);
-        var handler = new TestCommandHandler();
-        var provider = BuildCommandProvider(context, handler);
-        var sender = provider.GetRequiredService<ISender>();
-
-        var result = await sender.Send(new TestCommand());
-
-        handler.WasInvoked.Should().BeFalse();
+        nextCalled.Should().BeFalse();
         result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Unauthorized);
+        result.Error.Type.Should().Be(ErrorType.Forbidden);
+        result.Error.Code.Should().Be("authorization.no_permissions_declared");
     }
 
     [Fact]
-    public async Task Handle_Unauthorized_GenericResultOfT_HandlerNeverInvokedAndReturnsUnauthorizedFailure()
+    public async Task Handle_AllOf_AllPermissionsGranted_CallsNext()
     {
-        var context = Substitute.For<IAuthorizationContext>();
-        context.IsAuthorizedAsync("orders:view", Arg.Any<CancellationToken>()).Returns(false);
-        var handler = new TestQueryHandler();
-        var provider = BuildQueryProvider(context, handler);
-        var sender = provider.GetRequiredService<ISender>();
+        var context = new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "a", "b" });
+        var behavior = new AuthorizationBehavior<AllOfRequest, Result>(context);
 
-        var result = await sender.Send(new TestQuery());
+        var result = await behavior.Handle(new AllOfRequest("a", "b"), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
-        handler.WasInvoked.Should().BeFalse();
-        result.IsFailure.Should().BeTrue();
-        result.Error.Type.Should().Be(ErrorType.Unauthorized);
-    }
-
-    [Fact]
-    public async Task Handle_Authorized_InvokesNextAndReturnsItsResultUnchanged()
-    {
-        var context = Substitute.For<IAuthorizationContext>();
-        context.IsAuthorizedAsync("orders:create", Arg.Any<CancellationToken>()).Returns(true);
-        var handler = new TestCommandHandler();
-        var provider = BuildCommandProvider(context, handler);
-        var sender = provider.GetRequiredService<ISender>();
-
-        var result = await sender.Send(new TestCommand());
-
-        handler.WasInvoked.Should().BeTrue();
         result.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
-    public void AuthorizationBehavior_DoesNotResolveIntoPipeline_ForRequestWithoutIAuthorizeRequestMarker()
+    public async Task Handle_AllOf_OnePermissionMissing_ReturnsForbiddenWithoutEchoingPermissionName()
     {
-        // TRequest : IAuthorizeRequest, IRequest<TResponse> — PlainCommand never implements
-        // IAuthorizeRequest, so AuthorizationBehavior<PlainCommand, Result> cannot be constructed:
-        // a DI-level fact, not a runtime branch.
-        typeof(PlainCommand).Should().NotBeAssignableTo<IAuthorizeRequest>();
+        var context = new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "a" });
+        var behavior = new AuthorizationBehavior<AllOfRequest, Result>(context);
 
-        var closesOverPlainCommand = () => typeof(AuthorizationBehavior<,>)
-            .MakeGenericType(typeof(PlainCommand), typeof(Result));
+        var result = await behavior.Handle(new AllOfRequest("a", "b"), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
-        closesOverPlainCommand.Should().Throw<ArgumentException>();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Forbidden);
+        result.Error.Code.Should().Be(ErrorCodes.Forbidden.InsufficientPermission);
+        result.Error.Message.Should().NotContain("b");
+    }
+
+    [Fact]
+    public async Task Handle_AnyOf_AtLeastOnePermissionGranted_CallsNext()
+    {
+        var context = new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "b" });
+        var behavior = new AuthorizationBehavior<AnyOfRequest, Result>(context);
+
+        var result = await behavior.Handle(new AnyOfRequest("a", "b"), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Handle_AnyOf_NonePermissionGranted_ReturnsForbidden()
+    {
+        var context = new FakeRequestContext(isAuthenticated: true, new HashSet<string>());
+        var behavior = new AuthorizationBehavior<AnyOfRequest, Result>(context);
+
+        var result = await behavior.Handle(new AnyOfRequest("a", "b"), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Forbidden);
     }
 }

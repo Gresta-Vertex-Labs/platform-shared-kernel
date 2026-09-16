@@ -1,91 +1,75 @@
+using System.Diagnostics;
 using FluentAssertions;
-using MediatR;
-using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Tests.TestHarness;
 using SharedKernel.Application.Behaviors.Tracing;
 using SharedKernel.Application.Messaging;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Behaviors.Tests.Tracing;
 
-/// <summary>
-/// Verifies <see cref="TracingBehavior{TRequest,TResponse}"/> records exactly one span per request
-/// on success, on <see cref="Result.Failure"/>, and on a thrown exception, and that the span
-/// carries the <c>request.name</c> tag.
-/// </summary>
 public sealed class TracingBehaviorTests
 {
-    private sealed record SucceedingCommand : ICommand;
+    // The documented public ActivitySource name TracingBehavior emits under — 13.ServiceDefaults
+    // subscribes to this same literal at the host level. ApplicationDiagnostics itself is internal.
+    private const string ActivitySourceName = "SharedKernel.Application";
 
-    private sealed class SucceedingCommandHandler : IRequestHandler<SucceedingCommand, Result>
+    private sealed record TestCommand : ICommand;
+
+    private static ActivityListener Listen(List<Activity> captured)
     {
-        public Task<Result> Handle(SucceedingCommand request, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-    }
-
-    private sealed record FailingResultCommand : ICommand;
-
-    private sealed class FailingResultCommandHandler : IRequestHandler<FailingResultCommand, Result>
-    {
-        public Task<Result> Handle(FailingResultCommand request, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Failure(SharedKernel.Primitives.Errors.Error.Validation("x", "bad")));
-    }
-
-    private sealed record ThrowingCommand : ICommand;
-
-    private sealed class ThrowingCommandHandler : IRequestHandler<ThrowingCommand, Result>
-    {
-        public Task<Result> Handle(ThrowingCommand request, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("boom");
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = captured.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
     }
 
     [Fact]
-    public async Task Handle_SuccessfulRequest_RecordsExactlyOneSpanTaggedWithRequestName()
+    public async Task Handle_Success_RecordsSpanWithRequestTags()
     {
-        using var harness = new PipelineTestHarness().WithActivityCapture();
-        harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddTracingBehavior().Build();
-        harness.Build<TracingBehaviorTests>();
+        var captured = new List<Activity>();
+        using var listener = Listen(captured);
+        var behavior = new TracingBehavior<TestCommand, Result>();
 
-        await harness.SendAsync(new SucceedingCommand());
+        await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
-        var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand)))
-            .ToList();
-        spans.Should().HaveCount(1);
-        spans[0].GetTagItem("request.name").Should().Be(typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand));
+        captured.Should().ContainSingle();
+        var activity = captured[0];
+        activity.OperationName.Should().Be(nameof(TestCommand));
+        activity.GetTagItem("request.kind").Should().Be("command");
+        activity.Status.Should().NotBe(ActivityStatusCode.Error);
     }
 
     [Fact]
-    public async Task Handle_ResultFailureRequest_StillRecordsSpan()
+    public async Task Handle_ResultFailure_SetsErrorStatusAndErrorTags()
     {
-        using var harness = new PipelineTestHarness().WithActivityCapture();
-        harness.Services.AddSingleton<IRequestHandler<FailingResultCommand, Result>, FailingResultCommandHandler>();
-        harness.AddBehaviors().AddTracingBehavior().Build();
-        harness.Build<TracingBehaviorTests>();
+        var captured = new List<Activity>();
+        using var listener = Listen(captured);
+        var behavior = new TracingBehavior<TestCommand, Result>();
+        var error = Error.Conflict("test.conflict", "conflict");
 
-        await harness.SendAsync(new FailingResultCommand());
+        await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Failure(error)), CancellationToken.None);
 
-        var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), typeof(FailingResultCommand).FullName ?? nameof(FailingResultCommand)))
-            .ToList();
-        spans.Should().HaveCount(1);
+        var activity = captured.Should().ContainSingle().Subject;
+        activity.Status.Should().Be(ActivityStatusCode.Error);
+        activity.GetTagItem("error.type").Should().Be("Conflict");
+        activity.GetTagItem("error.code").Should().Be("test.conflict");
     }
 
     [Fact]
-    public async Task Handle_ThrowingHandler_StillRecordsSpanAndRethrows()
+    public async Task Handle_ThrownException_SetsErrorStatusAndRethrows()
     {
-        using var harness = new PipelineTestHarness().WithActivityCapture();
-        harness.Services.AddSingleton<IRequestHandler<ThrowingCommand, Result>, ThrowingCommandHandler>();
-        harness.AddBehaviors().AddTracingBehavior().Build();
-        harness.Build<TracingBehaviorTests>();
+        var captured = new List<Activity>();
+        using var listener = Listen(captured);
+        var behavior = new TracingBehavior<TestCommand, Result>();
 
-        var act = async () => await harness.SendAsync(new ThrowingCommand());
+        var act = async () => await behavior.Handle(new TestCommand(), () => throw new InvalidOperationException("boom"), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), typeof(ThrowingCommand).FullName ?? nameof(ThrowingCommand)))
-            .ToList();
-        spans.Should().HaveCount(1);
+        var activity = captured.Should().ContainSingle().Subject;
+        activity.Status.Should().Be(ActivityStatusCode.Error);
     }
 }
