@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Argon2id implementation of SharedKernel.Cryptography's IOneWayHasher, registered as a keyed ("Argon2id") alternative alongside the unkeyed PBKDF2 default — never replacing it. Self-describing output using the real, interoperable PHC string format ($argon2id$v=19$m=...,t=...,p=...$salt$subkey), so raising cost parameters later does not invalidate already-stored hashes; Verify reports HashVerificationResult.SuccessRehashNeeded when the stored parameters differ from the currently configured ones. The one 01.Core package with a genuine third-party Argon2id dependency (Konscious.Security.Cryptography.Argon2, a pure-managed implementation — no native/P-Invoke binding), kept out of the zero-third-party-dependency SharedKernel.Cryptography core, mirroring why SharedKernel.Cryptography.KeyVault.Azure and SharedKernel.Validation.FluentValidation are separate packages. Choose Argon2id over the unkeyed PBKDF2 default everywhere FIPS 140-3 compliance is not a hard constraint — PBKDF2 remains the FIPS-approved-algorithm-territory choice for exactly that reason.</Description>
-    <PackageTags>shared-kernel;cryptography;argon2;argon2id;password-hashing;owasp;one-way-hasher</PackageTags>
+    <Description>Argon2id (RFC 9106) for SharedKernel.Cryptography's IOneWayHasher. Adds an argon2id hash algorithm that writes standard PHC strings ($argon2id$v=19$m=...,t=...,p=...$salt$hash), so hashes interoperate with other Argon2 libraries. Select it with OneWayHashing:Algorithm; existing PBKDF2 hashes keep verifying and are upgraded as users sign in. Stored costs are bounded before any work is done, so a hash written by an attacker cannot exhaust memory or CPU. Uses Konscious.Security.Cryptography.Argon2, a managed implementation with no native code. Argon2id is not FIPS 140-3 approved; keep PBKDF2 where FIPS compliance is required.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;cryptography;argon2;argon2id;password-hashing;phc</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
@@ -12,10 +16,8 @@
     <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Test-only seam (P-524/WO-083): exposes the internal capture-buffer-before-zeroing
-         overload on Argon2idOneWayHasher.Hash to this package's own .Tests project only, never
-         to any other assembly. No public surface change — the internal overload has a
-         same-named public wrapper passing null. -->
-    <InternalsVisibleTo Include="SharedKernel.Cryptography.Argon2.Tests" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

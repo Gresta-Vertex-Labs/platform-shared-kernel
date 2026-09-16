@@ -1,0 +1,24 @@
+#nullable enable
+SharedKernel.Cryptography.Argon2.Argon2CryptographyBuilderExtensions
+SharedKernel.Cryptography.Argon2.Argon2Options
+SharedKernel.Cryptography.Argon2.Argon2Options.Argon2Options() -> void
+SharedKernel.Cryptography.Argon2.Argon2Options.DegreeOfParallelism.get -> int
+SharedKernel.Cryptography.Argon2.Argon2Options.DegreeOfParallelism.set -> void
+SharedKernel.Cryptography.Argon2.Argon2Options.Iterations.get -> int
+SharedKernel.Cryptography.Argon2.Argon2Options.Iterations.set -> void
+SharedKernel.Cryptography.Argon2.Argon2Options.MemorySizeKb.get -> int
+SharedKernel.Cryptography.Argon2.Argon2Options.MemorySizeKb.set -> void
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.AlgorithmId.get -> string!
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.Argon2idOneWayHashAlgorithm(Microsoft.Extensions.Options.IOptionsMonitor<SharedKernel.Cryptography.Argon2.Argon2Options!>! options) -> void
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.Hash(System.ReadOnlySpan<byte> secret) -> SharedKernel.Cryptography.Hashing.PhcHashString!
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.RequiresRehash(SharedKernel.Cryptography.Hashing.PhcHashString! hash) -> bool
+SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.Verify(SharedKernel.Cryptography.Hashing.PhcHashString! hash, System.ReadOnlySpan<byte> secret) -> bool
+const SharedKernel.Cryptography.Argon2.Argon2Options.MaximumDegreeOfParallelism = 16 -> int
+const SharedKernel.Cryptography.Argon2.Argon2Options.MaximumIterations = 10 -> int
+const SharedKernel.Cryptography.Argon2.Argon2Options.MaximumMemorySizeKb = 1048576 -> int
+const SharedKernel.Cryptography.Argon2.Argon2Options.MinimumIterations = 2 -> int
+const SharedKernel.Cryptography.Argon2.Argon2Options.MinimumMemorySizeKb = 7168 -> int
+const SharedKernel.Cryptography.Argon2.Argon2idOneWayHashAlgorithm.Id = "argon2id" -> string!
+static SharedKernel.Cryptography.Argon2.Argon2CryptographyBuilderExtensions.AddArgon2id(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
+static SharedKernel.Cryptography.Argon2.Argon2Options.SectionName.get -> string!
