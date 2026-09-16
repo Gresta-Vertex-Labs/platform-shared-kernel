@@ -1,13 +1,9 @@
 namespace SharedKernel.Cryptography.Symmetric;
 
-/// <summary>
-/// The outcome of an <see cref="IEncryptionKeyProviderProbe"/> reachability check.
-/// </summary>
-/// <param name="IsHealthy">
-/// Whether the external key-management dependency is currently reachable.
-/// </param>
+/// <summary>The result of <see cref="IEncryptionKeyProviderProbe.ProbeAsync"/>.</summary>
+/// <param name="IsHealthy">Whether the key service is reachable.</param>
 /// <param name="Description">
-/// A human-readable explanation of the failure when <paramref name="IsHealthy"/> is
-/// <see langword="false"/> — <see langword="null"/> when healthy.
+/// Why the check failed, or <see langword="null"/> when healthy. Health endpoints may expose it, so it must not
+/// contain secrets or key material.
 /// </param>
 public sealed record EncryptionKeyProviderHealth(bool IsHealthy, string? Description);
