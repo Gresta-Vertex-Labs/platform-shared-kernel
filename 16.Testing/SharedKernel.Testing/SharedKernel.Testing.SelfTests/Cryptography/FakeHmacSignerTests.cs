@@ -1,98 +1,119 @@
+using SharedKernel.Cryptography.Signing;
 using SharedKernel.Testing.Cryptography;
-using Xunit;
 
 namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
-/// Proves <see cref="FakeHmacSigner"/> against <c>IHmacSigner</c>'s documented contract. Proven
-/// exclusively in <c>SharedKernel.Testing.SelfTests</c> — see <c>16.Testing/state-map.md</c> T-56.
+/// Proves <see cref="FakeHmacSigner"/> against <c>IHmacSigner</c>'s contract: real HMAC-SHA256, the production
+/// 32-byte minimum key length, and a record of every call.
 /// </summary>
 public sealed class FakeHmacSignerTests
 {
+    private static readonly byte[] Data = "payload"u8.ToArray();
+    private static readonly byte[] Key = "0123456789abcdef0123456789abcdef"u8.ToArray();
+    private static readonly byte[] OtherKey = "fedcba9876543210fedcba9876543210"u8.ToArray();
+
     [Fact]
     public void Sign_ThenVerify_RoundTrips()
     {
         var signer = new FakeHmacSigner();
-        var data = "payload"u8.ToArray();
-        var secret = "shared-secret"u8.ToArray();
 
-        var signature = signer.Sign(data, secret);
+        byte[] signature = signer.Sign(Data, Key);
 
-        Assert.True(signer.Verify(data, signature, secret));
+        Assert.True(signer.Verify(Data, signature, Key));
+    }
+
+    [Fact]
+    public void Sign_MatchesTheProductionSigner()
+    {
+        Assert.Equal(new HmacSha256Signer().Sign(Data, Key), new FakeHmacSigner().Sign(Data, Key));
     }
 
     [Fact]
     public void Verify_TamperedData_ReturnsFalse()
     {
         var signer = new FakeHmacSigner();
-        var secret = "shared-secret"u8.ToArray();
-        var signature = signer.Sign("payload"u8.ToArray(), secret);
+        byte[] signature = signer.Sign(Data, Key);
 
-        Assert.False(signer.Verify("tampered"u8.ToArray(), signature, secret));
+        Assert.False(signer.Verify("tampered"u8, signature, Key));
     }
 
     [Fact]
-    public void Verify_WrongSecret_ReturnsFalse()
+    public void Verify_WrongKey_ReturnsFalse()
     {
         var signer = new FakeHmacSigner();
-        var data = "payload"u8.ToArray();
-        var signature = signer.Sign(data, "secret-a"u8.ToArray());
+        byte[] signature = signer.Sign(Data, Key);
 
-        Assert.False(signer.Verify(data, signature, "secret-b"u8.ToArray()));
+        Assert.False(signer.Verify(Data, signature, OtherKey));
     }
 
     [Fact]
-    public void Verify_ConstantTimeCompare_CorrectlyDistinguishesSameLengthMismatch()
+    public void Verify_SameLengthSignatureWithOneByteChanged_ReturnsFalse()
     {
-        // Timing itself can't be observed in a unit test, but the constant-time compare
-        // (CryptographicOperations.FixedTimeEquals) must still be functionally correct: a full
-        // match succeeds and a same-length-but-differing-content signature fails.
         var signer = new FakeHmacSigner();
-        var data = "payload"u8.ToArray();
-        var secret = "secret"u8.ToArray();
-        var signature = signer.Sign(data, secret);
-        var sameLengthWrongSignature = (byte[])signature.Clone();
-        sameLengthWrongSignature[0] ^= 0xFF;
+        byte[] signature = signer.Sign(Data, Key);
+        byte[] changed = (byte[])signature.Clone();
+        changed[0] ^= 0xFF;
 
-        Assert.True(signer.Verify(data, signature, secret));
-        Assert.False(signer.Verify(data, sameLengthWrongSignature, secret));
+        Assert.False(signer.Verify(Data, changed, Key));
+    }
+
+    [Fact]
+    public void Verify_TruncatedSignature_ReturnsFalse()
+    {
+        var signer = new FakeHmacSigner();
+        byte[] signature = signer.Sign(Data, Key);
+
+        Assert.False(signer.Verify(Data, signature.AsSpan(0, 16), Key));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(16)]
+    [InlineData(HmacSha256Signer.MinimumKeyLength - 1)]
+    public void ShortKey_Throws_OnSignAndVerify(int keyLength)
+    {
+        var signer = new FakeHmacSigner();
+        byte[] shortKey = new byte[keyLength];
+        byte[] signature = signer.Sign(Data, Key);
+
+        Assert.Throws<ArgumentException>(() => signer.Sign(Data, shortKey));
+        Assert.Throws<ArgumentException>(() => signer.Verify(Data, signature, shortKey));
+    }
+
+    [Fact]
+    public void MinimumLengthKey_IsAccepted()
+    {
+        var signer = new FakeHmacSigner();
+        byte[] key = new byte[HmacSha256Signer.MinimumKeyLength];
+
+        Assert.True(signer.Verify(Data, signer.Sign(Data, key), key));
     }
 
     [Fact]
     public void SignedPayloads_AndVerifiedPayloads_RecordEveryCall()
     {
         var signer = new FakeHmacSigner();
-        var data = "payload"u8.ToArray();
-        var secret = "secret"u8.ToArray();
-        var signature = signer.Sign(data, secret);
+        byte[] signature = signer.Sign(Data, Key);
 
-        signer.Verify(data, signature, secret);
+        signer.Verify(Data, signature, Key);
+        signer.Verify(Data, signature, OtherKey);
 
         Assert.Single(signer.SignedPayloads);
-        Assert.Single(signer.VerifiedPayloads);
-        Assert.Equal(data, signer.SignedPayloads[0].Data);
-        Assert.Equal(secret, signer.SignedPayloads[0].Secret);
-        Assert.Equal(data, signer.VerifiedPayloads[0].Data);
-        Assert.Equal(secret, signer.VerifiedPayloads[0].Secret);
+        Assert.Equal(Data, signer.SignedPayloads[0].Data);
+        Assert.Equal(Key, signer.SignedPayloads[0].Key);
+        Assert.Equal(2, signer.VerifiedPayloads.Count);
+        Assert.Equal(Key, signer.VerifiedPayloads[0].Key);
+        Assert.Equal(OtherKey, signer.VerifiedPayloads[1].Key);
     }
 
     [Fact]
-    public void Sign_NullArguments_Throw()
+    public void RejectedShortKeyCall_IsNotRecorded()
     {
         var signer = new FakeHmacSigner();
 
-        Assert.Throws<ArgumentNullException>(() => signer.Sign(null!, "secret"u8.ToArray()));
-        Assert.Throws<ArgumentNullException>(() => signer.Sign("data"u8.ToArray(), null!));
-    }
+        Assert.Throws<ArgumentException>(() => signer.Sign(Data, new byte[8]));
 
-    [Fact]
-    public void Verify_NullArguments_Throw()
-    {
-        var signer = new FakeHmacSigner();
-        var signature = signer.Sign("data"u8.ToArray(), "secret"u8.ToArray());
-
-        Assert.Throws<ArgumentNullException>(() => signer.Verify(null!, signature, "secret"u8.ToArray()));
-        Assert.Throws<ArgumentNullException>(() => signer.Verify("data"u8.ToArray(), null!, "secret"u8.ToArray()));
-        Assert.Throws<ArgumentNullException>(() => signer.Verify("data"u8.ToArray(), signature, null!));
+        Assert.Empty(signer.SignedPayloads);
     }
 }

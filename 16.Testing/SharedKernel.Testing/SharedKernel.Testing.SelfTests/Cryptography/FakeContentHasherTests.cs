@@ -1,93 +1,85 @@
+using System.Security.Cryptography;
+using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Testing.Cryptography;
-using Xunit;
 
 namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
-/// Proves <see cref="FakeContentHasher"/> against <c>IContentHasher</c>'s documented contract.
-/// Proven exclusively in <c>SharedKernel.Testing.SelfTests</c> — see
-/// <c>16.Testing/state-map.md</c> T-57.
+/// Proves <see cref="FakeContentHasher"/> against <c>IContentHasher</c>'s contract: real SHA-256 digests from every
+/// overload, and a record of every hashed buffer.
 /// </summary>
 public sealed class FakeContentHasherTests
 {
     [Fact]
-    public void ComputeHash_ByteArray_IsDeterministic_ForIdenticalInput()
+    public void ComputeHash_MatchesSha256()
     {
         var hasher = new FakeContentHasher();
-        var content = "identical content"u8.ToArray();
+        byte[] content = "identical content"u8.ToArray();
 
-        var first = hasher.ComputeHash(content);
-        var second = hasher.ComputeHash((byte[])content.Clone());
-
-        Assert.Equal(first, second);
+        Assert.Equal(SHA256.HashData(content), hasher.ComputeHash(content));
+        Assert.Equal(new Sha256ContentHasher().ComputeHash(content), hasher.ComputeHash(content));
     }
 
     [Fact]
     public void ComputeHash_SingleByteChange_ProducesADifferentDigest()
     {
         var hasher = new FakeContentHasher();
-        var original = "content"u8.ToArray();
-        var changed = (byte[])original.Clone();
+        byte[] original = "content"u8.ToArray();
+        byte[] changed = (byte[])original.Clone();
         changed[0] ^= 0x01;
 
-        var originalHash = hasher.ComputeHash(original);
-        var changedHash = hasher.ComputeHash(changed);
-
-        Assert.NotEqual(originalHash, changedHash);
+        Assert.NotEqual(hasher.ComputeHash(original), hasher.ComputeHash(changed));
     }
 
     [Fact]
-    public void ComputeHash_Stream_IsByteIdentical_ToComputeHash_ByteArray()
+    public void ComputeHash_EmptyContent_IsTheSha256OfNothing() =>
+        Assert.Equal(SHA256.HashData([]), new FakeContentHasher().ComputeHash(ReadOnlySpan<byte>.Empty));
+
+    [Fact]
+    public void ComputeHash_Stream_IsByteIdentical_ToComputeHash_Span()
     {
         var hasher = new FakeContentHasher();
-        var content = "stream content"u8.ToArray();
+        byte[] content = "stream content"u8.ToArray();
 
-        var fromBytes = hasher.ComputeHash(content);
-        var fromStream = hasher.ComputeHash(new MemoryStream(content));
-
-        Assert.Equal(fromBytes, fromStream);
+        Assert.Equal(hasher.ComputeHash(content), hasher.ComputeHash(new MemoryStream(content)));
     }
 
     [Fact]
-    public async Task ComputeHashAsync_IsByteIdentical_ToComputeHash_ByteArray()
+    public async Task ComputeHashAsync_IsByteIdentical_ToComputeHash_Span()
     {
         var hasher = new FakeContentHasher();
-        var content = "async stream content"u8.ToArray();
+        byte[] content = "async stream content"u8.ToArray();
 
-        var fromBytes = hasher.ComputeHash(content);
-        var fromAsyncStream = await hasher.ComputeHashAsync(new MemoryStream(content));
+        byte[] fromAsyncStream = await hasher.ComputeHashAsync(new MemoryStream(content));
 
-        Assert.Equal(fromBytes, fromAsyncStream);
+        Assert.Equal(hasher.ComputeHash(content), fromAsyncStream);
     }
 
     [Fact]
-    public void HashedContent_RecordsEveryPayload_AcrossByteArrayAndSyncStreamOverloads()
+    public void ComputeHashHex_Extension_UsesTheFake()
     {
         var hasher = new FakeContentHasher();
-        var content = "a"u8.ToArray();
+        byte[] content = "hex"u8.ToArray();
+
+        string hex = hasher.ComputeHashHex(content);
+
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(content)), hex, ignoreCase: true);
+        Assert.Single(hasher.HashedContent);
+    }
+
+    [Fact]
+    public async Task HashedContent_RecordsEveryPayload_AcrossAllOverloads()
+    {
+        var hasher = new FakeContentHasher();
+        byte[] content = "a"u8.ToArray();
 
         hasher.ComputeHash(content);
         hasher.ComputeHash(new MemoryStream(content));
-
-        Assert.Equal(2, hasher.HashedContent.Count);
-        Assert.All(hasher.HashedContent, recorded => Assert.Equal(content, recorded));
-    }
-
-    [Fact]
-    public async Task HashedContent_RecordsAsyncStreamPayloadToo()
-    {
-        var hasher = new FakeContentHasher();
-        var content = "async"u8.ToArray();
-
         await hasher.ComputeHashAsync(new MemoryStream(content));
 
-        Assert.Single(hasher.HashedContent);
-        Assert.Equal(content, hasher.HashedContent[0]);
+        Assert.Equal(3, hasher.HashedContent.Count);
+        Assert.All(hasher.HashedContent, recorded => Assert.Equal(content, recorded));
     }
-
-    [Fact]
-    public void ComputeHash_NullByteArray_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new FakeContentHasher().ComputeHash((byte[])null!));
 
     [Fact]
     public void ComputeHash_NullStream_Throws() =>

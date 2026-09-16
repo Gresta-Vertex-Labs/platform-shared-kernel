@@ -1,151 +1,122 @@
-using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Signing;
 using SharedKernel.Testing.Cryptography;
-using Xunit;
 
 namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
-/// Proves <see cref="FakeAsymmetricSignatureService"/> against
-/// <c>IAsymmetricSignatureService</c>'s documented contract. Proven exclusively in
-/// <c>SharedKernel.Testing.SelfTests</c> — see <c>16.Testing/state-map.md</c> T-56.
+/// Proves <see cref="FakeAsymmetricSignatureService"/> against <c>IAsymmetricSignatureService</c>'s contract: real
+/// signatures under the algorithm bound to each key, and a record of every signing call.
 /// </summary>
 public sealed class FakeAsymmetricSignatureServiceTests
 {
-    [Fact]
-    public void Sign_ThenVerify_RoundTrips()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-
-        var signature = service.Sign(data, "key-1");
-
-        Assert.True(service.Verify(data, signature, "key-1"));
-    }
-
-    [Fact]
-    public void Verify_TamperedData_ReturnsFalse()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var signature = service.Sign("payload"u8.ToArray(), "key-1");
-
-        Assert.False(service.Verify("tampered"u8.ToArray(), signature, "key-1"));
-    }
-
-    [Fact]
-    public void Verify_TamperedSignature_ReturnsFalse()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-        var signature = service.Sign(data, "key-1");
-        signature[0] ^= 0xFF;
-
-        Assert.False(service.Verify(data, signature, "key-1"));
-    }
-
-    [Fact]
-    public void Verify_MismatchedKeyId_ReturnsFalse()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-        var signature = service.Sign(data, "key-1");
-
-        Assert.False(service.Verify(data, signature, "key-2"));
-    }
-
-    [Theory]
-    [InlineData("unkeyed-default")]
-    [InlineData(CryptographyServiceCollectionExtensions.RsaSignatureServiceKey)]
-    [InlineData(CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey)]
-    public void SignVerify_BehavesUniformly_AcrossUnkeyedAndBothRealKeyedRegistrationSlotNames(string keyId)
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-
-        var signature = service.Sign(data, keyId);
-
-        Assert.True(service.Verify(data, signature, keyId));
-    }
-
-    [Fact]
-    public void SignedPayloads_RecordsEveryCall_InOrder()
-    {
-        var service = new FakeAsymmetricSignatureService();
-
-        service.Sign("a"u8.ToArray(), "key-1");
-        service.Sign("b"u8.ToArray(), "key-2");
-
-        Assert.Equal(2, service.SignedPayloads.Count);
-        Assert.Equal("key-1", service.SignedPayloads[0].KeyId);
-        Assert.Equal("key-2", service.SignedPayloads[1].KeyId);
-    }
-
-    [Fact]
-    public void Sign_NullArguments_Throw()
-    {
-        var service = new FakeAsymmetricSignatureService();
-
-        Assert.Throws<ArgumentNullException>(() => service.Sign(null!, "key-1"));
-        Assert.Throws<ArgumentNullException>(() => service.Sign("data"u8.ToArray(), null!));
-    }
-
-    // --- SignAsync/VerifyAsync (T-105, P-502/WO-081) ---
-
-    [Fact]
-    public async Task SignAsync_ProducesByteIdenticalSignature_ToSyncSign_ForTheSameInput()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-
-        var syncSignature = service.Sign(data, "key-1");
-        var asyncSignature = await service.SignAsync(data, "key-1");
-
-        Assert.Equal(syncSignature, asyncSignature);
-    }
-
-    [Fact]
-    public async Task VerifyAsync_ProducesIdenticalResult_ToSyncVerify_ForTheSameInput()
-    {
-        var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
-        var signature = service.Sign(data, "key-1");
-
-        var syncResult = service.Verify(data, signature, "key-1");
-        var asyncResult = await service.VerifyAsync(data, signature, "key-1");
-
-        Assert.Equal(syncResult, asyncResult);
-        Assert.True(asyncResult);
-    }
+    private static readonly byte[] Data = "payload"u8.ToArray();
 
     [Fact]
     public async Task SignAsync_ThenVerifyAsync_RoundTrips()
     {
         var service = new FakeAsymmetricSignatureService();
-        var data = "payload"u8.ToArray();
 
-        var signature = await service.SignAsync(data, "key-1");
+        byte[] signature = await service.SignAsync(Data, "key-1");
 
-        Assert.True(await service.VerifyAsync(data, signature, "key-1"));
+        Assert.True(await service.VerifyAsync(Data, signature, "key-1"));
     }
 
     [Fact]
     public async Task VerifyAsync_TamperedData_ReturnsFalse()
     {
         var service = new FakeAsymmetricSignatureService();
-        var signature = await service.SignAsync("payload"u8.ToArray(), "key-1");
+        byte[] signature = await service.SignAsync(Data, "key-1");
 
         Assert.False(await service.VerifyAsync("tampered"u8.ToArray(), signature, "key-1"));
     }
 
     [Fact]
-    public async Task SignedPayloads_RecordsCallsFromBothSyncAndAsyncShapes_IntoTheSameList()
+    public async Task VerifyAsync_TamperedSignature_ReturnsFalse()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        byte[] signature = await service.SignAsync(Data, "key-1");
+        signature[0] ^= 0xFF;
+
+        Assert.False(await service.VerifyAsync(Data, signature, "key-1"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_DifferentKeyId_ReturnsFalse()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        byte[] signature = await service.SignAsync(Data, "key-1");
+
+        Assert.False(await service.VerifyAsync(Data, signature, "key-2"));
+    }
+
+    [Theory]
+    [MemberData(nameof(FakeSigningKeyProviderTests.AllAlgorithms), MemberType = typeof(FakeSigningKeyProviderTests))]
+    public async Task SignAndVerify_UseTheAlgorithmBoundToTheKey(SignatureAlgorithm algorithm)
+    {
+        var service = new FakeAsymmetricSignatureService();
+        service.KeyProvider.AddKey("key", algorithm);
+
+        byte[] signature = await service.SignAsync(Data, "key");
+
+        Assert.Equal(algorithm, await service.GetAlgorithmAsync("key"));
+        Assert.True(await service.VerifyAsync(Data, signature, "key"));
+    }
+
+    [Fact]
+    public async Task StreamOverloads_AgreeWithMemoryOverloads()
     {
         var service = new FakeAsymmetricSignatureService();
 
-        service.Sign("a"u8.ToArray(), "key-1");
+        byte[] fromStream = await service.SignAsync(new MemoryStream(Data), "key-1");
+        byte[] fromMemory = await service.SignAsync(Data, "key-1");
+
+        Assert.True(await service.VerifyAsync(Data, fromStream, "key-1"));
+        Assert.True(await service.VerifyAsync(new MemoryStream(Data), fromMemory, "key-1"));
+    }
+
+    [Fact]
+    public async Task SignAsync_UnknownKey_WithCreateKeysOnDemandDisabled_ThrowsKeyNotFound()
+    {
+        var service = new FakeAsymmetricSignatureService(new FakeSigningKeyProvider { CreateKeysOnDemand = false });
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.SignAsync(Data, "missing"));
+        Assert.False(await service.VerifyAsync(Data, new byte[64], "missing"));
+    }
+
+    [Fact]
+    public async Task Constructor_WithSuppliedKeyProvider_SignsWithThatProvidersKeys()
+    {
+        using var keys = new FakeSigningKeyProvider();
+        SigningKey key = keys.AddKey("shared", SignatureAlgorithm.PS256);
+        var service = new FakeAsymmetricSignatureService(keys);
+
+        byte[] signature = await service.SignAsync(Data, "shared");
+
+        Assert.Same(keys, service.KeyProvider);
+        Assert.Equal(SignatureAlgorithm.PS256, key.Algorithm);
+        Assert.True(await new AsymmetricSignatureService(keys).VerifyAsync(Data, signature, "shared"));
+    }
+
+    [Fact]
+    public async Task SignedPayloads_RecordsEveryCall_InOrder()
+    {
+        var service = new FakeAsymmetricSignatureService();
+
+        await service.SignAsync("a"u8.ToArray(), "key-1");
         await service.SignAsync("b"u8.ToArray(), "key-2");
 
         Assert.Equal(2, service.SignedPayloads.Count);
         Assert.Equal("key-1", service.SignedPayloads[0].KeyId);
+        Assert.Equal("a"u8.ToArray(), service.SignedPayloads[0].Data);
         Assert.Equal("key-2", service.SignedPayloads[1].KeyId);
+        Assert.Equal("b"u8.ToArray(), service.SignedPayloads[1].Data);
+    }
+
+    [Fact]
+    public async Task SignAsync_NullKeyId_Throws()
+    {
+        var service = new FakeAsymmetricSignatureService();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.SignAsync(Data, null!));
     }
 }

@@ -1,13 +1,14 @@
 using SharedKernel.Cryptography;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Cryptography;
-using Xunit;
 
 namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
-/// Proves <see cref="FakeSymmetricEncryptionService"/> against <c>ISymmetricEncryptionService</c>'s
-/// documented contract, including its required-AAD shape (P-502/WO-081). Proven exclusively in
-/// <c>SharedKernel.Testing.SelfTests</c> — see <c>16.Testing/state-map.md</c> T-56/T-102.
+/// Proves <see cref="FakeSymmetricEncryptionService"/> against both <c>ISymmetricEncryptionService</c> and
+/// <c>ISynchronousSymmetricEncryptionService</c>: real AES-256-GCM with enforced associated data, the production
+/// error codes, a record of every encryption, and simulated decryption failure.
 /// </summary>
 public sealed class FakeSymmetricEncryptionServiceTests
 {
@@ -17,166 +18,223 @@ public sealed class FakeSymmetricEncryptionServiceTests
     public void Encrypt_ThenDecrypt_RoundTripsPlaintext()
     {
         var service = new FakeSymmetricEncryptionService();
-        var plaintext = "secret payload"u8.ToArray();
 
-        var payload = service.Encrypt(plaintext, NoAad);
+        EncryptedPayload payload = service.Encrypt("secret payload"u8, NoAad);
         var result = service.Decrypt(payload, NoAad);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(plaintext, result.Value);
+        Assert.Equal("secret payload"u8.ToArray(), result.Value);
     }
 
     [Fact]
-    public void EncryptToString_ThenDecryptToString_RoundTripsPlaintext()
+    public async Task EncryptAsync_ThenDecryptAsync_RoundTripsPlaintext()
     {
         var service = new FakeSymmetricEncryptionService();
 
-        var encoded = service.EncryptToString("hello world", NoAad);
-        var result = service.DecryptToString(encoded, NoAad);
+        EncryptedPayload payload = await service.EncryptAsync("secret payload"u8.ToArray(), NoAad);
+        var result = await service.DecryptAsync(payload, NoAad);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("hello world", result.Value);
+        Assert.Equal("secret payload"u8.ToArray(), result.Value);
     }
 
     [Fact]
-    public void Decrypt_UnknownKeyId_ReturnsFailure_MatchingCryptographyErrorCodesUnknownKeyId()
+    public async Task StringMembers_RoundTrip_AcrossTheSynchronousAndAsynchronousShapes()
     {
         var service = new FakeSymmetricEncryptionService();
-        var payload = service.Encrypt("data"u8.ToArray(), NoAad);
-        var withUnknownKey = payload with { KeyId = "retired-key" };
+
+        string fromSync = service.EncryptToString("hello", NoAad);
+        string fromAsync = await service.EncryptToStringAsync("world", NoAad);
+
+        Assert.Equal("hello", (await service.DecryptToStringAsync(fromSync, NoAad)).Value);
+        Assert.Equal("world", service.DecryptToString(fromAsync, NoAad).Value);
+    }
+
+    [Fact]
+    public void Payload_RoundTripsThroughBothWireFormats()
+    {
+        var service = new FakeSymmetricEncryptionService();
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
+
+        Assert.True(EncryptedPayload.TryParse(payload.ToString(), out EncryptedPayload? fromText));
+        Assert.True(EncryptedPayload.TryParse(payload.ToBytes(), out EncryptedPayload? fromBytes));
+
+        Assert.Equal("data"u8.ToArray(), service.Decrypt(fromText!, NoAad).Value);
+        Assert.Equal("data"u8.ToArray(), service.Decrypt(fromBytes!, NoAad).Value);
+    }
+
+    [Fact]
+    public async Task Payloads_ReadableByTheProductionServicesOverTheSameKeys()
+    {
+        var service = new FakeSymmetricEncryptionService();
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
+
+        var bySync = new SynchronousAesGcmEncryptionService(service.KeyProvider).Decrypt(payload, NoAad);
+        var byAsync = await new AesGcmEncryptionService(service.KeyProvider).DecryptAsync(payload, NoAad);
+
+        Assert.Equal("data"u8.ToArray(), bySync.Value);
+        Assert.Equal("data"u8.ToArray(), byAsync.Value);
+    }
+
+    [Fact]
+    public void Decrypt_UnknownKeyId_FailsWithUnknownKeyId()
+    {
+        var service = new FakeSymmetricEncryptionService();
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
+        var withUnknownKey = new EncryptedPayload("retired-key", payload.Nonce, payload.Ciphertext, payload.Tag);
 
         var result = service.Decrypt(withUnknownKey, NoAad);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.UnknownKeyId, result.Error.Code);
+        Assert.Equal(ErrorType.Unexpected, result.Error.Type);
     }
 
     [Fact]
-    public void SimulateDecryptFailure_ForcesDecryptFailure_MatchingCryptographyErrorCodesDecryptionFailed()
+    public void Decrypt_TamperedCiphertext_FailsWithDecryptionFailed()
     {
-        var service = new FakeSymmetricEncryptionService { SimulateDecryptFailure = true };
-        var payload = service.Encrypt("data"u8.ToArray(), NoAad);
+        var service = new FakeSymmetricEncryptionService();
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
+        byte[] ciphertext = payload.Ciphertext.ToArray();
+        ciphertext[0] ^= 0x01;
+        var tampered = new EncryptedPayload(payload.KeyId, payload.Nonce, ciphertext, payload.Tag);
 
-        var result = service.Decrypt(payload, NoAad);
+        var result = service.Decrypt(tampered, NoAad);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
+        Assert.Equal(ErrorType.Validation, result.Error.Type);
     }
 
     [Fact]
-    public void SimulateDecryptFailure_False_AllowsNormalDecryptToSucceed()
-    {
-        var service = new FakeSymmetricEncryptionService { SimulateDecryptFailure = false };
-        var payload = service.Encrypt("data"u8.ToArray(), NoAad);
-
-        var result = service.Decrypt(payload, NoAad);
-
-        Assert.True(result.IsSuccess);
-    }
-
-    [Fact]
-    public void EncryptedPayloads_RecordsEveryPayload_ProducedByBothEncryptOverloads()
+    public async Task DecryptToString_MalformedInput_FailsWithMalformedPayload()
     {
         var service = new FakeSymmetricEncryptionService();
 
-        service.Encrypt("first"u8.ToArray(), NoAad);
-        service.EncryptToString("second", NoAad);
+        var fromSync = service.DecryptToString("not-a-valid-payload-!!!", NoAad);
+        var fromAsync = await service.DecryptToStringAsync("not-a-valid-payload-!!!", NoAad);
 
-        Assert.Equal(2, service.EncryptedPayloads.Count);
+        Assert.Equal(CryptographyErrorCodes.MalformedPayload, fromSync.Error.Code);
+        Assert.Equal(CryptographyErrorCodes.MalformedPayload, fromAsync.Error.Code);
+        Assert.Equal(ErrorType.Validation, fromSync.Error.Type);
     }
 
     [Fact]
-    public void Constructor_WithNoKeyProviderSupplied_UsesInternalDefaultProvider_EncryptDecryptStillWorks()
-    {
-        var service = new FakeSymmetricEncryptionService();
-
-        var payload = service.Encrypt("zero config convenience"u8.ToArray(), NoAad);
-        var result = service.Decrypt(payload, NoAad);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal("zero config convenience"u8.ToArray(), result.Value);
-    }
-
-    [Fact]
-    public void Constructor_WithSuppliedKeyProvider_UsesThatProviderForEncryption()
+    public void Constructor_WithSuppliedKeyProvider_EncryptsWithItsCurrentKey()
     {
         var keyProvider = new FakeEncryptionKeyProvider(currentKeyId: "custom-key");
         var service = new FakeSymmetricEncryptionService(keyProvider);
 
-        var payload = service.Encrypt("data"u8.ToArray(), NoAad);
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
 
+        Assert.Same(keyProvider, service.KeyProvider);
         Assert.Equal("custom-key", payload.KeyId);
     }
 
     [Fact]
-    public void DecryptToString_MalformedInput_ReturnsFailure_MatchingCryptographyErrorCodesMalformedPayload()
+    public async Task Rotation_IsEncryptedWithCurrentKey_AndReEncrypt_FollowTheKeyProvider()
     {
         var service = new FakeSymmetricEncryptionService();
+        EncryptedPayload original = service.Encrypt("data"u8, NoAad);
 
-        var result = service.DecryptToString("not-a-valid-payload-!!!", NoAad);
+        service.KeyProvider.AddKey("v2");
+        service.KeyProvider.SetCurrentKey("v2");
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(CryptographyErrorCodes.MalformedPayload, result.Error.Code);
+        Assert.False(service.IsEncryptedWithCurrentKey(original));
+        Assert.False(await service.IsEncryptedWithCurrentKeyAsync(original));
+        var syncReEncrypted = service.ReEncrypt(original, NoAad);
+        var asyncReEncrypted = await service.ReEncryptAsync(original, NoAad);
+        Assert.Equal("v2", syncReEncrypted.Value.KeyId);
+        Assert.Equal("v2", asyncReEncrypted.Value.KeyId);
+        Assert.True(service.IsEncryptedWithCurrentKey(syncReEncrypted.Value));
     }
 
     [Fact]
-    public void Encrypt_NullPlaintext_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new FakeSymmetricEncryptionService().Encrypt(null!, NoAad));
+    public async Task SimulateDecryptFailure_FailsEveryDecryptingMember_EvenWithCorrectAssociatedData()
+    {
+        var service = new FakeSymmetricEncryptionService();
+        byte[] aad = "matching-aad"u8.ToArray();
+        EncryptedPayload payload = service.Encrypt("data"u8, aad);
+        string encoded = service.EncryptToString("data", aad);
+        service.KeyProvider.AddKey("v2");
+        service.KeyProvider.SetCurrentKey("v2");
+
+        service.SimulateDecryptFailure = true;
+
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, service.Decrypt(payload, aad).Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, (await service.DecryptAsync(payload, aad)).Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, service.DecryptToString(encoded, aad).Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, (await service.DecryptToStringAsync(encoded, aad)).Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, service.ReEncrypt(payload, aad).Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, (await service.ReEncryptAsync(payload, aad)).Error.Code);
+    }
 
     [Fact]
-    public void Encrypt_NullAssociatedData_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new FakeSymmetricEncryptionService().Encrypt("data"u8.ToArray(), null!));
+    public void SimulateDecryptFailure_False_AllowsDecryptToSucceed()
+    {
+        var service = new FakeSymmetricEncryptionService { SimulateDecryptFailure = false };
+        EncryptedPayload payload = service.Encrypt("data"u8, NoAad);
+
+        Assert.True(service.Decrypt(payload, NoAad).IsSuccess);
+    }
+
+    [Fact]
+    public async Task EncryptedPayloads_RecordsEveryEncryptingMember_WithItsAssociatedData()
+    {
+        var service = new FakeSymmetricEncryptionService();
+
+        EncryptedPayload first = service.Encrypt("first"u8, "aad-1"u8);
+        service.EncryptToString("second", "aad-2"u8);
+        EncryptedPayload third = await service.EncryptAsync("third"u8.ToArray(), "aad-3"u8.ToArray());
+        await service.EncryptToStringAsync("fourth", "aad-4"u8.ToArray());
+
+        Assert.Equal(4, service.EncryptedPayloads.Count);
+        Assert.Same(first, service.EncryptedPayloads[0].Payload);
+        Assert.Same(third, service.EncryptedPayloads[2].Payload);
+        Assert.Equal("aad-1"u8.ToArray(), service.EncryptedPayloads[0].AssociatedData);
+        Assert.Equal("aad-2"u8.ToArray(), service.EncryptedPayloads[1].AssociatedData);
+        Assert.Equal("aad-3"u8.ToArray(), service.EncryptedPayloads[2].AssociatedData);
+        Assert.Equal("aad-4"u8.ToArray(), service.EncryptedPayloads[3].AssociatedData);
+    }
 
     [Fact]
     public void Decrypt_NullPayload_Throws() =>
         Assert.Throws<ArgumentNullException>(() => new FakeSymmetricEncryptionService().Decrypt(null!, NoAad));
 
     [Fact]
-    public void Decrypt_NullAssociatedData_Throws()
+    public async Task NullStringArguments_Throw()
     {
         var service = new FakeSymmetricEncryptionService();
-        var payload = service.Encrypt("data"u8.ToArray(), NoAad);
 
-        Assert.Throws<ArgumentNullException>(() => service.Decrypt(payload, null!));
+        Assert.Throws<ArgumentNullException>(() => service.EncryptToString(null!, NoAad));
+        Assert.Throws<ArgumentNullException>(() => service.DecryptToString(null!, NoAad));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.EncryptToStringAsync(null!, NoAad));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.DecryptAsync(null!, NoAad));
     }
 
-    // --- AAD enforcement (T-102, the headline acceptance criterion of P-502/WO-081) ---
+    // --- Associated data enforcement ---
 
     [Fact]
-    public void Encrypt_ThenDecrypt_WithMatchingAssociatedData_Succeeds()
+    public void Decrypt_WithMismatchedAssociatedData_FailsWithDecryptionFailed()
     {
         var service = new FakeSymmetricEncryptionService();
-        var plaintext = "secret payload"u8.ToArray();
-        var aad = "row-pk-42"u8.ToArray();
+        EncryptedPayload payload = service.Encrypt("secret payload"u8, "row-pk-42"u8);
 
-        var payload = service.Encrypt(plaintext, aad);
-        var result = service.Decrypt(payload, aad);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(plaintext, result.Value);
-    }
-
-    [Fact]
-    public void Decrypt_WithMismatchedAssociatedData_Fails_MatchingCryptographyErrorCodesDecryptionFailed()
-    {
-        var service = new FakeSymmetricEncryptionService();
-        var payload = service.Encrypt("secret payload"u8.ToArray(), "row-pk-42"u8.ToArray());
-
-        var result = service.Decrypt(payload, "row-pk-99"u8.ToArray());
+        var result = service.Decrypt(payload, "row-pk-99"u8);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
     }
 
     [Fact]
-    public void Decrypt_SwappingAssociatedDataBetweenTwoOtherwiseIdenticalPayloads_BothFail()
+    public void Decrypt_SwappingAssociatedDataBetweenTwoPayloads_BothFail()
     {
         var service = new FakeSymmetricEncryptionService();
-        var aadA = "context-a"u8.ToArray();
-        var aadB = "context-b"u8.ToArray();
+        byte[] aadA = "context-a"u8.ToArray();
+        byte[] aadB = "context-b"u8.ToArray();
 
-        var payloadA = service.Encrypt("payload"u8.ToArray(), aadA);
-        var payloadB = service.Encrypt("payload"u8.ToArray(), aadB);
+        EncryptedPayload payloadA = service.Encrypt("payload"u8, aadA);
+        EncryptedPayload payloadB = service.Encrypt("payload"u8, aadB);
 
         Assert.True(service.Decrypt(payloadA, aadB).IsFailure);
         Assert.True(service.Decrypt(payloadB, aadA).IsFailure);
@@ -185,68 +243,16 @@ public sealed class FakeSymmetricEncryptionServiceTests
     }
 
     [Fact]
-    public void Encrypt_ThenDecrypt_WithEmptyAssociatedData_IsAValidAlwaysSucceedingNoContextBindingChoice()
+    public async Task AsyncMembers_WithMismatchedAssociatedData_FailWithDecryptionFailed()
     {
         var service = new FakeSymmetricEncryptionService();
-        var plaintext = "no context binding needed"u8.ToArray();
+        EncryptedPayload payload = await service.EncryptAsync("secret"u8.ToArray(), "context-a"u8.ToArray());
+        string encoded = await service.EncryptToStringAsync("secret", "context-a"u8.ToArray());
 
-        var payload = service.Encrypt(plaintext, []);
-        var result = service.Decrypt(payload, []);
+        var bytes = await service.DecryptAsync(payload, "context-b"u8.ToArray());
+        var text = await service.DecryptToStringAsync(encoded, "context-b"u8.ToArray());
 
-        Assert.True(result.IsSuccess);
-        Assert.Equal(plaintext, result.Value);
-    }
-
-    [Fact]
-    public void EncryptedPayloads_PairsEachRecordedPayload_WithTheExactAssociatedDataUsedToProduceIt()
-    {
-        var service = new FakeSymmetricEncryptionService();
-        var aadOne = "aad-one"u8.ToArray();
-        var aadTwo = "aad-two"u8.ToArray();
-
-        service.Encrypt("first"u8.ToArray(), aadOne);
-        service.Encrypt("second"u8.ToArray(), aadTwo);
-
-        Assert.Equal(2, service.EncryptedPayloads.Count);
-        Assert.Equal(aadOne, service.EncryptedPayloads[0].AssociatedData);
-        Assert.Equal(aadTwo, service.EncryptedPayloads[1].AssociatedData);
-    }
-
-    [Fact]
-    public void SimulateDecryptFailure_StillFailsUnconditionally_RegardlessOfAssociatedDataCorrectness()
-    {
-        var service = new FakeSymmetricEncryptionService { SimulateDecryptFailure = true };
-        var aad = "matching-aad"u8.ToArray();
-        var payload = service.Encrypt("data"u8.ToArray(), aad);
-
-        // Even with the CORRECT AAD supplied, SimulateDecryptFailure still forces a failure.
-        var result = service.Decrypt(payload, aad);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
-    }
-
-    [Fact]
-    public async Task EncryptAsync_ThenDecryptAsync_WithMismatchedAssociatedData_Fails()
-    {
-        var service = new FakeSymmetricEncryptionService();
-        var payload = await service.EncryptAsync("secret"u8.ToArray(), "context-a"u8.ToArray());
-
-        var result = await service.DecryptAsync(payload, "context-b"u8.ToArray());
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
-    }
-
-    [Fact]
-    public async Task EncryptToStringAsync_ThenDecryptToStringAsync_WithMismatchedAssociatedData_Fails()
-    {
-        var service = new FakeSymmetricEncryptionService();
-        var encoded = await service.EncryptToStringAsync("secret", "context-a"u8.ToArray());
-
-        var result = await service.DecryptToStringAsync(encoded, "context-b"u8.ToArray());
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, bytes.Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, text.Error.Code);
     }
 }

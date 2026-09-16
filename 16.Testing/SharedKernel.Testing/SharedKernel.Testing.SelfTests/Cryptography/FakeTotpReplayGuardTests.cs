@@ -4,159 +4,149 @@ using SharedKernel.Testing.Cryptography;
 namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
-/// Proves <see cref="FakeTotpReplayGuard"/> against <c>01.Core</c>'s <c>ITotpReplayGuard</c>
-/// contract — no consuming domain has adopted this fake yet, so this self-test is the only
-/// behavioral proof today, per the SelfTests routing rule.
+/// Proves <see cref="FakeTotpReplayGuard"/> against <c>ITotpReplayGuard</c>'s monotonic time-step contract: per
+/// identity, a time step is accepted only when it is later than every step already accepted and still retained.
 /// </summary>
 /// <remarks>
-/// Migrated for P-527/WO-083: the retired two-member <c>HasBeenUsedAsync</c>/<c>MarkUsedAsync</c>
-/// shape is gone, replaced by the single atomic <c>TryMarkUsedAsync</c>. Every pre-existing scenario
-/// (expiry behaviour, per-identity isolation, <c>Reset()</c>) is preserved, re-expressed against the
-/// new single-member API — a fresh/unclaimed code's first <c>TryMarkUsedAsync</c> call returns
-/// <see langword="true"/>, a replay returns <see langword="false"/>. Two new tests
-/// (<see cref="TryMarkUsedAsync_TwoConcurrentCallsSameCode_ExactlyOneWinner"/>,
-/// <see cref="TryMarkUsedAsync_ManyConcurrentCallsSameCode_ExactlyOneWinner"/>) prove the fake's own
-/// claim logic is genuinely atomic — this is the reusable proof downstream TOCTOU-regression tests
-/// build on, mirroring <c>01.Core</c>'s own <c>TotpVerifierTests</c> pairwise/50-way race pattern.
+/// The concurrency tests race real threads on purpose: a sequential test would also pass against a non-atomic
+/// check-then-set implementation.
 /// </remarks>
 public sealed class FakeTotpReplayGuardTests
 {
+    private static readonly TimeSpan Retention = TimeSpan.FromSeconds(90);
+
     [Fact]
-    public async Task TryMarkUsedAsync_FreshCode_ReturnsTrue()
+    public async Task TryAcceptTimeStepAsync_FirstStepForAnIdentity_IsAccepted()
     {
         var guard = new FakeTotpReplayGuard();
 
-        var claimed = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-
-        Assert.True(claimed);
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_SecondCallWithinValidityWindow_ReturnsFalse()
+    public async Task TryAcceptTimeStepAsync_SameStepAgain_IsRejected()
     {
         var guard = new FakeTotpReplayGuard();
 
-        var first = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-        var replay = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-
-        Assert.True(first);
-        Assert.False(replay);
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_AfterClockAdvancesPastWindow_ReturnsTrueAgain_CodeIsFreshAgain()
+    public async Task TryAcceptTimeStepAsync_EarlierStepAfterALaterOne_IsRejected()
+    {
+        var guard = new FakeTotpReplayGuard();
+
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 101, Retention));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
+    }
+
+    [Fact]
+    public async Task TryAcceptTimeStepAsync_LaterStep_IsAccepted_AndRaisesTheFloor()
+    {
+        var guard = new FakeTotpReplayGuard();
+
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 101, Retention));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 101, Retention));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
+    }
+
+    [Fact]
+    public async Task TryAcceptTimeStepAsync_JustBeforeRetentionExpires_StillRejectsTheStep()
     {
         var clock = new FakeClock();
         var guard = new FakeTotpReplayGuard(clock);
+        await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention);
 
-        var first = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-        clock.Advance(TimeSpan.FromSeconds(91));
-        var afterExpiry = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
+        clock.Advance(Retention - TimeSpan.FromSeconds(1));
 
-        Assert.True(first);
-        Assert.True(afterExpiry);
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_JustBeforeWindowExpires_StillReturnsFalse()
+    public async Task TryAcceptTimeStepAsync_AfterRetentionExpires_ForgetsTheIdentity()
     {
         var clock = new FakeClock();
         var guard = new FakeTotpReplayGuard(clock);
+        await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention);
 
-        var first = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-        clock.Advance(TimeSpan.FromSeconds(89));
-        var stillReplay = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
+        clock.Advance(Retention + TimeSpan.FromSeconds(1));
 
-        Assert.True(first);
-        Assert.False(stillReplay);
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_DifferentCode_SameIdentity_ReturnsTrue()
+    public async Task TryAcceptTimeStepAsync_RetentionRunsFromTheLatestAcceptance()
     {
-        var guard = new FakeTotpReplayGuard();
+        var clock = new FakeClock();
+        var guard = new FakeTotpReplayGuard(clock);
+        await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention);
+        clock.Advance(TimeSpan.FromSeconds(60));
+        await guard.TryAcceptTimeStepAsync("identity-1", 102, Retention);
 
-        var first = await guard.TryMarkUsedAsync("identity-1", "111111", TimeSpan.FromSeconds(90));
-        var otherCode = await guard.TryMarkUsedAsync("identity-1", "222222", TimeSpan.FromSeconds(90));
+        clock.Advance(TimeSpan.FromSeconds(60));
 
-        Assert.True(first);
-        Assert.True(otherCode);
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", 101, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_SameCode_DifferentIdentity_ReturnsTrue()
+    public async Task TryAcceptTimeStepAsync_Identities_AreIndependent()
     {
         var guard = new FakeTotpReplayGuard();
 
-        var first = await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-        var otherIdentity = await guard.TryMarkUsedAsync("identity-2", "123456", TimeSpan.FromSeconds(90));
-
-        Assert.True(first);
-        Assert.True(otherIdentity);
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 200, Retention));
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-2", 100, Retention));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-2", 100, Retention));
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 201, Retention));
     }
 
     [Fact]
-    public async Task Reset_ClearsRecordedUsages()
+    public async Task Reset_ForgetsEveryAcceptedStep()
     {
         var guard = new FakeTotpReplayGuard();
-        await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
+        await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention);
 
         guard.Reset();
 
-        Assert.True(await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90)));
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_NullIdentityKey_Throws() =>
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await new FakeTotpReplayGuard().TryMarkUsedAsync(null!, "code", TimeSpan.FromSeconds(1)));
+    public async Task TryAcceptTimeStepAsync_NullIdentityKey_Throws() =>
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            async () => await new FakeTotpReplayGuard().TryAcceptTimeStepAsync(null!, 1, Retention));
 
     [Fact]
-    public async Task TryMarkUsedAsync_NullCode_Throws() =>
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await new FakeTotpReplayGuard().TryMarkUsedAsync("identity", null!, TimeSpan.FromSeconds(1)));
-
-    [Fact]
-    public async Task TryMarkUsedAsync_TwoConcurrentCallsSameCode_ExactlyOneWinner()
+    public async Task TryAcceptTimeStepAsync_ManyConcurrentCallsForTheSameStep_ExactlyOneWins()
     {
-        // Deliberately NOT a sequential test (call, await, call, await) — a sequential test would
-        // pass just as well against a broken, non-atomic two-step check-then-act implementation,
-        // because sequential calls never actually race. This is the reusable proof that this fake's
-        // claim logic is genuinely atomic, mirroring 01.Core's own TotpVerifierTests race pattern.
         var guard = new FakeTotpReplayGuard();
-        using var barrier = new Barrier(2);
+        const int callers = 50;
+        using var barrier = new Barrier(callers);
 
-        Task<bool> RaceAsync() =>
-            Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-                return await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-            });
+        bool[] results = await Task.WhenAll(Enumerable.Range(0, callers).Select(_ => Task.Run(async () =>
+        {
+            barrier.SignalAndWait();
+            return await guard.TryAcceptTimeStepAsync("identity-1", 100, Retention);
+        })));
 
-        Task<bool> firstTask = RaceAsync();
-        Task<bool> secondTask = RaceAsync();
-
-        bool[] results = await Task.WhenAll(firstTask, secondTask);
-
-        Assert.Equal(1, results.Count(static r => r));
-        Assert.Equal(1, results.Count(static r => !r));
+        Assert.Equal(1, results.Count(static accepted => accepted));
     }
 
     [Fact]
-    public async Task TryMarkUsedAsync_ManyConcurrentCallsSameCode_ExactlyOneWinner()
+    public async Task TryAcceptTimeStepAsync_ConcurrentCallsForDifferentSteps_LeaveTheHighestStepAsTheFloor()
     {
         var guard = new FakeTotpReplayGuard();
-        const int concurrentCallers = 50;
-        using var barrier = new Barrier(concurrentCallers);
+        const int callers = 50;
+        using var barrier = new Barrier(callers);
 
-        IEnumerable<Task<bool>> tasks = Enumerable.Range(0, concurrentCallers).Select(_ =>
-            Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-                return await guard.TryMarkUsedAsync("identity-1", "123456", TimeSpan.FromSeconds(90));
-            }));
+        await Task.WhenAll(Enumerable.Range(1, callers).Select(step => Task.Run(async () =>
+        {
+            barrier.SignalAndWait();
+            return await guard.TryAcceptTimeStepAsync("identity-1", step, Retention);
+        })));
 
-        bool[] results = await Task.WhenAll(tasks);
-
-        Assert.Equal(1, results.Count(static r => r));
-        Assert.Equal(concurrentCallers - 1, results.Count(static r => !r));
+        Assert.False(await guard.TryAcceptTimeStepAsync("identity-1", callers, Retention));
+        Assert.True(await guard.TryAcceptTimeStepAsync("identity-1", callers + 1, Retention));
     }
 }
