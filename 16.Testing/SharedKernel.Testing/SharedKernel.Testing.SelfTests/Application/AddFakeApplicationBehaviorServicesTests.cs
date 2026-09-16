@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Transaction;
+using SharedKernel.Application.Context;
 using SharedKernel.Testing.Application;
 using Xunit;
 
@@ -18,19 +18,19 @@ public sealed class AddFakeApplicationBehaviorServicesTests
     }
 
     [Fact]
-    public void AddFakeApplicationBehaviorServices_RegistersFakeAuthorizationContext()
+    public void AddFakeApplicationBehaviorServices_RegistersFakeRequestContext()
     {
         var provider = BuildProvider();
 
-        Assert.IsType<FakeAuthorizationContext>(provider.GetRequiredService<IAuthorizationContext>());
+        Assert.IsType<FakeRequestContext>(provider.GetRequiredService<IRequestContext>());
     }
 
     [Fact]
-    public void AddFakeApplicationBehaviorServices_RegistersFakeIdempotencyKeyStore()
+    public void AddFakeApplicationBehaviorServices_RegistersFakeRequestIdempotencyStore()
     {
         var provider = BuildProvider();
 
-        Assert.IsType<FakeIdempotencyKeyStore>(provider.GetRequiredService<IIdempotencyKeyStore>());
+        Assert.IsType<FakeRequestIdempotencyStore>(provider.GetRequiredService<IRequestIdempotencyStore>());
     }
 
     [Fact]
@@ -39,8 +39,10 @@ public sealed class AddFakeApplicationBehaviorServicesTests
         var provider = BuildProvider();
 
         Assert.Same(provider.GetRequiredService<IUnitOfWork>(), provider.GetRequiredService<IUnitOfWork>());
-        Assert.Same(provider.GetRequiredService<IAuthorizationContext>(), provider.GetRequiredService<IAuthorizationContext>());
-        Assert.Same(provider.GetRequiredService<IIdempotencyKeyStore>(), provider.GetRequiredService<IIdempotencyKeyStore>());
+        Assert.Same(provider.GetRequiredService<IRequestContext>(), provider.GetRequiredService<IRequestContext>());
+        Assert.Same(
+            provider.GetRequiredService<IRequestIdempotencyStore>(),
+            provider.GetRequiredService<IRequestIdempotencyStore>());
     }
 
     [Fact]

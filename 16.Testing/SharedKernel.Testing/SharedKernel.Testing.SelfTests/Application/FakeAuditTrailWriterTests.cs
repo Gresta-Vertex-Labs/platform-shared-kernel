@@ -10,8 +10,13 @@ namespace SharedKernel.Testing.SelfTests.Application;
 /// </summary>
 public sealed class FakeAuditTrailWriterTests
 {
-    private static AuditEntry CreateEntry(string action = "OrderApproved", string resourceType = "Order", string resourceId = "order-1") =>
-        new(action, resourceType, resourceId, "before", "after", "approval-1");
+    private static AuditEntry CreateEntry(
+        string action = "OrderApproved",
+        string resourceType = "Order",
+        string resourceId = "order-1",
+        bool succeeded = true,
+        string? errorCode = null) =>
+        new(action, resourceType, resourceId, "before", "after", succeeded, errorCode);
 
     [Fact]
     public async Task RecordAsync_RecordsEntry()
@@ -68,13 +73,26 @@ public sealed class FakeAuditTrailWriterTests
     }
 
     [Fact]
-    public async Task RecordAsync_NullApprovalId_IsRecordedAsNull()
+    public async Task RecordAsync_SucceededTrue_ErrorCodeIsNull()
     {
         var writer = new FakeAuditTrailWriter();
-        var entry = new AuditEntry("Action", "Type", "Id", null, null, null);
+        var entry = CreateEntry(succeeded: true, errorCode: null);
 
         await writer.RecordAsync(entry);
 
-        Assert.Null(writer.Recorded[0].ApprovalId);
+        Assert.True(writer.Recorded[0].Succeeded);
+        Assert.Null(writer.Recorded[0].ErrorCode);
+    }
+
+    [Fact]
+    public async Task RecordAsync_SucceededFalse_RecordsErrorCode()
+    {
+        var writer = new FakeAuditTrailWriter();
+        var entry = CreateEntry(succeeded: false, errorCode: "order.already_approved");
+
+        await writer.RecordAsync(entry);
+
+        Assert.False(writer.Recorded[0].Succeeded);
+        Assert.Equal("order.already_approved", writer.Recorded[0].ErrorCode);
     }
 }
