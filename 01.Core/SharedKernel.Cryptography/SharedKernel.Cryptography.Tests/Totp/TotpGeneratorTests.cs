@@ -1,162 +1,193 @@
 using System.Text;
-using SharedKernel.Cryptography.Tests.Symmetric;
+using SharedKernel.Cryptography.Tests.TestDoubles;
 using SharedKernel.Cryptography.Totp;
-using SharedKernel.Primitives.Clocks;
-using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Totp;
 
-/// <summary>
-/// Covers <see cref="TotpGenerator"/> (C-70/T-55/T-56) against RFC 6238 Appendix B's published
-/// test vectors (SHA-1/SHA-256/SHA-512, 8-digit codes, step = 30s, at the RFC's documented
-/// timestamps) plus the configurable clock-drift window behavior.
-/// </summary>
 public sealed class TotpGeneratorTests
 {
-    // RFC 6238 Appendix B: the seed is the ASCII digit pattern "1234567890" repeated and
-    // truncated to 20 bytes (SHA1), 32 bytes (SHA256), or 64 bytes (SHA512) — NOT the same
-    // 20-byte secret reused across all three algorithms. Generated programmatically here rather
-    // than hardcoded to guarantee correctness against the RFC's own construction rule.
-    private static byte[] Seed(int length) =>
-        Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("1234567890", (length / 10) + 1))[..length]);
+    private static readonly byte[] Sha1Seed = Encoding.ASCII.GetBytes("12345678901234567890");
+    private static readonly byte[] Sha256Seed = Encoding.ASCII.GetBytes("12345678901234567890123456789012");
+    private static readonly byte[] Sha512Seed = Encoding.ASCII.GetBytes("1234567890123456789012345678901234567890123456789012345678901234");
 
-    private static readonly byte[] Seed20 = Seed(20);
-    private static readonly byte[] Seed32 = Seed(32);
-    private static readonly byte[] Seed64 = Seed(64);
+    private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_015);
 
-    // RFC 6238 Appendix B published test vectors — 8-digit codes, 30-second step.
-    public static TheoryData<long, HotpAlgorithm, byte[], string> Rfc6238Vectors()
+    private readonly FakeClock _clock = new(Now);
+    private readonly TotpGenerator _generator;
+
+    public TotpGeneratorTests()
     {
-        var data = new TheoryData<long, HotpAlgorithm, byte[], string>
+        _generator = new TotpGenerator(_clock);
+    }
+
+    [Theory]
+    [InlineData(59L, "94287082", "46119246", "90693936")]
+    [InlineData(1111111109L, "07081804", "68084774", "25091201")]
+    [InlineData(1111111111L, "14050471", "67062674", "99943326")]
+    [InlineData(1234567890L, "89005924", "91819424", "93441116")]
+    [InlineData(2000000000L, "69279037", "90698825", "38618901")]
+    [InlineData(20000000000L, "65353130", "77737706", "47863826")]
+    public void GenerateCode_Rfc6238AppendixB_MatchesExpected(long unixSeconds, string sha1, string sha256, string sha512)
+    {
+        DateTimeOffset time = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+
+        Assert.Equal(sha1, _generator.GenerateCode(Sha1Seed, time, new TotpParameters { Digits = 8, Algorithm = HotpAlgorithm.Sha1 }));
+        Assert.Equal(sha256, _generator.GenerateCode(Sha256Seed, time, new TotpParameters { Digits = 8, Algorithm = HotpAlgorithm.Sha256 }));
+        Assert.Equal(sha512, _generator.GenerateCode(Sha512Seed, time, new TotpParameters { Digits = 8, Algorithm = HotpAlgorithm.Sha512 }));
+    }
+
+    [Theory]
+    [InlineData(59L, "94287082", HotpAlgorithm.Sha1)]
+    [InlineData(1234567890L, "91819424", HotpAlgorithm.Sha256)]
+    [InlineData(20000000000L, "47863826", HotpAlgorithm.Sha512)]
+    public void TryValidateCode_Rfc6238Vector_MatchesExactStep(long unixSeconds, string code, HotpAlgorithm algorithm)
+    {
+        byte[] seed = algorithm switch
         {
-            { 59L, HotpAlgorithm.Sha1, Seed20, "94287082" },
-            { 59L, HotpAlgorithm.Sha256, Seed32, "46119246" },
-            { 59L, HotpAlgorithm.Sha512, Seed64, "90693936" },
-            { 1111111109L, HotpAlgorithm.Sha1, Seed20, "07081804" },
-            { 1111111109L, HotpAlgorithm.Sha256, Seed32, "68084774" },
-            { 1111111109L, HotpAlgorithm.Sha512, Seed64, "25091201" },
-            { 1111111111L, HotpAlgorithm.Sha1, Seed20, "14050471" },
-            { 1111111111L, HotpAlgorithm.Sha256, Seed32, "67062674" },
-            { 1111111111L, HotpAlgorithm.Sha512, Seed64, "99943326" },
-            { 1234567890L, HotpAlgorithm.Sha1, Seed20, "89005924" },
-            { 1234567890L, HotpAlgorithm.Sha256, Seed32, "91819424" },
-            { 1234567890L, HotpAlgorithm.Sha512, Seed64, "93441116" },
-            { 2000000000L, HotpAlgorithm.Sha1, Seed20, "69279037" },
-            { 2000000000L, HotpAlgorithm.Sha256, Seed32, "90698825" },
-            { 2000000000L, HotpAlgorithm.Sha512, Seed64, "38618901" },
-            { 20000000000L, HotpAlgorithm.Sha1, Seed20, "65353130" },
-            { 20000000000L, HotpAlgorithm.Sha256, Seed32, "77737706" },
-            { 20000000000L, HotpAlgorithm.Sha512, Seed64, "47863826" },
+            HotpAlgorithm.Sha1 => Sha1Seed,
+            HotpAlgorithm.Sha256 => Sha256Seed,
+            _ => Sha512Seed,
         };
-        return data;
+        var parameters = new TotpParameters { Digits = 8, Algorithm = algorithm };
+
+        Assert.True(_generator.TryValidateCode(seed, code, DateTimeOffset.FromUnixTimeSeconds(unixSeconds), out long step, parameters));
+        Assert.Equal(unixSeconds / 30, step);
     }
 
-    private static TotpGenerator NewGenerator(IClock? clock = null) =>
-        new(new HotpGenerator(), clock ?? new SystemClock(new FakeTimeProvider(DateTimeOffset.UnixEpoch)));
+    [Fact]
+    public void GenerateCode_WithoutTimestamp_UsesClock()
+    {
+        Assert.Equal(_generator.GenerateCode(Sha1Seed, Now), _generator.GenerateCode(Sha1Seed));
+
+        _clock.UtcNow = Now.AddSeconds(30);
+
+        Assert.Equal(_generator.GenerateCode(Sha1Seed, Now.AddSeconds(30)), _generator.GenerateCode(Sha1Seed));
+    }
+
+    [Fact]
+    public void GenerateCode_NullParameters_UsesDefaults()
+    {
+        Assert.Equal(_generator.GenerateCode(Sha1Seed, Now, TotpParameters.Default), _generator.GenerateCode(Sha1Seed, Now, null));
+        Assert.Equal(6, _generator.GenerateCode(Sha1Seed, Now).Length);
+    }
+
+    [Fact]
+    public void GenerateCode_SameStep_ReturnsSameCode()
+    {
+        DateTimeOffset stepStart = DateTimeOffset.FromUnixTimeSeconds(1_700_000_010);
+
+        Assert.Equal(_generator.GenerateCode(Sha1Seed, stepStart), _generator.GenerateCode(Sha1Seed, stepStart.AddSeconds(29)));
+    }
 
     [Theory]
-    [MemberData(nameof(Rfc6238Vectors))]
-    public void GenerateCode_MatchesRfc6238AppendixBVectors(long unixSeconds, HotpAlgorithm algorithm, byte[] seed, string expectedCode)
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void TryValidateCode_CodeWithinDriftWindow_ReturnsMatchedStep(int offset)
     {
-        TotpGenerator generator = NewGenerator();
-        DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+        long current = Now.ToUnixTimeSeconds() / 30;
+        string code = _generator.GenerateCode(Sha1Seed, Now.AddSeconds(30 * offset));
 
-        string actual = generator.GenerateCode(seed, timestamp, digits: 8, stepSeconds: 30, algorithm: algorithm);
-
-        Assert.Equal(expectedCode, actual);
+        Assert.True(_generator.TryValidateCode(Sha1Seed, code, Now, out long step));
+        Assert.Equal(current + offset, step);
     }
 
     [Theory]
-    [MemberData(nameof(Rfc6238Vectors))]
-    public void ValidateCode_AcceptsTheMatchingRfc6238Vector(long unixSeconds, HotpAlgorithm algorithm, byte[] seed, string expectedCode)
+    [InlineData(-2)]
+    [InlineData(2)]
+    [InlineData(10)]
+    public void TryValidateCode_CodeOutsideDriftWindow_ReturnsFalse(int offset)
     {
-        TotpGenerator generator = NewGenerator();
-        DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+        string code = _generator.GenerateCode(Sha1Seed, Now.AddSeconds(30 * offset));
 
-        bool valid = generator.ValidateCode(seed, expectedCode, timestamp, digits: 8, stepSeconds: 30, driftWindow: 0, algorithm: algorithm);
+        Assert.False(_generator.TryValidateCode(Sha1Seed, code, Now, out long step));
+        Assert.Equal(-1, step);
+    }
 
-        Assert.True(valid);
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void TryValidateCode_ZeroDrift_AcceptsOnlyExactStep(int offset)
+    {
+        var parameters = new TotpParameters { DriftSteps = 0 };
+        string exact = _generator.GenerateCode(Sha1Seed, Now, parameters);
+        string adjacent = _generator.GenerateCode(Sha1Seed, Now.AddSeconds(30 * offset), parameters);
+
+        Assert.True(_generator.TryValidateCode(Sha1Seed, exact, Now, out _, parameters));
+        Assert.False(_generator.TryValidateCode(Sha1Seed, adjacent, Now, out _, parameters));
     }
 
     [Fact]
-    public void GenerateCode_UsesInjectedClock_NeverRealWallClock()
+    public void TryValidateCode_LargerDrift_AcceptsWiderWindow()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(59));
-        var clock = new SystemClock(timeProvider);
-        TotpGenerator generator = NewGenerator(clock);
+        var parameters = new TotpParameters { DriftSteps = 3 };
+        string code = _generator.GenerateCode(Sha1Seed, Now.AddSeconds(-90), parameters);
 
-        string viaClock = generator.GenerateCode(Seed20, digits: 8, stepSeconds: 30);
-        string viaExplicitTimestamp = generator.GenerateCode(Seed20, DateTimeOffset.FromUnixTimeSeconds(59), digits: 8, stepSeconds: 30);
-
-        Assert.Equal("94287082", viaClock);
-        Assert.Equal(viaExplicitTimestamp, viaClock);
+        Assert.True(_generator.TryValidateCode(Sha1Seed, code, Now, out long step, parameters));
+        Assert.Equal((Now.ToUnixTimeSeconds() / 30) - 3, step);
     }
 
     [Fact]
-    public void ValidateCode_CodeOneStepBeforeNow_AcceptedWithinDriftWindow()
+    public void TryValidateCode_CustomStepAndDigits_RoundTrips()
     {
-        // "now" is step 100 (t=3000s at a 30s step). Generate the code for step 99 (t=2970s) —
-        // one step in the past — and confirm it validates against "now" with driftWindow=1.
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        TotpGenerator generator = NewGenerator(clock);
+        var parameters = new TotpParameters { StepSeconds = 60, Digits = 7, Algorithm = HotpAlgorithm.Sha256 };
 
-        string previousStepCode = generator.GenerateCode(Seed20, DateTimeOffset.FromUnixTimeSeconds(2970), stepSeconds: 30);
+        string code = _generator.GenerateCode(Sha256Seed, Now, parameters);
 
-        bool valid = generator.ValidateCode(Seed20, previousStepCode, stepSeconds: 30, driftWindow: 1);
-
-        Assert.True(valid);
+        Assert.Equal(7, code.Length);
+        Assert.True(_generator.TryValidateCode(Sha256Seed, code, Now, out long step, parameters));
+        Assert.Equal(Now.ToUnixTimeSeconds() / 60, step);
+        Assert.False(_generator.TryValidateCode(Sha256Seed, code, Now, out _, parameters with { StepSeconds = 30 }));
     }
 
     [Fact]
-    public void ValidateCode_CodeOneStepAfterNow_AcceptedWithinDriftWindow()
+    public void TryValidateCode_WithoutTimestamp_UsesClock()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        TotpGenerator generator = NewGenerator(clock);
+        string code = _generator.GenerateCode(Sha1Seed, Now);
 
-        string nextStepCode = generator.GenerateCode(Seed20, DateTimeOffset.FromUnixTimeSeconds(3030), stepSeconds: 30);
+        Assert.True(_generator.TryValidateCode(Sha1Seed, code, out long step));
+        Assert.Equal(Now.ToUnixTimeSeconds() / 30, step);
 
-        bool valid = generator.ValidateCode(Seed20, nextStepCode, stepSeconds: 30, driftWindow: 1);
+        _clock.UtcNow = Now.AddMinutes(5);
 
-        Assert.True(valid);
+        Assert.False(_generator.TryValidateCode(Sha1Seed, code, out _));
     }
 
     [Fact]
-    public void ValidateCode_CodeTwoStepsAway_RejectedOutsideDriftWindow()
+    public void TryValidateCode_AtUnixEpoch_SkipsNegativeSteps()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        TotpGenerator generator = NewGenerator(clock);
+        DateTimeOffset epoch = DateTimeOffset.FromUnixTimeSeconds(5);
+        string code = _generator.GenerateCode(Sha1Seed, epoch);
 
-        // Two steps in the future (t=3060s) — outside the default driftWindow=1.
-        string twoStepsAwayCode = generator.GenerateCode(Seed20, DateTimeOffset.FromUnixTimeSeconds(3060), stepSeconds: 30);
+        Assert.True(_generator.TryValidateCode(Sha1Seed, code, epoch, out long step));
+        Assert.Equal(0, step);
+    }
 
-        bool valid = generator.ValidateCode(Seed20, twoStepsAwayCode, stepSeconds: 30, driftWindow: 1);
-
-        Assert.False(valid);
+    [Theory]
+    [InlineData("")]
+    [InlineData("abcdef")]
+    [InlineData("12345")]
+    [InlineData("1234567")]
+    public void TryValidateCode_MalformedCode_ReturnsFalse(string code)
+    {
+        Assert.False(_generator.TryValidateCode(Sha1Seed, code, Now, out long step));
+        Assert.Equal(-1, step);
     }
 
     [Fact]
-    public void ValidateCode_WrongCode_Rejected()
+    public void TryValidateCode_CodeWithSeparators_IsAccepted()
     {
-        TotpGenerator generator = NewGenerator();
+        string code = _generator.GenerateCode(Sha1Seed, Now);
 
-        Assert.False(generator.ValidateCode(Seed20, "00000000", DateTimeOffset.FromUnixTimeSeconds(59), digits: 8));
+        Assert.True(_generator.TryValidateCode(Sha1Seed, $"{code[..3]} {code[3..]}", Now, out _));
     }
 
     [Fact]
-    public void GenerateCode_NullSecret_Throws()
+    public void Members_InvalidArguments_Throw()
     {
-        TotpGenerator generator = NewGenerator();
-
-        Assert.Throws<ArgumentNullException>(() => generator.GenerateCode(null!));
-    }
-
-    [Fact]
-    public void Constructor_NullDependencies_Throw()
-    {
-        Assert.Throws<ArgumentNullException>(() => new TotpGenerator(null!, new SystemClock(new FakeTimeProvider(DateTimeOffset.UnixEpoch))));
-        Assert.Throws<ArgumentNullException>(() => new TotpGenerator(new HotpGenerator(), null!));
+        Assert.Throws<ArgumentNullException>(() => new TotpGenerator(null!));
+        Assert.Throws<ArgumentNullException>(() => _generator.TryValidateCode(Sha1Seed, null!, Now, out _));
+        Assert.Throws<ArgumentException>(() => _generator.GenerateCode(new byte[15], Now));
+        Assert.Throws<ArgumentException>(() => _generator.TryValidateCode(new byte[15], "123456", Now, out _));
     }
 }

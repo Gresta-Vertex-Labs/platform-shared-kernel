@@ -1,162 +1,96 @@
+using System.Security.Cryptography;
 using System.Text;
 using SharedKernel.Cryptography.Signing;
-using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Signing;
 
 public sealed class HmacSha256SignerTests
 {
-    private static readonly byte[] Secret = Encoding.UTF8.GetBytes("shared-secret-key");
+    // RFC 4231 test cases 6 and 7 use a 131-byte key of 0xaa.
+    private static readonly byte[] Rfc4231Key = Enumerable.Repeat((byte)0xAA, 131).ToArray();
 
-    [Fact]
-    public void Sign_ThenVerify_RoundTripsSuccessfully()
+    private readonly HmacSha256Signer _signer = new();
+
+    [Theory]
+    [InlineData(
+        "Test Using Larger Than Block-Size Key - Hash Key First",
+        "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")]
+    [InlineData(
+        "This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
+        "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2")]
+    public void Sign_Rfc4231Vectors_MatchExpected(string data, string expectedHex)
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data to sign");
+        byte[] signature = _signer.Sign(Encoding.ASCII.GetBytes(data), Rfc4231Key);
 
-        byte[] signature = signer.Sign(data, Secret);
-        bool verified = signer.Verify(data, signature, Secret);
-
-        Assert.True(verified);
+        Assert.Equal(Convert.FromHexString(expectedHex), signature);
+        Assert.True(_signer.Verify(Encoding.ASCII.GetBytes(data), Convert.FromHexString(expectedHex), Rfc4231Key));
     }
 
     [Fact]
-    public void Sign_IsDeterministic_ForSameInputAndSecret()
+    public void Sign_ReturnsHmacSha256OfData()
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data to sign");
+        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] data = RandomNumberGenerator.GetBytes(500);
 
-        byte[] signature1 = signer.Sign(data, Secret);
-        byte[] signature2 = signer.Sign(data, Secret);
+        byte[] signature = _signer.Sign(data, key);
 
-        Assert.Equal(signature1, signature2);
+        Assert.Equal(32, signature.Length);
+        Assert.Equal(HMACSHA256.HashData(key, data), signature);
     }
 
     [Fact]
-    public void Verify_WithTamperedData_ReturnsFalse()
+    public void Verify_ValidSignature_ReturnsTrue()
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("original data");
-        byte[] signature = signer.Sign(data, Secret);
+        byte[] key = RandomNumberGenerator.GetBytes(32);
 
-        byte[] tamperedData = Encoding.UTF8.GetBytes("tampered data");
-        bool verified = signer.Verify(tamperedData, signature, Secret);
-
-        Assert.False(verified);
+        Assert.True(_signer.Verify("payload"u8, _signer.Sign("payload"u8, key), key));
     }
 
     [Fact]
-    public void Verify_WithTamperedSignature_ReturnsFalse()
+    public void Verify_AlteredDataSignatureOrKey_ReturnsFalse()
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data");
-        byte[] signature = signer.Sign(data, Secret);
-        byte[] tamperedSignature = [.. signature];
-        tamperedSignature[0] ^= 0xFF;
+        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] signature = _signer.Sign("payload"u8, key);
+        byte[] alteredSignature = [.. signature];
+        alteredSignature[31] ^= 0x01;
+        byte[] otherKey = [.. key];
+        otherKey[0] ^= 0x01;
 
-        bool verified = signer.Verify(data, tamperedSignature, Secret);
+        Assert.False(_signer.Verify("payloaD"u8, signature, key));
+        Assert.False(_signer.Verify("payload"u8, alteredSignature, key));
+        Assert.False(_signer.Verify("payload"u8, signature, otherKey));
+    }
 
-        Assert.False(verified);
+    [Theory]
+    [InlineData(0)]
+    [InlineData(16)]
+    [InlineData(31)]
+    public void Verify_TruncatedSignature_ReturnsFalse(int length)
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] signature = _signer.Sign("payload"u8, key);
+
+        Assert.False(_signer.Verify("payload"u8, signature.AsSpan(0, length), key));
     }
 
     [Fact]
-    public void Verify_WithWrongSecret_ReturnsFalse()
+    public void Verify_SignatureWithExtraBytes_ReturnsFalse()
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data");
-        byte[] signature = signer.Sign(data, Secret);
-        byte[] wrongSecret = Encoding.UTF8.GetBytes("wrong-secret-key");
+        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] signature = [.. _signer.Sign("payload"u8, key), 0x00];
 
-        bool verified = signer.Verify(data, signature, wrongSecret);
-
-        Assert.False(verified);
+        Assert.False(_signer.Verify("payload"u8, signature, key));
     }
 
-    [Fact]
-    public void Verify_WithDifferentLengthSignature_ReturnsFalseWithoutThrowing()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20)]
+    [InlineData(31)]
+    public void SignAndVerify_KeyShorterThan32Bytes_Throw(int keyLength)
     {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data");
-        byte[] shortSignature = [1, 2, 3];
+        byte[] key = new byte[keyLength];
 
-        bool verified = signer.Verify(data, shortSignature, Secret);
-
-        Assert.False(verified);
-    }
-
-    [Fact]
-    public void Verify_RejectsSignatureDifferingOnlyInFinalByte()
-    {
-        // A non-constant-time comparison (e.g. a naive byte-by-byte loop with early
-        // exit, or `SequenceEqual`) is still functionally correct here — this test
-        // guards against regression to that pattern by pinning the exact "differs in
-        // the last byte only" shape that constant-time comparison handles identically
-        // to "differs in the first byte" (CryptographicOperations.FixedTimeEquals
-        // always walks the full length regardless of where the mismatch occurs).
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data");
-        byte[] signature = signer.Sign(data, Secret);
-        byte[] tamperedAtEnd = [.. signature];
-        tamperedAtEnd[^1] ^= 0xFF;
-
-        bool verified = signer.Verify(data, tamperedAtEnd, Secret);
-
-        Assert.False(verified);
-    }
-
-    [Fact]
-    public void Verify_RejectsSignatureDifferingOnlyInFirstByte()
-    {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data");
-        byte[] signature = signer.Sign(data, Secret);
-        byte[] tamperedAtStart = [.. signature];
-        tamperedAtStart[0] ^= 0xFF;
-
-        bool verified = signer.Verify(data, tamperedAtStart, Secret);
-
-        Assert.False(verified);
-    }
-
-    [Fact]
-    public void Verify_NullData_Throws()
-    {
-        var signer = new HmacSha256Signer();
-        byte[] signature = signer.Sign(Encoding.UTF8.GetBytes("data"), Secret);
-
-        Assert.Throws<ArgumentNullException>(() => signer.Verify(null!, signature, Secret));
-    }
-
-    [Fact]
-    public void Sign_NullData_Throws()
-    {
-        var signer = new HmacSha256Signer();
-
-        Assert.Throws<ArgumentNullException>(() => signer.Sign(null!, Secret));
-    }
-
-    // ---- P-524/WO-083: key-material zeroization ----
-
-    /// <summary>
-    /// Proves — with a genuine runtime check against actual bytes — that
-    /// <see cref="HmacSha256Signer.Verify(byte[], byte[], byte[])"/>'s internal <c>expected</c>
-    /// comparison buffer is zeroed in place before the public call returns. Uses the internal,
-    /// test-only capture-before-zeroing overload (gated via <c>InternalsVisibleTo</c>) to grab the
-    /// exact same array reference the production code path zeroes.
-    /// </summary>
-    [Fact]
-    public void Verify_ZeroesTheInternalExpectedComparisonBuffer_BeforeReturning()
-    {
-        var signer = new HmacSha256Signer();
-        byte[] data = Encoding.UTF8.GetBytes("data to sign");
-        byte[] signature = signer.Sign(data, Secret);
-        byte[]? capturedExpected = null;
-
-        bool verified = signer.Verify(data, signature, Secret, buffer => capturedExpected = buffer);
-
-        Assert.True(verified);
-        Assert.NotNull(capturedExpected);
-        Assert.NotEmpty(capturedExpected);
-        Assert.All(capturedExpected, b => Assert.Equal(0, b));
+        Assert.Throws<ArgumentException>(() => _signer.Sign("payload"u8, key));
+        Assert.Throws<ArgumentException>(() => _signer.Verify("payload"u8, new byte[32], key));
     }
 }

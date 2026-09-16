@@ -1,244 +1,171 @@
-using System.Collections.Concurrent;
-using System.Threading;
 using NSubstitute;
-using SharedKernel.Cryptography.Tests.Symmetric;
+using SharedKernel.Cryptography.Tests.TestDoubles;
 using SharedKernel.Cryptography.Totp;
-using SharedKernel.Primitives.Clocks;
-using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Totp;
 
-/// <summary>
-/// A real atomic, lock-free <see cref="ITotpReplayGuard"/> test double backed by
-/// <see cref="ConcurrentDictionary{TKey,TValue}.TryAdd"/> — the same atomic-reservation shape a
-/// production Redis (<c>SET NX PX</c>) or EF Core (<c>INSERT ... ON CONFLICT DO NOTHING</c>) store
-/// uses. Used by <see cref="TotpVerifierTests"/>'s concurrency proof (T-81) instead of an
-/// NSubstitute mock, since the whole point of that test is to prove the real check-and-mark
-/// operation is indivisible — a mock configured with canned return values could not demonstrate
-/// that under genuine concurrent access.
-/// </summary>
-internal sealed class AtomicInMemoryTotpReplayGuard : ITotpReplayGuard
-{
-    private readonly ConcurrentDictionary<string, byte> _used = new();
-
-    public ValueTask<bool> TryMarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default) =>
-        ValueTask.FromResult(_used.TryAdd($"{identityKey}:{code}", 0));
-}
-
-/// <summary>
-/// Covers <see cref="TotpVerifier"/> (C-71/T-57, atomic rewrite C-104/T-81/T-82 for P-514/WO-083)
-/// — this phase's headline acceptance criterion: two concurrent submissions of the same valid TOTP
-/// code resolve to exactly one success and one rejection, and the replay window always matches the
-/// step/drift parameters actually used for that verification.
-/// </summary>
 public sealed class TotpVerifierTests
 {
-    private static readonly byte[] Secret = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    private const string IdentityKey = "user-42";
+    private const string User = "user-42";
 
-    private static (TotpVerifier Verifier, ITotpReplayGuard ReplayGuard, string Code) NewVerifierWithValidCode()
+    private static readonly byte[] Secret = [.. Enumerable.Range(1, 20).Select(i => (byte)i)];
+    private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000);
+
+    private readonly FakeClock _clock = new(Now);
+    private readonly TotpGenerator _generator;
+    private readonly InMemoryTotpReplayGuard _replayGuard = new();
+    private readonly TotpVerifier _verifier;
+
+    public TotpVerifierTests()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), clock);
-        var replayGuard = Substitute.For<ITotpReplayGuard>();
-
-        string code = totpGenerator.GenerateCode(Secret);
-
-        var verifier = new TotpVerifier(totpGenerator, replayGuard);
-        return (verifier, replayGuard, code);
+        _generator = new TotpGenerator(_clock);
+        _verifier = new TotpVerifier(_generator, _replayGuard);
     }
 
     [Fact]
-    public async Task VerifyAsync_FreshValidCode_ReturnsTrueAndMarksUsed()
+    public async Task VerifyAsync_ValidCode_ReturnsValid()
     {
-        (TotpVerifier verifier, ITotpReplayGuard replayGuard, string code) = NewVerifierWithValidCode();
-        replayGuard.TryMarkUsedAsync(IdentityKey, code, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
+        string code = _generator.GenerateCode(Secret);
 
-        bool result = await verifier.VerifyAsync(IdentityKey, Secret, code);
-
-        Assert.True(result);
-        await replayGuard.Received(1).TryMarkUsedAsync(IdentityKey, code, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync(User, Secret, code));
     }
 
     [Fact]
-    public async Task VerifyAsync_SameValidCodeSubmittedTwiceSequentially_SecondCallRejectedByReplayGuard()
+    public async Task VerifyAsync_SameCodeTwice_ReturnsReplayed()
     {
-        (TotpVerifier verifier, ITotpReplayGuard replayGuard, string code) = NewVerifierWithValidCode();
+        string code = _generator.GenerateCode(Secret);
 
-        // Simulate the guard's real atomic behavior: the first reservation succeeds, the second
-        // (for the identical identityKey/code) fails because it is already reserved.
-        replayGuard.TryMarkUsedAsync(IdentityKey, code, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true, false);
+        await _verifier.VerifyAsync(User, Secret, code);
 
-        bool firstResult = await verifier.VerifyAsync(IdentityKey, Secret, code);
-        bool secondResult = await verifier.VerifyAsync(IdentityKey, Secret, code);
-
-        Assert.True(firstResult);
-        Assert.False(secondResult);
-
-        await replayGuard.Received(2).TryMarkUsedAsync(IdentityKey, code, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        Assert.Equal(TotpVerificationResult.Replayed, await _verifier.VerifyAsync(User, Secret, code));
     }
 
     [Fact]
-    public async Task VerifyAsync_InvalidCode_ReturnsFalseAndNeverConsultsReplayGuard()
+    public async Task VerifyAsync_OlderCodeAfterNewerAccepted_ReturnsReplayed()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), clock);
-        var replayGuard = Substitute.For<ITotpReplayGuard>();
-        var verifier = new TotpVerifier(totpGenerator, replayGuard);
+        string newer = _generator.GenerateCode(Secret, Now.AddSeconds(30));
+        string older = _generator.GenerateCode(Secret, Now);
 
-        bool result = await verifier.VerifyAsync(IdentityKey, Secret, "000000");
-
-        Assert.False(result);
-
-        // A verifier that marks an invalid code as used would let an attacker burn a legitimate
-        // code by submitting garbage — this must never happen.
-        await replayGuard.DidNotReceive().TryMarkUsedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync(User, Secret, newer));
+        Assert.Equal(TotpVerificationResult.Replayed, await _verifier.VerifyAsync(User, Secret, older));
     }
 
     [Fact]
-    public async Task VerifyAsync_PreviouslyUsedCode_ReturnsFalse()
+    public async Task VerifyAsync_NewerCodeAfterOlderAccepted_ReturnsValid()
     {
-        (TotpVerifier verifier, ITotpReplayGuard replayGuard, string code) = NewVerifierWithValidCode();
-        replayGuard.TryMarkUsedAsync(IdentityKey, code, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(false);
+        string older = _generator.GenerateCode(Secret, Now.AddSeconds(-30));
+        string newer = _generator.GenerateCode(Secret, Now);
 
-        bool result = await verifier.VerifyAsync(IdentityKey, Secret, code);
-
-        Assert.False(result);
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync(User, Secret, older));
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync(User, Secret, newer));
     }
 
     [Fact]
-    public void Constructor_NullDependencies_Throw()
+    public async Task VerifyAsync_SameCodeForDifferentIdentities_IsTrackedPerIdentity()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), new SystemClock(timeProvider));
-        var replayGuard = Substitute.For<ITotpReplayGuard>();
+        string code = _generator.GenerateCode(Secret);
 
-        Assert.Throws<ArgumentNullException>(() => new TotpVerifier(null!, replayGuard));
-        Assert.Throws<ArgumentNullException>(() => new TotpVerifier(totpGenerator, null!));
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync("user-1", Secret, code));
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync("user-2", Secret, code));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("abcdef")]
+    [InlineData("12345")]
+    public async Task VerifyAsync_MalformedCode_ReturnsInvalidWithoutConsultingReplayGuard(string code)
+    {
+        ITotpReplayGuard guard = Substitute.For<ITotpReplayGuard>();
+        var verifier = new TotpVerifier(_generator, guard);
+
+        Assert.Equal(TotpVerificationResult.Invalid, await verifier.VerifyAsync(User, Secret, code));
+        _ = guard.DidNotReceiveWithAnyArgs().TryAcceptTimeStepAsync(default!, default, default, default);
     }
 
     [Fact]
-    public async Task VerifyAsync_InvalidIdentityKey_Throws()
+    public async Task VerifyAsync_CodeOutsideWindow_ReturnsInvalidWithoutConsultingReplayGuard()
     {
-        (TotpVerifier verifier, _, string code) = NewVerifierWithValidCode();
+        ITotpReplayGuard guard = Substitute.For<ITotpReplayGuard>();
+        var verifier = new TotpVerifier(_generator, guard);
+        string stale = _generator.GenerateCode(Secret, Now.AddMinutes(-10));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => verifier.VerifyAsync("", Secret, code).AsTask());
-    }
-
-    // --- T-81: the phase's headline acceptance criterion — a genuine concurrency proof ---
-
-    [Fact]
-    public async Task VerifyAsync_TwoConcurrentCallsWithIdenticalValidCode_ExactlyOneSucceedsAndOneIsRejected()
-    {
-        // This is deliberately NOT a sequential test — a sequential test (call, await, call, await)
-        // would pass just as well against the OLD, defective two-step HasBeenUsedAsync+MarkUsedAsync
-        // implementation, because sequential calls never actually race. Proving the fix requires
-        // both calls to be genuinely in flight at once against a real atomic guard.
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), clock);
-        var replayGuard = new AtomicInMemoryTotpReplayGuard();
-        var verifier = new TotpVerifier(totpGenerator, replayGuard);
-
-        string code = totpGenerator.GenerateCode(Secret);
-
-        using var barrier = new Barrier(2);
-
-        Task<bool> RaceAsync() =>
-            Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-                return await verifier.VerifyAsync(IdentityKey, Secret, code);
-            });
-
-        Task<bool> firstTask = RaceAsync();
-        Task<bool> secondTask = RaceAsync();
-
-        bool[] results = await Task.WhenAll(firstTask, secondTask);
-
-        Assert.Equal(1, results.Count(static r => r));
-        Assert.Equal(1, results.Count(static r => !r));
+        Assert.Equal(TotpVerificationResult.Invalid, await verifier.VerifyAsync(User, Secret, stale));
+        _ = guard.DidNotReceiveWithAnyArgs().TryAcceptTimeStepAsync(default!, default, default, default);
     }
 
     [Fact]
-    public async Task VerifyAsync_ManyConcurrentCallsWithIdenticalValidCode_ExactlyOneSucceeds()
+    public async Task VerifyAsync_InvalidCodeDoesNotConsumeValidCode()
     {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), clock);
-        var replayGuard = new AtomicInMemoryTotpReplayGuard();
-        var verifier = new TotpVerifier(totpGenerator, replayGuard);
+        string valid = _generator.GenerateCode(Secret);
+        string invalid = _generator.GenerateCode(Secret, Now.AddMinutes(-10));
 
-        string code = totpGenerator.GenerateCode(Secret);
-        const int concurrentCallers = 50;
-
-        using var barrier = new Barrier(concurrentCallers);
-
-        IEnumerable<Task<bool>> tasks = Enumerable.Range(0, concurrentCallers).Select(_ =>
-            Task.Run(async () =>
-            {
-                barrier.SignalAndWait();
-                return await verifier.VerifyAsync(IdentityKey, Secret, code);
-            }));
-
-        bool[] results = await Task.WhenAll(tasks);
-
-        Assert.Equal(1, results.Count(static r => r));
-        Assert.Equal(concurrentCallers - 1, results.Count(static r => !r));
-    }
-
-    // --- T-82: the replay window must be derived from the actual parameters used, not from a
-    // hardcoded default independent of what was validated ---
-
-    [Fact]
-    public async Task VerifyAsync_NonDefaultStepAndDrift_ReplayWindowMatchesActualParametersNotHardcodedDefaults()
-    {
-        const int stepSeconds = 60;
-        const int driftWindow = 2;
-        // With the removed hardcoded DefaultStepSeconds=30/DefaultDriftWindow=1, the (wrong) old
-        // computation would have produced 30 * (2*1+1) = 90 seconds regardless of what was passed
-        // here. The correct, config-consistent computation is stepSeconds * (2*driftWindow+1).
-        var expectedWindow = TimeSpan.FromSeconds(stepSeconds * ((2 * driftWindow) + 1)); // 60 * 5 = 300s
-        Assert.Equal(TimeSpan.FromSeconds(300), expectedWindow);
-
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(3000));
-        var clock = new SystemClock(timeProvider);
-        var totpGenerator = new TotpGenerator(new HotpGenerator(), clock);
-        string code = totpGenerator.GenerateCode(Secret, digits: 6, stepSeconds: stepSeconds);
-
-        var replayGuard = Substitute.For<ITotpReplayGuard>();
-        replayGuard.TryMarkUsedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
-        var verifier = new TotpVerifier(totpGenerator, replayGuard);
-
-        bool result = await verifier.VerifyAsync(
-            IdentityKey,
-            Secret,
-            code,
-            digits: 6,
-            stepSeconds: stepSeconds,
-            driftWindow: driftWindow);
-
-        Assert.True(result);
-        await replayGuard.Received(1).TryMarkUsedAsync(IdentityKey, code, expectedWindow, Arg.Any<CancellationToken>());
-
-        // Never the stale default-derived 90-second window.
-        await replayGuard.DidNotReceive().TryMarkUsedAsync(IdentityKey, code, TimeSpan.FromSeconds(90), Arg.Any<CancellationToken>());
+        Assert.Equal(TotpVerificationResult.Invalid, await _verifier.VerifyAsync(User, Secret, invalid));
+        Assert.Equal(TotpVerificationResult.Valid, await _verifier.VerifyAsync(User, Secret, valid));
     }
 
     [Fact]
-    public async Task VerifyAsync_DefaultParameters_ReplayWindowIsNinetySeconds()
+    public async Task VerifyAsync_PassesMatchedStepRetentionAndToken()
     {
-        // Parity check: at the defaults (stepSeconds=30, driftWindow=1) the window is still the
-        // same 90 seconds it always was — this phase changes HOW the window is derived, not its
-        // value at the defaults.
-        (TotpVerifier verifier, ITotpReplayGuard replayGuard, string code) = NewVerifierWithValidCode();
-        replayGuard.TryMarkUsedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
+        ITotpReplayGuard guard = Substitute.For<ITotpReplayGuard>();
+        guard.TryAcceptTimeStepAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+        var verifier = new TotpVerifier(_generator, guard);
+        var parameters = new TotpParameters { StepSeconds = 60, DriftSteps = 2 };
+        using var cts = new CancellationTokenSource();
+        string code = _generator.GenerateCode(Secret, Now.AddSeconds(-60), parameters);
 
-        bool result = await verifier.VerifyAsync(IdentityKey, Secret, code);
+        TotpVerificationResult result = await verifier.VerifyAsync(User, Secret, code, parameters, cts.Token);
 
-        Assert.True(result);
-        await replayGuard.Received(1).TryMarkUsedAsync(IdentityKey, code, TimeSpan.FromSeconds(90), Arg.Any<CancellationToken>());
+        Assert.Equal(TotpVerificationResult.Valid, result);
+        _ = guard.Received(1).TryAcceptTimeStepAsync(User, (Now.ToUnixTimeSeconds() / 60) - 1, TimeSpan.FromSeconds(300), cts.Token);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_DefaultParameters_RetentionIsDefaultValidityWindow()
+    {
+        await _verifier.VerifyAsync(User, Secret, _generator.GenerateCode(Secret));
+
+        Assert.Equal(TotpParameters.Default.ValidityWindow, Assert.Single(_replayGuard.Retentions));
+        Assert.Equal(TimeSpan.FromSeconds(90), TotpParameters.Default.ValidityWindow);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReplayGuardRejects_ReturnsReplayed()
+    {
+        ITotpReplayGuard guard = Substitute.For<ITotpReplayGuard>();
+        guard.TryAcceptTimeStepAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(false));
+        var verifier = new TotpVerifier(_generator, guard);
+
+        Assert.Equal(TotpVerificationResult.Replayed, await verifier.VerifyAsync(User, Secret, _generator.GenerateCode(Secret)));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ConcurrentSubmissionsOfSameCode_AcceptExactlyOne()
+    {
+        string code = _generator.GenerateCode(Secret);
+
+        TotpVerificationResult[] results = await Task.WhenAll(
+            Enumerable.Range(0, 50).Select(_ => Task.Run(async () => await _verifier.VerifyAsync(User, Secret, code))));
+
+        Assert.Single(results, r => r == TotpVerificationResult.Valid);
+        Assert.Equal(49, results.Count(r => r == TotpVerificationResult.Replayed));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task VerifyAsync_BlankIdentity_Throws(string identity)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(async () => await _verifier.VerifyAsync(identity, Secret, "123456"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_NullArguments_Throw()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await _verifier.VerifyAsync(null!, Secret, "123456"));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await _verifier.VerifyAsync(User, Secret, null!));
+        Assert.Throws<ArgumentNullException>(() => new TotpVerifier(null!, _replayGuard));
+        Assert.Throws<ArgumentNullException>(() => new TotpVerifier(_generator, null!));
     }
 }

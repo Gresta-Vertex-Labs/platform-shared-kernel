@@ -1,86 +1,97 @@
 using System.Text;
+using System.Web;
 using SharedKernel.Cryptography.Totp;
-using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Totp;
 
-/// <summary>
-/// Covers <see cref="TotpProvisioningUri"/> (C-70/T-56) — the <c>otpauth://totp/...</c> Key Uri
-/// Format builder, verified field-for-field against the documented format.
-/// </summary>
 public sealed class TotpProvisioningUriTests
 {
-    /// <summary>Minimal hand-rolled query-string parser — avoids pulling in System.Web/ASP.NET just to assert on a query string in a test.</summary>
-    private static Dictionary<string, string> ParseQuery(string query)
-    {
-        var result = new Dictionary<string, string>();
-        string trimmed = query.TrimStart('?');
-        if (trimmed.Length == 0)
-        {
-            return result;
-        }
-
-        foreach (string pair in trimmed.Split('&'))
-        {
-            string[] parts = pair.Split('=', 2);
-            result[Uri.UnescapeDataString(parts[0])] = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
-        }
-
-        return result;
-    }
+    private static readonly byte[] Secret = Encoding.ASCII.GetBytes("12345678901234567890");
 
     [Fact]
-    public void Build_MatchesKeyUriFormatFieldForField()
+    public void Build_DefaultParameters_WritesEveryQueryParameter()
     {
-        byte[] secret = Encoding.ASCII.GetBytes("12345678901234567890");
-        string expectedSecret = Base32.Encode(secret);
-
-        Uri uri = TotpProvisioningUri.Build("Contoso", "alice@example.com", secret, digits: 6, stepSeconds: 30, algorithm: HotpAlgorithm.Sha1);
+        Uri uri = TotpProvisioningUri.Build("Contoso", "alice@example.com", Secret);
 
         Assert.Equal("otpauth", uri.Scheme);
         Assert.Equal("totp", uri.Host);
-        Assert.Equal("/Contoso:alice@example.com", Uri.UnescapeDataString(uri.AbsolutePath));
+        Assert.Equal(
+            "otpauth://totp/Contoso:alice%40example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Contoso&algorithm=SHA1&digits=6&period=30",
+            uri.OriginalString);
+    }
 
-        Dictionary<string, string> query = ParseQuery(uri.Query);
+    [Fact]
+    public void Build_SecretIsBase32EncodedWithoutPadding()
+    {
+        Uri uri = TotpProvisioningUri.Build("Contoso", "alice", Secret);
 
-        Assert.Equal(expectedSecret, query["secret"]);
-        Assert.Equal("Contoso", query["issuer"]);
-        Assert.Equal("6", query["digits"]);
-        Assert.Equal("30", query["period"]);
-        Assert.Equal("SHA1", query["algorithm"]);
+        string secret = HttpUtility.ParseQueryString(uri.Query)["secret"]!;
+        Assert.DoesNotContain('=', secret);
+        Assert.Equal(Secret, Base32.Decode(secret).Value);
     }
 
     [Theory]
     [InlineData(HotpAlgorithm.Sha1, "SHA1")]
     [InlineData(HotpAlgorithm.Sha256, "SHA256")]
     [InlineData(HotpAlgorithm.Sha512, "SHA512")]
-    public void Build_AlgorithmNameMatchesKeyUriFormat(HotpAlgorithm algorithm, string expectedName)
+    public void Build_Algorithm_IsWrittenByName(HotpAlgorithm algorithm, string expected)
     {
-        byte[] secret = [1, 2, 3, 4, 5];
+        Uri uri = TotpProvisioningUri.Build("Contoso", "alice", Secret, new TotpParameters { Algorithm = algorithm });
 
-        Uri uri = TotpProvisioningUri.Build("Issuer", "user", secret, algorithm: algorithm);
-
-        Assert.Contains($"algorithm={expectedName}", uri.Query);
+        Assert.Equal(expected, HttpUtility.ParseQueryString(uri.Query)["algorithm"]);
     }
 
     [Fact]
-    public void Build_EncodesSpecialCharactersInIssuerAndAccount()
+    public void Build_CustomParameters_WritesDigitsAndPeriod()
     {
-        byte[] secret = [1, 2, 3, 4, 5];
+        Uri uri = TotpProvisioningUri.Build("Contoso", "alice", Secret, new TotpParameters { Digits = 8, StepSeconds = 60 });
 
-        Uri uri = TotpProvisioningUri.Build("My Company", "user name@example.com", secret);
-
-        Assert.DoesNotContain(" ", uri.AbsoluteUri.Replace("%20", string.Empty));
-        Assert.Contains("My%20Company", uri.AbsoluteUri);
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        Assert.Equal("8", query["digits"]);
+        Assert.Equal("60", query["period"]);
     }
 
     [Fact]
-    public void Build_NullSecret_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => TotpProvisioningUri.Build("Issuer", "account", null!));
+    public void Build_EscapesIssuerAndAccountName()
+    {
+        Uri uri = TotpProvisioningUri.Build("A&B Co/Ltd", "ali ce+tag@example.com?x=1", Secret);
+
+        Assert.StartsWith("otpauth://totp/A%26B%20Co%2FLtd:ali%20ce%2Btag%40example.com%3Fx%3D1?", uri.OriginalString, StringComparison.Ordinal);
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        Assert.Equal("A&B Co/Ltd", query["issuer"]);
+        Assert.Equal(5, query.Count);
+    }
+
+    [Fact]
+    public void Build_NonAsciiIssuer_IsPercentEncoded()
+    {
+        Uri uri = TotpProvisioningUri.Build("Şirket", "kullanıcı", Secret);
+
+        Assert.StartsWith("otpauth://totp/%C5%9Eirket:kullan%C4%B1c%C4%B1?", uri.OriginalString, StringComparison.Ordinal);
+    }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Build_InvalidIssuer_Throws(string invalidIssuer) =>
-        Assert.Throws<ArgumentException>(() => TotpProvisioningUri.Build(invalidIssuer, "account", [1, 2, 3]));
+    [InlineData("Con:toso", "alice")]
+    [InlineData("Contoso", "alice:admin")]
+    [InlineData("", "alice")]
+    [InlineData("Contoso", " ")]
+    public void Build_InvalidLabelPart_Throws(string issuer, string accountName)
+    {
+        Assert.Throws<ArgumentException>(() => TotpProvisioningUri.Build(issuer, accountName, Secret));
+    }
+
+    [Fact]
+    public void Build_NullLabelPart_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => TotpProvisioningUri.Build(null!, "alice", Secret));
+        Assert.Throws<ArgumentNullException>(() => TotpProvisioningUri.Build("Contoso", null!, Secret));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(15)]
+    public void Build_SecretShorterThan16Bytes_Throws(int length)
+    {
+        Assert.Throws<ArgumentException>(() => TotpProvisioningUri.Build("Contoso", "alice", new byte[length]));
+    }
 }
