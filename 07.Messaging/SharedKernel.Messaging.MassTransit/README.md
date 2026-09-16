@@ -97,7 +97,7 @@ services
 // AppTenantContextAccessor — the ONLY class you write to get tenant identity flowing into
 // every published EventEnvelope<TEvent>.TenantId automatically. Bridges the locally-owned
 // ITenantContextAccessor seam to your service's real tenant source (12.Security's
-// ITenantProvider here), mirroring 05.Application's IAuthorizationContext/IUnitOfWork
+// ITenantProvider here), mirroring 05.Application's IRequestContext/IUnitOfWork
 // bridge pattern — SharedKernel.Messaging.* never references 12.Security directly.
 public sealed class AppTenantContextAccessor(ITenantProvider tenantProvider) : ITenantContextAccessor
 {

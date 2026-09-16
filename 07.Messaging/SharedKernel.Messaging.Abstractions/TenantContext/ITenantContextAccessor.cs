@@ -6,7 +6,7 @@ namespace SharedKernel.Messaging.Abstractions.TenantContext;
 /// <remarks>
 /// <para>
 /// This interface references nothing outside <c>01.Core</c>–<c>04.Contracts</c> — it mirrors
-/// <c>05.Application.Behaviors</c>' <c>IAuthorizationContext</c>/<c>IUnitOfWork</c> bridge pattern.
+/// <c>05.Application</c>'s <c>IRequestContext</c>/<c>IUnitOfWork</c> bridge pattern.
 /// The consuming service's composition root implements this interface against its own real
 /// tenant-identity source (e.g. <c>ITenantProvider</c> from <c>12.Security</c>, or
 /// <c>ICurrentTenantService</c> from <c>06.Persistence</c>). <c>SharedKernel.Messaging.*</c> never

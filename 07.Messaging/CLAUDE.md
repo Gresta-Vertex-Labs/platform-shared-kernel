@@ -290,7 +290,7 @@ ITenantContextAccessor  (interface)
         actually uses (HTTP claim, gRPC metadata, background-job context, etc.). Returns null
         when no tenant context is available.
     NOTE: A locally-owned seam interface, referencing nothing outside 01.Core–04.Contracts —
-          mirrors 05.Application.Behaviors' IAuthorizationContext/IUnitOfWork bridge pattern.
+          mirrors 05.Application's IRequestContext/IUnitOfWork bridge pattern.
           The consuming service's composition root implements this against its real
           ITenantProvider (12.Security) or ICurrentTenantService (06.Persistence); this package
           never references either directly. Register the implementation and enable automatic
@@ -1552,7 +1552,7 @@ services
 // identity flowing into every published EventEnvelope<TEvent>.TenantId automatically.
 // Bridges this domain's local ITenantContextAccessor seam to the service's real tenant
 // source (12.Security's ITenantProvider here), mirroring 05.Application's
-// IAuthorizationContext/IUnitOfWork bridge pattern.
+// IRequestContext/IUnitOfWork bridge pattern.
 public sealed class AppTenantContextAccessor : ITenantContextAccessor
 {
     private readonly ITenantProvider _tenantProvider;
