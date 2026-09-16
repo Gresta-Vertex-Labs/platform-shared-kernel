@@ -78,7 +78,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <c>Result&lt;T&gt;.Failure(...)</c>), never a public constructor call — nor on
 /// <see cref="ConditionalAccessExpressionSyntax"/> (<c>maybeService?.ReturnsResult();</c>). Both
 /// are accepted false-negative risks, mirroring this domain's established
-/// SK0708/HealthCheckTagIntegrityRules/NoTaskDelayOutsideResilienceBehaviorPredicate
+/// SK0708/HealthCheckTagIntegrityRules
 /// "document the limitation, revisit only on a real finding" discipline.
 /// </para>
 /// <para>

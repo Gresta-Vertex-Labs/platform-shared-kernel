@@ -32,8 +32,10 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </para>
 /// <para>
 /// <strong>Self-exemption.</strong> The <c>AddStreamingBehaviors</c> method-name check is
-/// syntax-only and short-circuits before the semantic-model call — the canonical builder method
-/// is the single sanctioned call site for streaming-behavior registration.
+/// syntax-only and short-circuits before the semantic-model call — the conventional name for a
+/// service's own streaming-behavior composition helper, which registers these deliberately.
+/// `05.Application` ships no such method: it removed its streaming behaviors before its first
+/// publish, so every streaming behavior on the platform now belongs to a consuming service.
 /// </para>
 /// <para>
 /// <b>Covered form:</b>
@@ -66,7 +68,7 @@ public sealed class StreamPipelineBehaviorMisregistrationAnalyzer : AnalyzerBase
         messageFormat: "'{0}' implements IStreamPipelineBehavior<,> but is registered against " +
                        "IPipelineBehavior<,>. MediatR dispatches streaming requests through " +
                        "IStreamPipelineBehavior<,> only — this registration is silently never invoked. " +
-                       "Call ApplicationBehaviorsBuilder.AddStreamingBehaviors() instead.",
+                       "Register it against IStreamPipelineBehavior<,> instead.",
         category: Usage,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0015-streampipelinebehaviormisregistration"

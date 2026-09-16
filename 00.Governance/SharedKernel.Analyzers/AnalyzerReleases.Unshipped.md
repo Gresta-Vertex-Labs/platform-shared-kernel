@@ -8,3 +8,10 @@ Rule ID | Category | Severity | Notes
 SK0037 | Design | Warning | ValueObjectMissingEnsureValid
 SK0038 | Design | Warning | IntegrationEventMissingAttribute
 SK0039 | Design | Warning | InvalidIntegrationEventAttribute
+SK0040 | Design | Warning | PipelineMarkerResponseShapeMismatch
+
+### Removed Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+SK0019 | Design | Warning | RetryableRequestWithoutIdempotency — target type (IRetryableRequest) removed from SharedKernel.Application.Behaviors (P-544)

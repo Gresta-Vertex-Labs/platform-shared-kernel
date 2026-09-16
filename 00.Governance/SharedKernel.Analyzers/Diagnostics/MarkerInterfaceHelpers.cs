@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// Shared semantic-model interface-closure matching helper reused by SK0017, SK0018, and SK0019.
+/// Shared semantic-model interface-closure matching helper reused by SK0017 and SK0018.
 /// </summary>
 /// <remarks>
 /// Interface matching uses <see cref="INamedTypeSymbol.OriginalDefinition"/> (so both open-generic
