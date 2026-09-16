@@ -129,7 +129,7 @@ SystemUserContext  (sealed class, singleton instance, implements IUserContext)  
           a background-execution composition root (a 17.Workflows activity host, a 07.Messaging consumer host,
           a hosted-service startup path) is responsible for registering it in place of the HTTP-derived
           IUserContext factory. This domain does not itself decide whether IdentityKind.System bypasses
-          authorization — that is the consuming service's own IAuthorizationContext bridge's explicit choice.
+          authorization — that is the consuming service's own 05.Application IRequestContext bridge's explicit choice.
 ```
 
 #### Tenant provider (`Abstractions/`)
@@ -1048,12 +1048,12 @@ services.AddTotpStepUp<MyRedisBackedTotpChallengeStore>();
 
 - **Domain-root `README.md`** (`12.Security/README.md`): `Overview` (thin abstractions / claims-first / no domain coupling philosophy) → `Packages` table → `Quick Start` → links to each package's own `README.md`. **Shipped** — populated per this structure (DOC-04).
 - **`SharedKernel.Security.Abstractions/README.md`**: usage example per public type — `IUserContext`/`HasRole`/`HasPermission`, `ITenantProvider`, `IdentityKind`, `AnonymousUserContext`, `SystemUserContext`, `SecurityClaimTypes`. **Shipped** (DOC-05).
-- **`SharedKernel.Security.Oidc/README.md`**: usage example per public type, plus the `ClaimMapping` sub-options and the four end-to-end recipes (`05.Application` `IAuthorizationContext` bridge, `06.Persistence` `TenantedDbContext` wiring, `07.Messaging` `ITenantContextAccessor` bridge, background-execution `SystemUserContext` registration). **Shipped** (DOC-05/DOC-07).
+- **`SharedKernel.Security.Oidc/README.md`**: usage example per public type, plus the `ClaimMapping` sub-options and the four end-to-end recipes (`05.Application` `IRequestContext` bridge, `06.Persistence` `TenantedDbContext` wiring, `07.Messaging` `ITenantContextAccessor` bridge, background-execution `SystemUserContext` registration). **Shipped** (DOC-05/DOC-07).
 - **`SharedKernel.Security.ApiKey/README.md`**: pre-shared-key/machine-client disclaimer. **Shipped** (DOC-06).
 
 ### WO-058 (P-375/P-376/P-377/P-379) — shipped, kept for reference
 
-- **`SharedKernel.Security.Oidc/README.md` — step-up authorization recipe**: a fifth end-to-end recipe alongside the existing four — gating a high-risk operation (e.g. a funds-transfer command) on `WasAuthenticatedWith("mfa")` + `IsAuthenticationFresherThan(...)`, wired through the same `IAuthorizationContext` bridge the first WO-057 recipe already established. **Shipped** (DOC-10).
+- **`SharedKernel.Security.Oidc/README.md` — step-up authorization recipe**: a fifth end-to-end recipe alongside the existing four — gating a high-risk operation (e.g. a funds-transfer command) on `WasAuthenticatedWith("mfa")` + `IsAuthenticationFresherThan(...)`, wired through the same `IRequestContext` bridge the first WO-057 recipe already established. **Shipped** (DOC-10).
 - **`SharedKernel.Security.Oidc/README.md` — DPoP Quick Start**: opt-in `.RequireDpop<TReplayCache>()`, a minimal `IDpopProofReplayCache` implementation sketch, and explicit FAPI 2.0 framing (why DPoP over/alongside mTLS sender-constraining for this platform's "developer friendly" requirement). **Shipped** (DOC-11).
 - **`SharedKernel.Security.Oidc/README.md` — revocation-check Quick Start**: opt-in `.WithRevocationCheck<TCheck>()` with an explicit latency/availability trade-off callout block — this is the one capability in the domain with a genuine per-request cost. **Shipped** (DOC-12).
 - **`SharedKernel.Security.Mtls/README.md`**: states up front, mirroring `.ApiKey`'s disclaimer pattern, that this package performs no certificate issuance, CA management, or revocation checking (CRL/OCSP) — those remain the consuming service's own concern. **Shipped** (DOC-09) — rewritten end to end, replacing the stale Scaffold-era stub.

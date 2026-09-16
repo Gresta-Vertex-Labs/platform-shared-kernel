@@ -248,36 +248,43 @@ This boundary applies uniformly to every trust decision this domain hands you a 
 
 The five recipes below bridge `IUserContext`/`ITenantProvider` into other capability domains' own locally-owned seam interfaces — each domain deliberately never references `SharedKernel.Security.Abstractions` directly (see each domain's own `CLAUDE.md` for the "why", summarized inline below). Every bridge type shown is written once, at the consuming service's composition root — none of it ships in this package.
 
-### 1. `05.Application` — `IAuthorizationContext` bridge (`HasRole` + `HasPermission`)
+### 1. `05.Application` — `IRequestContext` bridge (`HasRole` + `HasPermission`)
 
-`05.Application.Behaviors`'s `AuthorizationBehavior<TRequest,TResponse>` evaluates `IAuthorizeRequest`-marked commands/queries against a locally-owned `IAuthorizationContext` seam — never against `IUserContext` directly, mirroring the existing `IUnitOfWork`/`TransactionBehavior` bridge pattern so `05.Application` never takes a `12.Security` reference. `IAuthorizationContext` (`SharedKernel.Application.Behaviors.Authorization`) declares:
+`05.Application.Behaviors`'s `AuthorizationBehavior<TRequest,TResponse>` evaluates `IAuthorizeRequest`-marked commands/queries against a locally-owned `IRequestContext` seam — never against `IUserContext` directly, mirroring the existing `IUnitOfWork`/`TransactionBehavior` bridge pattern so `05.Application` never takes a `12.Security` reference. `IRequestContext` (`SharedKernel.Application.Context`) declares:
 
 ```csharp
-public interface IAuthorizationContext
+public interface IRequestContext
 {
-    Task<bool> IsAuthorizedAsync(string requirement, CancellationToken cancellationToken);
-    Task<bool> AllOf(IEnumerable<string> requirements, CancellationToken cancellationToken);
-    Task<bool> AnyOf(IEnumerable<string> requirements, CancellationToken cancellationToken);
+    bool IsAuthenticated { get; }
+    string? UserId { get; }
+    Guid? TenantId { get; }
+    ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken);
 }
 ```
 
-Bridge it to `IUserContext.HasRole`/`.HasPermission` — a single `requirement` string can name either a role or a permission, since both checks are case-insensitive membership tests:
+A request declares what it needs through `IAuthorizeRequest.RequiredPermissions`, evaluated per `IAuthorizeRequest.PermissionMatch` (`All` by default, or `Any`). The behavior fails closed: an unauthenticated caller gets `Error.Unauthorized` (401), a missing permission or an empty `RequiredPermissions` gets `Error.Forbidden` (403), and both come back as a failed `Result`, never an exception.
+
+Bridge it to `IUserContext`/`ITenantProvider`. A single permission string can name either a role or a permission, since both checks are case-insensitive membership tests:
 
 ```csharp
-public sealed class UserContextAuthorizationAdapter(IUserContext user) : IAuthorizationContext
+public sealed class UserRequestContext(IUserContext user, ITenantProvider tenantProvider) : IRequestContext
 {
-    public Task<bool> IsAuthorizedAsync(string requirement, CancellationToken cancellationToken) =>
-        Task.FromResult(user.HasRole(requirement) || user.HasPermission(requirement));
+    public bool IsAuthenticated => user.IsAuthenticated;
 
-    public Task<bool> AllOf(IEnumerable<string> requirements, CancellationToken cancellationToken) =>
-        Task.FromResult(requirements.All(r => user.HasRole(r) || user.HasPermission(r)));
+    public string? UserId => user.IsAuthenticated ? user.UserId.ToString("D") : null;
 
-    public Task<bool> AnyOf(IEnumerable<string> requirements, CancellationToken cancellationToken) =>
-        Task.FromResult(requirements.Any(r => user.HasRole(r) || user.HasPermission(r)));
+    public Guid? TenantId => tenantProvider.TenantId == Guid.Empty ? null : tenantProvider.TenantId;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(user.HasRole(permission) || user.HasPermission(permission));
 }
 
-// Composition root:
-services.AddScoped<SharedKernel.Application.Behaviors.Authorization.IAuthorizationContext, UserContextAuthorizationAdapter>();
+// Composition root — register the seam before AddAuthorizationBehavior()'s Build(), which throws without it:
+services.AddScoped<SharedKernel.Application.Context.IRequestContext, UserRequestContext>();
+services.AddSharedKernelApplicationBehaviors()
+    .AddDefaultBehaviors()
+    .AddAuthorizationBehavior()
+    .Build();
 ```
 
 ### 2. `06.Persistence` — `TenantedDbContext` wiring via `ITenantProvider`
@@ -311,7 +318,7 @@ No explicit `IUserContext`/`ITenantProvider` wiring is needed here beyond callin
 
 ### 3. `07.Messaging` — `ITenantContextAccessor` bridge
 
-`07.Messaging.Abstractions`'s `TenantHeaderPropagator` (enabled via `MessagingBusBuilder.WithTenantContext<TAccessor>()`) reads tenant identity through a locally-owned `ITenantContextAccessor` seam — mirroring the `IAuthorizationContext`/`IUnitOfWork` bridge pattern above, so `07.Messaging` never references `12.Security.Abstractions` directly:
+`07.Messaging.Abstractions`'s `TenantHeaderPropagator` (enabled via `MessagingBusBuilder.WithTenantContext<TAccessor>()`) reads tenant identity through a locally-owned `ITenantContextAccessor` seam — mirroring the `IRequestContext`/`IUnitOfWork` bridge pattern above, so `07.Messaging` never references `12.Security.Abstractions` directly:
 
 ```csharp
 public interface ITenantContextAccessor
@@ -347,52 +354,62 @@ services.AddSharedKernelSecurity(configuration); // still needed for JWT Bearer 
 services.AddScoped<IUserContext>(_ => SystemUserContext.Instance);
 
 // A consuming service's own authorization bridge (recipe 1) decides what IdentityKind.System means —
-// this package never bypasses authorization on its behalf:
-public sealed class UserContextAuthorizationAdapter(IUserContext user) : IAuthorizationContext
+// this package never bypasses authorization on its behalf. Granting a trusted background context
+// every permission is a deliberate choice made by the consuming service, not this domain:
+public sealed class UserRequestContext(IUserContext user, ITenantProvider tenantProvider) : IRequestContext
 {
-    public Task<bool> IsAuthorizedAsync(string requirement, CancellationToken cancellationToken) =>
-        Task.FromResult(user.IdentityKind == IdentityKind.System || user.HasRole(requirement) || user.HasPermission(requirement));
-    // AllOf/AnyOf follow the same IdentityKind.System short-circuit if the host wants a trusted-background
-    // context to bypass fine-grained checks — a deliberate choice made by the consuming service, not this domain.
+    public bool IsAuthenticated => user.IsAuthenticated;
+
+    public string? UserId => user.IsAuthenticated ? user.UserId.ToString("D") : null;
+
+    public Guid? TenantId => tenantProvider.TenantId == Guid.Empty ? null : tenantProvider.TenantId;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(
+            user.IdentityKind == IdentityKind.System || user.HasRole(permission) || user.HasPermission(permission));
 }
 ```
 
+`SystemUserContext.IsAuthenticated` is `true`, so this bridge lets the commands a Temporal activity (`CommandActivity<TCommand>`) or scheduled job (`ScheduledCommandJob<TCommand>`) sends pass `AuthorizationBehavior`'s authentication check. Without the registration above, the scoped factory falls back to `AnonymousUserContext` and every guarded command fails closed with `Error.Unauthorized`. Each such command runs in the activity's or job's own DI scope, so it is an outermost command for `ICommandScope` and commits its own unit of work.
+
 `ITenantProvider` for a background host is typically supplied differently per message/activity (e.g. from the recipe-3 `ITenantContextAccessor`'s propagated header, mapped back to a request-scoped `ITenantProvider` per message) rather than a single process-wide sentinel — `SystemUserContext` only addresses the *user* identity half of the ambient context.
+
+**A host with no `IUserContext` at all does not need this bridge.** `05.Application` ships `SystemRequestContext`, an `IRequestContext` taking an identity name and an explicit permission set, so a worker that never sees a token registers that directly and skips `SystemUserContext` entirely. Reach for the bridge above only when the same host also serves authenticated callers and you want one `IRequestContext` covering both.
 
 ### 5. Step-up authorization — gating a high-risk operation on `AuthenticationMethods`/`AuthTime`
 
-PSD2/FFIEC/PCI-DSS-style regulatory regimes commonly require a *recently, strongly* authenticated session before allowing a high-risk operation (a funds transfer, a limit change, a credential rotation) — not merely "the caller has a still-valid token from three hours ago." `IUserContext.WasAuthenticatedWith`/`.IsAuthenticationFresherThan` exist for exactly this, wired through the same `IAuthorizationContext` bridge recipe 1 already established:
+PSD2/FFIEC/PCI-DSS-style regulatory regimes commonly require a *recently, strongly* authenticated session before allowing a high-risk operation (a funds transfer, a limit change, a credential rotation) — not merely "the caller has a still-valid token from three hours ago." `IUserContext.WasAuthenticatedWith`/`.IsAuthenticationFresherThan` exist for exactly this, wired through the same `IRequestContext` bridge recipe 1 already established:
 
 ```csharp
-public sealed class StepUpAuthorizationContext(IUserContext user, IClock clock) : IAuthorizationContext
+public sealed class StepUpRequestContext(IUserContext user, ITenantProvider tenantProvider, IClock clock)
+    : IRequestContext
 {
-    public Task<bool> IsAuthorizedAsync(string requirement, CancellationToken cancellationToken) =>
-        Task.FromResult(requirement switch
+    public bool IsAuthenticated => user.IsAuthenticated;
+
+    public string? UserId => user.IsAuthenticated ? user.UserId.ToString("D") : null;
+
+    public Guid? TenantId => tenantProvider.TenantId == Guid.Empty ? null : tenantProvider.TenantId;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(permission switch
         {
             // High-risk requirement: caller must have used MFA within the last 5 minutes —
             // a token's raw expiry says nothing about how recently the human actually authenticated.
             "step_up:high_risk" => user.WasAuthenticatedWith("mfa")
                 && user.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), clock.UtcNow),
-            _ => user.HasRole(requirement) || user.HasPermission(requirement),
+            _ => user.HasRole(permission) || user.HasPermission(permission),
         });
-
-    public Task<bool> AllOf(IEnumerable<string> requirements, CancellationToken cancellationToken) =>
-        Task.WhenAll(requirements.Select(r => IsAuthorizedAsync(r, cancellationToken)))
-            .ContinueWith(t => t.Result.All(x => x), cancellationToken);
-
-    public Task<bool> AnyOf(IEnumerable<string> requirements, CancellationToken cancellationToken) =>
-        Task.WhenAll(requirements.Select(r => IsAuthorizedAsync(r, cancellationToken)))
-            .ContinueWith(t => t.Result.Any(x => x), cancellationToken);
 }
 ```
 
 ```csharp
 // Application layer — a high-risk command opts into the step-up requirement via IAuthorizeRequest,
-// exactly like any other AuthorizationBehavior-gated command:
-public sealed class TransferFundsCommand : ICommand, IAuthorizeRequest
+// exactly like any other AuthorizationBehavior-gated command. PermissionMatch defaults to All, so the
+// caller needs both the business permission and a fresh MFA; failing either returns Error.Forbidden.
+public sealed record TransferFundsCommand(Guid FromAccount, Guid ToAccount, decimal Amount)
+    : ICommand, IAuthorizeRequest
 {
-    public string Requirement => "step_up:high_risk";
-    // ...
+    public IReadOnlyCollection<string> RequiredPermissions => ["payments.transfer", "step_up:high_risk"];
 }
 ```
 

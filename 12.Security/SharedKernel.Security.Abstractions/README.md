@@ -87,11 +87,12 @@ PSD2/FFIEC/PCI-DSS-style regimes commonly require gating a high-risk operation (
 // Gate a high-risk command on recent, strong authentication rather than a token's raw expiry:
 if (!user.WasAuthenticatedWith("mfa") || !user.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), clock.UtcNow))
 {
-    return Result.Failure(Error.Unauthorized("step_up.required", "Recent MFA is required for this operation."));
+    // Forbidden (403), not Unauthorized (401): the caller is authenticated, but this operation needs more.
+    return Result.Failure(Error.Forbidden("step_up.required", "Recent MFA is required for this operation."));
 }
 ```
 
-See `SharedKernel.Security.Oidc/README.md`'s "Step-up authorization" recipe for a fully worked `IAuthorizationContext` bridge.
+See `SharedKernel.Security.Oidc/README.md`'s "Step-up authorization" recipe for a fully worked `IRequestContext` bridge.
 
 ## `IsSenderConstrained`
 
