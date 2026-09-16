@@ -4,30 +4,18 @@ using SharedKernel.Cryptography.Hashing;
 
 namespace SharedKernel.Testing.Cryptography;
 
-/// <summary>
-/// In-memory test double for <see cref="IContentHasher"/>.
-/// </summary>
-/// <remarks>
-/// Mirrors <see cref="Sha256ContentHasher"/> exactly (real <see cref="SHA256.HashData(byte[])"/>)
-/// since content hashing is already fast/deterministic and there is no reason to fake the
-/// algorithm — the sole value-add is completeness and introspection via <see cref="HashedContent"/>.
-/// The stream overloads fully buffer their input before hashing (so the payload can be recorded for
-/// introspection), unlike production's genuinely constant-memory streaming — an accepted trade-off
-/// for a test double, since test payloads are never blob-scale.
-/// </remarks>
+/// <summary>A test double for <see cref="IContentHasher"/> that computes real SHA-256 digests and records the content.</summary>
 public sealed class FakeContentHasher : IContentHasher
 {
-    private readonly ConcurrentQueue<byte[]> _hashedContent = new();
+    private readonly ConcurrentQueue<byte[]> _hashed = new();
 
-    /// <summary>Every content payload ever hashed via <see cref="ComputeHash(byte[])"/>/<see cref="ComputeHash(Stream)"/>/<see cref="ComputeHashAsync"/>, append-only.</summary>
-    public IReadOnlyList<byte[]> HashedContent => _hashedContent.ToArray();
+    /// <summary>Every buffer hashed so far, streams included, in order.</summary>
+    public IReadOnlyList<byte[]> HashedContent => [.. _hashed];
 
     /// <inheritdoc />
-    public byte[] ComputeHash(byte[] content)
+    public byte[] ComputeHash(ReadOnlySpan<byte> content)
     {
-        ArgumentNullException.ThrowIfNull(content);
-
-        _hashedContent.Enqueue(content);
+        _hashed.Enqueue(content.ToArray());
         return SHA256.HashData(content);
     }
 
@@ -36,9 +24,9 @@ public sealed class FakeContentHasher : IContentHasher
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        byte[] buffer = ReadAllBytes(content);
-        _hashedContent.Enqueue(buffer);
-        return SHA256.HashData(buffer);
+        using var buffer = new MemoryStream();
+        content.CopyTo(buffer);
+        return ComputeHash(buffer.ToArray());
     }
 
     /// <inheritdoc />
@@ -46,22 +34,8 @@ public sealed class FakeContentHasher : IContentHasher
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        byte[] buffer = await ReadAllBytesAsync(content, cancellationToken).ConfigureAwait(false);
-        _hashedContent.Enqueue(buffer);
-        return SHA256.HashData(buffer);
-    }
-
-    private static byte[] ReadAllBytes(Stream content)
-    {
-        using var buffer = new MemoryStream();
-        content.CopyTo(buffer);
-        return buffer.ToArray();
-    }
-
-    private static async Task<byte[]> ReadAllBytesAsync(Stream content, CancellationToken cancellationToken)
-    {
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return buffer.ToArray();
+        return ComputeHash(buffer.ToArray());
     }
 }

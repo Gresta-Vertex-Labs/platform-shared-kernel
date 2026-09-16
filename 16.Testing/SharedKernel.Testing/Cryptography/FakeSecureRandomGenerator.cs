@@ -1,76 +1,86 @@
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using SharedKernel.Cryptography.Random;
 
 namespace SharedKernel.Testing.Cryptography;
 
 /// <summary>
-/// In-memory test double for <see cref="ISecureRandomGenerator"/>.
+/// A test double for <see cref="ISecureRandomGenerator"/>: cryptographically random by default, or reproducible when
+/// given a seed.
 /// </summary>
-/// <remarks>
-/// <para>
-/// When constructed with <c>seed: null</c> (the default), both members delegate to the real
-/// <see cref="RandomNumberGenerator"/> — byte-for-byte identical behavior to production's
-/// <see cref="CryptoRandomGenerator"/>, so two calls never return equal output. This deliberately
-/// preserves enough non-determinism to catch a hardcoded-token bug that a fully-deterministic fake
-/// would silently hide.
-/// </para>
-/// <para>
-/// When a seed is supplied, output is backed by a seeded <see cref="System.Random"/> instead — fully
-/// reproducible across runs for the SAME seed.
-/// </para>
-/// <para>
-/// <b>SEEDED MODE IS NOT CRYPTOGRAPHICALLY SECURE.</b> It must never be used outside deterministic
-/// test assertions (e.g. snapshot-testing a generated token value).
-/// </para>
-/// <para>
-/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> Even in non-seeded mode, where output is byte-for-byte
-/// production-equivalent, this type must never be wired into a production DI container —
-/// <c>16.Testing</c> packages are never referenced by production code (root <c>CLAUDE.md</c> hard
-/// rule). Its optional seeded mode exists purely to make a test's own random output reproducible, not
-/// to replace <c>CryptoRandomGenerator</c>.
-/// </para>
-/// </remarks>
+/// <remarks>A seeded instance is predictable by design. Never use it outside tests.</remarks>
 public sealed class FakeSecureRandomGenerator : ISecureRandomGenerator
 {
-    private readonly System.Random? _seededRandom;
+    private readonly System.Random? _seeded;
+    private readonly Lock _gate = new();
 
-    /// <summary>
-    /// Initialises a new <see cref="FakeSecureRandomGenerator"/>.
-    /// </summary>
-    /// <param name="seed">
-    /// When <see langword="null"/> (the default), output is backed by the real
-    /// <see cref="RandomNumberGenerator"/>. When supplied, output is backed by a seeded
-    /// <see cref="System.Random"/> instead — deterministic, but NOT cryptographically secure.
-    /// </param>
-    public FakeSecureRandomGenerator(int? seed = null)
-    {
-        _seededRandom = seed.HasValue ? new System.Random(seed.Value) : null;
-    }
+    /// <summary>Creates the generator.</summary>
+    /// <param name="seed">A seed for reproducible values, or <see langword="null"/> for real randomness.</param>
+    public FakeSecureRandomGenerator(int? seed = null) =>
+        _seeded = seed is int value ? new System.Random(value) : null;
 
     /// <inheritdoc />
-    public byte[] NextBytes(int length)
+    public byte[] GetBytes(int length)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
-
-        if (_seededRandom is null)
-        {
-            return RandomNumberGenerator.GetBytes(length);
-        }
-
-        var bytes = new byte[length];
-        _seededRandom.NextBytes(bytes);
+        byte[] bytes = new byte[length];
+        Fill(bytes);
         return bytes;
     }
 
     /// <inheritdoc />
-    public string NextToken(int length = 32)
+    public void Fill(Span<byte> destination)
     {
+        if (_seeded is null)
+        {
+            RandomNumberGenerator.Fill(destination);
+            return;
+        }
+
+        lock (_gate)
+        {
+            _seeded.NextBytes(destination);
+        }
+    }
+
+    /// <inheritdoc />
+    public int GetInt32(int toExclusive)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(toExclusive);
+        if (_seeded is null)
+        {
+            return RandomNumberGenerator.GetInt32(toExclusive);
+        }
+
+        lock (_gate)
+        {
+            return _seeded.Next(toExclusive);
+        }
+    }
+
+    /// <inheritdoc />
+    public string GetString(ReadOnlySpan<char> alphabet, int length)
+    {
+        if (alphabet.IsEmpty)
+        {
+            throw new ArgumentException("The alphabet must contain at least one character.", nameof(alphabet));
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
 
-        byte[] bytes = NextBytes(length);
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
+        char[] result = new char[length];
+        for (int i = 0; i < length; i++)
+        {
+            result[i] = alphabet[GetInt32(alphabet.Length)];
+        }
+
+        return new string(result);
+    }
+
+    /// <inheritdoc />
+    public string GetToken(int byteCount = 32)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(byteCount, SecureRandomGenerator.MinimumTokenBytes);
+        return Base64Url.EncodeToString(GetBytes(byteCount));
     }
 }

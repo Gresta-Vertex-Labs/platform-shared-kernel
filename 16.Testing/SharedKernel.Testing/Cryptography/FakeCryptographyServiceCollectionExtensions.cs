@@ -1,86 +1,64 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Cryptography.Extensions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Cryptography.Totp;
 
 namespace SharedKernel.Testing.Cryptography;
 
-/// <summary>
-/// DI extension methods for registering <c>SharedKernel.Testing</c>'s fake
-/// <c>SharedKernel.Cryptography</c> test doubles.
-/// </summary>
-/// <remarks>
-/// Named distinctly from the real <see cref="CryptographyServiceCollectionExtensions"/> to avoid any
-/// static-member ambiguity, since this class deliberately reuses that real class's
-/// <see cref="CryptographyServiceCollectionExtensions.RsaSignatureServiceKey"/>/
-/// <see cref="CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey"/> keyed-service key
-/// constants rather than redeclaring fake-only key strings.
-/// </remarks>
+/// <summary>Registers every <c>SharedKernel.Cryptography</c> test double.</summary>
 public static class FakeCryptographyServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers every <c>SharedKernel.Cryptography</c> fake as a singleton:
-    /// <see cref="IOneWayHasher"/> → <see cref="FakeOneWayHasher"/>,
-    /// <see cref="IEncryptionKeyProvider"/> → <see cref="FakeEncryptionKeyProvider"/>,
-    /// <see cref="ISymmetricEncryptionService"/> → <see cref="FakeSymmetricEncryptionService"/>,
-    /// <see cref="IAsymmetricKeyProvider"/> → <see cref="FakeAsymmetricKeyProvider"/>,
-    /// <see cref="IAsymmetricSignatureService"/> → <see cref="FakeAsymmetricSignatureService"/>
-    /// (unkeyed default plus both
-    /// <see cref="CryptographyServiceCollectionExtensions.RsaSignatureServiceKey"/>/
-    /// <see cref="CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey"/>-keyed
-    /// singletons), <see cref="IHmacSigner"/> → <see cref="FakeHmacSigner"/>,
-    /// <see cref="ISecureRandomGenerator"/> → <see cref="FakeSecureRandomGenerator"/> (non-seeded
-    /// constructor — genuinely random by default; register a seeded instance manually for
-    /// deterministic tokens), <see cref="IContentHasher"/> → <see cref="FakeContentHasher"/>, and
-    /// <see cref="IEnvelopeEncryptionProvider"/> → <see cref="FakeEnvelopeEncryptionProvider"/>
-    /// (P-450/WO-068).
+    /// Registers fakes for every cryptography contract, removing earlier registrations of those contracts first. One
+    /// <see cref="FakeEncryptionKeyProvider"/> backs both encryption services, and one
+    /// <see cref="FakeSigningKeyProvider"/> backs signing, so tests can resolve them to rotate keys.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Deliberately diverges from
-    /// <see cref="CryptographyServiceCollectionExtensions.AddSharedKernelCryptography"/>: production
-    /// intentionally does NOT register <see cref="IEncryptionKeyProvider"/>/
-    /// <see cref="IAsymmetricKeyProvider"/>/<see cref="IEnvelopeEncryptionProvider"/>
-    /// (consumer-supplied by design) — this fake bundle DOES, since a test wanting
-    /// <see cref="AddFakeCryptography"/> to work end-to-end with zero extra wiring needs some
-    /// functioning key material.
-    /// </para>
-    /// <para>
-    /// <b>(P-502/WO-081)</b> The registrations below are UNCHANGED IN SHAPE by this phase — only the
-    /// backing types' member contracts changed (async migration, required AAD). The default
-    /// <see cref="IEncryptionKeyProvider"/> registration stays the now-marked-synchronous
-    /// <see cref="FakeEncryptionKeyProvider"/>, so every existing consumer of
-    /// <see cref="AddFakeCryptography"/> keeps a provider that satisfies
-    /// <see cref="ISynchronousEncryptionKeyProvider"/> — zero migration burden for the common case.
-    /// <see cref="FakeRemoteEncryptionKeyProvider"/> is DELIBERATELY NOT auto-registered here — a
-    /// KMS-style gated provider is opt-in-only by nature; a test wanting the gated/async-only path
-    /// constructs it directly, mirroring how a test opts into
-    /// <see cref="FakeSymmetricEncryptionService.SimulateDecryptFailure"/> on other fakes in this
-    /// bundle today.
-    /// </para>
-    /// </remarks>
-    /// <param name="services">The service collection to register into.</param>
-    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same service collection.</returns>
     public static IServiceCollection AddFakeCryptography(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.RemoveAll<IOneWayHasher>();
         services.AddSingleton<IOneWayHasher, FakeOneWayHasher>();
-        services.AddSingleton<IEncryptionKeyProvider, FakeEncryptionKeyProvider>();
-        services.AddSingleton<ISymmetricEncryptionService, FakeSymmetricEncryptionService>();
-        services.AddSingleton<IAsymmetricKeyProvider, FakeAsymmetricKeyProvider>();
-        services.AddSingleton<IHmacSigner, FakeHmacSigner>();
+        services.RemoveAll<ISecureRandomGenerator>();
         services.AddSingleton<ISecureRandomGenerator, FakeSecureRandomGenerator>();
+        services.RemoveAll<IContentHasher>();
         services.AddSingleton<IContentHasher, FakeContentHasher>();
-        services.AddSingleton<IEnvelopeEncryptionProvider, FakeEnvelopeEncryptionProvider>();
+        services.RemoveAll<IHmacSigner>();
+        services.AddSingleton<IHmacSigner, FakeHmacSigner>();
 
-        services.AddSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureService>();
-        services.AddKeyedSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureService>(
-            CryptographyServiceCollectionExtensions.RsaSignatureServiceKey);
-        services.AddKeyedSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureService>(
-            CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey);
+        services.TryAddSingleton<FakeEncryptionKeyProvider>();
+        services.RemoveAll<IEncryptionKeyProvider>();
+        services.AddSingleton<IEncryptionKeyProvider>(sp => sp.GetRequiredService<FakeEncryptionKeyProvider>());
+        services.RemoveAll<ISynchronousEncryptionKeyProvider>();
+        services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp => sp.GetRequiredService<FakeEncryptionKeyProvider>());
+        services.TryAddSingleton(sp => new FakeSymmetricEncryptionService(sp.GetRequiredService<FakeEncryptionKeyProvider>()));
+        services.RemoveAll<ISymmetricEncryptionService>();
+        services.AddSingleton<ISymmetricEncryptionService>(sp => sp.GetRequiredService<FakeSymmetricEncryptionService>());
+        services.RemoveAll<ISynchronousSymmetricEncryptionService>();
+        services.AddSingleton<ISynchronousSymmetricEncryptionService>(sp => sp.GetRequiredService<FakeSymmetricEncryptionService>());
+
+        services.TryAddSingleton<FakeEnvelopeEncryptionProvider>();
+        services.RemoveAll<IEnvelopeEncryptionProvider>();
+        services.AddSingleton<IEnvelopeEncryptionProvider>(sp => sp.GetRequiredService<FakeEnvelopeEncryptionProvider>());
+        services.RemoveAll<IEnvelopeEncryptionService>();
+        services.AddSingleton<IEnvelopeEncryptionService, EnvelopeEncryptionService>();
+
+        services.TryAddSingleton<FakeSigningKeyProvider>();
+        services.RemoveAll<ISigningKeyProvider>();
+        services.AddSingleton<ISigningKeyProvider>(sp => sp.GetRequiredService<FakeSigningKeyProvider>());
+        services.TryAddSingleton(sp => new FakeAsymmetricSignatureService(sp.GetRequiredService<FakeSigningKeyProvider>()));
+        services.RemoveAll<IAsymmetricSignatureService>();
+        services.AddSingleton<IAsymmetricSignatureService>(sp => sp.GetRequiredService<FakeAsymmetricSignatureService>());
+
+        services.TryAddSingleton<FakeTotpReplayGuard>();
+        services.RemoveAll<ITotpReplayGuard>();
+        services.AddSingleton<ITotpReplayGuard>(sp => sp.GetRequiredService<FakeTotpReplayGuard>());
 
         return services;
     }
