@@ -1,148 +1,71 @@
+using System.Security.Cryptography;
 using System.Text;
 using SharedKernel.Cryptography.Hashing;
-using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Hashing;
 
 public sealed class Sha256ContentHasherTests
 {
-    private static byte[] SampleContent(string text = "The quick brown fox jumps over the lazy dog") =>
-        Encoding.UTF8.GetBytes(text);
+    private const string AbcDigestHex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    private const string EmptyDigestHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-    [Fact]
-    public void ComputeHash_ByteArray_IsDeterministicForIdenticalInput()
+    private readonly Sha256ContentHasher _hasher = new();
+
+    [Theory]
+    [InlineData("abc", AbcDigestHex)]
+    [InlineData("", EmptyDigestHex)]
+    [InlineData("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")]
+    public void ComputeHash_Span_MatchesKnownVector(string input, string expectedHex)
     {
-        var hasher = new Sha256ContentHasher();
-        byte[] content = SampleContent();
+        byte[] digest = _hasher.ComputeHash(Encoding.ASCII.GetBytes(input));
 
-        byte[] first = hasher.ComputeHash(content);
-        byte[] second = hasher.ComputeHash(content);
-
-        Assert.Equal(first, second);
+        Assert.Equal(Convert.FromHexString(expectedHex), digest);
     }
 
     [Fact]
-    public void ComputeHash_ByteArray_ProducesThirtyTwoByteDigest()
+    public void ComputeHash_Stream_MatchesSpan()
     {
-        var hasher = new Sha256ContentHasher();
-
-        byte[] digest = hasher.ComputeHash(SampleContent());
-
-        Assert.Equal(32, digest.Length);
-    }
-
-    [Fact]
-    public void ComputeHash_SingleByteChange_ProducesDifferentDigest()
-    {
-        var hasher = new Sha256ContentHasher();
-        byte[] original = SampleContent("The quick brown fox jumps over the lazy dog");
-        byte[] mutated = SampleContent("The quick brown fox jumps over the lazy dot");
-
-        byte[] originalDigest = hasher.ComputeHash(original);
-        byte[] mutatedDigest = hasher.ComputeHash(mutated);
-
-        Assert.NotEqual(originalDigest, mutatedDigest);
-    }
-
-    [Fact]
-    public void ComputeHash_Stream_MatchesByteArrayOverloadForSameContent()
-    {
-        var hasher = new Sha256ContentHasher();
-        byte[] content = SampleContent();
-
-        byte[] fromBytes = hasher.ComputeHash(content);
+        byte[] content = RandomNumberGenerator.GetBytes(200_000);
         using var stream = new MemoryStream(content);
-        byte[] fromStream = hasher.ComputeHash(stream);
 
-        Assert.Equal(fromBytes, fromStream);
+        Assert.Equal(_hasher.ComputeHash(content), _hasher.ComputeHash(stream));
     }
 
     [Fact]
-    public async Task ComputeHashAsync_Stream_MatchesByteArrayOverloadForSameContent()
+    public async Task ComputeHashAsync_Stream_MatchesSpan()
     {
-        var hasher = new Sha256ContentHasher();
-        byte[] content = SampleContent();
-
-        byte[] fromBytes = hasher.ComputeHash(content);
+        byte[] content = RandomNumberGenerator.GetBytes(200_000);
         using var stream = new MemoryStream(content);
-        byte[] fromStreamAsync = await hasher.ComputeHashAsync(stream);
 
-        Assert.Equal(fromBytes, fromStreamAsync);
+        byte[] digest = await _hasher.ComputeHashAsync(stream);
+
+        Assert.Equal(_hasher.ComputeHash(content), digest);
     }
 
     [Fact]
-    public async Task ComputeHashAsync_RespectsCancellation()
+    public async Task ComputeHashAsync_Stream_MatchesKnownVector()
     {
-        var hasher = new Sha256ContentHasher();
-        using var stream = new MemoryStream(SampleContent());
+        using var stream = new MemoryStream(Encoding.ASCII.GetBytes("abc"));
+
+        Assert.Equal(Convert.FromHexString(AbcDigestHex), await _hasher.ComputeHashAsync(stream));
+    }
+
+    [Fact]
+    public async Task ComputeHash_NullStream_Throws()
+    {
+        Stream? missing = null;
+
+        Assert.Throws<ArgumentNullException>(() => _hasher.ComputeHash(missing!));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await _hasher.ComputeHashAsync(missing!));
+    }
+
+    [Fact]
+    public async Task ComputeHashAsync_CanceledToken_Throws()
+    {
+        using var stream = new MemoryStream(RandomNumberGenerator.GetBytes(1024));
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => hasher.ComputeHashAsync(stream, cts.Token).AsTask());
-    }
-
-    [Fact]
-    public void ComputeHash_NullByteArray_Throws()
-    {
-        var hasher = new Sha256ContentHasher();
-
-        Assert.Throws<ArgumentNullException>(() => hasher.ComputeHash((byte[])null!));
-    }
-
-    [Fact]
-    public void ComputeHash_NullStream_Throws()
-    {
-        var hasher = new Sha256ContentHasher();
-
-        Assert.Throws<ArgumentNullException>(() => hasher.ComputeHash((Stream)null!));
-    }
-
-    [Fact]
-    public async Task ComputeHashAsync_NullStream_Throws()
-    {
-        var hasher = new Sha256ContentHasher();
-
-        await Assert.ThrowsAsync<ArgumentNullException>(
-            () => hasher.ComputeHashAsync(null!).AsTask());
-    }
-
-    [Fact]
-    public void ComputeHashHex_ProducesLowercaseHexEncodingOfDigest()
-    {
-        var hasher = new Sha256ContentHasher();
-        byte[] content = SampleContent();
-
-        string hex = hasher.ComputeHashHex(content);
-
-        byte[] digest = hasher.ComputeHash(content);
-        Assert.Equal(Convert.ToHexStringLower(digest), hex);
-        Assert.Equal(hex, hex.ToLowerInvariant());
-    }
-
-    [Fact]
-    public void ComputeHashBase64_ProducesBase64EncodingOfDigest()
-    {
-        var hasher = new Sha256ContentHasher();
-        byte[] content = SampleContent();
-
-        string base64 = hasher.ComputeHashBase64(content);
-
-        byte[] digest = hasher.ComputeHash(content);
-        Assert.Equal(Convert.ToBase64String(digest), base64);
-    }
-
-    [Fact]
-    public void KnownAnswerTest_EmptyInput_MatchesWellKnownSha256Digest()
-    {
-        // SHA-256 of the empty byte array is a well-known constant — a strong sanity check
-        // that this type is genuinely delegating to SHA-256 and not some other algorithm.
-        var hasher = new Sha256ContentHasher();
-
-        string hex = hasher.ComputeHashHex([]);
-
-        Assert.Equal(
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            hex);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await _hasher.ComputeHashAsync(stream, cts.Token));
     }
 }
