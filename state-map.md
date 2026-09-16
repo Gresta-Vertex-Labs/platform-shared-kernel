@@ -2384,6 +2384,36 @@ The user ruled:
 - Validation returns `Error.Validation(errors)`, carried by the new `Error.Details` in `SharedKernel.Primitives`. Authorization returns 401/403 and fails closed.
 - Added: `IRequestContext`, error-aware telemetry, `IQueryBase`, and a nested-command guard with `ICommandScope` post-commit callbacks.
 
+### P-545 — Core: `SharedKernel.Cryptography`, `.Argon2` and `.KeyVault.Azure` Pre-First-Publish Redesign (BREAKING API + BEHAVIOUR + STORED FORMAT)
+
+**Status:** `◐` In progress — code, migrations and verification complete; publish pending
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 01.Core (with migrations in 00.Governance, 02.Caching, 06.Persistence, 07.Messaging, 12.Security, 13.ServiceDefaults, 15.Integration, 16.Testing, 17.Workflows)
+**Depends on:** P-530, P-544
+
+#### What is needed
+Finalize the three cryptography packages before their first feed publish, and migrate every consumer in the same pass.
+
+#### Why this is needed
+A full review found defects that would ship as contract:
+
+- `CachedEncryptionKeyProvider` grows without bound on attacker-chosen key ids.
+- Its single-flight cache can hand a caller a cancellation it never requested.
+- `EncryptToString` silently truncates key ids longer than 65,535 bytes.
+- The HMAC signer accepts empty keys; PBKDF2 verification accepts an empty salt; Argon2 verification has no cost ceiling.
+- HOTP/TOTP accept 1-digit codes and any secret length; ECDSA always hashes with SHA-256.
+- Sync members compile but throw at runtime depending on the registered key provider.
+- Test hooks ship in production code.
+- `AzureKeyVaultEncryptionKeyProvider` accepts attacker-chosen master key names (a forgery path with RSA wrapping), overwrites a data-key version when two mints race, and loses every minted version when `CurrentKeyId` changes.
+
+The user ruled:
+
+- Split interfaces: `ISymmetricEncryptionService` is async-only; a separate synchronous service takes a genuinely synchronous key provider; signing is async-only.
+- Algorithm-explicit signing (PS/RS/ES 256–512) with key-bound algorithms, curve-matched hashes and remote async signing for Key Vault.
+- Added: HKDF subkey derivation, envelope encryption, key-rotation helpers, PHC-format hashes with a composite migrating hasher, password pepper, fixed-time comparison and random helpers, and TOTP hardening (time-step replay, 6+ digits, 128-bit secrets, secret generator, normalization).
+- HOTP/TOTP stay in `SharedKernel.Cryptography`. Decryption failures split by cause: malformed or unauthenticated payloads are `Validation`, an unknown key id is `Unexpected`. Post-quantum algorithms are deferred.
+- `SharedKernel.Cryptography.Argon2` and `SharedKernel.Cryptography.KeyVault.Azure` get the same review and publish together with `SharedKernel.Cryptography`.
+
 ---
 
 ### Closed phase index
@@ -3824,3 +3854,4 @@ The user ruled:
 - [2026-09-15] P-543 recorded `◐` (9/10) — `SharedKernel.Contracts` redesigned before its first publish by user ruling: integration-event CloudEvents envelope with required `[IntegrationEvent]`, `Envelope`/mapping/serializer context and `03.Domain` reference removed, `long` totals, page requests and cursor codec; migrations in 00/06/07/09/11/14/15/16 incl. analyzers SK0038/SK0039; solution 0 errors, 15 affected suites green; publish pending (04.Contracts, 00.Governance, 06.Persistence, 07.Messaging, 09.Search, 11.Communication, 14.Presentation, 15.Integration, 16.Testing) — user request
 - [2026-09-15] P-543 closed `●` — `SharedKernel.Contracts`, `SharedKernel.Primitives`, `SharedKernel.Analyzers` and `SharedKernel.ArchitectureTests` published as `1.0.0-alpha.0.935` from `9f3ee5f`; ConsumerVerify 5/5 against the feed (04.Contracts, 01.Core, 00.Governance) — user request
 - [2026-09-15] P-544 recorded `◐` — `SharedKernel.Application` and `.Behaviors` redesigned before first publish by user ruling: fire-and-forget, resilience, streaming behaviors, parallel domain events and dual approval removed; caching behaviors split into `.Behaviors.Caching`; `IRequestContext`, fail-closed authorization, validation as `Error.Validation(errors)` (new `Error.Details` in Primitives), success-only commit, nested-command guard, `IRequestIdempotencyStore` with fingerprint and reservation token; migrations in 00/06/13/14/16/17/18/19 and samples; solution 0 errors; publish pending (05.Application, 01.Core, 14.Presentation, 18.Idempotency, 16.Testing, 00.Governance) — user request
+- [2026-09-16] P-545 recorded `◐` — `SharedKernel.Cryptography`, `.Argon2` and `.KeyVault.Azure` redesigned before first publish by user ruling (split sync/async services, algorithm-explicit signing, HKDF, envelope encryption, rotation helpers, PHC hashes with pepper and migration, TOTP hardening); every consumer migrated; solution builds, unit filter green; publish pending (coordinator)

@@ -45,7 +45,6 @@
       "03.Domain/SharedKernel.Domain/SharedKernel.Domain.csproj",
       "04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj",
       "04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.csproj",
-      "04.Contracts/consumer-verify/consumer-verify.csproj",
       "05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.Tests/SharedKernel.Application.Behaviors.Tests.csproj",
       "05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj",
       "05.Application/SharedKernel.Application/SharedKernel.Application.Tests/SharedKernel.Application.Tests.csproj",
