@@ -386,8 +386,7 @@ AddKeyVaultKeyProviderReadinessCheck(this IHealthChecksBuilder, string name = He
     wrapper (the same no-wrapper shape as `ISchedulerServiceProbe`/`SchedulerServiceHealth`, and
     `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` before it). `AzureKeyVaultEncryptionKeyProvider`
     now also implements `IEncryptionKeyProviderProbe`, registered as a third resolvable service type
-    by the already-shipped `AddSharedKernelAzureKeyVaultCryptography` — `AddSharedKernelKeyVaultKeyProvider`
-    needed zero changes. `ProbeAsync`'s own implementation never lets an exception propagate for an
+    by `01.Core`'s `AddAzureKeyVaultEncryption`, which `AddSharedKernelKeyVaultKeyProvider` calls. `ProbeAsync`'s own implementation never lets an exception propagate for an
     ordinary reachability failure (catches everything except `OperationCanceledException`, reports via
     `IsHealthy: false`) — this adapter reads `IsHealthy`/`.Description` directly, no defensive
     try/catch needed. Resolves only `IEncryptionKeyProviderProbe` — never `IEncryptionKeyProvider`,
@@ -408,11 +407,8 @@ AddKeyVaultKeyProviderReadinessCheck(this IHealthChecksBuilder, string name = He
     never `AddCacheReadinessCheck`'s fail-safe-aware `Degraded`.
     **This closes WO-068/P-449 end to end — every `SK.13.*` phase key is now fully `●`/`—`, closing
     out the last blocked item anywhere in this domain.**
-    **UNAFFECTED by WO-081/P-503's `cacheTtl` caching wrap (DESIGN-LOCKED, implementation pending —
-    see the Interface Contracts entry above for the full D-37/D-38/D-39 detail):** this check
-    continues to resolve only `IEncryptionKeyProviderProbe`, which stays wired to the RAW,
-    UNCACHED `AzureKeyVaultEncryptionKeyProvider` singleton regardless of `cacheTtl` — a probe must
-    never report a cached reachability signal.
+    Resolves only `IEncryptionKeyProviderProbe`, wired directly to the `AzureKeyVaultEncryptionKeyProvider`
+    singleton — a probe must never report a cached reachability signal.
 
 AddSchedulerReadinessCheck(this IHealthChecksBuilder, string name = HealthCheckNames.Scheduler)
                                                                    → IHealthChecksBuilder
@@ -1183,110 +1179,38 @@ AddSharedKernelKeyVaultConfiguration(this IHostApplicationBuilder, Uri vaultUri,
     the SDK's default is lazy/silent instead.
 ```
 
-#### Opt-in Azure Key Vault key-provider registration (`Cryptography/`, `HealthChecks/`, WO-068/P-449 — IMPLEMENTED and tested, shipped 2026-09-04; caching wrap IMPLEMENTED and tested WO-081/P-503, shipped 2026-09-08)
+#### Opt-in Azure Key Vault key-provider registration (`Cryptography/`, `HealthChecks/`, WO-068/P-449; re-based on the P-545 `SharedKernel.Cryptography` redesign)
 
 ```text
-AddSharedKernelKeyVaultKeyProvider(this IHostApplicationBuilder builder, TimeSpan? cacheTtl = null)
-                                                                   → IHostApplicationBuilder
+AddSharedKernelKeyVaultKeyProvider(this IHostApplicationBuilder builder) → ICryptographyBuilder
     A composition-root registration helper, **distinctly named from `AddSharedKernelKeyVaultConfiguration()`
     above to avoid the two being confused**: that method wires Azure Key Vault as an `IConfiguration`
-    *source*; this one registers `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure`'s
-    `AzureKeyVaultEncryptionKeyProvider` as the platform's `IEncryptionKeyProvider`/
-    `IEnvelopeEncryptionProvider`. Implementation is a thin call-through to `01.Core`'s already-fully-
-    specified `AddSharedKernelAzureKeyVaultCryptography(builder.Configuration)` (P-447) —
-    `13.ServiceDefaults` never reimplements Key Vault key resolution itself, mirroring the standing
-    "owning domain ships the provider, this domain ships the composition wiring" rule already applied
-    to `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`/`12.Security.Mtls`.
-    IDEMPOTENCY: guarded by `services.Any(d => d.ServiceType == typeof(AzureKeyVaultEncryptionKeyProvider))`
-    before calling through — `01.Core`'s own registration method registers unconditionally via plain
-    `AddSingleton` on every call (correct for its own single-call contract), so a bare call-through here
-    would double-register `AzureKeyVaultEncryptionKeyProvider`/`IEncryptionKeyProvider`/
-    `IEnvelopeEncryptionProvider` on a second invocation; the guard therefore lives in THIS package.
-    RESOLVED AND SHIPPED (2026-09-04): the recorded blocker was found STALE and corrected — re-verified
-          directly against disk (not taken on trust): `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure`
-          is fully shipped (`AzureKeyVaultEncryptionKeyProvider`, `AddSharedKernelAzureKeyVaultCryptography`,
-          a full test project, all registered in `Platform.SharedKernel.slnx`) — the package is NOT
-          zero-code-on-disk as this section previously (incorrectly) stated. `ProjectReference` added to
-          `SharedKernel.ServiceDefaults.csproj`.
+    *source*; this one registers `01.Core`'s `AzureKeyVaultEncryptionKeyProvider` as the host's
+    `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` (one singleton behind
+    all three). Implementation is exactly
+    `builder.Services.AddSharedKernelCryptography(builder.Configuration).AddAzureKeyVaultEncryption(builder.Configuration)`
+    — `13.ServiceDefaults` never reimplements Key Vault key resolution itself. Its only value is the host-builder
+    shorthand; it returns `01.Core`'s `ICryptographyBuilder` so a service chains `.AddSymmetricEncryption()`/
+    `.AddEnvelopeEncryption()` onto it. Options bind from `SharedKernel:Cryptography:KeyVault:Azure:Encryption`
+    (`VaultUri`, `MasterKeyName`, `PreviousMasterKeyNames`, `DataKeySecretName`, `RefreshInterval`).
+    IDEMPOTENCY: every `01.Core` registration uses `TryAdd`, so no guard of its own is needed.
+    NO CACHING WRAPPER: the provider caches its version list (per `RefreshInterval`) and each unwrapped data key
+    itself; wrapping it in `CachedEncryptionKeyProvider` is wrong. The earlier `cacheTtl` parameter (WO-081/P-503)
+    was removed with the redesign.
+    ASYNC ONLY: the provider is never an `ISynchronousEncryptionKeyProvider`, so synchronous paths (`06.Persistence`
+    value converters, `07.Messaging` payload serializers) cannot use it — `ISynchronousSymmetricEncryptionService`
+    fails to resolve against it rather than blocking. Keep those paths on their own synchronous provider.
 
-    **CACHING GAP CONFIRMED AND CLOSED, IMPLEMENTED AND TESTED (WO-081/P-503, D-37/D-38/C-70,
-    shipped 2026-09-08):** re-verified directly against source (not assumed): `01.Core`'s
-    `AddSharedKernelAzureKeyVaultCryptography` registers ONE `AzureKeyVaultEncryptionKeyProvider`
-    singleton and wires it, RAW and UNCACHED, as all three of `IEncryptionKeyProvider`/
-    `IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` — `01.Core`'s own XML doc says
-    plainly "registers no caching decorator... wrap explicitly if desired." This composition-root
-    method is the deliberate, designated place to make that choice. `cacheTtl` (new optional
-    parameter): unless it resolves to `TimeSpan.Zero` (explicit opt-out, mirrors
-    `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`'s "0 disables" convention from
-    `11.Communication`), this method (1) registers `SharedKernel.Cryptography.Symmetric
-    .CachedEncryptionKeyProvider` (`01.Core`, P-446) as its OWN concrete singleton, wrapping the raw
-    `AzureKeyVaultEncryptionKeyProvider`, and (2) re-registers ONLY `IEncryptionKeyProvider` to
-    resolve the cached wrapper — the BCL container resolves the LAST registration for a
-    single-instance request, so this cleanly supersedes `01.Core`'s own raw `IEncryptionKeyProvider`
-    registration for that one interface, without touching `01.Core`'s own call. `null` → internal
-    5-minute default; a negative value throws `ArgumentOutOfRangeException` before any registration
-    occurs (mirrors `CachedEncryptionKeyProvider`'s own constructor guard — `01.Core` ships NO
-    default TTL of its own, by design, so the default lives entirely in this package).
-    **`IEnvelopeEncryptionProvider` and `IEncryptionKeyProviderProbe` are DELIBERATELY LEFT ON THE
-    RAW PROVIDER, UNTOUCHED** — two independent, load-bearing reasons: `CachedEncryptionKeyProvider`
-    implements `IEncryptionKeyProvider` ONLY, never `IEnvelopeEncryptionProvider` (envelope
-    wrap/unwrap is a real per-call crypto operation against the vault, not a cacheable key lookup —
-    there is nothing to cache); and a readiness/health probe caching its own reachability signal
-    would defeat the entire purpose of `AddKeyVaultKeyProviderReadinessCheck` below — a probe MUST
-    always observe live KMS state, never a stale cache entry. `CachedEncryptionKeyProvider` is ALSO
-    registered as its own resolvable concrete type (not merely behind `IEncryptionKeyProvider`) so a
-    consuming service's `06.Persistence` builder chain can target it explicitly via
-    `.WithExternalEncryptionKeyProvider<CachedEncryptionKeyProvider>()`, alongside the
-    still-independently-available raw `.WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>()`
-    — see the AC#3-refutation note immediately below for why this domain does not and must not wire
-    that connection itself. **Confirmed this can never unlock any synchronous path:**
-    `CachedEncryptionKeyProvider` never implements `01.Core`'s `ISynchronousEncryptionKeyProvider`
-    marker (`SK.01.P492`) regardless of cache warmth or TTL — the value here is strictly for ASYNC
-    consumers (general-purpose `ISymmetricEncryptionService.EncryptAsync`/`DecryptAsync` callers,
-    and `06.Persistence`'s `PreWarmedEncryptionKeyProvider.WarmCurrentAsync`/`WarmVersionAsync` if a
-    consumer opts into the cached `TProvider`).
-
-    **STANDING DESIGN NOTE — do not "fix" this back to automatic (WO-081/P-503, D-37):** an earlier
-    phase draft assumed this method's registration should make a consuming service automatically
-    satisfy `06.Persistence`'s P-498 startup fail-fast check "without extra manual wiring." That
-    premise was checked against `06.Persistence`'s own design-locked fix (`SK.06`'s D-131, the same
-    WO-081 wave) and found FALSE: the SEVERE defect P-498 corrects is precisely an accidental
-    ambient-registration-order collision between `.WithEncryption()` and THIS method both wiring the
-    SAME unkeyed `IEncryptionKeyProvider` — `06.Persistence`'s fix eliminates that collision
-    STRUCTURALLY by never resolving the ambient slot at all, replacing it with an EXPLICIT,
-    consumer-driven opt-in call (`.WithExternalEncryptionKeyProvider<TProvider>()`) the consuming
-    service makes on its OWN `EfCorePersistenceBuilder`. If `13.ServiceDefaults` ever tried to make
-    that connection automatic, it would recreate the exact hazard `06.Persistence` just eliminated. A
-    service wanting BOTH KMS-backed general-purpose crypto (via this method) AND KMS-backed
-    persistence-layer column encryption must call `.WithExternalEncryptionKeyProvider<TProvider>()`
-    itself, explicitly, in its own `06.Persistence` builder chain — this is coordination with
-    `06.Persistence`'s design, not a gap in this one.
-
-    **CROSS-DOMAIN HAZARD — KMS-backed provider + `07.Messaging` payload encryption
-    (WO-081/P-503, D-39, documentation-only, no code fix — out of this domain's jurisdiction):**
-    this wave's calibration finding (verified by `07.Messaging` via reflection against the installed
-    MassTransit assembly) is that `07.Messaging`'s payload-encryption serializer path is
-    HARD-SYNCHRONOUS with no async overload. A KMS-backed `IEncryptionKeyProvider` — cache-wrapped
-    or not, per the finding directly above — can NEVER satisfy `01.Core`'s `IsGenuinelySynchronous`
-    gate. **A service that enables both `AddSharedKernelKeyVaultKeyProvider()` and `07.Messaging`'s
-    `WithPayloadTransform()` against the SAME ambient `IEncryptionKeyProvider`/
-    `ISymmetricEncryptionService` breaks UNCONDITIONALLY, FOREVER (`NotSupportedException` on every
-    message) — `01.Core`'s `SK.01.P492` sync-gate has already shipped** — not a performance hazard, a hard
-    functional break, identical in shape to the one `06.Persistence`'s D-126/D-131 found and fixed
-    structurally for the persistence path. `13.ServiceDefaults` is the one composition-root location
-    where a service wires both together, so this is documented here, IN CAPITALS, rather than
-    silently left for a service author to discover in production: keep messaging payload encryption
-    on an independently-configured, config-backed `IEncryptionKeyProvider` — never the ambient slot
-    this method registers — until/unless `07.Messaging` ships its own keyed-DI isolation mirroring
-    `06.Persistence`'s D-131 (that domain's own P-499 territory, not this one's).
+    **STANDING DESIGN NOTE — do not make this automatic (WO-081/P-503, D-37):** this method never wires the
+    provider into `06.Persistence`'s encryption on a consuming service's behalf. `06.Persistence` requires its own
+    explicit opt-in in its builder chain precisely so its `.WithEncryption()` and this method can never collide on
+    the one unkeyed `IEncryptionKeyProvider` slot; making the connection automatic here would recreate that hazard.
 
 AddKeyVaultKeyProviderReadinessCheck  — see the Health check composition subsection above for the full
-    signature. IMPLEMENTED and tested, shipped 2026-09-04, in `HealthChecks/`
-    (`KeyVaultKeyProviderReadinessHealthCheck.cs`/`KeyVaultKeyProviderReadinessHealthCheckExtensions.cs`) —
-    `01.Core` shipped P-487 (`IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth`), closing the
-    upstream design gap this method was previously blocked on. This closes WO-068/P-449 end to end.
-    UNAFFECTED by the caching wrap above — resolves only `IEncryptionKeyProviderProbe`, which
-    (per the note above) is never cache-wrapped.
+    signature. IMPLEMENTED and tested, in `HealthChecks/`
+    (`KeyVaultKeyProviderReadinessHealthCheck.cs`/`KeyVaultKeyProviderReadinessHealthCheckExtensions.cs`).
+    Resolves only `IEncryptionKeyProviderProbe`, which reaches the provider singleton directly and always reads
+    live vault state.
 ```
 
 #### Opt-in culture resolution (`Localization/`, WO-078/P-483 — IMPLEMENTED and tested, shipped 2026-09-04)
@@ -1760,7 +1684,7 @@ app.Run();
 
 **Tenant catalog (WO-075/P-471/P-472, IMPLEMENTED and tested, shipped 2026-09-04):** `builder.Services.AddScoped<ITenantCatalog>(sp => new CachedTenantCatalog(new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>())));` registers the first real `ITenantStatusValidator` implementation as a byproduct — `builder.Services.AddScoped<ITenantStatusValidator, CatalogTenantStatusValidator>();`. Cross-instance invalidation is a further opt-in: `.WithCrossInstanceInvalidation(sp.GetRequiredService<ICacheInvalidationBus>())` (requires `02.Caching.Redis.PubSub` registered separately by the consumer — never a hard dependency of `SharedKernel.MultiTenancy` itself) — receiving a signal from another replica is a further, separate step: wire your own `IRedisChannelService.SubscribeAsync` and call the resulting `CachedTenantCatalog`'s `.HandleCrossInstanceInvalidationSignal(tenantId)` on receipt (`ICacheInvalidationBus` itself is publish-only — see Interface Contracts above).
 
-**Opt-in Azure Key Vault key-provider registration (WO-068/P-449, IMPLEMENTED and tested, shipped 2026-09-04):** `builder.AddSharedKernelKeyVaultKeyProvider();` — distinct from `AddSharedKernelKeyVaultConfiguration()` above; do not confuse the two in a service's own `Program.cs`. Idempotent — safe to call more than once. Pair it with `builder.Services.AddHealthChecks().AddKeyVaultKeyProviderReadinessCheck();` — `AddHealthChecks()`, never a second `AddSharedKernelHealthChecks()`, which re-registers the `"startup"` check and throws at startup (corrected WO-084) so an unreachable KMS/HSM shows up on `/health/ready` — resolves `01.Core`'s `IEncryptionKeyProviderProbe` (already registered as a byproduct of `AddSharedKernelKeyVaultKeyProvider()`).
+**Opt-in Azure Key Vault key-provider registration (WO-068/P-449, IMPLEMENTED and tested, shipped 2026-09-04):** `builder.AddSharedKernelKeyVaultKeyProvider();` — distinct from `AddSharedKernelKeyVaultConfiguration()` above; do not confuse the two in a service's own `Program.cs`. It returns `01.Core`'s `ICryptographyBuilder`; chain `.AddSymmetricEncryption()`/`.AddEnvelopeEncryption()` onto it. Idempotent — safe to call more than once. Pair it with `builder.Services.AddHealthChecks().AddKeyVaultKeyProviderReadinessCheck();` — `AddHealthChecks()`, never a second `AddSharedKernelHealthChecks()`, which re-registers the `"startup"` check and throws at startup (corrected WO-084) so an unreachable KMS/HSM shows up on `/health/ready` — resolves `01.Core`'s `IEncryptionKeyProviderProbe` (already registered as a byproduct of `AddSharedKernelKeyVaultKeyProvider()`).
 
 **Opt-in culture resolution (WO-078/P-483, IMPLEMENTED and tested, shipped 2026-09-04):** `builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "preferred_culture");` — called after `AddServiceDefaults()`/`AddSharedKernelMultiTenancy()`, before `builder.Build()`; the `TenantDefault` step activates automatically once an `ITenantCatalog` is registered (see above) and degrades cleanly otherwise. The consumer still calls the real `app.UseRequestLocalization();` after `builder.Build()` — this method configures `RequestLocalizationOptions` only, it does not wire the middleware itself.
 
@@ -1790,7 +1714,7 @@ app.Run();
 - `ITenantStatusValidator` (WO-061/P-400, IMPLEMENTED and tested, shipped 2026-08-19) is a plain interface with one `Task<bool>`-returning member — no reflection; `TenantResolutionMiddleware`'s optional resolution via `IServiceProvider.GetService<T>()` is an ordinary DI call, not a reflection-based lookup.
 - `IntegrationTelemetryExtensions.WithIntegrationTelemetry` (WO-064/P-430, IMPLEMENTED and tested, shipped 2026-08-21) is a plain static class doing a single string-name `AddSource` call, no `ProjectReference` needed regardless of `WebhookIntegrationActivitySource`'s declared accessibility — same AOT profile as `PersistenceTelemetryExtensions.WithPersistenceTelemetry`, minus the `AddMeter` half it also deliberately never makes.
 - `TenantDescriptor`/`TenantStatus`/`TenantIsolationMode`/`ITenantCatalog`/`CatalogTenantStatusValidator`/`DatabaseTenantCatalog`/`CachedTenantCatalog` (WO-075/P-471/P-472, IMPLEMENTED, shipped 2026-09-04) are plain sealed records/classes over BCL primitives (`Guid`, `string`, `IReadOnlyDictionary<string,string>`) and the already-AOT-safe `IDbConnectionFactory`/parameterized-ADO.NET-`IDataReader` pattern this domain already relies on for `DatabaseTenantResolutionStrategy` — no reflection anywhere. `CachedTenantCatalog`'s TTL logic is a plain `ConcurrentDictionary`-backed cache keyed against an injectable `TimeProvider` — no reflection.
-- `AddSharedKernelKeyVaultKeyProvider` (WO-068/P-449, IMPLEMENTED, shipped 2026-09-04) is a plain, reflection-free call-through plus an `IServiceCollection.Any(...)` idempotency guard — same AOT profile as `AddSharedKernelKeyVaultConfiguration` above, still dependent on `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure`'s own `Azure.Security.KeyVault.Keys`/`Azure.Identity` AOT status, encapsulated entirely behind this one opt-in extension method. **`cacheTtl` caching-wrap addition (WO-081/P-503, IMPLEMENTED and tested, shipped 2026-09-08, C-70):** the added registrations (`CachedEncryptionKeyProvider` factory + the `IEncryptionKeyProvider` re-registration) are plain reflection-free lambdas over already-AOT-safe `01.Core` types — no new AOT exposure beyond what this method already carries.
+- `AddSharedKernelKeyVaultKeyProvider` (WO-068/P-449, IMPLEMENTED, shipped 2026-09-04) is a call-through to `01.Core`'s `AddSharedKernelCryptography`/`AddAzureKeyVaultEncryption`, which bind configuration by reflection — so it carries the same `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` annotations, and remains dependent on `Azure.Security.KeyVault.Keys`/`Azure.Identity`'s own AOT status, encapsulated behind this one opt-in extension method.
 - `KeyVaultKeyProviderReadinessHealthCheck`/`AddKeyVaultKeyProviderReadinessCheck` (WO-068/P-449, IMPLEMENTED, shipped 2026-09-04) is a plain sealed class over `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` (no `Result<T>` wrapper, no reflection) — same AOT profile as `WorkflowReadinessHealthCheck`/`SchedulerReadinessHealthCheck`.
 - `SchedulingTelemetryExtensions.WithSchedulingTelemetry` (WO-073/P-465, IMPLEMENTED, shipped 2026-09-04) is a plain static class doing string-name `AddSource`/`AddMeter` calls — same AOT profile as `MessagingTelemetryExtensions`/`CachingTelemetryExtensions`/every other string-name-only sibling.
 - `SchedulerReadinessHealthCheck` (WO-073/P-466, IMPLEMENTED, shipped 2026-09-04) is a plain sealed class over `ISchedulerServiceProbe`/`SchedulerServiceHealth` (no `Result<T>` wrapper, no reflection) — same AOT profile as `WorkflowReadinessHealthCheck`/`VectorStoreReadinessHealthCheck`.
@@ -1841,7 +1765,7 @@ app.Run();
 - **Test-authoring gotcha found while writing T-54 (`ServiceDefaultsLogWiringTests`'s `ForwardedHeaderTrustBoundaryUnconfigured`-fires-exactly-once test) — will recur for any future "fires exactly once" test on a type that combines `PostConfigure<T>` with `.ValidateOnStart()`:** `AddMtlsForwardedHeaderCertificate` wires its trust-boundary warning via `.PostConfigure<ILoggerFactory>(...)` on `MtlsForwardedHeaderOptions` AND separately chains `.ValidateOnStart()` on the same options type. These resolve through two **independently-cached** paths — `IOptions<T>` (an `OptionsManager<T>` singleton's own `Lazy<T>` cache) versus `.ValidateOnStart()`'s internal startup-validation pass (which resolves through `IOptionsMonitor<T>`'s separate `OptionsCache<T>`) — so a test that calls `host.StartAsync()` (exercising the `ValidateOnStart` path) and THEN also resolves `IOptions<T>.Value` repeatedly (a second, different path) observes the `PostConfigure` callback fire twice, not because it isn't cached but because each path caches independently. This is not a production defect — it is a trap for a test mixing both resolution paths inside one "fires exactly once" assertion. **Fix:** exercise exactly one resolution path per test — build a bare `ServiceProvider` from `builder.Services` and resolve `IOptions<T>.Value` repeatedly without ever calling `host.StartAsync()` in that same test (mirrors the pre-existing `AddCacheReadinessCheck_ResolvingHealthCheckOptionsRepeatedly_LogsHealthCheckRegisteredExactlyOnce` shape), or test the `ValidateOnStart` path in isolation without a follow-up `IOptions<T>.Value` resolution. See `AddMtlsForwardedHeaderCertificate_TrustedNetworksLeftEmpty_OptionsResolvedRepeatedly_LogsForwardedHeaderTrustBoundaryUnconfiguredExactlyOnce` for the corrected shape.
 - **`RateLimitRejectionRecipeTests` (T-67/T-68, WO-063/P-419 — implemented and tested, shipped 2026-08-21):** proves the D-28-corrected `AddSharedKernelRateLimiting()` `OnRejected` recipe against a real `WebApplication`/`TestServer` host — a permit-limit-1 fixed-window policy, two requests in quick succession, and assertions on the second (rejected) response: `429`, `Content-Type: application/problem+json`, a `ProblemDetails` body with `Status`/`Type`/`Extensions["traceId"]` populated, and a parseable non-negative `Retry-After` header (T-67); a companion test proves the pre-existing no-recipe call shape stays the byte-identical BCL default — empty body, no `Content-Type`, no `Retry-After` (T-68). This required a **test-only** `ProjectReference` from `SharedKernel.ServiceDefaults.Tests.csproj` to `14.Presentation/SharedKernel.Presentation.WebApi.csproj` (inline-commented as gating-proof-only), mirroring the T-43/WO-056 `Grpc.AspNetCore`/`Polly.Core` precedent — **the first time this domain has taken a test-only reference to `14.Presentation` specifically**, established as the sanctioned pattern for proving a documented cross-domain recipe compiles and behaves correctly without ever letting the production `.csproj` cross the `01`–`12` composition-root ceiling. `SharedKernel.ServiceDefaults.Tests`: 173/173 passing, 0 regressions.
 - **`CatalogTenantStatusValidatorTests`/`DatabaseTenantCatalogTests`/`CachedTenantCatalogTests`/`CachedTenantCatalogComposesWithCatalogTenantStatusValidatorTests`/`CachedTenantCatalogCrossInstanceInvalidationTests` (WO-075/P-471/P-472, IMPLEMENTED and tested, shipped 2026-09-04, `SharedKernel.MultiTenancy.Tests`, +22 tests):** `Active`/`Suspended`/`Offboarded`/catalog-miss cases for `IsActiveAsync` (fail-closed on a miss — never `true`); `DatabaseTenantCatalog` parameterization proven via a test-double `IDbCommand`/`IDataReader`, mirroring `DatabaseTenantResolutionStrategyTests`; `CachedTenantCatalog`'s TTL-bypass-on-`InvalidateTenantAsync` proven directly via a controllable `TimeProvider` fake (never by waiting out a real TTL); `CatalogTenantStatusValidator` composes with `CachedTenantCatalog` with zero code changes, proven directly, per P-472's own explicit acceptance criterion; cross-instance invalidation proven via a test-double `ICacheInvalidationBus` (publish half) plus a direct call to `HandleCrossInstanceInvalidationSignal` (receive half — see the Interface Contracts publish-only finding above), never a real Redis dependency.
-- **`KeyVaultKeyProviderExtensionsTests` (WO-068/P-449, IMPLEMENTED and tested, shipped 2026-09-04, `SharedKernel.ServiceDefaults.Tests`; `cacheTtl` additions WO-081/P-503, T-82, IMPLEMENTED and tested, shipped 2026-09-08 — +8 tests, 14 total in this file):** proven via `Host.CreateApplicationBuilder()`/`builder.Services` inspection (never `WebApplicationFactory`) that `AddSharedKernelKeyVaultKeyProvider` registers `AzureKeyVaultEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` exactly once, including when called twice — **`IEncryptionKeyProvider` registers TWICE under the default `cacheTtl` (the raw registration from `01.Core`'s call-through, plus this method's own re-registration redirecting to the cached wrapper — MS.DI resolves the LAST registration for a single-instance request), a corrected count from the pre-P-503 shape, proven via a dedicated resolution-level (not just registration-count) assertion.** `cacheTtl` coverage, proven via `IServiceCollection.BuildServiceProvider()` resolution against a syntactically-valid (never-reached) `AzureKeyVaultCryptographyOptions` configuration: default call resolves `IEncryptionKeyProvider` as `CachedEncryptionKeyProvider`; `IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` stay reference-equal to the raw `AzureKeyVaultEncryptionKeyProvider` singleton; `cacheTtl: TimeSpan.Zero` disables wrapping (`IEncryptionKeyProvider` resolves reference-equal to the raw singleton, zero `CachedEncryptionKeyProvider` registrations); a negative `cacheTtl` throws `ArgumentOutOfRangeException` before any service is registered (verified via a zero-registrations assertion, not just the exception type); `CachedEncryptionKeyProvider` independently resolvable as its own concrete type (proving `06.Persistence`'s `.WithExternalEncryptionKeyProvider<CachedEncryptionKeyProvider>()` compatibility with no reference to `06.Persistence` itself); double-call does not double-register the cached wrapper.
+- **`KeyVaultKeyProviderExtensionsTests` (WO-068/P-449; rewritten for the P-545 `SharedKernel.Cryptography` redesign, `SharedKernel.ServiceDefaults.Cryptography.KeyVault.Tests`):** proven via `Host.CreateApplicationBuilder()`/`builder.Services` inspection (never `WebApplicationFactory`) that `AddSharedKernelKeyVaultKeyProvider` registers `AzureKeyVaultEncryptionKeyProvider`/`IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` exactly once each, including when called twice; registers no `CachedEncryptionKeyProvider`; returns an `ICryptographyBuilder` over the host's own services. Resolution-level coverage against a syntactically-valid (never-reached) `SharedKernel:Cryptography:KeyVault:Azure:Encryption` section: all three provider interfaces resolve reference-equal to the one provider singleton; a chained `.AddSymmetricEncryption()` resolves `ISymmetricEncryptionService`; no `ISynchronousEncryptionKeyProvider` is registered.
 - **`KeyVaultKeyProviderReadinessHealthCheckTests` (WO-068/P-449, IMPLEMENTED and tested, shipped 2026-09-04, `SharedKernel.ServiceDefaults.Tests`, +4 tests):** via a test-double `IEncryptionKeyProviderProbe`, `IsHealthy == true` → `Healthy`; `IsHealthy == false` → `Unhealthy`, never `Degraded`; `Description` surfaces in the result when unhealthy; a null `Description` on an unhealthy result does not throw. **This closes WO-068/P-449 end to end — every `SK.13.*` phase key is now fully `●`/`—`.**
 - **`SchedulingTelemetryExtensionsTests`/`SchedulerReadinessHealthCheckTests` (WO-073/P-465/P-466, IMPLEMENTED and tested, shipped 2026-09-04, `SharedKernel.ServiceDefaults.Tests`, +9 tests):** `SchedulingTelemetryExtensionsTests` proves BOTH a tracing-capture (via `BaseProcessor<Activity>`) and a metrics-capture (via `OpenTelemetry.Exporter.InMemory`'s `AddInMemoryExporter`) genuine proof (unlike `WithPersistenceTelemetry`'s/`WithIntegrationTelemetry`'s tracing-only test shape), each independently verified during implementation to fail when its corresponding `AddSource`/`AddMeter` call was temporarily removed. `SchedulerReadinessHealthCheckTests` includes a dedicated `RegisteredJobCount`-never-drives-Unhealthy regression, mirroring the `PendingWriteCount`/`TaskQueueBacklog` precedent exactly, plus a `LastTickUtc`-null-is-informational-only test.
 - **`LocalizationResolutionOptionsTests`/`SharedKernelLocalizationExtensionsTests`/`SharedKernelLocalizationWrapsRequestLocalizationMiddlewareTests` (WO-078/P-483, IMPLEMENTED and tested, shipped 2026-09-04, `SharedKernel.ServiceDefaults.Tests`, +13 tests):** proves the `UserPreference`-beats-`TenantDefault`-beats-`AcceptLanguageHeader` precedence directly (not by omission — all three signals configured simultaneously in one test, asserting `UserPreference` wins) — the WO-061-lesson acceptance criterion; the `TenantDefault` step proven to skip cleanly (never throw) with zero `ITenantCatalog` registered in DI at all; a startup `Warning`-fires-exactly-once test (EventId `13004`) for the fully-unconfigured case, plus negative tests proving it does NOT fire once either dynamic step is configured; the custom providers proven present ahead of the real BCL `AcceptLanguageHeaderRequestCultureProvider` in the resolved `RequestLocalizationOptions.RequestCultureProviders` list; a no-op regression proving a host that never calls `AddSharedKernelLocalization()` is unaffected.

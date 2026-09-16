@@ -11,11 +11,14 @@ One of the `SharedKernel.ServiceDefaults.*` integration packages.
 ```
 
 ```csharp
+using SharedKernel.Cryptography.Extensions;
 using SharedKernel.ServiceDefaults.Cryptography;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
 builder.AddServiceDefaults();
-builder.AddSharedKernelKeyVaultKeyProvider();
+builder.AddSharedKernelKeyVaultKeyProvider()
+    .AddSymmetricEncryption()     // ISymmetricEncryptionService over the Key Vault data keys
+    .AddEnvelopeEncryption();     // IEnvelopeEncryptionService, a fresh wrapped data key per payload
 
 builder.Services.AddHealthChecks()
     .AddKeyVaultKeyProviderReadinessCheck();
@@ -26,46 +29,45 @@ Chain the readiness check onto `AddHealthChecks()`, **not** `AddSharedKernelHeal
 `"startup"` check twice and the application throws `ArgumentException: Duplicate health checks were
 registered with the name(s): startup` when it starts.
 
-`AddSharedKernelKeyVaultKeyProvider()` calls through to `01.Core`'s
-`SharedKernel.Cryptography.KeyVault.Azure`. Configure `AzureKeyVaultCryptographyOptions` under the
-`SharedKernel:Cryptography:KeyVault:Azure` section — `VaultUri`, `CurrentKeyId`, `KeyNames`; see that
-package's README for the full shape. It is idempotent: calling it more than once registers the provider
-once.
+`AddSharedKernelKeyVaultKeyProvider()` is a host-builder shorthand for
+`builder.Services.AddSharedKernelCryptography(builder.Configuration).AddAzureKeyVaultEncryption(builder.Configuration)`
+from `01.Core`'s `SharedKernel.Cryptography` and `SharedKernel.Cryptography.KeyVault.Azure`. It returns the
+`ICryptographyBuilder`, so chain the services that consume the provider onto it. It registers
+`AzureKeyVaultEncryptionKeyProvider` as `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider` and
+`IEncryptionKeyProviderProbe` — one singleton behind all three. Every registration uses `TryAdd`, so calling it
+more than once registers the provider once.
+
+Configure `AzureKeyVaultEncryptionOptions` under `SharedKernel:Cryptography:KeyVault:Azure:Encryption`:
+
+```json
+{
+  "SharedKernel": { "Cryptography": { "KeyVault": { "Azure": { "Encryption": {
+    "VaultUri": "https://contoso-prod.vault.azure.net/",
+    "MasterKeyName": "orders-kek",
+    "DataKeySecretName": "orders-data-keys",
+    "RefreshInterval": "00:05:00"
+  } } } } }
+}
+```
+
+See the `SharedKernel.Cryptography.KeyVault.Azure` README for the key and secret layout and for rotation.
 
 ## Key caching
 
-By default — `cacheTtl` left `null` — `IEncryptionKeyProvider`, and only `IEncryptionKeyProvider`, is wrapped
-in `01.Core`'s bounded-TTL `CachedEncryptionKeyProvider` with a 5-minute TTL. `IEnvelopeEncryptionProvider`
-and `IEncryptionKeyProviderProbe` always stay on the raw, uncached provider: envelope wrap and unwrap is a
-real per-call vault operation rather than a cacheable lookup, and a readiness probe must observe live vault
-state.
+The provider caches by itself: it reads the list of data-key versions at most once per `RefreshInterval` and
+unwraps each data key once. Do **not** wrap it in `CachedEncryptionKeyProvider`. The readiness probe is the same
+singleton and always reads live vault state.
 
-```csharp
-builder.AddSharedKernelKeyVaultKeyProvider();                                 // cached, 5-minute TTL
-builder.AddSharedKernelKeyVaultKeyProvider(cacheTtl: TimeSpan.FromMinutes(10)); // custom TTL
-builder.AddSharedKernelKeyVaultKeyProvider(cacheTtl: TimeSpan.Zero);          // uncached
-```
-
-The cache never unlocks a synchronous path. `CachedEncryptionKeyProvider` does not implement `01.Core`'s
-`ISynchronousEncryptionKeyProvider` marker, so the synchronous `Encrypt`/`Decrypt`/`EncryptToString`/
-`DecryptToString` members still throw `NotSupportedException` against it. The cache helps async callers
-only.
-
-Both variants are resolvable as their own concrete types, so a service using `06.Persistence`'s encryption
-builder can target either explicitly:
-
-```csharp
-efCorePersistenceBuilder.WithExternalEncryptionKeyProvider<CachedEncryptionKeyProvider>();
-// or
-efCorePersistenceBuilder.WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>();
-```
+The provider is asynchronous only — it does not implement `ISynchronousEncryptionKeyProvider`. Synchronous code
+paths (EF Core value converters, message serializers) cannot use it: `ISynchronousSymmetricEncryptionService`
+fails to resolve against it instead of blocking a thread. Give those paths their own synchronous provider.
 
 ## Rules
 
 | Rule | Why |
 | --- | --- |
-| Registering the provider does **not** make persistence use it | `06.Persistence` requires its own explicit `.WithExternalEncryptionKeyProvider<TProvider>()`, so its `.WithEncryption()` and this method can never silently collide on the one unkeyed `IEncryptionKeyProvider` slot. |
-| **Never** point `07.Messaging` payload encryption at this provider | Messaging's payload-encryption serializer is hard-synchronous with no async overload, so against a Key Vault–backed provider — cached or not — every message fails with `NotSupportedException`. Keep messaging payload encryption on a separately configured, config-backed provider, never the ambient slot this method registers. |
+| Registering the provider does **not** make persistence use it | `06.Persistence`'s encryption is configured in its own builder chain, so it and this method can never silently collide on the one unkeyed `IEncryptionKeyProvider` slot. |
+| **Never** point synchronous encryption — `06.Persistence` value converters, `07.Messaging` payload serializers — at this provider | Those paths are synchronous and need an `ISynchronousEncryptionKeyProvider`, which a Key Vault–backed provider never is. Keep them on a separately configured provider. |
 | Register the provider before the readiness check | `AddKeyVaultKeyProviderReadinessCheck()` resolves `IEncryptionKeyProviderProbe`, which `AddSharedKernelKeyVaultKeyProvider()` registers. |
 
 ## Readiness check

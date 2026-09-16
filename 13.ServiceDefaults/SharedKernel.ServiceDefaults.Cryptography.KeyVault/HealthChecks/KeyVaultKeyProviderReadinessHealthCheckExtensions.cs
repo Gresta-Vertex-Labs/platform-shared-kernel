@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Symmetric;
 
 namespace SharedKernel.ServiceDefaults.HealthChecks;
