@@ -9,9 +9,8 @@ namespace SharedKernel.Application.Behaviors.Auditing;
 /// (<c>06.Persistence</c>). <c>05.Application</c> can never reference <c>06.Persistence</c>
 /// (layering runs the other direction), so <see cref="AuditingBehavior{TRequest,TResponse}"/>
 /// depends on this local interface instead; the consuming service bridges it to the real, richer
-/// <c>06.Persistence.Abstractions.IAuditTrailWriter</c> at the composition root. Same-name-
-/// different-namespace precedent, mirroring <c>Transaction.IUnitOfWork</c>'s existing bridge shape
-/// exactly — never a compiled reference to <c>06.Persistence</c> from this package.
+/// <c>06.Persistence.Abstractions.IAuditTrailWriter</c> at the composition root — the same
+/// same-name-different-namespace bridge shape as <c>Transaction.IUnitOfWork</c>.
 /// </para>
 /// <para>
 /// Deliberately smaller than the real contract, which returns a persisted record and internally
@@ -33,5 +32,5 @@ public interface IAuditTrailWriter
     /// A failed write (a thrown exception) must propagate to the caller unchanged —
     /// <see cref="AuditingBehavior{TRequest,TResponse}"/> never catches or swallows it.
     /// </remarks>
-    Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default);
+    Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken);
 }

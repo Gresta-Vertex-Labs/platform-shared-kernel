@@ -1,5 +1,6 @@
 using MediatR;
-using SharedKernel.Application.Behaviors.DualApproval;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
 
 namespace SharedKernel.Application.Behaviors.Auditing;
@@ -15,48 +16,36 @@ namespace SharedKernel.Application.Behaviors.Auditing;
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
 /// <para>
-/// Constrained to <see cref="ICommandBase"/> only — mirrors <c>Transaction.TransactionBehavior</c>'s,
-/// <c>Idempotency.IdempotentCommandBehavior</c>'s, and <c>DualApproval.DualApprovalBehavior</c>'s
-/// exact commands-only constraint shape; never applies to queries (a DI-level fact, since
-/// <c>IQuery&lt;TResponse&gt;</c> never implements <see cref="ICommandBase"/>). No runtime
-/// <see langword="is"/>-check for applicability is needed — the .NET DI container's
-/// generic-constraint-aware resolution naturally excludes this behavior from any closed
-/// <typeparamref name="TRequest"/> that does not satisfy the constraint.
+/// Calls <c>next()</c>, then unconditionally records an entry for every outcome — success, a
+/// <c>Result.Failure</c>, and a thrown exception alike. A rejected or faulted high-risk attempt is
+/// itself often the compliance-relevant event, so leaving it unrecorded would be the wrong default.
+/// Runs for nested commands exactly as for the outermost command — a nested audited command still
+/// records its own entry.
 /// </para>
 /// <para>
-/// Calls <c>next()</c> FIRST to obtain the response, then unconditionally calls
-/// <see cref="IAuditTrailWriter.RecordAsync"/> for BOTH a successful and a business-rejected
-/// (<c>Result.Failure</c>) outcome — auditing a rejected high-risk attempt is itself often the
-/// compliance-relevant event, not just a successful one — but NEVER when <c>next()</c> throws
-/// (mirrors <see cref="Logging.ILoggableRequest{TResponse}"/>'s established convention: there is no
-/// response object to project). Does NOT catch an exception thrown by
-/// <see cref="IAuditTrailWriter.RecordAsync"/> itself — it propagates unchanged and blocks the rest
-/// of the pipeline (FAILS CLOSED), consistent with this domain's "log/audit failures are never
-/// silently swallowed" convention; a failed audit write means <c>Transaction.TransactionBehavior</c>
-/// (which wraps this behavior — see the Pipeline Composition section of
-/// <c>05.Application/CLAUDE.md</c>) never reaches its own commit either.
+/// <see cref="AuditEntry.AfterSnapshot"/> is computed via
+/// <see cref="IAuditableRequest{TResponse}.GetAfterSnapshot"/> only on success; both a
+/// <c>Result.Failure</c> and a thrown exception record <see cref="AuditEntry.Succeeded"/> =
+/// <see langword="false"/> with <see cref="AuditEntry.AfterSnapshot"/> left <see langword="null"/>
+/// (there is no new state to snapshot). <see cref="AuditEntry.ErrorCode"/> carries the response's
+/// <c>Error.Code</c> on a <c>Result.Failure</c>, or the thrown exception's type full name on a fault
+/// — the exception itself is then rethrown unchanged after the entry is recorded.
 /// </para>
 /// <para>
-/// <b>Dual-approval linkage:</b> detects <c>request is <see cref="IRequiresDualApproval"/> dual</c>
-/// via a plain <see langword="is"/>-pattern (zero coupling to <see cref="IDualApprovalStore"/>
-/// itself, zero new project reference) and passes <c>dual.ApprovalKey</c> as
-/// <see cref="AuditEntry.ApprovalId"/>; a request implementing only
-/// <see cref="IAuditableRequest{TResponse}"/> (no dual-approval) passes <c>ApprovalId = null</c>.
-/// </para>
-/// <para>
-/// <b>AUDIT-WRITE / BUSINESS-COMMIT DECOUPLING (documented, disclosed, not an oversight):</b> since
-/// <c>06.Persistence</c>'s real <c>EfAuditTrailWriter</c> is SELF-CONTAINED and calls its own
-/// <c>SaveChangesAsync</c> independently of the caller's business <see cref="Transaction.IUnitOfWork"/>,
-/// the recorded audit entry reflects the outcome the handler COMPUTED, not a guarantee the business
-/// mutation itself later persisted — matching <c>06.Persistence</c>'s own already-locked design
-/// decision, not a gap introduced here.
-/// </para>
-/// <para>
-/// Runs TENTH in the canonical pipeline, immediately inside <c>Transaction.TransactionBehavior</c> —
-/// see the Pipeline Composition section of <c>05.Application/CLAUDE.md</c>.
+/// On the success/<c>Result.Failure</c> path, an exception thrown by
+/// <see cref="IAuditTrailWriter.RecordAsync"/> itself is <b>not</b> caught — it propagates unchanged
+/// and blocks the rest of the pipeline (fails closed): a failed audit write means
+/// <c>Transaction.TransactionBehavior</c>, which wraps this behavior in the canonical command stage,
+/// never reaches its own commit either. On the handler-exception path this fail-closed rule would
+/// hide the original fault behind the audit writer's own exception, so it does not apply there: if
+/// <see cref="IAuditTrailWriter.RecordAsync"/> itself throws while recording the fault entry, that
+/// write failure is logged and the <b>original</b> handler exception is still the one that
+/// propagates.
 /// </para>
 /// </remarks>
-public sealed class AuditingBehavior<TRequest, TResponse>(IAuditTrailWriter auditTrailWriter)
+public sealed partial class AuditingBehavior<TRequest, TResponse>(
+    IAuditTrailWriter auditTrailWriter,
+    ILogger<AuditingBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : ICommandBase, IAuditableRequest<TResponse>, IRequest<TResponse>
 {
@@ -66,20 +55,62 @@ public sealed class AuditingBehavior<TRequest, TResponse>(IAuditTrailWriter audi
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var response = await next().ConfigureAwait(false);
+        TResponse response;
+        try
+        {
+            response = await next().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            var faultEntry = new AuditEntry(
+                request.Action,
+                request.ResourceType,
+                request.ResourceId,
+                request.BeforeSnapshot,
+                AfterSnapshot: null,
+                Succeeded: false,
+                ErrorCode: exception.GetType().FullName ?? exception.GetType().Name);
 
-        var approvalId = request is IRequiresDualApproval dual ? dual.ApprovalKey : null;
+            try
+            {
+                await auditTrailWriter.RecordAsync(faultEntry, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception auditWriteException)
+            {
+                LogAuditWriteFailedDuringException(
+                    logger,
+                    auditWriteException,
+                    typeof(TRequest).FullName ?? typeof(TRequest).Name);
+            }
+
+            throw;
+        }
+
+        var error = ResponseOutcome.TryGetError(response);
+        var succeeded = error is null;
 
         var entry = new AuditEntry(
             request.Action,
             request.ResourceType,
             request.ResourceId,
             request.BeforeSnapshot,
-            request.GetAfterSnapshot(response),
-            approvalId);
+            succeeded ? request.GetAfterSnapshot(response) : null,
+            succeeded,
+            error?.Code);
 
         await auditTrailWriter.RecordAsync(entry, cancellationToken).ConfigureAwait(false);
 
         return response;
     }
+
+    /// <summary>
+    /// <see cref="IAuditTrailWriter.RecordAsync"/> threw while recording the fault entry for a
+    /// command whose handler had already thrown (Error). The original handler exception is still
+    /// the one propagated to the caller — see this behavior's class remarks.
+    /// </summary>
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogAuditWriteFailedDuringException,
+        Level = LogLevel.Error,
+        Message = "Recording the audit entry for a faulted {RequestType} failed; the original exception still propagates")]
+    private static partial void LogAuditWriteFailedDuringException(ILogger logger, Exception exception, string requestType);
 }
