@@ -63,6 +63,25 @@ public sealed class ContractShapeTests
     }
 
     [Fact]
+    public void IQueryBase_IsZeroMemberMarkerInterface()
+    {
+        typeof(IQueryBase).GetMembers().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void IQueryOfTResponse_ImplementsIQueryBase()
+    {
+        typeof(IQuery<string>).Should().BeAssignableTo<IQueryBase>();
+    }
+
+    [Fact]
+    public void ICommand_DoesNotImplementIQueryBase()
+    {
+        typeof(ICommand).Should().NotBeAssignableTo<IQueryBase>();
+        typeof(ICommand<Guid>).Should().NotBeAssignableTo<IQueryBase>();
+    }
+
+    [Fact]
     public void ICommandHandler_IsPureAliasOverIRequestHandlerOfResult()
     {
         typeof(ICommandHandler<TestCommand>).Should().BeAssignableTo<IRequestHandler<TestCommand, Result>>();

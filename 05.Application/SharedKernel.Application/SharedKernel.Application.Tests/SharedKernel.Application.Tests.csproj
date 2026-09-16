@@ -1,12 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Application.csproj" />
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <!-- Test-project-only reference (WO-039 P-241 / D-46). Never referenced from SharedKernel.Application.csproj. -->
-    <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -21,5 +18,6 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 </Project>
