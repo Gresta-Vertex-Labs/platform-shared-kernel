@@ -1,320 +1,512 @@
-using System.Security.Cryptography;
+using System.Globalization;
 using SharedKernel.Cryptography.Symmetric;
-using Xunit;
+using SharedKernel.Cryptography.Tests.TestDoubles;
 
 namespace SharedKernel.Cryptography.Tests.Symmetric;
 
-/// <summary>
-/// Covers <see cref="CachedEncryptionKeyProvider"/> (P-446/WO-068): cache-hit behavior, TTL
-/// expiry, single-flight refresh under genuine concurrency, and fail-closed propagation on a
-/// failed refresh.
-/// </summary>
 public sealed class CachedEncryptionKeyProviderTests
 {
-    private static CryptographicKey NewKey(string id) => new(id, RandomNumberGenerator.GetBytes(32));
+    private static readonly TimeSpan TimeToLive = TimeSpan.FromMinutes(5);
+
+    private readonly ManualTimeProvider _time = new();
+    private readonly ScriptedKeyProvider _inner = new();
 
     [Fact]
-    public async Task GetCurrentKeyAsync_CacheHit_NeverCallsInnerProvider()
+    public async Task GetCurrentKeyAsync_WithinTimeToLive_CallsInnerOnce()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+        CryptographicKey key = TestKeys.Create("current");
+        _inner.OnGetCurrentKey = _ => new(key);
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        CryptographicKey first = await cached.GetCurrentKeyAsync();
-        CryptographicKey second = await cached.GetCurrentKeyAsync();
-        CryptographicKey third = await cached.GetCurrentKeyAsync();
+        CryptographicKey first = await cache.GetCurrentKeyAsync();
+        _time.Advance(TimeToLive - TimeSpan.FromSeconds(1));
+        CryptographicKey second = await cache.GetCurrentKeyAsync();
 
-        Assert.Equal("v1", first.Id);
-        Assert.Equal("v1", second.Id);
-        Assert.Equal("v1", third.Id);
-        Assert.Equal(1, inner.CurrentKeyCallCount);
+        Assert.Same(key, first);
+        Assert.Same(key, second);
+        Assert.Equal(1, _inner.CurrentKeyCalls);
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_ExpiredEntry_AlwaysRefetches()
+    public async Task GetCurrentKeyAsync_AfterTimeToLive_CallsInnerAgain()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var ttl = TimeSpan.FromMinutes(5);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, ttl);
+        _inner.OnGetCurrentKey = _ => new(TestKeys.Create("current"));
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        await cached.GetCurrentKeyAsync();
-        Assert.Equal(1, inner.CurrentKeyCallCount);
+        await cache.GetCurrentKeyAsync();
+        _time.Advance(TimeToLive);
+        await cache.GetCurrentKeyAsync();
 
-        timeProvider.Advance(ttl + TimeSpan.FromSeconds(1));
-
-        await cached.GetCurrentKeyAsync();
-        Assert.Equal(2, inner.CurrentKeyCallCount);
+        Assert.Equal(2, _inner.CurrentKeyCalls);
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_RevokedOrRotatedKey_IsNeverServedPastConfiguredTtl()
+    public async Task GetCurrentKeyAsync_RotationBecomesVisibleAfterTimeToLive()
     {
-        var v1 = NewKey("v1");
-        var v2 = NewKey("v2");
-        var inner = new ControllableEncryptionKeyProvider(v1);
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var ttl = TimeSpan.FromMinutes(10);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, ttl);
+        CryptographicKey oldKey = TestKeys.Create("2026-03");
+        CryptographicKey newKey = TestKeys.Create("2026-09");
+        CryptographicKey current = oldKey;
+        _inner.OnGetCurrentKey = _ => new(current);
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        CryptographicKey resolved = await cached.GetCurrentKeyAsync();
-        Assert.Equal("v1", resolved.Id);
-
-        // Rotate the inner provider's key while still inside the TTL window — the cached
-        // (now-stale) v1 must still be served: this is the caching contract working as designed,
-        // not a bug, and sets up the real assertion below.
-        inner.SetCurrentKey(v2);
-        resolved = await cached.GetCurrentKeyAsync();
-        Assert.Equal("v1", resolved.Id);
-
-        // Advance strictly past the TTL boundary — the next resolution MUST observe the rotated
-        // key. A revoked/rotated key must never be served once its cache entry's TTL has elapsed.
-        timeProvider.Advance(ttl + TimeSpan.FromSeconds(1));
-
-        resolved = await cached.GetCurrentKeyAsync();
-        Assert.Equal("v2", resolved.Id);
-        Assert.Equal(2, inner.CurrentKeyCallCount);
+        Assert.Same(oldKey, await cache.GetCurrentKeyAsync());
+        current = newKey;
+        _time.Advance(TimeSpan.FromMinutes(4));
+        Assert.Same(oldKey, await cache.GetCurrentKeyAsync());
+        _time.Advance(TimeSpan.FromMinutes(1));
+        Assert.Same(newKey, await cache.GetCurrentKeyAsync());
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_ConcurrentCallersPastExpiry_CallInnerProviderExactlyOnce()
+    public async Task GetKeyAsync_WithinTimeToLive_CallsInnerOncePerId()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+        CryptographicKey a = TestKeys.Create("a");
+        CryptographicKey b = TestKeys.Create("b");
+        _inner.OnGetKey = (id, _) => new(id == "a" ? a : b);
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        // Hold the inner provider open so every one of the N concurrent callers below is
-        // guaranteed to be genuinely in-flight simultaneously, rather than merely appearing to
-        // race by chance — this is what makes the assertion below a real proof of single-flight
-        // behavior rather than a trivially-passing sequential test.
-        inner.Hold();
+        Assert.Same(a, await cache.GetKeyAsync("a"));
+        Assert.Same(b, await cache.GetKeyAsync("b"));
+        Assert.Same(a, await cache.GetKeyAsync("a"));
+        Assert.Same(b, await cache.GetKeyAsync("b"));
 
-        const int concurrency = 50;
-
-        // Call directly on this thread — deliberately NOT via Task.Run. GetCurrentKeyAsync runs
-        // synchronously up to its first suspension point (the held inner provider), so it has
-        // already registered itself as a waiter on the shared in-flight slot by the time it
-        // returns its Task. Attachment is therefore complete for all N callers the moment this
-        // loop finishes, with no barrier and no dependence on the thread pool at all.
-        //
-        // Task.Run plus a CountdownEvent barrier was tried and is strictly worse: it queues N
-        // work items while this thread blocks synchronously on the barrier, and on a two-core CI
-        // runner the pool injects threads far too slowly to drain them, so the barrier times out
-        // deterministically rather than merely flaking. The neighbouring cancellation tests in
-        // this file have always used direct calls for exactly this reason.
-        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
-            .Select(_ => cached.GetCurrentKeyAsync().AsTask())];
-
-        inner.Release();
-
-        CryptographicKey[] results = await Task.WhenAll(callers).WaitAsync(TimeSpan.FromSeconds(10));
-
-        Assert.Equal(1, inner.CurrentKeyCallCount);
-        Assert.All(results, key => Assert.Equal("v1", key.Id));
+        Assert.Equal(2, _inner.KeyCalls);
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_InnerProviderFailureDuringRefresh_PropagatesToEveryWaitingCaller()
+    public async Task GetKeyAsync_AfterTimeToLive_CallsInnerAgain()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+        _inner.OnGetKey = (id, _) => new(TestKeys.Create(id));
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        var failure = new InvalidOperationException("KMS unreachable");
-        inner.ThrowOnNextCall(failure);
-        inner.Hold();
+        await cache.GetKeyAsync("a");
+        _time.Advance(TimeToLive + TimeSpan.FromTicks(1));
+        await cache.GetKeyAsync("a");
 
-        const int concurrency = 10;
+        Assert.Equal(2, _inner.KeyCalls);
+    }
 
-        // Direct calls on this thread, deliberately NOT Task.Run — see the identical comment in
-        // GetCurrentKeyAsync_ConcurrentCallersPastExpiry_CallInnerProviderExactlyOnce above.
-        // Every caller has attached to the shared in-flight slot by the time its Task is
-        // returned, so all N are provably attached before Release() runs below. That matters
-        // here specifically: a caller still queued when the others observe the fault, decrement
-        // the slot's waiter count to zero and evict it (the documented, correct P-511 behaviour
-        // for a failed refresh) would start a brand-new resolution against ThrowOnNextCall's
-        // already-consumed one-shot exception, and spuriously succeed instead of observing the
-        // failure. That is the exact CI failure this shape removes.
-        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
-            .Select(_ => cached.GetCurrentKeyAsync().AsTask())];
+    [Fact]
+    public async Task GetKeyAsync_KeyIdsAreCaseSensitive()
+    {
+        _inner.OnGetKey = (id, _) => new(TestKeys.Create(id));
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        inner.Release();
+        CryptographicKey? upper = await cache.GetKeyAsync("Key");
+        CryptographicKey? lower = await cache.GetKeyAsync("key");
 
-        // Every single caller awaiting the one shared in-flight refresh must observe the failure
-        // — never a stale fallback, and never a subset silently succeeding.
-        foreach (Task<CryptographicKey> caller in callers)
+        Assert.Equal("Key", upper!.Id);
+        Assert.Equal("key", lower!.Id);
+        Assert.Equal(2, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_UnknownId_IsNotCached()
+    {
+        _inner.OnGetKey = (_, _) => new((CryptographicKey?)null);
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        Assert.Null(await cache.GetKeyAsync("missing"));
+        Assert.Null(await cache.GetKeyAsync("missing"));
+        Assert.Null(await cache.GetKeyAsync("missing"));
+
+        Assert.Equal(3, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_ManyUnknownIds_DoNotOccupyCacheCapacity()
+    {
+        _inner.OnGetKey = (id, _) => new(id.StartsWith("known-", StringComparison.Ordinal) ? TestKeys.Create(id) : null);
+        CachedEncryptionKeyProvider cache = CreateCache(maxEntries: 10);
+
+        for (int i = 0; i < 5000; i++)
         {
-            InvalidOperationException thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => caller);
-            Assert.Same(failure, thrown);
+            Assert.Null(await cache.GetKeyAsync(string.Create(CultureInfo.InvariantCulture, $"unknown-{i}")));
         }
 
-        Assert.Equal(1, inner.CurrentKeyCallCount);
+        for (int round = 0; round < 2; round++)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                string id = string.Create(CultureInfo.InvariantCulture, $"known-{i}");
+                Assert.Equal(id, (await cache.GetKeyAsync(id))!.Id);
+            }
+        }
 
-        // A failed refresh must not permanently poison the slot — the next call retries.
-        CryptographicKey resolved = await cached.GetCurrentKeyAsync();
-        Assert.Equal("v1", resolved.Id);
-        Assert.Equal(2, inner.CurrentKeyCallCount);
+        Assert.Equal(5000 + 10, _inner.KeyCalls);
     }
 
     [Fact]
-    public async Task GetKeyAsync_CacheHit_NeverCallsInnerProvider()
+    public async Task GetKeyAsync_MoreKnownIdsThanCapacity_StillReturnsCorrectKeys()
     {
-        var key = NewKey("v1");
-        var inner = new ControllableEncryptionKeyProvider(key);
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+        var keys = Enumerable.Range(0, 50)
+            .Select(i => TestKeys.Create(string.Create(CultureInfo.InvariantCulture, $"key-{i}")))
+            .ToDictionary(k => k.Id, StringComparer.Ordinal);
+        _inner.OnGetKey = (id, _) => new(keys.GetValueOrDefault(id));
+        CachedEncryptionKeyProvider cache = CreateCache(maxEntries: 10);
 
-        CryptographicKey? first = await cached.GetKeyAsync("v1");
-        CryptographicKey? second = await cached.GetKeyAsync("v1");
+        for (int round = 0; round < 3; round++)
+        {
+            foreach ((string id, CryptographicKey key) in keys)
+            {
+                Assert.Same(key, await cache.GetKeyAsync(id));
+            }
+        }
 
-        Assert.NotNull(first);
-        Assert.NotNull(second);
-        Assert.Equal(1, inner.GetKeyCallCount);
+        Assert.Equal(10 + (40 * 3), _inner.KeyCalls);
     }
 
     [Fact]
-    public async Task GetKeyAsync_ExpiredEntry_AlwaysRefetches()
+    public async Task GetKeyAsync_ConcurrentRequestsForSameId_ShareOneInnerCall()
     {
-        var key = NewKey("v1");
-        var inner = new ControllableEncryptionKeyProvider(key);
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var ttl = TimeSpan.FromMinutes(5);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, ttl);
+        CryptographicKey key = TestKeys.Create("k");
+        var release = new TaskCompletionSource<CryptographicKey?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetKey = (_, _) => new(release.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        await cached.GetKeyAsync("v1");
-        Assert.Equal(1, inner.GetKeyCallCount);
+        Task<CryptographicKey?>[] callers = [.. Enumerable.Range(0, 20).Select(_ => Task.Run(async () => await cache.GetKeyAsync("k")))];
+        await WaitUntilAsync(() => _inner.KeyCalls >= 1);
+        await Task.Delay(50);
+        release.SetResult(key);
+        CryptographicKey?[] results = await Task.WhenAll(callers);
 
-        timeProvider.Advance(ttl + TimeSpan.FromSeconds(1));
-
-        await cached.GetKeyAsync("v1");
-        Assert.Equal(2, inner.GetKeyCallCount);
+        Assert.Equal(1, _inner.KeyCalls);
+        Assert.All(results, result => Assert.Same(key, result));
     }
 
     [Fact]
-    public async Task GetKeyAsync_UnknownKeyId_ReturnsNull_AndIsNotCachedAsPositiveHit()
+    public async Task GetCurrentKeyAsync_SequentialRequestsWhileFetchPending_ShareOneInnerCall()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+        CryptographicKey key = TestKeys.Create("current");
+        var release = new TaskCompletionSource<CryptographicKey>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetCurrentKey = _ => new(release.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
 
-        CryptographicKey? result = await cached.GetKeyAsync("unknown");
+        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, 20).Select(_ => cache.GetCurrentKeyAsync().AsTask())];
+        release.SetResult(key);
+        CryptographicKey[] results = await Task.WhenAll(callers);
 
-        Assert.Null(result);
+        Assert.Equal(1, _inner.CurrentKeyCalls);
+        Assert.All(results, result => Assert.Same(key, result));
     }
 
     [Fact]
-    public void Constructor_NullInner_Throws()
+    public async Task GetCurrentKeyAsync_ConcurrentColdStartRequests_ShareOneInnerCall()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => new CachedEncryptionKeyProvider(null!, new FakeTimeProvider(DateTimeOffset.UnixEpoch), TimeSpan.FromMinutes(1)));
+        for (int round = 0; round < 150; round++)
+        {
+            var inner = new ScriptedKeyProvider();
+            var release = new TaskCompletionSource<CryptographicKey>(TaskCreationOptions.RunContinuationsAsynchronously);
+            inner.OnGetCurrentKey = _ => new(release.Task);
+            var cache = new CachedEncryptionKeyProvider(inner, _time, TimeToLive);
+            using var barrier = new Barrier(8);
+
+            Task<CryptographicKey>[] callers =
+            [
+                .. Enumerable.Range(0, 8).Select(_ => Task.Run(async () =>
+                {
+                    barrier.SignalAndWait();
+                    return await cache.GetCurrentKeyAsync();
+                })),
+            ];
+            await WaitUntilAsync(() => inner.CurrentKeyCalls >= 1);
+            await Task.Delay(5);
+            release.SetResult(TestKeys.Create("current"));
+            await Task.WhenAll(callers);
+
+            Assert.True(inner.CurrentKeyCalls == 1, $"Round {round}: the inner provider was called {inner.CurrentKeyCalls} times.");
+        }
     }
 
     [Fact]
-    public void Constructor_NullTimeProvider_Throws()
+    public async Task GetKeyAsync_CapacityOne_ConcurrentColdRequestsForSameIdShareOneInnerCall()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => new CachedEncryptionKeyProvider(new ControllableEncryptionKeyProvider(NewKey("v1")), null!, TimeSpan.FromMinutes(1)));
+        for (int round = 0; round < 150; round++)
+        {
+            var inner = new ScriptedKeyProvider();
+            var release = new TaskCompletionSource<CryptographicKey?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            inner.OnGetKey = (_, _) => new(release.Task);
+            var cache = new CachedEncryptionKeyProvider(inner, _time, TimeToLive, maxEntries: 1);
+            using var barrier = new Barrier(8);
+            CryptographicKey key = TestKeys.Create("k");
+
+            Task<CryptographicKey?>[] callers =
+            [
+                .. Enumerable.Range(0, 8).Select(_ => Task.Run(async () =>
+                {
+                    barrier.SignalAndWait();
+                    return await cache.GetKeyAsync("k");
+                })),
+            ];
+            await WaitUntilAsync(() => inner.KeyCalls >= 1);
+            await Task.Delay(5);
+            release.SetResult(key);
+            CryptographicKey?[] results = await Task.WhenAll(callers);
+
+            Assert.True(inner.KeyCalls == 1, $"Round {round}: the inner provider was called {inner.KeyCalls} times.");
+            Assert.All(results, result => Assert.Same(key, result));
+        }
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_CapacityOneFull_DifferentIdResolvesCorrectlyWithoutCaching()
+    {
+        CryptographicKey cached = TestKeys.Create("k");
+        CryptographicKey other = TestKeys.Create("other");
+        var requestedIds = new List<string>();
+        _inner.OnGetKey = (id, _) =>
+        {
+            requestedIds.Add(id);
+            return new(id switch
+            {
+                "k" => cached,
+                "other" => other,
+                _ => null,
+            });
+        };
+        CachedEncryptionKeyProvider cache = CreateCache(maxEntries: 1);
+
+        Assert.Same(cached, await cache.GetKeyAsync("k"));
+        Assert.Same(other, await cache.GetKeyAsync("other"));
+        Assert.Same(other, await cache.GetKeyAsync("other"));
+        Assert.Same(cached, await cache.GetKeyAsync("k"));
+
+        Assert.Equal(["k", "other", "other"], requestedIds);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_OneWaiterCancels_OtherWaiterStillCompletes()
+    {
+        CryptographicKey key = TestKeys.Create("k");
+        var release = new TaskCompletionSource<CryptographicKey?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetKey = (_, _) => new(release.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
+        using var cancelA = new CancellationTokenSource();
+
+        Task<CryptographicKey?> callerA = cache.GetKeyAsync("k", cancelA.Token).AsTask();
+        Task<CryptographicKey?> callerB = cache.GetKeyAsync("k").AsTask();
+        await cancelA.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => callerA);
+        Assert.False(callerB.IsCompleted);
+        Assert.False(_inner.KeyTokens.Single().IsCancellationRequested);
+
+        release.SetResult(key);
+
+        Assert.Same(key, await callerB);
+        Assert.Equal(1, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_LastWaiterCancels_CancelsInnerCallAndNextCallStartsFreshFetch()
+    {
+        CryptographicKey key = TestKeys.Create("k");
+        var abandoned = new TaskCompletionSource<CryptographicKey?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetKey = (_, _) => new(abandoned.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
+        using var cancel = new CancellationTokenSource();
+
+        Task<CryptographicKey?> caller = cache.GetKeyAsync("k", cancel.Token).AsTask();
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => caller);
+
+        Assert.True(_inner.KeyTokens.Single().IsCancellationRequested);
+
+        _inner.OnGetKey = (_, _) => new(key);
+        Assert.Same(key, await cache.GetKeyAsync("k"));
+        Assert.Equal(2, _inner.KeyCalls);
+
+        abandoned.SetResult(TestKeys.Create("k"));
+        Assert.Same(key, await cache.GetKeyAsync("k"));
+        Assert.Equal(2, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_LastWaiterCancels_CancelsInnerCall()
+    {
+        var never = new TaskCompletionSource<CryptographicKey>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetCurrentKey = _ => new(never.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
+        using var cancel = new CancellationTokenSource();
+
+        Task<CryptographicKey> caller = cache.GetCurrentKeyAsync(cancel.Token).AsTask();
+        await cancel.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => caller);
+        Assert.True(_inner.CurrentKeyTokens.Single().IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_InnerFails_AllWaitersObserveFailureAndNextCallRetries()
+    {
+        CryptographicKey key = TestKeys.Create("k");
+        var failing = new TaskCompletionSource<CryptographicKey?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inner.OnGetKey = (_, _) => new(failing.Task);
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        Task<CryptographicKey?> first = cache.GetKeyAsync("k").AsTask();
+        Task<CryptographicKey?> second = cache.GetKeyAsync("k").AsTask();
+        failing.SetException(new TimeoutException("key service unreachable"));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => first);
+        await Assert.ThrowsAsync<TimeoutException>(() => second);
+        Assert.Equal(1, _inner.KeyCalls);
+
+        _inner.OnGetKey = (_, _) => new(key);
+        Assert.Same(key, await cache.GetKeyAsync("k"));
+        Assert.Equal(2, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_InnerThrowsSynchronously_IsNotCached()
+    {
+        CryptographicKey key = TestKeys.Create("k");
+        _inner.OnGetKey = (_, _) => throw new InvalidOperationException("denied");
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await cache.GetKeyAsync("k"));
+
+        _inner.OnGetKey = (_, _) => new(key);
+        Assert.Same(key, await cache.GetKeyAsync("k"));
+    }
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_RefreshFailsAfterExpiry_ThrowsInsteadOfServingExpiredKey()
+    {
+        CryptographicKey key = TestKeys.Create("current");
+        _inner.OnGetCurrentKey = _ => new(key);
+        CachedEncryptionKeyProvider cache = CreateCache();
+        await cache.GetCurrentKeyAsync();
+
+        _time.Advance(TimeToLive);
+        _inner.OnGetCurrentKey = _ => throw new TimeoutException("key service unreachable");
+
+        await Assert.ThrowsAsync<TimeoutException>(async () => await cache.GetCurrentKeyAsync());
+        await Assert.ThrowsAsync<TimeoutException>(async () => await cache.GetCurrentKeyAsync());
+
+        _inner.OnGetCurrentKey = _ => new(key);
+        Assert.Same(key, await cache.GetCurrentKeyAsync());
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_RefreshFailsAfterExpiry_ThrowsInsteadOfServingExpiredKey()
+    {
+        _inner.OnGetKey = (id, _) => new(TestKeys.Create(id));
+        CachedEncryptionKeyProvider cache = CreateCache();
+        await cache.GetKeyAsync("k");
+
+        _time.Advance(TimeToLive);
+        _inner.OnGetKey = (_, _) => throw new TimeoutException("key service unreachable");
+
+        await Assert.ThrowsAsync<TimeoutException>(async () => await cache.GetKeyAsync("k"));
+    }
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_InnerReturnsNull_Throws()
+    {
+        _inner.OnGetCurrentKey = _ => new((CryptographicKey)null!);
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await cache.GetCurrentKeyAsync());
+    }
+
+    [Theory]
+    [InlineData("\0current")]
+    [InlineData("True")]
+    [InlineData("current")]
+    public async Task GetKeyAsync_DoesNotReturnCachedCurrentKey(string keyId)
+    {
+        _inner.OnGetCurrentKey = _ => new(TestKeys.Create("current"));
+        _inner.OnGetKey = (_, _) => new((CryptographicKey?)null);
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        await cache.GetCurrentKeyAsync();
+
+        Assert.Null(await cache.GetKeyAsync(keyId));
+        Assert.Equal(1, _inner.KeyCalls);
+    }
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_DoesNotReturnKeyCachedById()
+    {
+        CryptographicKey byId = TestKeys.Create("k");
+        CryptographicKey current = TestKeys.Create("current");
+        _inner.OnGetKey = (_, _) => new(byId);
+        _inner.OnGetCurrentKey = _ => new(current);
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        await cache.GetKeyAsync("k");
+
+        Assert.Same(current, await cache.GetCurrentKeyAsync());
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_NullId_Throws()
+    {
+        CachedEncryptionKeyProvider cache = CreateCache();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetKeyAsync(null!));
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_PassesCallerTokenWhenCacheIsFull()
+    {
+        _inner.OnGetKey = (id, _) => new(TestKeys.Create(id));
+        CachedEncryptionKeyProvider cache = CreateCache(maxEntries: 1);
+        using var cts = new CancellationTokenSource();
+
+        await cache.GetKeyAsync("a");
+        await cache.GetKeyAsync("b", cts.Token);
+
+        Assert.Equal(2, _inner.KeyCalls);
+        Assert.Equal(cts.Token, _inner.KeyTokens.Last());
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Constructor_NonPositiveTtl_Throws(int ttlSeconds)
+    public void Constructor_NonPositiveTimeToLive_Throws(int seconds)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new CachedEncryptionKeyProvider(
-                new ControllableEncryptionKeyProvider(NewKey("v1")),
-                new FakeTimeProvider(DateTimeOffset.UnixEpoch),
-                TimeSpan.FromSeconds(ttlSeconds)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CachedEncryptionKeyProvider(_inner, _time, TimeSpan.FromSeconds(seconds)));
     }
 
-    // ---- P-511/WO-083: cross-caller cancellation safety ----
-
-    [Fact]
-    public async Task GetCurrentKeyAsync_OneCallerCancels_NeverCancelsOrFaultsAnotherConcurrentCaller()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_NonPositiveMaxEntries_Throws(int maxEntries)
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
-
-        inner.Hold();
-
-        using var callerACts = new CancellationTokenSource();
-        Task<CryptographicKey> callerA = cached.GetCurrentKeyAsync(callerACts.Token).AsTask();
-        Task<CryptographicKey> callerB = cached.GetCurrentKeyAsync().AsTask();
-
-        // Let both callers genuinely start and block on the held gate before staggering A's
-        // cancellation — this is what makes the assertions below a real proof rather than a
-        // trivially-passing sequential test.
-        await Task.Delay(TimeSpan.FromMilliseconds(200));
-
-        callerACts.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => callerA);
-
-        // Caller B must be entirely undisturbed by A's cancellation: still legitimately pending,
-        // not faulted, not cancelled — the shared in-flight resolution is untouched because at
-        // least one caller (B) is still waiting.
-        await Task.Delay(TimeSpan.FromMilliseconds(100));
-        Assert.False(callerB.IsCompleted);
-        Assert.Equal(0, inner.CanceledCallCount);
-
-        inner.Release();
-
-        CryptographicKey resolved = await callerB.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Equal("v1", resolved.Id);
-        Assert.Equal(1, inner.CurrentKeyCallCount);
-        Assert.Equal(0, inner.CanceledCallCount);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CachedEncryptionKeyProvider(_inner, _time, TimeToLive, maxEntries));
     }
 
     [Fact]
-    public async Task GetCurrentKeyAsync_LastCallerCancels_GenuinelyAbandonsInnerCallAndEvictsSlot()
+    public void Constructor_NullArguments_Throw()
     {
-        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
-
-        inner.Hold();
-
-        using var soleCallerCts = new CancellationTokenSource();
-        Task<CryptographicKey> soleCaller = cached.GetCurrentKeyAsync(soleCallerCts.Token).AsTask();
-
-        await Task.Delay(TimeSpan.FromMilliseconds(200));
-
-        // This caller is the ONLY one currently awaiting the shared slot — cancelling it must
-        // bring the per-slot waiter count to zero, genuinely abandoning the inner factory call
-        // (as opposed to the previous test, where a second caller was still legitimately waiting).
-        soleCallerCts.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => soleCaller);
-
-        // The inner call's own await must observe cancellation directly — proving the slot's
-        // owned CancellationTokenSource, not merely Task.WaitAsync's caller-side surfacing, is
-        // what tore down the abandoned in-flight resolution.
-        await WaitUntilAsync(() => inner.CanceledCallCount == 1, TimeSpan.FromSeconds(10));
-
-        // A subsequent call inside the same still-unexpired TTL window must NOT reuse the
-        // abandoned slot (which would otherwise poison every future caller with a spurious
-        // cancellation) — it must evict and start a genuinely fresh resolution.
-        Task<CryptographicKey> nextCaller = cached.GetCurrentKeyAsync().AsTask();
-        await WaitUntilAsync(() => inner.CurrentKeyCallCount == 2, TimeSpan.FromSeconds(10));
-
-        inner.Release();
-        CryptographicKey resolved = await nextCaller.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Equal("v1", resolved.Id);
+        Assert.Throws<ArgumentNullException>(() => new CachedEncryptionKeyProvider(null!, _time, TimeToLive));
+        Assert.Throws<ArgumentNullException>(() => new CachedEncryptionKeyProvider(_inner, null!, TimeToLive));
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    [Fact]
+    public async Task CachedProvider_WorksWithEncryptionService()
     {
-        DateTime deadline = DateTime.UtcNow + timeout;
+        StaticEncryptionKeyProvider keys = TestKeys.SingleKeyProvider();
+        var service = new AesGcmEncryptionService(new CachedEncryptionKeyProvider(keys, _time, TimeToLive));
+
+        EncryptedPayload payload = await service.EncryptAsync(new byte[] { 1, 2, 3 }, "aad"u8.ToArray());
+
+        Assert.Equal([1, 2, 3], (await service.DecryptAsync(payload, "aad"u8.ToArray())).Value);
+    }
+
+    private CachedEncryptionKeyProvider CreateCache(int maxEntries = CachedEncryptionKeyProvider.DefaultMaxEntries) =>
+        new(_inner, _time, TimeToLive, maxEntries);
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         while (!condition())
         {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("Condition was not met within the allotted timeout.");
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(20));
+            await Task.Delay(5, timeout.Token);
         }
     }
 }
