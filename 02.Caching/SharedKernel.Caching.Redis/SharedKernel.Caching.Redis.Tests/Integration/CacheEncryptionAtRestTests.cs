@@ -30,20 +30,18 @@ internal sealed record CacheEncryptionAtRestPayload(string Secret, int Number);
 /// <c>StringGetAsync</c> (which would fail with a Redis <c>WRONGTYPE</c> error against this key).
 /// </para>
 /// <para>
-/// <b>Phase 46/WO-081:</b> the wire shape changed from Phase 42's magic-byte-prefixed opaque blob
-/// (produced by the now-retired <c>CacheEncryptionSerializer</c>) to a directly-stored,
-/// JSON-serialized <c>EncryptedPayload</c> envelope — <c>EncryptedCacheService</c> now encrypts at
-/// the <c>ICacheService</c> level, storing an <c>EncryptedPayload</c> (<c>KeyId</c>/<c>Nonce</c>/
-/// <c>Ciphertext</c>/<c>Tag</c>) as the value FusionCache's own (now plain, unwrapped) serializer
-/// writes to Redis. The assertion below no longer checks for the retired magic-byte prefix; it
-/// instead proves the raw bytes contain neither the plaintext secret nor the DTO's own property
-/// name, while genuinely looking like the new <c>EncryptedPayload</c> JSON envelope.
+/// <c>EncryptedCacheService</c> encrypts at the <c>ICacheService</c> level and stores each value as a
+/// <see cref="T:byte[]"/> holding the <c>EncryptedPayload</c> storage format
+/// (<c>EncryptedPayload.ToBytes()</c>). FusionCache's own (plain, unwrapped) JSON serializer writes that
+/// array into its distributed-entry wrapper as a Base64 string, so this test decodes the wrapper's
+/// value and parses it with <c>EncryptedPayload.TryParse</c>.
 /// </para>
 /// </remarks>
 [Collection("Redis")]
 public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
 {
     private const string UserKey = "encryption-test:entry:1";
+    private const string KeyId = "cache-at-rest-v1";
     private const string RedisSchemaVersionSeparator = "v2:";
 
     /// <summary>
@@ -68,7 +66,7 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
         // A real AES-GCM encryption service backed by an in-memory key provider — proves genuine
         // authenticated encryption, not merely that some transform ran.
         services.AddSingleton<ISymmetricEncryptionService>(
-            new AesGcmEncryptionService(new FakeEncryptionKeyProvider()));
+            new AesGcmEncryptionService(new FakeEncryptionKeyProvider(KeyId)));
 
         services
             .AddSharedKernelCaching(o => o.ServiceName = "encryption-test-svc")
@@ -95,8 +93,7 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
     /// <see cref="IDatabase.HashGetAsync(RedisKey, RedisValue, CommandFlags)"/> call — bypassing
     /// FusionCache/the SharedKernel serializer pipeline entirely. Asserts the raw bytes are genuine
     /// AES-GCM ciphertext: they contain neither the plaintext value nor any readable JSON of the
-    /// original DTO, while genuinely carrying the new <c>EncryptedPayload</c> envelope's own field
-    /// names.
+    /// original DTO, and the stored value parses as an <c>EncryptedPayload</c> under the expected key id.
     /// </summary>
     [Fact]
     public async Task SetAsync_WithCacheEncryption_RawRedisRead_IsNotThePlaintextJson()
@@ -118,21 +115,22 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
 
         byte[] rawBytes = raw!;
 
-        // Genuinely parses as JSON — it is now a directly-stored EncryptedPayload envelope
-        // (nested inside FusionCache's own distributed-entry wrapper, whose own properties are
-        // "Value"/"Timestamp"/"LogicalExpirationTimestamp"/"Tags"/"Metadata" — "Value" is the
-        // EncryptedPayload), not an opaque magic-byte-prefixed blob. Confirms it is well-formed
-        // JSON at all (JsonDocument.Parse throws on malformed input) rather than asserting on a
-        // specific naming policy for the nested EncryptedPayload's own property names, which the
-        // substring checks below cover case-insensitively instead.
-        using (JsonDocument.Parse(rawBytes))
+        // FusionCache's distributed-entry wrapper is JSON; its value property holds the stored byte[]
+        // as a Base64 string, which must be an EncryptedPayload in its storage format.
+        using (JsonDocument document = JsonDocument.Parse(rawBytes))
         {
-            // Parsed successfully — see remarks above.
+            JsonElement storedValue = document.RootElement.EnumerateObject()
+                .Single(p => string.Equals(p.Name, "Value", StringComparison.OrdinalIgnoreCase))
+                .Value;
+
+            Assert.Equal(JsonValueKind.String, storedValue.ValueKind);
+            Assert.True(
+                EncryptedPayload.TryParse(storedValue.GetBytesFromBase64(), out EncryptedPayload? payload),
+                "The stored value must be an EncryptedPayload in its storage format.");
+            Assert.Equal(KeyId, payload.KeyId);
         }
 
         string rawAsLatin1 = Encoding.Latin1.GetString(rawBytes);
-        Assert.Contains("Ciphertext", rawAsLatin1, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("KeyId", rawAsLatin1, StringComparison.OrdinalIgnoreCase);
 
         // The raw bytes must not contain the plaintext secret value or the DTO's own property
         // name — genuine ciphertext-on-the-wire proof, not merely "serialized." (A bare "{" is

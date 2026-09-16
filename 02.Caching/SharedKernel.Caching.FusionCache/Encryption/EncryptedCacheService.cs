@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Serialization;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
@@ -35,12 +36,14 @@ namespace SharedKernel.Caching.FusionCache.Encryption;
 /// is available, identical, on both the encrypt and decrypt paths.
 /// </para>
 /// <para>
-/// <b>Exclusively async crypto.</b> Every member calls
-/// <see cref="ISymmetricEncryptionService.EncryptAsync"/>/<see cref="ISymmetricEncryptionService.DecryptAsync"/>
-/// — never the four synchronous members — regardless of which <c>IEncryptionKeyProvider</c> a
-/// consuming service registers. This decorator never needs
-/// <c>ISynchronousEncryptionKeyProvider</c>'s capability gate at all, because it never attempts the
-/// synchronous path in the first place.
+/// <b>Async crypto.</b> Every member calls the asynchronous
+/// <see cref="ISymmetricEncryptionService.EncryptAsync"/>/<see cref="ISymmetricEncryptionService.DecryptAsync"/>,
+/// so any <c>IEncryptionKeyProvider</c> works, including a KMS-backed one.
+/// </para>
+/// <para>
+/// <b>Stored shape.</b> The wrapped <see cref="ICacheService"/> stores a <see cref="T:byte[]"/> per key:
+/// the <see cref="EncryptedPayload"/> storage format (<see cref="EncryptedPayload.ToBytes"/>), read
+/// back with <see cref="EncryptedPayload.TryParse(ReadOnlySpan{byte}, out EncryptedPayload)"/>.
 /// </para>
 /// <para>
 /// <b>Compression composition.</b> When both Brotli compression (<c>AddBrotliCompression()</c>) and
@@ -107,7 +110,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-        EncryptedPayload? payload = await _inner.GetAsync<EncryptedPayload>(key, ct).ConfigureAwait(false);
+        byte[]? payload = await _inner.GetAsync<byte[]>(key, ct).ConfigureAwait(false);
         if (payload is null)
             return default;
 
@@ -125,7 +128,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(policy);
 
-        EncryptedPayload payload = await EncryptValueAsync(value, key, ct).ConfigureAwait(false);
+        byte[] payload = await EncryptValueAsync(value, key, ct).ConfigureAwait(false);
         await _inner.SetAsync(key, payload, policy, ct).ConfigureAwait(false);
     }
 
@@ -148,13 +151,13 @@ internal sealed partial class EncryptedCacheService : ICacheService
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(policy);
 
-        Func<CancellationToken, ValueTask<EncryptedPayload>> wrappedFactory = async innerCt =>
+        Func<CancellationToken, ValueTask<byte[]>> wrappedFactory = async innerCt =>
         {
             T value = await factory(innerCt).ConfigureAwait(false);
             return await EncryptValueAsync(value, key, innerCt).ConfigureAwait(false);
         };
 
-        EncryptedPayload payload = await _inner.GetOrSetAsync(key, wrappedFactory, policy, ct).ConfigureAwait(false);
+        byte[] payload = await _inner.GetOrSetAsync(key, wrappedFactory, policy, ct).ConfigureAwait(false);
 
         Result<T> decrypted = await TryDecryptAsync<T>(payload, key, ct).ConfigureAwait(false);
         if (decrypted.IsSuccess)
@@ -166,7 +169,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
         await HandleDecryptFailureAsync(key, decrypted.Error, ct).ConfigureAwait(false);
 
         T freshValue = await factory(ct).ConfigureAwait(false);
-        EncryptedPayload freshPayload = await EncryptValueAsync(freshValue, key, ct).ConfigureAwait(false);
+        byte[] freshPayload = await EncryptValueAsync(freshValue, key, ct).ConfigureAwait(false);
         await _inner.SetAsync(key, freshPayload, policy, ct).ConfigureAwait(false);
         return freshValue;
     }
@@ -203,12 +206,12 @@ internal sealed partial class EncryptedCacheService : ICacheService
     {
         ArgumentNullException.ThrowIfNull(keys);
 
-        IReadOnlyDictionary<string, EncryptedPayload?> encrypted =
-            await _inner.GetManyAsync<EncryptedPayload>(keys, ct).ConfigureAwait(false);
+        IReadOnlyDictionary<string, byte[]?> encrypted =
+            await _inner.GetManyAsync<byte[]>(keys, ct).ConfigureAwait(false);
 
         var result = new Dictionary<string, T?>(encrypted.Count);
 
-        foreach ((string key, EncryptedPayload? payload) in encrypted)
+        foreach ((string key, byte[]? payload) in encrypted)
         {
             if (payload is null)
             {
@@ -244,7 +247,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(policy);
 
-        var encryptedEntries = new Dictionary<string, EncryptedPayload>(entries.Count);
+        var encryptedEntries = new Dictionary<string, byte[]>(entries.Count);
 
         foreach ((string key, T value) in entries)
         {
@@ -261,10 +264,11 @@ internal sealed partial class EncryptedCacheService : ICacheService
 
     /// <summary>
     /// Serializes <paramref name="value"/> to plaintext bytes, compresses them when
-    /// <see cref="_compressionEnabled"/>, and encrypts the result with AAD derived from
-    /// <paramref name="key"/>.
+    /// <see cref="_compressionEnabled"/>, encrypts the result with AAD derived from
+    /// <paramref name="key"/>, and returns the payload in its storage format
+    /// (<see cref="EncryptedPayload.ToBytes"/>).
     /// </summary>
-    private async ValueTask<EncryptedPayload> EncryptValueAsync<T>(T value, string key, CancellationToken ct)
+    private async ValueTask<byte[]> EncryptValueAsync<T>(T value, string key, CancellationToken ct)
     {
         byte[] plaintext = JsonSerializer.SerializeToUtf8Bytes(value, _jsonOptions);
 
@@ -272,15 +276,24 @@ internal sealed partial class EncryptedCacheService : ICacheService
             plaintext = BrotliPayloadCodec.Compress(plaintext, thresholdBytes: 0, CompressionLevel.Fastest);
 
         byte[] associatedData = Encoding.UTF8.GetBytes(key);
-        return await _encryption.EncryptAsync(plaintext, associatedData, ct).ConfigureAwait(false);
+        EncryptedPayload payload = await _encryption.EncryptAsync(plaintext, associatedData, ct).ConfigureAwait(false);
+        return payload.ToBytes();
     }
 
     /// <summary>
-    /// Decrypts <paramref name="payload"/> with AAD derived from <paramref name="key"/>, decompresses
-    /// the result when <see cref="_compressionEnabled"/>, and deserializes it to <typeparamref name="T"/>.
+    /// Parses <paramref name="stored"/> as an <see cref="EncryptedPayload"/>, decrypts it with AAD
+    /// derived from <paramref name="key"/>, decompresses the result when
+    /// <see cref="_compressionEnabled"/>, and deserializes it to <typeparamref name="T"/>. A stored
+    /// value that is not an encrypted payload fails like a tampered one.
     /// </summary>
-    private async ValueTask<Result<T>> TryDecryptAsync<T>(EncryptedPayload payload, string key, CancellationToken ct)
+    private async ValueTask<Result<T>> TryDecryptAsync<T>(byte[] stored, string key, CancellationToken ct)
     {
+        if (!EncryptedPayload.TryParse(stored, out EncryptedPayload? payload))
+        {
+            return Result<T>.Failure(Error.Validation(
+                CryptographyErrorCodes.MalformedPayload, "The cached value is not an encrypted payload."));
+        }
+
         byte[] associatedData = Encoding.UTF8.GetBytes(key);
         Result<byte[]> decryptResult = await _encryption.DecryptAsync(payload, associatedData, ct).ConfigureAwait(false);
 

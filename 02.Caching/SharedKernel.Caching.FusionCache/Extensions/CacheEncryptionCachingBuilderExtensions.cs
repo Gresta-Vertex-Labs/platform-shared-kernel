@@ -38,8 +38,9 @@ public static class CacheEncryptionCachingBuilderExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="ISymmetricEncryptionService"/> is not already registered (call
-    /// <c>AddSharedKernelCryptography()</c> from <c>01.Core/SharedKernel.Cryptography</c> first),
+    /// Thrown when <see cref="ISymmetricEncryptionService"/> is not already registered (register an
+    /// <see cref="IEncryptionKeyProvider"/> and call <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c>
+    /// from <c>01.Core/SharedKernel.Cryptography</c> first),
     /// or when no <see cref="ICacheService"/> is registered yet (call <c>AddSharedKernelCaching()</c>
     /// first).
     /// </exception>
@@ -61,7 +62,8 @@ public static class CacheEncryptionCachingBuilderExtensions
     /// <para>
     /// Example:
     /// <code>
-    /// services.AddSharedKernelCryptography(configuration);
+    /// services.AddSingleton&lt;IEncryptionKeyProvider&gt;(keyProvider);
+    /// services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption();
     /// services.AddSharedKernelCaching(o => { o.ServiceName = "my-service"; })
     ///         .AddRedisL2(connectionString)
     ///         .AddBrotliCompression(o => { o.L2ThresholdBytes = 2048; })   // compression first (innermost)
@@ -77,7 +79,8 @@ public static class CacheEncryptionCachingBuilderExtensions
         {
             throw new InvalidOperationException(
                 "AddCacheEncryption requires ISymmetricEncryptionService to be registered first. "
-                    + "Call AddSharedKernelCryptography() (SharedKernel.Cryptography, 01.Core) before AddCacheEncryption().");
+                    + "Register an IEncryptionKeyProvider and call services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption() "
+                    + "(SharedKernel.Cryptography, 01.Core) before AddCacheEncryption().");
         }
 
         ServiceDescriptor? existingCacheService = builder.Services.LastOrDefault(

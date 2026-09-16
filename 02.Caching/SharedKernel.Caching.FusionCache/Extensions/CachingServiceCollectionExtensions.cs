@@ -58,7 +58,7 @@ public static class CachingServiceCollectionExtensions
 
         // Build the JsonSerializerOptions for the FusionCache STJ serializer.
         // When SerializerContext is set, combine it with the internal CacheInvalidationMessage
-        // context (and, Phase 46/WO-081, EncryptedPayloadJsonContext) so FusionCache's L2
+        // context (and EncryptedCacheEntryJsonContext, for encrypted entries) so FusionCache's L2
         // serializer is fully NativeAOT-safe.
         JsonSerializerOptions? resolvedJsonOptions = null;
         if (tempOptions.SerializerContext is not null)
@@ -68,7 +68,7 @@ public static class CachingServiceCollectionExtensions
                 TypeInfoResolver = JsonTypeInfoResolver.Combine(
                     tempOptions.SerializerContext,
                     CacheInvalidationMessageJsonContext.Default,
-                    EncryptedPayloadJsonContext.Default),
+                    EncryptedCacheEntryJsonContext.Default),
             };
         }
 

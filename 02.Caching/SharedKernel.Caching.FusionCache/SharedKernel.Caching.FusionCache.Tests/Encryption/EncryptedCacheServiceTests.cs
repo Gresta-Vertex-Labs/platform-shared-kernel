@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,7 @@ using SharedKernel.Caching.FusionCache.Encryption;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Caching.FusionCache.Serialization;
+using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Results;
 using ZiggyCreatures.Caching.Fusion.Serialization;
@@ -23,71 +25,35 @@ namespace SharedKernel.Caching.FusionCache.Tests.Encryption;
 internal sealed record EncryptedCacheServiceTestPayload(string Value, int Number);
 
 /// <summary>
-/// Minimal in-memory <see cref="IEncryptionKeyProvider"/> test double — a single generated
-/// AES-256 key, mirroring the platform's established
-/// <c>InMemoryEncryptionKeyProvider</c>/<c>FakeEncryptionKeyProvider</c> shape used elsewhere
-/// (<c>01.Core/SharedKernel.Cryptography.Tests</c>, <c>16.Testing/SharedKernel.Testing</c>).
+/// An <see cref="IEncryptionKeyProvider"/> that only completes asynchronously, as a KMS-backed
+/// provider does — a single generated AES-256 key that yields before returning it. Proves
+/// <see cref="EncryptedCacheService"/> needs nothing beyond the asynchronous key-provider contract.
 /// </summary>
-internal sealed class InMemoryEncryptionKeyProvider : IEncryptionKeyProvider
+internal sealed class AsyncOnlyEncryptionKeyProvider : IEncryptionKeyProvider
 {
     private readonly CryptographicKey _key;
 
-    public InMemoryEncryptionKeyProvider(string keyId = "v1")
+    public AsyncOnlyEncryptionKeyProvider(string keyId = "v1") =>
+        _key = new CryptographicKey(keyId, RandomNumberGenerator.GetBytes(32));
+
+    public async ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken cancellationToken = default)
     {
-        byte[] material = new byte[32];
-        RandomNumberGenerator.Fill(material);
-        _key = new CryptographicKey(keyId, material);
+        await Task.Yield();
+        return _key;
     }
 
-    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
-        new(_key);
-
-    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(keyId == _key.Id ? _key : null);
-}
-
-/// <summary>
-/// Wraps a real <see cref="ISymmetricEncryptionService"/>, throwing from every synchronous member
-/// (<see cref="Encrypt"/>/<see cref="Decrypt"/>/<see cref="EncryptToString"/>/<see cref="DecryptToString"/>)
-/// while delegating the four async members unchanged — used by AA-08 to prove
-/// <see cref="EncryptedCacheService"/> never calls a synchronous crypto member on any code path.
-/// </summary>
-internal sealed class ThrowOnSyncCallEncryptionService : ISymmetricEncryptionService
-{
-    private readonly ISymmetricEncryptionService _real;
-
-    public ThrowOnSyncCallEncryptionService(ISymmetricEncryptionService real) => _real = real;
-
-    public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData) =>
-        throw new InvalidOperationException("EncryptedCacheService must never call the synchronous Encrypt member.");
-
-    public Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData) =>
-        throw new InvalidOperationException("EncryptedCacheService must never call the synchronous Decrypt member.");
-
-    public string EncryptToString(string plaintext, byte[] associatedData) =>
-        throw new InvalidOperationException("EncryptedCacheService must never call the synchronous EncryptToString member.");
-
-    public Result<string> DecryptToString(string encoded, byte[] associatedData) =>
-        throw new InvalidOperationException("EncryptedCacheService must never call the synchronous DecryptToString member.");
-
-    public ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) =>
-        _real.EncryptAsync(plaintext, associatedData, ct);
-
-    public ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) =>
-        _real.DecryptAsync(payload, associatedData, ct);
-
-    public ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) =>
-        _real.EncryptToStringAsync(plaintext, associatedData, ct);
-
-    public ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) =>
-        _real.DecryptToStringAsync(encoded, associatedData, ct);
+    public async ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        return keyId == _key.Id ? _key : null;
+    }
 }
 
 /// <summary>
 /// A minimal, dictionary-backed <see cref="ICacheService"/> double giving tests direct control over
 /// (and visibility into) exactly what <see cref="EncryptedCacheService"/> stores/reads at the inner
-/// layer — e.g. moving a raw stored <see cref="EncryptedPayload"/> from one key to another to
-/// simulate a replay (AA-07), or inspecting stored ciphertext length (AA-09).
+/// layer — e.g. moving a raw stored entry (an <see cref="EncryptedPayload"/> in its storage format)
+/// from one key to another to simulate a replay (AA-07), or inspecting stored length (AA-09).
 /// </summary>
 internal sealed class InMemoryDictionaryCacheService : ICacheService
 {
@@ -143,7 +109,7 @@ internal sealed class InMemoryDictionaryCacheService : ICacheService
 }
 
 /// <summary>
-/// A bespoke <see cref="ICacheService"/> double that captures the <c>EncryptedPayload</c>-typed
+/// A bespoke <see cref="ICacheService"/> double that captures the <c>byte[]</c>-typed
 /// factory <see cref="EncryptedCacheService.GetOrSetAsync{T}"/> passes down to
 /// <see cref="GetOrSetAsync{T}"/>, so AA-08's eager-refresh proof can re-invoke that exact closure
 /// from an unrelated execution context afterwards. Every other member is unused by that test and
@@ -151,7 +117,7 @@ internal sealed class InMemoryDictionaryCacheService : ICacheService
 /// </summary>
 internal sealed class FactoryCapturingCacheService : ICacheService
 {
-    public Func<CancellationToken, ValueTask<EncryptedPayload>>? CapturedFactory { get; private set; }
+    public Func<CancellationToken, ValueTask<byte[]>>? CapturedFactory { get; private set; }
 
     public ValueTask<T> GetOrSetAsync<T>(
         string key,
@@ -159,8 +125,8 @@ internal sealed class FactoryCapturingCacheService : ICacheService
         CachePolicy policy,
         CancellationToken ct = default)
     {
-        if (typeof(T) == typeof(EncryptedPayload))
-            CapturedFactory = (Func<CancellationToken, ValueTask<EncryptedPayload>>)(object)factory;
+        if (typeof(T) == typeof(byte[]))
+            CapturedFactory = (Func<CancellationToken, ValueTask<byte[]>>)(object)factory;
 
         return factory(ct);
     }
@@ -185,14 +151,14 @@ internal sealed class FactoryCapturingCacheService : ICacheService
 }
 
 /// <summary>
-/// Unit tests for <see cref="EncryptedCacheService"/> (Phase 46/WO-081) — key-bound AAD, exclusively
-/// async crypto, compression composition, tamper/decrypt-failure handling, and
+/// Unit tests for <see cref="EncryptedCacheService"/> (Phase 46/WO-081) — key-bound AAD, asynchronous
+/// crypto, compression composition, tamper/decrypt-failure handling, and
 /// <c>AddCacheEncryption()</c> DI wiring.
 /// </summary>
 public sealed class EncryptedCacheServiceTests
 {
     private static ISymmetricEncryptionService CreateRealEncryptionService(string keyId = "v1") =>
-        new AesGcmEncryptionService(new InMemoryEncryptionKeyProvider(keyId));
+        new AesGcmEncryptionService(new AsyncOnlyEncryptionKeyProvider(keyId));
 
     private static EncryptedCacheService CreateSut(
         ICacheService inner,
@@ -282,10 +248,10 @@ public sealed class EncryptedCacheServiceTests
 
         await sut.SetAsync("key-a", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
 
-        // Take the raw EncryptedPayload written under key-a's AAD and place it, byte-for-byte,
+        // Take the raw stored entry written under key-a's AAD and place it, byte-for-byte,
         // under a different key — simulating a replay/corruption where the ciphertext itself is
         // untouched but the key it's read back under has changed.
-        var storedUnderA = await inner.GetAsync<EncryptedPayload>("key-a");
+        var storedUnderA = await inner.GetAsync<byte[]>("key-a");
         await inner.SetAsync("key-b", storedUnderA, CachePolicy.Default);
 
         var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("key-b");
@@ -300,14 +266,14 @@ public sealed class EncryptedCacheServiceTests
         var sut = CreateSut(inner, CreateRealEncryptionService());
 
         await sut.SetAsync("key-a", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
-        var storedUnderA = await inner.GetAsync<EncryptedPayload>("key-a");
+        var storedUnderA = await inner.GetAsync<byte[]>("key-a");
         await inner.SetAsync("key-b", storedUnderA, CachePolicy.Default);
 
         await sut.GetAsync<EncryptedCacheServiceTestPayload>("key-b");
 
         // Best-effort eviction (AA-06) — the corrupt entry must no longer be present at the inner
         // layer, so it does not fail identically again on a subsequent read.
-        Assert.Null(await inner.GetAsync<EncryptedPayload>("key-b"));
+        Assert.Null(await inner.GetAsync<byte[]>("key-b"));
     }
 
     [Fact]
@@ -318,14 +284,46 @@ public sealed class EncryptedCacheServiceTests
 
         await sut.SetAsync("tamper-key", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
 
-        var stored = await inner.GetAsync<EncryptedPayload>("tamper-key");
-        var tamperedCiphertext = (byte[])stored!.Ciphertext.Clone();
-        tamperedCiphertext[0] ^= 0xFF;
-        await inner.SetAsync("tamper-key", stored with { Ciphertext = tamperedCiphertext }, CachePolicy.Default);
+        // The ciphertext is the tail of the storage format — flip its last byte.
+        var tampered = (byte[])(await inner.GetAsync<byte[]>("tamper-key"))!.Clone();
+        tampered[^1] ^= 0xFF;
+        await inner.SetAsync("tamper-key", tampered, CachePolicy.Default);
 
         var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("tamper-key");
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetAsync_StoredValueIsNotAnEncryptedPayload_TreatedAsCacheMiss_AndEvicted()
+    {
+        var inner = new InMemoryDictionaryCacheService();
+        var sut = CreateSut(inner, CreateRealEncryptionService());
+
+        // Bytes that never went through EncryptedCacheService, e.g. written by a service without encryption.
+        await inner.SetAsync("plain-key", "{\"Value\":\"x\",\"Number\":1}"u8.ToArray(), CachePolicy.Default);
+
+        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("plain-key");
+
+        Assert.Null(result);
+        Assert.Null(await inner.GetAsync<byte[]>("plain-key"));
+    }
+
+    [Fact]
+    public async Task SetAsync_StoresEncryptedPayloadStorageFormat_BoundToCacheKey()
+    {
+        var inner = new InMemoryDictionaryCacheService();
+        var encryption = new AesGcmEncryptionService(new AsyncOnlyEncryptionKeyProvider("cache-v7"));
+        var sut = CreateSut(inner, encryption);
+
+        await sut.SetAsync("format-key", new EncryptedCacheServiceTestPayload("v", 1), CachePolicy.Default);
+
+        byte[]? stored = await inner.GetAsync<byte[]>("format-key");
+        Assert.True(EncryptedPayload.TryParse(stored, out EncryptedPayload? payload));
+        Assert.Equal("cache-v7", payload.KeyId);
+
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, System.Text.Encoding.UTF8.GetBytes("format-key"));
+        Assert.True(decrypted.IsSuccess);
     }
 
     [Fact]
@@ -336,7 +334,7 @@ public sealed class EncryptedCacheServiceTests
 
         await sut.SetAsync("valid-key", new EncryptedCacheServiceTestPayload("ok", 1), CachePolicy.Default);
         await sut.SetAsync("replay-source", new EncryptedCacheServiceTestPayload("secret", 2), CachePolicy.Default);
-        var storedForReplaySource = await inner.GetAsync<EncryptedPayload>("replay-source");
+        var storedForReplaySource = await inner.GetAsync<byte[]>("replay-source");
         await inner.SetAsync("replayed-key", storedForReplaySource, CachePolicy.Default);
 
         var results = await sut.GetManyAsync<EncryptedCacheServiceTestPayload>(
@@ -349,14 +347,14 @@ public sealed class EncryptedCacheServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // AA-08 — never calls a synchronous ISymmetricEncryptionService member
+    // AA-08 — every member works against a key provider that only completes asynchronously
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task AllMembers_WithThrowOnSyncCryptoProvider_NeverThrow_ProvingAsyncOnlyCompliance()
+    public async Task AllMembers_WithAsyncOnlyKeyProvider_RoundTripCorrectly()
     {
-        var throwOnSync = new ThrowOnSyncCallEncryptionService(CreateRealEncryptionService());
-        var sut = CreateSut(new InMemoryDictionaryCacheService(), throwOnSync, compressionEnabled: true);
+        var encryption = CreateRealEncryptionService();
+        var sut = CreateSut(new InMemoryDictionaryCacheService(), encryption, compressionEnabled: true);
 
         await sut.SetAsync("k1", new EncryptedCacheServiceTestPayload("v1", 1), CachePolicy.Default);
         var got = await sut.GetAsync<EncryptedCacheServiceTestPayload>("k1");
@@ -389,14 +387,13 @@ public sealed class EncryptedCacheServiceTests
     public async Task GetOrSetAsync_WrappedFactory_ReinvokedFromUnrelatedExecutionContext_StillEncryptsCorrectly()
     {
         // Proves the closure EncryptedCacheService.GetOrSetAsync builds needs no ambient/AsyncLocal
-        // context: capture the exact EncryptedPayload-typed factory it hands to the inner
+        // context: capture the exact byte[]-typed factory it hands to the inner
         // ICacheService, then invoke that SAME closure again from a background Task.Run — simulating
         // FusionCache re-invoking it on its own eager-refresh continuation — and prove it still
-        // produces a payload that decrypts correctly under the original key's AAD, without ever
-        // touching a synchronous crypto member.
+        // produces an entry that decrypts correctly under the original key's AAD.
         var innerCache = new FactoryCapturingCacheService();
-        var throwOnSync = new ThrowOnSyncCallEncryptionService(CreateRealEncryptionService());
-        var sut = CreateSut(innerCache, throwOnSync);
+        var encryption = CreateRealEncryptionService();
+        var sut = CreateSut(innerCache, encryption);
 
         const string key = "eager-refresh-key";
         var result = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
@@ -411,11 +408,12 @@ public sealed class EncryptedCacheServiceTests
         Assert.Equal("first-value", result.Value);
         Assert.NotNull(innerCache.CapturedFactory);
 
-        EncryptedPayload refreshedPayload = await Task.Run(
+        byte[] refreshedEntry = await Task.Run(
             () => innerCache.CapturedFactory!(CancellationToken.None).AsTask());
 
         byte[] associatedData = System.Text.Encoding.UTF8.GetBytes(key);
-        Result<byte[]> decrypted = await throwOnSync.DecryptAsync(refreshedPayload, associatedData);
+        Assert.True(EncryptedPayload.TryParse(refreshedEntry, out EncryptedPayload? refreshedPayload));
+        Result<byte[]> decrypted = await encryption.DecryptAsync(refreshedPayload, associatedData);
 
         Assert.True(decrypted.IsSuccess);
         var value = JsonSerializer.Deserialize<EncryptedCacheServiceTestPayload>(decrypted.Value, new JsonSerializerOptions());
@@ -441,11 +439,11 @@ public sealed class EncryptedCacheServiceTests
         await withCompression.SetAsync("k", highlyCompressible, CachePolicy.Default);
         await withoutCompression.SetAsync("k", highlyCompressible, CachePolicy.Default);
 
-        var compressedPayload = await innerCompressed.GetAsync<EncryptedPayload>("k");
-        var uncompressedPayload = await innerUncompressed.GetAsync<EncryptedPayload>("k");
+        var compressedPayload = await innerCompressed.GetAsync<byte[]>("k");
+        var uncompressedPayload = await innerUncompressed.GetAsync<byte[]>("k");
 
         Assert.True(
-            compressedPayload!.Ciphertext.Length < uncompressedPayload!.Ciphertext.Length,
+            compressedPayload!.Length < uncompressedPayload!.Length,
             "Compressing before encrypting a highly-compressible payload must produce meaningfully shorter ciphertext.");
 
         // Round trip still holds — decrypt-then-decompress correctly recovers the original value.
@@ -517,7 +515,7 @@ public sealed class EncryptedCacheServiceTests
         var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
 
         var ex = Assert.Throws<InvalidOperationException>(() => builder.AddCacheEncryption());
-        Assert.Contains("AddSharedKernelCryptography", ex.Message);
+        Assert.Contains("AddSharedKernelCryptography(configuration).AddSymmetricEncryption()", ex.Message);
     }
 
     [Fact]
@@ -533,6 +531,27 @@ public sealed class EncryptedCacheServiceTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => builder.AddCacheEncryption());
         Assert.Contains("AddSharedKernelCaching", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddCacheEncryption_RegisteredThroughCryptographyBuilder_RoundTripsWithAsyncOnlyKeyProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IEncryptionKeyProvider>(new AsyncOnlyEncryptionKeyProvider());
+        services.AddSharedKernelCryptography(new ConfigurationBuilder().Build())
+            .AddSymmetricEncryption();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
+
+        builder.AddCacheEncryption();
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICacheService>();
+        Assert.IsType<EncryptedCacheService>(cache);
+
+        var value = new EncryptedCacheServiceTestPayload("through-builder", 5);
+        await cache.SetAsync("builder-key", value, CachePolicy.Default);
+        Assert.Equal(value, await cache.GetAsync<EncryptedCacheServiceTestPayload>("builder-key"));
     }
 
     [Fact]
@@ -614,7 +633,7 @@ public sealed class EncryptedCacheServiceTests
         // Simulate the raw payload landing under tenant B's key for the same (entity, id) pair —
         // a hypothetical routing/replay bug, not something the normal ITenantCacheService surface
         // can produce on its own, but exactly the scenario key-bound AAD must defend against.
-        var storedForA = await inner.GetAsync<EncryptedPayload>(tenantAKey);
+        var storedForA = await inner.GetAsync<byte[]>(tenantAKey);
         await inner.SetAsync(tenantBKey, storedForA, CachePolicy.Default);
 
         var result = await sut.GetAsync<string>(tenantBKey);

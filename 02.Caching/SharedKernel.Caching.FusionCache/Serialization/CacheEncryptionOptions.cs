@@ -2,14 +2,15 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 
 /// <summary>
 /// Marker options registered by <c>AddCacheEncryption</c>, indicating that
-/// <see cref="CacheEncryptionSerializer"/> is the currently active outermost decorator over the
-/// registered <c>IFusionCacheSerializer</c>.
+/// <c>Encryption.EncryptedCacheService</c> is the currently active outermost decorator over the
+/// registered <c>ICacheService</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Carries no secret material of its own — key material is owned and resolved entirely by the
 /// registered <c>ISymmetricEncryptionService</c>'s own configuration (see
-/// <c>01.Core/SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography()</c>). This type is
+/// <c>01.Core/SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c>
+/// and the registered <c>IEncryptionKeyProvider</c>). This type is
 /// never duplicated or re-implemented as a key store; it exists purely as a DI-registration marker.
 /// </para>
 /// <para>
