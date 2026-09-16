@@ -12,16 +12,16 @@ using SharedKernel.Compression.Extensions;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Argon2;
-using SharedKernel.Cryptography.Argon2.Extensions;
+using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.KeyVault.Azure;
-using SharedKernel.Cryptography.KeyVault.Azure.Extensions;
-using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Cryptography.Totp;
 using SharedKernel.DataPrivacy.Classification;
 using SharedKernel.DataPrivacy.DataSubjectRequests;
 using SharedKernel.DataPrivacy.Masking;
@@ -520,24 +520,30 @@ public sealed class ConsumerDependencyGraphTests
             .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>()))
             .ConfigureServices((ctx, services) =>
             {
-                services.AddSharedKernelCryptography(ctx.Configuration);
-                // AddSharedKernelCryptography ships no key material — the consuming
-                // service must supply its own IAsymmetricKeyProvider before resolving
-                // IAsymmetricSignatureService (documented in 01.Core/CLAUDE.md).
-                services.AddSingleton<IAsymmetricKeyProvider, ConsumerAsymmetricKeyProvider>();
+                // AddSharedKernelCryptography registers only the key-free services. Key-dependent
+                // services are opt-in and need a key provider only the consuming service can supply.
+                var keys = new StaticEncryptionKeyProvider("consumer-key-v1", [ConsumerKeys.CreateEncryptionKey("consumer-key-v1")]);
+                services.AddSingleton<IEncryptionKeyProvider>(keys);
+                services.AddSingleton<ISynchronousEncryptionKeyProvider>(keys);
+                services.AddSingleton<ISigningKeyProvider>(ConsumerKeys.CreateSigningKeyProvider("consumer-signing-key"));
+                services.AddSharedKernelCryptography(ctx.Configuration)
+                    .AddSymmetricEncryption()
+                    .AddSynchronousSymmetricEncryption()
+                    .AddAsymmetricSigning();
             })
             .Build();
 
         await host.StartAsync();
 
-        Assert.NotNull(host.Services.GetRequiredService<IOneWayHasher>());
-        Assert.NotNull(host.Services.GetRequiredService<IHmacSigner>());
-        Assert.NotNull(host.Services.GetRequiredService<ISecureRandomGenerator>());
-        Assert.NotNull(host.Services.GetRequiredService<IAsymmetricSignatureService>());
-        Assert.NotNull(host.Services.GetRequiredKeyedService<IAsymmetricSignatureService>(
-            CryptographyServiceCollectionExtensions.RsaSignatureServiceKey));
-        Assert.NotNull(host.Services.GetRequiredKeyedService<IAsymmetricSignatureService>(
-            CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey));
+        Assert.IsType<OneWayHasher>(host.Services.GetRequiredService<IOneWayHasher>());
+        Assert.IsType<HmacSha256Signer>(host.Services.GetRequiredService<IHmacSigner>());
+        Assert.IsType<SecureRandomGenerator>(host.Services.GetRequiredService<ISecureRandomGenerator>());
+        Assert.IsType<Sha256ContentHasher>(host.Services.GetRequiredService<IContentHasher>());
+        Assert.NotNull(host.Services.GetRequiredService<ITotpGenerator>());
+        Assert.NotNull(host.Services.GetRequiredService<IRecoveryCodeGenerator>());
+        Assert.IsType<AesGcmEncryptionService>(host.Services.GetRequiredService<ISymmetricEncryptionService>());
+        Assert.IsType<SynchronousAesGcmEncryptionService>(host.Services.GetRequiredService<ISynchronousSymmetricEncryptionService>());
+        Assert.IsType<AsymmetricSignatureService>(host.Services.GetRequiredService<IAsymmetricSignatureService>());
 
         await host.StopAsync();
     }
@@ -550,6 +556,7 @@ public sealed class ConsumerDependencyGraphTests
 
         string hash = hasher.Hash("correct-horse-battery-staple");
 
+        Assert.StartsWith("$pbkdf2-sha256$i=600000$", hash, StringComparison.Ordinal);
         Assert.Equal(HashVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
         Assert.Equal(HashVerificationResult.Failed, hasher.Verify(hash, "wrong-password"));
     }
@@ -560,12 +567,13 @@ public sealed class ConsumerDependencyGraphTests
         using ServiceProvider provider = BuildCryptographyServiceProvider();
         IHmacSigner signer = provider.GetRequiredService<IHmacSigner>();
 
-        byte[] secret = "shared-secret"u8.ToArray();
+        byte[] key = provider.GetRequiredService<ISecureRandomGenerator>().GetBytes(32);
         byte[] data = "payload"u8.ToArray();
-        byte[] signature = signer.Sign(data, secret);
+        byte[] signature = signer.Sign(data, key);
 
-        Assert.True(signer.Verify(data, signature, secret));
-        Assert.False(signer.Verify("tampered"u8.ToArray(), signature, secret));
+        Assert.True(signer.Verify(data, signature, key));
+        Assert.False(signer.Verify("tampered"u8.ToArray(), signature, key));
+        Assert.Throws<ArgumentException>(() => signer.Sign(data, new byte[16]));
     }
 
     [Fact]
@@ -574,90 +582,121 @@ public sealed class ConsumerDependencyGraphTests
         using ServiceProvider provider = BuildCryptographyServiceProvider();
         ISecureRandomGenerator generator = provider.GetRequiredService<ISecureRandomGenerator>();
 
-        byte[] bytes = generator.NextBytes(32);
-        string token = generator.NextToken();
+        byte[] bytes = generator.GetBytes(32);
+        string token = generator.GetToken();
 
         Assert.Equal(32, bytes.Length);
-        Assert.NotEmpty(token);
+        Assert.Equal(43, token.Length);
     }
 
     [Fact]
-    public void Cryptography_SymmetricEncryption_EncryptDecryptRoundtrip_ResolvedFromPackage()
+    public void Cryptography_SynchronousEncryption_EncryptDecryptRoundtrip_ResolvedFromPackage()
     {
-        using ServiceProvider provider = BuildCryptographyServiceProvider();
-        var keyProvider = new ConsumerEncryptionKeyProvider();
-        var encryption = new AesGcmEncryptionService(keyProvider);
+        var keys = new StaticEncryptionKeyProvider("consumer-key-v1", [ConsumerKeys.CreateEncryptionKey("consumer-key-v1")]);
+        var encryption = new SynchronousAesGcmEncryptionService(keys);
 
-        EncryptedPayload payload = encryption.Encrypt("plaintext-from-consumer"u8.ToArray(), []);
-        Result<byte[]> decrypted = encryption.Decrypt(payload, []);
+        EncryptedPayload payload = encryption.Encrypt("plaintext-from-consumer"u8, "consumer-aad"u8);
+        Assert.True(EncryptedPayload.TryParse(payload.ToString(), out EncryptedPayload? parsed));
+        Result<byte[]> decrypted = encryption.Decrypt(parsed!, "consumer-aad"u8);
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-from-consumer", System.Text.Encoding.UTF8.GetString(decrypted.Value));
     }
 
     [Fact]
-    public void Cryptography_SynchronousProviderCapabilityGate_ResolvesFromPackage()
+    public void Cryptography_SynchronousEncryption_RequiresASynchronousKeyProvider_ResolvedFromPackage()
     {
-        // P-492/WO-081: proves ISynchronousEncryptionKeyProvider/EncryptionKeyProviderCapabilities
-        // resolve correctly against the packed (not project-referenced) SharedKernel.Cryptography
-        // assembly, and that AesGcmEncryptionService's sync members are genuinely gated by it —
-        // not merely gated in the project-referenced test suite.
-        var markedProvider = new ConsumerEncryptionKeyProvider();
-        Assert.True(EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(markedProvider));
+        // A synchronous encryption service is built over ISynchronousEncryptionKeyProvider by constructor
+        // type, so a service that registered only an asynchronous (key-service) provider fails clearly at
+        // resolution instead of blocking on the provider.
+        IServiceCollection services = new ServiceCollection();
+        services.AddSingleton<IEncryptionKeyProvider, ConsumerAsyncOnlyEncryptionKeyProvider>();
+        services.AddSharedKernelCryptography(new ConfigurationBuilder().Build())
+            .AddSymmetricEncryption()
+            .AddSynchronousSymmetricEncryption();
+        using ServiceProvider provider = services.BuildServiceProvider();
 
-        var unmarkedProvider = new ConsumerUnmarkedEncryptionKeyProvider();
-        Assert.False(EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(unmarkedProvider));
-
-        var gatedEncryption = new AesGcmEncryptionService(unmarkedProvider);
-        Assert.Throws<NotSupportedException>(() => gatedEncryption.Encrypt("blocked"u8.ToArray(), []));
+        Assert.NotNull(provider.GetRequiredService<ISymmetricEncryptionService>());
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<ISynchronousSymmetricEncryptionService>());
     }
 
     [Fact]
     public async Task Cryptography_SymmetricEncryption_AsyncEncryptDecryptRoundtrip_ResolvedFromPackage()
     {
-        // P-446/WO-068: proves the async IEncryptionKeyProvider contract and
-        // ISymmetricEncryptionService's additive *Async overloads resolve correctly end-to-end
-        // through the packed (not project-referenced) SharedKernel.Cryptography assembly.
-        using ServiceProvider provider = BuildCryptographyServiceProvider();
-        var keyProvider = new ConsumerEncryptionKeyProvider();
-        var encryption = new AesGcmEncryptionService(keyProvider);
+        var encryption = new AesGcmEncryptionService(new ConsumerAsyncOnlyEncryptionKeyProvider());
 
-        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-from-consumer-async"u8.ToArray(), []);
-        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, []);
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-from-consumer-async"u8.ToArray(), "consumer-aad"u8.ToArray());
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, "consumer-aad"u8.ToArray());
+        Result<byte[]> wrongAad = await encryption.DecryptAsync(payload, "other-aad"u8.ToArray());
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-from-consumer-async", System.Text.Encoding.UTF8.GetString(decrypted.Value));
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, wrongAad.Error.Code);
     }
 
     [Fact]
     public async Task Cryptography_CachedEncryptionKeyProvider_ComposesOverInnerProvider_ResolvedFromPackage()
     {
-        // P-446/WO-068: CachedEncryptionKeyProvider ships with no package-owned DI extension —
-        // this proves the documented plain-composition recipe resolves and functions correctly
-        // against the packed assembly.
+        // CachedEncryptionKeyProvider ships with no package-owned DI extension — this proves the documented
+        // plain-composition recipe resolves and functions correctly against the packed assembly.
         var keyProvider = new CachedEncryptionKeyProvider(
-            new ConsumerEncryptionKeyProvider(), TimeProvider.System, TimeSpan.FromMinutes(5));
+            new ConsumerAsyncOnlyEncryptionKeyProvider(), TimeProvider.System, TimeSpan.FromMinutes(5));
         var encryption = new AesGcmEncryptionService(keyProvider);
 
-        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-via-cached-provider"u8.ToArray(), []);
-        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, []);
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-via-cached-provider"u8.ToArray(), ReadOnlyMemory<byte>.Empty);
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, ReadOnlyMemory<byte>.Empty);
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-via-cached-provider", System.Text.Encoding.UTF8.GetString(decrypted.Value));
     }
 
     [Fact]
-    public async Task Cryptography_EnvelopeEncryptionProvider_ContractResolvesFromPackage()
+    public async Task Cryptography_EnvelopeEncryption_RoundtripsOverAConsumerProvider_ResolvedFromPackage()
     {
-        // P-446/WO-068: proves IEnvelopeEncryptionProvider/EnvelopeDataKey resolve correctly
-        // against the packed assembly, via a minimal in-memory test double.
         IEnvelopeEncryptionProvider envelope = new ConsumerEnvelopeEncryptionProvider();
 
-        EnvelopeDataKey dataKey = await envelope.GenerateDataKeyAsync();
-        Result<byte[]> unwrapped = await envelope.UnwrapDataKeyAsync(dataKey.WrappedKey, dataKey.MasterKeyId);
+        using EnvelopeDataKey dataKey = await envelope.GenerateDataKeyAsync();
+        byte[] plaintextKey = dataKey.PlaintextKey.ToArray();
+        byte[] wrappedKey = dataKey.WrappedKey.ToArray();
+        Result<byte[]> unwrapped = await envelope.UnwrapDataKeyAsync(wrappedKey, dataKey.MasterKeyId);
 
         Assert.True(unwrapped.IsSuccess);
-        Assert.Equal(dataKey.PlaintextKey, unwrapped.Value);
+        Assert.Equal(plaintextKey, unwrapped.Value);
+
+        var service = new EnvelopeEncryptionService(envelope);
+        EnvelopePayload payload = await service.EncryptAsync("envelope-plaintext"u8.ToArray(), "consumer-aad"u8.ToArray());
+        Assert.True(EnvelopePayload.TryParse(payload.ToBytes(), out EnvelopePayload? parsed));
+        Result<byte[]> decrypted = await service.DecryptAsync(parsed!, "consumer-aad"u8.ToArray());
+
+        Assert.True(decrypted.IsSuccess);
+        Assert.Equal("envelope-plaintext", System.Text.Encoding.UTF8.GetString(decrypted.Value));
+    }
+
+    [Fact]
+    public async Task Cryptography_AsymmetricSigning_SignAndVerifyRoundtrip_ResolvedFromPackage()
+    {
+        using InMemorySigningKeyProvider keys = ConsumerKeys.CreateSigningKeyProvider("consumer-signing-key");
+        var service = new AsymmetricSignatureService(keys);
+        byte[] data = "payload"u8.ToArray();
+
+        byte[] signature = await service.SignAsync(data, "consumer-signing-key");
+
+        Assert.Equal(SignatureAlgorithm.ES256, await service.GetAlgorithmAsync("consumer-signing-key"));
+        Assert.True(await service.VerifyAsync(data, signature, "consumer-signing-key"));
+        Assert.False(await service.VerifyAsync("tampered"u8.ToArray(), signature, "consumer-signing-key"));
+    }
+
+    [Fact]
+    public void Cryptography_Totp_GenerateAndValidate_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        ITotpGenerator generator = provider.GetRequiredService<ITotpGenerator>();
+        byte[] secret = TotpSecret.Generate(provider.GetRequiredService<ISecureRandomGenerator>());
+
+        string code = generator.GenerateCode(secret);
+
+        Assert.True(generator.TryValidateCode(secret, code, out _));
+        Assert.StartsWith("otpauth://totp/", TotpProvisioningUri.Build("Consumer", "user@example.com", secret).AbsoluteUri, StringComparison.Ordinal);
     }
 
     private static ServiceProvider BuildCryptographyServiceProvider()
@@ -848,34 +887,58 @@ public sealed class ConsumerDependencyGraphTests
     // ──────────────────────────────────────────────────────────────────────────
     // SharedKernel.Cryptography.KeyVault.Azure — verifies the package resolves
     // from the local feed and that its transitive dependency chain (Cryptography
-    // + Configuration, plus the third-party Azure.Security.KeyVault.Keys and
-    // Azure.Identity packages) resolves without conflict, end-to-end through DI
-    // registration; also directly inspects the packed SharedKernel.Cryptography
-    // .nuspec to prove neither Azure package leaks as one of ITS dependencies
-    // (P-26/WO-068).
+    // + Configuration, plus the third-party Azure.Security.KeyVault.Keys,
+    // Azure.Security.KeyVault.Secrets and Azure.Identity packages) resolves without
+    // conflict, end-to-end through DI registration; also directly inspects the
+    // packed SharedKernel.Cryptography .nuspec to prove no Azure package leaks as
+    // one of ITS dependencies (P-26/WO-068).
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void CryptographyKeyVaultAzure_AddSharedKernelAzureKeyVaultCryptography_RegistersSameSingletonInstance_ResolvedFromPackage()
+    public void CryptographyKeyVaultAzure_AddAzureKeyVaultEncryption_RegistersSameSingletonInstance_ResolvedFromPackage()
     {
         IServiceCollection services = new ServiceCollection();
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["SharedKernel:Cryptography:KeyVault:Azure:VaultUri"] = "https://consumer-verify.vault.azure.net/",
-                ["SharedKernel:Cryptography:KeyVault:Azure:CurrentKeyId"] = "primary",
-                ["SharedKernel:Cryptography:KeyVault:Azure:KeyNames:primary"] = "tenant-data-key",
+                ["SharedKernel:Cryptography:KeyVault:Azure:Encryption:VaultUri"] = "https://consumer-verify.vault.azure.net/",
+                ["SharedKernel:Cryptography:KeyVault:Azure:Encryption:MasterKeyName"] = "tenant-master-key",
+                ["SharedKernel:Cryptography:KeyVault:Azure:Encryption:DataKeySecretName"] = "tenant-data-keys",
             })
             .Build();
 
-        services.AddSharedKernelAzureKeyVaultCryptography(configuration);
+        services.AddSharedKernelCryptography(configuration).AddAzureKeyVaultEncryption(configuration);
         using ServiceProvider provider = services.BuildServiceProvider();
 
         var asKeyProvider = provider.GetRequiredService<IEncryptionKeyProvider>();
-        var asEnvelopeProvider = provider.GetRequiredService<IEnvelopeEncryptionProvider>();
 
         Assert.IsType<AzureKeyVaultEncryptionKeyProvider>(asKeyProvider);
-        Assert.Same(asKeyProvider, asEnvelopeProvider);
+        Assert.Same(asKeyProvider, provider.GetRequiredService<IEnvelopeEncryptionProvider>());
+        Assert.Same(asKeyProvider, provider.GetRequiredService<IEncryptionKeyProviderProbe>());
+        // A key-service provider never offers synchronous key access.
+        Assert.Null(provider.GetService<ISynchronousEncryptionKeyProvider>());
+    }
+
+    [Fact]
+    public void CryptographyKeyVaultAzure_AddAzureKeyVaultSigning_RegistersSigningKeyProvider_ResolvedFromPackage()
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SharedKernel:Cryptography:KeyVault:Azure:Signing:VaultUri"] = "https://consumer-verify.vault.azure.net/",
+                ["SharedKernel:Cryptography:KeyVault:Azure:Signing:Keys:token-signing:KeyName"] = "token-signing-key",
+                ["SharedKernel:Cryptography:KeyVault:Azure:Signing:Keys:token-signing:Algorithm"] = "PS256",
+            })
+            .Build();
+
+        services.AddSharedKernelCryptography(configuration)
+            .AddAzureKeyVaultSigning(configuration)
+            .AddAsymmetricSigning();
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.IsType<AzureKeyVaultSigningKeyProvider>(provider.GetRequiredService<ISigningKeyProvider>());
+        Assert.IsType<AsymmetricSignatureService>(provider.GetRequiredService<IAsymmetricSignatureService>());
     }
 
     [Fact]
@@ -886,30 +949,38 @@ public sealed class ConsumerDependencyGraphTests
             .Build();
 
         using IHost host = Host.CreateDefaultBuilder()
-            .ConfigureServices(services => services.AddSharedKernelAzureKeyVaultCryptography(invalidConfiguration))
+            .ConfigureServices(services => services
+                .AddSharedKernelCryptography(invalidConfiguration)
+                .AddAzureKeyVaultEncryption(invalidConfiguration))
             .Build();
 
         await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
     }
 
     [Fact]
-    public void CryptographyKeyVaultAzure_UnwrapDataKeyAsync_LocalValidation_ResolvedFromPackage()
+    public async Task CryptographyKeyVaultAzure_UnwrapDataKeyAsync_LocalValidation_ResolvedFromPackage()
     {
-        // Exercises AzureKeyVaultEncryptionKeyProvider's purely-local masterKeyId validation
-        // branch against the PACKED assembly — no reachable vault needed for this specific path.
+        // Exercises AzureKeyVaultEncryptionKeyProvider's purely-local masterKeyId validation branch against
+        // the PACKED assembly — a malformed master key id is rejected before any Key Vault call.
+        var vaultUri = new Uri("https://consumer-verify.vault.azure.net/");
+        var credential = new Azure.Identity.DefaultAzureCredential();
         var provider = new AzureKeyVaultEncryptionKeyProvider(
-            Microsoft.Extensions.Options.Options.Create(new AzureKeyVaultCryptographyOptions
+            Microsoft.Extensions.Options.Options.Create(new AzureKeyVaultEncryptionOptions
             {
-                VaultUri = new Uri("https://consumer-verify.vault.azure.net/"),
-                CurrentKeyId = "primary",
-                KeyNames = new Dictionary<string, string> { ["primary"] = "tenant-data-key" },
+                VaultUri = vaultUri,
+                MasterKeyName = "tenant-master-key",
+                DataKeySecretName = "tenant-data-keys",
             }),
-            new CryptoRandomGenerator());
+            new Azure.Security.KeyVault.Keys.KeyClient(vaultUri, credential),
+            new Azure.Security.KeyVault.Secrets.SecretClient(vaultUri, credential),
+            new SecureRandomGenerator(),
+            TimeProvider.System);
 
-        Result<byte[]> result = provider.UnwrapDataKeyAsync([1, 2, 3], "not-a-valid-key-vault-uri").AsTask().GetAwaiter().GetResult();
+        Result<byte[]> result = await provider.UnwrapDataKeyAsync(new byte[] { 1, 2, 3 }, "not-a-valid-master-key-id");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(AzureKeyVaultCryptographyErrorCodes.MalformedMasterKeyId, result.Error.Code);
+        Assert.Equal(CryptographyErrorCodes.DataKeyUnwrapFailed, result.Error.Code);
+        Assert.False(typeof(ISynchronousEncryptionKeyProvider).IsAssignableFrom(provider.GetType()));
     }
 
     [Fact]
@@ -942,7 +1013,7 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
-    public void CryptographyKeyVaultAzure_NuspecDeclaresBothAzureDependencies()
+    public void CryptographyKeyVaultAzure_NuspecDeclaresEveryAzureDependency()
     {
         string nupkgsDirectory = FindNupkgsDirectory();
 
@@ -955,6 +1026,7 @@ public sealed class ConsumerDependencyGraphTests
             .Select(d => d.Attribute("id")!.Value)];
 
         Assert.Contains("Azure.Security.KeyVault.Keys", dependencyIds);
+        Assert.Contains("Azure.Security.KeyVault.Secrets", dependencyIds);
         Assert.Contains("Azure.Identity", dependencyIds);
         Assert.Contains("SharedKernel.Cryptography", dependencyIds);
     }
@@ -969,22 +1041,24 @@ public sealed class ConsumerDependencyGraphTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CryptographyArgon2_AddSharedKernelArgon2Cryptography_RegistersKeyedHasherOnly_ResolvedFromPackage()
+    public async Task CryptographyArgon2_AddArgon2id_AddsTheAlgorithmAlongsidePbkdf2_ResolvedFromPackage()
     {
         IHost host = Host.CreateDefaultBuilder()
-            .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>()))
-            .ConfigureServices((ctx, services) =>
+            .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                services.AddSharedKernelCryptography(ctx.Configuration);
-                services.AddSharedKernelArgon2Cryptography(ctx.Configuration);
-            })
+                ["SharedKernel:Cryptography:OneWayHashing:Algorithm"] = Argon2idOneWayHashAlgorithm.Id,
+            }))
+            .ConfigureServices((ctx, services) => services
+                .AddSharedKernelCryptography(ctx.Configuration)
+                .AddArgon2id(ctx.Configuration))
             .Build();
 
         await host.StartAsync();
 
-        Assert.IsType<Pbkdf2OneWayHasher>(host.Services.GetRequiredService<IOneWayHasher>());
-        Assert.IsType<Argon2idOneWayHasher>(host.Services.GetRequiredKeyedService<IOneWayHasher>(
-            Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey));
+        Assert.IsType<OneWayHasher>(host.Services.GetRequiredService<IOneWayHasher>());
+        List<IOneWayHashAlgorithm> algorithms = [.. host.Services.GetServices<IOneWayHashAlgorithm>()];
+        Assert.Contains(algorithms, a => a is Pbkdf2OneWayHashAlgorithm);
+        Assert.Contains(algorithms, a => a is Argon2idOneWayHashAlgorithm);
 
         await host.StopAsync();
     }
@@ -992,22 +1066,27 @@ public sealed class ConsumerDependencyGraphTests
     [Fact]
     public void CryptographyArgon2_HashAndVerifyRoundtrip_ProducesRealPhcStringFormat_ResolvedFromPackage()
     {
-        IServiceCollection services = new ServiceCollection();
-        IConfiguration configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
-            .Build();
-
-        services.AddSharedKernelArgon2Cryptography(configuration);
-        using ServiceProvider provider = services.BuildServiceProvider();
-
-        IOneWayHasher hasher = provider.GetRequiredKeyedService<IOneWayHasher>(
-            Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey);
+        using ServiceProvider provider = BuildArgon2ServiceProvider(Argon2idOneWayHashAlgorithm.Id);
+        IOneWayHasher hasher = provider.GetRequiredService<IOneWayHasher>();
 
         string hash = hasher.Hash("correct-horse-battery-staple");
 
         Assert.StartsWith("$argon2id$v=19$m=19456,t=2,p=1$", hash, StringComparison.Ordinal);
         Assert.Equal(HashVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
         Assert.Equal(HashVerificationResult.Failed, hasher.Verify(hash, "wrong-secret"));
+    }
+
+    [Fact]
+    public void CryptographyArgon2_ExistingPbkdf2Hash_VerifiesAndReportsRehash_ResolvedFromPackage()
+    {
+        using ServiceProvider pbkdf2Provider = BuildArgon2ServiceProvider(Pbkdf2OneWayHashAlgorithm.Id);
+        using ServiceProvider argon2Provider = BuildArgon2ServiceProvider(Argon2idOneWayHashAlgorithm.Id);
+
+        string pbkdf2Hash = pbkdf2Provider.GetRequiredService<IOneWayHasher>().Hash("correct-horse-battery-staple");
+
+        Assert.Equal(
+            HashVerificationResult.SuccessRehashNeeded,
+            argon2Provider.GetRequiredService<IOneWayHasher>().Verify(pbkdf2Hash, "correct-horse-battery-staple"));
     }
 
     [Fact]
@@ -1048,6 +1127,20 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Contains("Konscious.Security.Cryptography.Argon2", dependencyIds);
         Assert.Contains("SharedKernel.Cryptography", dependencyIds);
         Assert.Contains("SharedKernel.Configuration", dependencyIds);
+    }
+
+    private static ServiceProvider BuildArgon2ServiceProvider(string algorithm)
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SharedKernel:Cryptography:OneWayHashing:Algorithm"] = algorithm,
+            })
+            .Build();
+
+        services.AddSharedKernelCryptography(configuration).AddArgon2id(configuration);
+        return services.BuildServiceProvider();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1391,67 +1484,70 @@ internal sealed class ConsumerStringLocalizerFactory(IStringLocalizer localizer)
 }
 
 /// <summary>
-/// Minimal in-memory <see cref="IEncryptionKeyProvider"/> for consumer-verification purposes only.
-/// Production services must resolve key material from Key Vault, environment config, or a secret
-/// store — never hardcode it as done here for test convenience. Implements
-/// <see cref="ISynchronousEncryptionKeyProvider"/> (P-492/WO-081) — this double genuinely never
-/// performs blocking I/O, so it honestly earns the marker; that marking is what allows this
-/// project's sync <c>Encrypt</c>/<c>Decrypt</c> consumer test below to call the packed
-/// <c>AesGcmEncryptionService</c> at all instead of observing <see cref="NotSupportedException"/>.
+/// Key material factories for consumer-verification purposes only. Production services must resolve keys from a
+/// key management service, environment configuration, or a secret store — never generate them in process as done
+/// here for test convenience.
 /// </summary>
-internal sealed class ConsumerEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
+internal static class ConsumerKeys
 {
-    private static readonly CryptographicKey CurrentKey = new("consumer-key-v1", new byte[32]);
+    public static CryptographicKey CreateEncryptionKey(string keyId) =>
+        new(keyId, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
-    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(CurrentKey);
-
-    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(keyId == CurrentKey.Id ? CurrentKey : null);
+    public static InMemorySigningKeyProvider CreateSigningKeyProvider(string keyId) =>
+        new([SigningKey.FromECDsa(keyId, System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))]);
 }
 
 /// <summary>
-/// A plain <see cref="IEncryptionKeyProvider"/> (deliberately NOT
-/// <see cref="ISynchronousEncryptionKeyProvider"/>) for consumer-verification purposes only — a
-/// stand-in for a raw KMS/HSM-backed provider that must never claim the marker. Proves that
-/// <see cref="AesGcmEncryptionService"/>'s sync members throw <see cref="NotSupportedException"/>
-/// against an unmarked provider resolved from the packed assembly, not merely in-project.
+/// An asynchronous-only <see cref="IEncryptionKeyProvider"/> (deliberately NOT
+/// <see cref="ISynchronousEncryptionKeyProvider"/>) for consumer-verification purposes only — a stand-in for a
+/// key-service-backed provider. Proves the asynchronous service works over it, and that the synchronous service
+/// cannot be resolved against it, from the packed assembly rather than only in-project.
 /// </summary>
-internal sealed class ConsumerUnmarkedEncryptionKeyProvider : IEncryptionKeyProvider
+internal sealed class ConsumerAsyncOnlyEncryptionKeyProvider : IEncryptionKeyProvider
 {
-    private static readonly CryptographicKey CurrentKey = new("consumer-unmarked-key-v1", new byte[32]);
+    private static readonly CryptographicKey CurrentKey = ConsumerKeys.CreateEncryptionKey("consumer-async-key-v1");
 
-    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(CurrentKey);
+    public async ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        return CurrentKey;
+    }
 
-    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(keyId == CurrentKey.Id ? CurrentKey : null);
+    public async ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        return keyId == CurrentKey.Id ? CurrentKey : null;
+    }
 }
 
 /// <summary>
-/// Minimal in-memory <see cref="IEnvelopeEncryptionProvider"/> for consumer-verification purposes
-/// only — proves the contract shape resolves against the packed assembly. Production services
-/// must resolve this against a real KMS (e.g. Azure Key Vault) — never a process-local master key
-/// as done here for test convenience.
+/// Minimal in-memory <see cref="IEnvelopeEncryptionProvider"/> for consumer-verification purposes only — proves
+/// the contract shape resolves against the packed assembly. Production services must wrap data keys with a real
+/// key management service (e.g. Azure Key Vault) — never a process-local master key as done here for test
+/// convenience.
 /// </summary>
 internal sealed class ConsumerEnvelopeEncryptionProvider : IEnvelopeEncryptionProvider
 {
     private const string MasterKeyId = "consumer-master-key-v1";
-    private static readonly byte[] MasterKey = new byte[32];
+    private static readonly byte[] MasterKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
 
-    public ValueTask<EnvelopeDataKey> GenerateDataKeyAsync(CancellationToken ct = default)
+    public ValueTask<EnvelopeDataKey> GenerateDataKeyAsync(CancellationToken cancellationToken = default)
     {
         byte[] plaintextKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-        byte[] wrappedKey = Xor(plaintextKey, MasterKey);
-        return new(new EnvelopeDataKey(plaintextKey, wrappedKey, MasterKeyId));
+        return new(new EnvelopeDataKey(plaintextKey, Xor(plaintextKey, MasterKey), MasterKeyId));
     }
 
-    public ValueTask<Result<byte[]>> UnwrapDataKeyAsync(byte[] wrappedDataKey, string masterKeyId, CancellationToken ct = default) =>
-        masterKeyId == MasterKeyId
-            ? new(Result<byte[]>.Success(Xor(wrappedDataKey, MasterKey)))
-            : new(Result<byte[]>.Failure(Error.Unexpected("consumer.envelope.unknown_master_key", "Unknown master key.")));
+    public ValueTask<Result<byte[]>> UnwrapDataKeyAsync(
+        ReadOnlyMemory<byte> wrappedKey,
+        string masterKeyId,
+        CancellationToken cancellationToken = default) =>
+        masterKeyId == MasterKeyId && wrappedKey.Length == MasterKey.Length
+            ? new(Result<byte[]>.Success(Xor(wrappedKey.Span, MasterKey)))
+            : new(Result<byte[]>.Failure(Error.Validation(CryptographyErrorCodes.DataKeyUnwrapFailed, "Unknown master key.")));
 
-    // A minimal, deliberately non-production "wrap" (XOR against a fixed key) — sufficient to
-    // prove the round-trip contract shape; a real provider wraps via a genuine KMS operation.
-    private static byte[] Xor(byte[] data, byte[] key)
+    // A minimal, deliberately non-production "wrap" (XOR against a process-local key) — sufficient to prove the
+    // round-trip contract shape; a real provider wraps with an authenticated key-service operation.
+    private static byte[] Xor(ReadOnlySpan<byte> data, byte[] key)
     {
         byte[] result = new byte[data.Length];
         for (int i = 0; i < data.Length; i++)
@@ -1461,25 +1557,4 @@ internal sealed class ConsumerEnvelopeEncryptionProvider : IEnvelopeEncryptionPr
 
         return result;
     }
-}
-
-/// <summary>
-/// Minimal in-memory <see cref="IAsymmetricKeyProvider"/> for consumer-verification purposes only.
-/// Production services must resolve key pairs from Key Vault or a certificate store — never
-/// generate ephemeral keys at resolution time as done here for test convenience. Genuinely never
-/// performs I/O, so it implements <see cref="ISynchronousAsymmetricKeyProvider"/> (P-493/WO-081).
-/// </summary>
-internal sealed class ConsumerAsymmetricKeyProvider : ISynchronousAsymmetricKeyProvider
-{
-    private static readonly System.Security.Cryptography.RSA RsaKey =
-        System.Security.Cryptography.RSA.Create(2048);
-
-    private static readonly System.Security.Cryptography.ECDsa EcdsaKey =
-        System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
-
-    public ValueTask<System.Security.Cryptography.RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(RsaKey);
-
-    public ValueTask<System.Security.Cryptography.ECDsa> GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) =>
-        new(EcdsaKey);
 }
