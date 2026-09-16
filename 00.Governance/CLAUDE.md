@@ -579,31 +579,14 @@ SK0018  QueryImplementsInvalidatesCache
                 enforce the platform's queries-cache / commands-invalidate split documented in
                 05.Application/CLAUDE.md.
 
-SK0019  RetryableRequestWithoutIdempotency
-    Category  : Design
-    Severity  : Warning
-    Trigger   : A ClassDeclarationSyntax, RecordDeclarationSyntax, or StructDeclarationSyntax
-                (non-abstract) whose declared symbol's AllInterfaces contains an interface
-                matching simple name "IRetryableRequest" (namespace prefix
-                "SharedKernel.Application") and does NOT also contain an interface matching
-                simple name "IIdempotentRequest" (same namespace prefix).
-    Fix       : Implement IIdempotentRequest alongside IRetryableRequest so
-                IdempotentCommandBehavior can guard against the retry-after-partial-commit
-                hazard (a retried request that already partially committed on the first
-                attempt is otherwise re-executed instead of returning the original outcome).
-                If idempotency truly cannot be guaranteed for this request, remove
-                IRetryableRequest instead of leaving the gap silently unguarded.
-    Exempt    : Types carrying the abstract modifier are excluded (same exemption as SK0017).
-    Suppress  : Per-type via #pragma warning disable SK0019 with an inline comment documenting
-                the rationale (e.g., an idempotency-key store is provided out-of-band); fires
-                globally, no suppression namespace.
-    Note      : Introduced WO-040 P-248. Fifth SK analyzer in this domain requiring a semantic
-                interface-closure check. Closes 05.Application/CLAUDE.md's own documented,
-                explicitly-accepted "not mechanically enforced" gap for the
-                IRetryableRequest/IIdempotentRequest pairing — the last of the three marker-
-                interface misuse patterns this phase addresses (the fourth pattern from the
-                same audit family, typeof(TRequest).Name short-name usage, was already closed
-                by SK0016 in WO-038 P-235).
+SK0019  RetryableRequestWithoutIdempotency — REMOVED (P-544)
+    Note      : Retracted when SharedKernel.Application.Behaviors dropped ResilienceBehavior
+                and IRetryableRequest entirely (05.Application's redesign, P-544) — the rule's
+                target type no longer exists. Removal recorded in
+                SharedKernel.Analyzers/AnalyzerReleases.Unshipped.md under "### Removed Rules"
+                per the standard release-tracking format (RS2007/RS2008 stay clean). Do not
+                reintroduce this ID for an unrelated rule — retired diagnostic IDs are never
+                recycled on this platform.
 
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
@@ -1533,7 +1516,56 @@ SK0039  InvalidIntegrationEventAttribute
     Note      : The name rule mirrors IntegrationEventDescriptor's own validation exactly —
                 change the two together.
 
-SK0040 is the next available sequential Roslyn-analyzer ID.
+SK0040  PipelineMarkerResponseShapeMismatch
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A non-abstract class, record, or struct implementing
+                SharedKernel.Application.Behaviors.Authorization.IAuthorizeRequest and/or
+                SharedKernel.Application.Behaviors.Idempotency.IIdempotentRequest (resolved through
+                the full interface closure via SemanticModel.GetDeclaredSymbol +
+                INamedTypeSymbol.AllInterfaces, the same technique SK0017–SK0019 established), that
+                also implements MediatR.IRequest<TResponse> (directly or transitively, e.g. through
+                ICommand<TResponse>/IQuery<TResponse>) whose resolved TResponse is neither
+                SharedKernel.Primitives.Results.Result nor a closed Result<T> (matched by simple
+                name "Result", arity 0 or 1, containing namespace exactly
+                "SharedKernel.Primitives.Results"). Reported on the type name, naming every matched
+                marker and the actual resolved response type.
+    Fix       : Declare the request's response as Result or a closed Result<T>, or remove the
+                marker interface if the request genuinely needs neither authorization nor
+                idempotency short-circuiting.
+    Exempt    : (1) A type implementing IAuditableRequest<TResponse> or ILoggableRequest<TResponse>
+                — READING FailureResponse.cs and both AuditingBehavior and LoggingBehavior found
+                NEITHER ever calls FailureResponse.Create<TResponse>: both only forward the
+                response next() already produced and classify it through
+                Shared.ResponseOutcome.TryGetError, which treats a non-Result response as a
+                success rather than requiring a static Failure(Error) factory — implementing either
+                marker on a plain-DTO-response request compiles and runs without ever throwing, so
+                this rule does not check them, matching the same verification discipline applied to
+                every other marker in this file. (2) A type implementing a checked marker with no
+                MediatR.IRequest<TResponse> at all — no behavior can ever resolve into that type's
+                pipeline (a DI/runtime fact), so there is no hazard. (3) A resolved TResponse that
+                is itself still an open type parameter or an unresolved/error type — the eventual
+                closed shape cannot be determined at the declaration site; a closed Result<T> whose
+                own type argument is an open type parameter still passes, since only the outer
+                Result/Result<T> shape is checked. (4) Abstract types — the same exemption already
+                applied by SK0009/SK0017/SK0018. (5) ValidationBehavior also calls
+                FailureResponse.Create, but applies to every TRequest : IRequest<TResponse>
+                unconditionally with no marker interface to gate scope on — out of reach for a
+                type-declaration rule of this shape, and not part of this rule's trigger.
+    Suppress  : Per-type via #pragma warning disable SK0040 with an inline comment documenting the
+                rationale; fires globally, no suppression namespace.
+    Note      : Introduced as a governance companion to 05.Application's P-544 pre-publish
+                redesign. Motivating gap: FailureResponse.Create<TResponse>
+                (SharedKernel.Application.Behaviors/Shared/FailureResponse.cs) binds to a public
+                static Failure(Error) factory resolved via reflection per closed TResponse —
+                Result takes a hardcoded fast path, every other TResponse must expose that factory
+                or the call throws InvalidOperationException, at runtime, on the first
+                authorization denial or duplicate submission. No SharedKernel.ArchitectureTests
+                counterpart — a per-compilation-unit source-level marker/interface-closure check
+                the Roslyn analyzer resolves completely on its own, mirroring SK0017–SK0019's/
+                SK0030's "no architecture-test counterpart by design" note.
+
+SK0041 is the next available sequential Roslyn-analyzer ID.
 ```
 
 ---
@@ -2627,7 +2659,7 @@ UnitOfWorkSeamRules  (static class — local-seam interface distinctness guard; 
         either direction.
         Rationale: the local-seam pattern (05.Application declares its own IUnitOfWork,
         bridged to 06.Persistence's IUnitOfWork at the composition root — the same pattern
-        already proven for IAuthorizationContext and IIdempotencyKeyStore) only holds if the
+        already proven for IRequestContext and IRequestIdempotencyStore) only holds if the
         two interfaces stay genuinely independent. A future "simplification" that merges them
         or makes one inherit the other would silently reintroduce the 05.Application →
         06.Persistence layering violation the local-seam pattern exists to prevent. This is a
@@ -2878,47 +2910,18 @@ ReflectionGuardRules  (static class — platform-wide reflection prohibition enf
         documented expression trees as the gold standard. Documentation alone did not
         prevent it.
 
-    Note: Historical claim corrected (WO-039 P-240) — "all production assemblies pass this
-    rule" was never actually verified by pointing the rule at every real assembly; it was
-    true only in the narrow sense that P-147 fixed the one violation manual/design-time
-    review had found. As of 2026-07-06, P-240 has SHIPPED:
-    SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod
-    call site is now registered in ReflectionExemptionRegistry.AllowList (the registry's
-    first real entry — see below). CORRECTED STATUS, NOT "now fully verified": pointing
-    this rule at the real SharedKernel.Application assembly via
-    ReflectionGuardRules.NoMakeGenericMethodReflection(assembly) currently reports success
-    REGARDLESS of whether the exemption is registered or not, because NetArchTest.Rules'
-    own type-discovery layer (Types.InAssembly(assembly), which this rule's factory method
-    uses internally) never surfaces compiler-generated closure types — such as the `<>c`
-    singleton display class that actually contains PublishSingle's MakeGenericMethod call —
-    to any ICustomRule. This was confirmed empirically by instrumenting a recording
-    ICustomRule and observing the `<>c` type is absent from the set of TypeDefinition
-    instances NetArchTest visits, with and without the `.AreNotAbstract()` filter. The
-    predicate itself (NoMakeGenericMethodReflectionPredicate) is correct and IS load-bearing
-    when invoked directly against the real `<>c` TypeDefinition (proven by
-    ReflectionGuardRulesRealAssemblyTests in SharedKernel.ArchitectureTests.Tests) — the gap
-    is entirely in NetArchTest's own type enumeration, not in this rule's IL-walk logic, and
-    P-240's scope explicitly forbids changing either. CANDIDATE FOLLOW-UP WORK ORDER: extend
-    ReflectionGuardRules.NoMakeGenericMethodReflection (or add a sibling factory method) to
-    enumerate nested compiler-generated types directly via Mono.Cecil
-    (TypeDefinition.NestedTypes, recursively) rather than relying solely on NetArchTest's
-    Types.InAssembly(...) projection, so closure-based MakeGenericMethod call sites are
-    actually caught end-to-end. Until that ships, this rule provides no real protection
-    against a NEW, unregistered closure-based MakeGenericMethod violation — only against
-    violations placed directly on an ordinary (non-compiler-generated) type, which remains
-    the common case this rule was originally designed for (see the T-113 fixture in
-    ReflectionGuardRulesTests, a plain top-level class). KNOWN OPEN GAP (separate from the
-    above): direct source inspection (2026-07-03) confirms 07.Messaging's
-    SharedKernel.Messaging.MassTransit.MassTransitEventPublisher.BuildPublisher (the same
-    lambda-closure MakeGenericMethod pattern — in fact the very precedent
-    MediatRDomainEventDispatcher's own exemption cites) and MessagingBusBuilder.AddActivity
-    (a second, differently-shaped MakeGenericMethod call) are UNREGISTERED in
-    ReflectionExemptionRegistry today; P-240 explicitly scoped registration to
-    SharedKernel.Application only (05.Application) and did not register either
-    07.Messaging entry. Both remain a candidate follow-up work order, not yet dispatched;
-    note that even once registered, the NetArchTest closure-visibility gap above would
-    still need to be resolved before this rule could reliably enforce against
-    MassTransitEventPublisher.BuildPublisher's real IL either. Introduced in WO-024 P-153.
+    Note: WO-039 P-240 previously registered a ReflectionExemptionRegistry entry for
+    SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's PublishSingle
+    factory-delegate closure. P-544 retired that entry: 05.Application's redesign rewrote
+    the dispatcher's runtime-type-dispatch technique from a cached MakeGenericMethod
+    delegate to Type.MakeGenericType + Activator.CreateInstance (see DispatchAsync/
+    BuildNotification in the current source) — a technique this rule's IL walk does not
+    match at all (it looks only for a call named exactly "MakeGenericMethod"), so no
+    exemption is needed for the current implementation. ReflectionExemptionRegistry.AllowList
+    is currently empty. The KNOWN OPEN GAP that 07.Messaging's
+    MassTransitEventPublisher.BuildPublisher/MessagingBusBuilder.AddActivity remain
+    unregistered MakeGenericMethod call sites is unaffected by this retraction and is still
+    a candidate follow-up work order in that domain. Introduced in WO-024 P-153.
 
 NoMakeGenericMethodReflectionPredicate  (class : ICustomRule — internal predicate)
     For each type (non-abstract types only — abstract filter applied at factory level):
@@ -2946,8 +2949,12 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
       — the governance rationale (why typed dispatch or expression trees cannot be used)
       — the approving work order and date
       — the reviewing team member
-    Held empty from introduction (WO-024 P-153) through WO-038. As of 2026-07-06
-    (WO-039 P-240), the registry contains its FIRST real entry — see below. The fixed P-147
+    Held empty from introduction (WO-024 P-153) through WO-038. From 2026-07-06 (WO-039
+    P-240) through P-544 it carried one entry for
+    SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's PublishSingle
+    factory-delegate closure. P-544 retired that entry when 05.Application's redesign
+    rewrote the dispatcher off MakeGenericMethod entirely (see the SK0012/ReflectionGuardRules
+    entry's Note above) — the registry is currently empty again. The fixed P-147
     EncryptionRotationService uses expression trees and needs no exemption. Any team
     requesting an exemption must:
       1. Open a governance review in the root state-map with a written rationale.
@@ -2956,40 +2963,27 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
     No other suppression mechanism is accepted: #pragma warning disable SK0012,
     [SuppressMessage], or inline comments do not exempt a type from this rule.
 
-    Shipped entry (P-240, WO-039, 2026-07-06):
-      1. SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher — the
-         MakeGenericMethod call inside PublishSingle's factory delegate:
-         PublishDelegateCache.GetOrAdd(eventType, static t => { ... MakeGenericMethod ... }).
-         REUSABLE IMPLEMENTATION NOTE — closure-free static-lambda naming: because the call
-         site is inside a closure-free `static` lambda, Roslyn compiles it onto a
-         compiler-generated `<>c` singleton cache class nested inside
-         MediatRDomainEventDispatcher, not onto the declaring type directly. The
-         empirically-verified Mono.Cecil TypeDefinition.FullName/MethodDefinition.Name pair
-         actually registered is:
-         "SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c" /
-         "<PublishSingle>b__8_0" — NOT the literal "MediatRDomainEventDispatcher"/
-         "PublishSingle" pair a source-level reading suggests. This pair was determined by
-         a temporary Mono.Cecil IL-walk (instrumented identically to
-         NoMakeGenericMethodReflectionPredicate) against the real compiled
-         SharedKernel.Application.dll — see ReflectionGuardRulesRealAssemblyTests in
-         SharedKernel.ArchitectureTests.Tests for the verification procedure and the
-         predicate-level red/green tests. Any future exemption request for a closure-free
-         static lambda must follow this same empirical (not source-level-assumed)
-         verification step; re-verify if PublishSingle's lambda body or position changes.
-         Rationale: runtime-only IDomainEvent-type dispatch — the concrete event type is
-         only known per element at DispatchAsync time; the same justification already
-         accepted for 07.Messaging's MassTransitEventPublisher.BuildPublisher (itself
-         still unregistered here — see the SK0012 entry's "KNOWN OPEN GAP" note above).
-         Approved: WO-039 (P-240 / SK.00.DomainEventDispatcherReflectionExemption),
-         2026-07-06. Reviewed by: governance-phase-implementer (00.Governance domain agent).
-         DISCOVERED GAP: registering this entry does NOT make
-         ReflectionGuardRules.NoMakeGenericMethodReflection actually detect-then-exempt this
-         violation end-to-end, because NetArchTest's own type discovery never visits the
-         `<>c` closure type in the first place — see the SK0012 entry's "CORRECTED STATUS"
-         note above for the full explanation and the candidate follow-up work order. The
-         entry is still the governance-correct action (documents intent, is ready the
-         moment the NetArchTest gap is closed, and is independently proven load-bearing at
-         the predicate layer by ReflectionGuardRulesRealAssemblyTests).
+    REUSABLE IMPLEMENTATION NOTE (retained from the retired entry, for the NEXT exemption
+    request) — closure-free static-lambda naming: a MakeGenericMethod call inside a
+    closure-free `static` lambda (e.g. `SomeCache.GetOrAdd(key, static t => { ...
+    MakeGenericMethod ... })`) is compiled by Roslyn onto a compiler-generated `<>c`
+    singleton cache class nested inside the declaring type (Mono.Cecil
+    TypeDefinition.FullName uses "/" as the nesting separator, e.g. "Outer/<>c"), with a
+    synthesized method name shaped like "<ContainingMethodName>b__{token}_{ordinal}" — NOT
+    the source-level declaring type/method name a naive reading suggests. The exact pair
+    must be determined empirically (a temporary Mono.Cecil IL-walk against the real compiled
+    assembly, or reading the ReflectionGuardRules failure message with the exemption
+    temporarily absent) — never hand-derived from source. Separately, NetArchTest's own
+    Types.InAssembly(...) type-discovery layer never surfaces such compiler-generated
+    closure types to any ICustomRule (confirmed empirically during the retired
+    MediatRDomainEventDispatcher exemption's verification) — a future exemption for a
+    closure-based call site should invoke the predicate directly against the real,
+    Mono.Cecil-loaded closure TypeDefinition (bypassing NetArchTest's scan) to prove the
+    exemption is genuinely load-bearing, mirroring the pattern the now-removed
+    ReflectionGuardRulesRealAssemblyTests established. KNOWN OPEN GAP (unaffected by this
+    retraction): 07.Messaging's MassTransitEventPublisher.BuildPublisher and
+    MessagingBusBuilder.AddActivity remain unregistered MakeGenericMethod call sites — a
+    candidate follow-up work order in that domain, not yet dispatched.
 
 CommunicationLayeringRules  (static class — Communication layer boundary enforcement predicates; WO-025 P-159)
     All factory methods accept Assembly (or params Assembly[]) and return ConditionList (or ConditionList[]).
@@ -3296,19 +3290,22 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
     PersistenceLayerProtectionRules (consumed by 06.Persistence's own test suites).
 
     .BehaviorsNeverReferenceConcreteInfrastructure(params Assembly[] assemblies)  → ConditionList
-        Asserts that no type named "TracingBehavior", "ResilienceBehavior", or
-        "CacheInvalidationBehavior" (exact simple name match, caller-supplied HashSet<string> —
-        never hardcoded inside the predicate) in the supplied assemblies has a member, field, or
-        method-signature reference to a forbidden concrete-infrastructure namespace:
-        "SharedKernel.Caching.FusionCache", "SharedKernel.Caching.Redis" (bare prefix — matches
-        Redis.Core and all four Redis capability packages), "SharedKernel.Persistence" (excluding
+        Asserts that no type named "TracingBehavior" or "CacheInvalidationBehavior" (exact simple
+        name match, caller-supplied HashSet<string> — never hardcoded inside the predicate) in the
+        supplied assemblies has a member, field, or method-signature reference to a forbidden
+        concrete-infrastructure namespace: "SharedKernel.Caching.FusionCache",
+        "SharedKernel.Caching.Redis" (bare prefix — matches Redis.Core and all four Redis
+        capability packages), "SharedKernel.Persistence" (excluding
         "SharedKernel.Persistence.Abstractions"), "SharedKernel.Messaging" (excluding
         "SharedKernel.Messaging.Abstractions"). Uses
         NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate (ICustomRule — see below).
         Failure message names the offending behavior type and the forbidden namespace referenced.
+        As of P-544, CacheInvalidationBehavior lives in the sibling
+        SharedKernel.Application.Behaviors.Caching package, not SharedKernel.Application.Behaviors
+        itself — callers pass both assemblies.
         Rationale: mirrors the existing, already-enforced
         SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure guarantee, made
-        explicit and behavior-scoped for the three new WO-036 behaviors — the same purity
+        explicit and behavior-scoped for the two behaviors — the same purity
         expectation CachingBehavior (SharedKernel.Caching.Abstractions only) already satisfies by
         construction. Abstractions-only references remain permitted; only concrete provider
         packages are forbidden.
@@ -3340,26 +3337,12 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
             subtype (ICommandBase, ICacheableQuery<TResponse>, IAuthorizeRequest, etc.) — never
             the shared IBaseRequest ancestor
 
-    .NoHandRolledRetryLoopOutsideResilienceBehavior(Assembly behaviorsAssembly)  → ConditionList
-        Asserts that no type other than exactly "ResilienceBehavior" (exact simple name match) in
-        the supplied assembly calls System.Threading.Tasks.Task.Delay (any overload — matched on
-        MethodReference.Name == "Delay" AND DeclaringType.FullName ==
-        "System.Threading.Tasks.Task", covering both the int-millisecond and TimeSpan overloads in
-        one check). Uses NoTaskDelayOutsideResilienceBehaviorPredicate (ICustomRule — see below).
-        This is a fingerprint heuristic, not a full retry-loop detector — Task.Delay is the one
-        IL-detectable signal common to virtually every hand-rolled retry/backoff loop; a
-        legitimate non-retry Task.Delay call elsewhere in 05.Application would also be flagged
-        (none is known to exist at the time of this phase).
-        Failure message names the offending type, method, and the Task.Delay call site.
-        Rationale: extends 05.Application/CLAUDE.md's existing prohibition on hand-rolled
-        System.Random/DateTime.UtcNow usage to retry/backoff specifically, now that
-        ResilienceBehavior exists as the platform-sanctioned alternative (IRetryableRequest +
-        ApplicationBehaviorsBuilder.AddResilienceBehavior(...)) — documented as a Hard Violation
-        in 05.Application/CLAUDE.md but not previously mechanically enforced.
-        Offending pattern: a handler or behavior catching a transient exception and calling
-            await Task.Delay(backoffMs, ct); before retrying inline
-        Compliant pattern: implement IRetryableRequest on the request and rely on
-            ResilienceBehavior's externally-registered Polly v8 resilience pipeline
+    P-544 REMOVAL NOTE: .NoHandRolledRetryLoopOutsideResilienceBehavior and its backing
+        NoTaskDelayOutsideResilienceBehaviorPredicate were retracted when 05.Application's redesign
+        dropped ResilienceBehavior/IRetryableRequest entirely — the rule existed solely to police
+        Task.Delay usage relative to that one now-nonexistent type. Do not reintroduce a
+        ResilienceBehavior-specific rule by this name; if 05.Application ever reintroduces a retry
+        mechanism, design its governance rule fresh against that mechanism's actual shape.
 
     PipelineOrderAssertion  (public class — reflection-based registration-order helper, not ConditionList/ICustomRule)
         .AssertRegistrationOrder(IServiceCollection services, params Type[] expectedBehaviorTypesInOrder)
@@ -3410,17 +3393,6 @@ NoGenericConstraintMatchesStreamRequestPredicate  (class : ICustomRule — inter
     fail-open policy already established by SagaStateMustExtendSagaStateBasePredicate. Lives in
     Predicates/ folder. Used by ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint.
 
-NoTaskDelayOutsideResilienceBehaviorPredicate  (class : ICustomRule — internal predicate)
-    Self-exemption guard (first check): types whose TypeDefinition.Name == "ResilienceBehavior"
-    (exact match) return true unconditionally. For all other types, walks
-    TypeDefinition.Methods.Body.Instructions for Call or Callvirt opcodes whose
-    MethodReference.Name == "Delay" AND MethodReference.DeclaringType.FullName ==
-    "System.Threading.Tasks.Task" (covers all Task.Delay overloads in one check — both
-    DeclaringType and Name must match, avoiding false positives on unrelated "Delay" methods on
-    other types). Returns false (rule violated) on the first match, with failure message naming the
-    offending type and method. Lives in Predicates/ folder. Used by
-    ApplicationPipelineRules.NoHandRolledRetryLoopOutsideResilienceBehavior.
-
 MetricsInstrumentationRules  (static class — Histogram outcome-tag completeness predicate; WO-038 P-235)
     .RequestDurationRecordsIncludeOutcomeTag(Assembly assembly)  → ConditionList
         Asserts that every method in the supplied assembly containing a Call/Callvirt
@@ -3441,8 +3413,7 @@ MetricsInstrumentationRules  (static class — Histogram outcome-tag completenes
         Rationale: the WO-038 audit found MetricsBehavior<,> (P-217) records
         sharedkernel.application.request.duration with no outcome tag, making it impossible to
         distinguish success/failure/exception/cached/duplicate/unauthorized outcomes in
-        dashboards — the streaming counterpart StreamMetricsBehavior (P-234) already ships with
-        the tag. This rule mechanically closes the gap so no future Histogram<T>.Record call
+        dashboards. This rule mechanically closes the gap so no future Histogram<T>.Record call
         site in 05.Application/05.Application.Behaviors can regress to a bare, outcome-less
         measurement.
         Offending pattern: ApplicationDiagnostics.RequestDuration.Record(elapsedMs,
@@ -3450,14 +3421,11 @@ MetricsInstrumentationRules  (static class — Histogram outcome-tag completenes
         Compliant pattern: ApplicationDiagnostics.RequestDuration.Record(elapsedMs,
             new KeyValuePair<string, object?>("request.name", requestName),
             new KeyValuePair<string, object?>("outcome", outcome));
-        Real-assembly note: when this rule is eventually run against the real
-        SharedKernel.Application.Behaviors assembly, it is EXPECTED TO FAIL against the
-        currently-shipped MetricsBehavior<,> (P-217) until a companion 05.Application phase
-        retrofits the outcome tag — see the Cross-Domain Dependencies entry for this phase. The
-        implementer of SK.00.MetricsOutcomeTagAndMisregistrationGuard must therefore validate
-        fire/pass paths against CONTRIVED in-memory fixtures only; do not point AssertRule at
-        the real assembly until the retrofit ships, or this phase's own test suite would ship
-        permanently red.
+        Note (P-544): the histogram's unit changed ms → s and it now resolves through
+        IMeterFactory (see ApplicationMetrics in 05.Application/CLAUDE.md) — this rule inspects
+        the Record call site's tag literals only, so the unit/resolution change does not affect
+        its detection logic. Real-assembly verification against 05.Application's own
+        MetricsBehavior<,> remains that domain's responsibility.
 
 RequestDurationRecordMissingOutcomeTagPredicate  (class : ICustomRule — internal predicate)
     For each type, walks TypeDefinition.Methods.Body.Instructions. Collects every method that
@@ -5325,7 +5293,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly` must be called with the `SharedKernel.Persistence.EfCore` assembly only. The `castclass` opcode check is a simple operand name prefix match — no semantic model or type hierarchy walk is required. The rule fires on any cast whose target `TypeReference.Name` starts with `"SpecificationEvaluator"`, covering both the generic (`SpecificationEvaluator<T>`) and any subclass forms in IL.
 - `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` must be called with the `06.Persistence` assembly containing concrete `IUnitOfWork` implementors (e.g., `SharedKernel.Persistence.EfCore`). `SingleConstructorPredicate` self-scopes to `IUnitOfWork` implementors only — passing an unrelated assembly produces zero matches and the rule trivially passes without masking violations, provided the correct persistence assembly is also passed.
 - `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction` must be called with the `05.Application` assembly. Passing persistence assemblies is redundant — the namespace exemption inside `NoDbContextTransactionInApplicationPredicate` is a safety net, not the primary enforcement mechanism. The "IDbContextTransaction" substring check covers the full interface name including namespace in the `FullName` property, ensuring `BeginTransactionAsync` return types and `IDbContextTransaction`-typed fields are both detected.
-- `EfCorePackageHygieneRules.NoDirectEfPropertyUsageInEfCoreAssembly` (WO-051 P-327) must be called with the `SharedKernel.Persistence.EfCore` assembly only, mirroring its sibling `NoSpecificationEvaluatorDowncastInEfCoreAssembly`. `NoDirectEfPropertyUsagePredicate` matches on `MethodReference.Name == "Property"` AND `MethodReference.DeclaringType.FullName == "Microsoft.EntityFrameworkCore.EF"` — a `DeclaringType`+`Name` match, not a bare method-name match, consistent with how `NoDbContextTransactionInApplicationPredicate`/`NoTaskDelayOutsideResilienceBehaviorPredicate` already discriminate BCL/framework static-method calls whose bare name alone could collide.
+- `EfCorePackageHygieneRules.NoDirectEfPropertyUsageInEfCoreAssembly` (WO-051 P-327) must be called with the `SharedKernel.Persistence.EfCore` assembly only, mirroring its sibling `NoSpecificationEvaluatorDowncastInEfCoreAssembly`. `NoDirectEfPropertyUsagePredicate` matches on `MethodReference.Name == "Property"` AND `MethodReference.DeclaringType.FullName == "Microsoft.EntityFrameworkCore.EF"` — a `DeclaringType`+`Name` match, not a bare method-name match, consistent with how `NoDbContextTransactionInApplicationPredicate` already discriminates BCL/framework static-method calls whose bare name alone could collide.
 - `NoDirectEfPropertyUsagePredicate` carries NO exemption mechanism — no namespace guard, no allow-list registry — mirroring `NoSpecificationEvaluatorDowncastPredicate`'s own zero-exemption precedent. This is deliberate: the platform's one known legitimate `EF.Property<T>` pattern (a `HasQueryFilter(Expression<Func<TEntity,bool>> filter)` tenant/shadow-property global query filter) is structurally, automatically excluded, because the C# compiler never emits a `Call`/`Callvirt` opcode targeting `EF.Property` when the call appears inside a lambda whose converted type is `Expression<TDelegate>` — it lowers the entire lambda body into `System.Linq.Expressions.Expression`-builder calls instead, referencing `EF.Property<T>`'s `MethodInfo` only as metadata. This claim must be confirmed empirically during implementation (compile the `HasQueryFilter`-shaped pass-path fixture, inspect the emitted IL) per this domain's established "confirmed empirically, not assumed" discipline (SK0025/`StorageTopologyRules`/`SearchTopologyRules` precedent) — do not trust this design note without that verification. If a genuinely justified direct usage is ever found, it requires a governance review and an explicit revision of this entry (e.g., adding a small allow-list registry mirroring `ReflectionExemptionRegistry`'s shape) before any exemption is applied in code.
 - `NoDirectEfPropertyUsageInEfCoreAssembly` introduces zero new SK diagnostic ID and zero new NuGet dependency — the fourth predicate in `EfCorePackageHygieneRules`, all four carrying no SK ID, following that class's established "EfCore-package-scoped regression-prevention rule, no SK ID" shape rather than the platform-wide SK0013 (raw-`HttpClient`)/SK0020 (ad hoc-logging) Roslyn-analyzer shape its own motivating phase input cites — a deliberate choice: the IL-opcode-presence technique avoids needing to duplicate the C# compiler's own expression-tree-conversion determination (`SemanticModel.GetTypeInfo(lambda).ConvertedType` against `Expression<TDelegate>`) inside a Roslyn analyzer's semantic-model logic. Motivating incidents: P-105 (`EfReadRepository.GetByIdsAsync`) and P-316 (`TenantedRepository`) — the second independent occurrence of the identical defect class is what elevated this from a one-time fix to a mechanically-enforced prohibition, mirroring the SK0012/`ReflectionExemptionRegistry` escalation precedent (P-147).
 - `NoDirectEfPropertyUsageInEfCoreAssembly` is UNVERIFIABLE against the real, corrected `SharedKernel.Persistence.EfCore` assembly until `06.Persistence` P-316 ships — as of this rule's introduction, `TenantedRepository`'s `EF.Property<TId>` call sites are still live in shipped source. Design/implementation/initial tests use contrived in-memory Mono.Cecil fixtures only; real-assembly re-verification is a GATING acceptance criterion (not a non-blocking follow-up), mirroring the `SK.00.SearchTopology`/`SK.00.IntelligenceTopology`/`SK.00.WorkflowTopology` precedent — see the Cross-Domain Dependencies entry in `00.Governance/state-map.md`'s `SK.00.EfPropertyUsageGuard` phase block. **CORRECTED at implementation closeout (2026-07-31):** `06.Persistence` P-316 had already shipped by implementation time — confirmed on disk (`06.Persistence/state-map.md`'s C-101 is `●` Complete; `TenantedRepository.cs` uses `BuildIdEqualsPredicate`'s `Expression.Parameter`/`Property`/`Equal`/`Lambda` construction for both `GetByIdForTenantAsync`/`GetByIdForTenantIncludingDeletedAsync`, with no direct `EF.Property<TId>` call remaining). Real-assembly verification was wired in this phase, not deferred: `SharedKernel.ArchitectureTests.Tests.csproj` gained a test-only `ProjectReference` (`PrivateAssets="all"`) to `SharedKernel.Persistence.EfCore`, and `EfCorePackageHygieneRulesTests.NoDirectEfPropertyUsageInEfCoreAssembly_RealEfCoreAssembly_RulePasses` confirms zero violations.
@@ -5395,15 +5363,14 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` and `.NoInlineResultBranchBeforeHttpResultOutsideWebApi` both accept `params Assembly[]` — the caller is responsible for never including `SharedKernel.Presentation.WebApi` in the supplied list. Unlike most prior `ICustomRule` predicates in this domain, there is no internal `TypeDefinition.Namespace.StartsWith(...)` guard inside either predicate; this is a deliberate design choice because no single namespace prefix covers every legitimate in-package construction site (`ErrorProblemDetailsExtensions`, the global `IExceptionHandler`, `ResultHttpExtensions` itself, and any future factory all legitimately trigger both signals).
 - `PresentationLayeringRules` lives in `SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs`; its two `ICustomRule` predicates live in `Predicates/`. Both reuse the existing `Mono.Cecil >= 0.11.5` reference — no new NuGet dependency introduced by this phase.
 - **`const string` vs `static readonly string` produce different IL at the *consuming* call site** — this matters for any future test fixture or predicate reasoning about field-reference detection. The C# compiler const-folds every `const string` field reference into a bare `Ldstr` literal at each call site (no `Ldsfld`, no trace that a constant was referenced at all); only `static readonly string` field references compile to `Ldsfld`. `StringConstantsClassDetector.ResolveStringConstants` correctly resolves the *declaring* type's own value for both field kinds (via `FieldDefinition.Constant` for `const`, via a `.cctor` `Ldstr`→`Stsfld` walk for `static readonly`), but `NoBareHealthCheckLiteralWhereConstantsExistPredicate`'s pass-path (field access instead of literal) only holds for `static readonly string` constants classes — a `const string` constants class can never produce a passing fixture for the "field access, not literal" scenario, because Roslyn erases the field reference before Mono.Cecil ever sees the consuming method's IL. Discovered while building the T-140 pass-path fixture for `SK.00.HealthCheckConstantsGuard` (WO-028 P-178); document this if a future domain's constants-class convention is ever questioned for using `const` instead of `static readonly`.
-- `ApplicationPipelineRules` introduces zero new SK diagnostic IDs — all three new checks are pure Mono.Cecil `ICustomRule` predicates, mirroring the established precedent (`RedisTopologyRules`, `CompositionRootExclusivityRules`, `GrpcNeverReferencesContracts`, `PresentationLayeringRules`) that boundary-mapping and structural-purity prohibitions do not always require minting a new Roslyn analyzer. `00.Governance` never references `05.Application`/`05.Application.Behaviors` directly (layering: `00.Governance` references nothing) — all three predicates and `PipelineOrderAssertion` are designed and tested here against contrived in-memory fixture assemblies; `05.Application` is responsible for invoking them against its own real assembly once WO-036's Core phase (`05.Application/state-map.md` C-18..C-29) ships.
-- `NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate`'s behavior-name set (`"TracingBehavior"`, `"ResilienceBehavior"`, `"CacheInvalidationBehavior"`) and forbidden-namespace set are both caller-supplied `HashSet<string>` constructor parameters, never hardcoded inside the predicate — the same caller-supplied-list convention already established by `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive`'s `dependencyCheckMethodNamePrefixes` parameter. This lets a future fourth infra-adjacent behavior be covered by a caller-side change alone, no predicate code change required.
+- `ApplicationPipelineRules` introduces zero new SK diagnostic IDs — its remaining checks are pure Mono.Cecil `ICustomRule` predicates, mirroring the established precedent (`RedisTopologyRules`, `CompositionRootExclusivityRules`, `GrpcNeverReferencesContracts`, `PresentationLayeringRules`) that boundary-mapping and structural-purity prohibitions do not always require minting a new Roslyn analyzer. `00.Governance` never references `05.Application`/`05.Application.Behaviors` directly (layering: `00.Governance` references nothing) — both predicates and `PipelineOrderAssertion` are designed and tested here against contrived in-memory fixture assemblies; `05.Application` is responsible for invoking them against its own real assembly. P-544 retracted the third check, `.NoHandRolledRetryLoopOutsideResilienceBehavior` (and its backing `NoTaskDelayOutsideResilienceBehaviorPredicate`), when 05.Application's redesign dropped `ResilienceBehavior`/`IRetryableRequest` entirely — see the "P-544 REMOVAL NOTE" in the Architecture Test Contracts entry above.
+- `NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate`'s behavior-name set (`"TracingBehavior"`, `"CacheInvalidationBehavior"`) and forbidden-namespace set are both caller-supplied `HashSet<string>` constructor parameters, never hardcoded inside the predicate — the same caller-supplied-list convention already established by `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive`'s `dependencyCheckMethodNamePrefixes` parameter. This lets a future infra-adjacent behavior be covered by a caller-side change alone, no predicate code change required. As of P-544, `CacheInvalidationBehavior` lives in the sibling `SharedKernel.Application.Behaviors.Caching` assembly — callers pass both assemblies to `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure`.
 - `NoGenericConstraintMatchesStreamRequestPredicate` introduces the platform's **fourth distinct Mono.Cecil technique** for this domain, alongside opcode-presence (`NoMakeGenericMethodReflectionPredicate`), `Ldstr` literal-collection (`HealthCheckTagIntegrityRules`), and field-shape/literal-value resolution (`StringConstantsClassDetector`): **IL generic-parameter-constraint inspection** (`GenericParameter.Constraints` on an open generic type's type parameter, with interface-closure resolution). This is a structural check at the type-definition level, not an instruction walk — document any new constraint-inspection helper here if a future rule needs the same technique, so it is reused rather than redefined.
-- `NoTaskDelayOutsideResilienceBehaviorPredicate` is a documented **fingerprint heuristic, not a full retry-loop detector** — it flags any `Task.Delay` call outside a type named exactly `ResilienceBehavior`, accepting the risk that a legitimate non-retry `Task.Delay` use elsewhere in `05.Application` would also be flagged. This mirrors the same documented-limitation philosophy already established for `HealthCheckTagIntegrityRules`'s literal-collection technique and `NoInlineResultBranchBeforeHttpResultPredicate`'s method-level co-occurrence check — do not narrow or broaden this heuristic speculatively; only revise it if a real false positive or false negative is found in production code.
 - `PipelineOrderAssertion` is the first artifact in `SharedKernel.ArchitectureTests` that is **not** a `ConditionList`/`ICustomRule` — it is a plain public reflection helper operating on an unbuilt `IServiceCollection`'s `ServiceDescriptor` entries, never calling `BuildServiceProvider()`. It exists in this package (not `16.Testing`) because it asserts an architectural invariant (fixed `IPipelineBehavior<,>` registration order), the same rationale that already places `ArchitectureRuleBase` and every `ICustomRule` predicate here rather than in shared test infrastructure. `05.Application.Behaviors.Tests` is the intended consumer — see `05.Application/state-map.md` T-17/T-18 (WO-036).
 - SK0014 `ClosedGenericResiliencePipelineRegistrationAnalyzer`, SK0015 `StreamPipelineBehaviorMisregistrationAnalyzer`, and SK0016 `RequestTypeShortNameUsageAnalyzer` (WO-038 P-235) are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0012, SK0013 were the prior two). All three target `netstandard2.0` and pin `Microsoft.CodeAnalysis.CSharp 4.14.0`, same as every prior SK analyzer.
 - SK0015 `StreamPipelineBehaviorMisregistrationAnalyzer` is the second SK analyzer in this domain (after SK0011) that requires `SemanticModel.GetSymbolInfo` — resolving whether a DI-registration type argument implements `MediatR.IStreamPipelineBehavior<,>` cannot be done from syntax alone (unlike SK0703/SK0705/SK0708's naming-heuristic approach), because the five known streaming behavior names are an enumerable convention, not a structural guarantee; using the interface-implementation check instead avoids a `"Stream"`-prefix naming-heuristic false-negative risk. The self-exemption check (`AddStreamingBehaviors` method name) remains syntax-only — it is evaluated on the enclosing `MethodDeclarationSyntax` before the semantic-model call is made, to short-circuit the more expensive symbol resolution inside the one sanctioned call site.
 - SK0016 `RequestTypeShortNameUsageAnalyzer`'s namespace scope (`SharedKernel.Application`/`SharedKernel.Application.Behaviors`) is a trigger-IN scope, not a trigger-OUTSIDE-with-exemption scope — this is the inverse of the pattern used by SK0001/SK0007/SK0013 (which fire everywhere except a named namespace). The inversion is deliberate: the `typeof(TRequest).Name` collision risk is intrinsic to MediatR pipeline-behavior tag/key construction, which lives exclusively in this domain, so scoping the rule to fire only inside it avoids false positives from unrelated `typeof(X).Name` usage elsewhere in the platform (e.g. legitimate short-name display strings).
-- `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` (WO-038 P-235) reuses the `Ldstr` literal-collection technique from `HealthCheckTagIntegrityRules` (WO-027 P-173) — no new Mono.Cecil technique is introduced, only a new call-site search target (`Histogram<T>.Record`). This rule is designed and tested against CONTRIVED in-memory fixtures only for this phase — it is EXPECTED TO FAIL if pointed at the real `SharedKernel.Application.Behaviors` assembly until a companion `05.Application` phase retrofits the non-streaming `MetricsBehavior<,>` (P-217) to emit the `"outcome"` tag the streaming `StreamMetricsBehavior` (P-234) already carries. `00.Governance` does not perform that retrofit — it is production code in `05.Application`, outside this domain's jurisdiction (`00.Governance` references nothing and writes no implementation files for other domains). Real-assembly re-verification is tracked as a follow-up once that companion phase ships, following the established `P-170`/`P-227`/`P-228` "real-assembly verification only" dependency pattern.
+- `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` (WO-038 P-235) reuses the `Ldstr` literal-collection technique from `HealthCheckTagIntegrityRules` (WO-027 P-173) — no new Mono.Cecil technique is introduced, only a new call-site search target (`Histogram<T>.Record`). This rule is designed and tested against CONTRIVED in-memory fixtures only — real-assembly verification against `05.Application`'s own `MetricsBehavior<,>` (which, as of P-544, resolves its `ApplicationMetrics` histogram through `IMeterFactory` and records duration in seconds, not milliseconds) is `05.Application`'s responsibility, outside this domain's jurisdiction (`00.Governance` references nothing and writes no implementation files for other domains).
 - `ClosedGenericResiliencePipelineRegistrationAnalyzer` (SK0014) fires globally with no suppression namespace, unlike most namespace-scoped SK analyzers — `ResiliencePipeline<T>` (arity 1) is unsafe as a DI-registered or injected type in any assembly, not only `SharedKernel.Application`. Suppression is per-site only (`#pragma warning disable SK0014`).
 - SK0017 `CommandImplementsCacheableQueryAnalyzer`, SK0018 `QueryImplementsInvalidatesCacheAnalyzer`, and SK0019 `RetryableRequestWithoutIdempotencyAnalyzer` are the domain's third, fourth, and fifth analyzers requiring a `SemanticModel`-resolved interface closure (`INamedTypeSymbol.AllInterfaces`), after SK0011 and SK0015. A `BaseList` simple-name check is insufficient for these three rules because `ICommandBase`/`IQuery<TResponse>` are typically implemented transitively (e.g. through `ICommand<TResponse> : ICommandBase`), not declared directly on the command/query type.
 - All three interface matches (SK0017–SK0019) use `OriginalDefinition` + `ContainingNamespace` prefix check (`"SharedKernel.Application"`, covering both `SharedKernel.Application` and `SharedKernel.Application.Behaviors`) rather than exact-assembly `INamedTypeSymbol` identity — this is deliberate so analyzer test fixtures stay self-contained: a fixture-local interface declared inside a matching-namespace code block in the SAME test compilation satisfies the check, with no `ProjectReference` to the real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies required for fire/pass-path tests.
@@ -5461,7 +5428,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0030's interface match uses the same "simple name + `ContainingNamespace` prefix" discriminator established by SK0017–SK0019 (`"IHasSuccessFlag"` + `"SharedKernel.Primitives"` prefix, matching the real type's actual home at `SharedKernel.Primitives.Results.IHasSuccessFlag` — confirmed by reading the shipped `01.Core` source, not assumed) rather than an exact-assembly `INamedTypeSymbol` identity check, for the same reason SK0017–SK0019 chose it: analyzer test fixtures can declare a fixture-local `IHasSuccessFlag`-named interface inside a matching-namespace code block in the SAME test compilation, with no `ProjectReference` to the real `SharedKernel.Primitives` assembly required for fire/pass-path unit tests. The check walks `INamedTypeSymbol.AllInterfaces` (plus the resolved type itself) — never a `BaseList`/syntax-only check — since `Result`/`Result<T>` and any consumer-defined `IHasSuccessFlag` implementor may satisfy the interface transitively.
 - For the `AwaitExpressionSyntax` shape, `SemanticModel.GetTypeInfo(awaitExpressionSyntax)` already returns Roslyn's own unwrapped "what does `await x` evaluate to" type — no manual `Task<T>`/`ValueTask<T>` unwrapping logic is written or needed. This is what makes `await FooAsync();` as a bare statement (where `FooAsync` returns `Task<Result<T>>`/`ValueTask<Result<T>>`) resolve directly to `Result<T>` and correctly FIRE — the documented edge case explicitly called out by this phase's own acceptance criteria, and the CS4014 analogy one level further down: an awaited-but-unobserved `Result` outcome is exactly as dangerous as an unawaited `Task`.
 - SK0030 only ever inspects the OUTERMOST `ExpressionStatementSyntax.Expression`'s resolved type — never a nested sub-expression's type. This single design choice is what makes "passed as an argument" (`Bar(Foo());`, outer type is `Bar`'s return type) and "receiver of a member-access/method chain" (`Foo().Match(...);`, outer type is `Match`'s return type) both pass without any special-case logic — while a fluent chain whose OUTERMOST call still resolves to an `IHasSuccessFlag`-implementing type (`Foo().Map(x => x + 1);`, where `Map` itself returns `Result<TNew>`) correctly still FIRES, since the chain's final produced `Result` is genuinely, separately discarded. This nuance is documented in the analyzer's own XML doc and proven by an explicit fire/pass test pair so a future reader does not "fix" the fire case as a false positive.
-- SK0030 deliberately does NOT register on `ObjectCreationExpressionSyntax` (`Result`/`Result<T>` in this platform are produced exclusively via static factory methods — `Result.Success()`/`Result<T>.Failure(...)` — never a public constructor call) or on `ConditionalAccessExpressionSyntax` (`maybeService?.ReturnsResult();`). Both are documented, deliberate scope limitations for this phase — accepted false-negative risk, mirroring this domain's established `SK0708`/`HealthCheckTagIntegrityRules`/`NoTaskDelayOutsideResilienceBehaviorPredicate` "document the limitation, revisit only on a real finding" discipline — not oversights.
+- SK0030 deliberately does NOT register on `ObjectCreationExpressionSyntax` (`Result`/`Result<T>` in this platform are produced exclusively via static factory methods — `Result.Success()`/`Result<T>.Failure(...)` — never a public constructor call) or on `ConditionalAccessExpressionSyntax` (`maybeService?.ReturnsResult();`). Both are documented, deliberate scope limitations for this phase — accepted false-negative risk, mirroring this domain's established `SK0708`/`HealthCheckTagIntegrityRules` "document the limitation, revisit only on a real finding" discipline — not oversights.
 - SK0030 has NO `SharedKernel.ArchitectureTests` counterpart, the first single-analyzer phase in this file where that is explicitly by design rather than a pending gap. Unlike every `*TopologyRules`-style phase, a bare-statement `Result` discard is inherently a per-syntax-tree, per-compilation-unit concern the Roslyn analyzer already resolves completely inside each consuming project's own build — there is no assembly-dependency-graph or IL-level aspect to this rule an `ICustomRule`/`ConditionList` predicate could usefully add.
 - SK0030 is the platform's first analyzer whose "GATING, not deferred" verification pass audits ALREADY-SHIPPED code across other domains (`05.Application.Behaviors`, `06.Persistence.EfCore`, `07.Messaging.MassTransit`, `17.Workflows.Temporal` — all four already Published as of this phase's authoring, 2026-07-27) rather than waiting on a not-yet-implemented dependency, unlike every `*TopologyRules` "designed ahead of a pending phase" precedent in this file (`SearchTopologyRules`, `IntelligenceTopologyRules`, `WorkflowTopologyRules`). Because this domain's own Test Rules forbid compiling real source files directly ("never test analyzers by compiling real source files manually" — `CSharpAnalyzerTest`/inline-markup only), the audit is executed as a manual/tool-assisted review: grep/read each domain's shipped `Result`/`Result<T>`-consuming call sites, catalog every DISTINCT real consumption shape encountered, then encode each shape as a representative (paraphrased, not literally copy-pasted) pass-path fixture. If the audit finds a real call site structurally matching SK0030's fire condition, that is a genuine, previously-invisible defect in the OWNING domain's shipped code, not a false positive to "fix" by weakening the rule — record it as a new finding and as a candidate follow-up work order in the owning domain, per this agent's jurisdiction boundary (`00.Governance` never implements another domain's production code).
 
@@ -5630,3 +5597,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-14] WO-084/P-535: ServiceDefaults layering-grant and forwarded-header tests re-pointed at the split integration packages (agent)
 - [2026-09-15] Contracts redesign: removed `ContractsLayeringRules`/`NoDirectEventEnvelopeConstructionPredicate` (construction outside `EventEnvelope.Wrap` no longer compiles); `ContractsReferencesOnlyCoreAndDomain` renamed `ContractsReferencesOnlyCore` and now forbids `SharedKernel.Domain`; `ContractsPurityRules` rewritten — `IntegrationEventsHaveNoNonTrivialMethods` judges only `IIntegrationEvent` types, no `EventEnvelope` exemption, new `NoResultTypedPublicMemberPredicate`, every rule proven against the real `SharedKernel.Contracts` assembly; SK0038/SK0039 `IntegrationEventAttributeAnalyzer` added to the registry (SK0040 next); Cross-Service DTO Boundary Mapping rewritten without `Envelope<T>` (coordinator)
 - [2026-09-15] SK0037 `ValueObjectMissingEnsureValid` added to the Diagnostic Rule Registry, which previously jumped from SK0036 to SK0038 (coordinator)
+- [2026-09-15] SK0040 `PipelineMarkerResponseShapeMismatchAnalyzer` added — pre-publish companion to `05.Application`'s P-544 redesign. Reads `FailureResponse.cs` and every behavior calling it before writing the rule: only `AuthorizationBehavior`/`IAuthorizeRequest` and `IdempotencyBehavior`/`IIdempotentRequest` genuinely construct a failed response through `FailureResponse.Create<TResponse>()`, which requires a `Result`/closed `Result<T>` response or throws `InvalidOperationException` at runtime. `AuditingBehavior`/`IAuditableRequest<TResponse>` and `LoggingBehavior`/`ILoggableRequest<TResponse>` were BOTH found, by reading their source, to never call it — both only forward the response `next()` already produced and classify it through `ResponseOutcome.TryGetError`, which degrades gracefully for a non-`Result` response — so neither is checked by this rule, and this applies to `IAuditableRequest` too even though the phase input's own marker list did not flag it for verification the way it flagged `ILoggableRequest`; independent verification found the identical exemption applies to both. `ValidationBehavior` also calls `FailureResponse.Create` but has no marker interface gating its scope (`TRequest : IRequest<TResponse>` unconditionally), so it is structurally out of reach for a type-declaration rule of this shape and not part of the trigger. Interface-closure resolution reuses `MarkerInterfaceHelpers.HasInterface` (WO-040/P-248's technique) for the two markers, plus new local logic resolving `MediatR.IRequest<TResponse>`'s closed type argument and checking it against `SharedKernel.Primitives.Results.Result`/`Result<T>` by exact namespace. An open type parameter or unresolved/error response type is never flagged (cannot determine the eventual closed shape); a closed `Result<T>` whose own type argument is still open still passes (only the outer shape is checked). Abstract types exempted, matching SK0009/SK0017/SK0018. No `SharedKernel.ArchitectureTests` counterpart — pure Roslyn analyzer, mirrors SK0017–SK0019's/SK0030's "no architecture-test counterpart by design" note. `SharedKernel.Analyzers.Tests`: 329/329 pass (10 new SK0040 tests: 3 fire-path including a both-markers-at-once case, 7 pass-path covering `Result`/closed `Result<T>` responses, no-`IRequest<>`, the `IAuditableRequest`/`ILoggableRequest` exclusions, and both open-generic shapes). `SharedKernel.ArchitectureTests.Tests` build currently fails — confirmed unrelated to this change: `05.Application.Behaviors`/`SharedKernel.Application`'s own `PublicApi.Analyzers` gate (RS0016) is failing on `IIdempotentRequest.Fingerprint`/`AnonymousRequestContext`/`SystemRequestContext`, all mid-edit by a concurrent `05.Application` session per this task's own stated constraint — not something `00.Governance` may fix, and this rule has no dependency on any of those in-flight members. Phase `SK.00.PipelineMarkerResponseShapeGuard` added — 13 tasks: D-84, C-146, T-379–T-388, DO-56. Root Backlog ID: P-544 (governance-phase-implementer)

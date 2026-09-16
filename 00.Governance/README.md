@@ -168,7 +168,7 @@ Prefer either over disabling a rule in `.editorconfig`. A per-site suppression r
 
 ## Analyzer rules
 
-`SharedKernel.Analyzers` contains 44 rules. Every diagnostic's help link in the IDE opens that rule's section below.
+`SharedKernel.Analyzers` contains 45 rules. Every diagnostic's help link in the IDE opens that rule's section below.
 
 **Which rules will you actually see?** Most rules only apply to code that already uses the technology they govern. The rules that apply to almost any C# project are `SK0001` (clock access), `SK0003`–`SK0005` (exception and error shape), `SK0011` (GUID formatting), `SK0016` (type-name collisions), `SK0020`–`SK0021` (log authoring), `SK0022` (magic strings), `SK0030` (discarded results) and `SK0033` (reflection-based mappers).
 
@@ -204,11 +204,11 @@ The MediatR pipeline and outbound HTTP.
 |---|---|---|
 | [SK0013](#sk0013-rawhttpclientconstructorinjection) | `HttpClient` injected into a constructor | A typed client via `AddRestClient<TClient>()` |
 | [SK0014](#sk0014-closedgenericresiliencepipelineregistration) | A closed-generic `ResiliencePipeline<T>` registration | The string-keyed, non-generic `ResiliencePipeline` |
-| [SK0015](#sk0015-streampipelinebehaviormisregistration) | A stream behavior registered as a request behavior | `AddStreamingBehaviors()` |
+| [SK0015](#sk0015-streampipelinebehaviormisregistration) | A stream behavior registered as a request behavior | Register it against `IStreamPipelineBehavior<,>` |
 | [SK0016](#sk0016-requesttypeshortnameusage) | `typeof(T).Name` used as a metric tag, log scope or cache key | `typeof(T).FullName ?? typeof(T).Name` |
 | [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
 | [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
-| [SK0019](#sk0019-retryablerequestwithoutidempotency) | A retryable request that is not idempotent | Also implement `IIdempotentRequest` |
+| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 
 #### Logging
 
@@ -1033,7 +1033,7 @@ Use the non-generic, string-keyed `ResiliencePipeline` instead of `ResiliencePip
 
 #### Why it matters
 
-The platform registers Polly v8 resilience pipelines by string key and resolves them as the non-generic `Polly.ResiliencePipeline` from `ResiliencePipelineProvider<string>`. This is how `ResilienceBehavior` in `SharedKernel.Application.Behaviors` resolves its pipelines.
+The platform registers Polly v8 resilience pipelines by string key and resolves them as the non-generic `Polly.ResiliencePipeline` from `ResiliencePipelineProvider<string>` — the shape `SharedKernel.Communication.Rest`'s typed clients use, and the one a consuming service should follow for its own pipelines.
 
 A closed-generic `ResiliencePipeline<TResponse>` ties resolution to the exact closed response type as well as the key. When the two do not line up, the call silently falls back to a no-op pipeline. Retry and circuit-breaker protection is lost, and nothing at runtime tells you.
 
@@ -1104,7 +1104,7 @@ MediatR sends streaming requests (`IStreamRequest<TResponse>`, including `IStrea
 
 #### What it does not flag
 
-- Any registration inside a method named `AddStreamingBehaviors`. The exemption matches the method name only, not the containing type.
+- Any registration inside a method named `AddStreamingBehaviors` — the conventional name for a service's own streaming-behavior composition helper. The exemption matches the method name only, not the containing type.
 - Generic registration overloads such as `AddTransient<IPipelineBehavior<TReq, TRes>, TImpl>()`, `TryAdd*` calls, `ServiceDescriptor` construction, and MediatR's own `AddOpenBehavior(...)` configuration.
 - Implementation types that implement only `IPipelineBehavior<,>`.
 
@@ -1118,17 +1118,12 @@ services.AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamAuditBehavior<,
 ```csharp
 // Compliant: a custom streaming behavior registered against the streaming interface
 services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamAuditBehavior<,>));
-
-// Compliant: the built-in streaming behaviors, registered by the builder
-services.AddSharedKernelApplicationBehaviors()
-    .AddStreamingBehaviors()
-    .Build();
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0015: 'StreamAuditBehavior' implements IStreamPipelineBehavior<,> but is registered against IPipelineBehavior<,>. MediatR dispatches streaming requests through IStreamPipelineBehavior<,> only — this registration is silently never invoked. Call ApplicationBehaviorsBuilder.AddStreamingBehaviors() instead.
+warning SK0015: 'StreamAuditBehavior' implements IStreamPipelineBehavior<,> but is registered against IPipelineBehavior<,>. MediatR dispatches streaming requests through IStreamPipelineBehavior<,> only — this registration is silently never invoked. Register it against IStreamPipelineBehavior<,> instead.
 ```
 
 #### Suppressing
@@ -1312,62 +1307,61 @@ warning SK0018: 'GetOrderQuery' implements IQuery<TResponse> and IInvalidatesCac
 
 ---
 
-<a id="sk0019-retryablerequestwithoutidempotency"></a>
-### SK0019 — RetryableRequestWithoutIdempotency
+<a id="sk0040-pipelinemarkerresponseshapemismatch"></a>
+### SK0040 — PipelineMarkerResponseShapeMismatch
 
 **Category:** Design · **Default severity:** Warning
 
-A request that implements `IRetryableRequest` must also implement `IIdempotentRequest`.
+A request implementing `IAuthorizeRequest` or `IIdempotentRequest` must declare its MediatR response as `Result` or a closed `Result<T>`.
 
 #### Why it matters
 
-`ResilienceBehavior` re-runs the handler when an attempt fails. If the first attempt already committed part of its work, for example charged a card and then timed out, the retry does it again. `IIdempotentRequest` supplies the key that `IdempotentCommandBehavior` uses to detect the duplicate and stop the second execution.
+`AuthorizationBehavior` and `IdempotencyBehavior` short-circuit through the internal `FailureResponse.Create<TResponse>()`, which binds to a public static `Failure(Error)` factory the first time a closed `TResponse` is used — `Result` takes a hardcoded fast path, and every other `TResponse` must expose that factory or the call throws `InvalidOperationException`. If a request implementing either marker declares a plain DTO as its response, nothing fails at compile time — the first authorization denial or duplicate submission throws in production. This rule moves that failure to compile time.
+
+Reading `FailureResponse.cs` and every behavior that calls it found exactly two callers: `AuthorizationBehavior` (gated by `IAuthorizeRequest`) and `IdempotencyBehavior` (gated by `IIdempotentRequest`). `AuditingBehavior` (`IAuditableRequest<TResponse>`) and `LoggingBehavior` (`ILoggableRequest<TResponse>`) never call it — both only forward the response `next()` already produced and read it through `ResponseOutcome.TryGetError`, which treats a non-`Result` response as a success rather than requiring a `Failure(Error)` factory. This rule does not check those two markers.
 
 #### What it flags
 
-- A non-abstract class, record, or struct that implements `IRetryableRequest` without also implementing `IIdempotentRequest`.
-- Interfaces are resolved through the full interface closure, including those inherited from a base class. Matching is by interface name and a containing namespace that starts with `SharedKernel.Application`.
-- Queries are flagged as well as commands.
+- A non-abstract class, record, or struct implementing `IAuthorizeRequest` and/or `IIdempotentRequest`, and `MediatR.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
+- Reported on the type name, naming every matched marker and the actual response type.
 
 #### What it does not flag
 
-- Abstract types, interface declarations, and `record struct` declarations.
-- The rule does not check that the guard will actually run. `IdempotentCommandBehavior` applies only to `ICommandBase` requests and only when `AddIdempotencyBehavior()` is enabled, so a non-command that implements both interfaces passes the rule but is not protected at runtime.
+- `IAuditableRequest<TResponse>` and `ILoggableRequest<TResponse>` — neither behavior constructs a failure response.
+- A marker implemented with no `IRequest<TResponse>` at all — no behavior can ever resolve into that type's pipeline.
+- A response type that is itself still an open type parameter (or unresolved) — the eventual closed shape cannot be determined at the declaration site.
+- A closed `Result<T>` whose own type argument `T` is an open type parameter — only the outer `Result`/`Result<T>` shape is checked.
+- Abstract types.
 
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.Resilience;
-using SharedKernel.Application.Messaging;
+using MediatR;
+using SharedKernel.Application.Behaviors.Authorization;
 
-// Flagged: SK0019
-public sealed record ChargeCardCommand(Guid PaymentId, decimal Amount) : ICommand<Guid>, IRetryableRequest;
+// Flagged: SK0040 — OrderDto has no static Failure(Error) factory
+public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<OrderDto>
+{
+    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
+}
 ```
 
 ```csharp
-using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Application.Behaviors.Resilience;
-using SharedKernel.Application.Messaging;
+using MediatR;
+using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Primitives.Results;
 
 // Compliant
-public sealed record ChargeCardCommand(Guid PaymentId, decimal Amount, string IdempotencyKey)
-    : ICommand<Guid>, IRetryableRequest, IIdempotentRequest;
+public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<Result<OrderDto>>
+{
+    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
+}
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0019: 'ChargeCardCommand' implements IRetryableRequest without also implementing IIdempotentRequest. Implement IIdempotentRequest so IdempotentCommandBehavior can guard against the retry-after-partial-commit hazard, or remove IRetryableRequest if idempotency truly cannot be guaranteed.
-```
-
-#### Suppressing
-
-A read-only query is naturally safe to re-run and has no partial commit to guard against.
-
-```csharp
-#pragma warning disable SK0019 // Read-only query: retrying has no side effects
-public sealed record GetExchangeRateQuery(string From, string To) : IQuery<decimal>, IRetryableRequest;
-#pragma warning restore SK0019
+warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its MediatR response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
 ```
 
 ---
