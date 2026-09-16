@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SharedKernel.Application.Behaviors.Shared;
 
 namespace SharedKernel.Application.Behaviors.Logging;
@@ -12,56 +13,27 @@ namespace SharedKernel.Application.Behaviors.Logging;
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
 /// <para>
-/// Logs <see cref="LogLevel.Information"/> at start ("Handling {RequestName}"), timed via
+/// Logs <see cref="LogLevel.Debug"/> at start ("Handling {RequestType}"), timed via
 /// <see cref="Stopwatch.GetTimestamp"/>/<see cref="Stopwatch.GetElapsedTime(long)"/> (no
 /// <see cref="Stopwatch"/> allocation).
 /// </para>
 /// <para>
-/// <b>Post-handler log level (WO-038, P-232, depends on P-230/IHasSuccessFlag):</b>
+/// On completion:
 /// <list type="bullet">
-///   <item>
-///     <term>Response implements <c>IHasSuccessFlag</c> with <c>IsSuccess == false</c></term>
-///     <description>Logs at <see cref="LogLevel.Warning"/> ("Handled {RequestName} with failure
-///     in {ElapsedMilliseconds}ms") so operations teams can alert on failure rates without
-///     sifting through <c>Information</c> noise.</description>
-///   </item>
-///   <item>
-///     <term>Response implements <c>IHasSuccessFlag</c> with <c>IsSuccess == true</c>,
-///     or response does not implement <c>IHasSuccessFlag</c></term>
-///     <description>Logs at <see cref="LogLevel.Information"/> ("Handled {RequestName} in
-///     {ElapsedMilliseconds}ms").</description>
-///   </item>
+///   <item><description>Success within <see cref="ApplicationLoggingOptions.SlowRequestThreshold"/> — <see cref="LogLevel.Information"/>.</description></item>
+///   <item><description>Success over the threshold — <see cref="LogLevel.Warning"/>, naming the threshold that was exceeded.</description></item>
+///   <item><description>A <c>Result</c>/<c>Result&lt;T&gt;</c> failure — <see cref="LogLevel.Warning"/>, naming the error's type and code.</description></item>
+///   <item><description>A thrown exception — <see cref="LogLevel.Error"/> with the exception, then rethrown unchanged; never swallowed.</description></item>
 /// </list>
-/// </para>
-/// <para>
-/// <b>Shared classification helper (WO-039, P-239):</b> the success/failure decision above is
-/// delegated to <see cref="ResponseOutcomeClassifier"/> — the same helper
-/// <see cref="Metrics.MetricsBehavior{TRequest,TResponse}"/> uses for its <c>outcome</c> tag, so the
-/// two behaviors' classification of a response can never silently diverge.
-/// </para>
-/// <para>
-/// On exception: logs <see cref="LogLevel.Error"/> with the exception and elapsed time, then
-/// rethrows unchanged — never swallows. Does not log request or response payloads by default
-/// (PII risk in command/query parameters).
-/// </para>
-/// <para>
-/// The <c>request.name</c> tag value uses <c>typeof(TRequest).FullName ?? typeof(TRequest).Name</c>
-/// to prevent log key collisions when two assemblies in the same host define a request type with
-/// the same short name.
-/// </para>
-/// <para>
-/// <b>Opt-in structured payload logging (WO-040, P-246):</b> when <c>TRequest</c> implements
-/// <see cref="ILoggableRequest{TResponse}"/>, the entry log line additionally opens an
-/// <see cref="ILogger.BeginScope{TState}"/> scope over <c>LoggableRequestFields</c> (skipped when
-/// null/empty), and the completion log line additionally opens a scope over
-/// <c>GetLoggableResponseFields(response)</c> — only when <c>next()</c> returns normally, never on
-/// a thrown exception. The request-side scope also wraps the fault-path <see cref="LogLevel.Error"/>
-/// log line. This is a pure additive branch: a <c>TRequest</c> not implementing
-/// <see cref="ILoggableRequest{TResponse}"/> produces byte-for-byte identical logging behavior to
-/// before this capability existed.
+/// Classification is delegated to <see cref="ResponseOutcome"/>, the same helper
+/// <see cref="Metrics.MetricsBehavior{TRequest,TResponse}"/> uses, so the two behaviors' taxonomy
+/// can never silently diverge. Never logs request or response payloads by default — see
+/// <see cref="ILoggableRequest{TResponse}"/> for the opt-in mechanism.
 /// </para>
 /// </remarks>
-public sealed partial class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
+public sealed partial class LoggingBehavior<TRequest, TResponse>(
+    ILogger<TRequest> logger,
+    IOptions<ApplicationLoggingOptions> options)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
@@ -71,39 +43,37 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(ILogger<TReques
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var requestName = typeof(TRequest).FullName ?? typeof(TRequest).Name;
+        var requestType = typeof(TRequest).FullName ?? typeof(TRequest).Name;
         var startTimestamp = Stopwatch.GetTimestamp();
 
-        // WO-040 (P-246): pure additive opt-in — a TRequest not implementing ILoggableRequest<TResponse>
-        // takes the `loggable is null` path below and produces identical logging behavior to before
-        // this capability existed.
         var loggable = request as ILoggableRequest<TResponse>;
         var requestFields = loggable?.LoggableRequestFields;
 
         using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
         {
-            LogHandling(logger, requestName);
+            LogHandling(logger, requestType);
         }
 
         try
         {
             var response = await next().ConfigureAwait(false);
-
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
             var responseFields = loggable?.GetLoggableResponseFields(response);
 
             using (responseFields is { Count: > 0 } ? logger.BeginScope(responseFields) : null)
             {
-                // Emit at Warning when the response signals a business-rule failure (IHasSuccessFlag);
-                // emit at Information for success or for response types that do not participate in the
-                // Result railway (e.g. raw T responses from streaming handlers).
-                if (!ResponseOutcomeClassifier.IsSuccess(response))
+                var error = ResponseOutcome.TryGetError(response);
+                if (error is not null)
                 {
-                    LogHandledFailure(logger, requestName, elapsed.TotalMilliseconds);
+                    LogHandledFailure(logger, requestType, error.Type.ToString(), error.Code, elapsed.TotalMilliseconds);
                 }
                 else
                 {
-                    LogHandledSuccess(logger, requestName, elapsed.TotalMilliseconds);
+                    var threshold = options.Value.SlowRequestThreshold;
+                    if (elapsed > threshold)
+                        LogHandledSuccessSlow(logger, requestType, elapsed.TotalMilliseconds, threshold.TotalMilliseconds);
+                    else
+                        LogHandledSuccess(logger, requestType, elapsed.TotalMilliseconds);
                 }
             }
 
@@ -115,38 +85,45 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(ILogger<TReques
 
             using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
             {
-                LogHandlingFailed(logger, requestName, elapsed.TotalMilliseconds, ex);
+                LogHandlingFailed(logger, requestType, elapsed.TotalMilliseconds, ex);
             }
 
             throw;
         }
     }
 
-    /// <summary>Entry log (EventId 5100, Information) — emitted once per request before <c>next()</c> runs.</summary>
+    /// <summary>Entry log (Debug) — emitted once per request before <c>next()</c> runs.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandling,
-        Level = LogLevel.Information,
-        Message = "Handling {RequestName}")]
-    private static partial void LogHandling(ILogger logger, string requestName);
+        Level = LogLevel.Debug,
+        Message = "Handling {RequestType}")]
+    private static partial void LogHandling(ILogger logger, string requestType);
 
-    /// <summary>Completion log, success path (EventId 5101, Information) — <c>next()</c> returned a successful response.</summary>
+    /// <summary>Completion log, success path within threshold (Information).</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccess,
         Level = LogLevel.Information,
-        Message = "Handled {RequestName} in {ElapsedMilliseconds}ms")]
-    private static partial void LogHandledSuccess(ILogger logger, string requestName, double elapsedMilliseconds);
+        Message = "Handled {RequestType} in {ElapsedMilliseconds}ms")]
+    private static partial void LogHandledSuccess(ILogger logger, string requestType, double elapsedMilliseconds);
 
-    /// <summary>Completion log, failure path (EventId 5102, Warning) — <c>next()</c> returned a response classified as failed by <see cref="ResponseOutcomeClassifier"/>.</summary>
+    /// <summary>Completion log, success path over the configured slow-request threshold (Warning).</summary>
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccessSlow,
+        Level = LogLevel.Warning,
+        Message = "Handled {RequestType} in {ElapsedMilliseconds}ms, over the {ThresholdMilliseconds}ms threshold")]
+    private static partial void LogHandledSuccessSlow(ILogger logger, string requestType, double elapsedMilliseconds, double thresholdMilliseconds);
+
+    /// <summary>Completion log, failure path — <c>next()</c> returned a <c>Result</c>/<c>Result&lt;T&gt;</c> failure (Warning).</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandledFailure,
         Level = LogLevel.Warning,
-        Message = "Handled {RequestName} with failure in {ElapsedMilliseconds}ms")]
-    private static partial void LogHandledFailure(ILogger logger, string requestName, double elapsedMilliseconds);
+        Message = "Handled {RequestType} with failure {ErrorType} {ErrorCode} in {ElapsedMilliseconds}ms")]
+    private static partial void LogHandledFailure(ILogger logger, string requestType, string errorType, string errorCode, double elapsedMilliseconds);
 
-    /// <summary>Fault log (EventId 5103, Error) — <c>next()</c> threw; the exception is rethrown unchanged after this log call.</summary>
+    /// <summary>Fault log (Error) — <c>next()</c> threw; the exception is rethrown unchanged after this log call.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandlingFailed,
         Level = LogLevel.Error,
-        Message = "Handling {RequestName} failed after {ElapsedMilliseconds}ms")]
-    private static partial void LogHandlingFailed(ILogger logger, string requestName, double elapsedMilliseconds, Exception exception);
+        Message = "Handling {RequestType} failed after {ElapsedMilliseconds}ms")]
+    private static partial void LogHandlingFailed(ILogger logger, string requestType, double elapsedMilliseconds, Exception exception);
 }

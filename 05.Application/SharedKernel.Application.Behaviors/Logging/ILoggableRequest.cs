@@ -8,25 +8,22 @@ namespace SharedKernel.Application.Behaviors.Logging;
 /// </summary>
 /// <typeparam name="TResponse">The response type returned by the request.</typeparam>
 /// <remarks>
-/// Self-supplied, mirroring <c>ICacheableQuery&lt;TResponse&gt;.CacheKey</c> and
-/// <c>IInvalidatesCache.CacheKeysToInvalidate</c>'s precedent: the request instance alone decides
-/// which of its own fields are safe to log (e.g. an <c>OrderId</c>, never a
-/// <c>CreditCardNumber</c>) — <see cref="LoggingBehavior{TRequest,TResponse}"/> never reflects over
-/// <c>TRequest</c>'s properties to discover this set. This is a pure additive opt-in: a
-/// <c>TRequest</c> that does not implement this interface produces byte-for-byte identical logging
-/// behavior to a platform without this capability. Typically declared as
-/// <c>ILoggableRequest&lt;Result&lt;TPayload&gt;&gt;</c> so it resolves to the exact same
-/// <see cref="IRequest{TResponse}"/> contract as <c>ICommand&lt;TPayload&gt;</c>/<c>IQuery&lt;TPayload&gt;</c>.
+/// Self-supplied: the request instance alone decides which of its own fields are safe to log (e.g.
+/// an <c>OrderId</c>, never a <c>CreditCardNumber</c>) — <see cref="LoggingBehavior{TRequest,TResponse}"/>
+/// never reflects over <c>TRequest</c>'s properties to discover this set. A plain interface, not
+/// itself an <see cref="IRequest{TResponse}"/> — implementers additionally implement
+/// <see cref="IRequest{TResponse}"/> (typically via <c>ICommand&lt;TResponse&gt;</c>/<c>IQuery&lt;TResponse&gt;</c>)
+/// so the two constraints compose naturally at the declaration site.
 /// </remarks>
-public interface ILoggableRequest<TResponse> : IRequest<TResponse>
+public interface ILoggableRequest<TResponse>
 {
     /// <summary>
     /// Gets the request fields safe to attach to the entry log line as a structured logging scope.
     /// </summary>
     /// <remarks>
     /// An empty dictionary is valid (opts in to the marker but has nothing to say for a given
-    /// call). Never null-checked away from a scope by throwing — <see cref="LoggingBehavior{TRequest,TResponse}"/>
-    /// simply skips opening the scope when this is null or empty.
+    /// call). <see cref="LoggingBehavior{TRequest,TResponse}"/> simply skips opening the scope when
+    /// this is empty.
     /// </remarks>
     IReadOnlyDictionary<string, object?> LoggableRequestFields { get; }
 

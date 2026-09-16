@@ -6,29 +6,20 @@ using SharedKernel.Application.Behaviors.Shared;
 namespace SharedKernel.Application.Behaviors.Metrics;
 
 /// <summary>
-/// Records request pipeline duration to <see cref="ApplicationDiagnostics.RequestDuration"/>.
+/// Records request pipeline duration to <see cref="ApplicationMetrics"/>.
 /// </summary>
 /// <typeparam name="TRequest">The request type being measured.</typeparam>
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
-/// Records <see cref="ApplicationDiagnostics.RequestDuration"/> exactly once per request, tagged
-/// with <c>request.name = typeof(TRequest).FullName ?? typeof(TRequest).Name</c> (FullName
-/// preferred to prevent metric key collisions when two assemblies in the same host define a request
-/// type with the same short name), via a try/finally around <c>next()</c> so the measurement is
-/// recorded whether the inner pipeline succeeds, returns a failed
+/// Records exactly once per request, tagged with <c>request.type</c> (full type name),
+/// <c>request.kind</c>, <c>outcome</c> (<c>"success"</c>/<c>"failure"</c>/<c>"exception"</c>), and —
+/// whenever the outcome is not a success — <c>error.type</c> (the <c>Error.Type</c> name for a
+/// <c>Result</c> failure, or the thrown exception's full type name), via a try/finally around
+/// <c>next()</c> so the measurement fires whether the inner pipeline succeeds, returns a failed
 /// <c>Result</c>/<c>Result&lt;T&gt;</c>, or throws.
-/// <para>
-/// <b>Outcome tag (WO-039, P-239):</b> every recorded measurement additionally carries an
-/// <c>outcome</c> tag of <c>"success"</c>, <c>"failure"</c> (response is a <c>Result</c>/<c>Result&lt;T&gt;</c>
-/// with <c>IsSuccess == false</c>), or <c>"exception"</c> (the inner pipeline threw before producing
-/// a response) — mirroring <see cref="Streaming.StreamMetricsBehavior{TRequest,TResponse}"/>'s
-/// existing <c>"streamed"</c>/<c>"faulted"</c> outcome tag on the streaming side. Classification is
-/// computed via <see cref="ResponseOutcomeClassifier"/>, the same helper
-/// <see cref="Logging.LoggingBehavior{TRequest,TResponse}"/> uses, so the two behaviors' taxonomy
-/// never silently diverges.
-/// </para>
 /// </remarks>
-public sealed class MetricsBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+internal sealed class MetricsBehavior<TRequest, TResponse>(ApplicationMetrics metrics)
+    : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
     /// <inheritdoc/>
@@ -39,27 +30,36 @@ public sealed class MetricsBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
     {
         var startTimestamp = Stopwatch.GetTimestamp();
 
-        // Pessimistic default: if next() throws, this value is never overwritten and "exception"
-        // is recorded. Overwritten with the classified success/failure outcome only after next()
-        // returns normally.
-        var outcome = ResponseOutcomeClassifier.Exception;
+        // Pessimistic default: if next() throws, this is never overwritten and "exception" is
+        // recorded with the exception's own type name as error.type.
+        var outcome = ResponseOutcome.Exception;
+        string? errorType = null;
 
         try
         {
             var response = await next().ConfigureAwait(false);
-            outcome = ResponseOutcomeClassifier.Classify(response);
+            outcome = ResponseOutcome.Classify(response);
+            errorType = ResponseOutcome.TryGetError(response)?.Type.ToString();
             return response;
+        }
+        catch (Exception ex)
+        {
+            errorType = ex.GetType().FullName;
+            throw;
         }
         finally
         {
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
-            ApplicationDiagnostics.RequestDuration.Record(
-                elapsed.TotalMilliseconds,
-                new TagList
-                {
-                    { "request.name", typeof(TRequest).FullName ?? typeof(TRequest).Name },
-                    { "outcome", outcome }
-                });
+            var tags = new TagList
+            {
+                { "request.type", typeof(TRequest).FullName ?? typeof(TRequest).Name },
+                { "request.kind", RequestKind.Classify<TRequest>() },
+                { "outcome", outcome },
+            };
+            if (errorType is not null)
+                tags.Add("error.type", errorType);
+
+            metrics.RecordRequestDuration(elapsed.TotalSeconds, tags);
         }
     }
 }
