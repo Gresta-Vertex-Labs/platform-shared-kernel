@@ -3,46 +3,60 @@ using SharedKernel.Cryptography.Random;
 namespace SharedKernel.Cryptography.Totp;
 
 /// <summary>
-/// Generates one-time TOTP/HOTP backup ("recovery") codes — for when the user has lost access to
-/// their authenticator device.
+/// The default <see cref="IRecoveryCodeGenerator"/>: 10 characters from the Base32 alphabet (50 bits), split into two
+/// groups of five.
 /// </summary>
-/// <remarks>
-/// This type only ever generates plaintext codes, shown once to the user at enrollment time. It
-/// never persists or hashes them — hashing the codes at rest via the existing
-/// <see cref="Hashing.IOneWayHasher"/> before storage (exactly like any other secret: a recovery
-/// code IS a secret) is the consuming service's own responsibility.
-/// </remarks>
-public sealed class RecoveryCodeGenerator
+/// <remarks>The Base32 alphabet has no 0, 1, 8 or 9, so O, I and B cannot be mistaken for a digit.</remarks>
+public sealed class RecoveryCodeGenerator : IRecoveryCodeGenerator
 {
-    private readonly ISecureRandomGenerator _randomGenerator;
+    private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    private const int GroupLength = 5;
 
-    /// <summary>Creates a new <see cref="RecoveryCodeGenerator"/>.</summary>
-    /// <param name="randomGenerator">The source of cryptographically secure randomness backing every generated code.</param>
-    public RecoveryCodeGenerator(ISecureRandomGenerator randomGenerator)
+    private readonly ISecureRandomGenerator _random;
+
+    /// <summary>Creates the generator.</summary>
+    /// <param name="random">The random source.</param>
+    public RecoveryCodeGenerator(ISecureRandomGenerator random)
     {
-        ArgumentNullException.ThrowIfNull(randomGenerator);
-        _randomGenerator = randomGenerator;
+        ArgumentNullException.ThrowIfNull(random);
+        _random = random;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> GenerateCodes(int count = 10)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, 50);
+
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        while (codes.Count < count)
+        {
+            string raw = _random.GetString(Alphabet, GroupLength * 2);
+            codes.Add($"{raw[..GroupLength]}-{raw[GroupLength..]}");
+        }
+
+        return [.. codes];
     }
 
     /// <summary>
-    /// Generates <paramref name="count"/> independent recovery codes, each rendered as unpadded
-    /// Base32 text over <paramref name="lengthBytes"/> cryptographically secure random bytes.
+    /// Converts a code as typed into the canonical form to hash and compare: uppercase, without spaces or hyphens.
     /// </summary>
-    /// <param name="count">The number of codes to generate. Defaults to 10.</param>
-    /// <param name="lengthBytes">The number of underlying random bytes per code, before Base32 encoding. Defaults to 5 (an 8-character Base32 code).</param>
-    /// <returns>A list of <paramref name="count"/> plaintext recovery codes.</returns>
-    public IReadOnlyList<string> GenerateCodes(int count = 10, int lengthBytes = 5)
+    /// <param name="code">The code as entered.</param>
+    /// <returns>The normalized code.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="code"/> is <see langword="null"/>.</exception>
+    public static string Normalize(string code)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(lengthBytes);
+        ArgumentNullException.ThrowIfNull(code);
 
-        var codes = new List<string>(count);
-        for (int i = 0; i < count; i++)
+        var builder = new System.Text.StringBuilder(code.Length);
+        foreach (char c in code)
         {
-            byte[] bytes = _randomGenerator.NextBytes(lengthBytes);
-            codes.Add(Base32.Encode(bytes));
+            if (c is not (' ' or '-'))
+            {
+                builder.Append(char.ToUpperInvariant(c));
+            }
         }
 
-        return codes;
+        return builder.ToString();
     }
 }

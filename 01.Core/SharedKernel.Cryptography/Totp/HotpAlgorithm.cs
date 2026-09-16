@@ -1,17 +1,14 @@
 namespace SharedKernel.Cryptography.Totp;
 
-/// <summary>
-/// The HMAC hash algorithm used by <see cref="IHotpGenerator"/>/<see cref="ITotpGenerator"/> to
-/// derive an HOTP/TOTP code.
-/// </summary>
+/// <summary>The HMAC algorithm an HOTP or TOTP code is derived with.</summary>
 public enum HotpAlgorithm
 {
-    /// <summary>HMAC-SHA1 — the RFC 4226/RFC 6238 default and the only algorithm every authenticator app is guaranteed to support.</summary>
+    /// <summary>HMAC-SHA1, the RFC default and the only algorithm every authenticator app supports.</summary>
     Sha1 = 0,
 
-    /// <summary>HMAC-SHA256 — a common, widely-supported opt-in extension beyond the RFC default.</summary>
+    /// <summary>HMAC-SHA256.</summary>
     Sha256 = 1,
 
-    /// <summary>HMAC-SHA512 — a common, widely-supported opt-in extension beyond the RFC default.</summary>
+    /// <summary>HMAC-SHA512.</summary>
     Sha512 = 2,
 }

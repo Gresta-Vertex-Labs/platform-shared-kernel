@@ -2,76 +2,70 @@ using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Cryptography.Totp;
 
-/// <summary>
-/// RFC 6238 TOTP (Time-based One-Time Password) implementation, composing an
-/// <see cref="IHotpGenerator"/> with a time-derived moving-factor counter
-/// (<c>counter = floor(unixSeconds / stepSeconds)</c>).
-/// </summary>
-/// <remarks>
-/// "Now" is sourced from the injected <see cref="IClock"/> — never <see cref="DateTime.UtcNow"/>
-/// — for every overload that does not take an explicit <see cref="DateTimeOffset"/>.
-/// </remarks>
+/// <summary>RFC 6238 TOTP: HOTP with the counter <c>floor(unix seconds / step)</c>.</summary>
+/// <remarks>Reads the time from <see cref="IClock"/>. Thread-safe.</remarks>
 public sealed class TotpGenerator : ITotpGenerator
 {
-    private readonly IHotpGenerator _hotpGenerator;
+    private static readonly HotpGenerator Hotp = new();
+
     private readonly IClock _clock;
 
-    /// <summary>Creates a new <see cref="TotpGenerator"/>.</summary>
-    /// <param name="hotpGenerator">The RFC 4226 core this type derives its time-stepped counter over.</param>
-    /// <param name="clock">The sole source of "now" — never <see cref="DateTime.UtcNow"/>.</param>
-    public TotpGenerator(IHotpGenerator hotpGenerator, IClock clock)
+    /// <summary>Creates the generator.</summary>
+    /// <param name="clock">The source of the current time.</param>
+    public TotpGenerator(IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(hotpGenerator);
         ArgumentNullException.ThrowIfNull(clock);
-        _hotpGenerator = hotpGenerator;
         _clock = clock;
     }
 
     /// <inheritdoc />
-    public string GenerateCode(byte[] secret, int digits = 6, int stepSeconds = 30, HotpAlgorithm algorithm = HotpAlgorithm.Sha1) =>
-        GenerateCode(secret, _clock.UtcNow, digits, stepSeconds, algorithm);
+    public string GenerateCode(ReadOnlySpan<byte> secret, TotpParameters? parameters = null) =>
+        GenerateCode(secret, _clock.UtcNow, parameters);
 
     /// <inheritdoc />
-    public string GenerateCode(byte[] secret, DateTimeOffset timestamp, int digits = 6, int stepSeconds = 30, HotpAlgorithm algorithm = HotpAlgorithm.Sha1)
+    public string GenerateCode(ReadOnlySpan<byte> secret, DateTimeOffset timestamp, TotpParameters? parameters = null)
     {
-        ArgumentNullException.ThrowIfNull(secret);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(stepSeconds);
-
-        long counter = ComputeCounter(timestamp, stepSeconds);
-        return _hotpGenerator.GenerateCode(secret, counter, digits, algorithm);
+        parameters ??= TotpParameters.Default;
+        return Hotp.GenerateCode(secret, GetTimeStep(timestamp, parameters), parameters.Digits, parameters.Algorithm);
     }
 
     /// <inheritdoc />
-    public bool ValidateCode(byte[] secret, string code, int digits = 6, int stepSeconds = 30, int driftWindow = 1, HotpAlgorithm algorithm = HotpAlgorithm.Sha1) =>
-        ValidateCode(secret, code, _clock.UtcNow, digits, stepSeconds, driftWindow, algorithm);
+    public bool TryValidateCode(ReadOnlySpan<byte> secret, string code, out long timeStep, TotpParameters? parameters = null) =>
+        TryValidateCode(secret, code, _clock.UtcNow, out timeStep, parameters);
 
     /// <inheritdoc />
-    public bool ValidateCode(byte[] secret, string code, DateTimeOffset timestamp, int digits = 6, int stepSeconds = 30, int driftWindow = 1, HotpAlgorithm algorithm = HotpAlgorithm.Sha1)
+    public bool TryValidateCode(
+        ReadOnlySpan<byte> secret,
+        string code,
+        DateTimeOffset timestamp,
+        out long timeStep,
+        TotpParameters? parameters = null)
     {
-        ArgumentNullException.ThrowIfNull(secret);
         ArgumentNullException.ThrowIfNull(code);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(stepSeconds);
-        ArgumentOutOfRangeException.ThrowIfNegative(driftWindow);
+        parameters ??= TotpParameters.Default;
 
-        long centerCounter = ComputeCounter(timestamp, stepSeconds);
+        long center = GetTimeStep(timestamp, parameters);
+        HotpGenerator.Validate(secret, center, parameters.Digits, parameters.Algorithm);
 
-        for (int delta = -driftWindow; delta <= driftWindow; delta++)
+        timeStep = -1;
+        if (!OtpCode.TryNormalize(code, parameters.Digits, out string? normalized))
         {
-            long candidateCounter = centerCounter + delta;
-            if (candidateCounter < 0)
-            {
-                continue;
-            }
+            return false;
+        }
 
-            if (_hotpGenerator.ValidateCode(secret, code, candidateCounter, digits, algorithm))
+        // Every step in the window is computed, whether or not an earlier one matched, so the time taken does not
+        // reveal which step matched.
+        for (long step = center - parameters.DriftSteps; step <= center + parameters.DriftSteps; step++)
+        {
+            if (step >= 0 && HotpGenerator.Matches(secret, normalized, step, parameters.Digits, parameters.Algorithm) && timeStep < 0)
             {
-                return true;
+                timeStep = step;
             }
         }
 
-        return false;
+        return timeStep >= 0;
     }
 
-    private static long ComputeCounter(DateTimeOffset timestamp, int stepSeconds) =>
-        timestamp.ToUnixTimeSeconds() / stepSeconds;
+    private static long GetTimeStep(DateTimeOffset timestamp, TotpParameters parameters) =>
+        timestamp.ToUnixTimeSeconds() / parameters.StepSeconds;
 }
