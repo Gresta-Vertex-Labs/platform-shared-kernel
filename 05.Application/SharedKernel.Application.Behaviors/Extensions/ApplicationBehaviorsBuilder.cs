@@ -1,25 +1,16 @@
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Polly.Registry;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Behaviors.CacheInvalidation;
-using SharedKernel.Application.Behaviors.Caching;
-using SharedKernel.Application.Behaviors.DualApproval;
-using SharedKernel.Application.Behaviors.FireAndForget;
+using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
 using SharedKernel.Application.Behaviors.Metrics;
-using SharedKernel.Application.Behaviors.Resilience;
-using SharedKernel.Application.Behaviors.Streaming;
-using SharedKernel.Application.Behaviors.Tracing;
 using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Behaviors.Validation;
-using SharedKernel.Application.Messaging;
-using SharedKernel.Application.Streaming;
-using SharedKernel.Caching.Abstractions;
-using System.Threading.Channels;
+using SharedKernel.Application.Context;
 
 namespace SharedKernel.Application.Behaviors.Extensions;
 
@@ -28,43 +19,42 @@ namespace SharedKernel.Application.Behaviors.Extensions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Use <c>.AddXBehavior()</c> methods to opt in to individual behaviors, then call
-/// <see cref="Build"/> to register them. The observable TEMPORAL execution order is always the
-/// fixed canonical twelve-named-slot order (Logging → Metrics → Tracing → Validation →
-/// Authorization → DualApproval → Caching → Resilience → Idempotency → Auditing → Transaction →
-/// CacheInvalidation — see <c>05.Application/CLAUDE.md</c>'s "Pipeline composition" section)
-/// regardless of the order in which <c>.AddXBehavior()</c> methods were called.
+/// Use the <c>.AddXBehavior()</c> methods to opt in to a built-in behavior, and
+/// <see cref="AddBehavior"/> to append a custom behavior into one of the five
+/// <see cref="PipelineStage"/> slots. Call <see cref="Build"/> to register everything opted into —
+/// always in the fixed canonical order (Observability → Authorization → Validation → Query →
+/// Command), regardless of the order the <c>.AddXBehavior()</c>/<see cref="AddBehavior"/> calls were
+/// made in.
 /// </para>
 /// <para>
-/// <b>This is the temporal step order, not necessarily the literal top-to-bottom order of
-/// <c>_services.AddTransient(...)</c> calls inside <see cref="Build"/>.</b> MediatR makes the
-/// first-registered <see cref="IPipelineBehavior{TRequest,TResponse}"/> outermost, so a behavior
-/// whose only observable side effect runs AFTER <c>next()</c> returns (e.g. a commit, an audit
-/// write, a cache eviction) is registered CLOSER to the desired temporal position of the OTHER
-/// post-`next()` behavior it must run before, not further from it — see the detailed comment
-/// immediately above the registration calls inside <see cref="Build"/> for the exact rule and the
-/// two pairs (Auditing/Transaction, Transaction/CacheInvalidation) that currently invert relative
-/// to the canonical numbering above.
+/// <see cref="ICommandScope"/> is always registered by <see cref="Build"/>, independent of whether
+/// any command-stage behavior is active, so a handler may always inject it. The pipeline-level
+/// <c>CommandScopeBehavior</c> itself is registered only when at least one command-stage behavior
+/// (idempotency, transaction, auditing, or a custom <see cref="PipelineStage.Command"/> behavior) is
+/// active — with nothing in the command stage, there is nothing for it to sequence.
 /// </para>
 /// </remarks>
 public sealed class ApplicationBehaviorsBuilder
 {
     private readonly IServiceCollection _services;
-    private bool _validation;
+    private readonly Dictionary<PipelineStage, List<(Type BehaviorType, Type[] RequiredServices)>> _customBehaviors = new()
+    {
+        [PipelineStage.Observability] = [],
+        [PipelineStage.Authorization] = [],
+        [PipelineStage.Validation] = [],
+        [PipelineStage.Query] = [],
+        [PipelineStage.Command] = [],
+    };
+
+    private bool _tracing;
     private bool _logging;
     private bool _metrics;
-    private bool _tracing;
     private bool _authorization;
-    private bool _dualApproval;
-    private bool _caching;
-    private bool _resilience;
+    private bool _validation;
     private bool _idempotency;
-    private bool _auditing;
     private bool _transaction;
-    private bool _cacheInvalidation;
-    private bool _fireAndForget;
-    private Action<FireAndForgetOptions>? _fireAndForgetConfigure;
-    private bool _streaming;
+    private bool _auditing;
+    private bool _built;
 
     internal ApplicationBehaviorsBuilder(IServiceCollection services)
     {
@@ -72,49 +62,35 @@ public sealed class ApplicationBehaviorsBuilder
     }
 
     /// <summary>
-    /// Opts in to the zero-prerequisite onboarding preset: <see cref="LoggingBehavior{TRequest,TResponse}"/>,
-    /// <see cref="MetricsBehavior{TRequest,TResponse}"/>, <see cref="TracingBehavior{TRequest,TResponse}"/>,
-    /// and <see cref="ValidationBehavior{TRequest,TResponse}"/>.
+    /// Opts in to the zero-prerequisite onboarding preset: <c>TracingBehavior</c>,
+    /// <c>LoggingBehavior</c>, <c>MetricsBehavior</c>, and <c>ValidationBehavior</c>.
     /// </summary>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
-    /// <para>
     /// Delegates to the four individual <c>.AddXBehavior()</c> methods below — provably equivalent,
     /// not a reimplementation. These four are the only behaviors in this domain that carry zero
-    /// <see cref="Build"/>-time missing-dependency guard: every other behavior requires a registered
-    /// local-seam or infrastructure bridge (<see cref="IUnitOfWork"/>, <see cref="ICacheService"/>,
-    /// <see cref="IAuthorizationContext"/>, <see cref="IIdempotencyKeyStore"/>, a Polly resilience
-    /// pipeline) and must remain a deliberate, individual opt-in — no other behavior is ever eligible
-    /// for this preset.
-    /// </para>
-    /// <para>
-    /// <b>Composable, not exclusive (WO-039, P-243):</b> each underlying <c>.AddXBehavior()</c> call
-    /// only sets a <see langword="bool"/> opt-in flag, so calling <see cref="AddDefaultBehaviors"/>
-    /// alongside any individual call to <see cref="AddLoggingBehavior"/>/<see cref="AddMetricsBehavior"/>/
-    /// <see cref="AddTracingBehavior"/>/<see cref="AddValidationBehavior"/> for the same behavior is
-    /// idempotent — <see cref="Build"/> still registers exactly one <see cref="IPipelineBehavior{TRequest,TResponse}"/>
-    /// per behavior, in the unchanged fixed canonical order. This preset never throws
-    /// <see cref="InvalidOperationException"/> from <see cref="Build"/> on its own.
-    /// </para>
+    /// <see cref="Build"/>-time missing-dependency guard; every infrastructure-gated behavior
+    /// (Authorization, Idempotency, Transaction, Auditing, and anything registered via
+    /// <see cref="AddBehavior"/>) remains a deliberate, individual opt-in.
     /// </remarks>
     public ApplicationBehaviorsBuilder AddDefaultBehaviors()
     {
+        AddTracingBehavior();
         AddLoggingBehavior();
         AddMetricsBehavior();
-        AddTracingBehavior();
         AddValidationBehavior();
         return this;
     }
 
-    /// <summary>Opts in to <see cref="ValidationBehavior{TRequest,TResponse}"/>.</summary>
+    /// <summary>Opts in to <c>TracingBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
-    public ApplicationBehaviorsBuilder AddValidationBehavior()
+    public ApplicationBehaviorsBuilder AddTracingBehavior()
     {
-        _validation = true;
+        _tracing = true;
         return this;
     }
 
-    /// <summary>Opts in to <see cref="LoggingBehavior{TRequest,TResponse}"/>.</summary>
+    /// <summary>Opts in to <c>LoggingBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
     public ApplicationBehaviorsBuilder AddLoggingBehavior()
     {
@@ -122,7 +98,7 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
-    /// <summary>Opts in to <see cref="MetricsBehavior{TRequest,TResponse}"/>.</summary>
+    /// <summary>Opts in to <c>MetricsBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
     public ApplicationBehaviorsBuilder AddMetricsBehavior()
     {
@@ -130,27 +106,12 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
-    /// <summary>Opts in to <see cref="TracingBehavior{TRequest,TResponse}"/>.</summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// No missing-dependency guard needed: <c>ApplicationDiagnostics.ActivitySource</c> is always
-    /// available (a BCL static instance), exactly like <see cref="AddMetricsBehavior"/>/
-    /// <see cref="AddLoggingBehavior"/> carry no guard.
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddTracingBehavior()
-    {
-        _tracing = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Opts in to <see cref="AuthorizationBehavior{TRequest,TResponse}"/>.
-    /// </summary>
+    /// <summary>Opts in to <c>AuthorizationBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
     /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IAuthorizationContext"/> is not registered in the service collection when this
-    /// was called.
+    /// <see cref="IRequestContext"/> is not registered in the service collection when this was
+    /// called.
     /// </remarks>
     public ApplicationBehaviorsBuilder AddAuthorizationBehavior()
     {
@@ -158,57 +119,19 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
-    /// <summary>
-    /// Opts in to <see cref="DualApprovalBehavior{TRequest,TResponse}"/>.
-    /// </summary>
+    /// <summary>Opts in to <c>ValidationBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// This domain's FIRST two-dependency <see cref="Build"/>-time guard: throws
-    /// <see cref="InvalidOperationException"/> naming <see cref="IAuthorizationContext"/> if it is
-    /// not registered, and a distinct <see cref="InvalidOperationException"/> naming
-    /// <see cref="IDualApprovalStore"/> if that is not registered — both are required for
-    /// <see cref="DualApprovalBehavior{TRequest,TResponse}"/> to function (identity resolution and
-    /// approval-record lookup respectively).
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddDualApprovalBehavior()
+    public ApplicationBehaviorsBuilder AddValidationBehavior()
     {
-        _dualApproval = true;
+        _validation = true;
         return this;
     }
 
-    /// <summary>Opts in to <see cref="CachingBehavior{TRequest,TResponse}"/>.</summary>
+    /// <summary>Opts in to <c>IdempotencyBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
     /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="ICacheService"/> is not registered in the service collection when this was
-    /// called.
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddCachingBehavior()
-    {
-        _caching = true;
-        return this;
-    }
-
-    /// <summary>Opts in to <see cref="ResilienceBehavior{TRequest,TResponse}"/>.</summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="ResiliencePipelineProvider{TKey}"/> of <see cref="string"/> is not registered in
-    /// the service collection when this was called.
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddResilienceBehavior()
-    {
-        _resilience = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Opts in to <see cref="IdempotentCommandBehavior{TRequest,TResponse}"/>.
-    /// </summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IIdempotencyKeyStore"/> is not registered in the service collection when this
+    /// <see cref="IRequestIdempotencyStore"/> is not registered in the service collection when this
     /// was called.
     /// </remarks>
     public ApplicationBehaviorsBuilder AddIdempotencyBehavior()
@@ -217,9 +140,19 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
-    /// <summary>
-    /// Opts in to <see cref="AuditingBehavior{TRequest,TResponse}"/>.
-    /// </summary>
+    /// <summary>Opts in to <c>TransactionBehavior</c>.</summary>
+    /// <returns>This builder, for chaining.</returns>
+    /// <remarks>
+    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
+    /// <see cref="IUnitOfWork"/> is not registered in the service collection when this was called.
+    /// </remarks>
+    public ApplicationBehaviorsBuilder AddTransactionBehavior()
+    {
+        _transaction = true;
+        return this;
+    }
+
+    /// <summary>Opts in to <c>AuditingBehavior</c>.</summary>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
     /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
@@ -232,300 +165,216 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
-    /// <summary>Opts in to <see cref="TransactionBehavior{TRequest,TResponse}"/>.</summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IUnitOfWork"/> is not registered in the service collection when this was
-    /// called.
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddTransactionBehavior()
-    {
-        _transaction = true;
-        return this;
-    }
-
-    /// <summary>Opts in to <see cref="CacheInvalidationBehavior{TRequest,TResponse}"/>.</summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <see cref="Build"/> reuses the exact same <see cref="ICacheService"/> missing-dependency
-    /// guard already enforced for <see cref="AddCachingBehavior"/> — not a duplicated guard.
-    /// Calling only <see cref="AddCacheInvalidationBehavior"/> without
-    /// <see cref="AddCachingBehavior"/> still requires <see cref="ICacheService"/> to be
-    /// registered; the check is keyed on the dependency, not on which <c>.AddXBehavior()</c> call
-    /// requested it.
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddCacheInvalidationBehavior()
-    {
-        _cacheInvalidation = true;
-        return this;
-    }
-
     /// <summary>
-    /// Opts in to fire-and-forget command dispatch infrastructure: <see cref="IFireAndForgetDispatcher"/>,
-    /// <see cref="FireAndForgetBackgroundConsumer"/>, and <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/>.
+    /// Appends a custom open-generic <see cref="IPipelineBehavior{TRequest,TResponse}"/>
+    /// implementation into <paramref name="stage"/>, running after that stage's built-in behaviors
+    /// (if any) and after any other custom behavior already added to the same stage.
     /// </summary>
-    /// <param name="configure">
-    /// An optional delegate to configure <see cref="FireAndForgetOptions"/> (channel capacity,
-    /// rejection policy). Pass <see langword="null"/> to use the defaults (capacity 1000,
-    /// <see cref="FireAndForgetRejectionPolicy.DropAndLog"/>).
+    /// <param name="openGenericBehaviorType">
+    /// An open generic type definition (e.g. <c>typeof(CachingBehavior&lt;,&gt;)</c>) implementing
+    /// <see cref="IPipelineBehavior{TRequest,TResponse}"/>.
+    /// </param>
+    /// <param name="stage">The pipeline stage to append the behavior into.</param>
+    /// <param name="requiredServices">
+    /// Service types that must already be registered in the service collection for this behavior to
+    /// function. Checked by <see cref="Build"/>, not by this method.
     /// </param>
     /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Registers the following on <see cref="Build"/>:
-    /// <list type="bullet">
-    ///   <item><description><see cref="IFireAndForgetDispatcher"/> → <see cref="ChannelFireAndForgetDispatcher"/> (singleton).</description></item>
-    ///   <item><description><see cref="FireAndForgetBackgroundConsumer"/> as <see cref="IHostedService"/> (singleton).</description></item>
-    ///   <item><description><see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> as an open-generic <see cref="IPipelineBehavior{TRequest,TResponse}"/>.</description></item>
-    /// </list>
-    /// None of these are registered unless this method is called — entirely opt-in.
-    /// </para>
-    /// <para>
-    /// <b>Note:</b> <see cref="FireAndForgetBackgroundConsumer"/> uses <c>ISender.Send</c>
-    /// internally to dispatch commands through the MediatR pipeline. That internal dispatch is
-    /// marked as trusted (WO-039, P-238) via an unspoofable ambient marker, so
-    /// <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> — registered by this same method
-    /// as a global behavior — permits the consumer's own dispatch through while still rejecting any
-    /// external caller's direct <c>ISender.Send</c> attempt for the same command types. Calling this
-    /// method once, exactly as documented, wires a fully functional unit — no special composition-root
-    /// ordering or separation is required.
-    /// </para>
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddFireAndForgetDispatch(Action<FireAndForgetOptions>? configure = null)
+    public ApplicationBehaviorsBuilder AddBehavior(
+        Type openGenericBehaviorType,
+        PipelineStage stage,
+        params Type[] requiredServices)
     {
-        _fireAndForget = true;
-        _fireAndForgetConfigure = configure;
-        return this;
-    }
+        ArgumentNullException.ThrowIfNull(openGenericBehaviorType);
+        ArgumentNullException.ThrowIfNull(requiredServices);
 
-    /// <summary>
-    /// Opts in to streaming pipeline behaviors for <see cref="IStreamQuery{TResponse}"/> requests:
-    /// <see cref="StreamLoggingBehavior{TRequest,TResponse}"/>,
-    /// <see cref="StreamMetricsBehavior{TRequest,TResponse}"/>,
-    /// <see cref="StreamTracingBehavior{TRequest,TResponse}"/>,
-    /// <see cref="StreamValidationBehavior{TRequest,TResponse}"/>, and
-    /// <see cref="StreamAuthorizationBehavior{TRequest,TResponse}"/>.
-    /// </summary>
-    /// <returns>This builder, for chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Registers all five streaming behaviors against the open-generic
-    /// <see cref="IStreamPipelineBehavior{TRequest,TResponse}"/> in the canonical streaming order
-    /// (Logging → Metrics → Tracing → Validation → Authorization) — the same positional logic as
-    /// the first five unary pipeline steps.
-    /// </para>
-    /// <para>
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IAuthorizationContext"/> is not registered (required by
-    /// <see cref="StreamAuthorizationBehavior{TRequest,TResponse}"/>).
-    /// </para>
-    /// <para>
-    /// This method is distinct from the unary <c>.AddXBehavior()</c> methods — calling neither is
-    /// valid; calling both registers both unary and streaming behaviors; calling only one registers
-    /// only that path. <b>Non-applicable streaming behaviors</b> (Transaction, Caching,
-    /// CacheInvalidation, Idempotency, Resilience) are intentionally excluded — see
-    /// <c>05.Application/CLAUDE.md</c> for the rationale.
-    /// </para>
-    /// </remarks>
-    public ApplicationBehaviorsBuilder AddStreamingBehaviors()
-    {
-        _streaming = true;
+        if (!_customBehaviors.TryGetValue(stage, out var entries))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(stage),
+                stage,
+                $"'{stage}' is not a defined {nameof(PipelineStage)} value. Use one of: " +
+                string.Join(", ", Enum.GetNames<PipelineStage>()) + ".");
+        }
+
+        entries.Add((openGenericBehaviorType, requiredServices));
         return this;
     }
 
     /// <summary>
     /// Registers the opted-into behaviors, always in the fixed canonical order, regardless of
-    /// <c>.AddXBehavior()</c> call order.
+    /// <c>.AddXBehavior()</c>/<see cref="AddBehavior"/> call order.
     /// </summary>
     /// <returns>The underlying <see cref="IServiceCollection"/>, for further chaining.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="AddTransactionBehavior"/> was opted into without
-    /// <see cref="IUnitOfWork"/> registered, when <see cref="AddCachingBehavior"/> or
-    /// <see cref="AddCacheInvalidationBehavior"/> was opted into without
-    /// <see cref="ICacheService"/> registered, when <see cref="AddAuthorizationBehavior"/>,
-    /// <see cref="AddDualApprovalBehavior"/>, or <see cref="AddStreamingBehaviors"/> was opted into
-    /// without <see cref="IAuthorizationContext"/> registered, when
-    /// <see cref="AddDualApprovalBehavior"/> was opted into without <see cref="IDualApprovalStore"/>
-    /// registered, when <see cref="AddIdempotencyBehavior"/> was opted into without
-    /// <see cref="IIdempotencyKeyStore"/> registered, when <see cref="AddAuditingBehavior"/> was
-    /// opted into without <see cref="IAuditTrailWriter"/> registered, or when
-    /// <see cref="AddResilienceBehavior"/> was opted into without
-    /// <see cref="ResiliencePipelineProvider{TKey}"/> of <see cref="string"/> registered.
+    /// <see cref="Build"/> was already called once on this builder instance, or a built-in behavior
+    /// was opted into without its required service registered, or a custom behavior added via
+    /// <see cref="AddBehavior"/> is not an open generic type implementing
+    /// <see cref="IPipelineBehavior{TRequest,TResponse}"/>, or one of its declared
+    /// <c>requiredServices</c> is not registered.
     /// </exception>
     /// <remarks>
     /// Does not call <c>services.AddMediatR(...)</c> — the consuming service already registers
     /// MediatR; this builder only appends behaviors via
-    /// <c>services.AddTransient(typeof(IPipelineBehavior&lt;,&gt;), ...)</c> and
-    /// <c>services.AddTransient(typeof(IStreamPipelineBehavior&lt;,&gt;), ...)</c>.
+    /// <c>services.AddTransient(typeof(IPipelineBehavior&lt;,&gt;), ...)</c>.
+    /// </remarks>
+    /// <remarks>
+    /// Always calls <c>services.AddLogging()</c> (idempotent — safe even if the consumer already
+    /// called it, and a no-op default logging pipeline if nothing else configures one). Several
+    /// behaviors this builder can register (<c>CommandScopeBehavior</c>, <c>IdempotencyBehavior</c>)
+    /// constructor-inject an <c>ILogger&lt;T&gt;</c>; without this call, a bare
+    /// <see cref="IServiceCollection"/> with no prior <c>AddLogging()</c> would fail to resolve those
+    /// loggers at the first dispatch rather than at this deterministic <see cref="Build"/> call.
     /// </remarks>
     public IServiceCollection Build()
     {
-        if (_transaction && !IsRegistered<IUnitOfWork>())
+        if (_built)
+        {
+            throw new InvalidOperationException(
+                "Build() has already been called on this ApplicationBehaviorsBuilder instance. " +
+                "Calling it again would register every opted-in behavior a second time. Start a new " +
+                "pipeline with a fresh AddSharedKernelApplicationBehaviors() call instead.");
+        }
+
+        _built = true;
+
+        _services.AddLogging();
+
+        if (_authorization && !IsRegistered(typeof(IRequestContext)))
+        {
+            throw new InvalidOperationException(
+                "AddAuthorizationBehavior() requires SharedKernel.Application.Context.IRequestContext " +
+                "to be registered in the service collection. Register an implementation before calling Build().");
+        }
+
+        if (_idempotency && !IsRegistered(typeof(IRequestIdempotencyStore)))
+        {
+            throw new InvalidOperationException(
+                "AddIdempotencyBehavior() requires SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore " +
+                "to be registered in the service collection. Register an implementation before calling Build().");
+        }
+
+        if (_transaction && !IsRegistered(typeof(IUnitOfWork)))
+        {
             throw new InvalidOperationException(
                 "AddTransactionBehavior() requires SharedKernel.Application.Behaviors.Transaction.IUnitOfWork " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
+        }
 
-        if ((_caching || _cacheInvalidation) && !IsRegistered<ICacheService>())
-            throw new InvalidOperationException(
-                "AddCachingBehavior()/AddCacheInvalidationBehavior() require SharedKernel.Caching.Abstractions.ICacheService " +
-                "to be registered in the service collection. Register an implementation before calling Build().");
-
-        if ((_authorization || _dualApproval || _streaming) && !IsRegistered<IAuthorizationContext>())
-            throw new InvalidOperationException(
-                "AddAuthorizationBehavior()/AddDualApprovalBehavior()/AddStreamingBehaviors() require " +
-                "SharedKernel.Application.Behaviors.Authorization.IAuthorizationContext to be registered " +
-                "in the service collection. Register an implementation before calling Build().");
-
-        if (_dualApproval && !IsRegistered<IDualApprovalStore>())
-            throw new InvalidOperationException(
-                "AddDualApprovalBehavior() requires SharedKernel.Application.Behaviors.DualApproval.IDualApprovalStore " +
-                "to be registered in the service collection. Register an implementation before calling Build().");
-
-        if (_idempotency && !IsRegistered<IIdempotencyKeyStore>())
-            throw new InvalidOperationException(
-                "AddIdempotencyBehavior() requires SharedKernel.Application.Behaviors.Idempotency.IIdempotencyKeyStore " +
-                "to be registered in the service collection. Register an implementation before calling Build().");
-
-        if (_resilience && !IsRegistered<ResiliencePipelineProvider<string>>())
-            throw new InvalidOperationException(
-                "AddResilienceBehavior() requires Polly.Registry.ResiliencePipelineProvider<string> " +
-                "to be registered in the service collection. Register one before calling Build().");
-
-        if (_auditing && !IsRegistered<IAuditTrailWriter>())
+        if (_auditing && !IsRegistered(typeof(IAuditTrailWriter)))
+        {
             throw new InvalidOperationException(
                 "AddAuditingBehavior() requires SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
+        }
 
-        // Fixed canonical unary order (the TEMPORAL step numbering documented in
-        // 05.Application/CLAUDE.md's "Pipeline composition" section) — never configurable:
-        // Logging -> Metrics -> Tracing -> Validation -> Authorization -> DualApproval -> Caching ->
-        // Resilience -> Idempotency -> Auditing -> Transaction -> CacheInvalidation
-        //
-        // *** DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP (READ BEFORE REORDERING ANYTHING
-        // BELOW) ***
-        //
-        // MediatR wraps IPipelineBehavior<,> instances so that the FIRST-registered behavior is
-        // OUTERMOST:
-        //   - An outermost behavior's PRE-`next()` code runs FIRST (before every later-registered/
-        //     more-inner behavior's pre-`next()` code).
-        //   - An outermost behavior's POST-`next()` code runs LAST (after every later-registered/
-        //     more-inner behavior's post-`next()` code has already run and unwound).
-        // Equivalently: for any two behaviors whose only observable side effect is POST-`next()`
-        // code (i.e. code that runs after `await next()` returns), the one registered EARLIER
-        // observes its own side effect LATER in wall-clock time than the one registered LATER.
-        // Physical top-to-bottom registration order therefore equals the desired TEMPORAL order of
-        // post-`next()` side effects only when read BOTTOM-TO-TOP (earliest side effect = last
-        // registered).
-        //
-        // This governs two deliberately-inverted pairs below, relative to the canonical step
-        // numbers in the comment above:
-        //   - AuditingBehavior (step 10) is registered AFTER TransactionBehavior (step 11) — i.e.
-        //     physically INNER to it — so AuditingBehavior's post-`next()` audit write is observed
-        //     BEFORE TransactionBehavior's post-`next()` SaveChangesAsync commit. Verified via a
-        //     real, empirical pipeline dispatch: AuditingTransactionOrderingTests (state-map.md
-        //     T-77, WO-071/P-458).
-        //   - CacheInvalidationBehavior (step 12) is registered BEFORE TransactionBehavior (step
-        //     11) — i.e. physically OUTER to it — so CacheInvalidationBehavior's post-`next()`
-        //     eviction is observed AFTER TransactionBehavior's post-`next()` SaveChangesAsync
-        //     commit. Verified via a real, empirical pipeline dispatch:
-        //     CacheInvalidationTransactionOrderingTests (state-map.md, WO-080/P-488 — this fixed a
-        //     confirmed defect where CacheInvalidationBehavior was previously registered AFTER
-        //     TransactionBehavior, causing eviction to run BEFORE the commit it was documented to
-        //     follow).
-        //
-        // Never assume physical registration-list order equals temporal execution order for a
-        // post-`next()` side effect — verify empirically via a real composed-pipeline dispatch test
-        // for any new/changed pairing, the same way both pairs above were proven.
+        foreach (var entries in _customBehaviors.Values)
+        {
+            foreach (var entry in entries)
+                ValidateCustomBehavior(entry);
+        }
+
+        // ICommandScope is always available for a handler to inject, whether or not any
+        // command-stage behavior is active.
+        _services.TryAddScoped<CommandScope>();
+        _services.TryAddScoped<ICommandScope>(sp => sp.GetRequiredService<CommandScope>());
+
+        // ---- Observability stage: Tracing, Logging, Metrics, then any custom entries. ----
+        if (_tracing)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(Tracing.TracingBehavior<,>));
+
         if (_logging)
+        {
+            _services.AddOptions<ApplicationLoggingOptions>()
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        }
 
         if (_metrics)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
+        {
+            _services.AddMetrics();
+            _services.TryAddSingleton<ApplicationMetrics>();
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(Metrics.MetricsBehavior<,>));
+        }
 
-        if (_tracing)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TracingBehavior<,>));
+        RegisterCustom(PipelineStage.Observability);
 
-        if (_validation)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-
+        // ---- Authorization stage. ----
         if (_authorization)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>));
 
-        if (_dualApproval)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(DualApprovalBehavior<,>));
+        RegisterCustom(PipelineStage.Authorization);
 
-        if (_caching)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehavior<,>));
+        // ---- Validation stage. ----
+        if (_validation)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
-        if (_resilience)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ResilienceBehavior<,>));
+        RegisterCustom(PipelineStage.Validation);
+
+        // ---- Query stage: no built-in of its own — custom entries only (e.g. CachingBehavior). ----
+        RegisterCustom(PipelineStage.Query);
+
+        // ---- Command stage: CommandScope, then Idempotency, Transaction, Auditing, then custom
+        // entries (e.g. CacheInvalidationBehavior). CommandScopeBehavior is registered only when
+        // the command stage is genuinely active — with nothing in it, there is nothing to sequence.
+        var commandStageActive = _idempotency || _transaction || _auditing
+            || _customBehaviors[PipelineStage.Command].Count > 0;
+
+        if (commandStageActive)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CommandScopeBehavior<,>));
 
         if (_idempotency)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotentCommandBehavior<,>));
-
-        // Registered BEFORE TransactionBehavior (physically OUTER to it) so eviction fires AFTER
-        // SaveChangesAsync — see the "DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP" comment
-        // above (WO-080, P-488).
-        if (_cacheInvalidation)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehavior<,>));
 
         if (_transaction)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
-        // Registered AFTER TransactionBehavior (physically INNER to it) so RecordAsync fires
-        // before SaveChangesAsync — see the "DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP"
-        // comment above.
         if (_auditing)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));
 
-        // Fire-and-forget infrastructure (opt-in — registered as a unit).
-        if (_fireAndForget)
-        {
-            _services.AddOptions<FireAndForgetOptions>();
-            if (_fireAndForgetConfigure is not null)
-                _services.Configure(_fireAndForgetConfigure);
-
-            // The bounded channel is the singleton shared between the dispatcher and the consumer.
-            _services.AddSingleton(static sp =>
-            {
-                var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<FireAndForgetOptions>>().Value;
-                return Channel.CreateBounded<IFireAndForgetCommand>(
-                    new BoundedChannelOptions(opts.Capacity)
-                    {
-                        FullMode = opts.RejectionPolicy == FireAndForgetRejectionPolicy.Block
-                            ? BoundedChannelFullMode.Wait
-                            : BoundedChannelFullMode.DropOldest, // DropAndLog uses TryWrite, so this fallback is never hit
-                        SingleReader = true
-                    });
-            });
-
-            _services.AddSingleton<ChannelWriter<IFireAndForgetCommand>>(
-                static sp => sp.GetRequiredService<Channel<IFireAndForgetCommand>>().Writer);
-
-            _services.AddSingleton<ChannelReader<IFireAndForgetCommand>>(
-                static sp => sp.GetRequiredService<Channel<IFireAndForgetCommand>>().Reader);
-
-            _services.AddSingleton<IFireAndForgetDispatcher, ChannelFireAndForgetDispatcher>();
-            _services.AddSingleton<IHostedService, FireAndForgetBackgroundConsumer>();
-
-            // Guard behavior: intercepts ISender.Send attempts for IFireAndForgetCommand types.
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(FireAndForgetGuardBehavior<,>));
-        }
-
-        // Streaming behaviors — canonical order: Logging -> Metrics -> Tracing -> Validation -> Authorization.
-        if (_streaming)
-        {
-            _services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamLoggingBehavior<,>));
-            _services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamMetricsBehavior<,>));
-            _services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamTracingBehavior<,>));
-            _services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamValidationBehavior<,>));
-            _services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamAuthorizationBehavior<,>));
-        }
+        RegisterCustom(PipelineStage.Command);
 
         return _services;
     }
 
-    private bool IsRegistered<TService>()
-        => _services.Any(descriptor => descriptor.ServiceType == typeof(TService));
+    private void RegisterCustom(PipelineStage stage)
+    {
+        foreach (var entry in _customBehaviors[stage])
+            _services.AddTransient(typeof(IPipelineBehavior<,>), entry.BehaviorType);
+    }
+
+    private void ValidateCustomBehavior((Type BehaviorType, Type[] RequiredServices) entry)
+    {
+        var type = entry.BehaviorType;
+
+        if (!type.IsGenericTypeDefinition)
+        {
+            throw new InvalidOperationException(
+                $"AddBehavior: '{type.FullName}' must be an open generic type definition " +
+                "implementing IPipelineBehavior<,>.");
+        }
+
+        var implementsPipelineBehavior = type.GetInterfaces()
+            .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IPipelineBehavior<,>));
+
+        if (!implementsPipelineBehavior)
+        {
+            throw new InvalidOperationException(
+                $"AddBehavior: '{type.FullName}' does not implement IPipelineBehavior<,>.");
+        }
+
+        foreach (var required in entry.RequiredServices)
+        {
+            if (!IsRegistered(required))
+            {
+                throw new InvalidOperationException(
+                    $"AddBehavior: '{type.FullName}' requires '{required.FullName}' to be registered " +
+                    "in the service collection. Register it before calling Build().");
+            }
+        }
+    }
+
+    private bool IsRegistered(Type serviceType)
+        => _services.Any(descriptor => descriptor.ServiceType == serviceType);
 }
