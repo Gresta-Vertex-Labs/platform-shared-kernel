@@ -102,7 +102,12 @@ ErrorProblemDetailsExtensions  (static class)
           Type = RFC 9457 URI for the resolved status (e.g. "https://httpstatuses.io/404");
           Extensions["errorCode"] = error.Code; Extensions["traceId"] = Activity.Current?.Id
           ?? context?.TraceIdentifier. Otherwise pure mapping — no logging, no I/O beyond the
-          optional DI resolution.
+          optional DI resolution. As of P-544 (shipped): when error.Details (01.Core.Error) is
+          non-empty — an Error.Validation(IReadOnlyList<Error>) aggregate — Extensions["errors"]
+          is additionally populated via the same internal LocalizedDetailResolver.BuildErrorsExtension
+          helper ValidationProblemDetailsExtensions uses, so a Result.Failure(Error.Validation(errors))
+          reaching the HTTP boundary through ResultHttpExtensions produces a byte-identical "errors"
+          shape to a thrown ValidationException carrying the same field errors.
 ```
 
 #### `Result<T>` → HTTP boundary (`Results/`)
@@ -242,10 +247,10 @@ RequireRoleAttribute  (sealed class : Attribute)
           below for the sugar form. Roles listed within ONE attribute instance are OR'd (caller
           needs any one). Stacking multiple [RequireRole]/[RequirePermission] attributes on the
           same endpoint is AND'd (caller must satisfy every attached attribute) — mirrors, in
-          spirit, 05.Application's IAuthorizeRequest.AllOfRequirements(across)/
-          AnyOfRequirements(within) vocabulary; this package does not reuse that exact API shape,
-          only the composition idea, since attribute constructors don't carry two separate lists
-          as naturally as an interface's two properties do.
+          spirit, 05.Application's IAuthorizeRequest.RequiredPermissions evaluated per
+          PermissionMatch.All/Any; this package does not reuse that exact API shape, only the
+          composition idea, since stacked attributes express AND-across/OR-within more naturally
+          than a single permission list with one match mode.
 
 RequirePermissionAttribute  (sealed class : Attribute)
     ctor(params string[] permissions)
@@ -322,7 +327,11 @@ ValidationProblemDetailsExtensions  (static class)
           BODY shape only, never the status-code mapping. Additive to, never a replacement for,
           ErrorProblemDetailsExtensions.ToProblemDetails(Error) — every non-ValidationException error
           (NotFound/Conflict/Forbidden/Unauthorized/BusinessRule/Unexpected) continues to produce a
-          byte-for-byte identical single-error body.
+          byte-for-byte identical single-error body. As of P-544 (shipped), delegates the
+          grouping/localization to the same internal LocalizedDetailResolver.BuildErrorsExtension
+          helper ErrorProblemDetailsExtensions now also calls for a non-exception Error.Details
+          aggregate (see the Error → ProblemDetails mapping section above), so the exception path
+          and the Result<T>→HTTP path produce byte-identical "errors" shapes for the same field errors.
 
 SharedKernelExceptionHandler  (extended)
     NOTE: Gains a ValidationException-specific branch, checked BEFORE the generic
@@ -414,7 +423,7 @@ AddSharedKernelCors(this IServiceCollection, Action<CorsPolicyOptions> configure
 
 #### Inbound idempotency-key HTTP boundary (`Idempotency/`)
 
-> **Status: Shipped end to end (WO-062, P-405).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Closes the gap between `05.Application`'s in-process `IIdempotentRequest`/`IdempotentCommandBehavior` (duplicate-submission protection for a dispatched command) and `11.Communication.Rest`'s still-queued outbound propagation (P-364) — neither owns the *inbound* HTTP-boundary half: extracting and validating a client-supplied `Idempotency-Key` header before a request ever reaches MediatR.
+> **Status: Shipped end to end (WO-062, P-405).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Closes the gap between `05.Application`'s in-process `IIdempotentRequest`/`IdempotencyBehavior` (duplicate-submission protection for a dispatched command) and `11.Communication.Rest`'s still-queued outbound propagation (P-364) — neither owns the *inbound* HTTP-boundary half: extracting and validating a client-supplied `Idempotency-Key` header before a request ever reaches MediatR.
 
 ```text
 IdempotencyKeyHeader  (const string, "Idempotency-Key")
@@ -1274,7 +1283,7 @@ app.MapPost("/payments", CreatePaymentHandler)
 httpContext.TryGetIdempotencyKey(out string? key);
 var command = new CreatePaymentCommand(..., IdempotencyKey: key);   // dispatched through
                                                                      // 05.Application's
-                                                                     // IdempotentCommandBehavior
+                                                                     // IdempotencyBehavior
 
 // WebApi — ETag / If-Match conditional requests (WO-062/P-407 — shipped)
 app.MapGet("/accounts/{id}", async (Guid id, IAccountQueryService svc, HttpContext ctx, CancellationToken ct) =>

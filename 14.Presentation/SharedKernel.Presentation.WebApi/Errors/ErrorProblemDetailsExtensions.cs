@@ -32,8 +32,15 @@ public static class ErrorProblemDetailsExtensions
     /// string instead (P-484/WO-078; see <see cref="LocalizedDetailResolver"/>) — <c>Status</c>
     /// resolved via <see cref="ErrorTypeStatusCodeMap.Resolve"/>, <c>Type</c> as an RFC 9457
     /// status URI, and <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> populated.
-    /// Localization is optional and additive: a service that never registers a catalog produces
-    /// byte-identical output to before P-484. Pure mapping — no logging, no I/O.
+    /// When <see cref="Error.Details"/> is non-empty (an aggregate built by
+    /// <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>),
+    /// <c>Extensions["errors"]</c> is additionally populated via
+    /// <see cref="LocalizedDetailResolver.BuildErrorsExtension"/> — the same
+    /// grouped-by-code/independently-localized shape
+    /// <see cref="ValidationProblemDetailsExtensions"/> produces for a thrown
+    /// <see cref="SharedKernel.Core.Exceptions.ValidationException"/>, since both call the one
+    /// shared helper. Localization is optional and additive: a service that never registers a
+    /// catalog produces byte-identical output to before P-484. Pure mapping — no logging, no I/O.
     /// </returns>
     public static ProblemDetails ToProblemDetails(this Error error, HttpContext? context = null)
     {
@@ -42,6 +49,11 @@ public static class ErrorProblemDetailsExtensions
         var problemDetails = ProblemDetailsShaping.Create(status, error.Code, detail, context);
 
         problemDetails.Extensions["errorCode"] = error.Code;
+
+        if (error.Details.Count > 0)
+        {
+            problemDetails.Extensions["errors"] = LocalizedDetailResolver.BuildErrorsExtension(error.Details, context);
+        }
 
         return problemDetails;
     }

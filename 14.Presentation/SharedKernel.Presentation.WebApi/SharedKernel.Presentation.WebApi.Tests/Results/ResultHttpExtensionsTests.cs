@@ -106,4 +106,52 @@ public class ResultHttpExtensionsTests
         var objectResult = actionResult.Result.Should().BeOfType<ObjectResult>().Subject;
         objectResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
+
+    private static Error BuildAggregateValidationError() => Error.Validation(
+    [
+        Error.Validation("name.required", "Name is required."),
+        Error.Validation("email.invalid", "Email is invalid."),
+    ]);
+
+    [Fact]
+    public void ToProblemDetailsResult_Generic_AggregateValidationFailure_Returns400WithErrorsExtension()
+    {
+        var result = Result<string>.Failure(BuildAggregateValidationError());
+
+        var httpResult = result.ToProblemDetailsResult();
+
+        var problemResult = httpResult.Should().BeOfType<ProblemHttpResult>().Subject;
+        problemResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var grouped = problemResult.ProblemDetails.Extensions["errors"]
+            .Should().BeOfType<Dictionary<string, string[]>>().Subject;
+        grouped.Should().HaveCount(2);
+        grouped["name.required"].Should().BeEquivalentTo("Name is required.");
+        grouped["email.invalid"].Should().BeEquivalentTo("Email is invalid.");
+    }
+
+    [Fact]
+    public void ToActionResult_Generic_AggregateValidationFailure_ObjectResultCarriesErrorsExtension()
+    {
+        var result = Result<string>.Failure(BuildAggregateValidationError());
+
+        var actionResult = result.ToActionResult();
+
+        var objectResult = actionResult.Result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var problemDetails = objectResult.Value.Should().BeOfType<ProblemDetails>().Subject;
+        var grouped = problemDetails.Extensions["errors"].Should().BeOfType<Dictionary<string, string[]>>().Subject;
+        grouped.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ToProblemDetailsResult_NonGeneric_AggregateValidationFailure_Returns400WithErrorsExtension()
+    {
+        var result = Result.Failure(BuildAggregateValidationError());
+
+        var httpResult = result.ToProblemDetailsResult();
+
+        var problemResult = httpResult.Should().BeOfType<ProblemHttpResult>().Subject;
+        problemResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        problemResult.ProblemDetails.Extensions.Should().ContainKey("errors");
+    }
 }

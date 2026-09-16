@@ -56,4 +56,32 @@ internal static class LocalizedDetailResolver
 
         return error.Message;
     }
+
+    /// <summary>
+    /// Builds the <c>Extensions["errors"]</c> value shared by every multi-error
+    /// <c>ProblemDetails</c> path: <paramref name="errors"/> grouped by
+    /// <see cref="Error.Code"/> (<see cref="StringComparer.Ordinal"/>), each value an array of
+    /// per-error localized/fallback messages resolved via <see cref="ResolveDetail"/>.
+    /// </summary>
+    /// <param name="errors">The child errors to group and resolve. Never mutated.</param>
+    /// <param name="context">
+    /// The current <see cref="HttpContext"/>, forwarded to <see cref="ResolveDetail"/> for every
+    /// error. May be <see langword="null"/>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="Dictionary{TKey, TValue}"/> of <see cref="Error.Code"/> to the array of
+    /// resolved messages for that code. One error may translate while a sibling falls back to its
+    /// raw <see cref="Error.Message"/> in the same result — never an all-or-nothing decision. This
+    /// is the single implementation shared by <see cref="ErrorProblemDetailsExtensions"/> (for
+    /// <see cref="Error.Details"/>) and <see cref="ValidationProblemDetailsExtensions"/> (for
+    /// <see cref="SharedKernel.Core.Exceptions.ValidationException.Errors"/>), so both paths
+    /// produce byte-identical shapes for the same input errors.
+    /// </returns>
+    public static Dictionary<string, string[]> BuildErrorsExtension(IReadOnlyList<Error> errors, HttpContext? context)
+        => errors
+            .GroupBy(error => error.Code, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(error => ResolveDetail(error, context)).ToArray(),
+                StringComparer.Ordinal);
 }

@@ -27,7 +27,13 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// additionally populates <c>Extensions["errors"]</c> with every failing field's messages grouped
 /// by <see cref="SharedKernel.Primitives.Errors.Error.Code"/>, mirroring ASP.NET Core's own
 /// built-in <see cref="ValidationProblemDetails.Errors"/> shape so client tooling that already
-/// understands that convention (form-binding libraries, generated SDKs) works unmodified.
+/// understands that convention (form-binding libraries, generated SDKs) works unmodified. Built via
+/// <see cref="LocalizedDetailResolver.BuildErrorsExtension"/> — the same helper
+/// <see cref="ErrorProblemDetailsExtensions"/> uses for a <see cref="SharedKernel.Primitives.Errors.Error"/>
+/// whose own <see cref="SharedKernel.Primitives.Errors.Error.Details"/> is non-empty (P-544), so a
+/// <c>Result.Failure(Error.Validation(errors))</c> returned from the application layer and a thrown
+/// <see cref="ValidationException"/> carrying the same field errors produce byte-identical
+/// <c>Extensions["errors"]</c> shapes.
 /// </para>
 /// <para>
 /// Each field's message is independently subject to the same optional localization step as
@@ -65,13 +71,10 @@ public static class ValidationProblemDetailsExtensions
 
         // Each field's message is localized/falls back independently (P-484/WO-078, D-82) — one
         // field may translate while a sibling field falls back to its raw message in the same
-        // response body; this is never an all-or-nothing decision.
-        problemDetails.Extensions["errors"] = exception.Errors
-            .GroupBy(error => error.Code, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(error => LocalizedDetailResolver.ResolveDetail(error, context)).ToArray(),
-                StringComparer.Ordinal);
+        // response body; this is never an all-or-nothing decision. Delegates to the same helper
+        // ErrorProblemDetailsExtensions uses for Error.Details, so both paths produce
+        // byte-identical "errors" shapes for the same input errors (P-544).
+        problemDetails.Extensions["errors"] = LocalizedDetailResolver.BuildErrorsExtension(exception.Errors, context);
 
         return problemDetails;
     }

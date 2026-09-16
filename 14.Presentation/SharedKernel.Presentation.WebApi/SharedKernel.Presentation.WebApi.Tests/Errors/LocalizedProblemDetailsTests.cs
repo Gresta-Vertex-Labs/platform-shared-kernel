@@ -145,4 +145,34 @@ public class LocalizedProblemDetailsTests
         errors[errorOne.Code].Should().Equal(errorOne.Message);
         errors[errorTwo.Code].Should().Equal(errorTwo.Message);
     }
+
+    [Fact]
+    public void ToProblemDetails_AggregateValidationError_AppliesLocalizationIndependentlyPerDetail()
+    {
+        // The Result path (Error.Validation(errors), Details non-empty) must localize each detail
+        // independently, exactly like the ValidationException path already does (P-544).
+        var translatedError = Error.Validation("field.required", "Field is required.");
+        var untranslatedError = Error.Validation("field.invalid", "Field is invalid.");
+        var aggregateError = Error.Validation([translatedError, untranslatedError]);
+
+        var originalCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
+            var catalog = new InMemoryLocalizationCatalog()
+                .AddTranslation(translatedError.Code, new CultureInfo("tr-TR"), "Alan zorunludur.");
+            var context = BuildContext(catalog);
+
+            var problemDetails = aggregateError.ToProblemDetails(context);
+
+            var errors = (Dictionary<string, string[]>)problemDetails.Extensions["errors"]!;
+
+            errors[translatedError.Code].Should().ContainSingle().Which.Should().Be("Alan zorunludur.");
+            errors[untranslatedError.Code].Should().ContainSingle().Which.Should().Be(untranslatedError.Message);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalCulture;
+        }
+    }
 }

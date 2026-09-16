@@ -336,6 +336,13 @@ purely additive. Every other `SharedKernelException` subtype (`NotFoundException
 `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path — this multi-error shape is specific to
 `ValidationException`, not a general precedent for other exception types.
 
+The same `errors` shape is also produced on the `Result<T>`→HTTP path with no exception involved:
+`ErrorProblemDetailsExtensions.ToProblemDetails(Error)` populates `Extensions["errors"]` whenever
+`Error.Details` (`01.Core`) is non-empty — the case for an `Error.Validation(IReadOnlyList<Error>)`
+aggregate returned as `Result.Failure(...)`. Both paths call the same internal
+`LocalizedDetailResolver.BuildErrorsExtension` helper, so `ResultHttpExtensions`/`ValidationProblemDetailsExtensions`
+produce byte-identical `errors` maps for the same underlying field errors.
+
 ---
 
 ## Security response headers
@@ -439,7 +446,7 @@ consuming service — read them from `IConfiguration` rather than hardcoding the
 
 `[RequireIdempotencyKey]` guards an endpoint on the presence of a valid client-supplied
 `Idempotency-Key` request header — the HTTP-boundary half that neither `05.Application`'s in-process
-`IIdempotentRequest`/`IdempotentCommandBehavior` nor `11.Communication.Rest`'s outbound propagation
+`IIdempotentRequest`/`IdempotencyBehavior` nor `11.Communication.Rest`'s outbound propagation
 covers. The end-to-end recipe, header to dispatch:
 
 ```csharp
@@ -466,8 +473,10 @@ static async Task<IResult> CreatePaymentHandler(
     // 2. Construct the command carrying that key.
     var command = new CreatePaymentCommand(body.AccountId, body.Amount, IdempotencyKey: idempotencyKey!);
 
-    // 3. Dispatch as normal — 05.Application's IdempotentCommandBehavior<TRequest,TResponse>
-    //    short-circuits a duplicate submission of the same key without re-executing the handler.
+    // 3. Dispatch as normal — 05.Application's IdempotencyBehavior<TRequest,TResponse> reserves the
+    //    key atomically and never re-executes the handler for it: a completed duplicate replays the
+    //    original response, one still in flight returns 409 (idempotency.in_progress), and the same
+    //    key sent with a different payload returns 409 (idempotency.key_reused).
     Result<PaymentDto> result = await sender.Send(command, ct);
     return result.ToProblemDetailsResult();
 }

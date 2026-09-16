@@ -90,4 +90,29 @@ public class ValidationProblemDetailsExtensionsTests
         actual.Type.Should().Be(expected.Type);
         actual.Extensions["errorCode"].Should().Be(expected.Extensions["errorCode"]);
     }
+
+    [Fact]
+    public void ToProblemDetails_ErrorsExtension_IsByteIdenticalToTheResultAggregateValidationPath()
+    {
+        // Same field errors, two independent entry points: a thrown ValidationException (the
+        // exception-boundary path) and Result.Failure(Error.Validation(errors)) (the in-process
+        // Result path, 05.Application's ValidationBehavior). Both must route through
+        // LocalizedDetailResolver.BuildErrorsExtension, so Extensions["errors"] is identical
+        // regardless of which path produced the ProblemDetails (P-544).
+        Error[] fieldErrors =
+        [
+            Error.Validation("name.required", "Name is required."),
+            Error.Validation("name.required", "Name must not exceed 50 characters."),
+            Error.Validation("email.invalid", "Email is invalid."),
+        ];
+        var exception = new ValidationException(fieldErrors);
+        var aggregateError = Error.Validation(fieldErrors);
+
+        var fromException = exception.ToProblemDetails();
+        var fromResult = aggregateError.ToProblemDetails();
+
+        var exceptionErrors = fromException.Extensions["errors"].Should().BeOfType<Dictionary<string, string[]>>().Subject;
+        var resultErrors = fromResult.Extensions["errors"].Should().BeOfType<Dictionary<string, string[]>>().Subject;
+        resultErrors.Should().BeEquivalentTo(exceptionErrors);
+    }
 }

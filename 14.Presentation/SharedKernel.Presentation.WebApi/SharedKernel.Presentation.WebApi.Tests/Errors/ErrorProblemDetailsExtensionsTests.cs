@@ -66,4 +66,51 @@ public class ErrorProblemDetailsExtensionsTests
 
         problemDetails.Extensions["traceId"].Should().BeNull();
     }
+
+    [Fact]
+    public void ToProblemDetails_AggregateValidationError_ResolvesStatus400()
+    {
+        var error = Error.Validation(
+        [
+            Error.Validation("name.required", "Name is required."),
+            Error.Validation("email.invalid", "Email is invalid."),
+        ]);
+
+        var problemDetails = error.ToProblemDetails();
+
+        problemDetails.Status.Should().Be(StatusCodes.Status400BadRequest);
+        problemDetails.Type.Should().Be("https://httpstatuses.io/400");
+        problemDetails.Title.Should().Be(error.Code);
+        problemDetails.Extensions["errorCode"].Should().Be(error.Code);
+    }
+
+    [Fact]
+    public void ToProblemDetails_AggregateValidationError_PopulatesErrorsGroupedByCode()
+    {
+        var error = Error.Validation(
+        [
+            Error.Validation("name.required", "Name is required."),
+            Error.Validation("name.required", "Name must not exceed 50 characters."),
+            Error.Validation("email.invalid", "Email is invalid."),
+        ]);
+
+        var problemDetails = error.ToProblemDetails();
+
+        var grouped = problemDetails.Extensions["errors"].Should().BeOfType<Dictionary<string, string[]>>().Subject;
+        grouped.Should().HaveCount(2);
+        grouped["name.required"].Should().BeEquivalentTo(
+            "Name is required.",
+            "Name must not exceed 50 characters.");
+        grouped["email.invalid"].Should().BeEquivalentTo("Email is invalid.");
+    }
+
+    [Fact]
+    public void ToProblemDetails_NoDetails_NeverPopulatesErrorsExtension()
+    {
+        var error = Error.Validation("field.required", "Field is required.");
+
+        var problemDetails = error.ToProblemDetails();
+
+        problemDetails.Extensions.Should().NotContainKey("errors");
+    }
 }
