@@ -1,11 +1,21 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Zero-dependency security abstractions for SharedKernel: IUserContext, ITenantProvider, IdentityKind, AnonymousUserContext, SystemUserContext, SecurityClaimTypes. References only SharedKernel.Primitives. AOT-safe.</Description>
-    <PackageTags>shared-kernel;security;identity;user-context;tenant;abstractions;aot</PackageTags>
-    <PackageReleaseNotes>3.0.0 (breaking): IUserContext gains six new step-up-authentication members — AuthenticationMethods, AuthContextClassReference, AuthTime, IsSenderConstrained, WasAuthenticatedWith(string), and IsAuthenticationFresherThan(TimeSpan, DateTimeOffset) — every implementer of IUserContext outside this package must be updated to add them. AnonymousUserContext/SystemUserContext updated with sentinel values (empty/null/false). See WO-058 (P-375/P-376). 2.0.0 (breaking): IUserContext gained IdentityKind and Permissions/HasPermission; added the IdentityKind enum and the SystemUserContext sentinel. See WO-057 (P-367/P-368/P-369).</PackageReleaseNotes>
+    <Description>Identity contracts shared by every SharedKernel service: IUserContext (subject, client, tenant, session, roles, permissions and step-up context of the caller), ITenantProvider, the per-scheme IUserContextMapper seam that authentication packages plug into, ready-made anonymous and system contexts, and the short OIDC claim type names. No ASP.NET Core or third-party dependency.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;security;identity;user-context;tenant;claims;abstractions</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

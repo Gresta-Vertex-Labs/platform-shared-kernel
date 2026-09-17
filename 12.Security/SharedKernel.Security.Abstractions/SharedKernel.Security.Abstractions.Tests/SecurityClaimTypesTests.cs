@@ -1,38 +1,39 @@
-using System.Security.Claims;
-using SharedKernel.Security.Abstractions.Claims;
 using Xunit;
 
 namespace SharedKernel.Security.Abstractions.Tests;
 
 public sealed class SecurityClaimTypesTests
 {
-    [Fact]
-    public void UserId_IsSubClaim()
+    [Theory]
+    [InlineData(SecurityClaimTypes.Subject, "sub")]
+    [InlineData(SecurityClaimTypes.TokenId, "jti")]
+    [InlineData(SecurityClaimTypes.Name, "name")]
+    [InlineData(SecurityClaimTypes.Email, "email")]
+    [InlineData(SecurityClaimTypes.AuthenticationMethod, "amr")]
+    [InlineData(SecurityClaimTypes.AuthContextClassReference, "acr")]
+    [InlineData(SecurityClaimTypes.AuthTime, "auth_time")]
+    [InlineData(SecurityClaimTypes.SessionId, "sid")]
+    [InlineData(SecurityClaimTypes.AuthorizedParty, "azp")]
+    [InlineData(SecurityClaimTypes.Scope, "scope")]
+    [InlineData(SecurityClaimTypes.ClientId, "client_id")]
+    [InlineData(SecurityClaimTypes.Confirmation, "cnf")]
+    [InlineData(SecurityClaimTypes.Roles, "roles")]
+    [InlineData(SecurityClaimTypes.TenantId, "tenant_id")]
+    public void Constant_MatchesRegisteredWireName(string actual, string expected)
     {
-        Assert.Equal("sub", SecurityClaimTypes.UserId);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
-    public void TenantId_IsTenantIdClaim()
+    public void Constants_AreDistinct()
     {
-        Assert.Equal("tenant_id", SecurityClaimTypes.TenantId);
-    }
+        string[] values = typeof(SecurityClaimTypes)
+            .GetFields()
+            .Where(field => field.IsLiteral)
+            .Select(field => (string)field.GetRawConstantValue()!)
+            .ToArray();
 
-    [Fact]
-    public void Email_MatchesClaimTypesEmail()
-    {
-        Assert.Equal(ClaimTypes.Email, SecurityClaimTypes.Email);
-    }
-
-    [Fact]
-    public void Role_MatchesClaimTypesRole()
-    {
-        Assert.Equal(ClaimTypes.Role, SecurityClaimTypes.Role);
-    }
-
-    [Fact]
-    public void AuthenticationMethod_IsAmrClaim()
-    {
-        Assert.Equal("amr", SecurityClaimTypes.AuthenticationMethod);
+        Assert.Equal(14, values.Length);
+        Assert.Equal(values.Length, values.Distinct(StringComparer.Ordinal).Count());
     }
 }
