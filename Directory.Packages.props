@@ -8,15 +8,11 @@
     into an explicit <dependency> in the emitted .nuspec — one pin would silently rewrite the
     public dependency graph of every package that touches it, the opposite of this repo's layering
     discipline. For a shipping package with a vulnerable transitive, the fix is a deliberate,
-    reviewable override instead of a blanket transitive pin — two shapes are used here depending on
-    how widely the vulnerable package is pulled in:
+    reviewable override instead of a blanket transitive pin. The shape used here, for a package
+    pulled in widely (the System.Security.Cryptography.Xml pin for Microsoft.Identity.Web was removed
+    with that dependency in P-546):
 
-      1. System.Security.Cryptography.Xml (via Microsoft.Identity.Web -> Microsoft.AspNetCore.
-         DataProtection, reached only through SharedKernel.Security.Oidc's own dependency chain):
-         a plain PackageVersion entry below, consumed by one explicit, commented, bare
-         <PackageReference> in SharedKernel.Security.Oidc.csproj.
-
-      2. SSH.NET and SQLitePCLRaw.bundle_e_sqlite3 (via Testcontainers.*/EF Core Sqlite, reached
+      - SSH.NET and SQLitePCLRaw.bundle_e_sqlite3 (via Testcontainers.*/EF Core Sqlite, reached
          independently by 8+ different projects across the repo, not through one shared owning
          project): a <GlobalPackageReference> below, which NuGet applies as an implicit direct,
          PrivateAssets="all" reference to every project automatically. This is the only way to
@@ -193,7 +189,6 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.7.0" />
     <PackageVersion Include="Microsoft.FeatureManagement" Version="4.5.0" />
-    <PackageVersion Include="Microsoft.Identity.Web" Version="3.10.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <PackageVersion Include="Microsoft.SemanticKernel" Version="1.78.0" />
     <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.78.0" />
@@ -286,7 +281,6 @@
     <PackageVersion Include="SharedKernel.Validation.FluentValidation" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
     <PackageVersion Include="System.ClientModel" Version="1.10.0" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
     <PackageVersion Include="Temporalio" Version="1.17.0" />
     <PackageVersion Include="Temporalio.Extensions.DiagnosticSource" Version="1.17.0" />
     <PackageVersion Include="Temporalio.Extensions.Hosting" Version="1.17.0" />
