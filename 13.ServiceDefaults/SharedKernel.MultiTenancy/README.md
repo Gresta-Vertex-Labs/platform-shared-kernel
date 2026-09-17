@@ -8,7 +8,7 @@ Concrete multi-tenant resolution strategies for Platform.SharedKernel microservi
 
 | Strategy | Resolves from |
 |---|---|
-| `ClaimTenantResolutionStrategy` | A signature-verified JWT tenant claim |
+| `ClaimTenantResolutionStrategy` | The authenticated credential's tenant, through the authentication package's `IUserContextMapper` (the claim type is that package's setting) |
 | `HeaderTenantResolutionStrategy` | The `X-Tenant-Id` request header |
 | `DatabaseTenantResolutionStrategy` | A tenant-directory lookup (host/domain → tenant) |
 
@@ -18,13 +18,17 @@ Concrete multi-tenant resolution strategies for Platform.SharedKernel microservi
 
 **`ITenantResolutionStrategy`** — implement this to add your own strategy.
 
-**`TenantResolutionOptions`** — bound from configuration section `SharedKernel:MultiTenancy`, validated at startup by `TenantResolutionOptionsValidator` (a typo in `StrategyOrder` fails the host rather than silently resolving nothing).
+**`TenantResolutionOptions`** — `StrategyOrder`, bindable from configuration section `SharedKernel:MultiTenancy` (`TenantResolutionOptions.SectionName`), validated at startup by `TenantResolutionOptionsValidator` (a typo or a duplicate entry in `StrategyOrder` fails the host rather than silently resolving nothing). Leave `StrategyOrder` empty to use `TenantResolutionOptions.DefaultStrategyOrder`; a configured list replaces the default.
 
 ## Quick Start
 
 ```csharp
 // Register (Program.cs)
-builder.Services.AddSharedKernelMultiTenancy(builder.Configuration);
+builder.Services.AddSharedKernelMultiTenancy();
+
+// Optional: read StrategyOrder from configuration instead of using the default
+builder.Services.Configure<TenantResolutionOptions>(
+    builder.Configuration.GetSection(TenantResolutionOptions.SectionName));
 
 app.UseMiddleware<TenantResolutionMiddleware>();
 
@@ -97,6 +101,8 @@ The default order is **`Claim` → `Header` → `Database`**, and it is delibera
 A JWT tenant claim is signature-verified; the `X-Tenant-Id` header is caller-supplied and trivially forged. Placing `Header` ahead of `Claim` lets any caller override a verified identity with an arbitrary one — a cross-tenant impersonation vector. This ordering is locked by an architecture test in `00.Governance` so it cannot silently regress.
 
 A service with no tenant directory simply omits `"Database"` from the order — no code change required.
+
+`StrategyOrder` is empty by default and the documented order lives in `TenantResolutionOptions.DefaultStrategyOrder`. Configuration binding appends to a list that already has items, so a non-empty default would turn a configured `["Header"]` into `[Claim, Header, Database, Header]`; with an empty default, a configured order replaces the default exactly.
 
 ## Package
 

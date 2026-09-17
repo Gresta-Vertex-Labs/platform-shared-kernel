@@ -34,7 +34,7 @@ Signed signals before an unsigned header, deliberately — the same security les
 `SharedKernel.MultiTenancy`'s `StrategyOrder`:
 
 1. **`UserPreference`** — the authenticated user's stored preference claim,
-   `IUserContext.Claims[UserPreferenceClaimType]`. Skipped when `UserPreferenceClaimType` is unconfigured.
+   `IUserContext.FindClaim(UserPreferenceClaimType)`. Skipped when `UserPreferenceClaimType` is unconfigured.
 2. **`TenantDefault`** — the current tenant's `TenantDescriptor.DefaultCulture`, through an optionally
    registered `ITenantCatalog`. Skipped, never throwing, when none is registered.
 3. **`AcceptLanguageHeader`** — the BCL's `AcceptLanguageHeaderRequestCultureProvider`.
