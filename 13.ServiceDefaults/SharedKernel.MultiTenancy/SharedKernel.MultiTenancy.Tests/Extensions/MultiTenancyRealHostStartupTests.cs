@@ -28,15 +28,26 @@ public sealed class MultiTenancyRealHostStartupTests
     }
 
     [Fact]
-    public async Task RealHost_EmptyStrategyOrder_StartAsyncThrowsOptionsValidationExceptionNamingStrategyOrder()
+    public async Task RealHost_StrategyOrderBoundFromConfiguration_ReplacesDefaultOrder()
     {
         var builder = CreateBuilderWithConnectionFactory();
-        builder.Services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = []);
+        builder.Configuration[$"{TenantResolutionOptions.SectionName}:StrategyOrder:0"] = TenantResolutionStrategyNames.Header;
+        builder.Services.AddSharedKernelMultiTenancy();
+        builder.Services.Configure<TenantResolutionOptions>(
+            builder.Configuration.GetSection(TenantResolutionOptions.SectionName));
         using var host = builder.Build();
 
-        var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+        await host.StartAsync();
 
-        Assert.Contains(nameof(TenantResolutionOptions.StrategyOrder), exception.Message);
+        try
+        {
+            var options = host.Services.GetRequiredService<IOptions<TenantResolutionOptions>>().Value;
+            Assert.Equal([TenantResolutionStrategyNames.Header], options.EffectiveStrategyOrder);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
     }
 
     [Fact]

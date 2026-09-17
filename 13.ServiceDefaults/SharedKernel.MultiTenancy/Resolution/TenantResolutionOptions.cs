@@ -16,7 +16,7 @@ public sealed class TenantResolutionOptions
     public const string SectionName = "SharedKernel:MultiTenancy";
 
     /// <summary>
-    /// Gets or sets the ordered list of strategy names to attempt. Defaults to
+    /// Gets the strategy order used when <see cref="StrategyOrder"/> is empty:
     /// <see cref="TenantResolutionStrategyNames.Claim"/>, <see cref="TenantResolutionStrategyNames.Header"/>,
     /// <see cref="TenantResolutionStrategyNames.Database"/>, in that order.
     /// </summary>
@@ -33,13 +33,32 @@ public sealed class TenantResolutionOptions
     /// unaffected, since it never has a claim to compete with. Only a request that is both
     /// authenticated with a tenant claim <b>and</b> carries a different <c>X-Tenant-Id</c> header
     /// changes behavior under this default, and it changes to the secure outcome (the claim wins).
-    /// A service that already explicitly configures its own <see cref="StrategyOrder"/> via
-    /// <c>AddSharedKernelMultiTenancy(options =&gt; ...)</c> is unaffected by this default entirely.
+    /// A service that already explicitly configures its own <see cref="StrategyOrder"/> is
+    /// unaffected by this default entirely.
     /// </remarks>
-    public IReadOnlyList<string> StrategyOrder { get; set; } =
+    public static IReadOnlyList<string> DefaultStrategyOrder { get; } =
     [
         TenantResolutionStrategyNames.Claim,
         TenantResolutionStrategyNames.Header,
         TenantResolutionStrategyNames.Database,
     ];
+
+    /// <summary>
+    /// Gets or sets the ordered list of strategy names to attempt. Empty (the default) means
+    /// <see cref="DefaultStrategyOrder"/>; a configured list replaces it.
+    /// </summary>
+    /// <remarks>
+    /// The list is empty by default because configuration binding appends to a collection that
+    /// already has items: a non-empty default plus a configured <c>["Header"]</c> would bind as
+    /// <c>[Claim, Header, Database, Header]</c> instead of <c>["Header"]</c>.
+    /// </remarks>
+    public IReadOnlyList<string> StrategyOrder
+    {
+        get;
+        set => field = value ?? [];
+    } = [];
+
+    /// <summary>Gets the order actually used: <see cref="StrategyOrder"/>, or the default when it is empty.</summary>
+    internal IReadOnlyList<string> EffectiveStrategyOrder =>
+        StrategyOrder.Count == 0 ? DefaultStrategyOrder : StrategyOrder;
 }

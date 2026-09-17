@@ -5,7 +5,7 @@ using SharedKernel.MultiTenancy.Extensions;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.MultiTenancy.Tests.Extensions;
 
@@ -102,7 +102,7 @@ public sealed class MultiTenancyExtensionsTests
     }
 
     [Fact]
-    public void AddSharedKernelMultiTenancy_EmptyStrategyOrder_ResolvingOptionsThrowsOptionsValidationException()
+    public void AddSharedKernelMultiTenancy_EmptyStrategyOrder_ResolvesToDefaultOrder()
     {
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IDbConnectionFactory>());
@@ -110,8 +110,23 @@ public sealed class MultiTenancyExtensionsTests
         services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = []);
 
         using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TenantResolutionOptions>>().Value;
 
-        Assert.Throws<OptionsValidationException>(
+        Assert.Equal(TenantResolutionOptions.DefaultStrategyOrder, options.EffectiveStrategyOrder);
+    }
+
+    [Fact]
+    public void AddSharedKernelMultiTenancy_DuplicateStrategyOrderEntry_ResolvingOptionsThrowsOptionsValidationException()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDbConnectionFactory>());
+
+        services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = ["Claim", "Header", "Claim"]);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<OptionsValidationException>(
             () => provider.GetRequiredService<IOptions<TenantResolutionOptions>>().Value);
+        Assert.Contains("more than once", exception.Message, StringComparison.Ordinal);
     }
 }

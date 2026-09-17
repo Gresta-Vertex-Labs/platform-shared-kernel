@@ -33,8 +33,9 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
     : IValidateOptions<TenantResolutionOptions>
 {
     /// <summary>
-    /// Fails when <see cref="TenantResolutionOptions.StrategyOrder"/> is empty, or when any of its
-    /// entries names a strategy with no matching registered <see cref="ITenantResolutionStrategy.StrategyName"/>.
+    /// Fails when any entry of the effective strategy order (<see cref="TenantResolutionOptions.StrategyOrder"/>,
+    /// or <see cref="TenantResolutionOptions.DefaultStrategyOrder"/> when it is empty) names a strategy
+    /// with no matching registered <see cref="ITenantResolutionStrategy.StrategyName"/>, or appears twice.
     /// </summary>
     /// <param name="name">The named options instance being validated (unused — this options type is not named).</param>
     /// <param name="options">The <see cref="TenantResolutionOptions"/> instance to validate.</param>
@@ -47,11 +48,19 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (options.StrategyOrder.Count == 0)
+        var strategyOrder = options.EffectiveStrategyOrder;
+
+        var duplicates = strategyOrder
+            .GroupBy(strategyName => strategyName, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+
+        if (duplicates.Length > 0)
         {
             return ValidateOptionsResult.Fail(
-                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} must not be empty — " +
-                "a misconfigured, empty strategy order would silently resolve every request to Guid.Empty (no tenant).");
+                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} lists " +
+                $"strategy name(s) more than once: {string.Join(", ", duplicates)}.");
         }
 
         using var scope = serviceProvider.CreateScope();
@@ -60,7 +69,7 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
             .Select(s => s.StrategyName)
             .ToHashSet(StringComparer.Ordinal);
 
-        var unmatched = options.StrategyOrder
+        var unmatched = strategyOrder
             .Where(strategyName => !registeredNames.Contains(strategyName))
             .ToArray();
 

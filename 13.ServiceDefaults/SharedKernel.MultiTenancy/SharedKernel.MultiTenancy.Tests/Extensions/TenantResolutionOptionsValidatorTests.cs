@@ -20,15 +20,29 @@ public sealed class TenantResolutionOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyStrategyOrder_Fails()
+    public void Validate_EmptyStrategyOrder_ValidatesDefaultOrder()
     {
         var validator = CreateValidator(new HeaderTenantResolutionStrategy());
         var options = new TenantResolutionOptions { StrategyOrder = [] };
 
         var result = validator.Validate(null, options);
 
+        // Only Header is registered, so the default [Claim, Header, Database] names two unregistered strategies.
         Assert.True(result.Failed);
-        Assert.Contains(nameof(TenantResolutionOptions.StrategyOrder), result.FailureMessage);
+        Assert.Contains(TenantResolutionStrategyNames.Claim, result.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains(TenantResolutionStrategyNames.Database, result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_DuplicateEntry_FailsAndNamesIt()
+    {
+        var validator = CreateValidator(new HeaderTenantResolutionStrategy());
+        var options = new TenantResolutionOptions { StrategyOrder = ["Header", "Header"] };
+
+        var result = validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("more than once: Header", result.FailureMessage, StringComparison.Ordinal);
     }
 
     [Fact]

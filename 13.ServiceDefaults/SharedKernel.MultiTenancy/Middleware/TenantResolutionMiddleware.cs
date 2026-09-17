@@ -67,7 +67,7 @@ public sealed class TenantResolutionMiddleware(
         var resolvedTenantId = Guid.Empty;
         string? resolvedStrategyName = null;
 
-        foreach (var strategyName in options.Value.StrategyOrder)
+        foreach (var strategyName in options.Value.EffectiveStrategyOrder)
         {
             if (!_strategiesByName.TryGetValue(strategyName, out var strategy))
             {

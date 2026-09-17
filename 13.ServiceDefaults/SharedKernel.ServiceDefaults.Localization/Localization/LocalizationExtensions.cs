@@ -112,9 +112,10 @@ public static class LocalizationExtensions
 
     private static IList<IRequestCultureProvider> BuildProviders(LocalizationResolutionOptions options)
     {
-        var providers = new List<IRequestCultureProvider>(options.StrategyOrder.Count);
+        var strategyOrder = options.EffectiveStrategyOrder;
+        var providers = new List<IRequestCultureProvider>(strategyOrder.Count);
 
-        foreach (var strategy in options.StrategyOrder)
+        foreach (var strategy in strategyOrder)
         {
             IRequestCultureProvider provider = strategy switch
             {
