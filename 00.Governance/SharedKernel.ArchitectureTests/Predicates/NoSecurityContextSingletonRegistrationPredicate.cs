@@ -8,8 +8,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// Custom NetArchTest predicate (no SK diagnostic ID) that fails any type whose method bodies
 /// contain a <c>Call</c>/<c>Callvirt</c> IL instruction invoking a closed-generic
 /// <c>AddSingleton</c> registration method whose generic arguments include
-/// <c>SharedKernel.Security.Abstractions.Abstractions.IUserContext</c> or
-/// <c>SharedKernel.Security.Abstractions.Abstractions.ITenantProvider</c>.
+/// <c>SharedKernel.Security.Abstractions.IUserContext</c> or
+/// <c>SharedKernel.Security.Abstractions.ITenantProvider</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -60,10 +60,10 @@ public sealed class NoSecurityContextSingletonRegistrationPredicate : ICustomRul
     private const string AddSingletonMethodName = "AddSingleton";
 
     private const string UserContextFullName =
-        "SharedKernel.Security.Abstractions.Abstractions.IUserContext";
+        "SharedKernel.Security.Abstractions.IUserContext";
 
     private const string TenantProviderFullName =
-        "SharedKernel.Security.Abstractions.Abstractions.ITenantProvider";
+        "SharedKernel.Security.Abstractions.ITenantProvider";
 
     /// <summary>
     /// Returns <see langword="false"/> (rule violated) when the type contains a call to a

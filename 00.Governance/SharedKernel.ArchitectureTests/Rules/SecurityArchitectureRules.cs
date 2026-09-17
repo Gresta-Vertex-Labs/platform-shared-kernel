@@ -66,7 +66,7 @@ public static class SecurityArchitectureRules
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type in the supplied
     /// <c>03.Domain</c> assembly references
-    /// <c>SharedKernel.Security.Abstractions.Abstractions.ITenantProvider</c> via a field type,
+    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c> via a field type,
     /// constructor/method parameter type, or method-call instruction operand.
     /// </summary>
     /// <remarks>
@@ -117,8 +117,8 @@ public static class SecurityArchitectureRules
     /// Returns a <see cref="ConditionList"/> asserting that no method body in the supplied
     /// assemblies contains a closed-generic <c>AddSingleton</c> registration call whose generic
     /// arguments include
-    /// <c>SharedKernel.Security.Abstractions.Abstractions.IUserContext</c> or
-    /// <c>SharedKernel.Security.Abstractions.Abstractions.ITenantProvider</c>.
+    /// <c>SharedKernel.Security.Abstractions.IUserContext</c> or
+    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c>.
     /// </summary>
     /// <remarks>
     /// <para>

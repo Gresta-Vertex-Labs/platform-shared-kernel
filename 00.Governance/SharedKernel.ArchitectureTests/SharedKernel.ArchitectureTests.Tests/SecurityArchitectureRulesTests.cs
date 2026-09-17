@@ -39,14 +39,14 @@ public class SecurityArchitectureRulesTests
 
     /// <summary>
     /// T-286: A fixture type accepting
-    /// <c>SharedKernel.Security.Abstractions.Abstractions.ITenantProvider</c> as a constructor
+    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c> as a constructor
     /// parameter must fail <see cref="SecurityArchitectureRules.DomainNeverReferencesTenantProvider"/>.
     /// </summary>
     [Fact]
     public void DomainNeverReferencesTenantProvider_CtorParameterViolation_RuleFails()
     {
         const string source = """
-            namespace SharedKernel.Security.Abstractions.Abstractions
+            namespace SharedKernel.Security.Abstractions
             {
                 // Stub simulating the real, shipped ITenantProvider — same namespace and name so
                 // the exact-FullName match fires correctly.
@@ -63,10 +63,10 @@ public class SecurityArchitectureRulesTests
                 // layer.
                 public sealed class PricingPolicy
                 {
-                    private readonly SharedKernel.Security.Abstractions.Abstractions.ITenantProvider _tenantProvider;
+                    private readonly SharedKernel.Security.Abstractions.ITenantProvider _tenantProvider;
 
                     public PricingPolicy(
-                        SharedKernel.Security.Abstractions.Abstractions.ITenantProvider tenantProvider)
+                        SharedKernel.Security.Abstractions.ITenantProvider tenantProvider)
                     {
                         _tenantProvider = tenantProvider;
                     }
@@ -98,7 +98,7 @@ public class SecurityArchitectureRulesTests
     public void DomainNeverReferencesTenantProvider_GuidTenantIdPrimitive_RulePasses()
     {
         const string source = """
-            namespace SharedKernel.Security.Abstractions.Abstractions
+            namespace SharedKernel.Security.Abstractions
             {
                 public interface ITenantProvider
                 {
@@ -170,7 +170,7 @@ public class SecurityArchitectureRulesTests
                 }
             }
 
-            namespace SharedKernel.Security.Abstractions.Abstractions
+            namespace SharedKernel.Security.Abstractions
             {
                 public interface IUserContext { }
             }
@@ -178,7 +178,7 @@ public class SecurityArchitectureRulesTests
             namespace Fixture.Composition
             {
                 public sealed class FixtureUserContext
-                    : SharedKernel.Security.Abstractions.Abstractions.IUserContext { }
+                    : SharedKernel.Security.Abstractions.IUserContext { }
 
                 public static class DiExtensions
                 {
@@ -193,7 +193,7 @@ public class SecurityArchitectureRulesTests
                         Stub.DependencyInjection.IServiceCollection services)
                     {
                         return Stub.DependencyInjection.ServiceCollectionExtensions.AddSingleton<
-                            SharedKernel.Security.Abstractions.Abstractions.IUserContext,
+                            SharedKernel.Security.Abstractions.IUserContext,
                             FixtureUserContext>(services);
                     }
                 }
@@ -244,7 +244,7 @@ public class SecurityArchitectureRulesTests
                 }
             }
 
-            namespace SharedKernel.Security.Abstractions.Abstractions
+            namespace SharedKernel.Security.Abstractions
             {
                 public interface IUserContext { }
             }
@@ -252,7 +252,7 @@ public class SecurityArchitectureRulesTests
             namespace Fixture.Composition
             {
                 public sealed class FixtureUserContext
-                    : SharedKernel.Security.Abstractions.Abstractions.IUserContext { }
+                    : SharedKernel.Security.Abstractions.IUserContext { }
 
                 public static class DiExtensions
                 {
@@ -261,7 +261,7 @@ public class SecurityArchitectureRulesTests
                         Stub.DependencyInjection.IServiceCollection services)
                     {
                         return Stub.DependencyInjection.ServiceCollectionExtensions.AddScoped<
-                            SharedKernel.Security.Abstractions.Abstractions.IUserContext,
+                            SharedKernel.Security.Abstractions.IUserContext,
                             FixtureUserContext>(services);
                     }
                 }
@@ -300,7 +300,7 @@ public class SecurityArchitectureRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             because: "the real, shipped SharedKernel.Domain assembly never references " +
-                     "SharedKernel.Security.Abstractions.Abstractions.ITenantProvider — " +
+                     "SharedKernel.Security.Abstractions.ITenantProvider — " +
                      "03.Domain has no dependency on 12.Security at all");
     }
 
@@ -312,23 +312,23 @@ public class SecurityArchitectureRulesTests
     /// T-291: Re-points
     /// <see cref="SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes"/> at
     /// the real, shipped <c>SharedKernel.Security.Oidc</c> assembly (its own
-    /// <c>AddSharedKernelSecurity</c>/<c>AddAzureB2CAuthentication</c> registration methods) and
+    /// <c>AddOidcAuthentication</c> registration method) and
     /// confirms zero violations. Non-gating — <c>12.Security</c> was already fully Published as
-    /// of this phase's authoring; both registration methods register
+    /// of this phase's authoring; the registration method registers
     /// <c>IUserContext</c>/<c>ITenantProvider</c> as <c>AddScoped</c>, never
     /// <c>AddSingleton</c>.
     /// </summary>
     [Fact]
     public void NoSingletonRegistrationOfSecurityContextTypes_RealOidcAssembly_RulePasses()
     {
-        var oidcAssembly = typeof(SharedKernel.Security.Oidc.Extensions.SecurityServiceCollectionExtensions).Assembly;
+        var oidcAssembly = typeof(SharedKernel.Security.Oidc.Extensions.OidcServiceCollectionExtensions).Assembly;
 
         var result = SecurityArchitectureRules
             .NoSingletonRegistrationOfSecurityContextTypes(oidcAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "the real, shipped SecurityServiceCollectionExtensions registers both " +
+            because: "the real, shipped OidcServiceCollectionExtensions registers both " +
                      "IUserContext and ITenantProvider via AddScoped — never AddSingleton");
     }
 
@@ -657,7 +657,7 @@ public class SecurityArchitectureRulesTests
     [Fact]
     public void DpopProofValidationNeverDuplicatedOutsideOidc_RealOidcAssembly_RulePasses()
     {
-        var oidcAssembly = typeof(SharedKernel.Security.Oidc.Extensions.SecurityServiceCollectionExtensions).Assembly;
+        var oidcAssembly = typeof(SharedKernel.Security.Oidc.Extensions.OidcServiceCollectionExtensions).Assembly;
 
         var result = SecurityArchitectureRules
             .DpopProofValidationNeverDuplicatedOutsideOidc(oidcAssembly)

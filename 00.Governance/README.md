@@ -2031,7 +2031,7 @@ Inject `IUserContext` or `ITenantProvider` instead of `IHttpContextAccessor`, `C
 #### What it flags
 
 - A constructor parameter whose type name is exactly `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`, written as a simple name or a qualified name (`System.Security.Claims.ClaimsPrincipal`).
-- Types inside a namespace starting with `SharedKernel.Security.Oidc` or `SharedKernel.Security.ApiKey` are exempt. These packages build `IUserContext` and `ITenantProvider` implementations from the raw ASP.NET Core types.
+- Types inside a namespace starting with `SharedKernel.Security.Oidc` or `SharedKernel.Security.ApiKey` are exempt. These packages turn the raw ASP.NET Core authentication result into an `IUserContext` (through their `IUserContextMapper`).
 
 #### What it does not flag
 
@@ -2058,7 +2058,7 @@ public sealed class OrderService
 // Compliant
 namespace Orders.Application;
 
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 public sealed class OrderService
 {

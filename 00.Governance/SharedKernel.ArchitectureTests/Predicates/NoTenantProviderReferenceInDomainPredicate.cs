@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <summary>
 /// Custom NetArchTest predicate (no SK diagnostic ID) that fails any type in a supplied
 /// <c>03.Domain</c> assembly that references
-/// <c>SharedKernel.Security.Abstractions.Abstractions.ITenantProvider</c> via a field type,
+/// <c>SharedKernel.Security.Abstractions.ITenantProvider</c> via a field type,
 /// constructor/method parameter type, or method-call instruction operand.
 /// </summary>
 /// <remarks>
@@ -50,7 +50,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 public sealed class NoTenantProviderReferenceInDomainPredicate : ICustomRule
 {
     private const string TenantProviderFullName =
-        "SharedKernel.Security.Abstractions.Abstractions.ITenantProvider";
+        "SharedKernel.Security.Abstractions.ITenantProvider";
 
     /// <summary>
     /// Returns <see langword="false"/> (rule violated) when the type references

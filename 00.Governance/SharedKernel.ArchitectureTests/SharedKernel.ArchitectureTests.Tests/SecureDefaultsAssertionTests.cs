@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
@@ -540,7 +541,7 @@ public class SecureDefaultsAssertionTests
     /// T-309: Re-points <see cref="SecureDefaultsAssertion.AssertEnumPropertyDefaultEquals"/> at
     /// the real, shipped <c>MtlsAuthenticationOptions</c> type for both
     /// <c>AllowedCertificateTypes</c> (expected <c>"Chained"</c>) and <c>RevocationMode</c>
-    /// (expected <c>"Offline"</c>) and confirms both hardened defaults hold.
+    /// (expected <c>"Online"</c>, ASP.NET Core's own default) and confirms both hardened defaults hold.
     /// </summary>
     /// <remarks>
     /// Originally tracked as a Cross-Domain Dependency pending <c>12.Security</c> P-386 — CONFIRMED
@@ -562,14 +563,14 @@ public class SecureDefaultsAssertionTests
 
         var revocationModeAct = () =>
             SecureDefaultsAssertion.AssertEnumPropertyDefaultEquals(
-                optionsType, "RevocationMode", "Offline");
+                optionsType, "RevocationMode", "Online");
 
         allowedCertificateTypesAct.Should().NotThrow(
             because: "the real, shipped MtlsAuthenticationOptions.AllowedCertificateTypes " +
                      "defaults to CertificateTypes.Chained (WO-060, C-39)");
         revocationModeAct.Should().NotThrow(
             because: "the real, shipped MtlsAuthenticationOptions.RevocationMode defaults to " +
-                     "X509RevocationMode.Offline (WO-060, C-39)");
+                     "X509RevocationMode.Online, never weaker than ASP.NET Core's certificate authentication");
     }
 
     // ---------------------------------------------------------------------------
@@ -577,43 +578,58 @@ public class SecureDefaultsAssertionTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-310: Re-points
-    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultExcludes"/> at the
-    /// real, shipped <c>SecurityOptions.JwtOptions.ValidAlgorithms</c> and
-    /// <c>DpopOptions.ValidAlgorithms</c> and confirms both hardened allowlists hold.
+    /// T-310: The real, shipped <c>AddOidcAuthentication</c> never accepts <c>none</c> or an HMAC algorithm, either
+    /// by default or when configuration asks for one.
     /// </summary>
     /// <remarks>
-    /// Originally tracked as a Cross-Domain Dependency pending <c>12.Security</c> P-387 — CONFIRMED
-    /// RESOLVED on disk before this phase's implementation session:
-    /// <c>SharedKernel.Security.Oidc</c> is packed at <c>4.0.0</c> and ships C-40/C-41's
-    /// <c>["PS256", "ES256"]</c> allowlists. Non-vacuous: T-307/T-308's contrived fixtures prove
-    /// the identical detection technique correctly fires when a forbidden value IS present — this
-    /// test proves the real types' actual resolved defaults contain none of them, not merely that
-    /// the scan runs without error.
+    /// The algorithm lists default to empty (configuration binding appends to a non-empty default list), so the
+    /// defaults are asserted on the configured <c>JwtBearerOptions</c> rather than by scanning a property
+    /// initializer.
     /// </remarks>
     [Fact]
-    public void AssertStringCollectionPropertyDefaultExcludes_RealOidcAllowlists_HardenedDefaultsHold()
+    public void AddOidcAuthentication_RealAssembly_RejectsSymmetricAndNoneAlgorithms()
     {
         string[] forbiddenValues = ["none", "HS256", "HS384", "HS512"];
 
-        var jwtAlgorithmsAct = () =>
-            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultExcludes(
-                typeof(SharedKernel.Security.Oidc.Options.SecurityOptions.JwtOptions),
-                "ValidAlgorithms",
-                forbiddenValues);
+        using ServiceProvider defaults = BuildOidc([]);
+        var parameters = defaults
+            .GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>>()
+            .Get(SharedKernel.Security.Oidc.OidcAuthenticationDefaults.AuthenticationScheme)
+            .TokenValidationParameters;
 
-        var dpopAlgorithmsAct = () =>
-            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultExcludes(
-                typeof(SharedKernel.Security.Oidc.Dpop.DpopOptions),
-                "ValidAlgorithms",
-                forbiddenValues);
+        parameters.ValidAlgorithms.Should().NotBeNullOrEmpty();
+        parameters.ValidAlgorithms.Should().NotContain(forbiddenValues);
 
-        jwtAlgorithmsAct.Should().NotThrow(
-            because: "the real, shipped SecurityOptions.JwtOptions.ValidAlgorithms defaults to " +
-                     "[\"PS256\", \"ES256\"] — the FAPI 2.0 baseline (WO-060, C-40)");
-        dpopAlgorithmsAct.Should().NotThrow(
-            because: "the real, shipped DpopOptions.ValidAlgorithms defaults to " +
-                     "[\"PS256\", \"ES256\"] — the same FAPI 2.0 baseline (WO-060, C-41)");
+        foreach (string forbidden in forbiddenValues)
+        {
+            using ServiceProvider configured = BuildOidc(new Dictionary<string, string?> { ["SharedKernel:Security:Oidc:ValidAlgorithms:0"] = forbidden });
+            var read = () => configured
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions>>()
+                .Value;
+
+            read.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>(
+                because: $"'{forbidden}' is not an asymmetric JWS algorithm and must fail startup validation");
+        }
+    }
+
+    private static ServiceProvider BuildOidc(Dictionary<string, string?> overrides)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["SharedKernel:Security:Oidc:Authority"] = "https://issuer.example.test",
+            ["SharedKernel:Security:Oidc:Audiences:0"] = "api://orders",
+        };
+
+        foreach ((string key, string? value) in overrides)
+        {
+            settings[key] = value;
+        }
+
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        SharedKernel.Security.Oidc.Extensions.OidcServiceCollectionExtensions.AddOidcAuthentication(services, configuration);
+        return services.BuildServiceProvider();
     }
 
     // ---------------------------------------------------------------------------
@@ -880,10 +896,9 @@ public class SecureDefaultsAssertionTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-317: Re-points
-    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/> at the
-    /// real, shipped <c>TenantResolutionOptions.StrategyOrder</c> and confirms the corrected
-    /// <c>[Claim, Header, Database]</c> order holds.
+    /// T-317: Confirms the real, shipped <c>TenantResolutionOptions.DefaultStrategyOrder</c> is the
+    /// corrected <c>[Claim, Header, Database]</c> order, and that <c>StrategyOrder</c> itself starts
+    /// empty so configuration binding replaces the default instead of appending to it.
     /// </summary>
     /// <remarks>
     /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c> P-393 —
@@ -893,21 +908,22 @@ public class SecureDefaultsAssertionTests
     /// <c>["Header", "Claim", "Database"]</c> order against this exact real type, confirmed to
     /// fail with the same message shape T-312's contrived fixture produces, then removed before
     /// commit — this test proves the real type's actual resolved default, not merely that the
-    /// scan runs without error.
+    /// scan runs without error. Since P-546 the order lives in the static <c>DefaultStrategyOrder</c>
+    /// (a non-empty instance default made a bound order append to it), so the check reads the
+    /// property value directly instead of scanning the constructor.
     /// </remarks>
     [Fact]
-    public void AssertStringCollectionPropertyDefaultEquals_RealTenantResolutionOptions_HardenedOrderHolds()
+    public void RealTenantResolutionOptions_HardenedDefaultOrderHolds()
     {
-        var optionsType = typeof(SharedKernel.MultiTenancy.Resolution.TenantResolutionOptions);
+        SharedKernel.MultiTenancy.Resolution.TenantResolutionOptions.DefaultStrategyOrder
+            .Should().Equal(
+                ["Claim", "Header", "Database"],
+                because: "the real, shipped TenantResolutionOptions.DefaultStrategyOrder is the " +
+                         "corrected, secure order (WO-061, C-49)");
 
-        var act = () =>
-            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
-                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
-
-        act.Should().NotThrow(
-            because: "the real, shipped TenantResolutionOptions.StrategyOrder defaults to " +
-                     "[\"Claim\", \"Header\", \"Database\"] — the corrected, secure order " +
-                     "(WO-061, C-49)");
+        new SharedKernel.MultiTenancy.Resolution.TenantResolutionOptions().StrategyOrder
+            .Should().BeEmpty(
+                because: "a non-empty instance default would make a configured order append to it");
     }
 
     // ---------------------------------------------------------------------------
