@@ -47,7 +47,7 @@ All three packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enable
 
 Both rely on `StackExchange.Redis` Pub/Sub under the hood, but they solve unrelated problems and must never be merged or treated as interchangeable:
 
-- **`SharedKernel.Caching.Redis.PubSub`** (`02.Caching`) propagates *cache invalidation signals* between service instances — its payload is a `CacheInvalidationMessage`, and its consumer is `ICacheService`.
+- **`SharedKernel.Caching.Redis.PubSub`** (`02.Caching`) carries *ephemeral, at-most-once, cache-adjacent string signals* between service instances through `IRedisChannelService` — its payload is a caller-defined string on a caller-named channel, and its consumer is whatever handler the service subscribes. (Cache invalidation itself no longer uses it: FusionCache's Redis backplane propagates removals, expirations and tag removals.)
 - **SignalR's Redis backplane** (`14.Presentation.SignalR`) fans out *real-time client messages* (`Hub.Clients.All.SendAsync(...)`, group broadcasts) across all pods serving the same Hub — its payload is whatever the Hub sends, and its consumer is connected WebSocket/SSE clients.
 
 A microservice may legitimately depend on both packages simultaneously for entirely different reasons. Neither package references the other.

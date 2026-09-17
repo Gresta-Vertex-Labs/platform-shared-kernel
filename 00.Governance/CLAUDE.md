@@ -591,17 +591,22 @@ SK0019  RetryableRequestWithoutIdempotency — REMOVED (P-544)
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
-    Trigger   : IRedisChannelService appears as a constructor parameter, field declaration,
-                or property declaration in a class whose name or enclosing namespace
-                contains any of the substrings: "Command", "Event", "DomainEvent",
-                "IntegrationEvent" (case-sensitive substring match). Signals inappropriate
-                use of Redis pub/sub as a substitute for a durable IMessageBus.
-    Suppress  : Inside SharedKernel.Caching or SharedKernel.Caching.Redis namespaces —
-                the service's own definition may reference IRedisChannelService freely.
+    Trigger   : IRedisChannelService (SharedKernel.Caching.Redis.PubSub since P-547) appears as
+                a constructor parameter, field declaration, or property declaration in a class
+                whose name or enclosing namespace contains any of the substrings: "Command",
+                "Event", "DomainEvent", "IntegrationEvent" (case-sensitive substring match).
+                The type is matched by its simple name whether written bare, namespace-qualified
+                (SharedKernel.Caching.Redis.PubSub.IRedisChannelService) or global::-qualified
+                (QualifiedNameSyntax / AliasQualifiedNameSyntax unwrap to the right-most name), and
+                inside a nullable type. Signals inappropriate use of Redis pub/sub as a substitute
+                for a durable IMessageBus.
+    Suppress  : Inside any namespace starting with "SharedKernel.Caching" — the service's own
+                definition and its provider package may reference IRedisChannelService freely.
                 Suppression uses the SyntaxNode.Parent namespace walk (same as SK0001).
     Fix       : Inject IMessageBus (SharedKernel.Messaging.Abstractions) for commands,
                 domain events, and integration events. Reserve IRedisChannelService for
-                cache invalidation signals and ephemeral, non-durable pub/sub only.
+                ephemeral, non-durable, cache-adjacent signaling only (cache invalidation itself
+                travels over the FusionCache backplane, not this service).
     Note      : Severity escalation to Error is gated on field confirmation of zero false
                 positives on the "DomainEvent" substring match — some projects use
                 "IDomainEventHandler" as a class name suffix that is not a misuse.
@@ -1882,19 +1887,21 @@ CachingAbstractionRules  (static class — caching boundary enforcement predicat
     Note: The method accepts a params Assembly[] so consuming test classes supply the
     production assemblies under test; assembly paths are never hard-coded in the predicate.
 
-RedisTopologyRules  (static class — five-package Redis topology enforcement predicates; WO-023 P-145)
-    All factory methods accept Assembly (or params Assembly[]). No Mono.Cecil, no ICustomRule,
-    no new SK diagnostic IDs — every predicate is a pure assembly-dependency-graph check using
-    NetArchTest's .Should().NotHaveDependencyOn(...), in the same style as CachingAbstractionRules.
+RedisTopologyRules  (static class — caching package topology and abstractions-purity predicates; WO-023 P-145, extended P-547)
+    All factory methods accept Assembly (or params Assembly[]). No new SK diagnostic IDs. Every
+    predicate is a NetArchTest check: .Should().NotHaveDependencyOn(...) or .NotHaveNameMatching(...),
+    except CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions, which uses the
+    AssemblyReferenceAllowListPredicate ICustomRule (Mono.Cecil, Predicates/).
 
     Matching note: NetArchTest's NotHaveDependencyOn(term) compares term against each scanned
     type's dependency NAMESPACES using StartsWith, with NO trailing dot on either side. Every
-    forbidden term in this class is therefore the EXACT namespace of the package it identifies
-    (e.g. "SharedKernel.Caching.Redis.HashStore"), never a bare root prefix such as
+    forbidden term in the capability-package rules is therefore the EXACT namespace of the package
+    it identifies (e.g. "SharedKernel.Caching.Redis.HashStore"), never a bare root prefix such as
     "SharedKernel.Caching.Redis" in a context where that would also match
     "SharedKernel.Caching.Redis.Core". The L2 backplane package (SharedKernel.Caching.Redis) has
-    no single dedicated sub-namespace — its types live under SharedKernel.Caching.Redis.Batch and
-    SharedKernel.Caching.Redis.Extensions, so both are used as its identifying terms.
+    no single dedicated sub-namespace — its types live under SharedKernel.Caching.Redis.Extensions
+    (the ".Batch" term also stays in its term list), so both are
+    used as its identifying terms.
 
     Self-dependency note: a type's dependency-namespace set includes its own declaring namespace.
     A package must never be checked against its own identifying term(s) — see
@@ -1906,10 +1913,7 @@ RedisTopologyRules  (static class — five-package Redis topology enforcement pr
         "SharedKernel.Caching.Redis.Extensions" (L2), "SharedKernel.Caching.Redis.DistributedLocking",
         "SharedKernel.Caching.Redis.HashStore", "SharedKernel.Caching.Redis.PubSub". None of these
         terms is a prefix of "SharedKernel.Caching.Redis.Core" or
-        "SharedKernel.Caching.Redis.Core.Extensions", so the check produces no self-collision for
-        Redis.Core. Uses five iterative .Should().NotHaveDependencyOn(term) calls — same pattern as
-        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure. Failure message
-        names the offending capability package.
+        "SharedKernel.Caching.Redis.Core.Extensions", so there is no self-collision.
         Rationale: Redis.Core is the shared connection/health/resilience foundation. A reference
         from Core to any capability package is a layering inversion.
 
@@ -1917,72 +1921,84 @@ RedisTopologyRules  (static class — five-package Redis topology enforcement pr
         Returns one ConditionList per element of capabilityAssemblies, in the same order. For
         each scanned assembly, resolves its own identifying namespace term(s) by assembly simple
         name via an internal Dictionary<string,string[]> keyed on the four real package names
-        ("SharedKernel.Caching.Redis" → its two Batch/Extensions terms;
+        ("SharedKernel.Caching.Redis" → its Batch/Extensions terms;
         "SharedKernel.Caching.Redis.DistributedLocking", ".HashStore", ".PubSub" → their own exact
-        namespace each). The returned ConditionList asserts
-        .Should().NotHaveDependencyOn(term) for every term belonging to the OTHER three packages
-        only — the scanned assembly's own term(s) are excluded, eliminating the self-dependency
-        false positive. An assembly whose simple name is not one of the four recognized package
-        names (e.g., a test fixture) is checked against the FULL term set (it owns none of the
-        four namespaces, so nothing is excluded). Excludes "SharedKernel.Caching.Redis.Core" and
-        "SharedKernel.Caching.Abstractions" from every forbidden set — both are permitted
-        dependencies (see exemption list below). Caller must assert .GetResult().IsSuccessful on
-        EACH element of the returned array.
-        Rationale: sibling role-packages must depend only on .{Provider}.Core (root CLAUDE.md
-        "Provider role-split variant" rule) — a sibling-to-sibling reference (e.g.,
-        Redis.DistributedLocking → Redis.HashStore) is exactly the shortcut this rule forecloses.
+        namespace each), and forbids only the OTHER packages' terms. An assembly whose simple name
+        is not one of the four (e.g. a test fixture) is checked against the full term set.
+        "SharedKernel.Caching.Redis.Core" and "SharedKernel.Caching.Abstractions" are never
+        forbidden. Caller must assert .GetResult().IsSuccessful on EACH element.
+        Rationale: sibling role-packages depend only on .{Provider}.Core (root CLAUDE.md
+        "Provider role-split variant" rule).
 
     .PubSubNeverReferencesMessaging(Assembly pubSubAssembly) → ConditionList
-        Asserts that SharedKernel.Caching.Redis.PubSub has no dependency on any assembly whose
-        name starts with "SharedKernel.Messaging". Single
-        .Should().NotHaveDependencyOn("SharedKernel.Messaging") call — the prefix covers both
-        SharedKernel.Messaging.Abstractions and SharedKernel.Messaging.MassTransit via NetArchTest's
-        substring-based dependency matching.
-        Rationale: codifies the Issue 3 boundary — Redis.PubSub is an ephemeral,
-        no-delivery-guarantee signaling channel (ICacheInvalidationBus / IRedisChannelService) and
-        must never become a backdoor path into the durable IMessageBus abstraction.
+        Asserts that SharedKernel.Caching.Redis.PubSub has no dependency on "SharedKernel.Messaging"
+        (prefix — covers .Abstractions and .MassTransit).
+        Rationale: Redis.PubSub's IRedisChannelService is an ephemeral, at-most-once signaling
+        channel and must never become a backdoor into the durable IMessageBus abstraction.
 
     .MessagingNeverReferencesCaching(params Assembly[] messagingAssemblies) → ConditionList
-        Asserts that no type in any of SharedKernel.Messaging.* (caller supplies
-        SharedKernel.Messaging.Abstractions and SharedKernel.Messaging.MassTransit) has a
-        dependency on any assembly whose name starts with "SharedKernel.Caching". Single
-        Types.InAssemblies(messagingAssemblies).That()...Should()
-        .NotHaveDependencyOn("SharedKernel.Caching") call across all supplied assemblies.
-        Rationale: structural converse of PubSubNeverReferencesMessaging and of the root
-        CLAUDE.md hard rule ("07.Messaging must never reference any SharedKernel.Caching.*
-        package, and no SharedKernel.Caching.* package may reference any SharedKernel.Messaging.*
-        package"). Both directions are asserted independently because NetArchTest dependency
+        Asserts that no type in the supplied SharedKernel.Messaging.* assemblies depends on
+        "SharedKernel.Caching". Structural converse of PubSubNeverReferencesMessaging and of the
+        root CLAUDE.md hard rule; both directions are asserted because NetArchTest dependency
         checks are directional.
 
     .CachingAbstractionsHasNoInfrastructureDependencies(Assembly abstractionsAssembly) → ConditionList
-        Re-verification of the existing guarantee that SharedKernel.Caching.Abstractions has zero
-        dependencies beyond Microsoft.Extensions.DependencyInjection.Abstractions. Asserts
-        .Should().NotHaveDependencyOn(term) for each of: "SharedKernel.Caching.Redis"
-        (bare prefix — deliberately matches Redis.Core, Redis (L2), .DistributedLocking,
-        .HashStore, .PubSub, all of which start with this string),
-        "StackExchange.Redis", "Microsoft.EntityFrameworkCore", "MassTransit" — the four
-        infrastructure families that must never leak into the abstractions package across the
-        five-package Redis topology. Same shape as SharedKernelLayeringRules.CoreReferencesNothing,
-        scoped to SharedKernel.Caching.Abstractions.
-        Rationale: confirms the five-package split did not introduce a transitive dependency from
-        any new capability package back into the abstraction the capability packages implement.
+        Asserts .Should().NotHaveDependencyOn(term) for each of: "SharedKernel.Caching.Redis"
+        (bare prefix — covers Redis.Core, Redis (L2), .DistributedLocking, .HashStore, .PubSub;
+        the abstractions package cannot self-collide with it), "SharedKernel.Caching.FusionCache",
+        "StackExchange.Redis", "ZiggyCreatures", "RedLockNet", "Polly",
+        "Microsoft.Extensions.Caching", "Microsoft.Extensions.Options", "Microsoft.Extensions.Hosting",
+        "Microsoft.EntityFrameworkCore", "MassTransit".
+        Rationale: the provider-neutral contract must not use a provider, a library only a provider
+        needs, or the options/hosting stacks (options and hosted services live in provider packages).
+        Namespace terms cannot tell two assemblies sharing a namespace apart, so this rule is
+        paired with the allow-list rule below.
 
-    Permitted cross-reference exemption list (required for rules 1 and 2 to pass unmodified):
-        - Redis.Core → SharedKernel.Caching.Abstractions (permitted; Core implements
-          abstraction-facing health/connection contracts)
+    .CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions(Assembly abstractionsAssembly)
+                                                                                     → ConditionList
+        MeetCustomRule(new AssemblyReferenceAllowListPredicate(
+            "Microsoft.Extensions.DependencyInjection.Abstractions")). The predicate reads
+        TypeDefinition.Module.AssemblyReferences and passes only when every reference is BCL
+        ("System", "System.*", "mscorlib", "netstandard") or on the allow-list. Every type is
+        reported when the assembly gains a reference, because the violation belongs to the assembly.
+        Rationale: a deny-list only catches what someone thought to list; any new package
+        dependency (Options, a logging or hosting package, SharedKernel.Primitives, a provider)
+        fails until the contract is deliberately widened here. ICachingBuilder exposing
+        IServiceCollection is the one reason DI.Abstractions is allowed.
+
+    .CachingAbstractionsDeclaresNoProviderSpecificTypes(Assembly abstractionsAssembly) → ConditionList
+        .Should().NotHaveNameMatching("Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection")
+        over every type (case-sensitive, compiler-generated and nested types included).
+        Rationale: a provider-shaped contract needs no provider dependency to leak in. The
+        provider contracts live with their providers — IRedisChannelService in
+        SharedKernel.Caching.Redis.PubSub, IRedisHashService/ITypedHashStore<T> in
+        SharedKernel.Caching.Redis.HashStore, ConnectionHealthState in SharedKernel.Caching.Redis.Core
+        — each in that package's root namespace, pinned by
+        RedisTopologyRulesTests.ProviderSpecificContract_IsDeclaredByItsProviderPackage.
+
+    .DistributedLockingNeverReferencesRedLock(Assembly distributedLockingAssembly) → ConditionList
+        Asserts SharedKernel.Caching.Redis.DistributedLocking has no dependency on "RedLockNet".
+        Rationale: the lock service issues its fencing token in the same atomic Lua script that
+        claims the key, and keeps the lock alive and reports its loss itself. RedLock.net acquires
+        through its own multi-step protocol and cannot issue a token in that step, so reintroducing
+        it would reopen the gap between "lock acquired" and "token issued".
+
+    Permitted cross-reference exemption list:
         - Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub → Redis.Core
           (permitted; the shared foundation)
         - Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub →
-          SharedKernel.Caching.Abstractions (permitted; each implements abstraction interfaces)
+          SharedKernel.Caching.Abstractions (permitted; ICachingBuilder and the contracts they implement)
+        - Redis.Core references no SharedKernel.Caching package at all (P-547); ConnectionHealthState
+          is its own type.
         Any additional exemption must be documented here before it is applied in code.
 
-    Note: All five factory methods accept Assembly / params Assembly[] supplied by the consuming
-    test project via typeof(SomeTypeInPackage).Assembly — no assembly paths are hard-coded.
-    RedisTopologyRules lives in SharedKernel.ArchitectureTests/Rules/ alongside
-    CachingAbstractionRules.cs and must not reference StackExchange.Redis, MassTransit, or EF Core
-    directly. Cross-reference: root CLAUDE.md Issue 3 / hard rule on the 02.Caching ↔ 07.Messaging
-    exclusion boundary (PubSubNeverReferencesMessaging and MessagingNeverReferencesCaching are the
-    mechanical enforcement of that rule for the post-split topology).
+    Note: every factory method takes assemblies supplied by the consuming test project via
+    typeof(SomeTypeInPackage).Assembly — no assembly paths are hard-coded. RedisTopologyRules
+    lives in SharedKernel.ArchitectureTests/Rules/ alongside CachingAbstractionRules.cs and must
+    not reference StackExchange.Redis, MassTransit, or EF Core directly. Cross-reference: root
+    CLAUDE.md hard rule on the 02.Caching ↔ 07.Messaging exclusion boundary
+    (PubSubNeverReferencesMessaging and MessagingNeverReferencesCaching are its mechanical
+    enforcement).
 
 DomainLayerPurityRules  (static class — domain layer purity predicates)
     All factory methods accept Assembly domainAssembly and return ConditionList.
@@ -5285,7 +5301,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0006 `GuardClauseThrowAnalyzer` follows the same `netstandard2.0` constraint as SK0001–SK0005. No new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`.
 - Each architecture test for `GuardPurityRules` must exercise the fire path (violation fixture), the pass path (clean fixture), and the exclusion path (`Guard.Throw` fixture) — three test cases minimum.
 - `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` uses `.Should().NotHaveDependencyOn("SharedKernel.Caching")` — the string is the assembly name prefix, matched by NetArchTest's dependency scanner against referenced assembly names. Two calls are required: one for `"SharedKernel.Caching"` (catches both the main package and Redis because `.Caching.Redis` contains `.Caching` as a prefix) and optionally one scoped specifically to `"SharedKernel.Caching.Redis"` for a more targeted failure message.
-- SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` operates on `ClassDeclarationSyntax` nodes only. It uses a simple name match (`IRedisChannelService`) without semantic model symbol resolution — the simple name is unique within the SDK. Namespace suppression uses the same `SyntaxNode.Parent` walk pattern established by SK0001.
+- SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` operates on `ClassDeclarationSyntax` nodes only. It uses a simple name match (`IRedisChannelService`) without semantic model symbol resolution — the simple name is unique within the SDK. `GetTypeName` unwraps `QualifiedNameSyntax` (right-most name) and `AliasQualifiedNameSyntax` (`global::`), so `SharedKernel.Caching.Redis.PubSub.IRedisChannelService` and `global::SharedKernel.Caching.Redis.PubSub.IRedisChannelService` are caught like the bare name (P-547; before that a qualified name fell through to `ToString()` and slipped past). Namespace suppression uses the same `SyntaxNode.Parent` walk pattern established by SK0001.
 - SK0007 forbidden-context terms are: `"Command"`, `"Event"`, `"DomainEvent"`, `"IntegrationEvent"` — case-sensitive substring match applied to both the class name and all ancestor namespace identifier strings. The check on `"Event"` intentionally covers `"DomainEvent"` and `"IntegrationEvent"` as substrings; all four terms are listed explicitly for documentation clarity.
 - SK0007 severity escalation to `Error` is gated on field confirmation of zero false positives on the `"DomainEvent"` substring — some projects name classes `IDomainEventHandler` without misusing Redis pub/sub. Until confirmed, severity remains `Warning`.
 - Architecture tests for `CachingAbstractionRules` require two test cases minimum: one fire-path (non-exempt assembly references concrete caching) and one pass-path (only exempt assemblies scanned). No exclusion-path test is needed because exemption is enforced by the caller choosing which assemblies to pass, not by an internal filter.
@@ -5348,13 +5364,16 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0705 and SK0708 follow the same `netstandard2.0` constraint and `Microsoft.CodeAnalysis.CSharp 4.14.0` pin as SK0703/SK0704. Both are syntax-only analyzers — no SemanticModel required. SK0706 and SK0707 are NetArchTest ICustomRule predicates (assembly-level, post-compile), consistent with SK0701/SK0702.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
-- `RedisTopologyRules` introduces zero new SK diagnostic IDs and zero new `ICustomRule`/Mono.Cecil predicates. All five factory methods are pure NetArchTest `ConditionList`(`[]`) assembly-dependency checks via `.Should().NotHaveDependencyOn(...)`, matching the implementation style of `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` — namespace-string prefix matching only.
+- `RedisTopologyRules` introduces zero new SK diagnostic IDs. Seven of its eight factory methods are pure NetArchTest checks (`.Should().NotHaveDependencyOn(...)`, or `.NotHaveNameMatching(...)` for `CachingAbstractionsDeclaresNoProviderSpecificTypes`); the eighth, `CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions` (P-547), uses the `AssemblyReferenceAllowListPredicate` `ICustomRule` because only the assembly's real reference list can catch a dependency nobody put on a deny-list.
 - **NetArchTest `NotHaveDependencyOn(term)` matching contract (critical)**: `term` is compared via `StartsWith` against each scanned type's set of dependency *namespaces* (the declaring namespace of every type referenced from a type's members) — NOT assembly names, and with NO trailing dot on either side of the comparison. A trailing dot on `term` (e.g. `"SharedKernel.Caching.Redis.HashStore."`) will NEVER match because dependency-namespace strings never carry a trailing dot — this was a confirmed regression during WO-023 P-145 and must not be reintroduced. Additionally, a type's dependency-namespace set includes its OWN declaring namespace (self-reference) — checking a package against its own identifying namespace term is a guaranteed false positive across every type in that package.
 - `RedisTopologyRules.RedisCoreNeverReferencesCapabilityPackages` checks five exact-namespace terms iteratively (one `.Should().NotHaveDependencyOn(term)` call per term: `"SharedKernel.Caching.Redis.Batch"`, `"SharedKernel.Caching.Redis.Extensions"`, `"SharedKernel.Caching.Redis.DistributedLocking"`, `"SharedKernel.Caching.Redis.HashStore"`, `"SharedKernel.Caching.Redis.PubSub"`), following the established iterative pattern from `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`. None of these five terms is a prefix of `"SharedKernel.Caching.Redis.Core"` or `"SharedKernel.Caching.Redis.Core.Extensions"` (the assembly under test), so no self-collision occurs — this is why the L2 package's two sub-namespaces (`.Batch`, `.Extensions`) are used instead of the bare `"SharedKernel.Caching.Redis"` root.
 - `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther` accepts `params Assembly[]` and returns `ConditionList[]` (NOT a single `ConditionList`) — one element per input assembly, in order. Internally it resolves each scanned assembly's OWN identifying namespace term(s) via a `Dictionary<string,string[]>` keyed by assembly simple name (`"SharedKernel.Caching.Redis"` → its Batch/Extensions terms; `"SharedKernel.Caching.Redis.DistributedLocking"`/`.HashStore`/`.PubSub` → their own exact namespace), then builds the forbidden-term set as the UNION of the OTHER three packages' terms only — excluding the scanned assembly's own term(s) avoids the self-dependency false positive described above. `"SharedKernel.Caching.Redis.Core"` and `"SharedKernel.Caching.Abstractions"` are never part of any forbidden set (permitted dependencies per the exemption list). Callers (including test fixtures whose assembly simple name is not one of the four recognized packages) must call `.GetResult()` on EVERY element of the returned array.
 - `RedisTopologyRules.PubSubNeverReferencesMessaging` and `RedisTopologyRules.MessagingNeverReferencesCaching` are directional converses of each other and must both be asserted — NetArchTest dependency checks are one-directional, so passing one does not imply the other passes. Both reuse the `"SharedKernel.Messaging"` / `"SharedKernel.Caching"` prefix-matching convention already established by `MessagingArchitectureRules` and `CachingAbstractionRules` respectively — these two terms have no trailing dot and are deliberately broad prefixes (they must match every sub-namespace of the respective capability).
-- `RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies` is a re-verification, not a new guarantee — it confirms the existing zero-dependency contract on `SharedKernel.Caching.Abstractions` still holds across the five-package Redis topology (`Redis.Core`, `Redis`, `Redis.DistributedLocking`, `Redis.HashStore`, `Redis.PubSub`) plus `StackExchange.Redis`, EF Core, and MassTransit. The term `"SharedKernel.Caching.Redis"` is used here WITHOUT a trailing dot deliberately — `SharedKernel.Caching.Abstractions` has zero dependencies, so the bare-prefix term cannot self-collide, and the prefix form is required to catch all five Redis sub-packages in one term. Same shape as `SharedKernelLayeringRules.CoreReferencesNothing`.
-- `RedisTopologyRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `CachingAbstractionRules.cs`. It introduces no new NuGet dependency — `NetArchTest.eNt >= 1.3.2` (existing pin) covers the entire phase. No new files in `Predicates/`; no `ICustomRule` is required.
+- `RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies` forbids every caching provider (`SharedKernel.Caching.Redis` prefix, `SharedKernel.Caching.FusionCache`), every provider library (`StackExchange.Redis`, `ZiggyCreatures`, `RedLockNet`, `Polly`, `Microsoft.Extensions.Caching`), the options and hosting stacks (`Microsoft.Extensions.Options`, `Microsoft.Extensions.Hosting` — added P-547, when options types and hosted services left the package), EF Core and MassTransit. The term `"SharedKernel.Caching.Redis"` is used WITHOUT a trailing dot deliberately — the abstractions package cannot self-collide with it, and the prefix catches all five Redis packages in one term. Because namespace terms cannot separate two assemblies sharing a namespace, it is always asserted together with `CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions`.
+- `AssemblyReferenceAllowListPredicate` (`Predicates/`, P-547) takes the allowed assembly simple names as `params string[]` and treats `System`, `System.*`, `mscorlib` and `netstandard` as always allowed. It checks `TypeDefinition.Module.AssemblyReferences`, so it fails every type once the assembly gains an unlisted reference — expected, since the violation is the assembly's. Reusable for any other package whose contract is "references only X".
+- `RedisTopologyRules.CachingAbstractionsDeclaresNoProviderSpecificTypes` matches simple type names against `Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection`. The companion theory `ProviderSpecificContract_IsDeclaredByItsProviderPackage` pins `IRedisChannelService` → `SharedKernel.Caching.Redis.PubSub`, `IRedisHashService`/`ITypedHashStore<T>` → `SharedKernel.Caching.Redis.HashStore`, and `ConnectionHealthState` → `SharedKernel.Caching.Redis.Core` (assembly and root namespace).
+- `RedisTopologyRules.DistributedLockingNeverReferencesRedLock` locks the Lua-script lock implementation in place: RedLock.net cannot issue a fencing token atomically with acquisition.
+- `RedisTopologyRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `CachingAbstractionRules.cs`. It introduces no new NuGet dependency — the project's existing `NetArchTest.Rules` and `Mono.Cecil` references cover every method.
 - In-memory fixture assemblies compiled via `CSharpCompilation`/`Assembly.LoadFrom` for `RedisTopologyRulesTests` MUST use assembly names that do not collide with real `ProjectReference`d assemblies already loaded in the test `AssemblyLoadContext` (e.g., name a `SharedKernel.Caching.Redis.HashStore`-shaped fixture `"Fixture.<Scenario>.SharedKernel.Caching.Redis.HashStore"`, not `"SharedKernel.Caching.Redis.HashStore"`). `Assembly.LoadFrom(path)` for a simple name matching an already-loaded assembly returns the ALREADY-LOADED real assembly, not the fixture, causing `CS0234`/missing-type failures. Cross-fixture `MetadataReference`s must be built via `MetadataReference.CreateFromImage(ImmutableArray<byte>)` from the in-memory emitted bytes, not `CreateFromFile(Assembly.Location)`.
 - `ReflectionGuardRules.NoMakeGenericMethodReflection(Assembly)` uses `.That().AreNotAbstract()` before the `.Should().MeetCustomRule(...)` call to exclude compiler-generated abstract helper types (e.g., state machine types generated by async/await) that may contain unusual IL patterns. This is the same filter philosophy used by `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase`.
 - `NoMakeGenericMethodReflectionPredicate` checks `MethodReference.Name == "MakeGenericMethod"` (exact name, case-sensitive). This name is unique to `System.Reflection.MethodInfo.MakeGenericMethod` — no other BCL API uses this exact name. No namespace or declaring-type check is needed; the name match is sufficient and avoids false positives from custom extension methods that would need to be deliberately named `MakeGenericMethod` to trigger the rule.

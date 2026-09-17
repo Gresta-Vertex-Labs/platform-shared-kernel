@@ -2,97 +2,81 @@
 
 ## What This Domain Is
 
-The caching capability domain. Provides a hybrid L1 (in-process memory) / L2 (Redis distributed) cache abstraction powered by **ZiggyCreatures.FusionCache** with built-in stampede protection, background refresh, and fail-safe. The Redis provider lives in a separate package so microservices that only need L1 can stay Redis-free. A dedicated abstractions package (zero infrastructure dependencies) allows layers such as `05.Application` to depend on caching contracts without transitively pulling in FusionCache or StackExchange.Redis.
+The caching capability domain. A hybrid L1 (in-process memory) / L2 (Redis distributed) cache powered by **ZiggyCreatures.FusionCache**, with stampede protection, fail-safe, eager refresh, tags and factory-controlled caching, plus Redis distributed locks and leases with fencing tokens. The Redis packages are separate, so a service that needs only L1 references no Redis package. `SharedKernel.Caching.Abstractions` is provider-neutral: layers such as `05.Application` depend on the contracts without pulling in FusionCache or StackExchange.Redis.
 
-Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
+Philosophy: **Provider-neutral contracts. Stampede-proof. Outages are never reported as contention.**
 
 ---
 
 ## Current Phase
 
-**All phases complete (WO-006 + WO-007 + WO-023 + WO-041 logging retrofit + WO-050 gold-standard follow-up + WO-065 gold-standard/big-fintech follow-up). Every phase key in this domain is `●`.**
+**P-547 — pre-first-publish redesign of `SharedKernel.Caching.Abstractions` (BREAKING API and behaviour), implemented in source.** The root phase stays `◐` until the packages are published. What changed, in one place:
 
-Last completed: Phase 36 (RedisPubSubExtraction) — ephemeral Redis Pub/Sub signaling and cache invalidation (`RedisChannelService`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`, `AddRedisChannelService`, `AddRedisCacheInvalidationBus`, `AddCacheInvalidationReceiver`) extracted from `SharedKernel.Caching.Redis` into new standalone package `SharedKernel.Caching.Redis.PubSub`, depending only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core`. The Phase 26 reconnect/resubscribe replay logic (`Dictionary<string, SubscriptionEntry>` + `_registryLock`, `volatile int _connectionHealth`, `OnConnectionRestored`/`OnConnectionFailed`) relocated **intact** with `RedisChannelService` — it coexists independently with `.Redis.Core`'s passive `RedisConnectionHealthTracker`. `AddRedisChannelService` startup guard message updated to reference `AddRedisConnection` (directly, or transitively via `AddRedisL2` / `AddRedisDistributedLocking` / `AddRedisHashService`). `SharedKernel.Caching.Redis` is now slimmed to its end state: `AddRedisL2`, `RedisL2Options`, `IRedisL2BatchService` (internal), and the FusionCache Redis backplane wiring only — `Microsoft.Extensions.Hosting.Abstractions` and `Polly.Core` PackageReferences removed (Polly resilience is still consumed transitively via `.Redis.Core`). 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing.
+- `ICacheService`: `TryGetAsync`/`TryGetManyAsync` return `CacheLookup<T>` (a cached `null`/`0` is a hit); a `GetOrSetAsync` overload whose factory receives a `CacheFactoryContext` (`SkipCaching`, `SetDurations`); new `ExpireAsync`, `RemoveByTagsAsync`, `ClearAsync`.
+- `CachePolicy`: tags are an `IReadOnlyList<string>`, validated; `ForTenant`; fail-safe maximum, factory timeouts, jitter, `LocalOnly`. `Sliding` and key versioning are gone.
+- `CacheKeyFormat`: one escaped, collision-free key and tag format with an `@{tenant}` marker. `CachingOptions.ServiceName` has no default and is validated at startup.
+- Locks: `IDistributedLockService.TryAcquireAsync` → `IDistributedLock` (fencing token, `IsHeld`, `LostToken`, kept alive until disposed); `TryAcquireLeaseAsync` → `DistributedLease`; an unreachable store throws `DistributedLockUnavailableException`. RedLock.net is replaced by atomic Lua scripts.
+- Removed: the Pub/Sub cache-invalidation bus and receiver (the FusionCache backplane already propagates removals), `CachingCoreOptions`. Provider contracts moved to their providers (`IRedisChannelService` → `.Redis.PubSub`, `IRedisHashService`/`ITypedHashStore<T>` → `.Redis.HashStore`, `ConnectionHealthState` → `.Redis.Core`).
+- The abstractions package now tracks its public API (`PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`) and has its own test project.
 
-**End state achieved (WO-023)**: `SharedKernel.Caching.Redis` is split into five packages — `.Redis.Core` (Phase 32, connection/health/resilience root), `.Redis` (Phases 33–35, L2 FusionCache backplane only), `.Redis.DistributedLocking` (Phase 34, RedLock), `.Redis.HashStore` (Phase 35, structured hash storage), `.Redis.PubSub` (Phase 36, cache invalidation signaling). Sibling packages (`.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`) never reference each other — only `.Redis.Core` + `Abstractions`. All `Add*` fluent DI shapes and `SharedKernel.Caching.Abstractions` contracts are unchanged throughout WO-023 — this was a pure package-topology refactor.
+Test runs after the redesign: Abstractions 78, FusionCache 198, Redis (L2) 34, Redis.DistributedLocking 47, Redis.PubSub 18, Redis.HashStore 30, Redis.Core 55 — all passing. Consumers migrated in the same pass: `05.Application.Behaviors.Caching` (24), `13.ServiceDefaults` MultiTenancy (85) and ServiceDefaults.Caching (9), `16.Testing` SelfTests (1399), `19.Scheduling` (39), `00.Governance` ArchitectureTests (323) and Analyzers (331).
 
-**Phase 37 (WO-041, P-252) — Logging Retrofit — complete.** Every production log statement in `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Caching.Redis.DistributedLocking`, and `SharedKernel.Caching.Redis.PubSub` now uses the platform's `[LoggerMessage]` source-generated pattern, and every `EventId` in this domain is renumbered into this domain's own `LoggingEventIdRanges.Caching` (2000-2999) block via `LoggingEventIdRanges.Caching + {offset}` compile-time constant expressions. This closed two confirmed pre-existing defects: `SharedKernel.Caching.Redis.Core`'s `RedisConnectionHealthTracker` and `SharedKernel.Caching.Redis.PubSub`'s `CacheInvalidationReceiver` had independently chosen `EventId` 4001/4002 (a live collision across two packages that run in the same process), and `FusionCacheService`/`RedisChannelService` had squatted on `01.Core`'s and `03.Domain`'s reserved `EventId` blocks respectively. See the "Logging (EventId sub-blocks)" section below for the full per-package allocation.
-
-**Phases 38–41 (WO-050) — Caching gold-standard follow-up.** Four independent, non-blocking-on-each-other phases dispatched from a direct root-level architecture review of this domain:
-
-- **Phase 38 (P-301, NuGetPackagingParity) — complete.** All 7 shipped packages now carry the full `08.Storage`/`09.Search` metadata bar (`PackageId`/`Version`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`PackageReadmeFile`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`GenerateDocumentationFile`/`IncludeSymbols`/`SymbolPackageFormat`); the 5 missing `README.md`/`PackageReadmeFile` pairs (`Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`) are authored; `SharedKernel.Caching.Abstractions`'s pre-existing mangled em-dash encoding defect (`â€”`) is fixed; and `02.Caching/consumer-verify` is rebuilt from scratch against the current 7-package topology — it now compiles and runs 5 real composition scenarios (L1-only, L1+L2, locking-only, hash-store-only, pub/sub-only), each through a real `IHost.StartAsync()`, against the freshly packed local `nupkgs` feed. See the "NuGet packaging" and "consumer-verify" subsections below for the details.
-- **Phase 39 (P-302, CrossInstanceTagInvalidation) — complete.** A genuine two-independent-DI-container test (`SharedKernel.Caching.Redis.Tests/Integration/CrossInstanceTagInvalidationTests.cs`) proved that `RemoveByTagAsync` **already** propagates across independently-constructed `ICacheService`/FusionCache instances sharing one Redis L2 backplane — the guarantee held with zero production wiring changes to `AddRedisL2`/`AddSharedKernelCaching`. See the "Core cache rules" bullet below for the confirmed carrying mechanism, identified via direct Redis `MONITOR` traffic inspection against a Testcontainers instance. While implementing this phase, discovered and fixed a latent, pre-existing defect blocking it: all four Redis-container-based `.Tests` projects (`.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`) had a stale direct `<PackageReference Include="Testcontainers.Redis" Version="4.4.0" />` that silently conflicted with `16.Testing`'s `>= 4.13.0` floor — MSBuild resolved the *lower* direct reference into the test output alongside the *higher* transitive core `DotNet.Testcontainers` assembly, producing a `MissingMethodException` at container-startup time in every one of these four projects' Redis-backed tests (reproduced independently of this phase's new test — the pre-existing `RedisL2IntegrationTests` failed identically). Fixed by bumping all four to `4.13.0`, matching `16.Testing` and Phase 38's `consumer-verify`. All five affected suites re-ran green after the fix: FusionCache 209/209, Redis.Core 33/33, Redis (L2) 29/29 (28 pre-existing + 1 new), Redis.DistributedLocking 41/41, Redis.HashStore 30/30, Redis.PubSub 41/41.
-- **Phase 40 (P-303, BatchOperationsParallelization) — complete.** `FusionCacheService.GetManyAsync`/`SetManyAsync` rewritten from a strictly sequential one-`await`-per-key loop to a bounded-concurrent `Parallel.ForEachAsync` fan-out (`MaxDegreeOfParallelism = 16`, fixed internal constant, not a new `CachingOptions` knob), accumulating into a `ConcurrentDictionary` for `GetManyAsync`. The confirmed-dead Phase 22 `IRedisL2BatchService`/`RedisL2BatchService` pipeline helper — zero DI registration, zero production caller, architecturally unreachable from `.FusionCache` under the sibling non-reference rule regardless — was deleted outright along with the now-empty `SharedKernel.Caching.Redis/Batch/` folder and its `InternalsVisibleTo` grant. See the "Batch operations rules" and Test Rules sections below for the corrected execution model, the accepted partial-in-flight-on-failure trade-off, and the new concurrency-safety/wall-clock/stampede-non-interference test coverage.
-- **Phase 41 (P-304, OtelTracingSpans) — complete.** A `SharedKernel.Caching` `ActivitySource` (same instrumentation-scope name/version as the existing Phase 31 `Meter`) is now a second static readonly field on `FusionCacheService`, alongside `_meter`. `GetAsync`/`SetAsync`/`GetOrSetAsync` each produce a distributed-trace span (`cache.get`/`cache.set`/`cache.get_or_set`, `ActivityKind.Client`) tagged `cache.key_prefix` (reusing `ExtractKeyPrefix`) and, for the two read paths, `cache.outcome` (`"hit"`/`"miss"`) — closing this domain's prior gap against the platform's other `WithXTelemetry` siblings, which all wire both a `Meter` and an `ActivitySource`. Zero new NuGet dependency. See the "OTel tracing rules (Phase 41)" subsection below for the full convention and `OtelTracingTests.cs` for the `ActivityListener`-based test coverage.
-
-See `02.Caching/state-map.md` Phases 38–41 for full task breakdowns, implementation rules, and acceptance criteria.
-
-**Phases 42–45 (WO-065) — gold-standard/big-fintech follow-up — all four complete.** Four independent, non-blocking-on-each-other phases dispatched from a second direct root-level architecture review of this domain (after WO-050):
-
-- **Phase 42 (P-433, CacheEncryptionAtRest, `●` complete).** Opt-in AES-GCM `CacheEncryptionSerializer` decorator over the FusionCache serialization pipeline, architecturally identical in shape to the shipped `BrotliCacheSerializer` (magic-byte prefix, pass-through for unprefixed payloads), built entirely on `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService`. Closes this domain's gap against `07.Messaging` (P-346/WO-054) and `15.Integration` (P-427/WO-064), which already ship the equivalent opt-in payload encryption. See "Cache-value encryption rules" below.
-- **Phase 43 (P-434, LockFencingTokens, `●` complete).** A new `IFencedLock` interface plus an atomic per-resource Redis `INCR` fencing-token counter wired into `RedLockDistributedLockService`/`RedLockRenewableLock`, mitigating the "brief unprotected window" stale-owner hazard the Phase 23 renewal rule already acknowledges. See "Fencing token rules (Phase 43, complete)" below.
-- **Phase 44 (P-435, TenantCacheService, `●` complete).** A new `ITenantCacheService` requiring a mandatory, non-defaulted `tenantId` on every method, composing `ITenantCacheKeyProvider` (Phase 29) so tenant-scoped key construction is structurally guaranteed rather than merely possible-to-get-right by convention. See "Tenant cache service rules (Phase 44, complete)" below.
-- **Phase 45 (P-436, RedisTransportHardening, `●` complete).** Genuine fail-fast `ValidateDataAnnotations()`/`ValidateOnStart()` validation of `RedisConnectionOptions` (the pre-existing `[Required]`/`[Range]` attributes were decorative until this phase), a new `Ssl`/`ClientCertificates`/`CertificateValidation` TLS/mTLS surface composed into the built `ConfigurationOptions`, and a one-time non-loopback-without-TLS startup `Warning` (`LoggingEventIdRanges.Caching + 102`) fired from inside the `IConnectionMultiplexer` singleton factory. See the extended "Redis Connection Core rules (Phase 32)" section below — including two corrections to the original plan discovered while implementing against the real, pinned StackExchange.Redis 2.13.1 API rather than assumed prose.
-
-See `02.Caching/state-map.md` Phases 42–45 for full task breakdowns, implementation rules, and acceptance criteria.
-
-**Phase 46 (WO-081, P-497) — `●` complete — Cache Encryption: AAD Key-Binding + Async-Only Crypto.** Migrated opt-in cache-value encryption off `01.Core`'s upstream breaking `ISymmetricEncryptionService` changes (`SK.01.P491`'s required `associatedData` parameter; `SK.01.P492`'s `ISynchronousEncryptionKeyProvider` capability gate on the four sync members, both shipped in `01.Core`). **This was not a straightforward async-ify-in-place of `CacheEncryptionSerializer`:** `IFusionCacheSerializer`'s members receive only the value, never the cache key, so a serializer-level decorator was structurally incapable of deriving key-bound associated data. `CacheEncryptionSerializer` is retired and deleted outright, superseded by `EncryptedCacheService`, a new decorator over `ICacheService` itself (mirroring `TenantCacheService`'s Phase 44 wrap-`ICacheService` shape) — the one layer that genuinely has the cache key on every call, with no ambient-context/`AsyncLocal` reliance (an alternative evaluated and rejected specifically because `CachePolicy.WithEagerRefresh`'s background factory re-invocation is not verifiably tied to the original caller's execution context). `AddCacheEncryption()`'s public opt-in surface and the compress-then-encrypt ordering guarantee are unchanged; the ordering's underlying mechanism moved — `EncryptedCacheService` takes over compression duty (reusing the extracted `BrotliPayloadCodec`, shared with `BrotliCacheSerializer`) whenever both features are opted in, since encryption must see plaintext bytes before compression can safely run. See "Cache-value encryption rules" below for the full structural finding, and `02.Caching/state-map.md` Phase 46 (`SK.02.CacheEncryptionAadBinding`) for the task breakdown. 259/259 `SharedKernel.Caching.FusionCache.Tests` + 31/31 `SharedKernel.Caching.Redis.Tests` passing. **P-545 follow-up:** the `SharedKernel.Cryptography` redesign made `ISymmetricEncryptionService` async-only (the marker and its gate are gone) and `EncryptedPayload` a non-serializable class, so `EncryptedCacheService` now stores `EncryptedPayload.ToBytes()` as a `byte[]` (context renamed `EncryptedCacheEntryJsonContext`).
+Phase-by-phase history (WO-003 through WO-081) lives in `02.Caching/state-map.md` and the Changelog below; it describes types that no longer exist.
 
 ---
 
 ## Packages
 
-> **WO-023 (Phases 32–36) split `SharedKernel.Caching.Redis` into five packages — complete as of Phase 36.** The table below reflects the final topology.
-
 | Package | Role | NuGet / Project References |
 | ------- | ---- | -------------------------- |
-| `SharedKernel.Caching.Abstractions` | Zero-infra contracts: `ICacheService`, `CachePolicy` (incl. `NeverExpire`), `ICacheKeyProvider`, `IDistributedLockService`, `IRenewableLock`, `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `ConnectionHealthState`, `ICachingBuilder`, `CachingCoreOptions`, `ICacheWarmupStrategy`, `ITenantCacheKeyProvider` | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
-| `SharedKernel.Caching.FusionCache` | FusionCache L1 provider implementation: `FusionCacheService`, `CacheKeyProvider`, `BrotliCacheSerializer` (opt-in, `.Inner` property + shared `BrotliPayloadCodec` since Phase 46), `EncryptedCacheService`/`AddCacheEncryption` (opt-in AES-GCM `ICacheService`-level decorator with key-bound AAD, Phase 46/WO-081 — supersedes Phase 42's retired `IFusionCacheSerializer`-level `CacheEncryptionSerializer`), `TenantCacheService`/`AddTenantCacheService` (tenant-scoped cache wrapper, Phase 44), STJ context base, `AddSharedKernelCaching` DI extension. **Previously named `SharedKernel.Caching` — renamed in Phase 14.** | `SharedKernel.Caching.Abstractions`, FusionCache packages, `01.Core` (incl. `SharedKernel.Cryptography` ProjectReference, Phase 42) |
-| `SharedKernel.Caching.Redis.Core` *(implemented, Phase 32; TLS/mTLS + fail-fast validation added Phase 45)* | Foundational connection layer: `IConnectionMultiplexer` registration (`AddRedisConnection`, `TryAddSingleton`, first-caller-wins), `RedisConnectionHealthTracker` (`ConnectionHealthState` tracking), `RedisCircuitBreakerOptions` + `AddRedisCircuitBreaker` (Polly v8 `ResiliencePipeline` factory). Zero references to FusionCache, RedLock.net, or capability-specific types. **Dependency root for `.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`.** **Phase 45 (P-436, complete):** `RedisConnectionOptions` is registered via `AddOptions<RedisConnectionOptions>().Configure(...).ValidateDataAnnotations().ValidateOnStart()` — its `[Required]`/`[Range]` attributes are now genuinely enforced at host-startup time; new `Ssl`/`ClientCertificates`/`CertificateValidation` properties compose into the `ConfigurationOptions` built inside the `IConnectionMultiplexer` factory; a one-time `Warning` (`LoggingEventIdRanges.Caching + 102`) fires when a non-loopback endpoint is configured with `Ssl = false`. | `SharedKernel.Caching.Abstractions`, StackExchange.Redis, Polly.Core, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options.DataAnnotations`, `Microsoft.Extensions.Hosting.Abstractions` (Phase 45) |
-| `SharedKernel.Caching.Redis` *(slimmed, Phases 33–36 — end state)* | Redis L2 FusionCache distributed backplane only: `AddRedisL2`, `RedisL2Options`, `IRedisL2BatchService` (internal batch pipeline helper, Phase 22). `AddRedisL2` sources `IConnectionMultiplexer` via `services.AddRedisConnection(...)` and the optional circuit breaker `ResiliencePipeline` via `services.AddRedisCircuitBreaker(...)`, both from `.Redis.Core` (Phase 33). `RedisL2Options.CircuitBreaker` is the top-level `RedisCircuitBreakerOptions` type from `.Redis.Core`. Brotli compression itself lives in `.FusionCache` (Phase 16) — this package's role is `.WithRegisteredSerializer()` wiring (Phase 18 AOT rule) so the Brotli-wrapped serializer is picked up. RedLock-based distributed locking was removed in Phase 34, `RedisHashService`/`TypedHashStore<T>` were removed in Phase 35, and `RedisChannelService`/`RedisCacheInvalidationBus`/`CacheInvalidationReceiver` were removed in Phase 36 — `RedLock.net`, `Microsoft.Extensions.Hosting.Abstractions`, and `Polly.Core` PackageReferences dropped (Polly resilience is consumed transitively via `.Redis.Core`). **Must not reference `SharedKernel.Caching.FusionCache` (fixed in Ph17).** | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, Microsoft.Extensions.Caching.StackExchangeRedis, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis |
-| `SharedKernel.Caching.Redis.DistributedLocking` *(implemented, Phase 34; fencing tokens added Phase 43)* | RedLock.net distributed locking: `RedLockDistributedLockService` (`IDistributedLockService`), `RedLockRenewableLock` + `KeepAliveAsync` extension (`IRenewableLock`), `RedisLockOptions`, `AddRedisDistributedLocking` (canonical `ICachingBuilder` overload + `[Obsolete]` `IServiceCollection` shim with its own private `RedisLockCachingBuilder` adapter). Sources `IConnectionMultiplexer` via `services.AddRedisConnection(...)` from `.Redis.Core`. Every successful acquisition is additionally issued a monotonically increasing fencing token (`IFencedLock`/`IRenewableLock.FencingToken`), sourced from an atomic per-resource Redis `INCR` via the internal `RedisFencingTokenSource` helper (Phase 43). | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, RedLock.net |
-| `SharedKernel.Caching.Redis.HashStore` *(implemented, Phase 35)* | Structured Redis Hash storage: `RedisHashService` (`IRedisHashService`), `TypedHashStore<T>` (internal sealed, `ITypedHashStore<T>`), `AddRedisHashService`, `AddTypedHashStore<T>`. `AddRedisHashService` sources `IConnectionMultiplexer` via `services.AddRedisConnection(...)` (guard on `AddRedisConnection` having been called) and the optional circuit breaker `ResiliencePipeline` via `sp.GetService<ResiliencePipeline>()`, both from `.Redis.Core`. | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core` |
-| `SharedKernel.Caching.Redis.PubSub` *(implemented, Phase 36)* | Ephemeral Redis Pub/Sub signaling and cache invalidation: `RedisChannelService` (`IRedisChannelService`, with Phase 26 reconnect/resubscribe replay relocated intact), `RedisCacheInvalidationBus` (`ICacheInvalidationBus`), `CacheInvalidationReceiver` (`BackgroundService`). `AddRedisChannelService` sources `IConnectionMultiplexer` via the `AddRedisConnection` guard and the optional circuit breaker `ResiliencePipeline` via `sp.GetService<ResiliencePipeline>()`, both from `.Redis.Core`. **Stays in `02.Caching` — see "Why pub/sub stays in 02.Caching" below.** | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, Microsoft.Extensions.Hosting.Abstractions |
+| `SharedKernel.Caching.Abstractions` | Provider-neutral contracts: `ICacheService`, `ITenantCacheService`, `CacheLookup<T>`, `CacheFactoryContext`, `CachePolicy`, `CacheKeyFormat`, `ICacheKeyProvider`, `ITenantCacheKeyProvider`, `ICacheWarmupStrategy`, `ICachingBuilder`, `IDistributedLockService`, `IDistributedLock`, `DistributedLockOptions`, `DistributedLease`, `DistributedLockUnavailableException`. Public API tracked (RS0016/RS0017 and friends as errors). No logging, no options, no hosting | `Microsoft.Extensions.DependencyInjection.Abstractions` only (plus the private `Microsoft.CodeAnalysis.PublicApiAnalyzers`) |
+| `SharedKernel.Caching.FusionCache` | `FusionCacheService` (`ICacheService`), `CacheKeyProvider` (both key interfaces), `TenantCacheService`, `EncryptedCacheService`, `BrotliCacheSerializer`, `CacheWarmupHostedService`, `CachingOptions` + `CachingOptionsValidator`; `AddSharedKernelCaching`, `AddTenantCacheService`, `AddBrotliCompression`, `AddCacheEncryption`, `AddCacheWarmup<TStrategy>` | `Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Cryptography`, ZiggyCreatures.FusionCache (+ `.Serialization.SystemTextJson`), `Microsoft.Extensions.Options.DataAnnotations`, `Microsoft.Extensions.Hosting.Abstractions` |
+| `SharedKernel.Caching.Redis.Core` | Shared connection layer: `AddRedisConnection` (one `IConnectionMultiplexer`, first caller wins), `RedisConnectionOptions` (validated, TLS/mTLS), `RedisConnectionHealthTracker`, `ConnectionHealthState`, `RedisCircuitBreakerOptions` + `AddRedisCircuitBreaker`. **References no `SharedKernel.Caching` package** | `SharedKernel.Primitives`, StackExchange.Redis, Polly.Core, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options.DataAnnotations`, `Microsoft.Extensions.Hosting.Abstractions` |
+| `SharedKernel.Caching.Redis` | L2 distributed cache and FusionCache backplane only: `AddRedisL2`, `RedisL2Options` | `Abstractions`, `Redis.Core`, `Microsoft.Extensions.Caching.StackExchangeRedis`, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis. **Must not reference `.FusionCache`** |
+| `SharedKernel.Caching.Redis.DistributedLocking` | `RedisDistributedLockService` (`IDistributedLockService`), `RedisDistributedLock` (`IDistributedLock`), `RedisLockScripts` (all internal); `AddRedisDistributedLocking` on `ICachingBuilder` and on `IServiceCollection`; `RedisLockOptions` | `Abstractions`, `Redis.Core`, `SharedKernel.Primitives`. No RedLock.net (locked by `00.Governance`) |
+| `SharedKernel.Caching.Redis.HashStore` | `IRedisHashService`, `ITypedHashStore<T>` (namespace `SharedKernel.Caching.Redis.HashStore`), `RedisHashService`, `TypedHashStore<T>`; `AddRedisHashService`, `AddTypedHashStore<T>` | `Abstractions` (for `ICachingBuilder`), `Redis.Core` |
+| `SharedKernel.Caching.Redis.PubSub` | `IRedisChannelService` (namespace `SharedKernel.Caching.Redis.PubSub`), `RedisChannelService`; `AddRedisChannelService` | `Abstractions` (for `ICachingBuilder`), `Redis.Core`, `SharedKernel.Primitives`. No hosting package |
 
-All packages target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+All packages target `net10.0`. Test projects are nested inside each project folder.
 
-**NuGet packaging status (Phase 38, complete):** all 7 packages now carry the full metadata bar (`PackageId`/`Version`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`PackageReadmeFile`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`GenerateDocumentationFile`/`IncludeSymbols`/`SymbolPackageFormat`) and a real, authored `README.md` wired via `PackageReadmeFile` + `<None Include="README.md" Pack="true" PackagePath="\" />`: `SharedKernel.Caching.FusionCache` and `SharedKernel.Caching.Redis` (L2) already had both since an earlier phase; `SharedKernel.Caching.Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, and `.Redis.PubSub` gained theirs in Phase 38. `SharedKernel.Caching.Abstractions.csproj`'s pre-existing mangled em-dash encoding defect (`â€”` in two inline comments) was fixed in the same pass. `dotnet pack --configuration Release --output ./nupkgs` (repo-root local feed, per the platform's established "pack and publish" convention) succeeds clean for all 7 packages — zero `NU5039`/`NU5128` warnings.
+**NuGet packaging:** all 7 packages carry the full metadata bar (`PackageId`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`PackageReadmeFile`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`GenerateDocumentationFile`/`IncludeSymbols`/`SymbolPackageFormat`) and a packed `README.md`. Versions come from the repo-wide MinVer tag (root `PLATFORM.md`), never a `<Version>` element.
 
-**`02.Caching/consumer-verify` (Phase 38, rebuilt):** the harness had silently rotted since the Phase 14 rename and the WO-023 package split — it imported namespaces that no longer existed anywhere in the source tree and referenced the retired pre-rename `SharedKernel.Caching`/`SharedKernel.Caching.Redis` v1.0.0 `PackageId`s (which, it turned out, still resolved against stale content sitting in the local `nupkgs` feed from before the split — the reason it had never visibly failed). Rebuilt from scratch: `SharedKernel.Caching.ConsumerVerify.csproj` now carries a direct `PackageReference` (not `ProjectReference` — a deliberate divergence from `08.Storage/consumer-verify`'s pattern, since proving the *packed* artifact resolves is the whole point) to all 7 current `PackageId`s, plus `Microsoft.Extensions.Hosting` (`10.0.9`) and `Testcontainers.Redis` (`4.13.0`, matching `16.Testing`'s own pin). `Program.cs` is a full rewrite proving five composition scenarios, each via a real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()` (never `BuildServiceProvider()` alone), against one shared Testcontainers Redis container started once and disposed at the end of the run:
+**`02.Caching/consumer-verify`:** `SharedKernel.Caching.ConsumerVerify.csproj` takes a `PackageReference` (not `ProjectReference` — proving the *packed* artifact resolves is the point) to all 7 `PackageId`s, plus `Microsoft.Extensions.Hosting` and `Testcontainers.Redis`. `Program.cs` runs five surfaces, each through a real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()`, against one shared Testcontainers Redis:
 
 | Surface | DI composition | Contract(s) resolved | Real-Redis proof |
 | ------- | --------------- | --------------------- | ----------------- |
-| 1. L1-only | `AddSharedKernelCaching(...)` | `ICacheService`, `ICacheKeyProvider` | none needed — `GetOrSetAsync` round-trip in-process only |
-| 2. L1+L2 | `AddSharedKernelCaching(...).AddRedisL2(connectionString)` | `ICacheService` | raw `IConnectionMultiplexer.GetDatabase().KeyExistsAsync("v2:{key}")` after a `GetOrSetAsync` write, proving the entry actually landed in Redis under the documented L2 key format (Phase 20) |
-| 3. Locking-only (no FusionCache) | `AddCachingCoreOptions(...).AddRedisDistributedLocking(connectionString)` (the `[Obsolete]` `IServiceCollection` shim — the documented Phase 27 standalone path) | `IDistributedLockService` | acquires a real RedLock, then proves a same-resource contended acquire (`wait: TimeSpan.Zero`) returns `null` instead of throwing |
-| 4. Hash-store-only (no FusionCache, no RedLock) | `AddRedisConnection(connectionString)` + a local `ICachingBuilder` adapter `.AddRedisHashService().AddTypedHashStore(...)` | `IRedisHashService`, `ITypedHashStore<string>` | `SetFieldAsync`/`GetFieldAsync`/`IncrementFieldAsync` round-trip through a real Redis hash |
-| 5. Pub/Sub-only (publish side only) | `AddCachingCoreOptions(...)` + `AddRedisConnection(...)` + a local `ICachingBuilder` adapter `.AddRedisChannelService().AddRedisCacheInvalidationBus()` — deliberately **not** `.AddCacheInvalidationReceiver()`, whose Phase 19 startup guard requires `ICacheService` to already be registered | `IRedisChannelService`, `ICacheInvalidationBus` | a real `SubscribeAsync`/`PublishAsync` round-trip over Redis Pub/Sub (bounded 10s wait), plus a bare `PublishKeyInvalidationAsync` call proving the publish side works with no receiver present |
+| 1. L1-only | `AddSharedKernelCaching(o => o.ServiceName = "consumer-verify-l1")` | `ICacheService`, `ICacheKeyProvider` | none needed — `GetOrSetAsync` round-trip in-process |
+| 2. L1+L2 | `AddSharedKernelCaching(...).AddRedisL2(connectionString)` | `ICacheService` | raw `KeyExistsAsync("v2:{key}")` after a `GetOrSetAsync` write |
+| 3. Locking-only (no FusionCache) | `services.AddRedisDistributedLocking(connectionString)` | `IDistributedLockService` | `TryAcquireAsync` returns a held lock with a positive fencing token; a contended attempt returns `null`; disposing releases and cancels `LostToken`; the next acquisition has a greater token; a second lease on the same resource returns `null` |
+| 4. Hash-store-only | `AddRedisConnection(connectionString)` + a local `ICachingBuilder` `.AddRedisHashService().AddTypedHashStore(...)` | `IRedisHashService`, `ITypedHashStore<string>` | `SetFieldAsync`/`GetFieldAsync`/`IncrementFieldAsync` round-trip |
+| 5. Pub/Sub-only | `AddRedisConnection(connectionString)` + a local `ICachingBuilder` `.AddRedisChannelService()` | `IRedisChannelService` | `SubscribeAsync`/`PublishAsync` round-trip (bounded 10 s wait), then `UnsubscribeAsync` |
 
-Each surface is run independently (a failure in one is caught, labeled, and reported without preventing the remaining four from running) and the process exits `1` if any surface failed, `0` if all five passed. Confirmed passing end-to-end against a real Docker daemon. See `02.Caching/state-map.md` Phase 38 for the full plan and acceptance criteria.
+Each surface is run independently; the process exits `1` if any failed.
 
-**Microservices must reference `SharedKernel.Caching.Abstractions` for DI contracts.** They reference concrete provider packages only at the composition root (startup project) — and only the ones they need:
+**Microservices reference `SharedKernel.Caching.Abstractions` for contracts** and provider packages only at the composition root:
 
 - L1-only: `SharedKernel.Caching.FusionCache`
-- L1 + L2 cache: `+ SharedKernel.Caching.Redis` (which transitively brings `.Redis.Core`)
-- Distributed locking only (no cache): `SharedKernel.Caching.Redis.Core` + `SharedKernel.Caching.Redis.DistributedLocking`
-- Structured hash storage only (e.g., session store): `SharedKernel.Caching.Redis.Core` + `SharedKernel.Caching.Redis.HashStore`
-- Cache invalidation signaling only: `SharedKernel.Caching.Redis.Core` + `SharedKernel.Caching.Redis.PubSub`
+- L1 + L2 cache: `+ SharedKernel.Caching.Redis` (brings `.Redis.Core`)
+- Distributed locking only (no cache): `SharedKernel.Caching.Redis.DistributedLocking` (brings `.Redis.Core`)
+- Structured hash storage only: `SharedKernel.Caching.Redis.HashStore`
+- Ephemeral signaling only: `SharedKernel.Caching.Redis.PubSub`
 
 **Layering rules:**
 
-- (Phase 17) `SharedKernel.Caching.Redis` and `SharedKernel.Caching.FusionCache` are sibling provider packages at the same layer. They must never reference each other. Both depend only on `SharedKernel.Caching.Abstractions` (`.Redis` also depends on `.Redis.Core`).
-- (Phase 32) `SharedKernel.Caching.Redis.Core` has zero references to FusionCache, RedLock.net, or any capability-specific (hash/channel/lock) type — it knows about Redis connections and resilience only.
-- (Phase 32) `SharedKernel.Caching.Redis`, `.DistributedLocking`, `.HashStore`, and `.PubSub` are sibling packages that all depend on `.Redis.Core` but **must never reference each other**. A consumer can take any subset of these four without pulling in the others.
+- `SharedKernel.Caching.Abstractions` references only `Microsoft.Extensions.DependencyInjection.Abstractions` and declares no provider-named type. `00.Governance` locks both (`RedisTopologyRules`).
+- `SharedKernel.Caching.Redis` and `SharedKernel.Caching.FusionCache` never reference each other.
+- `SharedKernel.Caching.Redis.Core` references no capability package and no `SharedKernel.Caching` package; it knows Redis connections and resilience only.
+- `.Redis`, `.DistributedLocking`, `.HashStore` and `.PubSub` depend on `.Redis.Core` (and `Abstractions`) but **never on each other**. A consumer can take any subset.
 
 ### Why pub/sub stays in `02.Caching` (not `07.Messaging`)
 
-`IRedisChannelService` and `ICacheInvalidationBus` (and their Phase 36 home, `SharedKernel.Caching.Redis.PubSub`) carry a **deliberately weaker contract** than `07.Messaging`:
+`IRedisChannelService` (`SharedKernel.Caching.Redis.PubSub`) carries a **deliberately weaker contract** than `07.Messaging`:
 
-- **At-most-once, no durability.** Redis Pub/Sub messages are not persisted — an offline subscriber misses the message permanently. There is no outbox, no retry, no dead-letter queue.
-- **No ordering or delivery guarantees across restarts.** `07.Messaging` (`SharedKernel.Messaging.Abstractions` / `.MassTransit`) provides outbox-backed, retryable, ordered delivery via RabbitMQ/ASB.
-- **Purpose-bound to cache coherence.** These types exist solely to propagate cache invalidation signals and lightweight ephemeral broadcasts between instances of the *same* cache topology — not general inter-service event communication.
+- **At-most-once, no durability.** An offline subscriber misses the message permanently. No outbox, no retry, no dead-letter queue.
+- **No ordering or delivery guarantees across restarts.** `07.Messaging` provides outbox-backed, retryable, ordered delivery via RabbitMQ/ASB.
+- **Cache-adjacent only.** Lightweight, loss-tolerant signals between instances. Cache invalidation itself does not use it: FusionCache's Redis backplane (`AddRedisL2`) already carries removals, expirations and tag evictions to every instance.
 
-Moving these types into `07.Messaging` would create two problems: (1) it would violate the layering rule that `07.Messaging` may reference `01–04` only — `CacheInvalidationMessage` and `CachingCoreOptions` are `02.Caching` types, and `07.Messaging` must not depend on `02.Caching`; and (2) developers would reasonably (but incorrectly) assume anything housed in `07.Messaging` inherits its durability guarantees, creating a latent reliability trap. Keeping `IRedisChannelService`/`ICacheInvalidationBus` in `02.Caching` (now `SharedKernel.Caching.Redis.PubSub`) — with the XML-doc boundary statement preserved verbatim — keeps the weaker contract visually and architecturally distinct from `07.Messaging`'s guarantees.
+Moving it into `07.Messaging` would let developers assume durability it does not have. `07.Messaging` never references a caching package and no caching package references messaging (root hard rule, locked by `RedisTopologyRules.PubSubNeverReferencesMessaging`/`MessagingNeverReferencesCaching`). The at-most-once boundary statement stays in `IRedisChannelService`'s XML doc.
 
 ---
 
@@ -101,304 +85,289 @@ Moving these types into `07.Messaging` would create two problems: (1) it would v
 | Concern | Technology | Confirmed Version | Owning Package |
 | ------- | ---------- | ----------------- | --------------- |
 | L1 cache (in-process) | `ZiggyCreatures.FusionCache` | 2.6.0 | `.FusionCache` |
-| L2 cache (distributed) | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | 2.6.0 | `.Redis` |
+| L2 backplane | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | 2.6.0 | `.Redis` |
+| L2 distributed cache | `Microsoft.Extensions.Caching.StackExchangeRedis` | 10.0.0 | `.Redis` |
 | STJ serialization for FusionCache | `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | 2.6.0 | `.FusionCache` |
-| Redis connection + resilience core | `StackExchange.Redis` | 2.13.1 | `.Redis.Core` (Phase 32) |
-| Distributed locking | `RedLock.net` (over Redis) | 2.3.2 | `.Redis.DistributedLocking` (implemented, Phase 34) |
-| DI abstractions | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.1** (not 10.0.0 — FusionCache transitive floor) | all packages |
-| OTel tracing (invalidation receiver) | `System.Diagnostics.DiagnosticSource` | BCL in `net10.0` — no additional NuGet reference | `.Redis.PubSub` (Phase 36) |
-| OTel tracing (cache read/write spans) | `System.Diagnostics` (`ActivitySource`/`Activity`) | BCL in `net10.0` — no additional NuGet reference | `.FusionCache` (Phase 41) |
-| Redis circuit breaker (opt-in) | `Polly.Core` | 8.5.2 | `.Redis.Core` (Phase 32) |
-| Background hosting (invalidation receiver) | `Microsoft.Extensions.Hosting.Abstractions` | 10.0.0 | `.Redis.PubSub` (Phase 36) |
-| Cache-value encryption at rest (opt-in) | `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService` (AES-256-GCM, required-AAD/async-only contract) | ProjectReference (MinVer-unified repo version) | `.FusionCache` (Phase 42, redesigned as an `ICacheService`-level decorator Phase 46/WO-081) |
-| Redis options validation | `Microsoft.Extensions.Options.DataAnnotations` | 10.0.0 | `.Redis.Core` (Phase 45) |
-| Redis options startup validation | `Microsoft.Extensions.Hosting.Abstractions` | 10.0.0 (matches `.Redis.PubSub`'s existing pin) | `.Redis.Core` (Phase 45) |
-
-> **Note:** "Owning Package" reflects the **final, achieved topology** as of Phase 36. `StackExchange.Redis` and `Polly.Core`'s *registration call sites* (`AddRedisConnection`, `AddRedisCircuitBreaker`) live in `.Redis.Core`; `RedLock.net` is confined to `.Redis.DistributedLocking` (Phase 34); `RedisHashService`/`TypedHashStore<T>` live in `.Redis.HashStore` (Phase 35); `RedisChannelService`/`RedisCacheInvalidationBus`/`CacheInvalidationReceiver` and their `Microsoft.Extensions.Hosting.Abstractions` dependency live in `.Redis.PubSub` (Phase 36). `SharedKernel.Caching.Redis` no longer carries direct `PackageReference`s to `StackExchange.Redis`, `Polly.Core`, `RedLock.net`, or `Microsoft.Extensions.Hosting.Abstractions` — its only Redis-related dependencies are transitive, via `.Redis.Core` and the FusionCache Redis backplane packages.
+| Redis client | `StackExchange.Redis` | 2.13.1 | `.Redis.Core` (used by every Redis package) |
+| Distributed locking | Server-side Lua scripts over `StackExchange.Redis` (`IDatabase.ScriptEvaluateAsync`) | — | `.Redis.DistributedLocking` |
+| DI abstractions | `Microsoft.Extensions.DependencyInjection.Abstractions` | 10.0.11 | all packages |
+| Public API tracking | `Microsoft.CodeAnalysis.PublicApiAnalyzers` | 5.6.0 | `Abstractions` |
+| OTel tracing and metrics | `System.Diagnostics` `ActivitySource`/`Meter` (BCL) | — | `.FusionCache` |
+| Redis circuit breaker (opt-in) | `Polly.Core` | 8.7.0 | `.Redis.Core`, `.HashStore`, `.PubSub` |
+| Options validation | `Microsoft.Extensions.Options.DataAnnotations` | 10.0.11 | `.FusionCache`, `.Redis.Core` |
+| Hosting (`ValidateOnStart` pairing, warmup hosted service) | `Microsoft.Extensions.Hosting.Abstractions` | 10.0.11 | `.FusionCache`, `.Redis.Core` |
+| Cache-value encryption at rest (opt-in) | `01.Core/SharedKernel.Cryptography` `ISymmetricEncryptionService` (AES-256-GCM, required AAD, async-only) | ProjectReference | `.FusionCache` |
 
 ---
 
 ## Interface Contracts
 
-### `SharedKernel.Caching.Abstractions` — full public surface
+### `SharedKernel.Caching.Abstractions` — full public surface (P-547)
+
+Authoritative surface: `SharedKernel.Caching.Abstractions/PublicAPI.Unshipped.txt`. Usage: that package's `README.md`.
 
 ```text
 ICacheService
-    GetAsync<T>(string key, CancellationToken ct)                                          → ValueTask<T?>
-    SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct)            → ValueTask
-    GetOrSetAsync<T>(string key, Func<CancellationToken,ValueTask<T>> factory,
-                     CachePolicy policy, CancellationToken ct)                             → ValueTask<T>
-    RemoveAsync(string key, CancellationToken ct)                                          → ValueTask
-    RemoveByTagAsync(string tag, CancellationToken ct)                                     → ValueTask
+    TryGetAsync<T>(string key, CancellationToken ct)                                   → ValueTask<CacheLookup<T>>
+    TryGetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct)
+                                                          → ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>>
+        // one lookup per DISTINCT requested key
+    GetOrSetAsync<T>(string key, Func<CancellationToken, ValueTask<T>> factory,
+                     CachePolicy policy, CancellationToken ct)                         → ValueTask<T>
+    GetOrSetAsync<T>(string key, Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+                     CachePolicy policy, CancellationToken ct)                         → ValueTask<T>
+        // factory runs once per key across concurrent callers; a nullable T caches "not found"
+    SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct)         → ValueTask
+    SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct) → ValueTask
+    RemoveAsync(string key, CancellationToken ct)                                      → ValueTask
+    ExpireAsync(string key, CancellationToken ct)                                      → ValueTask
+        // next read recomputes; fail-safe may still serve the old value if recomputing fails
+    RemoveByTagAsync(string tag, CancellationToken ct)                                 → ValueTask
+    RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct)                  → ValueTask
+    ClearAsync(CancellationToken ct)                                                   → ValueTask
+        // every entry, all tenants, every instance — break-glass
 
-    NOTE (Phase 21 — breaking change): factory delegate changed from Task<T> to ValueTask<T>.
-    C# constraint: a separate nullable overload is not possible because Func<CT,ValueTask<T>> and
-    Func<CT,ValueTask<T?>> are the same CLR type. Negative-result caching is achieved by calling
-    GetOrSetAsync<T?> (e.g. GetOrSetAsync<string?>) — the same single generic method handles
-    both nullable and non-nullable cases. FusionCache caches null as a genuine entry when T is
-    nullable. Migration: Task<T> callers wrap with async ct => await oldFactory(ct).
+CacheLookup<T>  (readonly struct, IEquatable)
+    IsHit                bool
+    Value                T        (throws InvalidOperationException on a miss)
+    TryGetValue(out T)   bool
+    GetValueOrDefault(T fallback) → T
+    static Miss (== default), static Hit(T value)
+    // a cached null or 0 is a HIT
 
-CachePolicy  (sealed immutable record)
-    .Default                              → 5 min L1, 30 min L2, fail-safe on
-    .NeverExpire                          → TimeSpan.MaxValue L1 + L2, fail-safe on, no EagerRefreshThreshold
-                                            Use only for truly static data; invalidation must be explicit via
-                                            ICacheService.RemoveAsync or ICacheInvalidationBus.
-    .For(TimeSpan l1, TimeSpan l2)
-    .WithTags(params string[] tags)
-    .WithEagerRefresh(double threshold)   → default 0.9 (90 % of TTL)
+CacheFactoryContext  (sealed class)
+    ctor(string key, CachePolicy policy)
+    Key, Policy
+    SkipCaching()                              // value still returned to every waiting caller; nothing written;
+                                               // an existing entry is left untouched
+    IsCachingSkipped                           bool
+    SetDurations(TimeSpan l1, TimeSpan l2)     // same validation as CachePolicy.For
+    L1DurationOverride / L2DurationOverride    TimeSpan?
 
-CachingCoreOptions  (sealed class — added Phase 17)
-    ServiceName  string  (default "app")
-    Authoritative source of ServiceName for all provider packages.
-    Registered in DI by AddSharedKernelCaching; consumed by RedisCacheInvalidationBus
-    and CacheInvalidationReceiver so the Redis package has no dependency on FusionCache.
+CachePolicy  (sealed immutable record; value equality incl. tags in order)
+    L1Duration  (5 min)   L2Duration (30 min)   — TimeSpan.MaxValue = never expires by time
+    Tags                  IReadOnlyList<string> (default empty)
+    IsFailSafeEnabled     (true)   FailSafeMaxDuration  TimeSpan?
+    FactorySoftTimeout    TimeSpan?  FactoryHardTimeout TimeSpan?
+    EagerRefreshThreshold double? (0.9)
+    JitterMaxDuration     TimeSpan?
+    IsLocalOnly           (false)  IsTenantScoped (false)
+    static Default                              // 5 min / 30 min, fail-safe on, eager refresh 0.9
+    static NeverExpire                          // MaxValue L1 + L2, no eager refresh
+    static For(TimeSpan l1, TimeSpan l2)        // both > 0, l1 <= l2
+    static For(TimeSpan duration)
+    WithTags(params string[] tags)              // non-empty; no null/whitespace; no leading '@'; copied
+    ForTenant(string tenantId)                  // tags → @{tenant}:{tag}, plus tenant-wide tag @{tenant};
+                                                // throws if already tenant-scoped; WithTags after it throws
+    WithFailSafe(TimeSpan max) / WithoutFailSafe()   // WithoutFailSafe also clears the soft timeout
+    WithFactoryTimeouts(TimeSpan? soft, TimeSpan? hard) // soft needs fail-safe; soft < hard
+    WithEagerRefresh(double threshold = 0.9) / WithoutEagerRefresh()   // threshold in (0, 1)
+    WithJitter(TimeSpan max)
+    LocalOnly()                                 // never L2, no backplane notification
+
+CacheKeyFormat  (static class)
+    Separator ':'   TenantMarker '@'
+    IsValidServiceName(string?)  → bool         // 1–64 of [a-z0-9._-], starts with [a-z0-9]
+    Escape(string part)          → string       // '%'→%25, ':'→%3A, '@'→%40; null/whitespace throws
+    BuildKey(service, entity, id, params ReadOnlySpan<string> segments)            → {service}:{entity}:{id}[:{segment}...]
+    BuildTenantKey(service, tenantId, entity, id, params ReadOnlySpan<string> segs) → {service}:@{tenant}:{entity}:{id}[...]
+    BuildTenantTag(tenantId, tag)  → @{tenant}:{tag}
+    BuildTenantWideTag(tenantId)   → @{tenant}
+    // every caller-supplied part escaped: no two inputs share a key or tag, a global key never
+    // equals a tenant key, one tenant's tag never matches another tenant's entries
 
 ICacheKeyProvider
-    BuildKey(string entity, string id, params string[] extraSegments) → string
-    // Format contract: {service}:{entity}:{id}[:{extraSegment}...]
+    BuildKey(string entity, string id, params string[] segments) → string
+ITenantCacheKeyProvider : ICacheKeyProvider
+    BuildTenantKey(string tenantId, string entity, string id, params string[] segments) → string
+    // tenantId is always explicit — never ambient; zero dependency on 12.Security or IHttpContextAccessor
 
-IDistributedLockService
-    AcquireAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry, CancellationToken ct)
-    → IAsyncDisposable?   (null = lock not acquired within wait; callers decide fallback)
+ITenantCacheService   (every method: explicit, non-defaulted tenantId; (entity, id), never a pre-built key)
+    TryGetAsync<T>(tenantId, entity, id, ct)                                   → ValueTask<CacheLookup<T>>
+    GetOrSetAsync<T>(tenantId, entity, id, Func<CancellationToken, ValueTask<T>>, CachePolicy, ct) → ValueTask<T>
+    GetOrSetAsync<T>(tenantId, entity, id, Func<CacheFactoryContext, CancellationToken, ValueTask<T>>, CachePolicy, ct)
+    SetAsync<T>(tenantId, entity, id, T value, CachePolicy, ct)               → ValueTask
+    RemoveAsync(tenantId, entity, id, ct) / ExpireAsync(tenantId, entity, id, ct) → ValueTask
+    RemoveByTagAsync(string tenantId, string tag, CancellationToken ct)       → ValueTask   // tag unscoped, as passed to WithTags
+    RemoveTenantAsync(string tenantId, CancellationToken ct)                  → ValueTask   // every entry of the tenant
+    // policies passed in must NOT already be tenant-scoped
 
-IRedisChannelService                      [ephemeral / non-durable — see rule below]
-    PublishAsync(string channel, string message, CancellationToken ct)   → ValueTask
-    SubscribeAsync(string channel, Func<string, ValueTask> handler, CancellationToken ct) → ValueTask
-    UnsubscribeAsync(string channel, CancellationToken ct)               → ValueTask
-
-IRedisHashService
-    GetFieldAsync<T>(string key, string field, JsonTypeInfo<T> typeInfo, CancellationToken ct)        → ValueTask<T?>
-    SetFieldAsync<T>(string key, string field, T value, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask
-    GetAllFieldsAsync<T>(string key, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask<IReadOnlyDictionary<string, T>>
-    DeleteFieldAsync(string key, string field, CancellationToken ct)                  → ValueTask
-    IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)   → ValueTask<long>
-
-ICacheInvalidationBus                     [no delivery guarantees — see rule below]
-    PublishKeyInvalidationAsync(string[] keys, CancellationToken ct)     → ValueTask
-    PublishTagInvalidationAsync(string[] tags, CancellationToken ct)     → ValueTask
-    PublishBroadcastInvalidationAsync(CancellationToken ct)              → ValueTask
-    PublishInvalidationAsync(CacheInvalidationMessage message, CancellationToken ct) → ValueTask
-
-CacheInvalidationMessage  (sealed record)
-    SourceService    string
-    InvalidationType CacheInvalidationType  (Key | Tag | All)
-    Keys             string[]?
-    Tags             string[]?
-    CorrelationId    string   (defaults to Activity.Current?.Id ?? Guid.NewGuid().ToString("N"))
-    TimestampUtc     DateTimeOffset
-
-ITypedHashStore<T>                        [AOT-safe typed wrapper — no per-call JsonTypeInfo<T>]
-    GetFieldAsync(string key, string field, CancellationToken ct)                           → ValueTask<T?>
-    SetFieldAsync(string key, string field, T value, CancellationToken ct)                  → ValueTask
-    GetAllFieldsAsync(string key, CancellationToken ct)          → ValueTask<IReadOnlyDictionary<string, T>>
-    DeleteFieldAsync(string key, string field, CancellationToken ct)                        → ValueTask
-    IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)         → ValueTask<long>
+ICacheWarmupStrategy
+    Name string, Order int, WarmupAsync(ICacheService cache, CancellationToken ct) → ValueTask
 
 ICachingBuilder
     Services  IServiceCollection { get; }
 
-    -- Planned additions (WO-007) --
+IDistributedLockService
+    TryAcquireAsync(string resource, DistributedLockOptions? options = null, CancellationToken ct)
+                                                                → ValueTask<IDistributedLock?>
+    TryAcquireLeaseAsync(string resource, TimeSpan duration, CancellationToken ct)
+                                                                → ValueTask<DistributedLease?>   // single attempt
+    // null ONLY when another holder has the resource; store unreachable → DistributedLockUnavailableException;
+    // cancelled → OperationCanceledException
 
-ICacheService  [additions in Phase 22]
-    GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct)
-    → ValueTask<IReadOnlyDictionary<string, T?>>
-    // Every requested key has an entry; missing keys map to null.
+IDistributedLock : IAsyncDisposable
+    Resource string, FencingToken long, IsHeld bool, LostToken CancellationToken
+    // kept alive by the provider until disposed; release is idempotent; LostToken is cancelled
+    // when the lock is lost OR released
 
-    SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct)
-    → ValueTask
-    // Single CachePolicy applies to all entries in the batch.
+DistributedLockOptions  (sealed record, validated init)
+    Expiry (30 s, > 0), WaitTime (0, >= 0), RetryInterval (200 ms, > 0); static Default
 
-IDistributedLockService  [addition in Phase 23]
-    AcquireRenewableAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry,
-                          CancellationToken ct)                → ValueTask<IRenewableLock?>
+DistributedLease  (sealed record)
+    ctor(string resource, long fencingToken, DateTimeOffset expiresAt)   // token > 0
+    Resource, FencingToken, ExpiresAt   // ExpiresAt as observed by the acquiring process — approximate
+    // never released or extended; simply expires
 
-IRenewableLock  [new in Phase 23 — SharedKernel.Caching.Abstractions]
-    RenewAsync(CancellationToken ct)                           → ValueTask<bool>
-    // true = lock still held; false = lock lost (never throws for lost lock)
-    IsAcquired                                                  bool { get; }
-    // Extends IAsyncDisposable.
-
-CachePolicy  [additions in Phases 24 and 25]
-    .Sliding(TimeSpan window)         → CachePolicy with SlidingWindow set
-    .WithVersion(int version)         → CachePolicy with KeyVersion set
-    SlidingWindow                     TimeSpan?  (null = absolute TTL only)
-    KeyVersion                        int        (0 = no suffix, backward-compat)
-
-    NOTE (Phase 24): SlidingWindow maps to L1 SlidingExpiration only — L2 does not slide.
-    NOTE (Phase 24): NeverExpire + SlidingWindow combination is invalid (guard in BuildEntryOptions).
-    NOTE (Phase 25): KeyVersion 0 produces the existing key format with no change.
-                     KeyVersion > 0 appends :v{version} suffix: {service}:{entity}:{id}:v{version}
-
-ICacheKeyProvider  [addition in Phase 25]
-    BuildKey(string entity, string id, int version, params string[] extraSegments) → string
-    // When version > 0 appends :v{version}. Version 0 = original format unchanged.
-
-ConnectionHealthState  [new enum in Phase 26 — SharedKernel.Caching.Abstractions]
-    Connected | Reconnecting | Disconnected
-
-IRedisChannelService  [addition in Phase 26]
-    ConnectionHealth                  ConnectionHealthState { get; }
-
-ICacheWarmupStrategy  [new in Phase 28 — SharedKernel.Caching.Abstractions]
-    Name                              string { get; }
-    Order                             int { get; }
-    WarmupAsync(ICacheService cache, CancellationToken ct) → ValueTask
-
-ITenantCacheKeyProvider  [new in Phase 29 — SharedKernel.Caching.Abstractions]
-    // Extends ICacheKeyProvider.
-    BuildTenantKey(string tenantId, string entity, string id, params string[] extraSegments) → string
-    // Format: {service}:{tenant}:{entity}:{id}[:{extra}...]
-    // tenantId is always an explicit parameter — never resolved from ambient context.
-    // Zero dependency on 12.Security or IHttpContextAccessor.
-
-IFencedLock  [new in Phase 43 — SharedKernel.Caching.Abstractions]
-    : IAsyncDisposable
-    FencingToken                      long { get; }
-    // Monotonically increasing, sourced from an atomic per-resource Redis INCR — never
-    // client-generated. XML doc states the standard usage contract: the PROTECTED RESOURCE's
-    // own write path must reject any write presenting a token that is not strictly greater
-    // than the last-accepted token it recorded — this package provides the token, never the
-    // enforcement.
-
-IRenewableLock  [extended in Phase 43]
-    : IFencedLock   (adds FencingToken)
-    // RedLockDistributedLockService's AcquireAsync-returned handle also implements IFencedLock
-    // additively — AcquireAsync's own IAsyncDisposable? return type is unchanged.
-
-ITenantCacheService  [new in Phase 44, complete — SharedKernel.Caching.Abstractions]
-    GetAsync<T>(string tenantId, string entity, string id, CancellationToken ct)                → ValueTask<T?>
-    SetAsync<T>(string tenantId, string entity, string id, T value, CachePolicy policy,
-               CancellationToken ct)                                                             → ValueTask
-    GetOrSetAsync<T>(string tenantId, string entity, string id,
-                     Func<CancellationToken,ValueTask<T>> factory, CachePolicy policy,
-                     CancellationToken ct)                                                       → ValueTask<T>
-    RemoveAsync(string tenantId, string entity, string id, CancellationToken ct)                 → ValueTask
-    RemoveByTagAsync(string tenantId, string tag, CancellationToken ct)                          → ValueTask
-    // Every method's tenantId is mandatory and non-defaulted. Default implementation composes
-    // ICacheService + ITenantCacheKeyProvider.BuildTenantKey. SetAsync/RemoveByTagAsync tenant-scope
-    // any CachePolicy.WithTags(...) tags as {tenantId}:{tag} — see "Tenant cache service rules".
-    // Zero dependency on 12.Security or IHttpContextAccessor.
+DistributedLockUnavailableException : Exception
+    static ForResource(string resource, Exception? inner = null); Resource string?
 ```
 
-### `SharedKernel.Caching.Redis.Core` — public surface (implemented, Phase 32)
+**Fencing contract (stated in the XML docs):** a holder can lose a lock without knowing it. Every lock or lease gets a token strictly greater than every earlier lock or lease on the same resource (gaps are normal). The **protected resource's own write path** must reject a token that is not greater than the last one it accepted — this domain provides the token, never the enforcement. Resource names are global across services; prefix them with the service name unless services must contend.
 
-> These types are **not** part of `SharedKernel.Caching.Abstractions` — they are concrete connection/resilience primitives shared by `.Redis`, `.DistributedLocking`, `.HashStore`, and `.PubSub`. No `Abstractions` contract changes in WO-023.
+### `SharedKernel.Caching.Redis.Core` — public surface
 
 ```text
-RedisConnectionOptions  [sealed class — Phase 32; Ssl/ClientCertificates/CertificateValidation added Phase 45]
+ConnectionHealthState  (enum, namespace SharedKernel.Caching.Redis.Core)
+    Connected | Reconnecting | Disconnected
+
+RedisConnectionOptions  (sealed class)
     ConnectionString         string                                                        ([Required])
     ConnectTimeoutMs         int                                                           ([Range(100,60000)], default 5000)
     Ssl                      bool                                                          (default false)
     ClientCertificates       X509Certificate2Collection?                                   (default null)
     CertificateValidation    Func<X509Certificate2, X509Chain?, SslPolicyErrors, bool>?     (default null)
     // Registered via AddOptions<RedisConnectionOptions>().Configure(...).ValidateDataAnnotations()
-    // .ValidateOnStart() — [Required]/[Range] are genuinely enforced at host-startup time (Phase 45).
-    // Ssl/ClientCertificates/CertificateValidation compose into ConfigurationOptions.Ssl and
-    // ConfigurationOptions.SslClientAuthenticationOptions (NOT .CertificateSelection/.CertificateValidation,
-    // which do not exist on StackExchange.Redis 2.13.1's ConfigurationOptions) before
-    // ConnectionMultiplexer.Connect(...). All default to today's exact plaintext behavior — additive, not breaking.
+    // .ValidateOnStart(). Ssl/ClientCertificates/CertificateValidation compose into
+    // ConfigurationOptions.Ssl and ConfigurationOptions.SslClientAuthenticationOptions before
+    // ConnectionMultiplexer.Connect(...). All default to plaintext behaviour.
 
-RedisCircuitBreakerOptions  [sealed class — Phase 32; generalized from Ph.30 RedisL2Options.CircuitBreakerOptions]
-    Enabled             bool          (default false)
-    FailureThreshold    int           ([Range(1,int.MaxValue)], default 5)
-    SamplingDuration    TimeSpan      (default 10s)
-    BreakDuration       TimeSpan      (default 30s)
-    MinimumThroughput   int           ([Range(1,int.MaxValue)], default 3)
+RedisCircuitBreakerOptions  (sealed class)
+    Enabled (false), FailureThreshold ([Range(1,int.MaxValue)], 5), SamplingDuration (10 s),
+    BreakDuration (30 s), MinimumThroughput ([Range(1,int.MaxValue)], 3)
 
-RedisConnectionHealthTracker  [sealed class — Phase 32]
+RedisConnectionHealthTracker  (sealed class)
     ConnectionHealth    ConnectionHealthState { get; }
-    // Wraps IConnectionMultiplexer.ConnectionRestored / ConnectionFailed.
-    // internal OnConnectionRestored / OnConnectionFailed exposed via InternalsVisibleTo for test simulation.
-    // Passive health observer only — no resubscription/replay logic (that remains in
-    // RedisChannelService / .Redis.PubSub, Phase 36).
+    // Wraps IConnectionMultiplexer.ConnectionRestored / ConnectionFailed. internal OnConnectionRestored /
+    // OnConnectionFailed exposed via InternalsVisibleTo for tests. Passive observer — no resubscription.
 
 AddRedisConnection(this IServiceCollection, string connectionString,
                     Action<RedisConnectionOptions>? configure = null)  → IServiceCollection
-    // TryAddSingleton<IConnectionMultiplexer> (first caller wins) + TryAddSingleton<RedisConnectionHealthTracker>
-    // The IConnectionMultiplexer factory logs a one-time Warning (LoggingEventIdRanges.Caching + 102) when a
-    // non-loopback endpoint is configured with Ssl = false (Phase 45) — never a thrown exception.
+    // TryAddSingleton<IConnectionMultiplexer> (first caller wins) + TryAddSingleton<RedisConnectionHealthTracker>.
+    // The multiplexer factory logs a one-time Warning (LoggingEventIdRanges.Caching + 102) for a
+    // non-loopback endpoint with Ssl = false — never a thrown exception.
 
 AddRedisCircuitBreaker(this IServiceCollection, Action<RedisCircuitBreakerOptions>? configure = null)
     → IServiceCollection
     // TryAddSingleton<ResiliencePipeline> only when Enabled = true (FailureRatio=1.0 / MinimumThroughput pattern)
 ```
 
-### `SharedKernel.Caching.FusionCache` — cache-encryption additions (Phase 46/WO-081, shipped — supersedes Phase 42)
-
-> Not part of `SharedKernel.Caching.Abstractions` — these are concrete FusionCache-package types, listed here because they compose directly with the Abstractions surface above.
->
-> **Phase 42's `CacheEncryptionSerializer` (`IFusionCacheSerializer` decorator) is retired and deleted outright.** It is superseded by `EncryptedCacheService`, a decorator over `ICacheService` itself. See "Cache-value encryption rules" below for the full structural reason this moved layers, and why it is a permanent design decision — not a stepping stone to revert.
+### `SharedKernel.Caching.Redis.PubSub` / `.Redis.HashStore` — provider contracts
 
 ```text
-EncryptedCacheService  [Phase 46/WO-081 — internal sealed partial, SharedKernel.Caching.FusionCache]
-    : ICacheService
-    // Decorates whichever ICacheService is currently registered. Every member encrypts/decrypts
-    // via the async-only ISymmetricEncryptionService.EncryptAsync/DecryptAsync (any IEncryptionKeyProvider,
-    // KMS-backed included). Associated data (AAD) is Encoding.UTF8.GetBytes(key) — the exact cache key string the
-    // member receives — never tags (unreachable at GetAsync<T>(key, ct) time). Stores an
-    // byte[] — EncryptedPayload.ToBytes(), 01.Core's storage format — as T on the wrapped ICacheService
-    // (P-545; a stored value that fails EncryptedPayload.TryParse is handled like a decrypt failure).
-    // A decrypt failure (tamper, wrong key, or AAD/key mismatch — indistinguishable) is logged
-    // (LoggingEventIdRanges.Caching + 15, Warning) and treated as a cache miss; the corrupt entry
-    // is best-effort evicted. When Brotli compression was previously applied, this type also takes
-    // over compression duty (compress-then-encrypt on write, decrypt-then-decompress on read) via
-    // BrotliPayloadCodec, called unconditionally (thresholdBytes: 0) — the per-service configured
-    // L2ThresholdBytes/Level from AddBrotliCompression() do not carry over, by design (see rules).
+IRedisChannelService  (namespace SharedKernel.Caching.Redis.PubSub)   [ephemeral / at-most-once]
+    ConnectionHealth                                                     ConnectionHealthState { get; }
+    PublishAsync(string channel, string message, CancellationToken ct)   → ValueTask
+    SubscribeAsync(string channel, Func<string, ValueTask> handler, CancellationToken ct) → ValueTask
+    UnsubscribeAsync(string channel, CancellationToken ct)               → ValueTask
 
-BrotliPayloadCodec  [Phase 46/WO-081 — internal static, SharedKernel.Caching.FusionCache]
-    // Shared Brotli compress/decompress mechanics extracted from BrotliCacheSerializer — identical
-    // magic-byte-prefixed wire shape (0x42 0x52/"BR"), used by both BrotliCacheSerializer (via its
-    // own configured threshold/level) and EncryptedCacheService (threshold 0 — unconditional).
+IRedisHashService  (namespace SharedKernel.Caching.Redis.HashStore)
+    GetFieldAsync<T>(string key, string field, JsonTypeInfo<T> typeInfo, CancellationToken ct)        → ValueTask<T?>
+    SetFieldAsync<T>(string key, string field, T value, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask
+    GetAllFieldsAsync<T>(string key, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask<IReadOnlyDictionary<string, T>>
+    DeleteFieldAsync(string key, string field, CancellationToken ct)                  → ValueTask
+    IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)   → ValueTask<long>
 
-CacheSerializationOptions  [Phase 46/WO-081 — internal sealed, SharedKernel.Caching.FusionCache]
-    Value   JsonSerializerOptions
-    // DI holder for the exact JsonSerializerOptions AddSharedKernelCaching constructs for
-    // FusionCache's own serializer (combining the consumer's CachingOptions.SerializerContext, if
-    // any, with CacheInvalidationMessageJsonContext.Default and, as of this phase,
-    // EncryptedCacheEntryJsonContext.Default) — registered unconditionally, so EncryptedCacheService
-    // can reuse the identical instance for its own T-to-plaintext-bytes step instead of re-deriving
-    // a second, possibly divergent one. Falls back to JsonSerializerDefaults.Web when no
-    // SerializerContext was supplied.
-
-EncryptedCacheEntryJsonContext  [Phase 46/WO-081, renamed P-545 — internal sealed partial, SharedKernel.Caching.FusionCache]
-    : JsonSerializerContext
-    // STJ source-generated context for byte[] (the stored encrypted entry), combined into CacheSerializationOptions'
-    // resolver chain so the wire envelope stays NativeAOT-safe when a SerializerContext is supplied.
-
-CacheEncryptionOptions  [Phase 42 — SharedKernel.Caching.FusionCache, unchanged]
-    Enabled   bool   (always true once registered)
-    // Marker options registered by AddCacheEncryption(); carries no secret material. Its presence
-    // in the service collection is how AddBrotliCompression() detects, at registration time, that
-    // encryption has already been applied. Zero code change to AddBrotliCompression() itself was
-    // needed by the Phase 46 redesign — this marker's registration point/shape is identical.
-
-AddCacheEncryption(this ICachingBuilder)  → ICachingBuilder    [Phase 42, rewritten Phase 46/WO-081]
-    // Wraps whichever ICacheService is currently registered with EncryptedCacheService (not
-    // IFusionCacheSerializer with CacheEncryptionSerializer, as Phase 42 did).
-    // Requires ISymmetricEncryptionService already registered (an IEncryptionKeyProvider plus
-    // AddSharedKernelCryptography(configuration).AddSymmetricEncryption()) — throws
-    // InvalidOperationException naming that prerequisite if missing (unchanged from Phase 42).
-    // Requires ICacheService already registered (AddSharedKernelCaching()) — throws
-    // InvalidOperationException naming that prerequisite if missing (NEW in Phase 46).
-    // When the currently-registered IFusionCacheSerializer is a BrotliCacheSerializer, unwraps it
-    // back to its .Inner and captures compressionEnabled = true for EncryptedCacheService —
-    // compression duty moves to this layer so FusionCache's own serializer never re-attempts
-    // compression against already-encrypted (incompressible) bytes.
-    // Must still be called AFTER AddBrotliCompression() when both are used — AddBrotliCompression()'s
-    // own ordering guard (checking for CacheEncryptionOptions) is unchanged and still enforces this.
+ITypedHashStore<T>  (namespace SharedKernel.Caching.Redis.HashStore)   [no per-call JsonTypeInfo<T>]
+    GetFieldAsync / SetFieldAsync / GetAllFieldsAsync / DeleteFieldAsync / IncrementFieldAsync (same shapes, no typeInfo)
 ```
 
-### `SharedKernel.Caching.FusionCache` — tenant cache service additions (Phase 44, complete)
+### `SharedKernel.Caching.Redis.DistributedLocking` — public surface
 
 ```text
-TenantCacheService  [Phase 44 — internal sealed, SharedKernel.Caching.FusionCache]
-    : ITenantCacheService
-    // Composes ICacheService + ITenantCacheKeyProvider. See "Tenant cache service rules".
+AddRedisDistributedLocking(this ICachingBuilder, string connectionString,
+                           Action<RedisLockOptions>? configure = null)      → ICachingBuilder
+AddRedisDistributedLocking(this IServiceCollection, string connectionString,
+                           Action<RedisLockOptions>? configure = null)      → IServiceCollection
+    // Both overloads are supported (neither is obsolete) and register the same services:
+    // AddRedisConnection(connectionString, ConnectTimeoutMs), TryAddSingleton(TimeProvider.System),
+    // TryAddSingleton<IDistributedLockService, RedisDistributedLockService>. The IServiceCollection
+    // overload is the lock-only host entry point (no FusionCache, no ICachingBuilder needed).
 
-AddTenantCacheService(this ICachingBuilder)  → ICachingBuilder    [Phase 44]
-    // Additive to AddTenantCacheKeyProvider() — never replaces or removes that lower-level registration.
-    // If ITenantCacheKeyProvider is not already registered, this method also registers it
-    // (TryAddSingleton), so ITenantCacheService resolves correctly on its own.
+RedisLockOptions  (sealed class)
+    SectionName = "SharedKernelCaching:DistributedLock"
+    ConnectionString  string  ([Required])
+    ConnectTimeoutMs  int     ([Range(100, 60000)], default 5000)
+```
+
+### `SharedKernel.Caching.FusionCache` — public surface
+
+```text
+AddSharedKernelCaching(this IServiceCollection, Action<CachingOptions>? configure = null) → ICachingBuilder
+    // AddOptions<CachingOptions>().ValidateDataAnnotations().ValidateOnStart() + Configure(configure);
+    // TryAddEnumerable(IValidateOptions<CachingOptions>, CachingOptionsValidator) — TryAddEnumerable, not
+    // TryAddSingleton, because ValidateDataAnnotations already registered an IValidateOptions<CachingOptions>;
+    // TryAddSingleton would silently skip the validator.
+    // Registers: IFusionCacheSerializer (STJ, via a registered FusionCacheSystemTextJsonSerializer),
+    // CacheSerializationOptions, FusionCache with its own MemoryCache (SizeLimit = L1SizeLimit, entry Size = 1),
+    // TryAddSingleton<ICacheService, FusionCacheService>, one CacheKeyProvider behind ICacheKeyProvider AND
+    // ITenantCacheKeyProvider (each TryAdd — a consumer may override either).
+
+CachingOptions  (sealed class)
+    SectionName = "SharedKernelCaching"
+    ServiceName        string  (NO default — empty; must satisfy CacheKeyFormat.IsValidServiceName)
+    L1SizeLimit        int     ([Range(1, int.MaxValue)], 10_000 — an entry count)
+    CacheName          string  ([Required], "default")
+    WaitForWarmup      bool    (false)
+    Compression        CompressionOptions { Enabled (false), L2ThresholdBytes (1024), Level (Fastest) }
+    SerializerContext  JsonSerializerContext?
+
+AddTenantCacheService(this ICachingBuilder)  → ICachingBuilder
+    // TryAddSingleton<ITenantCacheService, TenantCacheService>; the key providers come from AddSharedKernelCaching.
+
+TenantCacheService  (internal sealed : ITenantCacheService)
+    // key = ITenantCacheKeyProvider.BuildTenantKey(tenantId, entity, id); write policy = policy.ForTenant(tenantId);
+    // RemoveByTagAsync → ICacheService.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(tenantId, tag));
+    // RemoveTenantAsync → ICacheService.RemoveByTagAsync(CacheKeyFormat.BuildTenantWideTag(tenantId)).
+
+AddBrotliCompression(this ICachingBuilder, Action<CachingOptions.CompressionOptions>? configure) → ICachingBuilder
+    // Replaces IFusionCacheSerializer with BrotliCacheSerializer (Inner = the STJ serializer).
+    // Throws InvalidOperationException if CacheEncryptionOptions is already registered (must precede
+    // AddCacheEncryption); ArgumentException for L2ThresholdBytes <= 0.
+
+AddCacheEncryption(this ICachingBuilder)  → ICachingBuilder
+    // Guards (InvalidOperationException): ISymmetricEncryptionService registered (names
+    // AddSharedKernelCryptography(configuration).AddSymmetricEncryption()); ICacheService registered;
+    // IFusionCacheSerializer registered (both name AddSharedKernelCaching()).
+    // Unwraps a BrotliCacheSerializer back to its Inner and passes compressionEnabled = true to
+    // EncryptedCacheService; replaces ICacheService with EncryptedCacheService wrapping the previous
+    // registration; registers the CacheEncryptionOptions marker.
+
+EncryptedCacheService  (internal sealed partial : ICacheService)
+    // AAD = Encoding.UTF8.GetBytes(key). Stores byte[] = EncryptedPayload.ToBytes() in the wrapped ICacheService.
+    // Value → JSON (CacheSerializationOptions.Value) → optional Brotli (BrotliPayloadCodec, threshold 0) →
+    // EncryptAsync. RemoveAsync/ExpireAsync/RemoveByTagAsync/RemoveByTagsAsync/ClearAsync pass through.
+
+BrotliCacheSerializer / BrotliPayloadCodec (internal static)   // magic bytes 0x42 0x52 ("BR"), shared codec
+CacheSerializationOptions (internal sealed) { Value JsonSerializerOptions }
+EncryptedCacheEntryJsonContext (internal sealed partial JsonSerializerContext, [JsonSerializable(typeof(byte[]))])
+CacheEncryptionOptions (public sealed) { Enabled = true }   // marker only, no secret material
+CacheJsonSerializerContext (public abstract JsonSerializerContext)   // STJ base for consumer contexts
+AddCacheWarmup<TStrategy>(this ICachingBuilder) → ICachingBuilder
+```
+
+### `SharedKernel.Caching.Redis` — public surface
+
+```text
+AddRedisL2(this ICachingBuilder, string connectionString, Action<RedisL2Options>? configure = null) → ICachingBuilder
+    // AddRedisConnection(connectionString, ConnectTimeoutMs); AddStackExchangeRedisCache (InstanceName = KeyPrefix);
+    // AddFusionCache().WithRegisteredDistributedCache().WithRegisteredSerializer().WithStackExchangeRedisBackplane(...);
+    // AddRedisCircuitBreaker(...) from RedisL2Options.CircuitBreaker.
+
+RedisL2Options  (sealed class)
+    SectionName = "SharedKernelCaching:Redis"
+    ConnectionString string, KeyPrefix string (""), ConnectTimeoutMs int (5000),
+    CircuitBreaker RedisCircuitBreakerOptions { get; }
 ```
 
 ---
@@ -407,559 +376,397 @@ AddTenantCacheService(this ICachingBuilder)  → ICachingBuilder    [Phase 44]
 
 ### Core cache rules
 
-- `ICacheService` is **always** backed by FusionCache — never raw `IMemoryCache` or `IDistributedCache`.
-- `CachePolicy` is a sealed, immutable record — no subclassing, no mutation after construction.
-- Callers **must** use `GetOrSetAsync` for stampede protection. `GetAsync` + `SetAsync` in sequence is a bug.
-- The Redis L2 backplane is opt-in. When `AddRedisL2` is not called, `ICacheService` operates L1-only silently.
-- `IDistributedLockService.AcquireAsync` returns `null` on timeout — it must never throw for a contended lock.
-- No static mutable state anywhere in this domain.
-- `CachePolicy.NeverExpire` is for **truly static data only** (reference tables, feature flag snapshots, lookup codes). Any data that can change without notice must never use this preset. Callers using `NeverExpire` must explicitly invalidate via `ICacheService.RemoveAsync` or `ICacheInvalidationBus` — TTL-based expiry will not occur.
-- `CachePolicy.NeverExpire` must not set `EagerRefreshThreshold` — eager refresh is meaningless when no expiry is configured.
-- **`RemoveByTagAsync`'s cross-instance guarantee is proven (Phase 39, P-302).** Tag invalidation issued on one `ICacheService`/FusionCache instance propagates to every other independently-constructed instance sharing the same Redis L2 backplane and connection string — the two-pods-of-one-microservice topology. This requires **zero** additional wiring beyond what `AddRedisL2` already provides (`WithRegisteredDistributedCache()` + `WithStackExchangeRedisBackplane()`); no `AddRedisL2`/`AddSharedKernelCaching` change was needed. **Carrying mechanism (confirmed via direct Redis `MONITOR` traffic inspection against a Testcontainers instance, not FusionCache source alone):** `RemoveByTagAsync` is not a per-key operation. It writes an ordinary FusionCache entry to a reserved, tag-scoped Redis key — `{KeyPrefix}v2:__fc:t:{tag}` — whose value is a "clear before this timestamp" marker, then **publishes that write to the same shared backplane channel** (`FusionCache.Backplane:v2` for the default/unnamed cache used by `AddSharedKernelCaching`) as any other `Set`/`Remove` call. Every entry FusionCache stores (tagged or not) carries its own creation `Timestamp` in its serialized envelope; on every subsequent read, FusionCache compares an entry's `Timestamp` against its tag's marker value (read from L1 if fresh, else L2) and treats the entry as logically expired if it predates the marker — triggering a factory re-invocation (or a fresh L2 read) exactly like a TTL expiry would. Because the marker write rides the identical L2-write-plus-backplane-broadcast path as regular data, **no separate tagging-specific backplane channel, option, or opt-in exists to configure** — `SkipBackplaneNotifications` (default `false`) is the only entry-options knob that could disable this, and neither `AddRedisL2` nor `AddSharedKernelCaching` sets it. The two instances did not need to share `CachingCoreOptions.ServiceName` for this specific guarantee (that option only affects `.Redis.PubSub`'s own channel-naming convention, an unrelated mechanism) — the test still pins both instances to the same `ServiceName` to keep the topology realistic. Proof: `SharedKernel.Caching.Redis.Tests/Integration/CrossInstanceTagInvalidationTests.cs`.
+- `ICacheService` is **always** backed by FusionCache in production — never raw `IMemoryCache` or `IDistributedCache`.
+- `CachePolicy` is a sealed, immutable record. Every `With…` method returns a new instance and validates its arguments; equality compares every setting and every tag in order.
+- Use `GetOrSetAsync` for stampede protection. `TryGetAsync` followed by `SetAsync` is a bug wherever the value is computed.
+- A miss is `CacheLookup<T>.Miss`; a cached `null` or `0` is a hit. Never collapse the two with `default`.
+- `SkipCaching()` returns the value to every waiting caller and writes nothing. It is how a failed `Result` avoids being cached while keeping stampede protection (`05.Application`'s `CachingBehavior` does exactly this). `SetDurations` overrides both durations for that one write.
+- `ExpireAsync` versus `RemoveAsync`: expire keeps the old value available to fail-safe if recomputing fails; remove drops it (a removed value is never served by fail-safe — `RemoveAsync_FailSafePolicy_FactoryFailureCannotServeRemovedValue`).
+- `ClearAsync` calls FusionCache `ClearAsync(allowFailSafe: false)` and logs a `Warning`. It removes every tenant's entries on every instance; use `ITenantCacheService.RemoveTenantAsync` for one tenant.
+- Background work (eager refresh, a soft factory timeout) can run the factory after the caller's request ended. A factory that uses request-scoped services (a scoped `DbContext`) must run with `WithoutEagerRefresh()` and no factory timeouts.
+- `CachePolicy.NeverExpire` is for reference data that changes only with an explicit `RemoveAsync`/`ExpireAsync`/tag removal. It carries no eager refresh.
+- `LocalOnly()` maps to `SkipDistributedCacheRead`/`SkipDistributedCacheWrite`/`SkipBackplaneNotifications`: the entry never reaches Redis and never tells other instances to evict.
+- The Redis L2 layer is opt-in. Without `AddRedisL2`, `ICacheService` operates L1-only.
+- No static mutable state anywhere in this domain (the static `Meter`/`ActivitySource` instruments are the documented exception).
+- **Cross-instance propagation needs no extra wiring.** With `AddRedisL2`, `RemoveAsync`, `ExpireAsync`, `RemoveByTagAsync`/`RemoveByTagsAsync` and `ClearAsync` reach every independently-constructed instance sharing the Redis connection string. `RemoveByTagAsync` is not a per-key operation: FusionCache writes a "clear before this timestamp" marker to a reserved tag key (`{KeyPrefix}v2:__fc:t:{tag}`) and publishes that write on the same backplane channel (`FusionCache.Backplane:v2` for the default cache) as any other `Set`/`Remove`. Every entry carries its creation `Timestamp`; on read, an entry older than its tag's marker is treated as expired. `SkipBackplaneNotifications` (off unless `LocalOnly()`) is the only knob that disables this. Confirmed by Redis `MONITOR` inspection and `CrossInstanceTagInvalidationTests`.
 
 ### Key naming rule
 
-- `CacheKeyProvider` produces keys in the format `{service}:{entity}:{id}[:{extraSegment}...]`.
-- `CachingOptions.ServiceName` defaults to `"app"` but must be explicitly set in production — validation fails on null/whitespace.
-- Callers must use `ICacheKeyProvider` rather than constructing key strings inline.
+- Keys: `{service}:{entity}:{id}[:{segment}...]`; tenant keys: `{service}:@{tenant}:{entity}:{id}[...]`; tenant tags: `@{tenant}:{tag}`; tenant-wide tag: `@{tenant}`. Every caller-supplied part is escaped by `CacheKeyFormat.Escape` (`%`, `:`, `@`).
+- `CachingOptions.ServiceName` has **no default**. `CachingOptionsValidator` rejects any value failing `CacheKeyFormat.IsValidServiceName`, and it runs on first `IOptions<CachingOptions>.Value` access and at host start (`ValidateOnStart`). Two services sharing a Redis instance therefore cannot collide on a forgotten default.
+- There is one key provider: the internal `CacheKeyProvider` implements both `ICacheKeyProvider` and `ITenantCacheKeyProvider` and reads the single validated `CachingOptions.ServiceName`. There is no second source of the service name anywhere in this domain.
+- Build keys through `ICacheKeyProvider`/`ITenantCacheKeyProvider`, never by string interpolation. To change a cached type's shape across a deployment, change the key (`BuildKey("invoice-v2", id)`); there is no policy-level versioning.
+- Global tags may not start with `@` (`WithTags` throws), so no global tag can match a tenant tag.
 
 ### IRedisChannelService scope constraint
 
-- `IRedisChannelService` is scoped to **cache-adjacent ephemeral signaling only**: cache invalidation signals, lightweight broadcast.
-- It must never be used for durable, ordered, or guaranteed-delivery messaging — that is `07.Messaging`'s domain.
-- This constraint must be stated in the XML doc on the interface.
-
-### ICacheInvalidationBus contract
-
-- Invalidation messages are ephemeral (Redis Pub/Sub). If a subscriber is offline when a message is published, it will not receive the invalidation and must rely on TTL expiry.
-- `ICacheInvalidationBus` is not a substitute for `07.Messaging`. This must be stated in the XML doc.
-- `PublishBroadcastInvalidationAsync` is a break-glass operation — the receiver logs a structured warning and relies on TTL rather than attempting to enumerate all keys.
-
-### Invalidation channel naming convention (enforced by `RedisCacheInvalidationBus`)
-
-- Targeted: `sharedkernel:cache:invalidation:{service-name}` where `{service-name}` is `options.ServiceName.ToLowerInvariant().Replace(' ', '-')`
-- Broadcast: `sharedkernel:cache:invalidation:broadcast` (literal constant)
-- Receivers subscribe to both their own named channel and the broadcast channel.
-- `ServiceName` is sourced from `IOptions<CachingCoreOptions>` (Abstractions) — not from `CachingOptions` (FusionCache). This is enforced after Phase 17.
+- `IRedisChannelService` is scoped to **cache-adjacent, loss-tolerant ephemeral signaling only**.
+- It must never be used for durable, ordered, or guaranteed-delivery messaging — that is `07.Messaging`'s domain. `00.Governance`'s SK0007 flags it in command/event-named classes, including namespace-qualified and `global::` references.
+- This constraint is stated in the XML doc on the interface.
 
 ### RedisChannelService rules
 
 - Always use `RedisChannel.Literal(channelName)` — never `RedisChannel.Pattern`.
-- All handler exceptions must be caught and logged at `LogLevel.Error`. They must never propagate to the Redis subscriber thread.
+- All handler exceptions are caught and logged at `Error`. They never propagate to the Redis subscriber thread.
 
 ### FusionCache STJ serializer AOT rule
 
 - `CachingOptions.SerializerContext` must be set to the microservice's source-generated `JsonSerializerContext` in any NativeAOT build.
-- When set, `AddSharedKernelCaching` passes `JsonSerializerOptions { TypeInfoResolver = JsonTypeInfoResolver.Combine(SerializerContext, CacheInvalidationMessageJsonContext.Default) }` to `WithSystemTextJsonSerializer()`.
-- When absent, FusionCache falls back to reflection-based STJ — acceptable for non-AOT builds, breaks NativeAOT.
-- `AddRedisL2` must **not** call `.WithSystemTextJsonSerializer()` — this silently overwrites the options-aware registration with a reflection-based default (fixed in Phase 18). `AddRedisL2` uses `.WithRegisteredSerializer()` so FusionCache picks up the DI-registered `IFusionCacheSerializer`.
-- Example: `services.AddSharedKernelCaching(o => o.SerializerContext = MyAppSerializerContext.Default);`
+- When set, `AddSharedKernelCaching` builds `JsonSerializerOptions { TypeInfoResolver = JsonTypeInfoResolver.Combine(SerializerContext, EncryptedCacheEntryJsonContext.Default) }` for FusionCache's STJ serializer and for `CacheSerializationOptions`.
+- When absent, FusionCache uses reflection-based STJ (`CacheSerializationOptions` falls back to `JsonSerializerDefaults.Web`) — acceptable for non-AOT builds, breaks NativeAOT.
+- `AddSharedKernelCaching` reads `L1SizeLimit` and `SerializerContext` by invoking `configure` on a temporary `CachingOptions` at registration time; values bound later from configuration do not affect them.
+- `AddRedisL2` must **not** call `.WithSystemTextJsonSerializer()` — it would overwrite the options-aware registration with a reflection-based default. It uses `.WithRegisteredSerializer()`.
 
 ### ITypedHashStore rules
 
-- `ITypedHashStore<T>` is the preferred API for type-specific Redis hash operations in application code. `IRedisHashService` with explicit `JsonTypeInfo<T>` params is the low-level primitive for generic infrastructure code — both are valid and neither is deprecated.
-- Register one `ITypedHashStore<T>` per DTO type at startup via `AddTypedHashStore<T>(JsonTypeInfo<T>)`. Multiple types may be registered independently.
-- `AddTypedHashStore<T>` throws `InvalidOperationException` if `IRedisHashService` is not already registered — call `AddRedisHashService` first.
-- `TypedHashStore<T>` is `internal sealed` — consumers depend only on `ITypedHashStore<T>`.
+- `ITypedHashStore<T>` is the preferred API for type-specific Redis hash operations in application code. `IRedisHashService` with explicit `JsonTypeInfo<T>` is the low-level primitive — both are valid.
+- Register one `ITypedHashStore<T>` per DTO type via `AddTypedHashStore<T>(JsonTypeInfo<T>)`.
+- `AddTypedHashStore<T>` throws `InvalidOperationException("AddTypedHashStore<T> requires AddRedisHashService to be called first.")` if `IRedisHashService` is not registered.
+- `TypedHashStore<T>` is `internal sealed`.
 
 ### RedisHashService rules
 
-- All typed methods accept `JsonTypeInfo<T>` — no `typeof(T)` reflection anywhere.
-- `IDatabase` reference is obtained once from `IConnectionMultiplexer.GetDatabase()` and cached.
-- `AddRedisHashService` throws `InvalidOperationException` if `IConnectionMultiplexer` is not already registered.
+- All typed methods accept `JsonTypeInfo<T>` — no `typeof(T)` reflection.
+- `IDatabase` is obtained once from `IConnectionMultiplexer.GetDatabase()` and cached.
+- Do not compress hash fields; callers who need it compress values before `SetFieldAsync`.
 
-### DI startup guard rules (Phase 19)
+### DI startup guard rules
 
-- `AddRedisChannelService` throws `InvalidOperationException` if `IConnectionMultiplexer` is not registered: `"AddRedisChannelService requires AddRedisL2 or AddRedisDistributedLocking to be called first to register IConnectionMultiplexer."`
-- `AddCacheInvalidationReceiver` throws `InvalidOperationException` if `IRedisChannelService` is not registered: `"AddCacheInvalidationReceiver requires AddRedisChannelService to be called first."`
-- `AddCacheInvalidationReceiver` throws `InvalidOperationException` if `ICacheService` is not registered: `"AddCacheInvalidationReceiver requires AddSharedKernelCaching to be called first to register ICacheService."`
-- `AddRedisDistributedLocking` canonical overload is on `ICachingBuilder` (returns `ICachingBuilder` for fluent chaining). The `IServiceCollection` overload is `[Obsolete]` and delegates to the builder overload.
-- Guard checks use `services.Any(sd => sd.ServiceType == typeof(...))` at registration time.
+- Guards use `services.Any(sd => sd.ServiceType == typeof(...))` at registration time and throw `InvalidOperationException`.
+- `AddRedisChannelService`: `"AddRedisChannelService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisHashService) to be called first to register IConnectionMultiplexer."`
+- `AddRedisHashService`: `"AddRedisHashService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisChannelService) to be called first to register IConnectionMultiplexer."`
+- `AddCacheEncryption` and `AddBrotliCompression` guards: see "Cache-value encryption rules" and "Brotli compression rules".
+- `AddRedisL2` and `AddRedisDistributedLocking` take a connection string and register the multiplexer themselves, so they need no guard.
 
-### L1SizeLimit rule (Phase 20)
+### L1SizeLimit rule
 
-- `CachingOptions.L1SizeLimit` is wired to FusionCache's `MemoryCacheOptions.SizeLimit` via `.WithMemoryCache(_ => new MemoryCache(new MemoryCacheOptions { SizeLimit = sizeLimit }))`. Every cache entry has `Size = 1` in both the default entry options and `BuildEntryOptions`, so `L1SizeLimit` is an **entry count** limit, not a byte limit.
-- Default is 10,000 entries. Services in K8s with strict memory limits must set this explicitly.
-- **Verified L2 key format (Phase 20):** `{KeyPrefix}v2:{user-key}`. The `v2:` schema-version separator is injected by `Microsoft.Extensions.Caching.StackExchangeRedis` (v10+) between the `InstanceName` (= `KeyPrefix`) and the user key. It is not added by FusionCache or SharedKernel. When `KeyPrefix` is empty the key is `v2:{user-key}`. This behavior is confirmed by integration test via raw `KeyExistsAsync` inspection against a live Redis container.
+- `CachingOptions.L1SizeLimit` is wired to a dedicated `MemoryCache(new MemoryCacheOptions { SizeLimit = L1SizeLimit })` via `.WithMemoryCache(...)`. Every entry has `Size = 1` (default entry options and `BuildEntryOptions`), so it is an **entry count**, not bytes. Default 10,000; set it explicitly under strict K8s memory limits.
+- **L2 key format:** `{KeyPrefix}v2:{user-key}`. The `v2:` separator is injected by `Microsoft.Extensions.Caching.StackExchangeRedis` (v10+) between `InstanceName` (= `KeyPrefix`) and the key. Verified by raw `KeyExistsAsync` against a live Redis container.
+- `Microsoft.Extensions.Caching.StackExchangeRedis` stores every L2 entry as a Redis **Hash** (`absexp`/`sldexp`/`data`), never a plain string: raw reads use `IDatabase.HashGetAsync(key, "data")`. The stored JSON is FusionCache's distributed-entry envelope (`Value`/`Timestamp`/`LogicalExpirationTimestamp`/`Tags`/`Metadata`); the cached value is nested in `Value`.
 
 ### Brotli compression rules
 
-- Compression is opt-in and L2-only. L1 in-process values are never compressed.
-- `AddBrotliCompression()` on `ICachingBuilder` wraps the registered `IFusionCacheSerializer` with `BrotliCacheSerializer`.
-- `BrotliCacheSerializer` prepends magic bytes `0x42 0x52` ("BR") to compressed payloads. On read it detects the prefix and decompresses; payloads without the prefix are forwarded to the base STJ serializer unchanged (backward-compatible).
-- `BrotliEncoder` (not `BrotliStream`) is used for compression — `ArrayPool<byte>.Shared` for the output buffer, no `MemoryStream` allocation on the hot path.
-- Default threshold: 1 024 bytes. Values smaller than this threshold are stored uncompressed regardless of `Enabled`. Default level: `CompressionLevel.Fastest`.
-- Do not apply compression to `IRedisHashService` hash fields — they are naturally small. Callers who need per-field compression must compress values before passing to `SetFieldAsync`.
-- protobuf-net is explicitly prohibited as a cache serializer: not NativeAOT-compatible, requires `[ProtoContract]` attribute on DTOs (violates clean architecture), breaks the Redis wire format across deployments.
+- Compression is opt-in and L2-only. L1 values are never compressed.
+- `AddBrotliCompression()` wraps the registered `IFusionCacheSerializer` with `BrotliCacheSerializer`.
+- Compressed payloads carry magic bytes `0x42 0x52` ("BR"); payloads without the prefix pass to the inner serializer unchanged.
+- `BrotliEncoder` (not `BrotliStream`) with `ArrayPool<byte>.Shared` for compression — no `MemoryStream` on the hot path. The mechanics live in the internal `BrotliPayloadCodec`, shared with `EncryptedCacheService`.
+- Default threshold 1,024 bytes; default level `CompressionLevel.Fastest`.
+- protobuf-net is prohibited as a cache serializer: not NativeAOT-compatible, requires `[ProtoContract]` on DTOs, breaks the Redis wire format across deployments.
 
-### Cache-value encryption rules (Phase 42, shipped; redesigned Phase 46/WO-081, shipped)
+### Cache-value encryption rules
 
-> **Structural finding — permanent design note, do not revert.** `IFusionCacheSerializer.Serialize<T>`/`Deserialize<T>`/`SerializeAsync<T>`/`DeserializeAsync<T>` take **only the value** — FusionCache's library internals never pass the cache key (or any tag) to the registered serializer. Phase 42's `CacheEncryptionSerializer`, a serializer-level decorator, was therefore always structurally incapable of deriving any key-bound associated data (AAD) — no amount of async-ifying its body would have changed this. Two alternatives were evaluated and rejected before landing on the design below: (1) AAD via `typeof(T)` alone — does not bind to the cache key at all, so a ciphertext written under key `A` would still decrypt cleanly if replayed under key `B` for the same `T`; rejected outright. (2) AAD via an `AsyncLocal<string>` ambient channel set immediately before each FusionCache call — rejected because `CachePolicy.WithEagerRefresh` (Phase 25) means FusionCache can re-invoke the value factory on a background continuation to proactively refresh a soon-to-expire entry, and that continuation is not verifiably guaranteed to be flowing from the same `AsyncLocal`-carrying execution context as the original caller — too fragile to ship without a guarantee this repo does not have. **Resolution:** encryption moved from the `IFusionCacheSerializer` layer to a new decorator over `ICacheService` itself, `EncryptedCacheService` — the one layer where the cache key is an explicit method parameter on every member, so AAD derivation is trivial, deterministic, and needs no ambient state. `CacheEncryptionSerializer` is deleted outright (it was `internal sealed`, never part of any public surface). If a future maintainer is tempted to "simplify" this back into a serializer decorator: don't — the key-blindness above is why that shape cannot work, not an oversight this phase left unaddressed.
+> **Why a service decorator, not a serializer decorator — do not revert.** `IFusionCacheSerializer` members receive only the value, never the cache key or tags, so a serializer-level decorator cannot bind ciphertext to its key. AAD from `typeof(T)` alone lets a ciphertext written under key `A` decrypt under key `B`; an `AsyncLocal` key channel is not guaranteed to flow into FusionCache's background eager-refresh factory calls. `EncryptedCacheService` decorates `ICacheService`, where the key is an explicit parameter on every member.
 
-- Encryption is opt-in via `AddCacheEncryption(this ICachingBuilder)`. Disabled by default — `AddSharedKernelCaching`/`AddRedisL2` behavior is unchanged unless explicitly called.
-- **`AddCacheEncryption()` now wraps `ICacheService`, not `IFusionCacheSerializer`.** It requires both `ISymmetricEncryptionService` (an `IEncryptionKeyProvider` plus `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()`) and `ICacheService` (`AddSharedKernelCaching()`) already registered — throwing `InvalidOperationException` naming whichever prerequisite is missing. The `ICacheService` guard is new in Phase 46; the `ISymmetricEncryptionService` guard's message names the P-545 builder calls.
-- **AAD is derived from the cache key only — never tags, and this is a forced consequence of the interface shape, not a design preference.** `CachePolicy.WithTags(...)` tags are available at `SetAsync<T>` time but not at `GetAsync<T>(string key, CancellationToken ct)` time (that member takes no `CachePolicy` parameter), so a tag-inclusive AAD could not be reproduced at decrypt time — violating `01.Core`'s own AAD contract that the caller must be able to reproduce byte-identical `associatedData` at decrypt time from context already available then. The cache key alone is available, identical, on both paths.
-- Every member calls `EncryptAsync`/`DecryptAsync` on `ISymmetricEncryptionService`, which is async-only since P-545 — so any `IEncryptionKeyProvider` works, KMS-backed included. `EncryptedCacheService` never needs `ISynchronousSymmetricEncryptionService` or an `ISynchronousEncryptionKeyProvider`.
-- **Stored shape (P-545):** the wrapped `ICacheService` stores a `byte[]` per key — `EncryptedPayload.ToBytes()`, `01.Core`'s versioned storage format (`EncryptedPayload` is no longer an STJ-serializable record). FusionCache's JSON serializer writes it as a Base64 string, covered by `EncryptedCacheEntryJsonContext` when a `SerializerContext` is supplied. A stored value that fails `EncryptedPayload.TryParse` is handled exactly like a decrypt failure (miss + eviction).
-- Applies to **both** L1 and L2 — unchanged from Phase 42's rationale, since `EncryptedCacheService` sits above both layers (it decorates `ICacheService`, which itself fronts both L1 and L2 uniformly).
-- A decrypt failure (tamper, wrong key, or AAD/key mismatch — indistinguishable from one another by design) is treated as a cache miss: logged at `Warning` (`LoggingEventIdRanges.Caching + 15`) and the corrupt entry is best-effort evicted (`RemoveAsync`, failure swallowed) so it does not fail identically on every subsequent read. `GetOrSetAsync` falls through to the factory exactly as a genuine miss would. `GetManyAsync` maps a decrypt failure for one key to `null` for that key only, matching the existing "every requested key has an entry" contract.
-- Built exclusively on `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService` (AES-256-GCM, authenticated) — no new cryptographic primitive, no third-party crypto library.
-- **Composition ordering is mandatory and structurally enforced, never left to call-order chance:** `AddBrotliCompression()` must still be called **before** `AddCacheEncryption()` when both are used — that ordering guard (`AddBrotliCompression()` throwing `InvalidOperationException` if `CacheEncryptionOptions` is already present) is completely unchanged by Phase 46. What changed is *who does the compressing*: when the currently-registered `IFusionCacheSerializer` is a `BrotliCacheSerializer`, `AddCacheEncryption()` unwraps it back to its `.Inner` and captures `compressionEnabled = true` — compression duty moves to `EncryptedCacheService` itself (compress-then-encrypt on write, decrypt-then-decompress on read, reusing `BrotliPayloadCodec`, the same codec `BrotliCacheSerializer` uses), because encryption must see plaintext bytes before compression can safely run and compression could no longer happen inside the serializer pipeline after encryption already ran outside it. When encryption is **not** opted in, `BrotliCacheSerializer` is completely untouched and keeps operating exactly as it does today — zero regression for the compression-only case.
-- Unlike Brotli's 1024-byte compression threshold, `EncryptedCacheService` applies both encryption and (when enabled) compression unconditionally — no size threshold for either. This mirrors Phase 42's own encryption-has-no-threshold rationale (AES-GCM's fixed per-value overhead is worth paying unconditionally for confidentiality) and extends it to compression once it moves to this layer: the per-service `L2ThresholdBytes`/`Level` configured via `AddBrotliCompression(o => ...)` do **not** carry over to `EncryptedCacheService` — a deliberate simplification, not an oversight, since `EncryptedCacheService`'s constructor captures only a `bool compressionEnabled`, never the source `CompressionOptions` instance.
-- **A genuine, accepted rollout consequence:** the wire shape changed from Phase 42's magic-byte-prefixed opaque blob to a directly-stored, JSON-serialized `EncryptedPayload` envelope. Any value encrypted under the retired `CacheEncryptionSerializer` (or under a different `compressionEnabled` configuration) fails to decrypt correctly after this phase deploys and is silently treated as a cache miss (per the decrypt-failure rule above), repopulating from the factory. This is a bigger-than-usual cold-cache wave on rollout, not a data-loss risk — caches are inherently re-derivable from the system of record. P-545 changed the stored shape again (JSON `EncryptedPayload` object → Base64 `byte[]` of `EncryptedPayload.ToBytes()`); entries in the older shape fail to deserialize or parse and are handled the same way.
-- `CacheEncryptionOptions` is unchanged from Phase 42 — still the marker `AddBrotliCompression()`'s ordering guard checks for, still carrying no secret material.
-- Do not apply `AddCacheEncryption` as a substitute for TLS on the Redis connection itself (see "Redis Connection Core rules") — this decorator protects the value at rest (on disk / in a Redis snapshot / visible to anyone with raw `KeyGet` access), TLS protects the value in transit. The two are complementary, not alternatives.
-- Composes with `AddTenantCacheService()` (Phase 44) order-independently — `TenantCacheService` resolves `ICacheService` lazily via normal constructor DI, so whichever decorator chain is fully assembled by the time the container is built is what it wraps. When both are used, `ITenantCacheKeyProvider.BuildTenantKey`'s tenant-scoped key string is exactly what `EncryptedCacheService` receives and binds as AAD — a demonstrated benefit of this redesign over the retired serializer-level approach, not a special case requiring extra code.
-
-### CacheInvalidationReceiver rules
-
-- It is a `BackgroundService` — registered via `AddHostedService`.
-- `StopAsync` must call `IRedisChannelService.UnsubscribeAsync` for both channels before `base.StopAsync`.
-- All deserialization and `ICacheService` errors are caught, logged at `LogLevel.Error`, and swallowed.
-- OTel span: `"cache.invalidation.receive"` with tags `cache.invalidation.source`, `cache.invalidation.correlation_id`, `cache.invalidation.type`. Attempt to link to parent trace via `ActivityContext.TryParse` on `CorrelationId`.
+- Opt-in via `AddCacheEncryption(this ICachingBuilder)`; disabled by default.
+- **AAD is the cache key only** (`Encoding.UTF8.GetBytes(key)`). Tags are unavailable at `TryGetAsync(key)` time, so a tag-inclusive AAD could not be reproduced on decrypt.
+- Every member uses `ISymmetricEncryptionService.EncryptAsync`/`DecryptAsync` (async-only), so any `IEncryptionKeyProvider`, KMS-backed included, works.
+- **Stored shape:** a `byte[]` per key — `EncryptedPayload.ToBytes()`, `01.Core`'s versioned storage format — written to L2 as a Base64 string (covered by `EncryptedCacheEntryJsonContext`).
+- Applies to both L1 and L2, since it sits above `ICacheService`.
+- **Decrypt failure** (tamper, wrong key, AAD mismatch — indistinguishable — or a stored value that fails `EncryptedPayload.TryParse`) is logged at `Warning` (`LoggingEventIdRanges.Caching + 15`) and the entry is best-effort evicted (`RemoveAsync`, non-cancellation failures swallowed):
+  - `TryGetAsync` returns a miss; `TryGetManyAsync` returns a miss for that key only.
+  - `GetOrSetAsync` evicts and recomputes **once through the wrapped service**, so the recompute keeps stampede protection. If the recomputed entry still does not decrypt (another writer keeps storing entries this process cannot read), it logs again and returns a fresh factory value without caching it. It never throws for a corrupt entry and never returns wrong data.
+- **Known limitation (accepted):** concurrent readers that all observe the same corrupt entry each evict it and each start the recompute through the wrapped service. Stampede protection collapses calls that overlap, but a reader arriving after one recompute has already stored the fresh entry can trigger one extra recompute. The cost is an extra factory run, never wrong data.
+- Built only on `01.Core/SharedKernel.Cryptography` (AES-256-GCM). No other cryptographic primitive or library.
+- **Composition order is structurally enforced:** `AddBrotliCompression()` must precede `AddCacheEncryption()` (it throws when `CacheEncryptionOptions` is already registered). When the registered serializer is a `BrotliCacheSerializer`, `AddCacheEncryption()` unwraps it to `.Inner` and passes `compressionEnabled = true`; `EncryptedCacheService` then compresses before encrypting and decompresses after decrypting, because compression after encryption is useless. Without encryption, `BrotliCacheSerializer` is untouched.
+- `EncryptedCacheService` compresses and encrypts unconditionally (threshold 0, `CompressionLevel.Fastest`); the `L2ThresholdBytes`/`Level` given to `AddBrotliCompression` do not carry over — by design, its constructor takes only `bool compressionEnabled`.
+- Entries in an older stored shape fail to parse or decrypt and are handled as decrypt failures (a cold-cache wave on rollout, not data loss).
+- Not a substitute for TLS on the Redis connection: encryption protects the value at rest, TLS in transit. Use both for sensitive data.
+- Composes with `AddTenantCacheService()` in either order: the tenant-scoped key `TenantCacheService` builds is exactly the AAD, so a payload replayed across tenants for the same `(entity, id)` fails to decrypt.
 
 ### STJ serialization rule
 
-- All serialization uses STJ source-generated contexts — no reflection-based serializer.
-- `CacheInvalidationMessage` includes its own `CacheInvalidationMessageJsonContext` source-gen context.
-- `CacheJsonSerializerContext` (STJ base for FusionCache payloads) resides in `SharedKernel.Caching.FusionCache` under namespace `SharedKernel.Caching.FusionCache`.
+- All serialization uses STJ; source-generated contexts for AOT builds.
+- `CacheJsonSerializerContext` (public abstract base) lives in `SharedKernel.Caching.FusionCache.Serialization`.
+- `EncryptedCacheEntryJsonContext` covers the stored `byte[]` entry.
 
 ### Shared multiplexer rule
 
-- `RedisChannelService`, `RedisHashService`, `RedisCacheInvalidationBus`, and the existing L2 backplane all share the single `IConnectionMultiplexer` singleton. No new connections are created.
-- Both `AddRedisL2` and `AddRedisDistributedLocking` register `IConnectionMultiplexer` as a singleton (via `TryAddSingleton` — first caller wins). Either call satisfies the guard in `AddRedisHashService` and `AddRedisChannelService`.
+- `RedisChannelService`, `RedisHashService`, `RedisDistributedLockService` and the L2 backplane share the single `IConnectionMultiplexer` registered by `AddRedisConnection` (`TryAddSingleton`, first caller wins). No package creates another connection. (The FusionCache backplane and `AddStackExchangeRedisCache` connect with the same connection string through their own libraries.)
 
-### Batch operations rules (Phase 22, execution model corrected Phase 40/P-303)
+### Batch operations rules
 
-- `GetManyAsync<T>` always returns a dictionary entry for every requested key — missing keys map to `null`. An empty input enumerable returns an empty dictionary.
-- `SetManyAsync<T>` applies a single `CachePolicy` to all entries — there is no per-key policy in a batch call. `entryOptions`/`tags` are computed once from the policy before the fan-out begins, not per entry.
-- **Execution model (Phase 40): bounded concurrent, not sequential.** `GetManyAsync<T>` and `SetManyAsync<T>` fan out per-key L2 round-trips via `System.Threading.Tasks.Parallel.ForEachAsync` (BCL, AOT-safe, no new NuGet dependency), bounded by `ParallelOptions.MaxDegreeOfParallelism = 16` — a **fixed internal constant** (`FusionCacheService.MaxBatchConcurrency`), deliberately **not** exposed as a `CachingOptions` knob; growing that public surface is left to a future phase if telemetry ever shows 16 is wrong for a given workload. A batch over N keys therefore no longer costs N fully serialized L2 round-trips when Redis L2 is active — up to 16 requests are in flight simultaneously.
-- `GetManyAsync<T>`'s result accumulator is a `System.Collections.Concurrent.ConcurrentDictionary<string, T?>`, materialized to `IReadOnlyDictionary<string, T?>` at the end — a **correctness** requirement, not a style choice: a plain `Dictionary` is not thread-safe for concurrent writes from multiple `Parallel.ForEachAsync` bodies.
-- **Accepted trade-off — partial-in-flight-on-failure:** the prior strictly-sequential `SetManyAsync` loop guaranteed that a failure on key K meant keys after K in iteration order were never attempted. Under the bounded-concurrent rewrite, up to `MaxDegreeOfParallelism` (16) keys beyond the failing one may already be in flight — and may complete — by the time the failure surfaces to the caller. This is a deliberate, accepted consequence of parallelizing the loop, not a regression to silently work around; callers that need strict fail-fast-with-no-further-writes semantics must not rely on `SetManyAsync`'s iteration order.
-- `IRedisL2BatchService`/`RedisL2BatchService` are **retired (Phase 40) — deleted outright, not deprecated-and-kept.** They were `internal` to `SharedKernel.Caching.Redis`, carried zero DI registration, and had zero production caller since their Phase 22 introduction — confirmed dead code by a full-domain grep before Phase 40 was authored. They were also architecturally unreachable from `FusionCacheService` regardless of any future wiring attempt, because `.FusionCache` and `.Redis` are strict sibling packages that must never reference each other (Phase 17 rule) and the type was `internal` besides. The now-empty `SharedKernel.Caching.Redis/Batch/` folder and the `RedisL2BatchService`-only `InternalsVisibleTo` grant in `SharedKernel.Caching.Redis.csproj` were removed in the same phase.
-- `FakeCacheService` in `16.Testing` must implement both batch methods (unaffected by Phase 40 — the fake's contract-level behavior is unchanged; only the real `FusionCacheService` implementation's execution model changed).
-- Per-key stampede protection (FusionCache's own internal per-key locking inside `GetOrSetAsync`) is unrelated to and unaffected by `GetManyAsync`/`SetManyAsync`, which never invoke factories — proven by a regression test that runs the stampede scenario concurrently interleaved with an unrelated batch call (see Test Rules).
+- `TryGetManyAsync<T>` returns one `CacheLookup<T>` per **distinct** requested key (duplicates collapse; null/whitespace keys throw `ArgumentException`). An empty input returns an empty dictionary.
+- `SetManyAsync<T>` applies one `CachePolicy` to all entries; entry options and tags are computed once before the fan-out.
+- **Bounded concurrent execution:** both fan out per-key L2 round-trips via `Parallel.ForEachAsync` with `MaxDegreeOfParallelism = 16` (`FusionCacheService.MaxBatchConcurrency`, a fixed internal constant, not a `CachingOptions` knob). `TryGetManyAsync`'s accumulator is a `ConcurrentDictionary` — a correctness requirement.
+- **Accepted trade-off:** when one `SetManyAsync` write fails, up to 16 other writes may already be in flight and complete. Callers must not rely on iteration order for fail-fast semantics.
+- `EncryptedCacheService.TryGetManyAsync` delegates the batch read to the wrapped service and decrypts sequentially; `SetManyAsync` encrypts sequentially, then delegates one batch write.
+- Batch operations never invoke factories, so they cannot interfere with per-key stampede protection (proven by an interleaving regression test).
 
-### Renewable lock rules (Phase 23)
+### Distributed locking rules
 
-- `IRenewableLock.RenewAsync` returns `false` for a lost lock — it must never throw.
-- `IRenewableLock.IsAcquired` transitions to `false` after `DisposeAsync` and after renewal returns `false`.
-- `KeepAliveAsync` is a static extension method on `IRenewableLock` in `SharedKernel.Caching.Redis`; the caller owns cancellation.
-- `AcquireRenewableAsync` returns `null` if the lock cannot be acquired within `wait` — consistent with `AcquireAsync` semantics.
-- RedLock.net 2.3.2 has **no public `ExtendAsync`**. `RedLockRenewableLock` uses re-acquisition: dispose the old lock first, then `CreateLockAsync` on the same resource. This has a brief unprotected window but is the only option on a single-node Redis without a public extend API. Do not search for `ExtendAsync` on `IRedLock` — it does not exist in the public surface.
+- **Two primitives, different lifetimes.** A lock guards a critical section and is kept alive until disposed — always `await using`. A lease claims a resource for a fixed duration and is never released or extended; use it for "this occurrence runs once across replicas" (`19.Scheduling`'s per-occurrence lease).
+- **Three outcomes, never conflated.** A lock or lease → acquired. `null` → another holder has the resource (for a lock: for the whole `WaitTime`). `DistributedLockUnavailableException` → the store was unreachable (`RedisException` or `TimeoutException`, wrapped with `ForResource`). An outage must never be reported as contention; with a `WaitTime`, a store failure throws at once instead of waiting.
+- **Atomic acquisition and fencing.** One Lua script (`RedisLockScripts.Acquire`): `SET sharedkernel:lock:{resource} <owner> NX PX <ms>` and, only if that succeeded, `INCR sharedkernel:lock-fencing:{resource}`, returning the token (0 when contended). A token can never be issued to a holder that did not acquire, and a contended attempt never advances the counter. Locks and leases share the lock key and the counter, so they exclude each other and their tokens are mutually monotonic. The fencing key never expires. Both keys use the `{resource}` hash tag, so the script is valid on Redis Cluster.
+- **Keep-alive and loss.** `RedisDistributedLock` extends every `Expiry / 3` on a `PeriodicTimer(TimeProvider)` with a compare-owner `PEXPIRE` script. The lock is marked lost (`IsHeld = false`, `LostToken` cancelled, `Error` log `Caching + 307`) when an extension finds another owner, or when extensions keep failing until `Expiry` has passed since the last success. Store failures during keep-alive are logged (`Caching + 306`) and retried until then.
+- **Release.** `DisposeAsync` is idempotent: it stops the keep-alive, runs a compare-owner `DEL` (never deletes another owner's key; a store failure is logged at `Caching + 305` and the key expires on its own), then cancels `LostToken`. `LostToken` means "lost or released".
+- **Owner ids** are fresh `Guid`s per acquisition (`lease:` prefix for leases). Retry waits use `Task.Delay(delay, TimeProvider, ct)`; the retry interval is capped at the remaining wait time.
+- **Lease expiry** (`DistributedLease.ExpiresAt`) is `TimeProvider.GetUtcNow()` at request time plus the duration — approximate across machines.
+- **Failover caveat:** after a primary failover, a replica that had not received the lock key can grant it again. Fencing tokens are the protection in that window, so the protected write path must check them.
+- RedLock.net must not come back: it cannot issue a token in the acquisition step. `00.Governance`'s `RedisTopologyRules.DistributedLockingNeverReferencesRedLock` locks this.
 
-### Fencing token rules (Phase 43, complete)
-
-> **Directly mitigates the "brief unprotected window" caveat immediately above.** A lock holder preempted during that window (GC pause, network partition, or simply believing it still holds the lock after the dispose-then-recreate renewal race) can be prevented from corrupting protected state, provided the protected resource enforces the contract documented here.
-
-- `IFencedLock : IAsyncDisposable { long FencingToken { get; } }` — new interface in `SharedKernel.Caching.Abstractions`. `IRenewableLock` extends it (adds `FencingToken` to the existing interface); the concrete lock handle `RedLockDistributedLockService.AcquireAsync` returns additionally implements `IFencedLock` even though `AcquireAsync`'s own declared return type (`IAsyncDisposable?`) is unchanged — callers who want the token perform an `is IFencedLock`/`as IFencedLock` check.
-- Fencing tokens are sourced from an atomic, monotonically increasing Redis counter — `IDatabase.StringIncrementAsync` on a dedicated per-resource key, `sharedkernel:lock:fencing:{resource}` — **never** a client-generated GUID or a wall-clock timestamp. The counter is scoped per lock resource, not global: two different resources have entirely independent fencing sequences.
-- The `INCR` fires only after RedLock confirms a successful acquisition — a failed/contended `AcquireAsync` (returns `null`, per the Phase 19 never-throws rule) never advances the counter. Gaps in the sequence are acceptable — this is a strict-monotonicity guarantee, not a no-gaps guarantee.
-- `AcquireRenewableAsync`'s dispose-then-recreate re-acquisition (the rule immediately above) issues a fresh `INCR` on every renewal — the post-renewal handle's token is always strictly greater than the pre-renewal handle's.
-- **The standard fencing-token usage contract (must be stated verbatim in `IFencedLock.FencingToken`'s XML doc, mirroring the `ICacheInvalidationBus`/`IRedisChannelService` boundary-statement precedent):** the protected resource's own write path — never this package — must reject any write presenting a fencing token that is not strictly greater than the last-accepted token it recorded for that resource. `SharedKernel.Caching.Redis.DistributedLocking` provides the token; it has no knowledge of, and cannot enforce, what "the protected resource" is or how it stores its last-accepted token.
-- This is purely additive: `AcquireAsync`/`AcquireRenewableAsync`'s parameter lists, wait/retry/expiry semantics, and null-on-timeout behavior are unchanged.
-- **`16.Testing` cross-domain follow-up (not actioned here, out of `02.Caching`'s jurisdiction):** `IRenewableLock` gaining `FencingToken` is a breaking change for both known implementers — `RedLockRenewableLock` (this package, fully implemented) and `FakeRenewableLock` (`16.Testing`). Because `SharedKernel.Caching.Redis.DistributedLocking.Tests` carries a direct `ProjectReference` to `SharedKernel.Testing`, leaving `FakeRenewableLock` unchanged would have broken this package's own test build (a `16.Testing` compile failure cascades to any project referencing it) — so a **minimal, compile-only** fix was applied directly to `FakeRenewableLock` (`public long FencingToken { get; set; } = 1;`, no auto-increment on renewal, no new tests). This is deliberately narrow: a behaviorally-faithful fake (auto-incrementing `FencingToken` on `RenewAsync`, dedicated test coverage, DI registration checks) remains a queued follow-up phase for the `16.Testing` domain, not delivered here.
-
-### Sliding expiration rules (Phase 24)
-
-- `CachePolicy.SlidingWindow` maps to L1 `SlidingExpiration` only — L2 in Redis does not support sliding expiry; L2 uses the absolute `L2Duration` as a ceiling.
-- `CachePolicy.NeverExpire` and a non-null `SlidingWindow` together must throw `InvalidOperationException("CachePolicy.Sliding is incompatible with CachePolicy.NeverExpire.")` in `FusionCacheService.BuildEntryOptions`.
-- The guard lives in `BuildEntryOptions` (FusionCache package), not in `CachePolicy` construction (Abstractions) — Abstractions must remain free of runtime validation logic.
-
-### Key versioning rules (Phase 25)
-
-- `CachePolicy.KeyVersion` default is `0`. Version `0` produces no suffix change — identical key format to today. This is backward-compatible.
-- Version suffix format: `:v{version}` appended after all other segments. Example: `{service}:{entity}:{id}:v3`.
-- `ICacheService` method signatures do NOT change — key versioning is the caller's responsibility via `ICacheKeyProvider.BuildKey`. The version is baked into the key string.
-- `ICacheKeyProvider` gains a new `BuildKey` overload with `int version` parameter. Both overloads must be implemented by `CacheKeyProvider`.
-
-### Channel reconnect rules (Phase 26)
+### Channel reconnect rules
 
 - `RedisChannelService` subscribes to `IConnectionMultiplexer.ConnectionRestored` and `ConnectionFailed` in its constructor.
-- On `ConnectionRestored`: acquire the registry lock atomically for the full replay loop; resubscribe all channels; log per-channel failures at `Error` without aborting remaining channels; transition `ConnectionHealth` to `Connected` before the replay.
-- On `ConnectionFailed`: check `IConnectionMultiplexer.IsConnected`; set `Connected` if still connected, `Reconnecting` if not.
-- `ConnectionHealthState` enum lives in `SharedKernel.Caching.Abstractions` — it is a plain enum with no infrastructure dependencies.
-- `IRedisChannelService.ConnectionHealth` property is intended for health check consumption; stated in XML doc.
-- **Registry implementation**: `Dictionary<string, SubscriptionEntry>` + `object _registryLock` (replaces `ConcurrentDictionary`). The lock is held for the entire replay loop — prevents a concurrent `SubscribeAsync` from inserting a channel mid-replay. `SubscribeAsync` and `UnsubscribeAsync` both acquire `_registryLock`.
-- `_connectionHealth` is a `volatile int` field (cast to/from `ConnectionHealthState`) — AOT-safe, single-writer event callbacks, reads without a lock.
-- `OnConnectionRestored` and `OnConnectionFailed` are `internal` — exposed via `InternalsVisibleTo` so test projects can simulate events without a live multiplexer.
+- On `ConnectionRestored`: take the registry lock for the whole replay loop; resubscribe every channel; log per-channel failures at `Error` without aborting the rest; set `ConnectionHealth` to `Connected` before the replay.
+- On `ConnectionFailed`: `Connected` if `IConnectionMultiplexer.IsConnected`, otherwise `Reconnecting`.
+- `ConnectionHealthState` lives in `SharedKernel.Caching.Redis.Core` (P-547); `IRedisChannelService.ConnectionHealth` is for health checks.
+- **Registry:** `Dictionary<string, SubscriptionEntry>` + `_registryLock`, held for the entire replay so a concurrent `SubscribeAsync` cannot insert mid-replay. `SubscribeAsync`/`UnsubscribeAsync` take the same lock.
+- `_connectionHealth` is a `volatile int` cast to/from `ConnectionHealthState`.
+- `OnConnectionRestored`/`OnConnectionFailed` are `internal` (`InternalsVisibleTo`) so tests simulate events without a live multiplexer.
+- This replay logic is independent of `.Redis.Core`'s passive `RedisConnectionHealthTracker`; both may subscribe to the same multiplexer's events.
 
-### CachingCoreOptions standalone DI rules (Phase 27)
+### Cache warmup rules
 
-- `AddCachingCoreOptions(this IServiceCollection, Action<CachingCoreOptions>)` lives in `SharedKernel.Caching.Abstractions`.
-- It has zero dependency on FusionCache, StackExchange.Redis, or any provider package.
-- `AddSharedKernelCaching` behavior is unchanged — services calling it do not need `AddCachingCoreOptions`.
-- `AddRedisCacheInvalidationBus` logs `LogLevel.Warning` at startup if `ServiceName` is still the default `"app"`.
+- `ICacheWarmupStrategy.WarmupAsync` uses `ValueTask`.
+- `CacheWarmupHostedService` runs strategies in ascending `Order`, catches per-strategy exceptions, logs at `Error`, and continues — a failed strategy never crashes the pod.
+- `AddCacheWarmup<TStrategy>` uses `TryAddEnumerable` for the strategy and for the hosted service (idempotent).
+- `CachingOptions.WaitForWarmup = true` delays readiness until warmup completes (`IHostedLifecycleService.StartedAsync`).
 
-### Cache warmup rules (Phase 28)
+### Tenant cache service rules
 
-- `ICacheWarmupStrategy.WarmupAsync` uses `ValueTask` — consistent with the rest of the domain.
-- `CacheWarmupHostedService` catches per-strategy exceptions, logs at `Error`, and continues — a failed strategy must never crash the pod.
-- `AddCacheWarmup<TStrategy>` uses `TryAddEnumerable` for strategy registration (supports multiple strategies) and guards `CacheWarmupHostedService` registration to be idempotent.
-- `WaitForWarmup = true` in `CachingOptions` delays readiness via `IHostedLifecycle` (verify .NET 10 API at implementation time).
+> **`ITenantCacheService` is the recommended entry point for tenant data.** `ITenantCacheKeyProvider` remains available for callers that need raw tenant keys. `ICacheService` stays the entry point for genuinely global data.
 
-### Multi-tenant cache key rules (Phase 29)
+- Every method takes an explicit, non-defaulted `tenantId` and `(entity, id)` — never a pre-built key, never resolved from ambient context. Zero dependency on `12.Security` or `IHttpContextAccessor`.
+- `TenantCacheService` builds the key with `ITenantCacheKeyProvider.BuildTenantKey` and never formats keys itself.
+- **Tag scoping is mandatory:** every write passes `policy.ForTenant(tenantId)`, so tags become `@{tenant}:{tag}` and every entry also carries the tenant-wide tag `@{tenant}`. `RemoveByTagAsync(tenantId, tag)` removes `BuildTenantTag(tenantId, tag)`; `RemoveTenantAsync(tenantId)` removes `BuildTenantWideTag(tenantId)`. Because every part is escaped and global tags cannot start with `@`, two tenants sharing a tag name — or a global tag named like a tenant tag — can never cross-invalidate (a cross-tenant **invalidation** vector, worse than a read leak).
+- A policy that is already tenant-scoped throws `InvalidOperationException`: pass the unscoped policy.
+- `AddTenantCacheService()` only registers `ITenantCacheService`; the key providers come from `AddSharedKernelCaching()`.
 
-- `ITenantCacheKeyProvider.BuildTenantKey` key format: `{service}:{tenant}:{entity}:{id}[:{extra}...]`.
-- `tenantId` is always an explicit parameter — `ITenantCacheKeyProvider` never resolves tenant from HTTP context or ambient state.
-- `ITenantCacheKeyProvider` has zero dependency on `12.Security` or `IHttpContextAccessor`.
-- `AddTenantCacheKeyProvider` does NOT replace the existing `ICacheKeyProvider` registration.
+### Polly circuit breaker rules
 
-### Tenant cache service rules (Phase 44, complete)
+- `RedisCircuitBreakerOptions.Enabled` defaults to `false` — no Polly types registered, behaviour unchanged.
+- `Polly.Core` v8 only — do not add `Microsoft.Extensions.Http.Resilience`.
+- The `ResiliencePipeline` singleton is registered only when `Enabled = true`.
+- Complementary to FusionCache fail-safe, not a replacement.
+- **Count-based semantics via the ratio API:** `FailureRatio = 1.0` and `MinimumThroughput = FailureThreshold`.
+- **`BreakDuration` minimum:** Polly v8 enforces 500 ms; tests must not go below it.
+- **Optional injection:** `RedisHashService` and `RedisChannelService` resolve `sp.GetService<ResiliencePipeline>()`; `null` means no Polly overhead.
+- The FusionCache backplane and `RedisDistributedLockService` do not use the circuit breaker.
 
-> **`ITenantCacheService` is the recommended default entry point for a multi-tenant consumer.** `ITenantCacheKeyProvider` (rules immediately above) remains available and fully supported for callers that need raw tenant-scoped key construction only — neither is deprecated in favor of the other.
+### OTel metrics rules
 
-- `ITenantCacheService` requires an explicit, non-defaulted `tenantId` argument on every method (`GetAsync`/`SetAsync`/`GetOrSetAsync`/`RemoveAsync`/`RemoveByTagAsync`) — no overload defaults it, and it is never resolved from ambient context, mirroring `ITenantCacheKeyProvider`'s existing rule verbatim.
-- The default `TenantCacheService` composes `ICacheService` + `ITenantCacheKeyProvider` internally — every method calls `BuildTenantKey(tenantId, entity, id)` to construct the underlying key, then delegates. Zero duplicated key-formatting logic; this package never re-implements key construction.
-- **Tag tenant-scoping is mandatory, not optional:** FusionCache tags (`CachePolicy.WithTags`) live in a global namespace `ITenantCacheKeyProvider` does not touch. `TenantCacheService.SetAsync` rewrites every tag on the supplied policy to `{tenantId}:{tag}` before delegating, and `RemoveByTagAsync(tenantId, tag, ct)` applies the identical rewrite before calling `ICacheService.RemoveByTagAsync`. Skipping this would let two tenants sharing one tag name (e.g. both calling `.WithTags("orders")`) cross-invalidate each other's cache entries — a cross-tenant **invalidation** vector, strictly worse than a read leak.
-- Zero dependency on `12.Security` or `IHttpContextAccessor` — identical rule to `ITenantCacheKeyProvider`.
-- `AddTenantCacheService(this ICachingBuilder)` is additive to `AddTenantCacheKeyProvider()` — it never replaces or removes an already-registered `ITenantCacheKeyProvider`, and the Phase 29 rule that `AddTenantCacheKeyProvider` does not replace `ICacheKeyProvider` continues to hold transitively underneath it.
-- `ITenantCacheService` is a peer of `ICacheService`, not a universal replacement — a service with genuinely global (non-tenant-scoped) cached data continues to inject `ICacheService` directly.
+- `Meter("SharedKernel.Caching", "1.0")`, static readonly on `FusionCacheService`.
+- Instruments: `cache.hits`, `cache.misses`, `cache.factory.duration` (ms), `cache.errors`, `cache.evictions`.
+- `cache.key_prefix` is the first two key segments — `{service}:{entity}` for a global key, `{service}:@{tenant}` for a tenant key — never the `{id}`.
+- Hits/misses/evictions come from FusionCache memory events; `TryGetAsync` records its own miss because FusionCache's `TryGetAsync` raises no `Memory.Miss` event.
+- No `Enabled` guards around recording; no new NuGet dependency.
 
-### Polly circuit breaker rules (Phase 30)
+### OTel tracing rules
 
-- `RedisL2Options.CircuitBreaker.Enabled` defaults to `false` — all existing behavior is preserved when disabled.
-- Use `Polly.Core` v8 only — do not add `Microsoft.Extensions.Http.Resilience`. Confirmed AOT-compatible at version 8.5.2.
-- The circuit breaker `ResiliencePipeline` is registered as a singleton only when `Enabled = true`.
-- FusionCache's own fail-safe is not replaced — the Polly circuit breaker is complementary (short-circuits before the timeout accumulates).
-- **Count-based semantics via ratio API:** Polly v8 uses ratio-based circuit breaking (`FailureRatio` 0.0–1.0 + `MinimumThroughput`). To emulate count-based behaviour: set `FailureRatio = 1.0` and `MinimumThroughput = CircuitBreaker.FailureThreshold`. This means "all calls in the window must fail AND the threshold count must be reached."
-- **`BreakDuration` minimum:** Polly v8 enforces a minimum `BreakDuration` of `500ms`. The default of 30 s is safe; test code using shorter durations must use `TimeSpan.FromMilliseconds(500)` as the minimum.
-- **Optional DI injection:** `ResiliencePipeline` is resolved via `sp.GetService<ResiliencePipeline>()` (not `GetRequiredService`) in `RedisHashService` and `RedisChannelService` factory registrations. When not registered (disabled), the value is `null` and services operate without Polly overhead.
-- The FusionCache Redis backplane does not use the circuit breaker — FusionCache's own fail-safe covers L2 unavailability at that level.
+- `ActivitySource("SharedKernel.Caching", "1.0")` — same scope name/version as the `Meter` — static readonly on `FusionCacheService`.
+- Spans (`ActivityKind.Client`): `cache.get` (`TryGetAsync`), `cache.set` (`SetAsync`), `cache.get_or_set` (`GetOrSetAsync`). Batch, removal, expire and clear calls have no span.
+- Spans start **after** argument validation.
+- Tags: `cache.key_prefix` on all three; `cache.outcome` (`"hit"`/`"miss"`) on `cache.get` and `cache.get_or_set` (the latter from a `factoryInvoked` flag set inside the factory).
+- On an exception in the factory or `SetAsync`, `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` before rethrowing, alongside `cache.errors`.
+- `13.ServiceDefaults`' `WithCachingTelemetry` registers both the meter and the source by name.
 
-### OTel metrics rules (Phase 31)
+### Redis Connection Core rules
 
-- `Meter` name is `"SharedKernel.Caching"` (version `"1.0"`). Static readonly field — created once, AOT-safe.
-- `cache.key_prefix` tag value is `{service}:{entity}` (first two key segments only) — never the full key with `{id}` (high-cardinality).
-- No new NuGet dependencies — `System.Diagnostics.Metrics` is in the BCL for `net10.0`.
-- Use FusionCache events API (`IFusionCache.Events.Memory.*`) for hit/miss/eviction where available — prefer events over call-site instrumentation to avoid duplication.
-- Do not add `Enabled` guards around instrument recording — the BCL handles the no-listener fast path internally.
+- `SharedKernel.Caching.Redis.Core` is the **single registration point** for `IConnectionMultiplexer`: `AddRedisConnection` → `TryAddSingleton<IConnectionMultiplexer>`, first caller wins.
+- `RedisConnectionHealthTracker` is a passive observer; it performs no resubscription.
+- `ConnectionHealthState` is declared here (P-547) — `.Redis.Core` references no `SharedKernel.Caching` package, and the abstractions package declares no connection type.
+- `AddRedisConnection`/`AddRedisCircuitBreaker` are plain `IServiceCollection` extensions; fluent `ICachingBuilder` chaining belongs to the consuming packages.
 
-### OTel tracing rules (Phase 41)
+#### Fail-fast validation and TLS/mTLS surface
 
-- A companion `ActivitySource` (`"SharedKernel.Caching"`, version `"1.0"` — same instrumentation-scope name/version as the `Meter` above, deliberately) is a second static readonly field on `FusionCacheService`, alongside `_meter`.
-- Span names: `cache.get`, `cache.set`, `cache.get_or_set` (`ActivityKind.Client`) — dot-separated lowercase, matching the existing `CacheInvalidationReceiver` span-naming convention (`"cache.invalidation.receive"`, Phase 26/36).
-- Spans start **after** argument validation — a pure input-validation throw is a caller bug, not a cache operation, mirroring the existing rule that `_cacheErrors` is not incremented for validation failures either.
-- Tags: `cache.key_prefix` (reuses `ExtractKeyPrefix`, same high-cardinality guard as the `Meter`'s tag); `cache.get`/`cache.get_or_set` additionally carry `cache.outcome` (`"hit"`/`"miss"`) — for `GetAsync`, derived from the same `result.HasValue` check used for the miss-logging branch; for `GetOrSetAsync`, derived from a local `factoryInvoked` flag set `true` inside the factory lambda alongside `Log.FactoryInvoked` (`"miss"` when the factory ran, `"hit"` when it did not). `cache.set` has no hit/miss concept and carries `cache.key_prefix` only.
-- On an exception inside `SetAsync`/`GetOrSetAsync`'s existing `catch` blocks (which already increment `_cacheErrors`), `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` is also called before rethrowing — standard OTel exception-recording convention, additive to the existing metric/log behavior. `GetAsync` has no catch block and therefore no error status path.
-- `StartActivity(...)` returns `null` with no listener attached — every call site uses `activity?.SetTag(...)`/`activity?.SetStatus(...)`, mirroring the Meter's own no-listener-fast-path rule above. No new NuGet dependency — `ActivitySource`/`ActivityKind`/`ActivityStatusCode` are BCL (`System.Diagnostics`, already imported in `FusionCacheService.cs` for `Stopwatch`).
-- Test coverage (`OtelTracingTests.cs`) uses `Assert.Contains`/existence-style assertions against an `ActivityListener`-captured span list rather than `Assert.Single` — xUnit's default cross-class test parallelism means other test classes in the same assembly may concurrently drive their own `ICacheService` instances against the same static `ActivitySource`, so a single test's listener can observe spans it did not itself produce. This mirrors `OtelMetricsTests.cs`'s own `>= 1` tolerance for the identical reason.
-- **Not yet wired:** `13.ServiceDefaults`'s `WithCachingTelemetry` may register this `ActivitySource` for trace export, bringing it to parity with the platform's other `WithXTelemetry` wiring — noted for that domain, not actioned here (out of `02.Caching`'s jurisdiction).
+- `AddRedisConnection` wires `RedisConnectionOptions` through `AddOptions<RedisConnectionOptions>().Configure(...).ValidateDataAnnotations().ValidateOnStart()` directly in its method body (visible to `00.Governance`'s `AssertMethodBodyInvokesMethod`). The multiplexer factory resolves the validated `IOptions<RedisConnectionOptions>.Value`. The configure delegate therefore runs lazily, on first options access.
+- `Ssl`, `ClientCertificates` and `CertificateValidation` compose into the built `ConfigurationOptions` before `ConnectionMultiplexer.Connect(...)`.
+- **StackExchange.Redis 2.13.1 has no `ConfigurationOptions.CertificateSelection`/`CertificateValidation`.** TLS/mTLS goes through `ConfigurationOptions.SslClientAuthenticationOptions` (`Func<string, SslClientAuthenticationOptions>`): `ClientCertificates` → `SslClientAuthenticationOptions.ClientCertificates`; `CertificateValidation` is bridged into `RemoteCertificateValidationCallback` (converting `X509Certificate?` to `X509Certificate2`, rejecting `null`). The delegate is set only when one of the two is supplied; a bare `Ssl = true` keeps StackExchange.Redis's default TLS behaviour.
+- A `[LoggerMessage]` `Warning` (`Caching + 102`) — **never an exception**, since sidecar/mesh-terminated TLS is legitimate — fires once per registration, from the multiplexer factory, when an endpoint is non-loopback and `Ssl = false`. The check stops at the first such endpoint.
+- `BuildConfigurationOptions`/`WarnIfNonLoopbackWithoutTls`/`IsLoopback` are `internal` for testability without a live Redis.
+- TLS protects values in transit; `AddCacheEncryption` protects them at rest. Use both for sensitive data.
 
-### Redis Connection Core rules (Phase 32)
+### Redis distributed locking package rules
 
-- `SharedKernel.Caching.Redis.Core` is the **single registration point** for `IConnectionMultiplexer`. `AddRedisConnection(this IServiceCollection, connectionString, configure?)` calls `services.TryAddSingleton<IConnectionMultiplexer>(...)` — first caller wins, identical semantics to the pre-Phase-32 inline registrations in `AddRedisL2` and `AddRedisDistributedLocking`.
-- `RedisConnectionHealthTracker` is a **passive** health observer (`ConnectionHealthState` via `ConnectionRestored`/`ConnectionFailed`). It performs no resubscription or replay logic — that remains specific to `RedisChannelService` (`.Redis.PubSub`, Phase 36). Both may independently subscribe to the same multiplexer's events; StackExchange.Redis supports multiple subscribers without conflict.
-- `ConnectionHealthState` is **not** duplicated in `.Redis.Core` — it is sourced from `SharedKernel.Caching.Abstractions` (Phase 26), where it already lives.
-- `RedisCircuitBreakerOptions` is the generalized, top-level form of Phase 30's `RedisL2Options.CircuitBreakerOptions` — same five properties, same defaults, same `[Range]` validation. `AddRedisCircuitBreaker(this IServiceCollection, configure?)` registers `ResiliencePipeline` via `TryAddSingleton` only when `Enabled = true`, using the FailureRatio=1.0/MinimumThroughput pattern (Phase 30, unchanged).
-- `.Redis.Core` extensions (`AddRedisConnection`, `AddRedisCircuitBreaker`) are plain `IServiceCollection` extensions — not `ICachingBuilder`. Fluent `ICachingBuilder` chaining is the responsibility of the consuming packages (`.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`), each of which wraps these calls internally.
-- `.Redis.Core` has zero references to FusionCache, RedLock.net, or any capability-specific (hash/channel/lock) type.
+- `SharedKernel.Caching.Redis.DistributedLocking` depends only on `Abstractions` + `Redis.Core` (+ `SharedKernel.Primitives` for EventIds).
+- `AddRedisDistributedLocking` exists on `ICachingBuilder` and on `IServiceCollection`; both call one private `Register` and register exactly the same services (`BothOverloads_RegisterTheSameServices`). Neither is obsolete; there is no adapter builder class.
+- It sources `IConnectionMultiplexer` via `AddRedisConnection(connectionString, ConnectTimeoutMs)` and registers `TimeProvider.System` only if no `TimeProvider` is registered (tests inject a fake).
+- `RedisDistributedLockService`, `RedisDistributedLock` and `RedisLockScripts` are `internal`.
 
-#### Fail-fast validation and TLS/mTLS surface (Phase 45, complete)
+### Redis Hash Store package rules
 
-- `AddRedisConnection` wires `RedisConnectionOptions` through `services.AddOptions<RedisConnectionOptions>().Configure(...).ValidateDataAnnotations().ValidateOnStart()` — the existing `[Required]`/`[Range]` attributes (`ConnectionString`, `ConnectTimeoutMs`) are now genuinely enforced at host-startup time (`ValidateOnStart()`'s `IStartupValidator`-backed mechanism) instead of the pre-Phase-45 behavior of constructing-and-reading a bare, unvalidated instance directly. The `IConnectionMultiplexer` singleton factory resolves the validated `IOptions<RedisConnectionOptions>.Value`. The `ValidateOnStart()` call is a real, statically-visible invocation directly inside `AddRedisConnection`'s own method body — not hidden behind a local helper or a conditional — so a governance rule asserting its presence (e.g. `AssertMethodBodyInvokesMethod`) can see it directly.
-- `RedisConnectionOptions` gains `Ssl` (`bool`, default `false`), `ClientCertificates` (`X509Certificate2Collection?`), and `CertificateValidation` (`Func<X509Certificate2, X509Chain?, SslPolicyErrors, bool>?`) — composed into the built `ConfigurationOptions` before `ConnectionMultiplexer.Connect(...)`. All default to today's exact plaintext behavior — fully backward-compatible for a bare-connection-string caller.
-- A structured `[LoggerMessage]` `Warning` (`LoggingEventIdRanges.Caching + 102`) — **never a thrown exception**, since sidecar/mesh-terminated TLS (e.g. a service-mesh mTLS proxy in front of Redis) is a legitimate topology this domain must not falsely flag as broken — fires exactly once per registration, from inside the `IConnectionMultiplexer` singleton factory (naturally once-per-registration under `TryAddSingleton`'s first-caller-wins semantics, and only once even when multiple non-loopback endpoints are configured — the check short-circuits on the first match, it does not loop per endpoint), when the resolved `ConfigurationOptions.EndPoints` contains a non-loopback host (not `"localhost"`/a loopback `IPAddress`) with `Ssl = false`.
-- New `PackageReference`s required on `.Redis.Core`: `Microsoft.Extensions.Options.DataAnnotations` (for `ValidateDataAnnotations()`) and `Microsoft.Extensions.Hosting.Abstractions` — the latter is not new to this domain (`.Redis.PubSub` already carries it for `CacheInvalidationReceiver`), and is added here to match the platform-standard `ValidateOnStart()` package pairing, though implementation confirmed `ValidateOnStart()`/`IStartupValidator` itself resolves purely from `Microsoft.Extensions.Options` (transitively pulled in by `Microsoft.Extensions.Options.DataAnnotations`) in this platform's pinned `10.0.0` — the real `IHostedService` that triggers `IStartupValidator` at `IHost.StartAsync()` time is supplied by the Generic Host itself (`Microsoft.Extensions.Hosting`), not by this library.
-- **Correction to the original plan, found while implementing against the real StackExchange.Redis 2.13.1 API (not assumed from prose):** `ConfigurationOptions` in this pinned version carries **no** `CertificateSelection`/`CertificateValidation` properties — that legacy shape was removed. TLS/mTLS is composed instead via `ConfigurationOptions.SslClientAuthenticationOptions` (`Func<string, System.Net.Security.SslClientAuthenticationOptions>`, the modern .NET `SslStream` configuration surface): `RedisConnectionOptions.ClientCertificates` maps to `SslClientAuthenticationOptions.ClientCertificates`, and `RedisConnectionOptions.CertificateValidation` is bridged into `SslClientAuthenticationOptions.RemoteCertificateValidationCallback` (converting the BCL callback's `X509Certificate?` parameter to `X509Certificate2` via `new X509Certificate2(certificate)`, rejecting outright with `false` when the presented certificate is `null`). This delegate is set only when at least one of `ClientCertificates`/`CertificateValidation` is actually supplied — a bare `Ssl = true` with neither leaves `SslClientAuthenticationOptions` `null` and StackExchange.Redis's own default TLS behavior applies unchanged.
-- `AddRedisConnection`'s configure delegate is now invoked **lazily** — on first `IOptions<RedisConnectionOptions>.Value` access — rather than synchronously inside `AddRedisConnection` itself (an `AddOptions<T>().Configure(...)` registration mechanism). This is an internal timing change only; every existing caller passes a self-contained delegate (e.g. `o => o.ConnectTimeoutMs = capturedValue`) that produces the identical result regardless of when it runs, so no production call site (`.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`) required a change. A test that observed the delegate's side effect synchronously outside DI resolution would need updating to resolve `IOptions<RedisConnectionOptions>` instead (see `RedisConnectionCoreExtensionsTests.AddRedisConnection_WithConfigureDelegate_AppliesConnectTimeout`).
-- Do not use this surface as a substitute for the "Cache-value encryption rules" decorator above — TLS protects the value in transit between this process and Redis; `AddCacheEncryption` protects the value at rest inside Redis. Use both together for defense-in-depth on genuinely sensitive cached data.
+- `SharedKernel.Caching.Redis.HashStore` depends only on `Abstractions` + `Redis.Core`.
+- `IRedisHashService`/`ITypedHashStore<T>` are declared here, in namespace `SharedKernel.Caching.Redis.HashStore` (P-547).
+- `AddRedisHashService(this ICachingBuilder)` takes no connection string; it guards on `IConnectionMultiplexer` and resolves the optional `ResiliencePipeline`.
 
-### Redis distributed locking extraction rules (Phase 34)
+### Redis Pub/Sub package rules
 
-- `SharedKernel.Caching.Redis.DistributedLocking` depends only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — no reference to `SharedKernel.Caching.Redis`, `.HashStore`, or `.PubSub`.
-- `AddRedisDistributedLocking(this ICachingBuilder, string connectionString, Action<RedisLockOptions>? configure = null)` is the canonical signature, unchanged from pre-extraction. Internally it calls `services.AddRedisConnection(connectionString, o => o.ConnectTimeoutMs = options.ConnectTimeoutMs)` to source `IConnectionMultiplexer` from `.Redis.Core` (`TryAddSingleton` — first-caller-wins).
-- The `[Obsolete]` `AddRedisDistributedLocking(this IServiceCollection, ...)` shim is preserved and delegates to the canonical `ICachingBuilder` overload via a private `internal sealed class RedisLockCachingBuilder(IServiceCollection services) : ICachingBuilder` adapter — this adapter is **this package's own copy**, not shared with `.Redis` or any sibling package.
-- `RedLockFactory` registration and `IDistributedLockFactory` exposure are unchanged and stay in this package.
-- Renewable lock re-acquisition strategy (dispose-then-recreate, RedLock.net 2.3.2 has no public `ExtendAsync`) is preserved exactly — see Phase 23 rule above, which still applies verbatim to `RedLockRenewableLock` in its new location.
-- `KeepAliveAsync` remains a static extension method on `IRenewableLock`, now in `SharedKernel.Caching.Redis.DistributedLocking.Extensions`.
-- `FakeDistributedLockService`/`FakeRenewableLock` remain in `16.Testing` — they were not moved and are referenced by this package's test project via `ProjectReference`.
+- `SharedKernel.Caching.Redis.PubSub` depends only on `Abstractions` + `Redis.Core` (+ `SharedKernel.Primitives`). It has no hosting dependency: it ships no background service.
+- `IRedisChannelService` is declared here, in namespace `SharedKernel.Caching.Redis.PubSub` (P-547).
+- `AddRedisChannelService(this ICachingBuilder)` is the only registration; it guards on `IConnectionMultiplexer` and resolves the optional `ResiliencePipeline`.
+- There is no cache-invalidation bus or receiver. Cache invalidation across instances is the FusionCache backplane's job; do not rebuild one on this package.
 
-### Redis Hash Store extraction rules (Phase 35)
+### Redis package topology rules
 
-- `SharedKernel.Caching.Redis.HashStore` depends only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — no reference to `SharedKernel.Caching.Redis`, `.DistributedLocking`, or `.PubSub`.
-- `RedisHashService` (`internal sealed`, `IRedisHashService`) and `TypedHashStore<T>` (`internal sealed`, `ITypedHashStore<T>`) are pure namespace-rename relocations from `SharedKernel.Caching.Redis` — no behavioral changes to either type's method bodies.
-- `AddRedisHashService(this ICachingBuilder)` is the canonical signature, unchanged from pre-extraction (no connection-string parameter — it never owned multiplexer registration). Its startup guard now reads: `"AddRedisHashService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisChannelService) to be called first to register IConnectionMultiplexer."`
-- `AddRedisHashService` resolves the optional `ResiliencePipeline` via `sp.GetService<ResiliencePipeline>()` (Phase 30 pattern, unchanged) — now sourced from `.Redis.Core`'s `AddRedisCircuitBreaker` rather than from `AddRedisL2`'s inline registration.
-- `AddTypedHashStore<T>(this ICachingBuilder, JsonTypeInfo<T> typeInfo)` is unchanged — still guards on `IRedisHashService` being registered first (`"AddTypedHashStore<T> requires AddRedisHashService to be called first."`).
-- No `[Obsolete]` shim was needed — `AddRedisHashService`/`AddTypedHashStore<T>` were already `ICachingBuilder`-only before this phase (added in Phase 15/19, post-dating the `IServiceCollection`-era APIs that needed shims in Phase 34).
-- **Hidden cross-package test coverage**: extraction phases must grep the *donor* package's test projects for references to the extension methods being moved, not just the File-Level Plan's listed test files — `.Redis.Tests`'s `RedisDiRegistrationTests.cs` and `CircuitBreakerTests.cs` both contained `AddRedisHashService`-related tests that were not in the Phase 35 File-Level Plan. These were removed from `.Redis.Tests` and their coverage (DI registration, startup guard message, `ResiliencePipeline` injection) was recreated in the new package's `RedisHashServiceDiTests.cs`.
-
-### Redis Pub/Sub extraction rules (Phase 36)
-
-- `SharedKernel.Caching.Redis.PubSub` depends only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — no reference to `SharedKernel.Caching.Redis`, `.DistributedLocking`, or `.HashStore`.
-- `RedisChannelService` (`internal sealed`, `IRedisChannelService`), `RedisCacheInvalidationBus` (`internal sealed`, `ICacheInvalidationBus`), and `CacheInvalidationReceiver` (`BackgroundService`) are pure namespace-rename relocations from `SharedKernel.Caching.Redis` — no behavioral changes to any type's method bodies.
-- The Phase 26 reconnect/resubscribe replay logic (`Dictionary<string, SubscriptionEntry>` + `_registryLock`, `volatile int _connectionHealth`, `OnConnectionRestored`/`OnConnectionFailed`) relocates **intact** with `RedisChannelService` — it is not refactored to depend on `.Redis.Core`'s `RedisConnectionHealthTracker`. The two health-tracking mechanisms coexist independently (see Phase 32 rule above).
-- `AddRedisChannelService(this ICachingBuilder)`, `AddRedisCacheInvalidationBus(this ICachingBuilder)`, and `AddCacheInvalidationReceiver(this ICachingBuilder)` are the canonical signatures, unchanged from pre-extraction. `AddRedisChannelService`'s startup guard now reads: `"AddRedisChannelService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisHashService) to be called first to register IConnectionMultiplexer."`
-- `AddRedisChannelService` resolves the optional `ResiliencePipeline` via `sp.GetService<ResiliencePipeline>()` (Phase 30 pattern, unchanged) — now sourced from `.Redis.Core`'s `AddRedisCircuitBreaker` rather than from `AddRedisL2`'s inline registration.
-- No `[Obsolete]` shim was needed — `AddRedisChannelService`/`AddRedisCacheInvalidationBus`/`AddCacheInvalidationReceiver` were already `ICachingBuilder`-only before this phase.
-- **Hidden cross-package test coverage** (3rd occurrence of this pattern): `.Redis.Tests`'s `CachingCoreOptionsDiTests.cs` (both CO-04 generic `AddCachingCoreOptions` tests and CO-03 `RedisCacheInvalidationBus`-internal-type-dependent tests), `DI/DiErgonomicsGuardTests.cs` (pub/sub DI guard tests), and `DI/RedisDiRegistrationTests.cs` (`AddRedisChannelService` registration tests) were full-file relocations not called out in the File-Level Plan, plus one test in `CircuitBreakerTests.cs` (`AddRedisChannelService_WithCircuitBreakerEnabled_InjectsResiliencePipeline`). These were removed from `.Redis.Tests`; the `CircuitBreakerTests.cs` coverage was recreated as `RedisChannelServiceDiTests.cs` in the new package, modeled on Phase 35's `RedisHashServiceDiTests.cs`.
-- **DI integration tests that previously called `AddSharedKernelCaching`/`AddRedisL2`** (which would violate the sibling-package no-cross-reference rule) were rewritten to use `AddCachingCoreOptions` (from `SharedKernel.Caching.Abstractions`, zero FusionCache/Redis dependency) + `AddRedisConnection` (from `.Redis.Core`) + `services.AddSingleton<ICacheService, FakeCacheService>()` (`SharedKernel.Testing.Caching`, satisfies the `AddCacheInvalidationReceiver` `ICacheService` guard) + `TestCachingBuilder` wrapping `services` for the fluent `ICachingBuilder` chain. This is the established pattern for any future PubSub.Tests DI integration test that needs an `ICacheService`.
-
-### Redis package extraction rules (Phases 33–36)
-
-- **Source of truth for `IConnectionMultiplexer` and `ResiliencePipeline`:** every `Add*` extension that previously self-registered `IConnectionMultiplexer` (`AddRedisL2`, `AddRedisDistributedLocking`) now calls `services.AddRedisConnection(connectionString, ...)` (Phase 32) internally. Extensions that don't take a connection string (`AddRedisHashService`, `AddRedisChannelService`) retain their existing `services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))` startup guard, with the error message updated to point at `AddRedisConnection` (directly, or transitively via `AddRedisL2` / `AddRedisDistributedLocking` / `AddRedisChannelService`) as the registration source.
-- **No new `IConnectionMultiplexer` registrations** are permitted outside `.Redis.Core`'s `AddRedisConnection`. Any `Add*` extension in `.Redis`, `.DistributedLocking`, `.HashStore`, or `.PubSub` that needs a multiplexer must call `AddRedisConnection` (idempotent via `TryAddSingleton`) — never `ConnectionMultiplexer.Connect(...)` directly.
-- **Sibling packages never reference each other.** `.Redis`, `.DistributedLocking`, `.HashStore`, and `.PubSub` each depend only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core`. A consumer can take any subset without transitively pulling in the others (e.g., a session-store service takes `.HashStore` without `.DistributedLocking` or FusionCache).
-- **All public DI extension signatures are preserved exactly.** `AddRedisL2(connectionString, configure?)`, `AddRedisDistributedLocking(connectionString, configure?)`, `AddRedisHashService()`, `AddTypedHashStore<T>(JsonTypeInfo<T>)`, `AddRedisChannelService()`, `AddRedisCacheInvalidationBus()`, `AddCacheInvalidationReceiver()` — no signature changes, no new required parameters. `RedisL2Options.CircuitBreaker` changes type from a locally-nested class to the top-level `RedisCircuitBreakerOptions` (Phase 32) — a type relocation, not a rename; `o.CircuitBreaker.Enabled = true` continues to compile.
-- **`[Obsolete]` `IServiceCollection` shims**: each extraction package that retains an `[Obsolete]` `IServiceCollection`-overload shim (e.g., `.DistributedLocking` for `AddRedisDistributedLocking`) defines its **own** small `internal sealed class ...CachingBuilder(IServiceCollection services) : ICachingBuilder` adapter. Do not share this adapter across packages via a project reference — each copy is ~3 lines and the duplication avoids an otherwise-unjustified inter-package dependency.
-- **`SharedKernel.Caching.Abstractions` contracts are unchanged** across Phases 33–36: `ICacheService`, `CachePolicy`, `ICacheKeyProvider`, `IDistributedLockService`, `IRenewableLock`, `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `ConnectionHealthState`, `CachingCoreOptions`, `ICachingBuilder` all remain as documented above — only their implementations and DI registration call sites move.
-- **End state (achieved, Phase 36):** `SharedKernel.Caching.Redis` contains only `AddRedisL2`, `RedisL2Options`, `IRedisL2BatchService` (internal), and the FusionCache Redis backplane wiring (`AddStackExchangeRedisCache` + `AddFusionCache().WithRegisteredDistributedCache().WithRegisteredSerializer().WithStackExchangeRedisBackplane(...)`).
-- **Reconnect/resubscribe replay logic** (Phase 26: `Dictionary<string, SubscriptionEntry>` + `_registryLock`, `volatile int _connectionHealth`, `OnConnectionRestored`/`OnConnectionFailed`) relocated **intact** with `RedisChannelService` into `.Redis.PubSub` (Phase 36) — it was not refactored to depend on `.Redis.Core`'s `RedisConnectionHealthTracker`. The two health-tracking mechanisms coexist independently (see Phase 32 rule above).
+- **No new `IConnectionMultiplexer` registrations** outside `.Redis.Core`'s `AddRedisConnection`. Every `Add*` that needs a multiplexer calls it (idempotent) — never `ConnectionMultiplexer.Connect(...)` directly.
+- **Sibling packages never reference each other.** `.Redis`, `.DistributedLocking`, `.HashStore` and `.PubSub` depend only on `Abstractions` + `Redis.Core`.
+- `SharedKernel.Caching.Redis` contains only `AddRedisL2`, `RedisL2Options` and the FusionCache backplane wiring.
+- Locked by `00.Governance`'s `RedisTopologyRules` (`RedisCoreNeverReferencesCapabilityPackages`, `CapabilityPackagesNeverReferenceEachOther`, `PubSubNeverReferencesMessaging`, `MessagingNeverReferencesCaching`, `CachingAbstractionsHasNoInfrastructureDependencies`, `CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions`, `CachingAbstractionsDeclaresNoProviderSpecificTypes`, `DistributedLockingNeverReferencesRedLock`).
 
 ### AOT compatibility
 
-- FusionCache is AOT-compatible as of v1.x — verify release notes on every upgrade.
-- StackExchange.Redis is AOT-compatible — avoid dynamic configuration patterns. `SharedKernel.Caching.Redis.Core` (Phase 32) is the sole owner of `ConfigurationOptions.Parse` / `ConnectionMultiplexer.Connect` — no dynamic configuration patterns introduced there.
-- RedLock.net — verify AOT status on each major upgrade and wrap if needed. Confined to `SharedKernel.Caching.Redis.DistributedLocking` (implemented, Phase 34) — AOT risk does not propagate to `.Redis`, `.HashStore`, or `.PubSub`.
-- `IRedisHashService` typed methods use `JsonTypeInfo<T>` parameter to remain AOT-safe.
-- `CacheInvalidationMessage` uses a source-generated `JsonSerializerContext` — no reflection.
-- `AddRedisL2` must not re-register the STJ serializer — doing so silently breaks NativeAOT by overwriting the user-configured `SerializerContext` (Phase 18 fix).
+- FusionCache is AOT-compatible — verify release notes on every upgrade.
+- StackExchange.Redis is AOT-compatible; `.Redis.Core` is the sole owner of `ConfigurationOptions.Parse`/`ConnectionMultiplexer.Connect`.
+- The lock implementation is plain Lua over `IDatabase.ScriptEvaluateAsync` — no third-party locking library.
+- `IRedisHashService` typed methods take `JsonTypeInfo<T>`.
+- `AddRedisL2` must not re-register the STJ serializer (it would overwrite the user's `SerializerContext`).
 
-### Logging (EventId sub-blocks — Phase 37, WO-041, P-252)
+### Logging (EventId sub-blocks)
 
-`02.Caching` reserves `LoggingEventIdRanges.Caching` (2000-2999, from `SharedKernel.Primitives` — `01.Core` P-249) as its platform-wide `EventId` block. This domain has the most logging call sites of any capability domain and, before Phase 37, the only confirmed live cross-package `EventId` collision in the platform (`Redis.Core` vs. `Redis.PubSub`, both at 4001/4002) plus two confirmed cross-domain squats (`FusionCache` on `01.Core`'s 1000-1999 block, `Redis.PubSub`'s `RedisChannelService` on `03.Domain`'s 3000-3999 block). The table below is this domain's **authoritative** 100-wide-per-package sub-block allocation, assigned in Packages-table declaration order — it supersedes `01.Core/CLAUDE.md`'s illustrative worked example for this domain, which predates this design and omitted `SharedKernel.Caching.FusionCache` entirely.
+`02.Caching` owns `LoggingEventIdRanges.Caching` (2000–2999, `SharedKernel.Primitives`). Sub-blocks, 100 per package in Packages-table order:
 
-| Package | Sub-block | Status |
+| Package | Sub-block | Events |
 | ------- | --------- | ------ |
-| `SharedKernel.Caching.Abstractions` | — (no sub-block) | Zero infrastructure dependencies — can never carry a logging call site |
-| `SharedKernel.Caching.FusionCache` | `LoggingEventIdRanges.Caching + 0` .. `+ 99` | `CacheWarmupHostedService` (`+0`..`+7`), `FusionCacheService` (`+10`..`+14`), `EncryptedCacheService` (`+15`, decrypt-failure `Warning`, Phase 46/WO-081) |
-| `SharedKernel.Caching.Redis.Core` | `LoggingEventIdRanges.Caching + 100` .. `+ 199` | `RedisConnectionHealthTracker` (`+100`, `+101`) |
-| `SharedKernel.Caching.Redis` (L2) | `LoggingEventIdRanges.Caching + 200` .. `+ 299` | Reserved — no logging call sites today |
-| `SharedKernel.Caching.Redis.DistributedLocking` | `LoggingEventIdRanges.Caching + 300` .. `+ 399` | `RedLockDistributedLockService` (`+300`..`+306`), `RedLockRenewableLock` (`+307`..`+312`) |
-| `SharedKernel.Caching.Redis.HashStore` | `LoggingEventIdRanges.Caching + 400` .. `+ 499` | Reserved — no logging call sites today |
-| `SharedKernel.Caching.Redis.PubSub` | `LoggingEventIdRanges.Caching + 500` .. `+ 599` | `RedisChannelService` (`+500`..`+504`), `CacheInvalidationReceiver` (`+505`..`+509`), `RedisCacheInvalidationBus` (`+510`) |
+| `SharedKernel.Caching.Abstractions` | — | No logging (no logging dependency, locked by the reference allow-list) |
+| `SharedKernel.Caching.FusionCache` | `Caching + 0` .. `+ 99` | `CacheWarmupHostedService` `+0`..`+7`; `FusionCacheService` `+10` miss, `+11` set, `+12` factory invoked, `+13` removed, `+14` tag removed, `+16` expired (Debug), `+17` cleared (Warning); `EncryptedCacheService` `+15` decrypt failed (Warning) |
+| `SharedKernel.Caching.Redis.Core` | `Caching + 100` .. `+ 199` | `RedisConnectionHealthTracker` `+100` restored, `+101` failed; `+102` non-loopback endpoint without TLS (Warning) |
+| `SharedKernel.Caching.Redis` (L2) | `Caching + 200` .. `+ 299` | Reserved — no logging today |
+| `SharedKernel.Caching.Redis.DistributedLocking` | `Caching + 300` .. `+ 399` | `RedisDistributedLockService` `+300` lock acquired, `+301` lock contended, `+302` lease acquired, `+303` lease contended (Debug); `RedisDistributedLock` `+304` released (Debug), `+305` release failed (Warning), `+306` extend failed (Warning), `+307` lock lost (Error) |
+| `SharedKernel.Caching.Redis.HashStore` | `Caching + 400` .. `+ 499` | Reserved — no logging today |
+| `SharedKernel.Caching.Redis.PubSub` | `Caching + 500` .. `+ 599` | `RedisChannelService` `+500` handler exception, `+501` connection restored, `+502` channel resubscribed, `+503` resubscription failed, `+504` connection failed |
 
-- Every `[LoggerMessage(EventId = ...)]` value in this domain must be written as `LoggingEventIdRanges.Caching + {offset}` — never a bare literal integer. `LoggingEventIdRanges.Caching` is `const int`, so the sum is itself a valid compile-time constant expression for the attribute argument.
-- All four logging-bearing packages (`FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub`) take a `<ProjectReference>` to `SharedKernel.Primitives` solely to consume this constant — layering-legal per the root `CLAUDE.md` (`02.Caching` may reference `01.Core`).
-- `SharedKernel.Caching.Redis` (L2) and `SharedKernel.Caching.Redis.HashStore` reserve a sub-block each (`+200..+299`, `+400..+499`) despite carrying zero logging call sites today, so the first future log statement in either package has a pre-assigned, collision-free home.
-- No direct `ILogger.LogInformation`/`LogWarning`/`LogError`/`LogDebug`/`LogCritical`/`LogTrace` extension-method call and no hand-written `LoggerMessage.Define`/`LoggerMessage.DefineScope` delegate is permitted anywhere in this domain's production source — every log statement is authored via the `[LoggerMessage]` source-generated partial-method pattern, mirroring the existing `private static partial class Log` nested-class convention already used by `FusionCacheService`, `RedisConnectionHealthTracker`, `RedLockDistributedLockService`, `RedLockRenewableLock`, `RedisChannelService`, and `CacheInvalidationReceiver`.
-- Message template placeholders are PascalCase named properties matching the call's named arguments — never positional placeholders, never string-interpolated into the template (root convention, unchanged).
-- This is enforced mechanically by `00.Governance`'s SK0020 (`DirectILoggerExtensionMethodUsage`), SK0021 (`HandWrittenLoggerMessageDefineDelegate`), and `LoggingEventIdIntegrityAssertion` once P-250 ships.
+- Every `EventId` is written `LoggingEventIdRanges.Caching + {offset}` — never a bare literal.
+- The four logging packages (`FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub`) reference `SharedKernel.Primitives` for the constant.
+- Every log statement uses the `[LoggerMessage]` source-generated pattern in a nested `private static partial class Log`; no direct `ILogger.LogX` call and no `LoggerMessage.Define` (SK0020/SK0021, `LoggingEventIdIntegrityAssertion`).
+- Placeholders are PascalCase named properties. Lock logs carry the resource name and fencing token, never secrets.
 
 ---
 
 ## DI Registration (current shape)
 
-> All examples below remain valid throughout WO-023 (Phases 32–36) — no `Add*` signatures change. The new Phase 32 entry points (`AddRedisConnection`, `AddRedisCircuitBreaker`) are additive, low-level, `IServiceCollection`-based primitives consumed internally by `AddRedisL2` / `AddRedisDistributedLocking` / `AddRedisHashService` / `AddRedisChannelService` — most consumers never call them directly.
-
 ```csharp
-// L1-only (non-AOT)
-services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; });
+// L1-only (non-AOT) — ServiceName is required and validated at startup
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service");
 
-// L1-only (NativeAOT — provide source-generated context for all cached types)
-services.AddSharedKernelCaching(options => {
-    options.ServiceName = "my-service";
-    options.SerializerContext = MyAppSerializerContext.Default;
+// L1-only (NativeAOT — source-generated context for all cached types)
+services.AddSharedKernelCaching(o =>
+{
+    o.ServiceName = "my-service";
+    o.SerializerContext = MyAppSerializerContext.Default;
 });
 
-// L1 + L2 (Redis backplane, NativeAOT)
-services.AddSharedKernelCaching(options => {
-             options.ServiceName = "my-service";
-             options.SerializerContext = MyAppSerializerContext.Default;
+// L1 + L2 (Redis distributed layer + backplane)
+services.AddSharedKernelCaching(o =>
+         {
+             o.ServiceName = "my-service";
+             o.SerializerContext = MyAppSerializerContext.Default;
          })
-        .AddRedisL2(connectionString, options => { });
+        .AddRedisL2(connectionString, o => o.KeyPrefix = "prod:");
 
-// L1 + L2 + Brotli compression for large payloads (opt-in)
-services.AddSharedKernelCaching(options => { options.SerializerContext = MyAppSerializerContext.Default; })
+// Tenant-scoped cache — the recommended entry point for tenant data
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
+        .AddTenantCacheService();
+// Inject: ITenantCacheService → GetOrSetAsync(tenantId, entity, id, factory, policy, ct)
+//         ITenantCacheKeyProvider / ICacheKeyProvider are registered by AddSharedKernelCaching
+
+// Brotli compression for large L2 payloads
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
         .AddRedisL2(connectionString)
-        .AddBrotliCompression(o => { o.L2ThresholdBytes = 2048; });
+        .AddBrotliCompression(o => o.L2ThresholdBytes = 2048);
 
-// Distributed locking — fluent chain (Phase 19: canonical form)
-services.AddSharedKernelCaching(options => { })
+// Cache-value encryption at rest — cryptography and the cache first; Brotli before encryption
+services.AddSingleton<IEncryptionKeyProvider>(keyProvider);    // any provider, KMS-backed included
+services.AddSharedKernelCryptography(configuration)
+        .AddSymmetricEncryption();                             // 01.Core — ISymmetricEncryptionService
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
+        .AddRedisL2(connectionString)
+        .AddBrotliCompression(o => o.L2ThresholdBytes = 2048)  // compression first
+        .AddCacheEncryption();                                 // encryption last
+
+// Distributed locking alongside the cache
+services.AddSharedKernelCaching(o => o.ServiceName = "billing")
         .AddRedisL2(connectionString)
         .AddRedisDistributedLocking(connectionString);
 
-// Distributed locking — standalone (IServiceCollection overload, Obsolete after Phase 19)
-services.AddRedisDistributedLocking(connectionString);
+// Lock-only host — no FusionCache, no ICachingBuilder
+services.AddRedisDistributedLocking(connectionString, o => o.ConnectTimeoutMs = 3000);
+// await using IDistributedLock? handle = await locks.TryAcquireAsync(resource,
+//     new DistributedLockOptions { Expiry = TimeSpan.FromSeconds(30), WaitTime = TimeSpan.FromSeconds(5) }, ct);
+// DistributedLease? lease = await locks.TryAcquireLeaseAsync(resource, TimeSpan.FromMinutes(5), ct);
+// Both return null only on contention; an unreachable store throws DistributedLockUnavailableException.
 
-// Redis Pub/Sub channel service (requires IConnectionMultiplexer — guard added Ph19)
-services.AddSharedKernelCaching(options => { })
+// Redis Pub/Sub channel service (requires IConnectionMultiplexer)
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
         .AddRedisL2(connectionString)
         .AddRedisChannelService();
 
-// Redis Hash service — low-level (JsonTypeInfo<T> per call)
-services.AddSharedKernelCaching(options => { })
-        .AddRedisL2(connectionString)
-        .AddRedisHashService();
-
-// Redis Hash service — typed per-DTO (no JsonTypeInfo<T> per call, AOT-safe)
-services.AddSharedKernelCaching(options => { options.SerializerContext = MyAppSerializerContext.Default; })
+// Redis hash service — typed per DTO (AOT-safe)
+services.AddSharedKernelCaching(o =>
+         {
+             o.ServiceName = "session-service";
+             o.SerializerContext = MyAppSerializerContext.Default;
+         })
         .AddRedisL2(connectionString)
         .AddRedisHashService()
         .AddTypedHashStore(MyAppSerializerContext.Default.OrderDto)
         .AddTypedHashStore(MyAppSerializerContext.Default.CustomerDto);
-// Inject: ITypedHashStore<OrderDto>, ITypedHashStore<CustomerDto>
+// Inject: IRedisHashService, ITypedHashStore<OrderDto>, ITypedHashStore<CustomerDto>
 
-// Cross-service cache invalidation (full stack)
-services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
-        .AddRedisL2(connectionString)
-        .AddRedisChannelService()
-        .AddRedisCacheInvalidationBus()     // registers ICacheInvalidationBus publisher
-        .AddCacheInvalidationReceiver();    // registers background service subscriber (opt-in)
+// Hash store or pub/sub without FusionCache: register the connection, then use any ICachingBuilder
+services.AddRedisConnection(connectionString);
+var cachingBuilder = new MyCachingBuilder(services);   // a local ICachingBuilder wrapping `services`
+cachingBuilder.AddRedisHashService().AddTypedHashStore(MyAppSerializerContext.Default.SessionDto);
+cachingBuilder.AddRedisChannelService();
 
-// Redis-only consumer (no FusionCache) — Phase 27; AddRedisDistributedLocking from
-// SharedKernel.Caching.Redis.Core + SharedKernel.Caching.Redis.DistributedLocking only (Phase 34)
-services.AddCachingCoreOptions(o => o.ServiceName = "worker-service")
-        .AddRedisDistributedLocking(connectionString);
-// Note: AddCachingCoreOptions is on IServiceCollection (not ICachingBuilder) — it is the
-// standalone entry point for services that do not call AddSharedKernelCaching.
-// AddRedisDistributedLocking sources IConnectionMultiplexer via AddRedisConnection internally
-// (TryAddSingleton — first caller wins).
-
-// Renewable lock (Phase 23) — fluent chain
-services.AddSharedKernelCaching(options => { })
-        .AddRedisDistributedLocking(connectionString);
-// Inject: IDistributedLockService → call AcquireRenewableAsync → IRenewableLock
-// Background renewal: await KeepAliveAsync(lock, renewalInterval, ct);
-// Fencing tokens (Phase 43) — no DI change needed; the token is automatic on every
-// successful acquisition:
-//   IRenewableLock (AcquireRenewableAsync) → renewableLock.FencingToken directly.
-//   AcquireAsync's plain IAsyncDisposable? handle → (handle as IFencedLock)?.FencingToken.
-
-// Cache warmup (Phase 28)
-services.AddSharedKernelCaching(options => { options.WaitForWarmup = true; })
+// Cache warmup
+services.AddSharedKernelCaching(o => { o.ServiceName = "my-service"; o.WaitForWarmup = true; })
         .AddCacheWarmup<MyProductCatalogWarmup>()
         .AddCacheWarmup<MyUserPreferencesWarmup>();
-// Multiple strategies registered; executed in Order ascending at startup.
 
-// Multi-tenant key provider (Phase 29)
-services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
-        .AddTenantCacheKeyProvider();
-// Inject: ITenantCacheKeyProvider → call BuildTenantKey(tenantId, entity, id)
-
-// Redis L2 with circuit breaker (Phase 30; RedisL2Options.CircuitBreaker is RedisCircuitBreakerOptions from .Redis.Core as of Phase 32/33)
-services.AddSharedKernelCaching(options => { })
-        .AddRedisL2(connectionString, o => {
+// Redis L2 with circuit breaker
+services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
+        .AddRedisL2(connectionString, o =>
+        {
             o.CircuitBreaker.Enabled = true;
             o.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
         });
 
-// Standalone connection core — minimal dependency for a service that only needs
-// IConnectionMultiplexer + health tracking + optional circuit breaker, with no
-// FusionCache, no RedLock, no hash store, no pub/sub (Phase 32).
-services.AddRedisConnection(connectionString, o => { o.ConnectTimeoutMs = 5000; });
-services.AddRedisCircuitBreaker(o => {
-    o.Enabled = true;
-    o.FailureThreshold = 5;
-    o.BreakDuration = TimeSpan.FromSeconds(30);
-});
+// Standalone connection core
+services.AddRedisConnection(connectionString, o => o.ConnectTimeoutMs = 5000);
+services.AddRedisCircuitBreaker(o => { o.Enabled = true; o.FailureThreshold = 5; });
 // Inject: IConnectionMultiplexer, RedisConnectionHealthTracker, ResiliencePipeline (when enabled)
 
-// Hash store — session storage (Phase 35). AddRedisHashService requires an ICachingBuilder
-// (from AddSharedKernelCaching) and IConnectionMultiplexer (from AddRedisConnection, or any
-// Add* that registers it transitively, e.g. AddRedisL2 / AddRedisDistributedLocking / AddRedisChannelService).
-services.AddRedisConnection(connectionString); // registers IConnectionMultiplexer via .Redis.Core (TryAddSingleton)
-
-services.AddSharedKernelCaching(options => {
-             options.ServiceName = "session-service";
-             options.SerializerContext = MyAppSerializerContext.Default;
-         })
-        .AddRedisHashService()
-        .AddTypedHashStore(MyAppSerializerContext.Default.SessionDto);
-// Inject: IRedisHashService, ITypedHashStore<SessionDto>
-
-// Cache-value encryption at rest (Phase 42, redesigned Phase 46/WO-081 — now an ICacheService-level
-// EncryptedCacheService decorator with key-bound AAD, not an IFusionCacheSerializer decorator) —
-// must call AddSharedKernelCryptography(configuration).AddSymmetricEncryption() (01.Core) first (a real
-// IEncryptionKeyProvider must also be registered separately — that package ships no key material) AND
-// AddSharedKernelCaching() first (EncryptedCacheService wraps whichever ICacheService is already
-// registered); AddBrotliCompression() must still precede AddCacheEncryption() when both are used.
-services.AddSingleton<IEncryptionKeyProvider>(keyProvider);    // any provider, KMS-backed included
-services.AddSharedKernelCryptography(configuration)
-        .AddSymmetricEncryption();                             // 01.Core — registers ISymmetricEncryptionService
-services.AddSharedKernelCaching(options => { options.SerializerContext = MyAppSerializerContext.Default; })
-        .AddRedisL2(connectionString)
-        .AddBrotliCompression(o => { o.L2ThresholdBytes = 2048; })   // compression first (innermost)
-        .AddCacheEncryption();                                       // encryption last (outermost)
-
-// Tenant-scoped cache service (Phase 44) — the recommended default entry point for a
-// multi-tenant consumer; additive to AddTenantCacheKeyProvider() (calling that first is
-// optional — AddTenantCacheService registers ITenantCacheKeyProvider itself if needed).
-services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
-        .AddTenantCacheKeyProvider()
-        .AddTenantCacheService();
-// Inject: ITenantCacheService → call GetOrSetAsync(tenantId, entity, id, factory, policy, ct)
-
-// Distributed locking with fencing tokens (Phase 43, WO-065)
-services.AddSharedKernelCaching(options => { })
-        .AddRedisDistributedLocking(connectionString);
-// await using var lockHandle = await distributedLockService.AcquireAsync(resource, expiry, wait, retry, ct);
-// if (lockHandle is IFencedLock fenced) { var token = fenced.FencingToken; /* pass to protected resource */ }
-// var renewable = await distributedLockService.AcquireRenewableAsync(resource, expiry, wait, retry, ct);
-// var token = renewable?.FencingToken;  // IRenewableLock now extends IFencedLock directly
-
-// Redis connection with TLS (Phase 45, WO-065) — additive, default-preserving
-services.AddRedisConnection(connectionString, o => {
+// Redis connection with TLS — composes into ConfigurationOptions.SslClientAuthenticationOptions
+services.AddRedisConnection(connectionString, o =>
+{
     o.Ssl = true;
     o.CertificateValidation = (cert, chain, errors) => errors == SslPolicyErrors.None;
 });
-// Composes into ConfigurationOptions.SslClientAuthenticationOptions (Func<string, SslClientAuthenticationOptions>) —
-// StackExchange.Redis 2.13.1 carries no ConfigurationOptions.CertificateSelection/.CertificateValidation properties.
-
-// Pub/Sub + invalidation only — lightweight signaling, no FusionCache, no RedLock, no hash store (Phase 36)
-services.AddCachingCoreOptions(o => o.ServiceName = "my-service")
-        .Services
-        .AddRedisConnection(connectionString); // registers IConnectionMultiplexer via .Redis.Core (TryAddSingleton)
-
-services.AddSingleton<ICacheService, MyCacheServiceImplementation>(); // required by AddCacheInvalidationReceiver guard
-
-var pubSubBuilder = new MyCachingBuilder(services); // any ICachingBuilder wrapping `services`
-pubSubBuilder.AddRedisChannelService()
-             .AddRedisCacheInvalidationBus()
-             .AddCacheInvalidationReceiver();
-// Inject: IRedisChannelService, ICacheInvalidationBus; CacheInvalidationReceiver runs as a BackgroundService
 ```
 
 ---
 
 ## Test Rules
 
-- Unit tests → `SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/`
-- **WO-023 (Phases 32–36) test locations** — each extracted package owns its nested `.Tests` project; tests are partitioned by capability, not duplicated:
-  - `SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/` — connection registration (first-caller-wins), `ConnectionHealthState` transitions via `RedisConnectionHealthTracker`, circuit breaker pipeline construction (enabled/disabled)
-  - `SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/` — L2 round-trip, batch operations, Brotli compression, `SerializerContext`/AOT regression, L1 fallback, L1SizeLimit, L2 KeyPrefix, sliding expiration, key versioning, cross-instance tag invalidation (`Integration/CrossInstanceTagInvalidationTests.cs`, Phase 39)
-  - `SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.Tests/` *(implemented, Phase 34)* — RedLock acquire/timeout/release/expiry, renewable lock renewal/`KeepAliveAsync`, `IDistributedLockService` contract tests, `FakeRenewableLock`/`FakeDistributedLockService` unit tests, DI registration sanity, fencing-token acquisition/renewal/per-resource-isolation (`FencingTokenTests.cs`, Phase 43)
-  - `SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.Tests/` — `RedisHashService` set/get/get-all/delete/increment, `ITypedHashStore<T>` round-trip
-  - `SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.Tests/` — Pub/Sub round-trip, unsubscribe, channel reconnect/resubscribe, cache invalidation (key/tag/broadcast/offline), `CachingCoreOptions` DI (pub/sub-facing), DI registration sanity and optional circuit-breaker `ResiliencePipeline` injection for `AddRedisChannelService`
-- Redis integration tests **must** use Testcontainers (`16.Testing/SharedKernel.Testing`) — no external Redis dependency. This applies to every `.Tests` project listed above.
-- Stampede protection must be covered: parallel `GetOrSetAsync` calls verifying factory is invoked exactly once.
-- RedLock tests must cover: acquire success, acquire timeout (returns `null`), release on dispose, lock expiry.
-- L1-only fallback must be covered: stop the Redis container and assert cache degrades gracefully.
-- `RedisChannelService` tests: Pub/Sub round-trip, unsubscribe stops delivery.
-- `RedisHashService` tests: set/get field, get-all fields, delete field, increment field, shared multiplexer (no duplicate connection).
-- `CacheInvalidationReceiver` tests: Key invalidation, Tag invalidation, broadcast warning logged, sender-offline no-crash, OTel `CorrelationId` present on span.
-- `ITypedHashStore<T>` tests: five-method round-trip via Testcontainers (set/get/get-all/delete/increment).
-- `BrotliCacheSerializer` unit tests: compressed round-trip (above threshold), passthrough (below threshold), mixed reads (both compressed and uncompressed values readable), compression level configuration.
-- DI guard tests (Phase 19): each guard path throws `InvalidOperationException` with the correct message; `[Obsolete]` `AddRedisDistributedLocking(IServiceCollection)` shim delegates correctly.
-- `SerializerContext` regression test (Phase 18): after `AddSharedKernelCaching(o => o.SerializerContext = ctx)` + `AddRedisL2(...)`, the DI-resolved `IFusionCacheSerializer` includes `ctx` in its type info resolver chain.
-- L1SizeLimit eviction test (Phase 20): `L1SizeLimit = 100` with 101 entries causes at least one eviction.
-- L2 KeyPrefix integration test (Phase 20): raw Redis key contains the configured prefix.
-- Nullable factory tests (Phase 21): null result is cached (factory called once on first miss, not on second); non-null factory round-trip works correctly.
-- Batch operations tests (Phase 22, execution model retested Phase 40/P-303): mixed hits/misses, batch set then get-many, empty key list → empty dictionary (`SharedKernel.Caching.FusionCache.Tests/BatchOperationsTests.cs`, `SharedKernel.Caching.Redis.Tests/BatchOperationsIntegrationTests.cs`). **The Phase 22 "single Redis pipeline round-trip verified by command count" integration test (`RedisL2BatchService_GetManyRawAsync_UsesSinglePipelineRoundTrip` and its two sibling `RedisL2BatchService_*` tests) was removed in Phase 40** along with the dead `IRedisL2BatchService`/`RedisL2BatchService` type it exercised — no replacement pipeline-count assertion exists, because the Phase 40 execution model is bounded-concurrent `Parallel.ForEachAsync` fan-out, not a single-pipeline `IBatch` flush; correctness for the new model is proven differently, by the three tests below.
-- Batch concurrency-safety test (Phase 40, new — `BatchOperationsIntegrationTests.GetManyAsync_WithRedisL2_LargeKeySet_UnderBoundedConcurrency_LosesNoKeysAndDuplicatesNone`): `GetManyAsync` over 200 keys (more than 12× `MaxDegreeOfParallelism`) against a real Testcontainers Redis, seeded so every key maps to its own distinguishable value, loses or duplicates no key in the returned `ConcurrentDictionary`-backed result.
-- Batch wall-clock test (Phase 40, new — `BatchOperationsIntegrationTests.GetManyAsync_WithRedisL2_ConcurrentBatch_IsMeasurablyFasterThanSequentialGetAsyncCalls`): `GetManyAsync` over 50 keys against a real Testcontainers Redis completes in ≤ 75% of the wall-clock time of 50 sequential `GetAsync` calls for the same keys — a CI-tolerant margin (Redis round-trip latency dominates both paths, so 16-way concurrency should produce a far larger gap than 25% in practice; the margin exists to avoid flaking noisy CI runners, not because a smaller gap is expected).
-- Batch stampede-non-interference test (Phase 40, new — `BatchOperationsTests.GetOrSetAsync_StampedeProtection_UnaffectedByInterleavedBatchOperations`): 20 concurrent `GetOrSetAsync` calls on one key, interleaved with an unrelated `GetManyAsync`/`SetManyAsync` batch call over 20 keys, still invoke the stampede-protected factory exactly once — proves the `Parallel.ForEachAsync`/`ConcurrentDictionary` rewrite introduces no shared mutable state that could interfere with FusionCache's own per-key locking.
-- Batch Phase-22-contract regression tests (Phase 40, new — one pair per package: `BatchOperationsTests.GetManyAsync_EmptyKeyList_UnderBoundedConcurrency_StillShortCircuitsToEmptyDictionary`/`.SetManyAsync_UnderBoundedConcurrency_SinglePolicyStillAppliesToEveryEntry` in `.FusionCache.Tests`; `BatchOperationsIntegrationTests.GetManyAsync_EmptyKeys_WithRedisL2_ReturnsEmptyDictionary`/`.SetManyAsync_UnderBoundedConcurrency_SinglePolicyStillAppliesToEveryEntry` in `.Redis.Tests`, the latter deliberately batching 20 entries — beyond `MaxDegreeOfParallelism` — under one tag): explicit, non-incidental confirmation that `GetManyAsync`'s empty-input short-circuit and `SetManyAsync`'s single-`CachePolicy`-for-all-entries contract still hold after the bounded-concurrency rewrite.
-- Renewable lock tests (Phase 23): renewal succeeds before expiry, returns `false` after expiry without throwing, `KeepAliveAsync` prevents lock loss; `FakeRenewableLock` tracks `RenewalCount`.
-- Sliding expiration tests (Phase 24): `Sliding` factory properties correct, idle-expired entry not returned, absolute ceiling applies; `NeverExpire + SlidingWindow` guard throws.
-- Key versioning tests (Phase 25): version 0 = no suffix change, version 3 = `:v3` suffix, `WithVersion` + `WithTags` chain correctly.
-- Channel reconnect test (Phase 26): drop and restore Redis container; messages delivered after reconnect; resubscription count equals pre-disconnect count.
-- CachingCoreOptions DI test (Phase 27): `ServiceName` resolves correctly via `AddCachingCoreOptions` alone; warning logged when `ServiceName` is still `"app"`.
-- Cache warmup tests (Phase 28): ordering correct, failed strategy does not abort others, timing logged per strategy.
-- Tenant key tests (Phase 29): `BuildTenantKey` format, tenant isolation (different tenant IDs → different keys), format consistent with `BuildKey`.
-- Circuit breaker tests (Phase 30): circuit opens after threshold, short-circuits on open, closes after break duration; `Enabled = false` → zero behavioral change.
-- OTel metrics tests (Phase 31): each counter and histogram verified via `MeterListener` under correct conditions.
-- OTel tracing tests (Phase 41, new — `OtelTracingTests.cs`): a `GetAsync` hit, a `GetAsync` miss, a `SetAsync`, a `GetOrSetAsync` hit, and a `GetOrSetAsync` miss each verified via `ActivityListener` for span name, `ActivityKind.Client`, and `cache.key_prefix`/`cache.outcome` tag values, plus an `ActivitySource` name/version identity check. Assertions use existence-style checks (`Assert.Contains`/a `HasMatchingSpan` helper) rather than `Assert.Single`, mirroring `OtelMetricsTests.cs`'s own `>= 1` tolerance — xUnit's default cross-class test parallelism means other test classes in this assembly can concurrently drive their own `ICacheService` instances against the same static `ActivitySource`, so a single test's listener may observe spans it did not itself produce.
-- **Listener-callback accumulators must be thread-safe, not just existence-tolerant (Phase 41 discovery):** `MeterListener`/`ActivityListener` measurement/span callbacks are invoked on whatever thread completes the underlying instrument recording or `Activity.Stop()` — under xUnit's default cross-class test parallelism, two concurrently-running test classes recording against the same static `Meter`/`ActivitySource` can call the *same test's own* listener callback from two threads at once. `OtelMetricsTests.cs`'s pre-existing `BuildListener` helper accumulated into plain `Dictionary<string, long>`/`Dictionary<string, double>` via a read-then-write (`c[name] = c.GetValueOrDefault(name) + measurement`) — thread-unsafe, but rare enough to stay dormant until Phase 41 added `OtelTracingTests.cs`'s extra concurrent cache traffic, which raised the collision probability enough to intermittently throw `InvalidOperationException: Operations that change non-concurrent collections must have exclusive access` **from unrelated test classes** (confirmed via a git-stash A/B comparison: 10/10 clean runs on the pre-Phase-41 code, ~25% flake rate after adding `OtelTracingTests.cs`, 0/10 flakes after this fix). Fixed by switching both dictionaries to `ConcurrentDictionary<string, long>`/`ConcurrentDictionary<string, double>` with atomic `AddOrUpdate(name, measurement, (_, existing) => existing + measurement)`. `OtelTracingTests.cs`'s own `captured` accumulator was written as a `ConcurrentBag<Activity>` from the start for the identical reason, never a plain `List<Activity>`. Any future `MeterListener`/`ActivityListener`-based test in this suite must use a thread-safe accumulator (`ConcurrentDictionary`/`ConcurrentBag`/`ConcurrentQueue`), never a plain `Dictionary`/`List`, regardless of how "obviously single-threaded" the test body itself looks — the race is in the listener's *callback*, not the test method's own execution flow.
-- Connection core tests (Phase 32, new): `AddRedisConnection` registers `IConnectionMultiplexer` exactly once when called from multiple `Add*` extensions in the same container (first-caller-wins); `RedisConnectionHealthTracker.ConnectionHealth` transitions correctly via `internal` `OnConnectionRestored`/`OnConnectionFailed` simulation; `AddRedisCircuitBreaker` returns a non-null `ResiliencePipeline` when `Enabled = true` and registers nothing when `false`.
-- Redis package extraction regression tests (Phases 33–36, relocated not new): every test listed above for L2/locking/hash/pub-sub must continue to pass unchanged after relocation to its new package — relocation is a pure move (namespace + project updates only), so test *behavior* and *assertions* must not change. A relocated test that requires behavioral changes to pass indicates a relocation error, not an expected update.
-- Cross-package DI composition test (Phases 34–36, new): a container that calls only `AddRedisConnection` + one of `AddRedisDistributedLocking` / `AddRedisHashService` / `AddRedisChannelService` (without `AddRedisL2`) resolves successfully — proves the four extraction packages are independently consumable per the "sibling packages never reference each other" rule.
-- Cache encryption tests (Phase 42, redesigned Phase 46/WO-081 — `EncryptedCacheServiceTests.cs`, superseding the deleted `CacheEncryptionSerializerTests.cs`): encrypted round-trip via a dictionary-backed `ICacheService` double; **headline test** — a value written under key `A`, its stored entry moved byte-for-byte under key `B`, proving decryption fails (never succeeds) once the AAD no longer matches — treated as a cache miss and best-effort evicted; tamper detection (a flipped ciphertext byte in the stored `EncryptedPayload.ToBytes()` entry is likewise treated as a decrypt-failure miss, never a thrown exception — `DecryptAsync` returns `Result.Failure`, it does not throw); `GetManyAsync` maps both an absent key and a decrypt-failure key to `null` while a valid key still decrypts; a stored value that is not an encrypted payload is a miss and is evicted; the stored entry parses with `EncryptedPayload.TryParse` and decrypts under the cache key as AAD; every `ICacheService` member round-trips against an async-only (yielding) `IEncryptionKeyProvider`, and a direct re-invocation, from an unrelated `Task.Run` continuation, of the exact `byte[]`-typed factory closure `GetOrSetAsync` hands to the inner cache proves the closure needs no ambient/`AsyncLocal` context (P-545 deleted the former throw-on-sync-call double: `ISymmetricEncryptionService` has no synchronous members any more); ordering tests (`AddBrotliCompression().AddCacheEncryption()` unwraps the registered `IFusionCacheSerializer` back to non-Brotli and still round-trips correctly; a direct byte-length comparison between a compression-enabled and compression-disabled `EncryptedCacheService` instance proves compress-then-encrypt genuinely shrinks ciphertext for a highly-compressible payload; `AddCacheEncryption().AddBrotliCompression()` still throws `InvalidOperationException` — that guard needed zero code change); DI registration sanity (`AddCacheEncryption` resolves as `EncryptedCacheService`, missing `ISymmetricEncryptionService` throws naming `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()`, and registration through that builder round-trips, missing `ICacheService` throws naming `AddSharedKernelCaching()` — the new Phase 46 guard, tested by constructing `CachingBuilder` directly since it is `internal`/`InternalsVisibleTo`-accessible); and a composition test with `AddTenantCacheService()` proving a raw payload replayed from one tenant's tenant-scoped key to another tenant's key for the identical `(entity, id)` pair fails to decrypt — `ITenantCacheKeyProvider.BuildTenantKey`'s output is exactly what becomes AAD. A Redis integration test (`SharedKernel.Caching.Redis.Tests/Integration/CacheEncryptionAtRestTests.cs`, updated Phase 46) proves a raw read of the underlying Redis entry contains neither the plaintext value nor the DTO's own property names, and that the distributed-entry wrapper's value (matched case-insensitively) is a Base64 string that parses with `EncryptedPayload.TryParse` under the expected key id (P-545). **Discovery (Phase 42, still applies): `Microsoft.Extensions.Caching.StackExchangeRedis` (10.x) stores every L2 entry as a Redis Hash — fields `absexp`/`sldexp`/`data`, written via its own internal Lua script — never a plain Redis string.** A raw `IDatabase.StringGetAsync` against an L2 key throws `WRONGTYPE`; the correct raw-value read is `IDatabase.HashGetAsync(key, "data")`. **Discovery (Phase 46): the raw stored JSON is FusionCache's own distributed-entry envelope (`Value`/`Timestamp`/`LogicalExpirationTimestamp`/`Tags`/`Metadata`) — the entry this domain stores as `T` lives nested inside that envelope's `Value` property, not at the JSON root (since P-545 a Base64 string of `EncryptedPayload.ToBytes()`).**
-- Fencing token tests (Phase 43, planned): two sequential acquisitions of the same resource produce strictly increasing tokens; a renewal (dispose-then-recreate) produces a token strictly greater than the pre-renewal token, and a simple "reject non-increasing token" guard function correctly rejects a stale write using the pre-renewal token once the post-renewal token has been accepted; tokens are scoped per-resource (two concurrently-held different resources do not share a counter).
-- Tenant cache service tests (Phase 44, `TenantCacheServiceTests.cs`): two different `tenantId` values for the same `(entity, id)` pair never collide on the same key (`SetAsync_SameEntityAndId_DifferentTenants_DoNotCollide`, `RemoveAsync_OneTenant_DoesNotAffectAnotherTenantsEntryForSameEntityAndId`); cross-tenant tag isolation — tenant A's tagged entry survives tenant B's `RemoveByTagAsync` call using the same tag name (`RemoveByTagAsync_TenantB_DoesNotEvictTenantA_SameTagName`), and a tenant's own `RemoveByTagAsync` still evicts all of that tenant's own tagged entries (`RemoveByTagAsync_ScopedToOwnTenant_EvictsAllOwnTaggedEntries`); `AddTenantCacheService()` does not remove or override a prior standalone `AddTenantCacheKeyProvider()` registration, and also self-registers `ITenantCacheKeyProvider` when no prior registration exists; round-trip (`GetAsync`/`SetAsync`/`GetOrSetAsync`/`RemoveAsync`), argument validation, singleton/idempotent DI registration.
-- Redis connection hardening tests (Phase 45, shipped — `RedisConnectionValidationTests.cs`/`RedisTlsConfigurationTests.cs`): an invalid `RedisConnectionOptions` (negative `ConnectTimeoutMs`, whitespace `ConnectionString`) throws `OptionsValidationException` at host startup (both via `IStartupValidator.Validate()` and via first `IOptions<T>.Value` access); `Ssl`/`ClientCertificates`/`CertificateValidation` compose correctly into the built `ConfigurationOptions.SslClientAuthenticationOptions`; the non-loopback-without-TLS warning fires exactly once for a non-loopback endpoint with `Ssl = false` (even with multiple non-loopback endpoints configured) and never fires for a loopback endpoint or `Ssl = true`; every existing bare-connection-string call site continues to work unchanged. `BuildConfigurationOptions`/`WarnIfNonLoopbackWithoutTls`/`IsLoopback` are `internal` (not `private`) specifically so this test project — which carries no Testcontainers dependency — can exercise them directly without a live Redis connection, mirroring `RedisConnectionHealthTracker`'s existing internal-for-testability convention.
-- Cross-instance tag invalidation test (Phase 39, new — `SharedKernel.Caching.Redis.Tests/Integration/CrossInstanceTagInvalidationTests.cs`): two fully independent `ServiceProvider`s (own `IConnectionMultiplexer`, own L1 `MemoryCache`, own `IFusionCache`) share one Testcontainers Redis connection string and the same `CachingCoreOptions.ServiceName` — never two scopes of one container, since that could pass even if the cross-instance guarantee were broken. Seed a tagged entry via instance A, read-through on instance B (populating B's L1), tag-invalidate via instance A's `RemoveByTagAsync`, then bounded-poll instance B's `GetOrSetAsync` (100 ms interval, 5 s timeout) with a new, distinguishable factory return value until the fresh value is observed. The bounded-poll pattern (never a fixed `Task.Delay` guess, never an unbounded wait) mirrors this suite's Phase 23 renewable-lock renewal-timing test precedent. **5 s timeout justification (Phase 39, CTI-08):** the same interval already proven sufficient for Phase 23's renewal-timing tests under this suite's CI runner; propagation here crosses two independent StackExchange.Redis connections plus one Redis Pub/Sub relay hop, which is strictly less latency than Phase 23's renewal-loop-plus-lock-expiry chain, so the existing tolerance carries over without needing a wider margin. The test failed with `MissingMethodException` on first attempt for an unrelated reason — a stale `Testcontainers.Redis` `4.4.0` pin conflicting with `16.Testing`'s `4.13.0` floor (see Phase 39 changelog entry) — not a cross-instance propagation gap; after that pin was corrected, the test passed against the current, unmodified `AddRedisL2`/`AddSharedKernelCaching` wiring.
+- Every package owns a nested `.Tests` project; tests are partitioned by capability, not duplicated:
+  - `SharedKernel.Caching.Abstractions.Tests` (78) — `CachePolicyTests` (presets, validation, `ForTenant`, equality), `CacheKeyFormatTests` (escaping, service-name rule, no-collision properties: a global key never equals a tenant key, a separator inside a part never collides, tenant tags never collide), `CacheLookupTests`, `CacheFactoryContextTests`, `DistributedLockContractTests` (options, lease, exception). No provider reference.
+  - `SharedKernel.Caching.FusionCache.Tests` (198) — `FusionCacheServiceTests`, `Policies/BuildEntryOptionsTests` (every `CachePolicy` setting → `FusionCacheEntryOptions`, `ApplyFactoryDecision`), `BatchOperationsTests`, `NullableFactoryTests`, `TenantCacheServiceTests`, `CacheKeyProviderTests`, `DI/CachingDiRegistrationTests`, `Encryption/EncryptedCacheServiceTests`, `Serialization/*`, `SerializerContextTests`, `L1SizeLimitTests`, `CacheWarmupTests`, `OtelMetricsTests`, `OtelTracingTests`.
+  - `SharedKernel.Caching.Redis.Tests` (34) — L2 round-trip and stampede protection, batch integration, circuit breaker, L1 fallback, `KeyPrefix`, `Integration/CacheEncryptionAtRestTests`, `Integration/CrossInstanceTagInvalidationTests`.
+  - `SharedKernel.Caching.Redis.DistributedLocking.Tests` (47) — `Abstractions/IDistributedLockServiceContractTests` (abstract contract base, run against real Redis by `RedisDistributedLockServiceContractTests`), `RedisDistributedLockTests` (raw key/TTL, keep-alive, loss, owner-safe release, fencing counter), `LockStoreUnavailableTests`, `DI/RedisDistributedLockingExtensionsTests`.
+  - `SharedKernel.Caching.Redis.HashStore.Tests` (30) — `RedisHashService` and `ITypedHashStore<T>` integration, DI guard and `ResiliencePipeline` injection.
+  - `SharedKernel.Caching.Redis.PubSub.Tests` (18) — publish/subscribe round-trip, unsubscribe, handler exceptions swallowed, reconnect/resubscribe, DI guard and `ResiliencePipeline` injection.
+  - `SharedKernel.Caching.Redis.Core.Tests` (55) — connection registration (first caller wins), health transitions via internal event handlers, circuit breaker, options validation, TLS composition.
+- Redis integration tests **must** use Testcontainers (`16.Testing/SharedKernel.Testing`), never an external Redis. `Testcontainers.Redis` stays on the same version as `16.Testing` (4.13.0); a lower direct pin resolves a mismatched `DotNet.Testcontainers` assembly and throws `MissingMethodException` at container start.
+- A test project that needs an `ICachingBuilder` without `.FusionCache` uses its own small `TestCachingBuilder` — never a reference to a sibling provider package.
+- **Hit versus miss** must be covered: a cached `null` and a cached `0` are hits (`TryGetAsync_DistinguishesMiss_FromCachedNull_AndCachedZero`, `NullableFactory_*`).
+- **Stampede protection** must be covered: parallel `GetOrSetAsync` calls invoke the factory exactly once (L1 and with Redis L2), including when interleaved with batch calls.
+- **Factory context** must be covered: `SkipCaching` returns the value and stores nothing; skipping for some calls still caches the others; `SetDurations` overrides expire independently; a throwing factory caches nothing and propagates.
+- **Expire versus remove under fail-safe:** after `ExpireAsync`, a failing factory serves the old value; after `RemoveAsync`, it cannot.
+- **Service name validation:** an unset or invalid `ServiceName` fails options resolution, key-provider resolution and host start; a valid one passes.
+- **Tenant isolation** must be covered at both layers: same `(entity, id)` for two tenants never collides; tenant A's tag removal never evicts tenant B's entries; a global `RemoveByTagAsync` with the same tag name — or a tag named like a tenant tag — never evicts tenant entries; `RemoveTenantAsync` removes only that tenant, including entries written through `GetOrSetAsync`; an already tenant-scoped policy throws.
+- **Locks** must cover: free resource → held handle with a positive token; contended → `null` (with zero wait immediately, with a shorter wait after waiting, with a longer wait acquiring after release); parallel attempts → exactly one winner (locks and leases); tokens strictly increase across locks and leases and a stale holder is rejected by a guard that accepted a newer token; contended attempts do not advance the counter; counters are independent per resource; dispose is idempotent, deletes only its own key and keeps the counter; a deleted or foreign-owned key is reported lost; a held lock outlives its expiry while kept alive; an unreachable store throws `DistributedLockUnavailableException` for locks, leases and waiting attempts, and a held lock whose store stays down past its expiry is reported lost; cancellation throws.
+- **L1-only fallback:** the cache works with no Redis configured.
+- **Batch operations:** mixed hits/misses; set-many then get-many; empty key list → empty dictionary; duplicate keys → one lookup per distinct key; single policy (tag) applies to every entry; 200 keys under bounded concurrency lose or duplicate nothing; a 50-key batch against real Redis completes in ≤ 75% of 50 sequential `TryGetAsync` calls (CI-tolerant margin).
+- **Cache encryption** (`EncryptedCacheServiceTests`, 27): round-trip; a payload replayed under a different key fails authentication, is a miss and is evicted; tampered ciphertext and a non-payload value are misses and are evicted; `TryGetManyAsync` maps a decrypt failure and an absent key to misses while a valid key decrypts; a corrupted entry in `GetOrSetAsync` is evicted and recomputed once through the inner service (also with a real FusionCache); `SkipCaching` passes through; the stored entry is `EncryptedPayload.ToBytes()` bound to the key; every member round-trips with an async-only key provider; the wrapped factory re-invoked from an unrelated execution context still encrypts correctly; compress-then-encrypt produces shorter ciphertext; `AddBrotliCompression().AddCacheEncryption()` unwraps the serializer and round-trips, the reverse order throws; each registration guard throws; with `AddTenantCacheService()`, a cross-tenant replay for the same `(entity, id)` fails. `CacheEncryptionAtRestTests` proves a raw Redis read (`HashGetAsync(key, "data")`) contains neither the plaintext nor the DTO property names, and the envelope's `Value` is Base64 that parses with `EncryptedPayload.TryParse`.
+- **Cross-instance propagation** (`CrossInstanceTagInvalidationTests`): two fully independent `ServiceProvider`s (own multiplexer, own L1, own `IFusionCache`) share one Testcontainers Redis and the same `ServiceName` — never two scopes of one container, which could pass with the guarantee broken. `RemoveByTagAsync`, `RemoveAsync` and `ExpireAsync` on instance A make instance B recompute; a `LocalOnly()` entry on A is neither written to Redis nor visible on B. Assertions bounded-poll (100 ms interval, 5 s timeout), never a fixed `Task.Delay`.
+- **Lock expiry is a real Redis TTL**, so expiry tests wait real time: short durations plus a small margin. Loss-detection tests wait on `LostToken` with a timeout (`Task.Delay(timeout, handle.LostToken)`), never an unbounded wait.
+- **OTel tests:** `OtelMetricsTests` verifies each instrument via `MeterListener`; `OtelTracingTests` verifies span name, `ActivityKind.Client`, `cache.key_prefix`/`cache.outcome` and the source's name/version. Assertions are existence-style (`Assert.Contains`, `>= 1`), because other test classes run concurrently against the same static instruments.
+- **Listener-callback accumulators must be thread-safe.** `MeterListener`/`ActivityListener` callbacks run on whatever thread records the measurement or stops the activity, so two concurrent test classes can call one test's callback from two threads. A plain `Dictionary` read-then-write threw `InvalidOperationException` from unrelated test classes (~25% of runs) until switched to `ConcurrentDictionary.AddOrUpdate`; spans are collected in a `ConcurrentBag<Activity>`. Use `ConcurrentDictionary`/`ConcurrentBag`/`ConcurrentQueue` in any listener-based test.
+- **Circuit breaker tests:** opens after the threshold, short-circuits when open, closes after the break duration; `Enabled = false` registers nothing.
+- **Redis connection hardening** (`RedisConnectionValidationTests`/`RedisTlsConfigurationTests`): invalid options throw `OptionsValidationException` via `IStartupValidator.Validate()` and on first `IOptions<T>.Value` access; TLS settings compose into `SslClientAuthenticationOptions`; the non-loopback warning fires exactly once and never for loopback or `Ssl = true`.
+- **Channel reconnect:** forcibly kill the subscriber connection on a live container; messages are delivered after reconnect; the resubscription count equals the pre-disconnect count; a partial resubscription failure still resubscribes the remaining channels.
+- **Cross-package composition:** a container calling only `AddRedisConnection` + one of `AddRedisDistributedLocking`/`AddRedisHashService`/`AddRedisChannelService` resolves (proven end to end by `consumer-verify` surfaces 3–5).
+- **Cache warmup:** ascending order, a failed strategy does not abort the others, `WaitForWarmup` awaits completion, registration is idempotent.
 
 ---
 

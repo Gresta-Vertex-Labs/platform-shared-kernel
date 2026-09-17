@@ -94,7 +94,7 @@ services.AddScoped<IRequestContext, HttpRequestContext>();               // -> 1
 services.AddScoped<IUnitOfWork, EfUnitOfWorkAdapter>();                  // -> 06.Persistence.Abstractions
 services.AddScoped<IRequestIdempotencyStore, RedisIdempotencyStore>();   // -> 18.Idempotency, or your own
 services.AddScoped<IAuditTrailWriter, PersistenceAuditTrailWriterAdapter>(); // -> 06.Persistence.Abstractions
-services.AddSingleton<ICacheService, FusionCacheService>();              // 02.Caching.FusionCache
+services.AddSharedKernelCaching(o => o.ServiceName = "orders");         // 02.Caching.FusionCache — registers ICacheService
 
 services.AddSharedKernelApplicationBehaviors()
     .AddTracingBehavior()
@@ -218,8 +218,8 @@ registered so a handler may inject it regardless.
 | `IdempotencyBehavior` | `CompleteAsync` (persists the serialized response, passing back the reservation token; a `false` result logs a `Warning` but still returns the response) | `ReleaseAsync` (never `CompleteAsync` — a failure must remain retryable) | `ReleaseAsync`, then rethrows |
 | `TransactionBehavior` | `IUnitOfWork.SaveChangesAsync` (outermost command only) | no commit | no commit — the exception propagates before this behavior's post-`next()` code runs |
 | `AuditingBehavior` | `RecordAsync` with `Succeeded=true`, `AfterSnapshot` computed | `RecordAsync` with `Succeeded=false`, `ErrorCode` = the response's `Error.Code`, `AfterSnapshot=null` | `RecordAsync` with `Succeeded=false`, `ErrorCode` = the exception type's full name, `AfterSnapshot=null`; a `RecordAsync` failure here is logged (`LogAuditWriteFailedDuringException`, EventId 5130), not propagated — the **original** exception always rethrows |
-| `CachingBehavior` (Query stage, `.Caching`) | on miss: stores the response via `SetAsync` | never cached | propagates; nothing cached |
-| `CacheInvalidationBehavior` (Command stage, `.Caching`) | registers an `ICommandScope.OnCompleted` eviction callback | nothing registered | nothing registered |
+| `CachingBehavior` (Query stage, `.Caching`) | runs the handler inside `GetOrSetAsync` (once per key across concurrent callers) and caches the response | returned to every waiting caller, never cached (`CacheFactoryContext.SkipCaching`) | propagates, nothing cached; the query policy's fail-safe may serve an expired entry instead |
+| `CacheInvalidationBehavior` (Command stage, `.Caching`) | registers an `ICommandScope.OnCompleted` callback that evicts after commit (`RemoveAsync` per key, `RemoveByTagAsync` per tag); keys and tags are scoped and validated **before** the handler runs, so an invalid key fails the command instead of the post-commit callback | nothing registered | nothing registered |
 
 A nested command (`ICommandScope.IsNested`) makes `IdempotencyBehavior` and `TransactionBehavior` call
 `next()` directly, skipping their own reservation/commit logic entirely — only the **outermost** command
@@ -333,8 +333,9 @@ them.
 ## Known limitation — `CachingBehavior` and the L2 serializer
 
 `CachingBehavior<,>` (`SharedKernel.Application.Behaviors.Caching`) caches the **whole** `TResponse`
-(typically `Result<T>`) via `ICacheService.GetAsync<TResponse>`/`SetAsync` — see the Decision Records
-table below for why it uses this pair instead of `GetOrSetAsync`.
+(typically `Result<T>`) through the context overload of `ICacheService.GetOrSetAsync<TResponse>`: the
+handler runs in the factory, and a failed `Result` calls `CacheFactoryContext.SkipCaching()` so it is
+returned but never stored (P-547). The cached value is still the whole `Result<T>`, not its payload.
 
 This works today in FusionCache's **L1** in-process `MemoryCache`, which stores the object by reference —
 no serialization involved. It is **not proven to work over L2 (Redis)**. Verified by reading
@@ -348,10 +349,10 @@ deserialize — a genuine Redis L2 round-trip of a cached `Result<T>` is expecte
 `Idempotency/IdempotencyResponseSerializer` already solves the identical problem with two hand-written
 `JsonConverter<Result>`/`JsonConverter<Result<T>>` plus a `JsonConverterFactory`, but that class is
 `internal` to the Idempotency namespace and `CachingBehavior` does not reuse it; `02.Caching`'s default
-serializer has no equivalent registered either. **Flagged for the follow-up `02.Caching` pass** (this
-package's own publish is deferred until then — see `state-map.md`): either `02.Caching`'s default
-serializer needs `Result`/`Result<T>` converters, or `CachingBehavior` needs to cache the unwrapped
-payload instead of the whole `Result<T>`.
+serializer has no equivalent registered either. **Still open.** The P-547 `02.Caching` redesign changed
+how `CachingBehavior` calls the cache, not what it serializes (this package's publish stays deferred —
+see `state-map.md`): either `02.Caching`'s default serializer needs `Result`/`Result<T>` converters, or
+`CachingBehavior` needs to cache the unwrapped payload instead of the whole `Result<T>`.
 
 ---
 
@@ -359,8 +360,8 @@ payload instead of the whole `Result<T>`.
 
 | Decision | Chosen | Rejected | Accepted cost |
 | --- | --- | --- | --- |
-| `CachingBehavior` cache-miss path | Explicit `GetAsync`/`SetAsync` pair; never caches a failure | `ICacheService.GetOrSetAsync` (built-in stampede protection) | Gives up de-duplicating concurrent cache-miss executions — `GetOrSetAsync` has no hook to skip caching a factory result conditionally, and the wrapped response here is the whole `Result`, not just the payload |
-| Tenant cache-key/tag scoping | A literal `tenant:{tenantId}:` string prefix, computed inline in both `.Caching` behaviors | `02.Caching.Abstractions`'s `ITenantCacheService`/`ITenantCacheKeyProvider` | `.Caching` stays a thin consumer of the plain `ICacheService`, with no dependency on the tenant-specific caching contracts |
+| `CachingBehavior` cache-miss path | `ICacheService.GetOrSetAsync` context overload; a failed `Result` calls `SkipCaching()`; the policy is forced to `WithoutEagerRefresh()` and `WithFactoryTimeouts(null, null)` (P-547) | A `TryGetAsync`/`SetAsync` pair (no stampede protection); keeping eager refresh or factory timeouts | Neither eager refresh nor a soft/hard factory timeout is available to a cached query: both let FusionCache run the handler in the background after the request's DI scope is disposed. Fail-safe and every other policy setting are kept |
+| Tenant cache-key/tag scoping | The internal `CacheScope` helper over `CacheKeyFormat`: key `@{tenant}:{key}` (`BuildTenantTag`, tenant as `Guid` `"D"`), policy `ForTenant(tenant)`, tags `@{tenant}:{tag}`; without a tenant the key is used as is and one starting with `@` throws `ArgumentException` (P-547) | `02.Caching.Abstractions`'s `ITenantCacheService`/`ITenantCacheKeyProvider` (they take `(entity, id)`, not a free-form query key) | `.Caching` stays a consumer of the plain `ICacheService`, yet uses the same escaped tenant format, so no tenant can read another tenant's or a global entry, and `ITenantCacheService.RemoveTenantAsync` also removes the tenant's cached query results |
 | Pipeline extensibility | A five-value `PipelineStage` enum + `AddBehavior(openGenericType, stage, requiredServices)` | An unordered, purely additive registration list | A sibling package (`.Caching`) can slot precisely between Validation and the command stage without `SharedKernel.Application.Behaviors` knowing it exists |
 | Idempotency store naming | `IRequestIdempotencyStore` | Reusing `07.Messaging.Abstractions.IIdempotencyStore`'s name | Avoids a same-name collision — `18.Idempotency` implements both contracts in one file |
 | AOT/trimming | Not a constraint (user ruling) | Reflection-free everywhere, at the cost of ceremony | Reflection used at the four documented sites, each cached once per closed type |
@@ -379,7 +380,7 @@ Changes here that silently break another layer. Check the right column before me
 | `Idempotency.IRequestIdempotencyStore`'s contract | `18.Idempotency`'s store implementations; `16.Testing`'s fake (both migrated onto the stateless `reservationToken`/`bool`-returning shape, same day as `SK.05.P544`) |
 | `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence`'s real `IAuditTrailWriter` bridge adapter; `16.Testing`'s fake |
 | `Context.IRequestContext`'s shape | Every consuming service's composition-root bridge; `12.Security.Abstractions.IUserContext`/`ITenantProvider` mapping |
-| `ICacheableQuery<TResponse>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`; the L2 serialization gap noted above |
+| `ICacheableQuery<TResponse>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format; the L2 serialization gap noted above |
 | `ApplicationBehaviorsBuilder`'s registration order | `00.Governance`'s pipeline-order architecture test (mid-migration as of `SK.05.P544`) |
 | Any public API | `PublicAPI.Unshipped.txt` in the affected package, that package's own `README.md` |
 
