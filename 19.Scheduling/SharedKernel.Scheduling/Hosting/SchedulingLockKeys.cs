@@ -2,12 +2,12 @@ namespace SharedKernel.Scheduling.Hosting;
 
 /// <summary>
 /// Builds the distributed-lock resource key for a single job occurrence's
-/// <c>IDistributedLockService</c> claim. Centralized here rather than string-concatenated ad hoc at
+/// <c>IDistributedLockService</c> lease. Centralized here rather than string-concatenated ad hoc at
 /// each call site (SK0022-shaped magic-string discipline).
 /// </summary>
 /// <remarks>
 /// <b>Deliberately keyed by (job name, scheduled fire time) — never job name alone.</b> This lock is a
-/// CLAIM on one specific occurrence, acquired once and never proactively released (see
+/// LEASE on one specific occurrence (<c>TryAcquireLeaseAsync</c>), acquired once and never released (see
 /// <c>SchedulingHostedService.ExecuteOneAsync</c>) — it expires naturally via its configured TTL. A
 /// job-name-only key combined with releasing the lock immediately after execution finishes would open a
 /// genuine cross-replica duplicate-execution window: replica B, evaluating the exact same due occurrence

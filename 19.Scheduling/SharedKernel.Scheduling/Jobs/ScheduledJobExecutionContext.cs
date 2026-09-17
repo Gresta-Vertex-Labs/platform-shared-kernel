@@ -38,14 +38,14 @@ public sealed record ScheduledJobExecutionContext
     public TenantScope? TenantScope { get; init; }
 
     /// <summary>
-    /// Gets the fencing token acquired alongside this tick's distributed lock, if any.
+    /// Gets the fencing token of this occurrence's distributed lease, if any.
     /// </summary>
     /// <remarks>
-    /// This is a propagation seam only — see <c>IFencedLock</c>'s own documentation for the standard
+    /// This is a propagation seam only — see <c>IDistributedLockService</c>'s own documentation for the standard
     /// usage contract. This package owns no protected resource of its own to re-check the token
     /// against; a job body that itself writes to a fencing-token-aware downstream resource is expected
     /// to pass this value along. <see langword="null"/> whenever no <c>IDistributedLockService</c> is
-    /// registered (single-replica mode) or the acquired lock handle did not carry a fencing token.
+    /// registered (single-replica mode).
     /// </remarks>
     public long? FencingToken { get; init; }
 }

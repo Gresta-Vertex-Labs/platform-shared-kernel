@@ -116,4 +116,10 @@ internal static partial class Log
         Level = LogLevel.Warning,
         Message = "Scheduling hosted service shutdown drain timed out waiting for {InFlightCount} in-flight execution(s)")]
     public static partial void ShutdownDrainTimedOut(ILogger logger, int inFlightCount);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Scheduling + 16,
+        Level = LogLevel.Error,
+        Message = "Job '{JobName}' occurrence skipped: the distributed lock store could not be reached, so no replica can claim it")]
+    public static partial void LockStoreUnavailable(ILogger logger, string jobName, Exception exception);
 }

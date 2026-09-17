@@ -51,4 +51,8 @@ internal static class SchedulingTelemetry
     /// <summary>Number of ticks where the per-tick distributed lock could not be acquired (another replica is executing).</summary>
     public static readonly Counter<long> LockAcquisitionFailedCount =
         Meter.CreateCounter<long>("scheduling.lock.acquisition_failed", unit: "{attempt}", description: "Number of ticks where the distributed lock was held by another replica.");
+
+    /// <summary>Number of ticks skipped because the distributed lock store could not be reached.</summary>
+    public static readonly Counter<long> LockStoreUnavailableCount =
+        Meter.CreateCounter<long>("scheduling.lock.store_unavailable", unit: "{attempt}", description: "Number of ticks skipped because the distributed lock store could not be reached.");
 }

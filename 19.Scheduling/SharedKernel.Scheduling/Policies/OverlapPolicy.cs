@@ -12,7 +12,7 @@ namespace SharedKernel.Scheduling.Policies;
 /// <para>
 /// <b>Per-process, in-memory only, and independent of and additional to cross-replica exclusivity.</b>
 /// This policy guards a single job against overlapping <em>itself</em> within one running process. It
-/// has nothing to do with, and does not substitute for, the optional <c>IFencedLock</c>-guarded
+/// has nothing to do with, and does not substitute for, the optional distributed-lease-guarded
 /// cross-replica exclusivity (Domain Invariant 3) — a service can be fully single-replica, have no
 /// distributed lock configured at all, and still need an overlap policy the moment a job's own body
 /// occasionally runs longer than its cron interval.

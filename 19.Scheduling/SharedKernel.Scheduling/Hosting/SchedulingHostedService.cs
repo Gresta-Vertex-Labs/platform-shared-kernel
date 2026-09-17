@@ -376,14 +376,23 @@ internal sealed class SchedulingHostedService : BackgroundService
                 string resource = SchedulingLockKeys.ForOccurrence(definition.JobName, scheduledFireTimeUtc);
                 TimeSpan lockExpiry = definition.Options.LockExpiry ?? _options.Value.DefaultLockExpiry;
 
-                IAsyncDisposable? lockHandle = await _lockService.AcquireAsync(
-                    resource,
-                    lockExpiry,
-                    wait: TimeSpan.Zero,
-                    retry: TimeSpan.FromMilliseconds(200),
-                    stoppingToken).ConfigureAwait(false);
+                DistributedLease? lease;
+                try
+                {
+                    lease = await _lockService.TryAcquireLeaseAsync(resource, lockExpiry, stoppingToken).ConfigureAwait(false);
+                }
+                catch (DistributedLockUnavailableException ex)
+                {
+                    // Without the lock store no replica can prove it owns this occurrence, so none
+                    // runs it. Visible as an error, never mistaken for another replica's claim.
+                    SchedulingTelemetry.LockStoreUnavailableCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
+                    Log.LockStoreUnavailable(_logger, definition.JobName, ex);
+                    activity?.SetTag(SchedulingTagKeys.Outcome, "lock-store-unavailable");
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    return;
+                }
 
-                if (lockHandle is null)
+                if (lease is null)
                 {
                     // Another replica already claimed this exact occurrence — this IS the
                     // cross-replica single-execution mechanism (Domain Invariant 3), not an error.
@@ -393,20 +402,12 @@ internal sealed class SchedulingHostedService : BackgroundService
                     return;
                 }
 
-                if (lockHandle is IFencedLock fenced)
-                {
-                    fencingToken = fenced.FencingToken;
-                }
-
+                fencingToken = lease.FencingToken;
                 Log.LockAcquired(_logger, definition.JobName, fencingToken);
 
-                // `lockHandle` is deliberately never disposed here — see SchedulingLockKeys'
-                // remarks. This is a claim on ONE occurrence, held until lockExpiry elapses
-                // naturally on the lock backend, not a traditional acquire-for-critical-section-
-                // then-release mutex. Releasing immediately after this execution finishes would
-                // reopen the exact cross-replica duplicate-execution window the per-occurrence key
-                // exists to close: a second replica evaluating the same due occurrence slightly
-                // later would find the lock already released and duplicate-fire it.
+                // A lease, not a lock: it is never released and simply expires after lockExpiry — see
+                // SchedulingLockKeys' remarks. Releasing it when this execution finishes would reopen
+                // the cross-replica duplicate-execution window the per-occurrence key exists to close.
             }
 
             var context = new ScheduledJobExecutionContext
