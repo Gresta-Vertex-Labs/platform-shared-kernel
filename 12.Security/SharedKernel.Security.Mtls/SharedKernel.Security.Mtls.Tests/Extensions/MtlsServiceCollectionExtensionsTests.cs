@@ -1,9 +1,18 @@
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions.Abstractions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.Security.Mtls.Authentication;
 using SharedKernel.Security.Mtls.Extensions;
 using SharedKernel.Security.Mtls.Options;
+using SharedKernel.Security.Mtls.Tests.TestSupport;
 using SharedKernel.Security.Mtls.Validation;
 using Xunit;
 
@@ -12,130 +21,243 @@ namespace SharedKernel.Security.Mtls.Tests.Extensions;
 public sealed class MtlsServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddMtlsAuthentication_RegistersIMtlsCertificateValidator_AsScoped()
+    public void AddMtlsAuthentication_RegistersSchemeValidatorMapperAndContexts()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMtlsAuthentication<DummyValidator>();
 
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IMtlsCertificateValidator));
-        Assert.NotNull(descriptor);
-        Assert.Equal(ServiceLifetime.Scoped, descriptor!.Lifetime);
+        services.AddMtlsAuthentication<RecordingValidator>();
+
+        ServiceDescriptor validator = Assert.Single(services, d => d.ServiceType == typeof(IMtlsCertificateValidator));
+        Assert.Equal(ServiceLifetime.Scoped, validator.Lifetime);
+        Assert.Equal(typeof(RecordingValidator), validator.ImplementationType);
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContextMapper) && d.ImplementationType == typeof(MtlsUserContextMapper));
+        ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
+        Assert.Equal(ServiceLifetime.Scoped, userContext.Lifetime);
+        Assert.NotNull(userContext.ImplementationFactory);
+        ServiceDescriptor tenantProvider = Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider));
+        Assert.Equal(typeof(UserContextTenantProvider), tenantProvider.ImplementationType);
+        Assert.Contains(services, d => d.ServiceType == typeof(IHttpContextAccessor));
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        AuthenticationOptions authentication = provider.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+        Assert.Contains(authentication.Schemes, s => s.Name == MtlsAuthenticationDefaults.AuthenticationScheme);
     }
 
     [Fact]
-    public void AddMtlsAuthentication_RegistersIUserContext_AsScoped()
+    public void AddMtlsAuthentication_Scheme_IsNotMadeDefault()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMtlsAuthentication<DummyValidator>();
 
-        var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(IUserContext));
-        Assert.NotNull(descriptor);
-        Assert.Equal(ServiceLifetime.Scoped, descriptor!.Lifetime);
+        services.AddMtlsAuthentication<RecordingValidator>();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        AuthenticationOptions options = provider.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+        Assert.Null(options.DefaultScheme);
+        Assert.Null(options.DefaultAuthenticateScheme);
+        Assert.Null(options.DefaultChallengeScheme);
+        Assert.Null(options.DefaultForbidScheme);
     }
 
     [Fact]
-    public void ResolvingIUserContext_WithoutHttpContext_ReturnsAnonymousUserContext_WhenNoPreviousFactory()
+    public async Task AddMtlsAuthentication_WithOtherDefaultScheme_DefaultEndpointIgnoresCertificate()
+    {
+        using TestCertificateAuthority ca = TestCertificateAuthority.Create();
+        using X509Certificate2 certificate = ca.IssueLeaf();
+        var validator = new RecordingValidator();
+        await using MtlsTestHost host = await MtlsTestHost.StartAsync(services =>
+        {
+            services.AddAuthentication("Other").AddScheme<AuthenticationSchemeOptions, NoResultHandler>("Other", _ => { });
+            services.AddSingleton<IMtlsCertificateValidator>(validator);
+            services.AddMtlsAuthentication<RecordingValidator>(options =>
+            {
+                options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust;
+                options.CustomTrustStore.Add(ca.Certificate);
+                options.RevocationMode = X509RevocationMode.NoCheck;
+            });
+        });
+
+        CallerSnapshot onDefault = await host.GetCallerAsync("/default", certificate);
+        CallerSnapshot onCertificate = await host.GetCallerAsync("/certificate", certificate);
+
+        Assert.False(onDefault.IsAuthenticated);
+        Assert.True(onCertificate.IsAuthenticated);
+        Assert.Single(validator.Certificates);
+    }
+
+    [Fact]
+    public void AddMtlsAuthentication_ExistingUserContextAndTenantProvider_AreKept()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddMtlsAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        services.AddSingleton<IUserContext>(SystemUserContext.Instance);
+        services.AddScoped<ITenantProvider, FixedTenantProvider>();
 
-        using var scope = provider.CreateScope();
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
+        services.AddMtlsAuthentication<RecordingValidator>();
 
-        Assert.IsType<AnonymousUserContext>(userContext);
+        Assert.Same(SystemUserContext.Instance, Assert.Single(services, d => d.ServiceType == typeof(IUserContext)).ImplementationInstance);
+        Assert.Equal(typeof(FixedTenantProvider), Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider)).ImplementationType);
     }
 
     [Fact]
-    public void ResolvingIUserContext_WithCertificateAuthenticatedPrincipal_ReturnsMtlsUserContext()
+    public void AddMtlsAuthentication_ExistingValidator_IsKept()
+    {
+        var existing = new RecordingValidator();
+        var services = new ServiceCollection();
+        services.AddSingleton<IMtlsCertificateValidator>(existing);
+
+        services.AddMtlsAuthentication<RecordingValidator>();
+
+        Assert.Same(existing, Assert.Single(services, d => d.ServiceType == typeof(IMtlsCertificateValidator)).ImplementationInstance);
+    }
+
+    [Fact]
+    public void AddMtlsAuthentication_AnonymousPlaceholder_IsReplacedByResolver()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddMtlsAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
 
-        using var scope = provider.CreateScope();
-        var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var identity = new ClaimsIdentity([], MtlsAuthenticationOptions.DefaultScheme);
-        accessor.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+        services.AddMtlsAuthentication<RecordingValidator>();
 
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<MtlsUserContext>(userContext);
-        Assert.Equal(IdentityKind.ServicePrincipal, userContext.IdentityKind);
+        ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
+        Assert.Null(userContext.ImplementationInstance);
+        Assert.NotNull(userContext.ImplementationFactory);
     }
 
     [Fact]
-    public void ResolvingIUserContext_WithoutMtlsScheme_FallsThroughToPreviouslyRegisteredFactory()
+    public void AddMtlsAuthentication_KeyedAnonymousRegistration_IsKept()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        // Simulates AddSharedKernelSecurity() having already registered a scoped IUserContext factory —
-        // deliberately not referencing SharedKernel.Security.Oidc from this test project, mirroring the
-        // sibling-provider-independence the production code itself must preserve.
-        services.AddScoped<IUserContext>(_ => new MarkerUserContext());
-        services.AddMtlsAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        services.AddKeyedSingleton<IUserContext>("audit", AnonymousUserContext.Instance);
 
-        using var scope = provider.CreateScope();
-        var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var identity = new ClaimsIdentity([], "Bearer");
-        accessor.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+        services.AddMtlsAuthentication<RecordingValidator>();
 
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<MarkerUserContext>(userContext);
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContext) && d.IsKeyedService);
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContext) && !d.IsKeyedService);
     }
 
     [Fact]
-    public void ResolvingIUserContext_WithNoHttpContext_DelegatesToPreviouslyRegisteredFactory()
+    public void AddMtlsAuthentication_ResolvedOutsideRequest_IsAnonymous()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddScoped<IUserContext>(_ => new MarkerUserContext());
-        services.AddMtlsAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        services.AddMtlsAuthentication<RecordingValidator>();
+        using ServiceProvider provider = services.BuildServiceProvider();
+        using IServiceScope scope = provider.CreateScope();
 
-        using var scope = provider.CreateScope();
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<MarkerUserContext>(userContext);
+        Assert.Same(AnonymousUserContext.Instance, scope.ServiceProvider.GetRequiredService<IUserContext>());
+        Assert.Equal(Guid.Empty, scope.ServiceProvider.GetRequiredService<ITenantProvider>().TenantId);
     }
 
     [Fact]
-    public void AddMtlsAuthentication_NullServices_ThrowsArgumentNullException()
+    public void AddMtlsAuthentication_CertificatePrincipal_ResolvesServicePrincipal()
     {
-        Assert.Throws<ArgumentNullException>(() =>
-            MtlsServiceCollectionExtensions.AddMtlsAuthentication<DummyValidator>(null!));
+        var services = new ServiceCollection();
+        services.AddMtlsAuthentication<RecordingValidator>();
+        using ServiceProvider provider = services.BuildServiceProvider();
+        using IServiceScope scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>().HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(SecurityClaimTypes.Subject, "tpp-42")],
+                MtlsAuthenticationDefaults.AuthenticationScheme)),
+        };
+
+        IUserContext user = scope.ServiceProvider.GetRequiredService<IUserContext>();
+
+        Assert.Equal(IdentityKind.ServicePrincipal, user.IdentityKind);
+        Assert.Equal("tpp-42", user.SubjectId);
     }
 
-    private sealed class DummyValidator : IMtlsCertificateValidator
+    [Fact]
+    public async Task AddMtlsAuthentication_ValidOptions_HostStarts()
     {
-        public Task<MtlsValidationResult> ValidateAsync(
-            System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, CancellationToken ct) =>
-            Task.FromResult(MtlsValidationResult.Invalid);
+        using IHost host = MtlsTestHost.Build(services => services.AddMtlsAuthentication<RecordingValidator>());
+
+        await host.StartAsync();
+        await host.StopAsync();
     }
 
-    private sealed class MarkerUserContext : IUserContext
+    [Fact]
+    public async Task AddMtlsAuthentication_CustomRootTrustWithoutTrustStore_HostStartFails()
     {
-        public Guid UserId => Guid.Empty;
-        public string? Email => null;
-        public string? Username => "marker";
-        public IReadOnlyCollection<string> Roles => [];
-        public IReadOnlyCollection<string> Permissions => [];
-        public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
-        public bool IsAuthenticated => false;
-        public IdentityKind IdentityKind => IdentityKind.Anonymous;
-        public bool HasRole(string role) => false;
-        public bool HasPermission(string permission) => false;
-        public IReadOnlyCollection<string> AuthenticationMethods => [];
-        public string? AuthContextClassReference => null;
-        public DateTimeOffset? AuthTime => null;
-        public bool IsSenderConstrained => false;
-        public bool WasAuthenticatedWith(string method) => false;
-        public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
+        using IHost host = MtlsTestHost.Build(services => services.AddMtlsAuthentication<RecordingValidator>(
+            options => options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust));
+
+        await AssertStartupFailsAsync(host, "CustomTrustStore");
+    }
+
+    [Fact]
+    public async Task AddMtlsAuthentication_TrustStoreWithSystemTrust_HostStartFails()
+    {
+        using TestCertificateAuthority ca = TestCertificateAuthority.Create();
+        using IHost host = MtlsTestHost.Build(services => services.AddMtlsAuthentication<RecordingValidator>(
+            options => options.CustomTrustStore.Add(ca.Certificate)));
+
+        await AssertStartupFailsAsync(host, "CustomTrustStore");
+    }
+
+    [Fact]
+    public async Task AddMtlsAuthentication_UndefinedRevocationMode_HostStartFails()
+    {
+        using IHost host = MtlsTestHost.Build(services => services.AddMtlsAuthentication<RecordingValidator>(
+            options => options.RevocationMode = (X509RevocationMode)99));
+
+        await AssertStartupFailsAsync(host, "RevocationMode");
+    }
+
+    [Fact]
+    public async Task AddMtlsAuthentication_NoAllowedCertificateTypes_HostStartFails()
+    {
+        using IHost host = MtlsTestHost.Build(services => services.AddMtlsAuthentication<RecordingValidator>(
+            options => options.AllowedCertificateTypes = 0));
+
+        await AssertStartupFailsAsync(host, "AllowedCertificateTypes");
+    }
+
+    [Fact]
+    public async Task AddMtlsAuthentication_EventsTypeOnCertificateScheme_HostStartFails()
+    {
+        using IHost host = MtlsTestHost.Build(services =>
+        {
+            services.AddMtlsAuthentication<RecordingValidator>();
+            services.Configure<CertificateAuthenticationOptions>(
+                MtlsAuthenticationDefaults.AuthenticationScheme,
+                options => options.EventsType = typeof(CertificateAuthenticationEvents));
+        });
+
+        await AssertStartupFailsAsync(host, "EventsType");
+    }
+
+    [Fact]
+    public void AddMtlsAuthentication_NullServices_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddMtlsAuthentication<RecordingValidator>());
+    }
+
+    // The certificate scheme options read the mTLS options, so an invalid setting can fail both validations at once and
+    // the host reports them together.
+    private static async Task AssertStartupFailsAsync(IHost host, string expectedFragment)
+    {
+        Exception exception = await Assert.ThrowsAnyAsync<Exception>(() => host.StartAsync());
+
+        IEnumerable<Exception> exceptions = exception is AggregateException aggregate ? aggregate.InnerExceptions : [exception];
+        string[] failures = [.. exceptions.OfType<OptionsValidationException>().SelectMany(e => e.Failures)];
+        Assert.NotEmpty(failures);
+        Assert.Equal(exceptions.Count(), exceptions.OfType<OptionsValidationException>().Count());
+        Assert.Contains(failures, failure => failure.Contains(expectedFragment, StringComparison.Ordinal));
+    }
+
+    private sealed class FixedTenantProvider : ITenantProvider
+    {
+        public Guid TenantId => Guid.Parse("22222222-2222-2222-2222-222222222222");
+    }
+
+    private sealed class NoResultHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory loggerFactory,
+        UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(AuthenticateResult.NoResult());
     }
 }

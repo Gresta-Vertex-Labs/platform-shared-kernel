@@ -13,6 +13,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <!--
       Pinned to 10.0.9, not 9.0.5 — SharedKernel.Testing (referenced above) already pulls
       Microsoft.Extensions.DependencyInjection >= 10.0.9 transitively; a lower explicit pin here is an
