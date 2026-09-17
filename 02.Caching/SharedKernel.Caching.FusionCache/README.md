@@ -1,66 +1,62 @@
-# SharedKernel.Caching
+# SharedKernel.Caching.FusionCache
 
-Hybrid L1/L2 cache abstraction for .NET 10 microservices powered by **ZiggyCreatures.FusionCache**.
-Provides `ICacheService` with stampede protection, background eager-refresh, fail-safe stale serving,
-and tag-based eviction. L1-only by default; add
-[`SharedKernel.Caching.Redis`](https://www.nuget.org/packages/SharedKernel.Caching.Redis) to opt in
-to a Redis distributed backplane.
+The FusionCache implementation of `ICacheService`, `ITenantCacheService` and the cache key providers from [`SharedKernel.Caching.Abstractions`](https://www.nuget.org/packages/SharedKernel.Caching.Abstractions).
 
-## Quick Start
+It provides an in-process memory cache with stampede protection, fail-safe, eager refresh, tags, and factory-controlled caching. Add `SharedKernel.Caching.Redis` (`AddRedisL2`) for the Redis distributed layer and backplane.
 
-```csharp
-// Program.cs — L1-only (in-process memory cache)
-builder.Services.AddSharedKernelCaching();
+## Install
+
+```text
+dotnet add package SharedKernel.Caching.FusionCache
 ```
 
-```csharp
-// Inject ICacheService — always use GetOrSetAsync for stampede protection.
-public sealed class ProductService(ICacheService cache)
-{
-    public Task<Product?> GetAsync(Guid id, CancellationToken ct) =>
-        cache.GetOrSetAsync(
-            key     : $"products:{id}",
-            factory : token => LoadFromDbAsync(id, token),
-            policy  : CachePolicy.Default,
-            ct      : ct);
-}
-```
-
-## CachePolicy
-
-`CachePolicy` is a sealed immutable record. Customise via fluent factory methods:
+## Registration
 
 ```csharp
-var policy = CachePolicy
-    .For(TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(20))
-    .WithTags("tenant:acme", "entity:product")
-    .WithEagerRefresh(0.75);
+builder.Services
+    .AddSharedKernelCaching(o => o.ServiceName = "orders")  // required, validated at startup
+    .AddTenantCacheService();                               // optional: ITenantCacheService
 ```
 
-| Preset | L1 TTL | L2 TTL | Fail-safe | Eager-refresh |
-|--------|--------|--------|-----------|---------------|
-| `CachePolicy.Default` | 5 min | 30 min | enabled | 0.9 |
+`ServiceName` prefixes every key and has no default, so two services sharing a Redis instance can never collide on a forgotten default. It must be 1 to 64 lowercase ASCII letters, digits, `.`, `_` or `-`, starting with a letter or digit.
 
-## Tag-Based Eviction
+| Registered | Implementation |
+| --- | --- |
+| `ICacheService` | FusionCache-backed service |
+| `ICacheKeyProvider`, `ITenantCacheKeyProvider` | One key provider using `CachingOptions.ServiceName` |
+| `ITenantCacheService` | Via `AddTenantCacheService()` |
 
-```csharp
-await cache.SetAsync(key, value, CachePolicy.Default.WithTags("tenant:acme"), ct);
-await cache.RemoveByTagAsync("tenant:acme", ct);
-```
+For usage, policies, tenant isolation and the key format, see the [`SharedKernel.Caching.Abstractions` README](https://www.nuget.org/packages/SharedKernel.Caching.Abstractions).
 
-## Configuration (`SharedKernelCaching` section)
+## Options (`CachingOptions`)
 
 | Property | Default | Description |
-|----------|---------|-------------|
-| `L1SizeLimit` | `10000` | Max items in the in-process cache |
+| --- | --- | --- |
+| `ServiceName` | _(required)_ | Key prefix; see above |
+| `L1SizeLimit` | `10000` | Maximum number of memory-cache entries |
 | `CacheName` | `"default"` | FusionCache instance name |
+| `WaitForWarmup` | `false` | Hold readiness until every `ICacheWarmupStrategy` has run |
+| `SerializerContext` | `null` | Source-generated `JsonSerializerContext` for distributed entries; required for NativeAOT |
+
+## Optional features
+
+| Call | Effect |
+| --- | --- |
+| `AddBrotliCompression(o => …)` | Compresses distributed entries above a size threshold |
+| `AddCacheEncryption()` | AES-GCM encrypts every value, bound to its key; requires `ISymmetricEncryptionService` from `SharedKernel.Cryptography`. Call after `AddBrotliCompression` |
+| `AddCacheWarmup<TStrategy>()` | Runs an `ICacheWarmupStrategy` at startup |
+
+## Telemetry
+
+The meter and activity source are both named `SharedKernel.Caching`:
+
+- **Metrics:** `cache.hits`, `cache.misses`, `cache.factory.duration`, `cache.errors`, `cache.evictions`.
+- **Spans:** `cache.get`, `cache.set`, `cache.get_or_set`, tagged with the key prefix only, never the id.
 
 ## Layering
 
-```
-SharedKernel.Caching  →  SharedKernel.Core
+```text
+SharedKernel.Caching.FusionCache  →  SharedKernel.Caching.Abstractions, SharedKernel.Primitives, SharedKernel.Cryptography
 ```
 
-Target framework: `net10.0`. AOT-compatible.
-
-For full documentation see the [repository README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md).
+Target framework: `net10.0`.

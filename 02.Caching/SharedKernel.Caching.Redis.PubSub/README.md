@@ -1,67 +1,44 @@
 # SharedKernel.Caching.Redis.PubSub
 
-Ephemeral Redis Pub/Sub signaling and cache invalidation: `IRedisChannelService` (raw
-publish/subscribe), `ICacheInvalidationBus` (key/tag/broadcast invalidation publishing), and
-`CacheInvalidationReceiver` (a `BackgroundService` subscriber). Depends only on
-`SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — does not transitively
-reference `SharedKernel.Caching.Redis` (L2), distributed locking, or the hash store package.
+Ephemeral Redis Pub/Sub signaling through `IRedisChannelService`: publish, subscribe, unsubscribe, and a `ConnectionHealth` state for health checks. It depends only on `SharedKernel.Caching.Abstractions` and `SharedKernel.Caching.Redis.Core`.
 
-> **At-most-once, no durability.** Messages are not persisted — an offline subscriber misses them
-> permanently. This package is scoped to cache-adjacent ephemeral signaling only and is **not** a
-> substitute for `SharedKernel.Messaging.*` (`07.Messaging`), which provides outbox-backed,
-> retryable, ordered delivery.
+> **At-most-once, no durability.** Messages are not persisted, so an offline subscriber misses them permanently. This package is for cache-adjacent, loss-tolerant signaling only. It is **not** a substitute for `SharedKernel.Messaging.*` (`07.Messaging`), which provides outbox-backed, retryable, ordered delivery.
+>
+> **Not needed for cache invalidation.** Removing, expiring or tag-evicting an `ICacheService` entry already reaches every instance of the service through the FusionCache backplane registered by `SharedKernel.Caching.Redis` (`AddRedisL2`).
 
 ## Install
 
-```
+```text
 dotnet add package SharedKernel.Caching.Redis.PubSub
-```
-
-```xml
-<PackageReference Include="SharedKernel.Caching.Redis.PubSub" Version="1.0.0" />
 ```
 
 ## Usage
 
-### Pub/Sub only (no FusionCache, no cache invalidation receiver)
-
 ```csharp
-services.AddRedisConnection("localhost:6379"); // IConnectionMultiplexer via .Redis.Core
-services.AddCachingCoreOptions(o => o.ServiceName = "my-service");
-
-var builder = new MyCachingBuilder(services); // any ICachingBuilder wrapping `services`
-builder.AddRedisChannelService()
-       .AddRedisCacheInvalidationBus();
-// Inject: IRedisChannelService, ICacheInvalidationBus
+services.AddSharedKernelCaching(o => o.ServiceName = "pricing")
+        .AddRedisL2("localhost:6379")      // or any registration that adds the shared IConnectionMultiplexer
+        .AddRedisChannelService();
 ```
 
-### Full cross-service cache invalidation (with the background receiver)
-
-`AddCacheInvalidationReceiver()` additionally requires an `ICacheService` to already be registered
-(it invalidates the local cache when a message arrives):
+`AddRedisChannelService` requires `IConnectionMultiplexer` to be registered first, through `AddRedisConnection`, `AddRedisL2` or `AddRedisDistributedLocking`.
 
 ```csharp
-builder.AddRedisChannelService()
-       .AddRedisCacheInvalidationBus()
-       .AddCacheInvalidationReceiver();
-// CacheInvalidationReceiver runs as a BackgroundService, subscribed to this service's own
-// invalidation channel and the broadcast channel.
-```
-
-```csharp
-public sealed class ProductInvalidator(ICacheInvalidationBus invalidationBus)
+public sealed class PriceTicker(IRedisChannelService channels)
 {
-    public ValueTask InvalidateAsync(Guid productId, CancellationToken ct) =>
-        invalidationBus.PublishKeyInvalidationAsync([$"products:{productId}"], ct);
+    public ValueTask StartAsync(CancellationToken ct) =>
+        channels.SubscribeAsync("pricing:ticks", message => HandleAsync(message), ct);
+
+    public ValueTask PublishAsync(string tick, CancellationToken ct) =>
+        channels.PublishAsync("pricing:ticks", tick, ct);
 }
 ```
 
+Handler exceptions are caught and logged, and never reach the Redis subscriber.
+
 ## Layering
 
-```
-SharedKernel.Caching.Redis.PubSub  →  SharedKernel.Caching.Redis.Core  →  SharedKernel.Caching.Abstractions
+```text
+SharedKernel.Caching.Redis.PubSub  →  SharedKernel.Caching.Abstractions, SharedKernel.Caching.Redis.Core
 ```
 
-Target framework: `net10.0`. AOT-compatible.
-
-For full documentation see the [repository README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md).
+Target framework: `net10.0`.

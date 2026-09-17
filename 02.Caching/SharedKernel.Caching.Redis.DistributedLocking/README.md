@@ -1,70 +1,89 @@
 # SharedKernel.Caching.Redis.DistributedLocking
 
-Distributed mutual-exclusion locking over Redis via RedLock.net: `IDistributedLockService`
-(acquire/release) and `IRenewableLock` (heartbeat-renewable locks for long-running work). Depends
-only on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — does not
-transitively reference `SharedKernel.Caching.Redis` (L2), the hash store, or the pub/sub package.
+Redis implementation of `IDistributedLockService` from `SharedKernel.Caching.Abstractions`:
+
+- **Locks** kept alive until released, and reported when lost.
+- **Leases** that expire on their own.
+- **Fencing tokens** issued in the same atomic server-side step as each acquisition.
+
+It runs on a single Redis primary or on Redis Cluster. It depends only on `SharedKernel.Caching.Abstractions` and `SharedKernel.Caching.Redis.Core`.
 
 ## Install
 
-```
+```text
 dotnet add package SharedKernel.Caching.Redis.DistributedLocking
 ```
 
-```xml
-<PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" Version="1.0.0" />
+## Registration
+
+```csharp
+// Lock-only host
+services.AddRedisDistributedLocking("localhost:6379");
+
+// Alongside the cache
+services.AddSharedKernelCaching(o => o.ServiceName = "billing")
+        .AddRedisL2("localhost:6379")
+        .AddRedisDistributedLocking("localhost:6379");
 ```
+
+Every Redis package shares one `IConnectionMultiplexer`, whichever registers it first. `TimeProvider.System` is registered unless a `TimeProvider` already is.
 
 ## Usage
 
 ```csharp
-services.AddRedisDistributedLocking("localhost:6379");
-```
-
-```csharp
-public sealed class InvoiceProcessor(IDistributedLockService locks)
+public sealed class InvoiceSettlement(IDistributedLockService locks, IInvoiceStore invoices)
 {
-    public async Task ProcessAsync(long invoiceId, CancellationToken ct)
+    public async Task SettleAsync(long invoiceId, CancellationToken ct)
     {
-        await using var handle = await locks.AcquireAsync(
-            resource : $"invoice:{invoiceId}",
-            expiry   : TimeSpan.FromSeconds(30),
-            wait     : TimeSpan.FromSeconds(5),
-            retry    : TimeSpan.FromMilliseconds(200),
-            ct       : ct);
+        await using IDistributedLock? handle = await locks.TryAcquireAsync(
+            $"billing:invoice:{invoiceId}",
+            new DistributedLockOptions { Expiry = TimeSpan.FromSeconds(30), WaitTime = TimeSpan.FromSeconds(5) },
+            ct);
 
         if (handle is null)
-            return; // not acquired within wait window — apply fallback
+            return; // another holder kept the lock for the whole wait time
 
-        await DoWorkAsync(invoiceId, ct);
+        using var work = CancellationTokenSource.CreateLinkedTokenSource(ct, handle.LostToken);
+        await invoices.SettleAsync(invoiceId, handle.FencingToken, work.Token);
     }
 }
 ```
 
-`AcquireAsync` returns `null` on timeout — it never throws for a contended lock.
-
-### Renewable lock (heartbeat)
+A lease claims a resource once and simply expires:
 
 ```csharp
-await using var renewable = await locks.AcquireRenewableAsync(
-    resource : $"invoice:{invoiceId}",
-    expiry   : TimeSpan.FromSeconds(30),
-    wait     : TimeSpan.FromSeconds(5),
-    retry    : TimeSpan.FromMilliseconds(200),
-    ct       : ct);
-
-if (renewable is not null)
-{
-    await renewable.KeepAliveAsync(TimeSpan.FromSeconds(10), ct); // background renewal loop
-}
+DistributedLease? lease = await locks.TryAcquireLeaseAsync($"reports:nightly:{runDate:yyyy-MM-dd}", TimeSpan.FromHours(1), ct);
+if (lease is null)
+    return; // another replica claimed this run
 ```
+
+## How it works
+
+| Operation | Redis |
+| --- | --- |
+| Acquire (lock or lease) | One Lua script: `SET sharedkernel:lock:{resource} <owner> NX PX <expiry>` and, only if that succeeded, `INCR sharedkernel:lock-fencing:{resource}` |
+| Keep alive (locks) | Every third of the expiry, `PEXPIRE` the key only if it still holds this owner |
+| Release (locks) | `DEL` the key only if it still holds this owner |
+
+- **Atomic fencing tokens.** A token can never be issued to a holder that did not acquire.
+- **Exclusive.** Locks and leases on the same resource exclude each other.
+- **Monotonic.** They share one fencing counter.
+- **Loss detection.** A lock is reported lost, through `IsHeld` = `false` and a cancelled `LostToken`, when an extension finds another owner. It is also reported lost when extensions keep failing past the expiry.
+- **Outages.** When Redis cannot be reached, acquisition throws `DistributedLockUnavailableException` instead of returning `null`.
+
+**Failover caveat.** After a primary failover, a replica that had not yet received a lock key can grant the lock again. Fencing tokens are what protect the resource in that window, so check them in the protected write path.
+
+## Configuration
+
+| `RedisLockOptions` property | Default | Description |
+| --- | --- | --- |
+| `ConnectionString` | _(required)_ | StackExchange.Redis connection string |
+| `ConnectTimeoutMs` | `5000` | Connection timeout in milliseconds |
 
 ## Layering
 
-```
-SharedKernel.Caching.Redis.DistributedLocking  →  SharedKernel.Caching.Redis.Core  →  SharedKernel.Caching.Abstractions
+```text
+SharedKernel.Caching.Redis.DistributedLocking  →  SharedKernel.Caching.Abstractions, SharedKernel.Caching.Redis.Core
 ```
 
-Target framework: `net10.0`. AOT-compatible.
-
-For full documentation see the [repository README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md).
+Target framework: `net10.0`.

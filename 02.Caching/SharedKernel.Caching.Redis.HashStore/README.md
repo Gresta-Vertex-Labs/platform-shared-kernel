@@ -20,7 +20,6 @@ dotnet add package SharedKernel.Caching.Redis.HashStore
 
 ```csharp
 services.AddRedisConnection("localhost:6379"); // IConnectionMultiplexer via .Redis.Core
-services.AddCachingCoreOptions(o => o.ServiceName = "session-service");
 
 var builder = new MyCachingBuilder(services); // any ICachingBuilder wrapping `services`
 builder.AddRedisHashService()
@@ -46,7 +45,7 @@ first. `AddTypedHashStore<T>` requires `AddRedisHashService` to have been called
 ## Layering
 
 ```
-SharedKernel.Caching.Redis.HashStore  →  SharedKernel.Caching.Redis.Core  →  SharedKernel.Caching.Abstractions
+SharedKernel.Caching.Redis.HashStore  →  SharedKernel.Caching.Abstractions, SharedKernel.Caching.Redis.Core
 ```
 
 Target framework: `net10.0`. AOT-compatible.

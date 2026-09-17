@@ -1,51 +1,24 @@
 # SharedKernel.Caching.Redis
 
-Redis L2 distributed backplane and RedLock distributed locking for
-[`SharedKernel.Caching`](https://www.nuget.org/packages/SharedKernel.Caching).
+The Redis distributed layer (L2) and backplane for
+[`SharedKernel.Caching.FusionCache`](https://www.nuget.org/packages/SharedKernel.Caching.FusionCache).
 
-Adds a Redis-backed `ICacheService` (FusionCache L2 via StackExchange.Redis) and
-`IDistributedLockService` (RedLock.net) to the SharedKernel caching stack.
+Entries are written to Redis as well as to memory, so every instance of a service shares them.
+The backplane carries removals, expirations, tag evictions and clears to every instance. For
+distributed locks, use `SharedKernel.Caching.Redis.DistributedLocking`.
 
 ## Quick Start
 
-### L1 + L2 (Redis distributed backplane)
+### L1 + L2 (Redis distributed layer and backplane)
 
 ```csharp
 builder.Services
-    .AddSharedKernelCaching()
+    .AddSharedKernelCaching(o => o.ServiceName = "orders")
     .AddRedisL2("localhost:6379");
 ```
 
-No changes to service code — `ICacheService` automatically promotes reads/writes to Redis.
-
-### Distributed Locking
-
-```csharp
-builder.Services
-    .AddRedisDistributedLocking("localhost:6379");
-```
-
-```csharp
-public sealed class InvoiceProcessor(IDistributedLockService locks)
-{
-    public async Task ProcessAsync(long invoiceId, CancellationToken ct)
-    {
-        await using var handle = await locks.AcquireAsync(
-            resource : $"invoice:{invoiceId}",
-            expiry   : TimeSpan.FromSeconds(30),
-            wait     : TimeSpan.FromSeconds(5),
-            retry    : TimeSpan.FromMilliseconds(200),
-            ct       : ct);
-
-        if (handle is null)
-            return; // not acquired within wait window — apply fallback
-
-        await DoWorkAsync(invoiceId, ct);
-    }
-}
-```
-
-`AcquireAsync` returns `null` on timeout — it never throws for a contended lock.
+No changes to service code: `ICacheService` reads and writes through Redis automatically. Entries
+created with `CachePolicy.LocalOnly()` stay in memory.
 
 ## Configuration
 
@@ -57,19 +30,12 @@ public sealed class InvoiceProcessor(IDistributedLockService locks)
 | `KeyPrefix` | `""` | Redis key prefix for all L2 entries |
 | `ConnectTimeoutMs` | `5000` | Connection timeout in milliseconds |
 
-### `AddRedisDistributedLocking` (`SharedKernelCaching:DistributedLock` section)
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `ConnectionString` | _(required)_ | StackExchange.Redis connection string |
-| `ConnectTimeoutMs` | `5000` | Connection timeout in milliseconds |
-
 ## Layering
 
-```
-SharedKernel.Caching.Redis  →  SharedKernel.Caching  →  SharedKernel.Core
+```text
+SharedKernel.Caching.Redis  →  SharedKernel.Caching.Abstractions, SharedKernel.Caching.Redis.Core
 ```
 
-Target framework: `net10.0`. AOT-compatible.
+Target framework: `net10.0`.
 
 For full documentation see the [repository README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md).

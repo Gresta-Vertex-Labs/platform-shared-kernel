@@ -7,12 +7,11 @@
 //                            zero Redis dependency
 //   2. L1 + L2 (Redis)    — AddSharedKernelCaching().AddRedisL2(...) round-trips through a real
 //                            Testcontainers Redis L2 backplane (verified via a raw redis key read)
-//   3. Locking-only       — AddCachingCoreOptions().AddRedisDistributedLocking(...) — no FusionCache
+//   3. Locking-only       — services.AddRedisDistributedLocking(...) — no FusionCache; lock, contention,
+//                            fencing tokens and a self-expiring lease against real Redis
 //   4. Hash-store-only    — AddRedisConnection() + AddRedisHashService()/.AddTypedHashStore<T>() —
-//                            no FusionCache, no RedLock
-//   5. Pub/Sub-only       — AddRedisChannelService()/.AddRedisCacheInvalidationBus(), publish side
-//                            only — deliberately never AddCacheInvalidationReceiver(), whose startup
-//                            guard requires ICacheService to already be registered
+//                            no FusionCache, no locking
+//   5. Pub/Sub-only       — AddRedisConnection() + AddRedisChannelService(), publish/subscribe round-trip
 //
 // One ephemeral Redis container (Testcontainers.Redis) is started once and shared across surfaces
 // 2-5, then disposed at the end of the run. A failure in one surface never prevents the others from
@@ -22,12 +21,13 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Abstractions.Extensions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
+using SharedKernel.Caching.Redis.HashStore;
 using SharedKernel.Caching.Redis.HashStore.Extensions;
+using SharedKernel.Caching.Redis.PubSub;
 using SharedKernel.Caching.Redis.PubSub.Extensions;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -121,7 +121,7 @@ static async Task Surface2_L1PlusL2Async(string connectionString)
     var cache = host.Services.GetRequiredService<ICacheService>();
     var multiplexer = host.Services.GetRequiredService<IConnectionMultiplexer>();
 
-    var key = $"consumer-verify:l2:{Guid.NewGuid():N}";
+    var key = host.Services.GetRequiredService<ICacheKeyProvider>().BuildKey("surface", Guid.NewGuid().ToString("N"));
     var value = await cache.GetOrSetAsync(
         key: key,
         factory: _ => new ValueTask<string>("hello-l2"),
@@ -142,16 +142,11 @@ static async Task Surface2_L1PlusL2Async(string connectionString)
         "Surface 2 PASS: AddSharedKernelCaching().AddRedisL2(...) resolves ICacheService, round-trips through a real Redis L2 backplane");
 }
 
-// ── Surface 3: locking-only — AddCachingCoreOptions().AddRedisDistributedLocking(...) ──
+// ── Surface 3: locking-only — services.AddRedisDistributedLocking(...) ──────────
 static async Task Surface3_DistributedLockingOnlyAsync(string connectionString)
 {
     var builder = Host.CreateApplicationBuilder();
-
-#pragma warning disable CS0618 // documented standalone (no-FusionCache) consumption path, Phase 27
-    builder.Services
-        .AddCachingCoreOptions(o => o.ServiceName = "consumer-verify-lock")
-        .AddRedisDistributedLocking(connectionString);
-#pragma warning restore CS0618
+    builder.Services.AddRedisDistributedLocking(connectionString);
 
     using var host = builder.Build();
     await host.StartAsync();
@@ -159,27 +154,28 @@ static async Task Surface3_DistributedLockingOnlyAsync(string connectionString)
     var locks = host.Services.GetRequiredService<IDistributedLockService>();
 
     var resource = $"consumer-verify:lock:{Guid.NewGuid():N}";
-    var handle = await locks.AcquireAsync(
-        resource: resource,
-        expiry: TimeSpan.FromSeconds(30),
-        wait: TimeSpan.FromSeconds(5),
-        retry: TimeSpan.FromMilliseconds(200));
+    var handle = await locks.TryAcquireAsync(resource, new DistributedLockOptions { Expiry = TimeSpan.FromSeconds(30) });
 
-    Verify(handle is not null, "IDistributedLockService.AcquireAsync acquires a real RedLock over Redis");
+    Verify(handle is { IsHeld: true, FencingToken: > 0 }, "TryAcquireAsync acquires a held lock with a fencing token over real Redis");
 
-    var contended = await locks.AcquireAsync(
-        resource: resource,
-        expiry: TimeSpan.FromSeconds(30),
-        wait: TimeSpan.Zero,
-        retry: TimeSpan.FromMilliseconds(50));
-
+    var contended = await locks.TryAcquireAsync(resource);
     Verify(contended is null, "a contended lock on the same resource returns null instead of throwing");
 
-    await handle!.DisposeAsync();
+    var firstToken = handle!.FencingToken;
+    await handle.DisposeAsync();
+    Verify(!handle.IsHeld && handle.LostToken.IsCancellationRequested, "disposing releases the lock and cancels LostToken");
+
+    await using var second = await locks.TryAcquireAsync(resource);
+    Verify(second is not null && second.FencingToken > firstToken, "a later acquisition gets a strictly greater fencing token");
+
+    var leaseResource = $"consumer-verify:lease:{Guid.NewGuid():N}";
+    var lease = await locks.TryAcquireLeaseAsync(leaseResource, TimeSpan.FromSeconds(30));
+    var secondLease = await locks.TryAcquireLeaseAsync(leaseResource, TimeSpan.FromSeconds(30));
+    Verify(lease is not null && secondLease is null, "a lease claims the resource once until it expires");
 
     await host.StopAsync();
     Console.WriteLine(
-        "Surface 3 PASS: AddCachingCoreOptions().AddRedisDistributedLocking(...) resolves IDistributedLockService (no FusionCache), acquires/contends a real RedLock");
+        "Surface 3 PASS: services.AddRedisDistributedLocking(...) resolves IDistributedLockService (no FusionCache); lock, contention, fencing and lease verified against real Redis");
 }
 
 // ── Surface 4: hash-store-only — AddRedisConnection() + AddRedisHashService() ────────
@@ -187,7 +183,6 @@ static async Task Surface4_HashStoreOnlyAsync(string connectionString)
 {
     var builder = Host.CreateApplicationBuilder();
     builder.Services.AddRedisConnection(connectionString);
-    builder.Services.AddCachingCoreOptions(o => o.ServiceName = "consumer-verify-hash");
 
     var cachingBuilder = new ConsumerCachingBuilder(builder.Services);
     cachingBuilder
@@ -215,29 +210,22 @@ static async Task Surface4_HashStoreOnlyAsync(string connectionString)
 
     await host.StopAsync();
     Console.WriteLine(
-        "Surface 4 PASS: AddRedisConnection() + AddRedisHashService()/.AddTypedHashStore<T>() resolve IRedisHashService/ITypedHashStore<T> (no FusionCache, no RedLock)");
+        "Surface 4 PASS: AddRedisConnection() + AddRedisHashService()/.AddTypedHashStore<T>() resolve IRedisHashService/ITypedHashStore<T> (no FusionCache, no locking)");
 }
 
-// ── Surface 5: pub/sub-only — AddRedisChannelService()/.AddRedisCacheInvalidationBus() ──
+// ── Surface 5: pub/sub-only — AddRedisConnection() + AddRedisChannelService() ─────
 static async Task Surface5_PubSubOnlyAsync(string connectionString)
 {
     var builder = Host.CreateApplicationBuilder();
-    builder.Services.AddCachingCoreOptions(o => o.ServiceName = "consumer-verify-pubsub");
     builder.Services.AddRedisConnection(connectionString);
 
     var cachingBuilder = new ConsumerCachingBuilder(builder.Services);
-    cachingBuilder
-        .AddRedisChannelService()
-        .AddRedisCacheInvalidationBus();
-    // Deliberately NOT .AddCacheInvalidationReceiver() here — its Phase 19 startup guard requires
-    // ICacheService to already be registered, which a pub/sub-only consumer (no FusionCache) never
-    // has. Requiring it here would silently reintroduce the coupling Phase 36's split eliminated.
+    cachingBuilder.AddRedisChannelService();
 
     using var host = builder.Build();
     await host.StartAsync();
 
     var channelService = host.Services.GetRequiredService<IRedisChannelService>();
-    var invalidationBus = host.Services.GetRequiredService<ICacheInvalidationBus>();
 
     var channel = $"consumer-verify:channel:{Guid.NewGuid():N}";
     var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -254,22 +242,17 @@ static async Task Surface5_PubSubOnlyAsync(string connectionString)
     Verify(completed == received.Task, "IRedisChannelService publish/subscribe round-trips over real Redis Pub/Sub within 10s");
     Verify(received.Task.Result == "hello-pubsub", "the received message matches what was published");
 
-    // Publish side only, per this surface's design — never asserts on a receiver here.
-    await invalidationBus.PublishKeyInvalidationAsync([$"products:{Guid.NewGuid():N}"]);
-
     await channelService.UnsubscribeAsync(channel);
 
     await host.StopAsync();
     Console.WriteLine(
-        "Surface 5 PASS: AddRedisChannelService()/.AddRedisCacheInvalidationBus() resolve IRedisChannelService/ICacheInvalidationBus, publish side only (no AddCacheInvalidationReceiver)");
+        "Surface 5 PASS: AddRedisConnection() + AddRedisChannelService() resolve IRedisChannelService; publish/subscribe round-trips over real Redis");
 }
 
 // ── Supporting types ──────────────────────────────────────────────────────────
 
-// Minimal ICachingBuilder implementation, mirroring the small adapter every extraction package's
-// own [Obsolete] IServiceCollection shim defines internally (SharedKernel.Caching.Redis.*'s own
-// "...CachingBuilder" pattern) — a real downstream consumer writes exactly this when composing a
-// standalone Redis capability package without SharedKernel.Caching.FusionCache's own CachingBuilder.
+// Minimal ICachingBuilder implementation — a downstream consumer writes exactly this when composing
+// a standalone Redis capability package without SharedKernel.Caching.FusionCache's own builder.
 internal sealed class ConsumerCachingBuilder(IServiceCollection services) : ICachingBuilder
 {
     public IServiceCollection Services { get; } = services;

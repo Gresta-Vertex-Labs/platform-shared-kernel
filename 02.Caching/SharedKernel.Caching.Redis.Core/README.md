@@ -7,7 +7,7 @@ registration (`AddRedisConnection`), `ConnectionHealthState` tracking
 [`SharedKernel.Caching.Redis`](https://www.nuget.org/packages/SharedKernel.Caching.Redis) (L2),
 `SharedKernel.Caching.Redis.DistributedLocking`, `SharedKernel.Caching.Redis.HashStore`, and
 `SharedKernel.Caching.Redis.PubSub` — take this package directly only if you need a shared Redis
-connection with health tracking and nothing else (no FusionCache, no RedLock, no hash store, no
+connection with health tracking and nothing else (no FusionCache, no locking, no hash store, no
 pub/sub).
 
 ## Install
@@ -42,7 +42,7 @@ call it internally, so most consumers never call these extensions directly.
 ## Layering
 
 ```
-SharedKernel.Caching.Redis.Core  →  SharedKernel.Caching.Abstractions
+SharedKernel.Caching.Redis.Core  →  SharedKernel.Primitives, StackExchange.Redis, Polly.Core
 ```
 
 Target framework: `net10.0`. AOT-compatible.
