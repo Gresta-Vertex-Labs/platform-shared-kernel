@@ -1,302 +1,369 @@
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
-/// Describes the caching behaviour for a single entry: L1 and L2 TTLs, optional tags for
-/// group-invalidation, fail-safe activation, and eager-refresh threshold.
+/// Describes how one cache entry is stored: memory (L1) and distributed (L2) durations, tags,
+/// fail-safe, factory timeouts, eager refresh, expiration jitter, and whether the distributed
+/// layer is used at all.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="CachePolicy"/> is a sealed immutable record. All customisation is performed via
-/// the fluent factory methods <see cref="For"/>, <see cref="WithTags"/>, and
-/// <see cref="WithEagerRefresh"/>. Do not subclass or mutate after construction.
+/// <b>Immutable and always valid.</b> Start from <see cref="Default"/>, <see cref="NeverExpire"/> or
+/// <see cref="For(TimeSpan, TimeSpan)"/> and derive variants with the <c>With…</c> methods. Each
+/// returns a new instance and validates its arguments, so an invalid policy cannot exist. Policies
+/// are safe to keep in <see langword="static"/> fields and share across threads. Two policies are
+/// equal when every setting and every tag, in order, is equal.
 /// </para>
 /// <para>
-/// The <see cref="Default"/> preset is the recommended starting point.
-/// Tune only when profiling confirms it is necessary.
+/// <b>Choosing durations.</b> L1 should be short enough that instances converge quickly after a
+/// change, and L2 long enough to protect the source of truth. L1 may not exceed L2. L2 settings are
+/// ignored when no distributed cache is configured.
+/// </para>
+/// <para>
+/// <b>Background work.</b> Eager refresh and a soft factory timeout run the factory after the caller
+/// has returned. Turn both off (<see cref="WithoutEagerRefresh"/>, <c>WithFactoryTimeouts(null, null)</c>)
+/// when the factory uses request-scoped services such as a scoped <c>DbContext</c>.
+/// </para>
+/// <para>
+/// <b>Tenants.</b> Pass unscoped policies to <see cref="ITenantCacheService"/>, which applies
+/// <see cref="ForTenant"/>. Tags starting with <c>@</c> are reserved for tenant scoping.
 /// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// // Declare once, reuse everywhere.
+/// private static readonly CachePolicy ProductPolicy = CachePolicy
+///     .For(TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(30))
+///     .WithTags("products")
+///     .WithFailSafe(TimeSpan.FromHours(2))
+///     .WithFactoryTimeouts(softTimeout: TimeSpan.FromMilliseconds(200), hardTimeout: TimeSpan.FromSeconds(2))
+///     .WithJitter(TimeSpan.FromSeconds(20));
+/// </code>
+/// </example>
 public sealed record CachePolicy
 {
-    // -------------------------------------------------------------------------
-    // Private constructor — all creation goes through factory methods.
-    // -------------------------------------------------------------------------
+    private IReadOnlyList<string> _tags = [];
 
     private CachePolicy() { }
 
-    // -------------------------------------------------------------------------
-    // Properties
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Time-to-live for the L1 in-process memory cache.
-    /// Defaults to <c>5 minutes</c>.
-    /// </summary>
+    /// <summary>Gets how long an entry stays in the memory cache. Defaults to 5 minutes.</summary>
+    /// <remarks><see cref="TimeSpan.MaxValue"/> means the entry never expires by time.</remarks>
     public TimeSpan L1Duration { get; private init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>
-    /// Time-to-live for the L2 distributed Redis cache.
-    /// Defaults to <c>30 minutes</c>.
-    /// Ignored when no Redis L2 provider is registered.
-    /// </summary>
+    /// <summary>Gets how long an entry stays in the distributed cache. Defaults to 30 minutes.</summary>
+    /// <remarks><see cref="TimeSpan.MaxValue"/> means the entry never expires by time.</remarks>
     public TimeSpan L2Duration { get; private init; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
-    /// Whether the fail-safe mechanism is enabled. When <see langword="true"/>, a stale
-    /// value may be served if the factory throws or times out, preventing complete unavailability.
-    /// Defaults to <see langword="true"/>.
+    /// Gets the tags attached to the entry, used to remove groups of entries with
+    /// <see cref="ICacheService.RemoveByTagAsync"/>. Defaults to none.
     /// </summary>
-    public bool FailSafeEnabled { get; private init; } = true;
+    public IReadOnlyList<string> Tags
+    {
+        get => _tags;
+        private init => _tags = value;
+    }
 
     /// <summary>
-    /// Tags assigned to this cache entry. Used for group-invalidation via
-    /// <c>ICacheService.RemoveByTagAsync</c>.
-    /// Defaults to an empty array.
+    /// Gets a value indicating whether an expired entry may be served when refreshing it fails or
+    /// times out. Defaults to <see langword="true"/>.
     /// </summary>
-    public string[] Tags { get; private init; } = [];
+    /// <remarks>
+    /// Fail-safe keeps a service answering while its source of truth is down, at the price of stale
+    /// data. Disable it (<see cref="WithoutFailSafe"/>) where stale data is unsafe, such as
+    /// authorization or a tenant's suspended status.
+    /// </remarks>
+    public bool IsFailSafeEnabled { get; private init; } = true;
 
     /// <summary>
-    /// Fraction of the L1 TTL at which background eager-refresh is triggered.
-    /// A value of <c>0.9</c> means refresh begins when 90 % of the TTL has elapsed.
-    /// Set to <see langword="null"/> to disable eager refresh.
-    /// Defaults to <c>0.9</c>.
+    /// Gets how long past its duration an expired entry may still be served by fail-safe, or
+    /// <see langword="null"/> for the provider's default.
+    /// </summary>
+    public TimeSpan? FailSafeMaxDuration { get; private init; }
+
+    /// <summary>
+    /// Gets how long a caller waits for a factory before being served a stale entry, while the
+    /// factory keeps running in the background, or <see langword="null"/> for no limit. Applies
+    /// only when fail-safe is enabled and a stale entry exists.
+    /// </summary>
+    public TimeSpan? FactorySoftTimeout { get; private init; }
+
+    /// <summary>
+    /// Gets how long a caller waits for a factory before the call fails, even without a stale
+    /// entry, or <see langword="null"/> for no limit.
+    /// </summary>
+    /// <remarks>
+    /// The caller stops waiting, but the factory may keep running in the background and store its
+    /// result when it completes.
+    /// </remarks>
+    public TimeSpan? FactoryHardTimeout { get; private init; }
+
+    /// <summary>
+    /// Gets the fraction of <see cref="L1Duration"/> after which a read refreshes the entry in the
+    /// background, or <see langword="null"/> to disable eager refresh. Defaults to <c>0.9</c>.
     /// </summary>
     public double? EagerRefreshThreshold { get; private init; } = 0.9;
 
     /// <summary>
-    /// Idle time-to-live for the L1 in-process memory cache when sliding expiration is enabled.
-    /// When set, the L1 entry's expiry is reset each time the entry is accessed, up to the
-    /// absolute ceiling imposed by <see cref="L1Duration"/>.
+    /// Gets the upper bound of a random extra duration added to each entry so that entries written
+    /// together do not expire together, or <see langword="null"/> for no jitter.
+    /// </summary>
+    public TimeSpan? JitterMaxDuration { get; private init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the entry lives only in the memory cache of this process,
+    /// never in the distributed cache. Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>L1 only.</strong> Sliding expiration is mapped to the in-process
-    /// <c>MemoryCache</c> <c>SlidingExpiration</c> property. The L2 Redis distributed
-    /// cache does not support sliding expiry — the absolute <see cref="L2Duration"/> acts
-    /// as the ceiling TTL for L2 entries.
-    /// </para>
-    /// <para>
-    /// Defaults to <see langword="null"/> (no sliding expiry — pure absolute TTL only).
-    /// </para>
-    /// <para>
-    /// Use <see cref="Sliding"/> to construct a policy with this property set.
-    /// </para>
+    /// Use it for values that are cheap to rebuild, specific to one instance, or not serializable.
+    /// Other instances neither see these entries nor evict their own copies when this one is written.
     /// </remarks>
-    public TimeSpan? SlidingWindow { get; private init; } = null;
+    public bool IsLocalOnly { get; private init; }
 
     /// <summary>
-    /// Schema version used to differentiate cache keys across deployments.
-    /// When greater than zero, <c>ICacheKeyProvider.BuildKey</c> appends a <c>:v{version}</c>
-    /// suffix to the generated key (e.g. <c>order-svc:invoice:42:v3</c>).
+    /// Gets a value indicating whether the tags have been scoped to a tenant with
+    /// <see cref="ForTenant"/>.
+    /// </summary>
+    public bool IsTenantScoped { get; private init; }
+
+    /// <summary>Gets the default policy: 5-minute L1, 30-minute L2, fail-safe on, eager refresh at 90%.</summary>
+    public static CachePolicy Default { get; } = new();
+
+    /// <summary>
+    /// Gets a policy for reference data that changes only with an explicit removal: no time-based
+    /// expiry and no eager refresh.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A value of <c>0</c> (the default) produces the original key format with no suffix —
-    /// this is backward-compatible with all callers that do not call <see cref="WithVersion"/>.
-    /// </para>
-    /// <para>
-    /// Use <see cref="WithVersion"/> to obtain a copy of this policy with a non-zero version.
-    /// Pass <c>KeyVersion</c> to
-    /// <c>ICacheKeyProvider.BuildKey(entity, id, version, extraSegments)</c> to bake
-    /// the version into the final key string. Key versioning is the <strong>caller's
-    /// responsibility</strong> — <c>ICacheService</c> method signatures do not change.
-    /// </para>
-    /// <para>
-    /// <strong>Deployment workflow:</strong> increment the version in the code → deploy →
-    /// the old key will expire naturally via its TTL — no explicit cache flush is required.
-    /// </para>
-    /// </remarks>
-    public int KeyVersion { get; private init; } = 0;
-
-    // -------------------------------------------------------------------------
-    // Presets
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Default policy: 5-minute L1, 30-minute L2, fail-safe on, 90 % eager-refresh threshold,
-    /// no tags.
-    /// </summary>
-    public static readonly CachePolicy Default = new();
-
-    /// <summary>
-    /// A cache policy for truly static data that should never expire via TTL.
-    /// Both L1 and L2 durations are set to <see cref="TimeSpan.MaxValue"/> and fail-safe is enabled.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Intended use case: truly static data such as reference tables, feature flag snapshots,
-    /// and lookup codes that never change during the lifetime of a deployment.
-    /// </para>
-    /// <para>
-    /// <strong>Explicit invalidation required.</strong> Because TTL-based expiry will not occur,
-    /// cached entries must be explicitly invalidated via
-    /// <c>ICacheService.RemoveAsync</c> or <c>ICacheInvalidationBus</c> whenever the underlying
-    /// data changes.
-    /// </para>
-    /// <para>
-    /// <strong>Warning:</strong> Do not use this preset for any data that can change without an
-    /// explicit invalidation signal. Using <see cref="NeverExpire"/> for mutable data will result
-    /// in stale entries being served indefinitely.
-    /// </para>
-    /// <para>
-    /// Eager refresh is intentionally disabled — there is nothing to refresh when no expiry
-    /// is configured.
-    /// </para>
+    /// Remove or expire these entries whenever the source data changes; otherwise stale data is
+    /// served until the process restarts or the distributed entry is evicted.
     /// </remarks>
     public static CachePolicy NeverExpire { get; } = new()
     {
         L1Duration = TimeSpan.MaxValue,
         L2Duration = TimeSpan.MaxValue,
-        FailSafeEnabled = true,
         EagerRefreshThreshold = null,
     };
 
-    // -------------------------------------------------------------------------
-    // Factory methods
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Creates a policy with explicit L1 and L2 durations, retaining the default fail-safe
-    /// and eager-refresh settings.
-    /// </summary>
-    /// <param name="l1">Time-to-live for the L1 in-process cache. Must be positive.</param>
-    /// <param name="l2">Time-to-live for the L2 distributed cache. Must be positive.</param>
-    /// <returns>A new <see cref="CachePolicy"/> with the specified durations.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="l1"/> or <paramref name="l2"/> is not positive.
-    /// </exception>
-    public static CachePolicy For(TimeSpan l1, TimeSpan l2)
+    /// <summary>Creates a policy with the given durations and the default settings otherwise.</summary>
+    /// <param name="l1Duration">The memory-cache duration. Must be positive and not exceed <paramref name="l2Duration"/>.</param>
+    /// <param name="l2Duration">The distributed-cache duration. Must be positive.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">A duration is not positive, or <paramref name="l1Duration"/> exceeds <paramref name="l2Duration"/>.</exception>
+    public static CachePolicy For(TimeSpan l1Duration, TimeSpan l2Duration)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(l1.Ticks, nameof(l1));
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(l2.Ticks, nameof(l2));
-
-        return new CachePolicy { L1Duration = l1, L2Duration = l2 };
+        ValidateDurations(l1Duration, l2Duration);
+        return new CachePolicy { L1Duration = l1Duration, L2Duration = l2Duration };
     }
 
-    /// <summary>
-    /// Returns a copy of this policy with the supplied <paramref name="tags"/> applied.
-    /// Tags are used for group-invalidation via <c>ICacheService.RemoveByTagAsync</c>.
-    /// </summary>
-    /// <param name="tags">One or more non-null tag strings.</param>
-    /// <returns>A new <see cref="CachePolicy"/> with <see cref="Tags"/> set to <paramref name="tags"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="tags"/> is empty.</exception>
+    /// <summary>Creates a policy that uses <paramref name="duration"/> for both cache layers.</summary>
+    /// <param name="duration">The duration. Must be positive.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration"/> is not positive.</exception>
+    public static CachePolicy For(TimeSpan duration) => For(duration, duration);
+
+    /// <summary>Returns a copy with <paramref name="tags"/> replacing the current tags.</summary>
+    /// <param name="tags">One or more tags. Each must be non-whitespace and must not start with <c>@</c>, which marks tenant tags.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tags"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tags"/> is empty, or a tag is invalid.</exception>
+    /// <exception cref="InvalidOperationException">The policy is already tenant-scoped.</exception>
     public CachePolicy WithTags(params string[] tags)
     {
-        if (tags.Length == 0)
-            throw new ArgumentException("At least one tag must be supplied.", nameof(tags));
+        ArgumentNullException.ThrowIfNull(tags);
+        EnsureNotTenantScoped();
 
-        return this with { Tags = tags };
+        if (tags.Length == 0)
+        {
+            throw new ArgumentException("At least one tag must be supplied.", nameof(tags));
+        }
+
+        var copy = new string[tags.Length];
+        for (int i = 0; i < tags.Length; i++)
+        {
+            string tag = tags[i];
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                throw new ArgumentException("Tags must not be null or whitespace.", nameof(tags));
+            }
+
+            if (tag[0] == CacheKeyFormat.TenantMarker)
+            {
+                throw new ArgumentException(
+                    $"Tag '{tag}' starts with '{CacheKeyFormat.TenantMarker}', which is reserved for tenant tags. Use ForTenant to scope tags to a tenant.",
+                    nameof(tags));
+            }
+
+            copy[i] = tag;
+        }
+
+        return this with { Tags = Array.AsReadOnly(copy) };
     }
 
     /// <summary>
-    /// Returns a copy of this policy with the eager-refresh threshold set to
-    /// <paramref name="threshold"/>.
+    /// Returns a copy whose tags are scoped to <paramref name="tenantId"/>, plus the tenant-wide tag
+    /// every tenant entry carries (see <see cref="CacheKeyFormat"/>).
     /// </summary>
-    /// <param name="threshold">
-    /// A value in the range <c>(0, 1)</c> representing the fraction of L1 TTL at which
-    /// background refresh is triggered. Use <c>0.9</c> for 90 % of TTL.
-    /// </param>
-    /// <returns>
-    /// A new <see cref="CachePolicy"/> with <see cref="EagerRefreshThreshold"/> set.
-    /// </returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="threshold"/> is not in the range <c>(0, 1)</c>.
-    /// </exception>
+    /// <remarks>
+    /// Applied automatically by <see cref="ITenantCacheService"/>. Call it directly only when writing
+    /// tenant data through <see cref="ICacheService"/>, so the entry still responds to
+    /// <see cref="ITenantCacheService.RemoveByTagAsync"/> and <see cref="ITenantCacheService.RemoveTenantAsync"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// CachePolicy.Default.WithTags("orders").ForTenant("tenant-a").Tags  // ["@tenant-a:orders", "@tenant-a"]
+    /// </code>
+    /// </example>
+    /// <remarks><see cref="ITenantCacheService"/> applies this automatically.</remarks>
+    /// <param name="tenantId">The tenant identifier.</param>
+    /// <returns>A new, tenant-scoped policy.</returns>
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">The policy is already tenant-scoped.</exception>
+    public CachePolicy ForTenant(string tenantId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        EnsureNotTenantScoped();
+
+        var scoped = new string[_tags.Count + 1];
+        for (int i = 0; i < _tags.Count; i++)
+        {
+            scoped[i] = CacheKeyFormat.BuildTenantTag(tenantId, _tags[i]);
+        }
+
+        scoped[^1] = CacheKeyFormat.BuildTenantWideTag(tenantId);
+        return this with { Tags = Array.AsReadOnly(scoped), IsTenantScoped = true };
+    }
+
+    /// <summary>Returns a copy with fail-safe enabled and the given maximum stale duration.</summary>
+    /// <param name="maxDuration">How long past its duration an entry may be served. Must be positive.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxDuration"/> is not positive.</exception>
+    public CachePolicy WithFailSafe(TimeSpan maxDuration)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxDuration, TimeSpan.Zero);
+        return this with { IsFailSafeEnabled = true, FailSafeMaxDuration = maxDuration };
+    }
+
+    /// <summary>Returns a copy with fail-safe disabled and no soft factory timeout.</summary>
+    /// <returns>A new policy.</returns>
+    public CachePolicy WithoutFailSafe() =>
+        this with { IsFailSafeEnabled = false, FailSafeMaxDuration = null, FactorySoftTimeout = null };
+
+    /// <summary>Returns a copy with the given factory timeouts.</summary>
+    /// <param name="softTimeout">The soft timeout, or <see langword="null"/> for none. Must be positive and shorter than <paramref name="hardTimeout"/>.</param>
+    /// <param name="hardTimeout">The hard timeout, or <see langword="null"/> for none. Must be positive.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">A timeout is not positive, or the soft timeout is not shorter than the hard timeout.</exception>
+    /// <exception cref="InvalidOperationException">A soft timeout is set while fail-safe is disabled.</exception>
+    public CachePolicy WithFactoryTimeouts(TimeSpan? softTimeout, TimeSpan? hardTimeout)
+    {
+        if (softTimeout is { } soft)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(soft, TimeSpan.Zero, nameof(softTimeout));
+            if (!IsFailSafeEnabled)
+            {
+                throw new InvalidOperationException("A soft factory timeout needs fail-safe: without a stale entry there is nothing to serve.");
+            }
+        }
+
+        if (hardTimeout is { } hard)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(hard, TimeSpan.Zero, nameof(hardTimeout));
+            if (softTimeout is { } s && s >= hard)
+            {
+                throw new ArgumentOutOfRangeException(nameof(softTimeout), softTimeout, "The soft timeout must be shorter than the hard timeout.");
+            }
+        }
+
+        return this with { FactorySoftTimeout = softTimeout, FactoryHardTimeout = hardTimeout };
+    }
+
+    /// <summary>Returns a copy that refreshes entries in the background after <paramref name="threshold"/> of <see cref="L1Duration"/>.</summary>
+    /// <param name="threshold">A fraction in the open range (0, 1).</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="threshold"/> is outside (0, 1).</exception>
     public CachePolicy WithEagerRefresh(double threshold = 0.9)
     {
-        if (threshold is <= 0 or >= 1)
-            throw new ArgumentOutOfRangeException(nameof(threshold), threshold,
-                "Eager refresh threshold must be in the range (0, 1) exclusive.");
+        if (threshold is <= 0 or >= 1 || double.IsNaN(threshold))
+        {
+            throw new ArgumentOutOfRangeException(nameof(threshold), threshold, "The eager refresh threshold must be in the open range (0, 1).");
+        }
 
         return this with { EagerRefreshThreshold = threshold };
     }
 
-    /// <summary>
-    /// Returns a copy of this policy with eager refresh disabled.
-    /// </summary>
+    /// <summary>Returns a copy with eager refresh disabled.</summary>
+    /// <returns>A new policy.</returns>
     public CachePolicy WithoutEagerRefresh() => this with { EagerRefreshThreshold = null };
 
-    /// <summary>
-    /// Returns a copy of this policy with fail-safe disabled.
-    /// </summary>
-    public CachePolicy WithFailSafeDisabled() => this with { FailSafeEnabled = false };
-
-    /// <summary>
-    /// Returns a copy of this policy with the cache key schema version set to
-    /// <paramref name="version"/>.
-    /// </summary>
-    /// <param name="version">
-    /// A non-negative integer identifying the schema version. When greater than zero,
-    /// <c>ICacheKeyProvider.BuildKey</c> appends a <c>:v{version}</c> suffix to the key
-    /// (e.g. <c>order-svc:invoice:42:v3</c>). Pass <c>0</c> to revert to the original
-    /// format with no suffix.
-    /// </param>
-    /// <returns>
-    /// A new <see cref="CachePolicy"/> with <see cref="KeyVersion"/> set to
-    /// <paramref name="version"/>.
-    /// </returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="version"/> is negative.
-    /// </exception>
-    /// <remarks>
-    /// Chains correctly alongside <see cref="WithTags"/>, <see cref="WithEagerRefresh"/>,
-    /// and <see cref="Sliding"/>:
-    /// <code>
-    /// CachePolicy.Default.WithVersion(3).WithTags("entity:invoice")
-    /// </code>
-    /// </remarks>
-    public CachePolicy WithVersion(int version)
+    /// <summary>Returns a copy that adds up to <paramref name="maxDuration"/> of random extra duration to each entry.</summary>
+    /// <param name="maxDuration">The maximum jitter. Must be positive.</param>
+    /// <returns>A new policy.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxDuration"/> is not positive.</exception>
+    public CachePolicy WithJitter(TimeSpan maxDuration)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(version, nameof(version));
-        return this with { KeyVersion = version };
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxDuration, TimeSpan.Zero);
+        return this with { JitterMaxDuration = maxDuration };
     }
 
-    // -------------------------------------------------------------------------
-    // Sliding-expiration factory
-    // -------------------------------------------------------------------------
+    /// <summary>Returns a copy whose entries live only in this process's memory cache.</summary>
+    /// <returns>A new policy.</returns>
+    public CachePolicy LocalOnly() => this with { IsLocalOnly = true };
 
-    /// <summary>
-    /// Creates a policy with sliding (idle) expiration for L1.
-    /// The entry's L1 expiry resets on each access; the absolute ceiling is
-    /// <see cref="Default"/>'s <see cref="L1Duration"/> (5 minutes) for L1
-    /// and <see cref="Default"/>'s <see cref="L2Duration"/> (30 minutes) for L2.
-    /// </summary>
-    /// <param name="window">
-    /// The idle TTL for the L1 in-process cache. The entry expires after this duration
-    /// elapses without any access. Must be positive.
-    /// </param>
-    /// <returns>
-    /// A new <see cref="CachePolicy"/> with <see cref="SlidingWindow"/> set to
-    /// <paramref name="window"/> and absolute durations equal to <see cref="Default"/>.
-    /// </returns>
-    /// <remarks>
-    /// <para>
-    /// <strong>L1 only.</strong> Sliding expiration applies only to the L1 in-process
-    /// <c>MemoryCache</c>. The L2 Redis distributed cache does not support sliding expiry;
-    /// L2 entries expire at the absolute <see cref="L2Duration"/> ceiling.
-    /// </para>
-    /// <para>
-    /// <strong>Incompatible with <see cref="NeverExpire"/>.</strong> Combining a non-null
-    /// <see cref="SlidingWindow"/> with <see cref="NeverExpire"/> (which sets
-    /// <see cref="L1Duration"/> to <see cref="TimeSpan.MaxValue"/>) is invalid and will
-    /// throw at the provider level (e.g., <c>FusionCacheService</c>).
-    /// </para>
-    /// <para>
-    /// Use <see cref="CachePolicy.WithTags"/> after this factory to add tag-based
-    /// group invalidation: <c>CachePolicy.Sliding(window).WithTags("tag")</c>.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="window"/> is not positive.
-    /// </exception>
-    public static CachePolicy Sliding(TimeSpan window)
+    /// <inheritdoc />
+    public bool Equals(CachePolicy? other) =>
+        other is not null
+        && L1Duration == other.L1Duration
+        && L2Duration == other.L2Duration
+        && IsFailSafeEnabled == other.IsFailSafeEnabled
+        && FailSafeMaxDuration == other.FailSafeMaxDuration
+        && FactorySoftTimeout == other.FactorySoftTimeout
+        && FactoryHardTimeout == other.FactoryHardTimeout
+        && EagerRefreshThreshold == other.EagerRefreshThreshold
+        && JitterMaxDuration == other.JitterMaxDuration
+        && IsLocalOnly == other.IsLocalOnly
+        && IsTenantScoped == other.IsTenantScoped
+        && _tags.SequenceEqual(other._tags, StringComparer.Ordinal);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(window.Ticks, nameof(window));
-
-        return new CachePolicy
+        var hash = new HashCode();
+        hash.Add(L1Duration);
+        hash.Add(L2Duration);
+        hash.Add(IsFailSafeEnabled);
+        hash.Add(FailSafeMaxDuration);
+        hash.Add(FactorySoftTimeout);
+        hash.Add(FactoryHardTimeout);
+        hash.Add(EagerRefreshThreshold);
+        hash.Add(JitterMaxDuration);
+        hash.Add(IsLocalOnly);
+        hash.Add(IsTenantScoped);
+        foreach (string tag in _tags)
         {
-            L1Duration = Default.L1Duration,
-            L2Duration = Default.L2Duration,
-            SlidingWindow = window,
-        };
+            hash.Add(tag, StringComparer.Ordinal);
+        }
+
+        return hash.ToHashCode();
+    }
+
+    internal static void ValidateDurations(TimeSpan l1Duration, TimeSpan l2Duration)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(l1Duration, TimeSpan.Zero, nameof(l1Duration));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(l2Duration, TimeSpan.Zero, nameof(l2Duration));
+
+        if (l1Duration > l2Duration)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(l1Duration),
+                l1Duration,
+                "The memory-cache duration must not exceed the distributed-cache duration.");
+        }
+    }
+
+    private void EnsureNotTenantScoped()
+    {
+        if (IsTenantScoped)
+        {
+            throw new InvalidOperationException("The policy is already scoped to a tenant. Set tags before calling ForTenant.");
+        }
     }
 }
