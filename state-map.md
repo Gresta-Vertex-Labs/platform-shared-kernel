@@ -2528,7 +2528,7 @@ The user ruled:
 
 ### P-550 — Caching: Redis packages Pre-First-Publish Pass (BREAKING API + BEHAVIOUR)
 
-**Status:** `✓` Shipped 2026-09-17 — Redis.Core 76, Redis 91, DistributedLocking 53, HashStore 63, PubSub 26 tests passing (real Redis), plus FusionCache 270, governance 324, Idempotency.Redis 35 and ServiceDefaults.Caching.Redis 10; published to GitHub Packages from one commit
+**Status:** `✓` Shipped 2026-09-17 — Redis.Core 76, Redis 91, DistributedLocking 53, HashStore 63, PubSub 26 tests passing (real Redis), plus FusionCache 270, governance 324, Idempotency.Redis 35 and ServiceDefaults.Caching.Redis 10; published to GitHub Packages as `1.0.0-alpha.0.1083` (with Primitives, Configuration and Caching.Abstractions) from one commit
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 02.Caching (with migrations in 00.Governance, 13.ServiceDefaults, 16.Testing and 18.Idempotency)
 **Depends on:** P-548, P-549
