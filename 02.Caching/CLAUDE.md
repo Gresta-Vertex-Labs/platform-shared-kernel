@@ -303,24 +303,30 @@ RedisLockOptions  (sealed class)
 ### `SharedKernel.Caching.FusionCache` — public surface
 
 ```text
-AddSharedKernelCaching(this IServiceCollection, Action<CachingOptions>? configure = null) → ICachingBuilder
-    // AddOptions<CachingOptions>().ValidateDataAnnotations().ValidateOnStart() + Configure(configure);
+AddSharedKernelCaching(this IServiceCollection, IConfiguration, Action<CachingOptions>? configure = null) → ICachingBuilder
+    // AddValidatedOptions<CachingOptions, CachingOptionsValidator>(configuration, validateDataAnnotations: true)
+    // (section SharedKernel:Caching, ValidateOnStart), then Configure(configure) so the delegate runs after binding.
+AddSharedKernelCaching(this IServiceCollection, Action<CachingOptions> configure) → ICachingBuilder
+    // configure is required. AddOptions().Configure().ValidateDataAnnotations().ValidateOnStart() +
     // TryAddEnumerable(IValidateOptions<CachingOptions>, CachingOptionsValidator) — TryAddEnumerable, not
-    // TryAddSingleton, because ValidateDataAnnotations already registered an IValidateOptions<CachingOptions>;
-    // TryAddSingleton would silently skip the validator.
-    // Registers: IFusionCacheSerializer (STJ, via a registered FusionCacheSystemTextJsonSerializer),
-    // CacheSerializationOptions, FusionCache with its own MemoryCache (SizeLimit = L1SizeLimit, entry Size = 1),
-    // TryAddSingleton<ICacheService, FusionCacheService>, one CacheKeyProvider behind ICacheKeyProvider AND
+    // TryAddSingleton, because ValidateDataAnnotations already registered a validator of that service type.
+    // Both overloads then register, reading IOptions<CachingOptions> only inside factories (never at registration):
+    // CacheSerializationOptions (one JsonSerializerOptions: General defaults, or Combine(SerializerContext,
+    // EncryptedCacheEntryJsonContext)); FusionCacheSystemTextJsonSerializer and IFusionCacheSerializer over it;
+    // FusionCache with its own MemoryCache (SizeLimit = L1SizeLimit) and WithPostSetup applying ApplyDefaults
+    // (Size = 1, DistributedCacheSoft/HardTimeout, FailSafeThrottleDuration) to IFusionCache.DefaultEntryOptions;
+    // TryAddSingleton<ICacheService, FusionCacheService>; one CacheKeyProvider behind ICacheKeyProvider AND
     // ITenantCacheKeyProvider (each TryAdd — a consumer may override either).
 
-CachingOptions  (sealed class)
-    SectionName = "SharedKernelCaching"
-    ServiceName        string  (NO default — empty; must satisfy CacheKeyFormat.IsValidServiceName)
-    L1SizeLimit        int     ([Range(1, int.MaxValue)], 10_000 — an entry count)
-    CacheName          string  ([Required], "default")
-    WaitForWarmup      bool    (false)
-    Compression        CompressionOptions { Enabled (false), L2ThresholdBytes (1024), Level (Fastest) }
-    SerializerContext  JsonSerializerContext?
+CachingOptions  (sealed class : ISectionBoundOptions)
+    static SectionName => "SharedKernel:Caching"
+    ServiceName                 string     (NO default — empty; must satisfy CacheKeyFormat.IsValidServiceName)
+    L1SizeLimit                 int        ([Range(1, int.MaxValue)], 10_000 — an entry count)
+    WaitForWarmup               bool       (false)
+    DistributedCacheSoftTimeout TimeSpan?  (positive; < hard when both set)
+    DistributedCacheHardTimeout TimeSpan?  (positive)
+    FailSafeThrottleDuration    TimeSpan?  (positive; provider default 30 s)
+    SerializerContext           JsonSerializerContext?  (code only)
 
 AddTenantCacheService(this ICachingBuilder)  → ICachingBuilder
     // TryAddSingleton<ITenantCacheService, TenantCacheService>; the key providers come from AddSharedKernelCaching.
@@ -330,30 +336,31 @@ TenantCacheService  (internal sealed : ITenantCacheService)
     // RemoveByTagAsync → ICacheService.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(tenantId, tag));
     // RemoveTenantAsync → ICacheService.RemoveByTagAsync(CacheKeyFormat.BuildTenantWideTag(tenantId)).
 
-AddBrotliCompression(this ICachingBuilder, Action<CachingOptions.CompressionOptions>? configure) → ICachingBuilder
-    // Replaces IFusionCacheSerializer with BrotliCacheSerializer (Inner = the STJ serializer).
-    // Throws InvalidOperationException if CacheEncryptionOptions is already registered (must precede
-    // AddCacheEncryption); ArgumentException for L2ThresholdBytes <= 0.
+CacheCompressionOptions  (public sealed class) { ThresholdBytes (1024, > 0), Level (Fastest) }
+AddBrotliCompression(this ICachingBuilder, Action<CacheCompressionOptions>? configure) → ICachingBuilder
+    // Replaces IFusionCacheSerializer with BrotliCacheSerializer (Inner = the STJ serializer, Options = the settings).
+    // Throws InvalidOperationException if CacheEncryptionMarker is already registered (must precede
+    // AddCacheEncryption); ArgumentException for ThresholdBytes <= 0.
 
 AddCacheEncryption(this ICachingBuilder)  → ICachingBuilder
     // Guards (InvalidOperationException): ISymmetricEncryptionService registered (names
     // AddSharedKernelCryptography(configuration).AddSymmetricEncryption()); ICacheService registered;
-    // IFusionCacheSerializer registered (both name AddSharedKernelCaching()).
-    // Unwraps a BrotliCacheSerializer back to its Inner and passes compressionEnabled = true to
+    // IFusionCacheSerializer registered.
+    // Unwraps a BrotliCacheSerializer back to its Inner and passes its CacheCompressionOptions to
     // EncryptedCacheService; replaces ICacheService with EncryptedCacheService wrapping the previous
-    // registration; registers the CacheEncryptionOptions marker.
+    // registration; registers the internal CacheEncryptionMarker.
 
 EncryptedCacheService  (internal sealed partial : ICacheService)
     // AAD = Encoding.UTF8.GetBytes(key). Stores byte[] = EncryptedPayload.ToBytes() in the wrapped ICacheService.
-    // Value → JSON (CacheSerializationOptions.Value) → optional Brotli (BrotliPayloadCodec, threshold 0) →
-    // EncryptAsync. RemoveAsync/ExpireAsync/RemoveByTagAsync/RemoveByTagsAsync/ClearAsync pass through.
+    // Value → JSON (CacheSerializationOptions.Value) → optional Brotli (BrotliPayloadCodec, configured threshold
+    // and level) → EncryptAsync. RemoveAsync/ExpireAsync/RemoveByTagAsync/RemoveByTagsAsync/ClearAsync pass through.
 
-BrotliCacheSerializer / BrotliPayloadCodec (internal static)   // magic bytes 0x42 0x52 ("BR"), shared codec
+BrotliCacheSerializer / BrotliPayloadCodec (internal static)   // marker bytes 0x42 0x52 ("BR"), shared codec
 CacheSerializationOptions (internal sealed) { Value JsonSerializerOptions }
 EncryptedCacheEntryJsonContext (internal sealed partial JsonSerializerContext, [JsonSerializable(typeof(byte[]))])
-CacheEncryptionOptions (public sealed) { Enabled = true }   // marker only, no secret material
-CacheJsonSerializerContext (public abstract JsonSerializerContext)   // STJ base for consumer contexts
+CacheEncryptionMarker (internal sealed)   // registration-time ordering marker only
 AddCacheWarmup<TStrategy>(this ICachingBuilder) → ICachingBuilder
+    // TryAddEnumerable for the strategy and for the internal CacheWarmupHostedService (IHostedLifecycleService).
 ```
 
 ### `SharedKernel.Caching.Redis` — public surface
@@ -467,8 +474,8 @@ RedisL2Options  (sealed class)
   - `GetOrSetAsync` evicts and recomputes **once through the wrapped service**, so the recompute keeps stampede protection. If the recomputed entry still does not decrypt (another writer keeps storing entries this process cannot read), it logs again and returns a fresh factory value without caching it. It never throws for a corrupt entry and never returns wrong data.
 - **Known limitation (accepted):** concurrent readers that all observe the same corrupt entry each evict it and each start the recompute through the wrapped service. Stampede protection collapses calls that overlap, but a reader arriving after one recompute has already stored the fresh entry can trigger one extra recompute. The cost is an extra factory run, never wrong data.
 - Built only on `01.Core/SharedKernel.Cryptography` (AES-256-GCM). No other cryptographic primitive or library.
-- **Composition order is structurally enforced:** `AddBrotliCompression()` must precede `AddCacheEncryption()` (it throws when `CacheEncryptionOptions` is already registered). When the registered serializer is a `BrotliCacheSerializer`, `AddCacheEncryption()` unwraps it to `.Inner` and passes `compressionEnabled = true`; `EncryptedCacheService` then compresses before encrypting and decompresses after decrypting, because compression after encryption is useless. Without encryption, `BrotliCacheSerializer` is untouched.
-- `EncryptedCacheService` compresses and encrypts unconditionally (threshold 0, `CompressionLevel.Fastest`); the `L2ThresholdBytes`/`Level` given to `AddBrotliCompression` do not carry over — by design, its constructor takes only `bool compressionEnabled`.
+- **Composition order is structurally enforced:** `AddBrotliCompression()` must precede `AddCacheEncryption()` (it throws when the internal `CacheEncryptionMarker` is already registered). When the registered serializer is a `BrotliCacheSerializer`, `AddCacheEncryption()` unwraps it to `.Inner` and passes its `CacheCompressionOptions`; `EncryptedCacheService` then compresses before encrypting and decompresses after decrypting, because compression after encryption is useless. Without encryption, `BrotliCacheSerializer` is untouched.
+- `EncryptedCacheService` honours the configured `ThresholdBytes` and `Level`: payloads below the threshold are encrypted uncompressed and carry no marker, so decryption decompresses only marked payloads.
 - Entries in an older stored shape fail to parse or decrypt and are handled as decrypt failures (a cold-cache wave on rollout, not data loss).
 - Not a substitute for TLS on the Redis connection: encryption protects the value at rest, TLS in transit. Use both for sensitive data.
 - Composes with `AddTenantCacheService()` in either order: the tenant-scoped key `TenantCacheService` builds is exactly the AAD, so a payload replayed across tenants for the same `(entity, id)` fails to decrypt.
@@ -476,7 +483,7 @@ RedisL2Options  (sealed class)
 ### STJ serialization rule
 
 - All serialization uses STJ; source-generated contexts for AOT builds.
-- `CacheJsonSerializerContext` (public abstract base) lives in `SharedKernel.Caching.FusionCache.Serialization`.
+- A service that trims or publishes as NativeAOT sets `CachingOptions.SerializerContext` (code only) to a context covering every cached type; the same `JsonSerializerOptions` instance serves the distributed serializer and the encryption plaintext.
 - `EncryptedCacheEntryJsonContext` covers the stored `byte[]` entry.
 
 ### Shared multiplexer rule
@@ -518,9 +525,9 @@ RedisL2Options  (sealed class)
 ### Cache warmup rules
 
 - `ICacheWarmupStrategy.WarmupAsync` uses `ValueTask`.
-- `CacheWarmupHostedService` runs strategies in ascending `Order`, catches per-strategy exceptions, logs at `Error`, and continues — a failed strategy never crashes the pod.
+- `CacheWarmupHostedService` (internal, `IHostedLifecycleService`) runs strategies in ascending `Order`, catches per-strategy exceptions, logs at `Error`, and continues — a failed strategy never crashes the pod.
 - `AddCacheWarmup<TStrategy>` uses `TryAddEnumerable` for the strategy and for the hosted service (idempotent).
-- `CachingOptions.WaitForWarmup = true` delays readiness until warmup completes (`IHostedLifecycleService.StartedAsync`).
+- `CachingOptions.WaitForWarmup = true` runs warmup inside `StartingAsync`, which the host completes for every lifecycle service before any `StartAsync` — including the web server's — so no traffic or readiness arrives until warmup finishes (P-548; the former `StartedAsync` wait ran after the server was already listening). Otherwise `StartAsync` starts warmup in the background and `StopAsync` cancels and awaits it. Cancellation propagates; strategy failures do not.
 
 ### Tenant cache service rules
 
@@ -545,19 +552,20 @@ RedisL2Options  (sealed class)
 
 ### OTel metrics rules
 
-- `Meter("SharedKernel.Caching", "1.0")`, static readonly on `FusionCacheService`.
+- `Meter("SharedKernel.Caching", <assembly informational version>)`, static readonly on `FusionCacheService`. The name is fixed: `13.ServiceDefaults`' `WithCachingTelemetry` subscribes to it.
 - Instruments: `cache.hits`, `cache.misses`, `cache.factory.duration` (ms), `cache.errors`, `cache.evictions`.
-- `cache.key_prefix` is the first two key segments — `{service}:{entity}` for a global key, `{service}:@{tenant}` for a tenant key — never the `{id}`.
-- Hits/misses/evictions come from FusionCache memory events; `TryGetAsync` records its own miss because FusionCache's `TryGetAsync` raises no `Memory.Miss` event.
+- `cache.key_prefix` is `{service}:{entity}` — for a tenant key `{service}:@{tenant}:{entity}:{id}` the tenant segment is dropped (`ExtractKeyPrefix`). Never an id, never a tenant (P-548; tenant ids previously leaked into every metric series).
+- Hits come from `Events.Memory.Hit` (`cache.level = l1`) and `Events.Distributed.Hit` (`l2`); evictions from `Events.Memory.Eviction`. Misses are recorded only at the call sites — a `TryGetAsync`/`TryGetManyAsync` miss or a `GetOrSetAsync` factory run — because a memory miss the distributed layer answers is not a miss.
+- Logs use `{KeyPrefix}` placeholders, never the full key; tenant tags are logged through `DescribeTag` as `@tenant:{tag}`.
 - No `Enabled` guards around recording; no new NuGet dependency.
 
 ### OTel tracing rules
 
-- `ActivitySource("SharedKernel.Caching", "1.0")` — same scope name/version as the `Meter` — static readonly on `FusionCacheService`.
+- `ActivitySource("SharedKernel.Caching", <assembly informational version>)` — same scope name/version as the `Meter` — static readonly on `FusionCacheService`.
 - Spans (`ActivityKind.Client`): `cache.get` (`TryGetAsync`), `cache.set` (`SetAsync`), `cache.get_or_set` (`GetOrSetAsync`). Batch, removal, expire and clear calls have no span.
 - Spans start **after** argument validation.
 - Tags: `cache.key_prefix` on all three; `cache.outcome` (`"hit"`/`"miss"`) on `cache.get` and `cache.get_or_set` (the latter from a `factoryInvoked` flag set inside the factory).
-- On an exception in the factory or `SetAsync`, `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` before rethrowing, alongside `cache.errors`.
+- On an exception in the factory or `SetAsync`, `activity?.SetStatus(ActivityStatusCode.Error, <exception type name>)` (never the message, which can carry data) before rethrowing, alongside `cache.errors`.
 - `13.ServiceDefaults`' `WithCachingTelemetry` registers both the meter and the source by name.
 
 ### Redis Connection Core rules
@@ -662,7 +670,7 @@ services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
 // Brotli compression for large L2 payloads
 services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
         .AddRedisL2(connectionString)
-        .AddBrotliCompression(o => o.L2ThresholdBytes = 2048);
+        .AddBrotliCompression(o => o.ThresholdBytes = 2048);
 
 // Cache-value encryption at rest — cryptography and the cache first; Brotli before encryption
 services.AddSingleton<IEncryptionKeyProvider>(keyProvider);    // any provider, KMS-backed included
@@ -670,7 +678,7 @@ services.AddSharedKernelCryptography(configuration)
         .AddSymmetricEncryption();                             // 01.Core — ISymmetricEncryptionService
 services.AddSharedKernelCaching(o => o.ServiceName = "my-service")
         .AddRedisL2(connectionString)
-        .AddBrotliCompression(o => o.L2ThresholdBytes = 2048)  // compression first
+        .AddBrotliCompression(o => o.ThresholdBytes = 2048)  // compression first
         .AddCacheEncryption();                                 // encryption last
 
 // Distributed locking alongside the cache
@@ -766,7 +774,7 @@ services.AddRedisConnection(connectionString, o =>
 - **Redis connection hardening** (`RedisConnectionValidationTests`/`RedisTlsConfigurationTests`): invalid options throw `OptionsValidationException` via `IStartupValidator.Validate()` and on first `IOptions<T>.Value` access; TLS settings compose into `SslClientAuthenticationOptions`; the non-loopback warning fires exactly once and never for loopback or `Ssl = true`.
 - **Channel reconnect:** forcibly kill the subscriber connection on a live container; messages are delivered after reconnect; the resubscription count equals the pre-disconnect count; a partial resubscription failure still resubscribes the remaining channels.
 - **Cross-package composition:** a container calling only `AddRedisConnection` + one of `AddRedisDistributedLocking`/`AddRedisHashService`/`AddRedisChannelService` resolves (proven end to end by `consumer-verify` surfaces 3–5).
-- **Cache warmup:** ascending order, a failed strategy does not abort the others, `WaitForWarmup` awaits completion, registration is idempotent.
+- **Cache warmup:** ascending order, a failed strategy does not abort the others, `WaitForWarmup` finishes warmup in `StartingAsync` before any hosted service starts, background warmup is cancelled on stop, registration is idempotent.
 
 ---
 
