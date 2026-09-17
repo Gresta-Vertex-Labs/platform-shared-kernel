@@ -1,4 +1,4 @@
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.MultiTenancy.Middleware;
 
@@ -10,10 +10,9 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// Scoped per HTTP request. Defaults to <see cref="Guid.Empty"/> until
 /// <see cref="TenantResolutionMiddleware"/> runs. <see cref="TenantId"/> is set exactly once per
 /// request — only by <see cref="TenantResolutionMiddleware"/>; no other component may set it.
-/// This is mutually exclusive with registering
-/// <c>SharedKernel.Security.Oidc.OidcTenantProvider</c> directly as <see cref="ITenantProvider"/> —
-/// that type is instead wrapped by <c>ClaimTenantResolutionStrategy</c> so header/claim/database
-/// resolution can compose in priority order.
+/// It replaces the authentication packages' default <c>UserContextTenantProvider</c>; the credential's tenant
+/// is read by <c>ClaimTenantResolutionStrategy</c> instead, so header, claim and database resolution compose in
+/// priority order.
 /// </remarks>
 public sealed class AmbientTenantProvider : ITenantProvider
 {

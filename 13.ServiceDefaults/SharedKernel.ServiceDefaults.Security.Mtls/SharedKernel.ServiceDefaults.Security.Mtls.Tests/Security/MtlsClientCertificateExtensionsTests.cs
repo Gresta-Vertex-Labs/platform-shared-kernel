@@ -109,7 +109,7 @@ public sealed class MtlsClientCertificateExtensionsTests
     {
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid(clientId: "client-1")));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("client-1")));
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddScoped(_ => validator);
@@ -130,7 +130,7 @@ public sealed class MtlsClientCertificateExtensionsTests
     {
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Invalid));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Failure()));
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddScoped(_ => validator);
@@ -159,7 +159,7 @@ public sealed class MtlsClientCertificateExtensionsTests
 
         var acceptingValidator = Substitute.For<IMtlsCertificateValidator>();
         acceptingValidator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
         var acceptingBuilder = Host.CreateApplicationBuilder();
         acceptingBuilder.Services.AddScoped(_ => acceptingValidator);
         acceptingBuilder.AddMtlsClientCertificate();
@@ -168,7 +168,7 @@ public sealed class MtlsClientCertificateExtensionsTests
 
         var rejectingValidator = Substitute.For<IMtlsCertificateValidator>();
         rejectingValidator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Invalid));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Failure()));
         var rejectingBuilder = Host.CreateApplicationBuilder();
         rejectingBuilder.Services.AddScoped(_ => rejectingValidator);
         rejectingBuilder.AddMtlsClientCertificate();
@@ -193,7 +193,7 @@ public sealed class MtlsClientCertificateExtensionsTests
             callCount++;
             var validator = Substitute.For<IMtlsCertificateValidator>();
             validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+                .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
             return validator;
         });
         builder.AddMtlsClientCertificate();

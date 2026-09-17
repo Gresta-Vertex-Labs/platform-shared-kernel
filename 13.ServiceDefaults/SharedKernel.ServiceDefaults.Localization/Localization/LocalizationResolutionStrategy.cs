@@ -8,7 +8,7 @@ public enum LocalizationResolutionStrategy
 {
     /// <summary>
     /// Resolve the culture from the current authenticated user's own stored preference — a claim
-    /// on <c>IUserContext.Claims</c> named by <see cref="LocalizationResolutionOptions.UserPreferenceClaimType"/>.
+    /// returned by <c>IUserContext.FindClaim</c> for <see cref="LocalizationResolutionOptions.UserPreferenceClaimType"/>.
     /// </summary>
     UserPreference,
 

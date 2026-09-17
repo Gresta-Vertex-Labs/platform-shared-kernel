@@ -9,7 +9,7 @@ using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
 namespace SharedKernel.ServiceDefaults.Persistence.Tests.HealthChecks;
@@ -72,7 +72,7 @@ public sealed class DatabaseReadinessHealthCheckTests
     private static IUserContext CreateUnauthenticatedUserContext()
     {
         var mock = Substitute.For<IUserContext>();
-        mock.UserId.Returns(Guid.Empty);
+        mock.SubjectId.Returns((string?)null);
         mock.IsAuthenticated.Returns(false);
         return mock;
     }

@@ -51,7 +51,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid(clientId: "client-1")));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("client-1")));
 
         var middleware = CreateMiddleware(out var nextCalled);
         await middleware.InvokeAsync(context, validator);
@@ -71,7 +71,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var middleware = CreateMiddleware(out var nextCalled);
         await middleware.InvokeAsync(context, validator);
@@ -90,7 +90,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Invalid));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Failure()));
 
         var middleware = CreateMiddleware(out var nextCalled);
         var act = async () => await middleware.InvokeAsync(context, validator);
@@ -195,7 +195,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var middleware = CreateMiddleware(out var nextCalled, options);
         var act = async () => await middleware.InvokeAsync(context, validator);
@@ -219,7 +219,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var middleware = CreateMiddleware(out var nextCalled, options);
         await middleware.InvokeAsync(context, validator);
@@ -261,7 +261,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var middleware = CreateMiddleware(out var nextCalled);
         await middleware.InvokeAsync(context, validator);

@@ -47,7 +47,7 @@ public sealed class ServiceDefaultsLogWiringTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var options = Options.Create(new MtlsForwardedHeaderOptions { HeaderName = "ssl-client-cert" });
         var middleware = new MtlsForwardedHeaderMiddleware(_ => Task.CompletedTask, options, logger);
@@ -75,7 +75,7 @@ public sealed class ServiceDefaultsLogWiringTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Invalid));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Failure()));
 
         var options = Options.Create(new MtlsForwardedHeaderOptions { HeaderName = "ssl-client-cert" });
         var middleware = new MtlsForwardedHeaderMiddleware(_ => Task.CompletedTask, options, logger);
@@ -121,7 +121,7 @@ public sealed class ServiceDefaultsLogWiringTests
         builder.Services.AddSingleton<ILoggerFactory>(new InMemoryLoggerFactory());
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
         builder.Services.AddScoped(_ => validator);
         builder.AddMtlsClientCertificate();
         using var host = builder.Build();
@@ -151,7 +151,7 @@ public sealed class ServiceDefaultsLogWiringTests
         builder.Services.AddSingleton<ILoggerFactory>(new InMemoryLoggerFactory());
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Invalid));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Failure()));
         builder.Services.AddScoped(_ => validator);
         builder.AddMtlsClientCertificate();
         using var host = builder.Build();
@@ -192,7 +192,7 @@ public sealed class ServiceDefaultsLogWiringTests
 
         var validator = Substitute.For<IMtlsCertificateValidator>();
         validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+            .Returns(ValueTask.FromResult(MtlsValidationResult.Success("test-client")));
 
         var options = Options.Create(new MtlsForwardedHeaderOptions { HeaderName = "ssl-client-cert" });
         var middleware = new MtlsForwardedHeaderMiddleware(_ => Task.CompletedTask, options, logger);

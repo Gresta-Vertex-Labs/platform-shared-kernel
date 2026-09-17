@@ -1,23 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, JWT claim delegation, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
+    <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, credential tenant claim, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
     <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
-    <!--
-      NU1903: transitive high-severity advisory on System.Security.Cryptography.Xml 9.0.0,
-      pulled in via the SharedKernel.Security.Oidc project reference. This is an upstream
-      12.Security dependency-tree advisory, not something owned or fixable from this domain —
-      suppressed here only so TreatWarningsAsErrors does not block packing on a transitive
-      advisory outside this package's control. Re-evaluate when 12.Security upgrades its
-      Cryptography.Xml-dependent package.
-    -->
-    <NoWarn>$(NoWarn);NU1903</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <!-- HttpContext, middleware and logging; previously arrived transitively through SharedKernel.Security.Oidc. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
-    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <!--
       WO-075/P-472 (S-21): needed only for CachedTenantCatalog.WithCrossInstanceInvalidation
@@ -27,9 +21,6 @@
       available via the SharedKernel.Persistence.Abstractions reference above.
     -->
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <!--

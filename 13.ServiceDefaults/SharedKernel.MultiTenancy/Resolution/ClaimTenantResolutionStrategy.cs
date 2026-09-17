@@ -1,16 +1,16 @@
 using Microsoft.AspNetCore.Http;
-using SharedKernel.Security.Oidc.Mapping;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.MultiTenancy.Resolution;
 
 /// <summary>
-/// Resolves the tenant identifier from the authenticated request's JWT claims by delegating to
-/// <see cref="OidcTenantProvider"/>.
+/// Resolves the tenant asserted by the authenticated caller's credential, through the
+/// <see cref="IUserContextMapper"/> the authentication package registered.
 /// </summary>
 /// <remarks>
-/// A thin adapter only — claim-name parsing belongs exclusively to
-/// <c>SharedKernel.Security.Oidc.OidcTenantProvider</c> / <c>SharedKernel.Security.Abstractions.SecurityClaimTypes</c>.
-/// This type must never duplicate that logic. Requires <see cref="HttpContext.User"/> to be
+/// A thin adapter only: which claim carries the tenant is decided by the authentication package (for example
+/// <c>SharedKernel:Security:Oidc:Claims:TenantClaimType</c>). Requires <see cref="HttpContext.User"/> to be
 /// populated, so the owning <see cref="Middleware.TenantResolutionMiddleware"/> must run after
 /// <c>UseAuthentication()</c>.
 /// </remarks>
@@ -24,10 +24,7 @@ public sealed class ClaimTenantResolutionStrategy : ITenantResolutionStrategy
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var tenantProvider = new OidcTenantProvider(context.User);
-
-        return Task.FromResult(tenantProvider.TenantId == Guid.Empty
-            ? (Guid?)null
-            : tenantProvider.TenantId);
+        IEnumerable<IUserContextMapper> mappers = context.RequestServices?.GetServices<IUserContextMapper>() ?? [];
+        return Task.FromResult(UserContextResolver.Resolve(context.User, mappers).TenantId);
     }
 }

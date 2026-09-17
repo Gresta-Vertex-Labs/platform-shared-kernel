@@ -14,7 +14,7 @@ using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.Probes;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 // ── Surface 1: AddServiceDefaults() — mandatory first call ──────────────────
 var builder = WebApplication.CreateBuilder();

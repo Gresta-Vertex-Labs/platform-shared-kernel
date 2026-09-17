@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.MultiTenancy.Catalog;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Localization;
 using SharedKernel.Testing.Logging;
 
@@ -33,7 +33,7 @@ public sealed class SharedKernelLocalizationExtensionsTests
         var tenantId = Guid.NewGuid();
 
         var userContext = Substitute.For<IUserContext>();
-        userContext.Claims.Returns(new Dictionary<string, string> { ["culture"] = "de-DE" });
+        userContext.FindClaim("culture").Returns("de-DE");
 
         var tenantProvider = Substitute.For<ITenantProvider>();
         tenantProvider.TenantId.Returns(tenantId);

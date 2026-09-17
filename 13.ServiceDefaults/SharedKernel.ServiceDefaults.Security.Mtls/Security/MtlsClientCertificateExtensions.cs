@@ -42,9 +42,7 @@ public static class MtlsClientCertificateExtensions
     /// the consuming service has registered — typically via <c>SharedKernel.Security.Mtls</c>'s
     /// <c>AddMtlsAuthentication&lt;TValidator&gt;()</c>, or a direct
     /// <c>services.AddScoped&lt;IMtlsCertificateValidator, TValidator&gt;()</c> call. This method
-    /// registers no validator of its own — mirrors
-    /// <c>SharedKernel.MultiTenancy.ClaimTenantResolutionStrategy</c>'s delegate-never-reimplement
-    /// pattern for <c>OidcTenantProvider</c>.
+    /// registers no validator of its own; certificate trust decisions stay in <c>SharedKernel.Security.Mtls</c>.
     /// </para>
     /// <para>
     /// <b>Blocking-bridge cost — documented deliberately, not a formality to wave away:</b>
