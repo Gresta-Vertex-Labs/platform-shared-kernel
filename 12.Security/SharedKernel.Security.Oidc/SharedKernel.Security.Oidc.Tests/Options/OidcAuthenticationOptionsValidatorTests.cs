@@ -11,6 +11,7 @@ public sealed class OidcAuthenticationOptionsValidatorTests
     {
         { "empty authority", o => o.Authority = string.Empty, "Authority must be an absolute URL." },
         { "relative authority", o => o.Authority = "/issuer", "Authority must be an absolute URL." },
+        { "file authority", o => o.Authority = "file:///issuer", "Authority must be an absolute URL." },
         { "http authority", o => o.Authority = "http://issuer.example.test", "Authority must use https unless RequireHttpsMetadata is false." },
         { "no audiences", o => o.Audiences = [], "Audiences must contain at least one value and no empty values." },
         { "null audiences", o => o.Audiences = null!, "Audiences must contain at least one value and no empty values." },

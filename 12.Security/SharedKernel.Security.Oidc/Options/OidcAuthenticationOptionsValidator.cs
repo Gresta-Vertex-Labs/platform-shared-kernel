@@ -18,7 +18,9 @@ internal sealed class OidcAuthenticationOptionsValidator(DpopRegistration? dpopR
 
         var failures = new List<string>();
 
-        if (!Uri.TryCreate(options.Authority, UriKind.Absolute, out Uri? authority))
+        // A rooted path parses as an absolute file URI on Linux, so the scheme is checked as well.
+        if (!Uri.TryCreate(options.Authority, UriKind.Absolute, out Uri? authority)
+            || (authority.Scheme != Uri.UriSchemeHttps && authority.Scheme != Uri.UriSchemeHttp))
         {
             failures.Add("Authority must be an absolute URL.");
         }
