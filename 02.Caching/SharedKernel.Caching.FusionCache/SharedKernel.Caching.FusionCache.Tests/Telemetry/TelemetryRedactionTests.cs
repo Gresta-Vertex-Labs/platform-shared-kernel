@@ -1,0 +1,180 @@
+using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.FusionCache.Implementations;
+using Xunit;
+
+namespace SharedKernel.Caching.FusionCache.Tests.Telemetry;
+
+/// <summary>
+/// Metrics, spans and logs carry only <c>{service}:{entity}</c> key prefixes and <c>@tenant</c>
+/// placeholders: never an entity id and never a tenant id.
+/// </summary>
+public sealed class TelemetryRedactionTests
+{
+    private const string TenantId = "tenant-secret-7";
+    private const string EntityId = "id-secret-42";
+
+    // -------------------------------------------------------------------------
+    // ExtractKeyPrefix
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("svc:entity:123", "svc:entity")]
+    [InlineData("svc:entity:123:extra", "svc:entity")]
+    [InlineData("svc:entity:123:extra:more", "svc:entity")]
+    [InlineData("svc:entity", "svc:entity")]
+    [InlineData("svc", "svc")]
+    [InlineData("", "")]
+    public void ExtractKeyPrefix_GlobalAndShortKeys(string key, string expected) =>
+        Assert.Equal(expected, FusionCacheService.ExtractKeyPrefix(key));
+
+    [Theory]
+    [InlineData("svc:@tenant-secret-7:orders:id-secret-42", "svc:orders")]
+    [InlineData("svc:@tenant-secret-7:orders:id-secret-42:lines:3", "svc:orders")]
+    [InlineData("svc:@tenant-secret-7:orders", "svc:orders")]
+    [InlineData("svc:@tenant-secret-7", "svc")]
+    public void ExtractKeyPrefix_TenantKeys_DropTheTenantAndTheId(string key, string expected)
+    {
+        var prefix = FusionCacheService.ExtractKeyPrefix(key);
+
+        Assert.Equal(expected, prefix);
+        Assert.DoesNotContain(TenantId, prefix, StringComparison.Ordinal);
+        Assert.DoesNotContain(EntityId, prefix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractKeyPrefix_KeysBuiltByCacheKeyFormat_NeverContainTheTenantOrTheId()
+    {
+        // Escaped parts (':' and '@' inside an id or tenant) must not shift the segments.
+        const string trickyTenant = "t:@x";
+        const string trickyId = "a:b@c";
+
+        var tenantKey = CacheKeyFormat.BuildTenantKey("orders-api", trickyTenant, "invoice", trickyId, "v2");
+        var globalKey = CacheKeyFormat.BuildKey("orders-api", "invoice", trickyId, "v2");
+
+        Assert.Equal("orders-api:invoice", FusionCacheService.ExtractKeyPrefix(tenantKey));
+        Assert.Equal("orders-api:invoice", FusionCacheService.ExtractKeyPrefix(globalKey));
+    }
+
+    // -------------------------------------------------------------------------
+    // DescribeTag
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("@tenant-secret-7:orders", "@tenant:orders")]
+    [InlineData("@tenant-secret-7:orders:open", "@tenant:orders:open")]
+    [InlineData("@tenant-secret-7", "@tenant")]
+    [InlineData("orders", "orders")]
+    [InlineData("orders:open", "orders:open")]
+    [InlineData("", "")]
+    public void DescribeTag_ReplacesTheTenantId(string tag, string expected) =>
+        Assert.Equal(expected, FusionCacheService.DescribeTag(tag));
+
+    [Fact]
+    public void DescribeTag_TagsBuiltByCacheKeyFormat_NeverContainTheTenant()
+    {
+        Assert.Equal("@tenant:orders", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag(TenantId, "orders")));
+        Assert.Equal("@tenant", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantWideTag(TenantId)));
+        Assert.Equal("@tenant:orders", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag("a:b", "orders")));
+    }
+
+    // -------------------------------------------------------------------------
+    // End to end: every call path through FusionCacheService
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task EveryOperation_OnTenantKeys_EmitsNoTenantOrIdInLogsMetricsOrSpans()
+    {
+        var logs = new CapturingLoggerProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Trace).AddProvider(logs));
+        services.AddSharedKernelCaching(o => o.ServiceName = "svc").AddTenantCacheService();
+        await using var provider = services.BuildServiceProvider();
+
+        var cache = provider.GetRequiredService<ICacheService>();
+        var tenantCache = provider.GetRequiredService<ITenantCacheService>();
+        var key = CacheKeyFormat.BuildTenantKey("svc", TenantId, "orders", EntityId);
+        var otherKey = CacheKeyFormat.BuildTenantKey("svc", TenantId, "orders", EntityId + "-b");
+        var tagged = CachePolicy.Default.WithTags("open").ForTenant(TenantId);
+
+        using var metrics = new MetricRecorder();
+        using var spans = new ActivityRecorder();
+
+        await cache.TryGetAsync<string>(key);                                          // miss
+        await cache.SetAsync(key, "v", tagged);                                         // set
+        await cache.TryGetAsync<string>(key);                                           // L1 hit
+        await cache.GetOrSetAsync(otherKey, _ => ValueTask.FromResult("f"), tagged);    // factory run
+        await cache.TryGetManyAsync<string>([key, otherKey + "-missing"]);              // hit + miss
+        await cache.SetManyAsync(new Dictionary<string, string> { [otherKey] = "m" }, tagged);
+        await cache.ExpireAsync(key);
+        await cache.RemoveAsync(otherKey);
+        await cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(TenantId, "open"));
+        await cache.RemoveByTagsAsync([CacheKeyFormat.BuildTenantWideTag(TenantId)]);
+        await tenantCache.RemoveTenantAsync(TenantId);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await cache.GetOrSetAsync<string>(key + ":boom", _ => throw new InvalidOperationException($"{TenantId} {EntityId}"), tagged));
+
+        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", "svc:orders", "l1") >= 2));
+
+        // Our own log category: present, and redacted.
+        var ownLogs = logs.Logs.Where(l => l.Category == typeof(FusionCacheService).FullName).ToList();
+        Assert.Contains(ownLogs, l => l.Message.Contains("svc:orders", StringComparison.Ordinal));
+        Assert.Contains(ownLogs, l => l.Message.Contains("@tenant:open", StringComparison.Ordinal));
+        Assert.Contains(ownLogs, l => l.Message == "Cache entries removed for tag @tenant");
+        foreach (var log in ownLogs)
+        {
+            AssertRedacted(log.Message);
+            foreach (var (_, value) in log.State)
+                AssertRedacted(value?.ToString());
+        }
+
+        Assert.NotEmpty(metrics.Measurements);
+        foreach (var measurement in metrics.Measurements)
+        {
+            foreach (var (_, value) in measurement.Tags)
+                AssertRedacted(value?.ToString());
+        }
+
+        Assert.NotEmpty(spans.Activities);
+        foreach (Activity span in spans.Activities)
+        {
+            AssertRedacted(span.DisplayName);
+            AssertRedacted(span.StatusDescription);
+            foreach (var (_, value) in span.TagObjects)
+                AssertRedacted(value?.ToString());
+        }
+    }
+
+    [Fact]
+    public async Task FactoryFailure_SpanStatusDescription_IsTheExceptionTypeName_NotTheMessage()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = "svc");
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICacheService>();
+        var key = CacheKeyFormat.BuildKey("svc", "status-" + Guid.NewGuid().ToString("N"), EntityId);
+
+        using var spans = new ActivityRecorder();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await cache.GetOrSetAsync<string>(key, _ => throw new InvalidOperationException("secret message"), CachePolicy.Default));
+
+        var span = Assert.Single(spans.Activities, a =>
+            a.OperationName == "cache.get_or_set" && (string?)a.GetTagItem("cache.key_prefix") == FusionCacheService.ExtractKeyPrefix(key));
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.Equal(nameof(InvalidOperationException), span.StatusDescription);
+    }
+
+    private static void AssertRedacted(string? text)
+    {
+        if (text is null)
+            return;
+
+        Assert.DoesNotContain(TenantId, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(EntityId, text, StringComparison.Ordinal);
+    }
+}

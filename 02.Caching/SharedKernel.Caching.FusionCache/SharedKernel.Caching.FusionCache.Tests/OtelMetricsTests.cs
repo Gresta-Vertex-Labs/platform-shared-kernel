@@ -143,7 +143,7 @@ public sealed class OtelMetricsTests : IDisposable
         listener.RecordObservableInstruments();
 
         Assert.Equal("factory-value", result);
-        // FusionCache fires a Memory.Miss event before invoking the factory
+        // Counted once, at the factory run (the preceding memory miss is not counted separately).
         var missesObserved = await WaitForCounterAsync(counters, "cache.misses", 1, listener);
         Assert.True(missesObserved >= 1,
             $"Expected cache.misses >= 1 but got {missesObserved}");
@@ -237,46 +237,26 @@ public sealed class OtelMetricsTests : IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // ExtractKeyPrefix — unit tests for the tag extraction helper
-    // -------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("svc:entity:123", "svc:entity")]
-    [InlineData("svc:entity:123:extra", "svc:entity")]
-    [InlineData("svc:entity", "svc:entity")]
-    [InlineData("svc", "svc")]
-    [InlineData("", "")]
-    public void ExtractKeyPrefix_ReturnsExpectedPrefix(string key, string expectedPrefix)
-    {
-        var actual = FusionCacheService.ExtractKeyPrefix(key);
-        Assert.Equal(expectedPrefix, actual);
-    }
-
-    // -------------------------------------------------------------------------
     // OM-07: Meter name and instrument names match spec
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Meter_HasCorrectNameAndVersion()
+    public async Task Meter_IsNamedSharedKernelCaching_AndVersionedWithTheAssembly()
     {
-        var found = false;
+        var versions = new ConcurrentBag<string?>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, _) =>
         {
-            if (instrument.Meter.Name == "SharedKernel.Caching" &&
-                instrument.Meter.Version == "1.0")
-                found = true;
+            if (instrument.Meter.Name == "SharedKernel.Caching")
+                versions.Add(instrument.Meter.Version);
         };
         listener.Start();
 
-        // Trigger instrument publication by recording
-        // The instruments are already created (static), so enabling them triggers the callback
-        listener.RecordObservableInstruments();
+        // Recording guarantees the static instruments exist; instruments created before Start were published by it.
+        await _cache.TryGetAsync<string>("svc:entity:version-" + Guid.NewGuid());
 
-        // Just verify our meter constants are correct by checking the instruments we know exist
-        // Since static instruments are created at class load, we verify them via reflection-free approach
-        Assert.True(found || true, // MeterListener.Start publishes already-created instruments
-            "Meter 'SharedKernel.Caching' version '1.0' should be published");
+        Assert.NotEmpty(versions);
+        Assert.All(versions, v => Assert.Equal(OtelTracingTests.ExpectedInstrumentationVersion(), v));
     }
 
     [Fact]

@@ -43,6 +43,13 @@ public sealed class OtelTracingTests : IDisposable
 
     public void Dispose() => _provider.Dispose();
 
+    // The source is versioned with the package assembly, so telemetry backends can tell releases apart.
+    internal static string ExpectedInstrumentationVersion() =>
+        typeof(CachingOptions).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .Single().InformationalVersion;
+
     // -------------------------------------------------------------------------
     // Helper: build an ActivityListener that captures completed spans from the
     // "SharedKernel.Caching" activity source.
@@ -210,6 +217,6 @@ public sealed class OtelTracingTests : IDisposable
         Assert.Contains(activities, a =>
             a.OperationName == "cache.set" &&
             a.Source.Name == "SharedKernel.Caching" &&
-            a.Source.Version == "1.0");
+            a.Source.Version == ExpectedInstrumentationVersion());
     }
 }
