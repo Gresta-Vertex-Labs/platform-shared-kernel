@@ -125,15 +125,123 @@ public sealed class RedisTlsConfigurationTests
     }
 
     [Fact]
-    public void BuildConfigurationOptions_ConnectTimeoutAndAbortOnConnectFail_UnaffectedByTlsSurface()
+    public void BuildConfigurationOptions_SslFalse_DoesNotDisableTlsEnabledByTheConnectionString()
     {
-        // Regression: the pre-Phase-45 fields must keep composing identically alongside the new ones.
-        var options = new RedisConnectionOptions { ConnectionString = "localhost:6379", ConnectTimeoutMs = 9_999 };
+        var options = new RedisConnectionOptions { ConnectionString = "redis.example.com:6380,ssl=true", Ssl = false };
 
         var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
 
-        Assert.Equal(9_999, configOptions.ConnectTimeout);
+        Assert.True(configOptions.Ssl);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_SslTrue_WithSslFalseInTheConnectionString_EnablesTls()
+    {
+        var options = new RedisConnectionOptions { ConnectionString = "redis.example.com:6380,ssl=false", Ssl = true };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
+        Assert.True(configOptions.Ssl);
+    }
+
+    // ─── Timeouts, reconnect and backlog mapping ──────────────────────────────────
+
+    [Fact]
+    public void BuildConfigurationOptions_MapsTimeouts_OverridingTheConnectionString()
+    {
+        var options = new RedisConnectionOptions
+        {
+            ConnectionString = "localhost:6379,connectTimeout=60000,syncTimeout=60000,asyncTimeout=60000",
+            ConnectTimeout = TimeSpan.FromMilliseconds(1_234),
+            CommandTimeout = TimeSpan.FromMilliseconds(2_345),
+        };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
+        Assert.Equal(1_234, configOptions.ConnectTimeout);
+        Assert.Equal(2_345, configOptions.SyncTimeout);
+        Assert.Equal(2_345, configOptions.AsyncTimeout);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_Defaults_MapToFiveSecondTimeouts()
+    {
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(
+            new RedisConnectionOptions { ConnectionString = "localhost:6379" });
+
+        Assert.Equal(5_000, configOptions.ConnectTimeout);
+        Assert.Equal(5_000, configOptions.SyncTimeout);
+        Assert.Equal(5_000, configOptions.AsyncTimeout);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_AbortOnConnectFail_IsAlwaysFalse()
+    {
+        var options = new RedisConnectionOptions { ConnectionString = "localhost:6379,abortConnect=true" };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
         Assert.False(configOptions.AbortOnConnectFail);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_FailFastWhenDisconnected_UsesFailFastBacklogPolicy()
+    {
+        var options = new RedisConnectionOptions { ConnectionString = "localhost:6379", FailFastWhenDisconnected = true };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
+        Assert.Same(BacklogPolicy.FailFast, configOptions.BacklogPolicy);
+        Assert.False(configOptions.BacklogPolicy.QueueWhileDisconnected);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_NotFailFastWhenDisconnected_UsesDefaultBacklogPolicy()
+    {
+        var options = new RedisConnectionOptions { ConnectionString = "localhost:6379", FailFastWhenDisconnected = false };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
+        Assert.Same(BacklogPolicy.Default, configOptions.BacklogPolicy);
+        Assert.True(configOptions.BacklogPolicy.QueueWhileDisconnected);
+    }
+
+    [Fact]
+    public void BuildConfigurationOptions_KeepsEndpointsAndPasswordFromTheConnectionString()
+    {
+        var options = new RedisConnectionOptions { ConnectionString = "redis-a:6379,redis-b:6380,password=pw,defaultDatabase=3" };
+
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
+
+        Assert.Equal(2, configOptions.EndPoints.Count);
+        Assert.Equal("pw", configOptions.Password);
+        Assert.Equal(3, configOptions.DefaultDatabase);
+    }
+
+    [Fact]
+    public void WarnIfNonLoopbackWithoutTls_NonLoopbackEndpoint_TlsFromConnectionString_NeverWarns()
+    {
+        var loggerFactory = new InMemoryLoggerFactory();
+        var logger = loggerFactory.GetLogger("test");
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(
+            new RedisConnectionOptions { ConnectionString = "redis.example.com:6380,ssl=true", Ssl = false });
+
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
+
+        logger.Records.ShouldNotHaveLogged(new EventId(LoggingEventIdRanges.Caching + 102));
+    }
+
+    [Fact]
+    public void WarnIfNonLoopbackWithoutTls_LoopbackAndNonLoopbackEndpoints_Warns()
+    {
+        var loggerFactory = new InMemoryLoggerFactory();
+        var logger = loggerFactory.GetLogger("test");
+        var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(
+            new RedisConnectionOptions { ConnectionString = "localhost:6379,10.0.0.5:6379" });
+
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
+
+        logger.Records.ShouldHaveLoggedCount(new EventId(LoggingEventIdRanges.Caching + 102), 1);
     }
 
     // ─── TH-08: one-time non-loopback-without-TLS warning ─────────────────────────
@@ -149,7 +257,7 @@ public sealed class RedisTlsConfigurationTests
         var options = new RedisConnectionOptions { ConnectionString = loopbackConnectionString, Ssl = false };
         var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
 
-        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, options, configOptions);
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
 
         logger.Records.ShouldNotHaveLogged(new EventId(LoggingEventIdRanges.Caching + 102));
     }
@@ -162,7 +270,7 @@ public sealed class RedisTlsConfigurationTests
         var options = new RedisConnectionOptions { ConnectionString = "redis.example.com:6379", Ssl = true };
         var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
 
-        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, options, configOptions);
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
 
         logger.Records.ShouldNotHaveLogged(new EventId(LoggingEventIdRanges.Caching + 102));
     }
@@ -175,7 +283,7 @@ public sealed class RedisTlsConfigurationTests
         var options = new RedisConnectionOptions { ConnectionString = "redis.example.com:6379", Ssl = false };
         var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
 
-        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, options, configOptions);
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
 
         var eventId = new EventId(LoggingEventIdRanges.Caching + 102);
         logger.Records.ShouldHaveLoggedCount(eventId, 1);
@@ -191,7 +299,7 @@ public sealed class RedisTlsConfigurationTests
         var configOptions = RedisConnectionCoreExtensions.BuildConfigurationOptions(options);
         Assert.True(configOptions.EndPoints.Count >= 2);
 
-        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, options, configOptions);
+        RedisConnectionCoreExtensions.WarnIfNonLoopbackWithoutTls(logger, configOptions);
 
         logger.Records.ShouldHaveLoggedCount(new EventId(LoggingEventIdRanges.Caching + 102), 1);
     }

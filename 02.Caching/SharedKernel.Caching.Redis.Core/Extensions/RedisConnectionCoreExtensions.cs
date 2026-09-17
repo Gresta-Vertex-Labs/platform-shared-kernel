@@ -1,192 +1,238 @@
 using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Caching.Redis.Core.Health;
+using SharedKernel.Configuration.Extensions;
 using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.Core.Extensions;
 
 /// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering the shared Redis
-/// <see cref="IConnectionMultiplexer"/> and connection health tracking.
+/// <see cref="IServiceCollection"/> extension methods that register the Redis connection shared by every
+/// <c>SharedKernel.Caching.Redis</c> package.
 /// </summary>
 public static partial class RedisConnectionCoreExtensions
 {
-    private const string LoggerCategoryName = "SharedKernel.Caching.Redis.Core.RedisConnectionCoreExtensions";
+    private const string LoggerCategoryName = "SharedKernel.Caching.Redis.Core.RedisConnection";
 
     /// <summary>
-    /// Registers the shared <see cref="IConnectionMultiplexer"/> singleton and
-    /// <see cref="RedisConnectionHealthTracker"/> for the supplied connection string.
+    /// Registers the shared <see cref="IConnectionMultiplexer"/> and <see cref="IRedisConnectionProbe"/>, with
+    /// <see cref="RedisConnectionOptions"/> bound from the <c>SharedKernel:Caching:Redis</c> section and
+    /// validated at startup.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="connectionString">
-    /// A StackExchange.Redis connection string (e.g., <c>"localhost:6379"</c>).
-    /// Must not be null or whitespace.
-    /// </param>
+    /// <param name="configuration">The configuration root that contains the section.</param>
     /// <param name="configure">
-    /// Optional delegate to customise <see cref="RedisConnectionOptions"/>. When
-    /// <see langword="null"/> the defaults are used.
+    /// Optional changes applied after binding, for settings configuration cannot carry such as
+    /// <see cref="RedisConnectionOptions.ClientCertificates"/>.
     /// </param>
-    /// <returns>The same <paramref name="services"/> to allow further chaining.</returns>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The Redis connection is already registered.</exception>
     /// <remarks>
-    /// <para>
-    /// This is the single registration point for <see cref="IConnectionMultiplexer"/> across
-    /// <c>SharedKernel.Caching.Redis</c>, <c>SharedKernel.Caching.Redis.DistributedLocking</c>,
-    /// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>SharedKernel.Caching.Redis.PubSub</c>.
-    /// </para>
-    /// <para>
-    /// The multiplexer is registered via <see cref="ServiceCollectionDescriptorExtensions.TryAddSingleton{TService}(IServiceCollection, Func{IServiceProvider, TService})"/> —
-    /// first caller wins. Calling this method multiple times across different <c>Add*</c>
-    /// extensions in the same container is safe and idempotent; the connection string and
-    /// options supplied by the first caller take effect.
-    /// </para>
-    /// <para>
-    /// <b>Fail-fast validation (Phase 45, WO-065/P-436):</b> <see cref="RedisConnectionOptions"/> is
-    /// registered via <c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...)
-    /// .ValidateDataAnnotations().ValidateOnStart()</c> — the existing <c>[Required]</c>/
-    /// <c>[Range]</c> attributes on <see cref="RedisConnectionOptions.ConnectionString"/> and
-    /// <see cref="RedisConnectionOptions.ConnectTimeoutMs"/> are genuinely enforced at
-    /// host-startup time (<c>IHost.StartAsync()</c>/<c>RunAsync()</c>) via
-    /// <c>ValidateOnStart()</c>'s <see cref="Microsoft.Extensions.Options.IStartupValidator"/>
-    /// mechanism, surfacing a clear <see cref="OptionsValidationException"/> instead of an
-    /// unvalidated bad value flowing silently into StackExchange.Redis and surfacing later as an
-    /// opaque <c>RedisConnectionException</c> at first use.
-    /// </para>
-    /// <para>
-    /// <b>TLS/mTLS (Phase 45, WO-065/P-436):</b> <see cref="RedisConnectionOptions.Ssl"/>,
-    /// <see cref="RedisConnectionOptions.ClientCertificates"/>, and
-    /// <see cref="RedisConnectionOptions.CertificateValidation"/> are composed into the
-    /// <see cref="ConfigurationOptions"/> built by the <see cref="IConnectionMultiplexer"/>
-    /// factory before <see cref="ConnectionMultiplexer.Connect(ConfigurationOptions, System.IO.TextWriter?)"/>
-    /// runs. All three default to today's exact plaintext behavior — fully backward-compatible for
-    /// a bare-connection-string caller. When the resolved endpoint set contains a non-loopback host
-    /// and <see cref="RedisConnectionOptions.Ssl"/> is <see langword="false"/>, a one-time
-    /// <see cref="LogLevel.Warning"/> is logged — never a thrown exception, since
-    /// sidecar/mesh-terminated TLS is a legitimate production topology.
-    /// </para>
+    /// Call it once, before <c>AddRedisL2</c>, <c>AddRedisDistributedLocking</c>, <c>AddRedisHashService</c> or
+    /// <c>AddRedisChannelService</c>. The connection is opened when it is first resolved; a server that is
+    /// unreachable at that moment does not fail startup, and the connection keeps retrying in the background.
     /// </remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddRedisConnection(builder.Configuration);
+    /// builder.Services.AddSharedKernelCaching(builder.Configuration).AddRedisL2();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddRedisConnection(
         this IServiceCollection services,
-        string connectionString,
+        IConfiguration configuration,
         Action<RedisConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(configuration);
+        EnsureNotRegistered(services);
 
-        services
-            .AddOptions<RedisConnectionOptions>()
-            .Configure(o =>
-            {
-                o.ConnectionString = connectionString;
-                configure?.Invoke(o);
-            })
+        services.AddValidatedOptions<RedisConnectionOptions, RedisConnectionOptionsValidator>(configuration, validateDataAnnotations: true);
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
+
+        return AddCore(services);
+    }
+
+    /// <summary>
+    /// Registers the shared <see cref="IConnectionMultiplexer"/> and <see cref="IRedisConnectionProbe"/>, with
+    /// <see cref="RedisConnectionOptions"/> set in code and validated at startup.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Sets the options; must at least set <see cref="RedisConnectionOptions.ConnectionString"/>.</param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The Redis connection is already registered.</exception>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddRedisConnection(o =>
+    /// {
+    ///     o.ConnectionString = builder.Configuration.GetConnectionString("redis")!;
+    ///     o.Ssl = true;
+    /// });
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddRedisConnection(
+        this IServiceCollection services,
+        Action<RedisConnectionOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+        EnsureNotRegistered(services);
+
+        services.AddOptions<RedisConnectionOptions>()
+            .Configure(configure)
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RedisConnectionOptions>, RedisConnectionOptionsValidator>());
 
-        services.TryAddSingleton<IConnectionMultiplexer>(sp =>
+        return AddCore(services);
+    }
+
+    /// <summary>
+    /// Throws when <c>AddRedisConnection</c> has not been called, naming the registration that needs it.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="caller">The registration method that requires the connection, used in the message.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The Redis connection is not registered.</exception>
+    /// <remarks>For packages built on the shared connection; application code does not need it.</remarks>
+    public static void EnsureRedisConnectionRegistered(this IServiceCollection services, string caller)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(caller);
+
+        if (!IsRegistered(services))
+        {
+            throw new InvalidOperationException(
+                $"{caller} uses the shared Redis connection. Call services.AddRedisConnection(...) before {caller}.");
+        }
+    }
+
+    private static IServiceCollection AddCore(IServiceCollection services)
+    {
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<RedisConnectionOptions>>().Value;
-            var configOptions = BuildConfigurationOptions(options);
-
+            var configurationOptions = BuildConfigurationOptions(options);
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger(LoggerCategoryName);
-            WarnIfNonLoopbackWithoutTls(logger, options, configOptions);
 
-            return ConnectionMultiplexer.Connect(configOptions);
+            WarnIfNonLoopbackWithoutTls(logger, configurationOptions);
+
+            var multiplexer = ConnectionMultiplexer.Connect(configurationOptions);
+            multiplexer.ConnectionFailed += (_, e) => Log.ConnectionFailed(logger, e.EndPoint?.ToString() ?? "(unknown)", e.FailureType);
+            multiplexer.ConnectionRestored += (_, e) => Log.ConnectionRestored(logger, e.EndPoint?.ToString() ?? "(unknown)");
+
+            if (!multiplexer.IsConnected)
+                Log.NotConnectedAtStartup(logger);
+
+            return multiplexer;
         });
 
-        services.TryAddSingleton<RedisConnectionHealthTracker>();
+        services.AddSingleton<IRedisConnectionProbe, RedisConnectionProbe>();
 
         return services;
     }
 
-    /// <summary>
-    /// Builds the StackExchange.Redis <see cref="ConfigurationOptions"/> for the supplied
-    /// <see cref="RedisConnectionOptions"/>, composing the TLS/mTLS surface (Phase 45).
-    /// </summary>
-    /// <remarks>Internal visibility allows the test project to exercise composition directly,
-    /// without resolving a real <see cref="IConnectionMultiplexer"/> against a live Redis
-    /// instance (mirrors <see cref="RedisConnectionHealthTracker"/>'s existing
-    /// internal-for-testability convention).</remarks>
+    private static bool IsRegistered(IServiceCollection services) =>
+        services.Any(d => d.ServiceType == typeof(IRedisConnectionProbe));
+
+    private static void EnsureNotRegistered(IServiceCollection services)
+    {
+        if (IsRegistered(services))
+        {
+            throw new InvalidOperationException(
+                "The Redis connection is already registered. Call AddRedisConnection once; every Redis package shares that connection.");
+        }
+    }
+
     internal static ConfigurationOptions BuildConfigurationOptions(RedisConnectionOptions options)
     {
-        var configOptions = ConfigurationOptions.Parse(options.ConnectionString);
-        configOptions.ConnectTimeout = options.ConnectTimeoutMs;
-        configOptions.AbortOnConnectFail = false;
-        configOptions.Ssl = options.Ssl;
+        var configurationOptions = ConfigurationOptions.Parse(options.ConnectionString);
+        configurationOptions.ConnectTimeout = (int)options.ConnectTimeout.TotalMilliseconds;
+        configurationOptions.SyncTimeout = (int)options.CommandTimeout.TotalMilliseconds;
+        configurationOptions.AsyncTimeout = (int)options.CommandTimeout.TotalMilliseconds;
+        configurationOptions.AbortOnConnectFail = false;
+        configurationOptions.BacklogPolicy = options.FailFastWhenDisconnected ? BacklogPolicy.FailFast : BacklogPolicy.Default;
+
+        // Ssl = true turns TLS on; it never turns off TLS that the connection string enables.
+        if (options.Ssl)
+            configurationOptions.Ssl = true;
 
         var clientCertificates = options.ClientCertificates;
         var certificateValidation = options.CertificateValidation;
 
         if (clientCertificates is { Count: > 0 } || certificateValidation is not null)
         {
-            configOptions.SslClientAuthenticationOptions = _ =>
+            configurationOptions.SslClientAuthenticationOptions = _ =>
             {
                 var sslOptions = new SslClientAuthenticationOptions();
 
                 if (clientCertificates is { Count: > 0 })
-                {
                     sslOptions.ClientCertificates = clientCertificates;
-                }
 
                 if (certificateValidation is not null)
                 {
-                    sslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, sslPolicyErrors) =>
+                    sslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
                         certificate is not null
-                        && certificateValidation(new X509Certificate2(certificate), chain, sslPolicyErrors);
+                        && certificateValidation(
+                            certificate as X509Certificate2 ?? X509CertificateLoader.LoadCertificate(certificate.GetRawCertData()),
+                            chain,
+                            errors);
                 }
 
                 return sslOptions;
             };
         }
 
-        return configOptions;
+        return configurationOptions;
     }
 
-    /// <summary>
-    /// Logs a one-time <see cref="LogLevel.Warning"/> when the resolved endpoint set contains a
-    /// non-loopback host and <see cref="RedisConnectionOptions.Ssl"/> is <see langword="false"/>.
-    /// Never throws — sidecar/mesh-terminated TLS is a legitimate production topology.
-    /// </summary>
-    internal static void WarnIfNonLoopbackWithoutTls(
-        ILogger logger,
-        RedisConnectionOptions options,
-        ConfigurationOptions configOptions)
+    internal static void WarnIfNonLoopbackWithoutTls(ILogger logger, ConfigurationOptions configurationOptions)
     {
-        if (options.Ssl)
-        {
+        if (configurationOptions.Ssl)
             return;
-        }
 
-        var nonLoopbackEndPoint = configOptions.EndPoints.FirstOrDefault(ep => !IsLoopback(ep));
-
-        if (nonLoopbackEndPoint is not null)
-        {
-            Log.NonLoopbackWithoutTls(logger, nonLoopbackEndPoint.ToString() ?? "(unknown endpoint)");
-        }
+        var nonLoopback = configurationOptions.EndPoints.FirstOrDefault(endPoint => !IsLoopback(endPoint));
+        if (nonLoopback is not null)
+            Log.NonLoopbackWithoutTls(logger, nonLoopback.ToString() ?? "(unknown)");
     }
 
     internal static bool IsLoopback(EndPoint endPoint) => endPoint switch
     {
-        IPEndPoint ipEndPoint => IPAddress.IsLoopback(ipEndPoint.Address),
-        DnsEndPoint dnsEndPoint => string.Equals(dnsEndPoint.Host, "localhost", StringComparison.OrdinalIgnoreCase)
-            || (IPAddress.TryParse(dnsEndPoint.Host, out var address) && IPAddress.IsLoopback(address)),
+        IPEndPoint ip => IPAddress.IsLoopback(ip.Address),
+        DnsEndPoint dns => string.Equals(dns.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || (IPAddress.TryParse(dns.Host, out var address) && IPAddress.IsLoopback(address)),
         _ => false,
     };
 
-    // ─── Logging ─────────────────────────────────────────────────────────────────
-
     private static partial class Log
     {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Caching + 102,
-            Level = LogLevel.Warning,
-            Message = "Redis endpoint '{EndPoint}' is configured with Ssl = false and is not a loopback address. " +
-                "If TLS is not terminated elsewhere in the network path (e.g. a service-mesh sidecar/mTLS proxy), " +
-                "traffic to Redis is unencrypted. Set RedisConnectionOptions.Ssl = true to enable TLS on this connection.")]
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 100, Level = LogLevel.Information,
+            Message = "Redis connection to {EndPoint} restored")]
+        internal static partial void ConnectionRestored(ILogger logger, string endPoint);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 101, Level = LogLevel.Warning,
+            Message = "Redis connection to {EndPoint} failed ({FailureType}); reconnecting in the background")]
+        internal static partial void ConnectionFailed(ILogger logger, string endPoint, ConnectionFailureType failureType);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 102, Level = LogLevel.Warning,
+            Message = "Redis endpoint {EndPoint} is not a loopback address and TLS is off. Traffic is unencrypted unless "
+                + "TLS is terminated in front of Redis; set RedisConnectionOptions.Ssl to true to encrypt it.")]
         internal static partial void NonLoopbackWithoutTls(ILogger logger, string endPoint);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 103, Level = LogLevel.Warning,
+            Message = "Redis is not reachable at startup; the connection keeps retrying in the background")]
+        internal static partial void NotConnectedAtStartup(ILogger logger);
     }
 }

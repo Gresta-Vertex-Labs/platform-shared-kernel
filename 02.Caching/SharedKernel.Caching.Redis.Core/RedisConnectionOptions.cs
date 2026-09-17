@@ -1,71 +1,86 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using SharedKernel.Configuration;
 
 namespace SharedKernel.Caching.Redis.Core;
 
 /// <summary>
-/// Canonical configuration for a StackExchange.Redis <c>IConnectionMultiplexer</c> registered via
-/// <see cref="Extensions.RedisConnectionCoreExtensions.AddRedisConnection"/>.
+/// Settings for the one Redis connection shared by every <c>SharedKernel.Caching.Redis</c> package, bound
+/// from the <c>SharedKernel:Caching:Redis</c> configuration section or set in code.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the single, shared shape for Redis connection configuration across
-/// <c>SharedKernel.Caching.Redis</c>, <c>SharedKernel.Caching.Redis.DistributedLocking</c>,
-/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>SharedKernel.Caching.Redis.PubSub</c>.
-/// Consuming packages must bind to this type rather than declaring local copies.
+/// The distributed cache, its backplane, distributed locks, the hash store and pub/sub all use the
+/// connection built from these settings, so TLS, timeouts and health apply to all of them. No other
+/// registration takes a connection string.
 /// </para>
 /// <para>
-/// This type is registered via <c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...)
-/// .ValidateDataAnnotations().ValidateOnStart()</c> — the <see cref="RequiredAttribute"/> and
-/// <see cref="RangeAttribute"/> below are genuinely enforced at host-startup time (Phase 45,
-/// WO-065/P-436), not merely decorative.
+/// Every setting is read when the connection is first resolved and validated at host startup.
+/// <see cref="ClientCertificates"/> and <see cref="CertificateValidation"/> cannot come from configuration;
+/// set them in the <c>configure</c> delegate.
 /// </para>
 /// </remarks>
-public sealed class RedisConnectionOptions
+/// <example>
+/// <code>
+/// // appsettings.json
+/// // "SharedKernel": { "Caching": { "Redis": { "ConnectionString": "redis.internal:6380", "Ssl": true } } }
+/// builder.Services.AddRedisConnection(builder.Configuration);
+/// </code>
+/// </example>
+public sealed class RedisConnectionOptions : ISectionBoundOptions
 {
-    /// <summary>
-    /// StackExchange.Redis connection string (e.g., <c>"localhost:6379"</c>).
-    /// Required; must not be null or whitespace.
-    /// </summary>
-    [Required]
-    public string ConnectionString { get; set; } = string.Empty;
+    /// <summary>Gets the configuration section path: <c>SharedKernel:Caching:Redis</c>.</summary>
+    public static string SectionName => "SharedKernel:Caching:Redis";
 
     /// <summary>
-    /// Connection timeout in milliseconds for the Redis multiplexer.
-    /// Defaults to <c>5000</c> ms.
-    /// </summary>
-    [Range(100, 60_000, ErrorMessage = "ConnectTimeoutMs must be between 100 ms and 60 000 ms.")]
-    public int ConnectTimeoutMs { get; set; } = 5_000;
-
-    /// <summary>
-    /// Whether to negotiate TLS for the connection to Redis. Defaults to <see langword="false"/> —
-    /// today's exact plaintext behavior — for full backward compatibility with a bare
-    /// connection-string caller.
+    /// Gets or sets the StackExchange.Redis connection string, for example
+    /// <c>"redis.internal:6379,password=secret"</c>. Required.
     /// </summary>
     /// <remarks>
-    /// When <see langword="false"/> and the configured endpoint is not loopback, a one-time
-    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> is logged (never a thrown
-    /// exception — sidecar/mesh-terminated TLS, e.g. a service-mesh mTLS proxy in front of Redis, is
-    /// a legitimate production topology this domain must not falsely flag as broken). See
-    /// "Fail-fast validation and TLS/mTLS surface" in <c>02.Caching/CLAUDE.md</c>.
+    /// Keep the password out of source control: bind it from a secret store. The timeouts on this type
+    /// override those in the string; TLS is on when either <see cref="Ssl"/> or the string enables it.
+    /// </remarks>
+    [Required(AllowEmptyStrings = false, ErrorMessage = "ConnectionString is required.")]
+    public string ConnectionString { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets how long a connection attempt may take. Defaults to 5 seconds.</summary>
+    /// <remarks>Between 100 milliseconds and 1 minute.</remarks>
+    public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Gets or sets how long a command may wait for its reply. Defaults to 5 seconds.</summary>
+    /// <remarks>Between 100 milliseconds and 1 minute. Applies to synchronous and asynchronous commands.</remarks>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a command fails at once while no connection is available,
+    /// instead of waiting up to <see cref="CommandTimeout"/> for a reconnect. Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// Failing fast lets the cache serve fail-safe values, and callers see an outage immediately, during a
+    /// Redis failover or network loss. Set it to <see langword="false"/> to ride out short reconnects instead.
+    /// </remarks>
+    public bool FailFastWhenDisconnected { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the connection uses TLS. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// When it is <see langword="false"/> and an endpoint is not a loopback address, a warning is logged
+    /// once. It is not an error: TLS may be terminated by a service-mesh sidecar in front of Redis.
     /// </remarks>
     public bool Ssl { get; set; }
 
     /// <summary>
-    /// Client certificates to present during TLS negotiation with Redis, for mutual-TLS (mTLS)
-    /// deployments where the Redis server requires client authentication.
-    /// <see langword="null"/> by default — no client certificate is presented.
+    /// Gets or sets client certificates presented during the TLS handshake, for Redis servers that require
+    /// mutual TLS. <see langword="null"/> by default.
     /// </summary>
     public X509Certificate2Collection? ClientCertificates { get; set; }
 
     /// <summary>
-    /// Optional custom server-certificate validation callback, invoked during TLS negotiation with
-    /// Redis. <see langword="null"/> by default — StackExchange.Redis's own default certificate
-    /// validation applies. Mirrors the synchronous
-    /// <c>Func&lt;X509Certificate2, X509Chain?, SslPolicyErrors, bool&gt;</c> shape ASP.NET Core
-    /// Kestrel's own <c>ClientCertificateValidation</c> callback uses, for consistency across the
-    /// platform's TLS-configuration surfaces.
+    /// Gets or sets a callback that validates the Redis server certificate, for example to trust a private
+    /// certificate authority. <see langword="null"/> by default, which uses the platform's validation.
     /// </summary>
+    /// <remarks>Return <see langword="true"/> to accept the certificate.</remarks>
     public Func<X509Certificate2, X509Chain?, SslPolicyErrors, bool>? CertificateValidation { get; set; }
 }
