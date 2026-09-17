@@ -21,7 +21,7 @@ public sealed class L1FallbackTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching(); // No AddRedisL2
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc"); // No AddRedisL2
 
         await using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<ICacheService>();
@@ -29,8 +29,8 @@ public sealed class L1FallbackTests
         const string key = "fallback:l1-only";
         await cache.SetAsync(key, "l1-value", CachePolicy.Default);
 
-        var result = await cache.GetAsync<string>(key);
-        Assert.Equal("l1-value", result);
+        var result = await cache.TryGetAsync<string>(key);
+        Assert.Equal("l1-value", result.Value);
     }
 
     /// <summary>
@@ -41,7 +41,7 @@ public sealed class L1FallbackTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
 
         await using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<ICacheService>();
@@ -66,7 +66,7 @@ public sealed class L1FallbackTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2("localhost:6379");
 
         using var provider = services.BuildServiceProvider();

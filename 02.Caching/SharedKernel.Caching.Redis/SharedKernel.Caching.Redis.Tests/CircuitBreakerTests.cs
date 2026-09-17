@@ -42,7 +42,7 @@ public sealed class CircuitBreakerTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2("localhost:6379", o =>
                 {
                     o.CircuitBreaker.Enabled = true;
@@ -60,7 +60,7 @@ public sealed class CircuitBreakerTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2("localhost:6379"); // Enabled = false by default
 
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ResiliencePipeline));
@@ -199,7 +199,7 @@ public sealed class CircuitBreakerTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching()
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                               .AddRedisL2("localhost:6379");
 
         // No ResiliencePipeline should be registered.
@@ -216,14 +216,14 @@ public sealed class CircuitBreakerTests
         // Count registrations without circuit breaker.
         var servicesWithout = new ServiceCollection();
         servicesWithout.AddLogging();
-        servicesWithout.AddSharedKernelCaching()
+        servicesWithout.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                        .AddRedisL2("localhost:6379");
         var countWithout = servicesWithout.Count;
 
         // Count registrations with circuit breaker enabled.
         var servicesWith = new ServiceCollection();
         servicesWith.AddLogging();
-        servicesWith.AddSharedKernelCaching()
+        servicesWith.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                     .AddRedisL2("localhost:6379", o => o.CircuitBreaker.Enabled = true);
         var countWith = servicesWith.Count;
 
@@ -238,7 +238,7 @@ public sealed class CircuitBreakerTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2("localhost:6379", o => o.CircuitBreaker.Enabled = true);
 
         using var provider = services.BuildServiceProvider();

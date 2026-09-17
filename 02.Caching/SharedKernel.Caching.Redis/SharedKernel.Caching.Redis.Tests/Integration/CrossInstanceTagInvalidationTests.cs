@@ -2,13 +2,15 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
+using StackExchange.Redis;
 using Testcontainers.Redis;
 using Xunit;
 
 namespace SharedKernel.Caching.Redis.Tests.Integration;
 
 /// <summary>
-/// Proves that <see cref="ICacheService.RemoveByTagAsync"/> propagates across two
+/// Proves that <see cref="ICacheService.RemoveByTagAsync"/>, <see cref="ICacheService.RemoveAsync"/> and
+/// <see cref="ICacheService.ExpireAsync"/> propagate across two
 /// <strong>independently-constructed</strong> <see cref="ICacheService"/>/FusionCache
 /// instances that share one Redis L2 backplane — the exact topology of two pods of the same
 /// microservice in production (Phase 39 / P-302 / WO-050).
@@ -21,13 +23,13 @@ namespace SharedKernel.Caching.Redis.Tests.Integration;
 /// independent DI containers — each with its own <c>IConnectionMultiplexer</c> (via its own
 /// <c>AddRedisConnection</c> call inside <c>AddRedisL2</c>), its own L1 <c>MemoryCache</c>, and
 /// its own <c>IFusionCache</c> instance — both pointed at the same Testcontainers Redis
-/// connection string and the same <c>CachingCoreOptions.ServiceName</c>.
+/// connection string and the same <c>CachingOptions.ServiceName</c>.
 /// </para>
 /// <para>
-/// The propagation proof is black-box: it never inspects FusionCache's internal tagging
-/// mechanism (an implementation detail this domain does not own). Instead it seeds a tagged
-/// entry via instance A, reads it through on instance B (populating B's own L1), invalidates
-/// the tag via instance A only, then polls instance B with a new, distinguishable factory
+/// The propagation proof is black-box: it never inspects FusionCache's internal backplane
+/// mechanism (an implementation detail this domain does not own). Instead it seeds an entry via
+/// instance A, reads it through on instance B (populating B's own L1), invalidates it via
+/// instance A only, then polls instance B with a new, distinguishable factory
 /// return value via <c>GetOrSetAsync</c> until the fresh value is observed or a bounded
 /// timeout elapses.
 /// </para>
@@ -144,6 +146,112 @@ public sealed class CrossInstanceTagInvalidationTests : IAsyncLifetime
         Assert.Equal(freshValue, observed);
     }
 
+    [Fact]
+    public async Task RemoveAsync_OnInstanceA_EvictsInstanceBsL1EntryWithinBoundedWait()
+    {
+        var key = "cross-instance:remove:" + Guid.NewGuid();
+        var policy = CachePolicy.Default;
+
+        var cacheA = CacheOf(_providerA!);
+        var cacheB = CacheOf(_providerB!);
+
+        await SeedAndReadThroughAsync(cacheA, cacheB, key, policy);
+
+        await cacheA.RemoveAsync(key);
+
+        var observed = await PollUntilAsync(
+            async () => (await cacheB.TryGetAsync<string>(key)).GetValueOrDefault("<miss>"),
+            value => value == "<miss>",
+            PollTimeout,
+            PollInterval);
+
+        Assert.Equal("<miss>", observed);
+    }
+
+    [Fact]
+    public async Task ExpireAsync_OnInstanceA_MakesInstanceBRecomputeWithinBoundedWait()
+    {
+        var key = "cross-instance:expire:" + Guid.NewGuid();
+        var policy = CachePolicy.Default.WithFailSafe(TimeSpan.FromMinutes(10));
+
+        var cacheA = CacheOf(_providerA!);
+        var cacheB = CacheOf(_providerB!);
+
+        await SeedAndReadThroughAsync(cacheA, cacheB, key, policy);
+
+        await cacheA.ExpireAsync(key);
+
+        var freshValue = "fresh-value-" + Guid.NewGuid();
+        var observed = await PollUntilAsync(
+            () => cacheB.GetOrSetAsync(key, _ => ValueTask.FromResult(freshValue), policy).AsTask(),
+            value => value == freshValue,
+            PollTimeout,
+            PollInterval);
+
+        Assert.Equal(freshValue, observed);
+    }
+
+    [Fact]
+    public async Task LocalOnlyEntry_OnInstanceA_IsNeitherWrittenToRedisNorVisibleOnInstanceB()
+    {
+        var localKey = "cross-instance:local-only:" + Guid.NewGuid();
+        var sharedKey = "cross-instance:shared:" + Guid.NewGuid();
+
+        var cacheA = CacheOf(_providerA!);
+        var cacheB = CacheOf(_providerB!);
+        var redis = _providerA!.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
+
+        await cacheA.SetAsync(localKey, "local", CachePolicy.Default.LocalOnly());
+        await cacheA.GetOrSetAsync(localKey + ":gos", _ => ValueTask.FromResult("local-gos"), CachePolicy.Default.LocalOnly());
+        await cacheA.SetAsync(sharedKey, "shared", CachePolicy.Default);
+
+        // The control entry proves L2 writes do land under "v2:{key}" in this topology.
+        var sharedWritten = await PollUntilAsync(
+            () => redis.KeyExistsAsync(RedisSchemaVersionPrefix + sharedKey),
+            exists => exists,
+            PollTimeout,
+            PollInterval);
+        Assert.True(sharedWritten);
+
+        Assert.Equal("local", (await cacheA.TryGetAsync<string>(localKey)).Value);
+        Assert.False(await redis.KeyExistsAsync(RedisSchemaVersionPrefix + localKey));
+        Assert.False(await redis.KeyExistsAsync(RedisSchemaVersionPrefix + localKey + ":gos"));
+        Assert.Empty(RedisServerKeys(localKey));
+        Assert.False((await cacheB.TryGetAsync<string>(localKey)).IsHit);
+        Assert.Equal("shared", (await cacheB.TryGetAsync<string>(sharedKey)).Value);
+    }
+
+    private const string RedisSchemaVersionPrefix = "v2:";
+
+    private IEnumerable<RedisKey> RedisServerKeys(string fragment)
+    {
+        var multiplexer = _providerA!.GetRequiredService<IConnectionMultiplexer>();
+        var server = multiplexer.GetServer(multiplexer.GetEndPoints()[0]);
+        return server.Keys(pattern: "*" + fragment + "*").ToList();
+    }
+
+    /// <summary>
+    /// Seeds <paramref name="key"/> via instance A, then reads it through on instance B so B holds
+    /// its own L1 copy — without invoking B's factory, since L2 already holds the value.
+    /// </summary>
+    private static async Task SeedAndReadThroughAsync(ICacheService cacheA, ICacheService cacheB, string key, CachePolicy policy)
+    {
+        await cacheA.SetAsync(key, "original-value", policy);
+
+        var factoryInvoked = false;
+        var initialValue = await cacheB.GetOrSetAsync(
+            key,
+            _ =>
+            {
+                factoryInvoked = true;
+                return ValueTask.FromResult("should-not-be-returned");
+            },
+            policy);
+
+        Assert.Equal("original-value", initialValue);
+        Assert.False(factoryInvoked);
+    }
+
     /// <summary>
     /// Polls <paramref name="poll"/> every <paramref name="interval"/> until
     /// <paramref name="isSatisfied"/> returns <see langword="true"/> or <paramref name="timeout"/>
@@ -169,7 +277,7 @@ public sealed class CrossInstanceTagInvalidationTests : IAsyncLifetime
         } while (DateTime.UtcNow < deadline);
 
         Assert.Fail(
-            $"Cross-instance tag invalidation did not propagate within {timeout.TotalSeconds}s. " +
+            $"Cross-instance invalidation did not propagate within {timeout.TotalSeconds}s. " +
             $"Last observed value: '{last}'.");
         return last; // Unreachable — Assert.Fail throws.
     }

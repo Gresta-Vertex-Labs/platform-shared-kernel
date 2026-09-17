@@ -147,14 +147,14 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
     /// surface.
     /// </summary>
     [Fact]
-    public async Task SetAsync_WithCacheEncryption_GetAsync_ReturnsCorrectValue()
+    public async Task SetAsync_WithCacheEncryption_TryGetAsync_ReturnsCorrectValue()
     {
         const string key = "encryption-test:roundtrip:1";
         var value = new CacheEncryptionAtRestPayload("round-trip-secret", 7);
 
         await Cache.SetAsync(key, value, CachePolicy.Default);
-        var result = await Cache.GetAsync<CacheEncryptionAtRestPayload>(key);
+        var result = await Cache.TryGetAsync<CacheEncryptionAtRestPayload>(key);
 
-        Assert.Equal(value, result);
+        Assert.Equal(value, result.Value);
     }
 }

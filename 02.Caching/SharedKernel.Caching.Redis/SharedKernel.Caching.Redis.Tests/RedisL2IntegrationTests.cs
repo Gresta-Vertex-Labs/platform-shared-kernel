@@ -26,7 +26,7 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2(_redisContainer.GetConnectionString());
 
         _provider = services.BuildServiceProvider();
@@ -43,15 +43,15 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
     private ICacheService Cache => _provider!.GetRequiredService<ICacheService>();
 
     [Fact]
-    public async Task SetAsync_ThenGetAsync_RoundTripsValueThroughRedis()
+    public async Task SetAsync_ThenTryGetAsync_RoundTripsValueThroughRedis()
     {
         const string key = "redis:roundtrip:1";
         const string value = "stored-in-redis";
 
         await Cache.SetAsync(key, value, CachePolicy.Default);
-        var result = await Cache.GetAsync<string>(key);
+        var result = await Cache.TryGetAsync<string>(key);
 
-        Assert.Equal(value, result);
+        Assert.Equal(value, result.Value);
     }
 
     [Fact]
@@ -83,8 +83,8 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
 
         await Cache.RemoveAsync(key);
 
-        var result = await Cache.GetAsync<string>(key);
-        Assert.Null(result);
+        var result = await Cache.TryGetAsync<string>(key);
+        Assert.False(result.IsHit);
     }
 
     [Fact]
@@ -98,8 +98,8 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
 
         await Cache.RemoveByTagAsync(tag);
 
-        Assert.Null(await Cache.GetAsync<string>("redis:tagged:a"));
-        Assert.Null(await Cache.GetAsync<string>("redis:tagged:b"));
+        Assert.False((await Cache.TryGetAsync<string>("redis:tagged:a")).IsHit);
+        Assert.False((await Cache.TryGetAsync<string>("redis:tagged:b")).IsHit);
     }
 
     [Fact]

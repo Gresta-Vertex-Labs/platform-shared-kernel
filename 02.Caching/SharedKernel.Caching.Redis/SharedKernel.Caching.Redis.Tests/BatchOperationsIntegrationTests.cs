@@ -9,13 +9,13 @@ using Xunit;
 namespace SharedKernel.Caching.Redis.Tests;
 
 /// <summary>
-/// Integration tests for batch cache operations (<see cref="ICacheService.GetManyAsync{T}"/>
+/// Integration tests for batch cache operations (<see cref="ICacheService.TryGetManyAsync{T}"/>
 /// and <see cref="ICacheService.SetManyAsync{T}"/>) backed by a live Redis container.
 /// </summary>
 /// <remarks>
 /// Phase 40 (P-303) retired the dead Phase 22 <c>IRedisL2BatchService</c>/<c>RedisL2BatchService</c>
 /// pipeline helper (zero DI registration, zero production caller — see <c>02.Caching/CLAUDE.md</c>'s
-/// "Batch operations rules" section) and replaced <c>FusionCacheService.GetManyAsync</c>/
+/// "Batch operations rules" section) and replaced <c>FusionCacheService.TryGetManyAsync</c>/
 /// <c>SetManyAsync</c>'s sequential per-key loop with a bounded <c>Parallel.ForEachAsync</c>
 /// fan-out. The tests below cover functional correctness (unchanged from Phase 22) plus
 /// Phase 40's new concurrency-safety and wall-clock-improvement guarantees.
@@ -35,7 +35,7 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching()
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
                 .AddRedisL2(_redisContainer.GetConnectionString());
 
         _provider = services.BuildServiceProvider();
@@ -52,11 +52,11 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
     private ICacheService Cache => _provider!.GetRequiredService<ICacheService>();
 
     // -------------------------------------------------------------------------
-    // GetManyAsync with L2 active — functional correctness (Phase 22, unchanged)
+    // TryGetManyAsync with L2 active — functional correctness (Phase 22, unchanged)
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_WithRedisL2_MixedHitsAndMisses_ReturnsCorrectDictionary()
+    public async Task TryGetManyAsync_WithRedisL2_MixedHitsAndMisses_ReturnsCorrectDictionary()
     {
         var suffix = Guid.NewGuid().ToString();
         var hitKey1 = $"batch:l2:hit1-{suffix}";
@@ -66,18 +66,18 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
         await Cache.SetAsync(hitKey1, "hello", CachePolicy.Default);
         await Cache.SetAsync(hitKey2, "world", CachePolicy.Default);
 
-        var result = await Cache.GetManyAsync<string>(
+        var result = await Cache.TryGetManyAsync<string>(
             [hitKey1, missKey, hitKey2],
             CancellationToken.None);
 
         Assert.Equal(3, result.Count);
-        Assert.Equal("hello", result[hitKey1]);
-        Assert.Equal("world", result[hitKey2]);
-        Assert.Null(result[missKey]);
+        Assert.Equal("hello", result[hitKey1].Value);
+        Assert.Equal("world", result[hitKey2].Value);
+        Assert.False(result[missKey].IsHit);
     }
 
     [Fact]
-    public async Task SetManyAsync_ThenGetManyAsync_WithRedisL2_RoundTripsAllValues()
+    public async Task SetManyAsync_ThenTryGetManyAsync_WithRedisL2_RoundTripsAllValues()
     {
         var suffix = Guid.NewGuid().ToString();
         var entries = new Dictionary<string, int>
@@ -89,11 +89,11 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
 
         await Cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        var result = await Cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        var result = await Cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
 
         Assert.Equal(entries.Count, result.Count);
         foreach (var (key, expected) in entries)
-            Assert.Equal(expected, result[key]);
+            Assert.Equal(expected, result[key].Value);
     }
 
     // -------------------------------------------------------------------------
@@ -102,12 +102,12 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_EmptyKeys_WithRedisL2_ReturnsEmptyDictionary()
+    public async Task TryGetManyAsync_EmptyKeys_WithRedisL2_ReturnsEmptyDictionary()
     {
         // Phase 22 contract: an empty input enumerable returns an empty dictionary.
         // Phase 40 rewrote the loop to Parallel.ForEachAsync — confirm the empty-source
         // case still short-circuits with no behavior change, against a real Redis L2.
-        var result = await Cache.GetManyAsync<string>([], CancellationToken.None);
+        var result = await Cache.TryGetManyAsync<string>([], CancellationToken.None);
         Assert.Empty(result);
     }
 
@@ -128,15 +128,15 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
 
         await Cache.SetManyAsync(entries, policy, CancellationToken.None);
 
-        var before = await Cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        var before = await Cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
         foreach (var (key, value) in entries)
-            Assert.Equal(value, before[key]);
+            Assert.Equal(value, before[key].Value);
 
         await Cache.RemoveByTagAsync(tag);
 
-        var after = await Cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        var after = await Cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
         foreach (var key in entries.Keys)
-            Assert.Null(after[key]);
+            Assert.False(after[key].IsHit);
     }
 
     // -------------------------------------------------------------------------
@@ -145,7 +145,7 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_WithRedisL2_LargeKeySet_UnderBoundedConcurrency_LosesNoKeysAndDuplicatesNone()
+    public async Task TryGetManyAsync_WithRedisL2_LargeKeySet_UnderBoundedConcurrency_LosesNoKeysAndDuplicatesNone()
     {
         const int keyCount = 200;
         var suffix = Guid.NewGuid().ToString();
@@ -158,23 +158,23 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
         var entries = keys.ToDictionary(k => k, k => k);
         await Cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        var result = await Cache.GetManyAsync<string>(keys, CancellationToken.None);
+        var result = await Cache.TryGetManyAsync<string>(keys, CancellationToken.None);
 
         Assert.Equal(keyCount, result.Count);
         foreach (var key in keys)
         {
             Assert.True(result.ContainsKey(key));
-            Assert.Equal(key, result[key]);
+            Assert.Equal(key, result[key].Value);
         }
     }
 
     // -------------------------------------------------------------------------
     // BP-07: wall-clock comparison — a concurrent batch call over N keys
-    // completes measurably faster than N sequential GetAsync calls.
+    // completes measurably faster than N sequential TryGetAsync calls.
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_WithRedisL2_ConcurrentBatch_IsMeasurablyFasterThanSequentialGetAsyncCalls()
+    public async Task TryGetManyAsync_WithRedisL2_ConcurrentBatch_IsMeasurablyFasterThanSequentialTryGetAsyncCalls()
     {
         const int keyCount = 50;
         var suffix = Guid.NewGuid().ToString();
@@ -185,17 +185,17 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
         var entries = keys.ToDictionary(k => k, k => k);
         await Cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        // Baseline: N fully sequential single-key GetAsync calls — the pre-Phase-40
-        // shape GetManyAsync itself used to have internally.
+        // Baseline: N fully sequential single-key TryGetAsync calls — the pre-Phase-40
+        // shape TryGetManyAsync itself used to have internally.
         var sequentialSw = Stopwatch.StartNew();
         foreach (var key in keys)
-            await Cache.GetAsync<string>(key, CancellationToken.None);
+            await Cache.TryGetAsync<string>(key, CancellationToken.None);
         sequentialSw.Stop();
 
-        // Candidate: one GetManyAsync batch call, now bounded-concurrent internally
+        // Candidate: one TryGetManyAsync batch call, now bounded-concurrent internally
         // (MaxDegreeOfParallelism = 16).
         var batchSw = Stopwatch.StartNew();
-        var result = await Cache.GetManyAsync<string>(keys, CancellationToken.None);
+        var result = await Cache.TryGetManyAsync<string>(keys, CancellationToken.None);
         batchSw.Stop();
 
         Assert.Equal(keyCount, result.Count);
@@ -216,7 +216,7 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
 
         Assert.True(
             batchSw.Elapsed <= sequentialSw.Elapsed * 0.75,
-            $"Expected GetManyAsync ({batchSw.ElapsedMilliseconds} ms) to be measurably " +
-            $"faster than {keyCount} sequential GetAsync calls ({sequentialSw.ElapsedMilliseconds} ms).");
+            $"Expected TryGetManyAsync ({batchSw.ElapsedMilliseconds} ms) to be measurably " +
+            $"faster than {keyCount} sequential TryGetAsync calls ({sequentialSw.ElapsedMilliseconds} ms).");
     }
 }

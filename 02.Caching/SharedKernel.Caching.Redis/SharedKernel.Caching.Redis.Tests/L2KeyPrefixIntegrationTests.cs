@@ -112,19 +112,19 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
 
     /// <summary>
     /// Verifies that the value stored under the prefixed key is readable via
-    /// <see cref="ICacheService.GetAsync"/> — confirming the round-trip is not broken
+    /// <see cref="ICacheService.TryGetAsync"/> — confirming the round-trip is not broken
     /// by the prefix wiring.
     /// </summary>
     [Fact]
-    public async Task SetAsync_WithKeyPrefix_GetAsync_ReturnsCorrectValue()
+    public async Task SetAsync_WithKeyPrefix_TryGetAsync_ReturnsCorrectValue()
     {
         const string key = "prefix-test:roundtrip:1";
         const string value = "round-trip-value";
 
         await Cache.SetAsync(key, value, CachePolicy.Default);
-        var result = await Cache.GetAsync<string>(key);
+        var result = await Cache.TryGetAsync<string>(key);
 
-        Assert.Equal(value, result);
+        Assert.Equal(value, result.Value);
     }
 
     /// <summary>
