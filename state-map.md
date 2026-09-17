@@ -2512,6 +2512,20 @@ The user ruled:
 
 ---
 
+### P-549 — Caching follow-ups: Redis section names and `CachingBehavior` value caching (BREAKING API)
+
+**Status:** `✓` Shipped 2026-09-17 — 28 `SharedKernel.Application.Behaviors.Caching` tests passing, including a round trip through two FusionCache instances sharing one distributed cache; nothing published
+**Work Order:** — (user-directed follow-up to P-548)
+**Domain:** 02.Caching, 05.Application
+**Depends on:** P-548
+
+#### What was fixed
+
+- `RedisL2Options.SectionName` was `SharedKernelCaching:Redis` and `RedisLockOptions.SectionName` was `SharedKernelCaching:DistributedLock`, inconsistent with FusionCache's `SharedKernel:Caching`. They are now `SharedKernel:Caching:Redis` and `SharedKernel:Caching:DistributedLocking`. No registration binds either constant yet.
+- `CachingBehavior` cached the whole `Result<T>`, which the FusionCache serializer cannot write (verified: `FusionCacheSerializationException` on the L2 write). It now caches the `TValue` of a successful result and rebuilds the `Result` on a hit. `ICacheableQuery<TValue>` replaces `ICacheableQuery<TResponse>` and is itself an `IQuery<TValue>`; the behavior is constrained to a new non-generic `ICacheableQuery` base whose internal member is implemented by the generic interface, so no reflection is used. This unblocks `05.Application` P-32 (publish `.Behaviors.Caching`).
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
