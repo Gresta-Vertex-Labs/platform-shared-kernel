@@ -47,7 +47,7 @@ All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Tes
 | Vector search | `Pgvector.EntityFrameworkCore` for pgvector typed columns |
 | Micro-ORM (read side) | `Dapper` |
 | Connection factory | `Npgsql` (PostgreSQL) via `NpgsqlConnectionFactory` in the Dapper package |
-| Multi-tenancy | `ITenantProvider` (from `SharedKernel.Security.Abstractions`) + `TenantedDbContext` + `TenantedRepository<T,TId>`; `NoOpTenantProvider` (returning `Guid.Empty`) registered by `.WithMultiTenancy()` as fallback |
+| Multi-tenancy | `ITenantProvider` (from `SharedKernel.Security.Abstractions`) + `TenantedDbContext` + `TenantedRepository<T,TId>`; `.WithMultiTenancy()` falls back to `UserContextTenantProvider` (`TryAddScoped`; returns `IUserContext.TenantId`, or `Guid.Empty` without a tenant) |
 | DI composition | `EfCorePersistenceBuilder` fluent builder via `AddSharedKernelEfCore<TContext>` |
 
 ---
@@ -285,7 +285,7 @@ AuditRecord  (sealed record — SHIPPED)
     .Id                  → Guid            (assigned by the writer, e.g. Guid.CreateVersion7())
     .TenantId             → Guid            (Guid.Empty sentinel — mirrors ITenantProvider's existing convention)
     .ActorId              → string          (REUSES AuditInterceptor's existing audit-string-format convention:
-                                              userId.ToString("D") or a service-name fallback — no new actor-identity shape)
+                                              IUserContext.SubjectId or a service-name fallback — no new actor-identity shape)
     .Action                → string          (caller-defined verb/code)
     .ResourceType          → string
     .ResourceId            → string          (caller stringifies — aggregate PK types vary: Guid, StronglyTypedId<T>, int)
@@ -784,19 +784,19 @@ EncryptionKeyPreWarmingInterceptor  (internal sealed class, extends SaveChangesI
 
 `AuditInterceptor` and `SoftDeleteInterceptor` require `IUserContext` from `SharedKernel.Security.Abstractions` to resolve the current user. `SharedKernel.Persistence.EfCore` holds a deliberate project reference to `SharedKernel.Security.Abstractions` — this is an approved layering exception: `12.Security.Abstractions` is a zero-dependency interface library, and the alternative (maintaining local interface copies) creates divergence risk. The pattern:
 
-1. `IUserContext` is sourced from `SharedKernel.Security.Abstractions`. `UserId` is `Guid`; `IsAuthenticated` is `bool`.
-2. `EfCorePersistenceBuilder.Build()` registers a scoped no-op `IUserContext` placeholder (`UserId = Guid.Empty`, `IsAuthenticated = false`) if no `IUserContext` is already registered in the DI container.
-3. Consuming services register their own `IUserContext` implementation (from `12.Security.Oidc` or similar) before or after `.Build()` — the last registration wins.
+1. `IUserContext` is sourced from `SharedKernel.Security.Abstractions` (namespace `SharedKernel.Security.Abstractions`). `SubjectId` is `string?`, non-null exactly for `IdentityKind.User` and `IdentityKind.ServicePrincipal`; `IsAuthenticated` is derived from `IdentityKind`.
+2. `EfCorePersistenceBuilder.Build()` registers `AnonymousUserContext.Instance` as a non-generic singleton instance placeholder (`ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance)`) if no `IUserContext` is already registered in the DI container.
+3. Consuming services register their `IUserContext` through a `12.Security` authentication package (`AddOidcAuthentication`, `AddManagedApiKeyAuthentication<TStore>`/`AddApiKeyAuthentication<TValidator>`, `AddMtlsAuthentication<TValidator>`) or their own implementation, before or after `.Build()`. The authentication packages remove the `AnonymousUserContext` instance placeholder before their `TryAdd`, so registration order does not matter.
 4. Interceptors are registered as **scoped** services so they receive a per-request `IUserContext` from DI.
 
 **Audit string format rule (P-091, updated WO-019):**
 
 Audit columns (`CreatedBy`, `ModifiedBy`, `DeletedBy`) are `string` with `HasMaxLength(256)`. The string value is produced as:
 
-- When `userContext.IsAuthenticated == true && userContext.UserId != Guid.Empty`: write `userContext.UserId.ToString("D")` — lowercase hyphenated GUID, 36 characters, e.g. `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`.
+- When `userContext.IsAuthenticated == true` and `userContext.SubjectId` is non-null: write `userContext.SubjectId` unchanged — the identity provider's subject (for example `"auth0|65f0…"` or a GUID string), or the client id of an API key or certificate. OIDC subjects are at most 255 characters, so they fit the 256-character column.
 - Otherwise: write `PersistenceServiceOptions.ServiceName` — defaults to `"system"` but is configurable per-service via `EfCorePersistenceBuilder.WithServiceName(string)`.
 
-No other format is permitted. The `"D"` format specifier is mandatory for authenticated users — `"N"`, `"B"`, `"P"`, and `"X"` formats are all violations. The unauthenticated fallback must always come from `PersistenceServiceOptions.ServiceName`; the hardcoded literal `"system"` is no longer permitted in `AuditInterceptor.ResolveUserId()` — it must be the options default value only.
+No other value is permitted. The subject is stored as issued — it is not parsed, reformatted or case-folded. The unauthenticated fallback must always come from `PersistenceServiceOptions.ServiceName`; the hardcoded literal `"system"` is not permitted in `AuditInterceptor.ResolveUserId()` — it must be the options default value only. `EfCoreAuditActorContext.ActorId` (audit trail, P-457) follows the same rule.
 
 #### Auditing — EfCore implementation (`Auditing/`) — P-457/WO-071, shipped 2026-09-02
 
@@ -885,7 +885,7 @@ EfCoreAuditActorContext  (sealed class, implements IAuditActorContext — SHIPPE
       (SharedKernel.Security.Abstractions, P-078 exception — see "IUserContext injection pattern" above).
       Registered by .WithAuditTrail() ONLY when the consuming service has not already registered its own
       IAuditActorContext (last-registration-wins is preserved as an override path, not a requirement).
-    — ActorId computed via the SAME userId.ToString("D")/PersistenceServiceOptions.ServiceName-fallback
+    — ActorId computed via the SAME IUserContext.SubjectId/PersistenceServiceOptions.ServiceName-fallback
       format AuditInterceptor already uses (P-091) — reuse, not a second convention. TenantId delegates
       straight to ITenantProvider.TenantId.
     — A genuine ergonomic advantage this package can offer that 05.Application's equivalent
@@ -1553,7 +1553,7 @@ TenantedRepository<TAggregate, TId>  (abstract class, extends EfRepository<TAggr
 
 **Guid.Empty no-tenant sentinel rule (P-092):**
 
-`ITenantProvider.TenantId` is `Guid` (non-nullable). `NoOpTenantProvider` returns `Guid.Empty` explicitly. When no real provider is registered, the global filter becomes `e.TenantId == Guid.Empty`, which returns **zero rows** — no production entity should ever have `TenantId == Guid.Empty`. This is intentional and safe: teams that forget to register a real provider see an empty result set immediately rather than a cross-tenant data leak.
+`ITenantProvider.TenantId` is `Guid` (non-nullable). The default `UserContextTenantProvider` (registered by `.WithMultiTenancy()` via `TryAddScoped`, and by each `12.Security` authentication package) returns `IUserContext.TenantId ?? Guid.Empty`. When no tenant is resolved — an anonymous caller, or a credential without a tenant claim — the global filter becomes `e.TenantId == Guid.Empty`, which returns **zero rows** — no production entity should ever have `TenantId == Guid.Empty`. This is intentional and safe: a caller without a tenant sees an empty result set immediately rather than a cross-tenant data leak.
 
 `EntityTypeConfigurationBase.ConfigureTenantColumn` carries an XML doc stating `TenantId == Guid.Empty` is forbidden in production rows.
 
@@ -1565,7 +1565,8 @@ AddSharedKernelEfCore<TContext>(IServiceCollection services, Action<DbContextOpt
 
 EfCorePersistenceBuilder
     .WithMultiTenancy()
-        — Registers NoOpTenantProvider (ITenantProvider, returns Guid.Empty) as scoped placeholder.
+        — TryAddScoped<ITenantProvider, UserContextTenantProvider>() — returns IUserContext.TenantId, or
+          Guid.Empty without a tenant; an ITenantProvider registered earlier wins.
         — Asserts at .Build() time that TContext extends TenantedDbContext; throws InvalidOperationException
           with actionable message if the assertion fails.
     .WithTransactionalUnitOfWork()
@@ -1575,7 +1576,7 @@ EfCorePersistenceBuilder
     .WithDbContextFactory()
         — Calls services.AddDbContextFactory<TContext>(configureDb) in addition to AddDbContext.
         — Required for background services, hosted workers, Hangfire jobs, and Temporal activities.
-        — Factory-created contexts receive NoOpUserContext (UserId = Guid.Empty) for audit fields,
+        — Factory-created contexts receive the AnonymousUserContext placeholder for audit fields,
           producing "system" audit values, unless a singleton IUserContext is registered.
         — Optional. Omit for services that have no background DbContext consumers.
     .AddInterceptor<TInterceptor>()
@@ -1625,7 +1626,7 @@ EfCorePersistenceBuilder
           enabled" the moment the context's internal services are first built (SaveChangesAsync,
           EnsureCreatedAsync, etc. — not immediately at construction). Therefore this method's
           optionsAction itself constructs the platform three interceptors (a throwaway
-          NoOpUserContext seeds their constructor — harmless, since AuditInterceptor/
+          AnonymousUserContext.Instance seeds their constructor — harmless, since AuditInterceptor/
           SoftDeleteInterceptor read CurrentUserContext live off eventData.Context, never their own
           captured field) plus any .AddInterceptor<T>() additional types (via ActivatorUtilities
           against the root sp — a consumer interceptor needing its OWN scoped dependencies will fail
@@ -1661,8 +1662,9 @@ EfCorePersistenceBuilder
         — Registers ISpecificationEvaluator<T> → SpecificationEvaluator<T> (singleton — stateless)
         — Registers AuditInterceptor, SoftDeleteInterceptor, ConcurrencyInterceptor (scoped)
         — Registers any additional interceptors supplied via .AddInterceptor<T>() (scoped)
-        — Registers no-op IUserContext placeholder (UserId = Guid.Empty, IsAuthenticated = false)
-          if no IUserContext already registered; uses SharedKernel.Security.Abstractions.IUserContext
+        — Registers AnonymousUserContext.Instance as a non-generic singleton instance placeholder
+          (IsAuthenticated = false, SubjectId = null) if no IUserContext already registered;
+          authentication packages remove it, so registration order does not matter
         — Calls AddDbContextFactory<TContext> when .WithDbContextFactory() was invoked
         — Applies UseModel(compiledModel) when .WithCompiledModel() was invoked
         — Registers MigrationAndSeedHostedService<TContext> as IHostedService ONLY when
@@ -2284,14 +2286,14 @@ DapperReadService  (abstract class)
 - Adding a project reference from `SharedKernel.Persistence.EfCore` to any `12.Security` package other than `SharedKernel.Security.Abstractions` — the single approved exception is `SharedKernel.Security.Abstractions` (zero-dependency interface library). All other `12.Security.*` packages are forbidden.
 - Using `nameof(IEntity<TId>.Id)` in EF Core configurations — `IEntity<TId>` is a **marker interface** with no `Id` property; `Id` is declared on `Entity<TId>`. Use the string literal `"Id"` or `nameof(Entity<TId>.Id)` (requires a concrete TEntity constraint).
 - Omitting the nested test-project exclusion items from production `.csproj` files — every production csproj that has a nested `*.Tests` subfolder must include: `<Compile Remove="*.Tests\**" />`, `<EmbeddedResource Remove="*.Tests\**" />`, `<None Remove="*.Tests\**" />`. Without these the SDK globs pick up test `.cs` files and the production build fails.
-- Writing audit strings in any format other than `userId.ToString("D")` or `PersistenceServiceOptions.ServiceName` — the `"D"` lowercase hyphenated GUID format is the only permitted authenticated value; the unauthenticated fallback must come from options (never a hardcoded string literal other than the options default). `"N"`, `"B"`, `"P"`, `"X"` GUID formats are violations.
+- Writing audit strings other than `IUserContext.SubjectId` (authenticated caller with a subject) or `PersistenceServiceOptions.ServiceName` — the subject is written as issued, never parsed as a `Guid` or reformatted; the unauthenticated fallback must come from options (never a hardcoded string literal other than the options default).
 - Placing encryption attributes (any attribute whose name contains `Encrypt` or `Encrypted`) on domain entity classes — encryption is configured exclusively via `PropertyBuilder<T>.Encrypt()` inside `IEntityTypeConfiguration<TEntity>` implementations. Attributes on domain types create an infrastructure concern in the domain layer, violating DDD purity (SK0302).
 - Instantiating `EncryptedValueConverter` directly inside `IEntityTypeConfiguration<TEntity>.Configure(builder)` and passing it to `.HasConversion(converter)` — `EncryptionModelConvention` applies the converter automatically after model finalization; manual instantiation produces duplicate or inconsistent converter registration (SK0304).
 - Injecting `IEncryptionRotationJob` in any MediatR handler, domain service, application command/query handler, or any type in `03.Domain` or `05.Application` — key rotation is an infrastructure operation triggered via hosted service, Hangfire job, Temporal activity, or management endpoint only (SK0303).
 - Using `AesGcm`, `Aes`, `SymmetricAlgorithm`, or any BCL symmetric cipher directly in `03.Domain` or `05.Application` layer types — all field-level encryption goes through `EncryptedValueConverter<T>` registered by the model convention (SK0301).
 - Removing a key version from `EncryptionOptions.Keys` before completing the rotation of all rows that were encrypted with that version — doing so causes `EncryptionKeyNotFoundException` at query time for any row still carrying a ciphertext prefixed with the removed version.
 - Using `GetMethod`, `MakeGenericMethod`, or `Invoke` in `TenantedDbContext.OnModelCreating` — the global tenant filter must be built using expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) and applied via the non-generic `modelBuilder.Entity(clrType).HasQueryFilter(lambdaExpr)` overload.
-- Storing `Guid.Empty` as a `TenantId` in production rows — `Guid.Empty` is the reserved no-tenant sentinel used by `NoOpTenantProvider`; any row with `TenantId == Guid.Empty` will be invisible to all tenanted queries.
+- Storing `Guid.Empty` as a `TenantId` in production rows — `Guid.Empty` is the reserved no-tenant sentinel returned by `UserContextTenantProvider` for a caller without a tenant; any row with `TenantId == Guid.Empty` will be invisible to all tenanted queries.
 - Calling `QueryableExtensions.IgnoreSoftDeleteFilter()` — this class has been deleted (P-080). Use `spec.IncludeDeleted = true` on the specification; `SpecificationEvaluator<T>` calls `.IgnoreQueryFilters()` automatically at step 0.
 - Calling `IReadRepository.GetByIdAsync(id, ct)` — this method has been removed (P-080 breaking change). Use `readRepo.GetBySpecAsync(new ByIdSpecification<TAggregate, TId>(id), ct)` instead. `IRepository` (write side) still has `GetByIdAsync`.
 - Calling `IDomainEventDispatcher.DispatchAsync` from anywhere other than `EfUnitOfWork.SaveChangesAsync` — domain event dispatch is triggered exclusively post-commit by `EfUnitOfWork`; dispatching from application layer is a responsibility violation (07.Messaging publishes integration events from dispatched domain events).
@@ -2397,13 +2399,13 @@ Step 2c note: `spec.AsSplitQuery` defaults `false` — a single-query plan is ne
 `AuditInterceptor` and `SoftDeleteInterceptor` must set field values exclusively via:
 
 ```csharp
-context.Entry(entity).CurrentValues[nameof(IHasCreatedAudit.CreatedBy)] = userContext.UserId;
+context.Entry(entity).CurrentValues[nameof(IHasCreatedAudit.CreatedBy)] = ResolveUserId(userContext);
 ```
 
 Never:
 
 ```csharp
-((IHasCreatedAudit)entity).CreatedBy = userContext.UserId;  // ← VIOLATION
+((IHasCreatedAudit)entity).CreatedBy = ResolveUserId(userContext);  // ← VIOLATION
 ```
 
 ---
@@ -2431,13 +2433,15 @@ services
     .WithTransactionalUnitOfWork()   // registers ITransactionalUnitOfWork → EfTransactionalUnitOfWork
     .Build();
 
-// Consuming service overrides the IUserContext placeholder with its real implementation
-// IUserContext is from SharedKernel.Security.Abstractions; UserId is Guid
-services.AddScoped<IUserContext, OidcUserContext>();
+// Consuming service registers its real IUserContext through an authentication package, which removes
+// the AnonymousUserContext placeholder — before or after Build(), order does not matter.
+// IUserContext is from SharedKernel.Security.Abstractions; SubjectId is string? (null when anonymous)
+services.AddOidcAuthentication(configuration);   // section "SharedKernel:Security:Oidc"
 
-// Multi-tenant service overrides the NoOpTenantProvider with its real implementation
-// ITenantProvider is from SharedKernel.Security.Abstractions; TenantId is Guid (Guid.Empty = no tenant)
-services.AddScoped<ITenantProvider, ClaimsTenantProvider>();
+// Multi-tenant service: the authentication package and WithMultiTenancy() both TryAdd
+// UserContextTenantProvider (IUserContext.TenantId, Guid.Empty = no tenant). Only a service with a
+// different tenant source registers its own ITenantProvider; an Add* registration wins over a TryAdd.
+services.AddScoped<ITenantProvider, MyTenantProvider>();
 
 // Per-aggregate repository pair — one registration per aggregate in the consuming service
 services.AddScoped<IRepository<Order, OrderId>, OrderEfRepository>();
@@ -2825,8 +2829,8 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 - `SharedKernel.Persistence.EfCore.Tests/` — interceptor integration tests with SQLite provider; `SpecificationEvaluator<T>` expression evaluation tests; `EfRepository` / `EfReadRepository` round-trips with real SQLite; `TenantedDbContext` isolation; `EfCorePersistenceBuilder` smoke tests. **Exception, `Auditing/` tests only (WO-071/P-457, shipped):** use `Microsoft.EntityFrameworkCore.InMemory` (test-only package, added to `Directory.Packages.props`/this project pinned 10.0.5), NOT SQLite — SQLite's EF Core provider refuses to translate `ORDER BY` on any `DateTimeOffset` expression at all (a LINQ-translation-level restriction, confirmed empirically, not row-count-dependent), which makes `AuditRecord`'s `OccurredOn`-ordered hash-chain/keyset queries completely untestable against SQLite. This mirrors the same class of SQLite limitation `KeysetTestAggregate` already works around by choosing a `long` sort key (not possible for `AuditRecord`, whose `OccurredOn` is fixed at `DateTimeOffset` by design D-113). Production targets PostgreSQL, which orders by `timestamptz` without issue.
 - `SharedKernel.Persistence.PostgreSQL.Tests/` — integration tests with a real PostgreSQL Testcontainer; JSONB round-trip; vector column read/write; snake_case naming verification via `DbContext.Model`.
 - `SharedKernel.Persistence.Dapper.Tests/` — type handler round-trip tests; `DapperReadService` query tests with a real PostgreSQL Testcontainer.
-- `AuditInterceptor` tests: verify `CreatedBy`/`CreatedOn` set on Added entities; `ModifiedBy`/`ModifiedOn` set on Modified; no audit mutation on Deleted entities (SoftDeleteInterceptor handles those); `IsAuthenticated == false` → `CreatedBy` receives `"system"`; `IsAuthenticated == true` with valid `UserId` → `CreatedBy` receives the lowercase hyphenated GUID string (`ToString("D")` format).
-- `SoftDeleteInterceptor` tests: verify Deleted state converted to Modified; `IsDeleted = true`; `DeletedOn` and `DeletedBy` set (same adapter rules as audit: `"system"` or GUID `"D"` format); soft-deleted records excluded by global query filter; non-soft-deletable entity passes through.
+- `AuditInterceptor` tests: verify `CreatedBy`/`CreatedOn` set on Added entities; `ModifiedBy`/`ModifiedOn` set on Modified; no audit mutation on Deleted entities (SoftDeleteInterceptor handles those); `IsAuthenticated == false` → `CreatedBy` receives `"system"`; `IsAuthenticated == true` with a non-null `SubjectId` → `CreatedBy` receives that subject string unchanged.
+- `SoftDeleteInterceptor` tests: verify Deleted state converted to Modified; `IsDeleted = true`; `DeletedOn` and `DeletedBy` set (same adapter rules as audit: `ServiceName` or `SubjectId`); soft-deleted records excluded by global query filter; non-soft-deletable entity passes through.
 - `ConcurrencyInterceptor` tests: `DbUpdateConcurrencyException` is caught and rethrown as a typed `ConcurrencyException` carrying `Error.Conflict(...)`; non-concurrency exceptions are not swallowed.
 - `SpecificationEvaluator<T>` tests: criteria, ordering (asc/desc), ThenBys, paging, distinct, AsNoTracking each verified independently; paging applied after ordering (determinism test); null Criteria matches all entities; ThenBys ignored without primary sort.
 - `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` tests: round-trip (entity to DB value, DB value to entity) with a concrete strongly-typed ID.
@@ -2944,3 +2948,4 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 - [2026-09-08] P-498 (WO-081, SEVERE) processed — this domain's phase in the coordinated cross-domain breaking wave whose `01.Core` foundation (`SK.01.P491` associated-data-required `ISymmetricEncryptionService`, `SK.01.P492` the `ISynchronousEncryptionKeyProvider` capability gate) was design-locked earlier the same session by `core-arch-planner`. **Refuted the phase input's own literal premise** (D-126, same discipline `02.Caching`/P-497 applied against its own phase input this session): a `SavingChangesAsync`-only pre-warming hook cannot close this defect — it never fires for a query (the read path is what the motivating F1 scenario actually describes), and even for writes, wrapping a KMS provider in `01.Core`'s `CachedEncryptionKeyProvider` does not satisfy `IsGenuinelySynchronous` regardless of cache warmth, since that check is a static provider-identity test a KMS provider can never honestly pass. Redesigned around: (1) marking the existing config-backed `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` genuinely synchronous, closing what would otherwise be a silent regression for every existing user the moment `01.Core`'s P-492 ships; (2) a new, honestly-marked `PreWarmedEncryptionKeyProvider` that never touches its wrapped provider from its own synchronous-contract members, serving only from an explicitly-warmed in-memory cache; (3) a dual-hook `EncryptionKeyPreWarmingInterceptor` — `SavingChangesAsync` for writes, `IDbCommandInterceptor.ReaderExecutingAsync` (EF Core's genuine async pre-materialization extension point) for reads — closing both halves of the defect, not just the write half the input text focused on; (4) a structural, keyed-DI isolation fix (`.WithExternalEncryptionKeyProvider<TProvider>()`, replacing `.WithEncryption()`'s prior unkeyed `IEncryptionKeyProvider` registration) that makes the SEVERE bug's actual root cause — an accidental DI-registration-order collision with an unrelated ambient KMS provider registration, e.g. `13.ServiceDefaults`'s `AddSharedKernelKeyVaultKeyProvider` — structurally unreachable, not merely fail-fast-detected. Also resolved `01.Core`'s own D-67 "hardest of the six" AAD-derivation open question: associated data is bound to each property's stable table+column storage identity, computed once at model-finalization time — no row-level access needed, with an optional `associatedDataOverride` escape hatch for rename-safety, documented as a hazard otherwise. Nine new Design tasks (D-126..D-134, all `●`, design-locked); eighteen `○` Core/Tests/Docs/Published tasks depend on `01.Core`'s `SK.01.P491`/`SK.01.P492` shipping past design-lock into Core before this package can compile against the new `ISymmetricEncryptionService` shape. `SK.06.Design` now 134/134 `●` (still promotable); `SK.06.Core`/`SK.06.Tests`/`SK.06.Docs`/`SK.06.Published` all moved from `●` to `◐` — none promoted. No root `state-map.md`, root `CLAUDE.md`, or `.slnx` changes made (out of jurisdiction) (persistence-arch-planner)
 - [2026-09-08] P-498/WO-081 SHIPPED (C-166..C-172, T-139..T-146, DO-69/DO-70, P-13) — `01.Core`'s `SK.01.P491`/`SK.01.P492` confirmed shipped on disk before starting. Two corrections against the design record during implementation: `EncryptionKeyPreWarmingInterceptor`'s constructor takes only `PreWarmedEncryptionKeyProvider` (the design sketch's second `IEncryptionVersionOverride` parameter was unnecessary — `WarmCurrentAsync()` already resolves it internally); `EncryptionStartupValidator`'s D-132 check resolves a SECOND keyed-DI slot (`PersistenceEncryptionKeys.EncryptionKeyProviderKey`, holding whichever `IEncryptionKeyProvider` backs the persistence-scoped service) rather than checking "individual dependencies like `ISecureRandomGenerator`" as originally sketched — source-verified `AesGcmEncryptionService`'s constructor takes only one parameter, so there was nothing else to check. `SharedKernelDbContext`'s new keyed-service resolution reads `DbContextOptions.FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider` (EF Core's own public mechanism) rather than requiring `[FromKeyedServices]` attributes on every downstream context subclass (which would have needed the internal key exposed cross-assembly — structurally impossible) — zero downstream signature changes required. Unplanned nice side effect found during implementation: the config-backed default path no longer needs `01.Core`'s `AddSharedKernelCryptography()` called at all, since this package now constructs `AesGcmEncryptionService` directly. Three pre-existing rotation test files had an now-obsolete manual unkeyed `ISymmetricEncryptionService` registration removed (depended on the pre-P-498 unkeyed slot this phase deliberately stopped populating). 8 new test files/~30 new tests added under `SharedKernel.Persistence.EfCore.Tests/Encryption/`; full suite 448/448 green; `dotnet pack` clean. `06.Persistence/CLAUDE.md` migrated off "DESIGN-LOCKED/implementation pending" language across the domain summary, Packages table, Encryption interface-contracts block (including two new types not previously listed: `EncryptionKeyPreWarmingHostedService`, `PersistenceEncryptionKeys`), the `.WithEncryption()`/`.WithExternalEncryptionKeyProvider<TProvider>()` wiring section, the `SharedKernelDbContext` constructor note, the five P-498 Hard-violations entries, and the "unwarmed historical key versions" known-limitation section. `README.md` corrected (dropped the now-unnecessary `AddSharedKernelCryptography()` call from the config-backed quick-start) and gained a new "KMS-backed field-level encryption" subsection. `SK.06.Core`/`SK.06.Tests`/`SK.06.Docs`/`SK.06.Published` promoted to `●` (persistence-phase-implementer)
 - [2026-09-15] Contracts redesign: paged reads now count with `LongCountAsync` into a `long` `PagedList<T>.TotalCount` and build the page through a private `CreatePage` that derives page and page size from the specification's Skip/Take, reporting a specification without Take as one page sized to the rows (coordinator)
+- [2026-09-16] P-546 security redesign: the IUserContext pattern, audit string format rule, DI extension notes, forbidden-pattern list, DI registration sample and interceptor test rules now describe the redesigned `12.Security` API — `NoOpUserContext`/`NoOpTenantProvider` are gone; `Build()` registers `AnonymousUserContext.Instance` as a non-generic singleton instance placeholder that authentication packages remove (registration order does not matter); `WithMultiTenancy()` uses `TryAddScoped<ITenantProvider, UserContextTenantProvider>()` (`Guid.Empty` without a tenant); `CreatedBy`/`ModifiedBy`/`DeletedBy` and `EfCoreAuditActorContext.ActorId` store `IUserContext.SubjectId` as issued for an authenticated caller with a subject, otherwise `PersistenceServiceOptions.ServiceName` (the lowercase hyphenated GUID `"D"` rule is removed) (coordinator)

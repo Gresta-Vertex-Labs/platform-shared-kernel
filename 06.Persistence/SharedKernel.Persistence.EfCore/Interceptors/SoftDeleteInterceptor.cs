@@ -5,7 +5,7 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
@@ -31,8 +31,8 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </para>
 /// <para>
 /// <strong>Audit string format (P-091, updated WO-019):</strong> <c>DeletedBy</c> is populated
-/// using the same adapter as <c>AuditInterceptor</c>: <c>userId.ToString("D")</c> (lowercase
-/// hyphenated GUID) when <c>IsAuthenticated == true</c> and <c>UserId != Guid.Empty</c>;
+/// using the same adapter as <c>AuditInterceptor</c>: <c>IUserContext.SubjectId</c> when the caller is
+/// authenticated and has a subject;
 /// <c>PersistenceServiceOptions.ServiceName</c> (default <c>"system"</c>) otherwise.
 /// Audit columns carry <c>HasMaxLength(256)</c>, which accommodates both formats.
 /// </para>
@@ -132,7 +132,7 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
 
     // Resolves the audit string from the given IUserContext per P-091/WO-019 rules.
     private string ResolveUserId(IUserContext userContext)
-        => userContext.IsAuthenticated && userContext.UserId != Guid.Empty
-            ? userContext.UserId.ToString("D")
+        => userContext.IsAuthenticated && userContext.SubjectId is { } subjectId
+            ? subjectId
             : _serviceOptions.Value.ServiceName;
 }

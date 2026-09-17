@@ -160,7 +160,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
     /// <para>
     /// <strong>Production constraint:</strong> <c>TenantId == Guid.Empty</c> is <em>forbidden</em>
     /// in production rows. <see cref="Guid.Empty"/> is reserved as the no-tenant sentinel used by
-    /// <c>NoOpTenantProvider</c>. When no real <c>ITenantProvider</c> is registered, the global
+    /// the default <c>UserContextTenantProvider</c> for a caller without a tenant. When no tenant is resolved, the global
     /// tenant query filter evaluates as <c>e.TenantId == Guid.Empty</c>, which returns
     /// <strong>zero rows</strong> — no production entity should ever carry <c>TenantId == Guid.Empty</c>.
     /// </para>

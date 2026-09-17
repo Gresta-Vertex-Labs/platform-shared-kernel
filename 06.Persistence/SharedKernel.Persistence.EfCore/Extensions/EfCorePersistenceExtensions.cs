@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,7 +27,7 @@ using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 
@@ -130,8 +131,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
     /// <summary>
     /// Opts in to multi-tenancy support.
-    /// Registers a no-op <see cref="ITenantProvider"/> placeholder (<see cref="NoOpTenantProvider"/>)
-    /// that returns <see cref="Guid.Empty"/> until overridden by the consuming service.
+    /// Registers <see cref="UserContextTenantProvider"/> as the <see cref="ITenantProvider"/> when none is
+    /// registered, which returns <see cref="Guid.Empty"/> until an authentication package supplies a tenant.
     /// At <see cref="Build"/> time, asserts that <typeparamref name="TContext"/> extends
     /// <see cref="TenantedDbContext"/>; throws <see cref="InvalidOperationException"/> with an
     /// actionable message if the assertion fails.
@@ -140,7 +141,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     public EfCorePersistenceBuilder<TContext> WithMultiTenancy()
     {
         _multiTenancyEnabled = true;
-        _services.AddScoped<ITenantProvider, NoOpTenantProvider>();
+        _services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
         return this;
     }
 
@@ -846,7 +847,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
             // remarks) and therefore correctly does nothing further here. The platform three
             // interceptors (plus any additional consumer-supplied ones) MUST therefore be added here
             // instead, via the (IServiceProvider, DbContextOptionsBuilder) overload, BEFORE freezing.
-            // Their own constructor-injected IUserContext is a throwaway NoOpUserContext — harmless,
+            // Their own constructor-injected IUserContext is a throwaway AnonymousUserContext — harmless,
             // because AuditInterceptor/SoftDeleteInterceptor read
             // ((SharedKernelDbContext)eventData.Context).CurrentUserContext LIVE at save time (see
             // those interceptors' own WO-051/P-322 remarks), never their own captured field, so one
@@ -860,7 +861,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
                 var clock = sp.GetRequiredService<IClock>();
                 var serviceOptions = sp.GetRequiredService<IOptions<PersistenceServiceOptions>>();
-                var placeholderUserContext = new NoOpUserContext();
+                IUserContext placeholderUserContext = AnonymousUserContext.Instance;
 
                 var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
                 {
@@ -957,10 +958,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
-        // No-op IUserContext placeholder — registered only when no other IUserContext is present.
+        // Placeholder IUserContext when none is present. The authentication packages replace an
+        // AnonymousUserContext instance registration, so registration order does not matter.
         if (!_services.Any(sd => sd.ServiceType == typeof(IUserContext)))
         {
-            _services.AddScoped<IUserContext, NoOpUserContext>();
+            _services.Add(ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance));
         }
 
         // WO-071/P-457: default IAuditActorContext — registered only when .WithAuditTrail() was

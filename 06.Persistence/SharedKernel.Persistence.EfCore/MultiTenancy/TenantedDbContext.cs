@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
@@ -21,8 +21,8 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// a scoped context) works correctly without rebuilding the context.
 /// </para>
 /// <para>
-/// <strong>Zero-row sentinel:</strong> when <see cref="NoOpTenantProvider"/> is active (or any
-/// provider returning <see cref="Guid.Empty"/>), the filter becomes
+/// <strong>Zero-row sentinel:</strong> when the tenant provider returns <see cref="Guid.Empty"/> (no tenant
+/// resolved), the filter becomes
 /// <c>e.TenantId == Guid.Empty</c> which returns zero rows. No production entity should carry
 /// <c>TenantId == Guid.Empty</c>. This is intentional — it prevents cross-tenant data leaks when
 /// no real tenant provider is registered.

@@ -5,7 +5,7 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
@@ -30,8 +30,8 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// <strong>Audit string format (P-091, updated WO-019):</strong> The audit column value is:
 /// <list type="bullet">
 ///   <item><description>
-///     <c>userContext.UserId.ToString("D")</c> (lowercase hyphenated GUID, 36 chars) when
-///     <c>IUserContext.IsAuthenticated == true</c> and <c>UserId != Guid.Empty</c>.
+///     <c>IUserContext.SubjectId</c> (the identity provider's subject, an API key's or certificate's client id;
+///     at most 255 characters for OIDC) when the caller is authenticated and has a subject.
 ///   </description></item>
 ///   <item><description>
 ///     <c>PersistenceServiceOptions.ServiceName</c> (default <c>"system"</c>) otherwise —
@@ -151,7 +151,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     // Resolves the audit string from the given IUserContext per P-091/WO-019 rules.
     private string ResolveUserId(IUserContext userContext)
-        => userContext.IsAuthenticated && userContext.UserId != Guid.Empty
-            ? userContext.UserId.ToString("D")
+        => userContext.IsAuthenticated && userContext.SubjectId is { } subjectId
+            ? subjectId
             : _serviceOptions.Value.ServiceName;
 }

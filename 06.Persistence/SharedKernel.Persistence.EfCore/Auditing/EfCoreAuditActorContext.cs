@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.EfCore.Options;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Auditing;
 
@@ -46,8 +46,8 @@ public sealed class EfCoreAuditActorContext : IAuditActorContext
 
     /// <inheritdoc />
     public string ActorId =>
-        _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
-            ? _userContext.UserId.ToString("D")
+        _userContext.IsAuthenticated && _userContext.SubjectId is { } subjectId
+            ? subjectId
             : _serviceOptions.Value.ServiceName;
 
     /// <inheritdoc />

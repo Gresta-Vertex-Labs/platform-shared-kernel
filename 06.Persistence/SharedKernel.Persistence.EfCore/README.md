@@ -35,7 +35,7 @@ services
     .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
     .Build();
 
-services.AddScoped<IUserContext, OidcUserContext>();        // overrides the no-op placeholder
+services.AddOidcAuthentication(configuration);  // real IUserContext; replaces the AnonymousUserContext placeholder in any order
 services.AddScoped<IRepository<Order, OrderId>, OrderEfRepository>();
 services.AddScoped<IReadRepository<Order, OrderId>, OrderEfReadRepository>();
 ```
@@ -48,8 +48,12 @@ services
     .WithMultiTenancy()          // TContext must extend TenantedDbContext, or Build() throws
     .Build();
 
-services.AddScoped<ITenantProvider, ClaimsTenantProvider>();
+// WithMultiTenancy() TryAdds UserContextTenantProvider: the tenant from IUserContext.TenantId, or
+// Guid.Empty (zero rows) when the caller has none. Register your own ITenantProvider only for another source.
+services.AddOidcAuthentication(configuration);
 ```
+
+Audit columns (`CreatedBy`/`ModifiedBy`/`DeletedBy`) store `IUserContext.SubjectId` as issued when the caller is authenticated and has a subject, otherwise `PersistenceServiceOptions.ServiceName` (default `"system"`, set with `.WithServiceName(...)`).
 
 ## DbContext pooling (opt-in, high-throughput services)
 
