@@ -81,7 +81,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching(o => { o.WaitForWarmup = waitForWarmup; });
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = waitForWarmup; });
         extra?.Invoke(services);
         var provider = services.BuildServiceProvider();
         return (provider, provider.GetRequiredService<ICacheService>());
@@ -98,7 +98,7 @@ public sealed class CacheWarmupTests
         var services = new ServiceCollection();
         services.AddLogging();
         // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
 
         // Register in reverse order to confirm sorting takes effect.
         services.AddSingleton<ICacheWarmupStrategy>(
@@ -131,7 +131,7 @@ public sealed class CacheWarmupTests
         var services = new ServiceCollection();
         services.AddLogging();
         // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
 
         services.AddSingleton<ICacheWarmupStrategy>(
             new OrderCapturingStrategy("X", order: 1, executionLog));
@@ -165,7 +165,7 @@ public sealed class CacheWarmupTests
         var services = new ServiceCollection();
         services.AddLogging();
         // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
 
         services.AddSingleton<ICacheWarmupStrategy>(
             new OrderCapturingStrategy("Before", order: 1, executionLog));
@@ -195,7 +195,7 @@ public sealed class CacheWarmupTests
         var services = new ServiceCollection();
         services.AddLogging();
         // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
 
         services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("FailA", order: 1));
         services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("FailB", order: 2));
@@ -228,7 +228,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         builder.AddCacheWarmup<RecordingStrategy_A>();
 
         using var provider = services.BuildServiceProvider();
@@ -243,7 +243,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         builder.AddCacheWarmup<RecordingStrategy_A>();
 
         using var provider = services.BuildServiceProvider();
@@ -257,7 +257,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         builder.AddCacheWarmup<RecordingStrategy_A>();
         builder.AddCacheWarmup<RecordingStrategy_B>();
 
@@ -277,7 +277,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         builder.AddCacheWarmup<RecordingStrategy_A>();
         builder.AddCacheWarmup<RecordingStrategy_A>(); // duplicate
 
@@ -292,7 +292,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         builder.AddCacheWarmup<RecordingStrategy_A>();
         builder.AddCacheWarmup<RecordingStrategy_B>();
 
@@ -312,7 +312,7 @@ public sealed class CacheWarmupTests
         var completedNames = new List<string>();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
 
         services.AddSingleton<ICacheWarmupStrategy>(
             new OrderCapturingStrategy("WarmOne", order: 1, completedNames));
@@ -337,7 +337,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = false);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = false; });
 
         // Use a slow strategy — StartedAsync should return before it finishes when WaitForWarmup=false.
         services.AddSingleton<ICacheWarmupStrategy>(
@@ -374,7 +374,7 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching(o => o.WaitForWarmup = true);
+        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
         services.AddSingleton<IHostedService, CacheWarmupHostedService>();
 
         await using var provider = services.BuildServiceProvider();

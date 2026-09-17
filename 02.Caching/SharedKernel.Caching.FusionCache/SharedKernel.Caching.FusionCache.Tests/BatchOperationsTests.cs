@@ -6,7 +6,7 @@ using Xunit;
 namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="ICacheService.GetManyAsync{T}"/> and
+/// Unit tests for <see cref="ICacheService.TryGetManyAsync{T}"/> and
 /// <see cref="ICacheService.SetManyAsync{T}"/> batch operations.
 /// </summary>
 public sealed class BatchOperationsTests : IDisposable
@@ -18,7 +18,7 @@ public sealed class BatchOperationsTests : IDisposable
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
         _provider = services.BuildServiceProvider();
         _cache = _provider.GetRequiredService<ICacheService>();
     }
@@ -26,31 +26,31 @@ public sealed class BatchOperationsTests : IDisposable
     public void Dispose() => _provider.Dispose();
 
     // -------------------------------------------------------------------------
-    // GetManyAsync — empty input
+    // TryGetManyAsync — empty input
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_EmptyKeyList_ReturnsEmptyDictionary()
+    public async Task TryGetManyAsync_EmptyKeyList_ReturnsEmptyDictionary()
     {
-        var result = await _cache.GetManyAsync<string>([], CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<string>([], CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Empty(result);
     }
 
     [Fact]
-    public async Task GetManyAsync_NullKeys_ThrowsArgumentNullException()
+    public async Task TryGetManyAsync_NullKeys_ThrowsArgumentNullException()
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            _cache.GetManyAsync<string>(null!, CancellationToken.None).AsTask());
+            _cache.TryGetManyAsync<string>(null!, CancellationToken.None).AsTask());
     }
 
     // -------------------------------------------------------------------------
-    // GetManyAsync — all misses
+    // TryGetManyAsync — all misses
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_AllMisses_ReturnsDictionaryWithNullValuesPerKey()
+    public async Task TryGetManyAsync_AllMisses_ReturnsMissPerKey()
     {
         var keys = new[]
         {
@@ -59,23 +59,23 @@ public sealed class BatchOperationsTests : IDisposable
             "batch:miss:3-" + Guid.NewGuid()
         };
 
-        var result = await _cache.GetManyAsync<string>(keys, CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<string>(keys, CancellationToken.None);
 
         // Every key must be present even on miss.
         Assert.Equal(keys.Length, result.Count);
         foreach (var key in keys)
         {
             Assert.True(result.ContainsKey(key));
-            Assert.Null(result[key]);
+            Assert.False(result[key].IsHit);
         }
     }
 
     // -------------------------------------------------------------------------
-    // GetManyAsync — mixed hits and misses
+    // TryGetManyAsync — mixed hits and misses
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_MixedHitsAndMisses_ReturnsCorrectValuesPerKey()
+    public async Task TryGetManyAsync_MixedHitsAndMisses_ReturnsCorrectValuesPerKey()
     {
         var hitKey1 = "batch:hit:1-" + Guid.NewGuid();
         var hitKey2 = "batch:hit:2-" + Guid.NewGuid();
@@ -85,20 +85,20 @@ public sealed class BatchOperationsTests : IDisposable
         await _cache.SetAsync(hitKey2, "beta", CachePolicy.Default);
 
         var keys = new[] { hitKey1, missKey, hitKey2 };
-        var result = await _cache.GetManyAsync<string>(keys, CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<string>(keys, CancellationToken.None);
 
         Assert.Equal(3, result.Count);
-        Assert.Equal("alpha", result[hitKey1]);
-        Assert.Equal("beta", result[hitKey2]);
-        Assert.Null(result[missKey]);
+        Assert.Equal("alpha", result[hitKey1].Value);
+        Assert.Equal("beta", result[hitKey2].Value);
+        Assert.False(result[missKey].IsHit);
     }
 
     // -------------------------------------------------------------------------
-    // SetManyAsync then GetManyAsync — round-trip
+    // SetManyAsync then TryGetManyAsync — round-trip
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task SetManyAsync_ThenGetManyAsync_ReturnsAllStoredValues()
+    public async Task SetManyAsync_ThenTryGetManyAsync_ReturnsAllStoredValues()
     {
         var suffix = Guid.NewGuid().ToString();
         var entries = new Dictionary<string, string>
@@ -110,11 +110,11 @@ public sealed class BatchOperationsTests : IDisposable
 
         await _cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        var result = await _cache.GetManyAsync<string>(entries.Keys, CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<string>(entries.Keys, CancellationToken.None);
 
         Assert.Equal(entries.Count, result.Count);
         foreach (var (key, expectedValue) in entries)
-            Assert.Equal(expectedValue, result[key]);
+            Assert.Equal(expectedValue, result[key].Value);
     }
 
     // -------------------------------------------------------------------------
@@ -155,19 +155,41 @@ public sealed class BatchOperationsTests : IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // GetManyAsync — every input key has a dictionary entry
+    // TryGetManyAsync — every input key has a dictionary entry
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_SingleKey_MissReturnsNullNotMissingEntry()
+    public async Task TryGetManyAsync_SingleKey_MissReturnsMissNotMissingEntry()
     {
         var key = "batch:single-miss-" + Guid.NewGuid();
 
-        var result = await _cache.GetManyAsync<int?>(new[] { key }, CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<int>(new[] { key }, CancellationToken.None);
 
         Assert.Single(result);
         Assert.True(result.ContainsKey(key));
-        Assert.Null(result[key]);
+        Assert.False(result[key].IsHit);
+    }
+
+    [Fact]
+    public async Task TryGetManyAsync_DuplicateKeys_ReturnsOneLookupPerDistinctKey()
+    {
+        var suffix = Guid.NewGuid().ToString();
+        var hitKey = $"batch:distinct:hit-{suffix}";
+        var nullKey = $"batch:distinct:null-{suffix}";
+        var missKey = $"batch:distinct:miss-{suffix}";
+
+        await _cache.SetAsync(hitKey, "value", CachePolicy.Default);
+        await _cache.SetAsync<string?>(nullKey, null, CachePolicy.Default);
+
+        var result = await _cache.TryGetManyAsync<string?>(
+            [hitKey, missKey, hitKey, nullKey, missKey],
+            CancellationToken.None);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal(CacheLookup<string?>.Hit("value"), result[hitKey]);
+        Assert.True(result[nullKey].IsHit);
+        Assert.Null(result[nullKey].Value);
+        Assert.False(result[missKey].IsHit);
     }
 
     // -------------------------------------------------------------------------
@@ -190,21 +212,21 @@ public sealed class BatchOperationsTests : IDisposable
         await _cache.SetManyAsync(entries, policy, CancellationToken.None);
 
         // Verify they exist before tag eviction.
-        var before = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
-        Assert.Equal(1, before[$"batch:tagged:1-{suffix}"]);
-        Assert.Equal(2, before[$"batch:tagged:2-{suffix}"]);
+        var before = await _cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
+        Assert.Equal(1, before[$"batch:tagged:1-{suffix}"].Value);
+        Assert.Equal(2, before[$"batch:tagged:2-{suffix}"].Value);
 
         // Evict by tag.
         await _cache.RemoveByTagAsync(tag);
 
-        var after = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
-        Assert.Null(after[$"batch:tagged:1-{suffix}"]);
-        Assert.Null(after[$"batch:tagged:2-{suffix}"]);
+        var after = await _cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
+        Assert.False(after[$"batch:tagged:1-{suffix}"].IsHit);
+        Assert.False(after[$"batch:tagged:2-{suffix}"].IsHit);
     }
 
     // -------------------------------------------------------------------------
     // BP-05: stampede protection under concurrency — Phase 40 rewrote
-    // GetManyAsync/SetManyAsync to run concurrently via Parallel.ForEachAsync
+    // TryGetManyAsync/SetManyAsync to run concurrently via Parallel.ForEachAsync
     // over a ConcurrentDictionary accumulator. This proves that change
     // introduces no shared mutable state that could interfere with
     // FusionCache's own per-key stampede-protection lock inside GetOrSetAsync.
@@ -236,7 +258,7 @@ public sealed class BatchOperationsTests : IDisposable
         var batchEntries = Enumerable.Range(0, 20)
             .ToDictionary(i => $"batch:interleaved:{i}-{suffix}", i => i);
         var setManyTask = _cache.SetManyAsync(batchEntries, CachePolicy.Default, CancellationToken.None).AsTask();
-        var getManyTask = _cache.GetManyAsync<int?>(batchEntries.Keys, CancellationToken.None).AsTask();
+        var getManyTask = _cache.TryGetManyAsync<int>(batchEntries.Keys, CancellationToken.None).AsTask();
 
         var results = await Task.WhenAll(stampedeTasks);
         await setManyTask;
@@ -256,13 +278,13 @@ public sealed class BatchOperationsTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetManyAsync_EmptyKeyList_UnderBoundedConcurrency_StillShortCircuitsToEmptyDictionary()
+    public async Task TryGetManyAsync_EmptyKeyList_UnderBoundedConcurrency_StillShortCircuitsToEmptyDictionary()
     {
         // Phase 22 contract: an empty input enumerable returns an empty dictionary.
         // Phase 40 rewrote the loop body to Parallel.ForEachAsync over an empty
         // source, which completes immediately with zero scheduled iterations —
         // confirm this explicitly rather than relying on incidental behavior.
-        var result = await _cache.GetManyAsync<string>(Array.Empty<string>(), CancellationToken.None);
+        var result = await _cache.TryGetManyAsync<string>(Array.Empty<string>(), CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Empty(result);
@@ -288,14 +310,14 @@ public sealed class BatchOperationsTests : IDisposable
 
         await _cache.SetManyAsync(entries, policy, CancellationToken.None);
 
-        var before = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        var before = await _cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
         foreach (var (key, value) in entries)
-            Assert.Equal(value, before[key]);
+            Assert.Equal(value, before[key].Value);
 
         await _cache.RemoveByTagAsync(tag);
 
-        var after = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        var after = await _cache.TryGetManyAsync<int>(entries.Keys, CancellationToken.None);
         foreach (var key in entries.Keys)
-            Assert.Null(after[key]);
+            Assert.False(after[key].IsHit);
     }
 }

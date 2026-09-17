@@ -4,6 +4,7 @@ using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.FusionCache.Serialization;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests;
@@ -51,45 +52,40 @@ public sealed class SerializerContextTests
     [Fact]
     public void AddSharedKernelCaching_WithSerializerContext_CombinedResolverContainsApplicationType()
     {
-        // Verify that a JsonTypeInfoResolver.Combine of the provided context and
-        // CacheInvalidationMessageJsonContext.Default can resolve the application's type.
-        // This directly validates the rule: when SerializerContext is set, the combined
-        // resolver must resolve both the app type and the infrastructure type.
+        // AddSharedKernelCaching combines the service's context with EncryptedCacheEntryJsonContext,
+        // so the resolver must resolve both the application's type and the encrypted-entry type.
         var combined = JsonTypeInfoResolver.Combine(
             WireTestSerializerContext.Default,
-            CacheInvalidationMessageJsonContext.Default);
+            EncryptedCacheEntryJsonContext.Default);
 
         var appTypeInfo = combined.GetTypeInfo(typeof(WireTestDto), new JsonSerializerOptions());
-        var infraTypeInfo = combined.GetTypeInfo(typeof(CacheInvalidationMessage), new JsonSerializerOptions());
+        var infraTypeInfo = combined.GetTypeInfo(typeof(byte[]), new JsonSerializerOptions());
 
         Assert.NotNull(appTypeInfo);
         Assert.NotNull(infraTypeInfo);
     }
 
     [Fact]
-    public void AddSharedKernelCaching_WithSerializerContext_CanRoundTripThroughCachingOptions()
+    public void AddSharedKernelCaching_WithSerializerContext_RegisteredOptionsRoundTripBothTypes()
     {
-        // End-to-end validation: when SerializerContext is provided, the same context
-        // (combined with CacheInvalidationMessageJsonContext.Default) that AddSharedKernelCaching
-        // would pass to WithSystemTextJsonSerializer must handle both types without reflection.
-        var appContext = WireTestSerializerContext.Default;
-        var infraContext = CacheInvalidationMessageJsonContext.Default;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o =>
+        {
+            o.ServiceName = "test-svc";
+            o.SerializerContext = WireTestSerializerContext.Default;
+        });
 
-        var combined = JsonTypeInfoResolver.Combine(appContext, infraContext);
-        var jsonOptions = new JsonSerializerOptions { TypeInfoResolver = combined };
+        using var provider = services.BuildServiceProvider();
+        var jsonOptions = provider.GetRequiredService<CacheSerializationOptions>().Value;
 
-        // App type round-trip
         var dto = new WireTestDto("hello", 99);
         var dtoJson = JsonSerializer.Serialize(dto, jsonOptions);
-        var dtoResult = JsonSerializer.Deserialize<WireTestDto>(dtoJson, jsonOptions);
-        Assert.Equal(dto, dtoResult);
+        Assert.Equal(dto, JsonSerializer.Deserialize<WireTestDto>(dtoJson, jsonOptions));
 
-        // Infrastructure type round-trip
-        var msg = new CacheInvalidationMessage("svc", CacheInvalidationType.Key, ["k1"], null);
-        var msgJson = JsonSerializer.Serialize(msg, jsonOptions);
-        var msgResult = JsonSerializer.Deserialize<CacheInvalidationMessage>(msgJson, jsonOptions);
-        Assert.NotNull(msgResult);
-        Assert.Equal("svc", msgResult.SourceService);
+        byte[] entry = [1, 2, 3, 255];
+        var entryJson = JsonSerializer.Serialize(entry, jsonOptions);
+        Assert.Equal(entry, JsonSerializer.Deserialize<byte[]>(entryJson, jsonOptions));
     }
 
     // -------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using Xunit;
@@ -7,21 +9,16 @@ namespace SharedKernel.Caching.FusionCache.Tests.DI;
 
 /// <summary>
 /// Verifies that <see cref="CachingServiceCollectionExtensions.AddSharedKernelCaching"/>
-/// registers all required services correctly.
+/// registers all required services correctly and validates <see cref="CachingOptions"/>.
 /// </summary>
 public sealed class CachingDiRegistrationTests
 {
     [Fact]
     public void AddSharedKernelCaching_RegistersICacheService()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching();
+        using var provider = BuildProvider(o => o.ServiceName = "test-svc");
 
-        using var provider = services.BuildServiceProvider();
-        var cacheService = provider.GetService<ICacheService>();
-
-        Assert.NotNull(cacheService);
+        Assert.NotNull(provider.GetService<ICacheService>());
     }
 
     [Fact]
@@ -30,42 +27,36 @@ public sealed class CachingDiRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        var builder = services.AddSharedKernelCaching();
+        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
 
         Assert.NotNull(builder);
         Assert.IsAssignableFrom<ICachingBuilder>(builder);
+        Assert.Same(services, builder.Services);
     }
 
     [Fact]
     public void AddSharedKernelCaching_WithCustomOptions_AppliesOptions()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o =>
+        using var provider = BuildProvider(o =>
         {
+            o.ServiceName = "test-svc";
             o.L1SizeLimit = 500;
             o.CacheName = "test-cache";
         });
 
-        // Should build without throwing — ValidateOnStart will catch misconfiguration.
-        using var provider = services.BuildServiceProvider();
-        var cacheService = provider.GetService<ICacheService>();
+        var options = provider.GetRequiredService<IOptions<CachingOptions>>().Value;
 
-        Assert.NotNull(cacheService);
+        Assert.Equal(500, options.L1SizeLimit);
+        Assert.Equal("test-cache", options.CacheName);
+        Assert.NotNull(provider.GetService<ICacheService>());
     }
 
     [Fact]
     public void AddSharedKernelCaching_ICacheService_IsSingleton()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching();
+        using var provider = BuildProvider(o => o.ServiceName = "test-svc");
 
-        using var provider = services.BuildServiceProvider();
-        var first = provider.GetRequiredService<ICacheService>();
-        var second = provider.GetRequiredService<ICacheService>();
-
-        Assert.Same(first, second);
+        Assert.Same(provider.GetRequiredService<ICacheService>(), provider.GetRequiredService<ICacheService>());
     }
 
     [Fact]
@@ -73,13 +64,83 @@ public sealed class CachingDiRegistrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelCaching();
-        services.AddSharedKernelCaching(); // idempotent via TryAdd
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc"); // idempotent via TryAdd
 
-        using var provider = services.BuildServiceProvider();
+        Assert.Single(services, d => d.ServiceType == typeof(ICacheService));
+        Assert.Single(services, d => d.ServiceType == typeof(ICacheKeyProvider));
+        Assert.Single(services, d => d.ServiceType == typeof(ITenantCacheKeyProvider));
+    }
 
-        // Should be exactly one ICacheService registration.
-        var registrations = services.Where(d => d.ServiceType == typeof(ICacheService)).ToList();
-        Assert.Single(registrations);
+    // -------------------------------------------------------------------------
+    // CachingOptions.ServiceName validation
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ServiceName_NotConfigured_FailsOnOptionsResolution()
+    {
+        using var provider = BuildProvider(configure: null);
+
+        var ex = Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IOptions<CachingOptions>>().Value);
+
+        Assert.Contains("ServiceName", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("Order-Service")]
+    [InlineData("order service")]
+    [InlineData("order:svc")]
+    [InlineData("-order")]
+    public void ServiceName_Invalid_FailsStartupValidation(string serviceName)
+    {
+        using var provider = BuildProvider(o => o.ServiceName = serviceName);
+
+        var ex = Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains("ServiceName", ex.Message);
+    }
+
+    [Fact]
+    public void ServiceName_Invalid_KeyProviderResolutionFails()
+    {
+        using var provider = BuildProvider(o => o.ServiceName = "Not Valid");
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<ICacheKeyProvider>());
+    }
+
+    [Fact]
+    public async Task ServiceName_Invalid_HostStartFails()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSharedKernelCaching(o => o.ServiceName = "");
+
+        using var host = builder.Build();
+
+        await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+    }
+
+    [Theory]
+    [InlineData("order-svc")]
+    [InlineData("orders.api_v2")]
+    [InlineData("9lives")]
+    public void ServiceName_Valid_PassesStartupValidation(string serviceName)
+    {
+        using var provider = BuildProvider(o => o.ServiceName = serviceName);
+
+        provider.GetRequiredService<IStartupValidator>().Validate();
+
+        Assert.Equal(serviceName, provider.GetRequiredService<IOptions<CachingOptions>>().Value.ServiceName);
+    }
+
+    private static ServiceProvider BuildProvider(Action<CachingOptions>? configure)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(configure);
+        return services.BuildServiceProvider();
     }
 }

@@ -93,32 +93,32 @@ public sealed class OtelMetricsTests : IDisposable
         using var listener = BuildListener(out var counters, out _);
 
         // This should be a hit — value is already in cache
-        var result = await _cache.GetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(key);
 
         listener.RecordObservableInstruments();
 
-        Assert.Equal("value", result);
+        Assert.Equal("value", result.Value);
         var hitsObserved = await WaitForCounterAsync(counters, "cache.hits", 1, listener);
         Assert.True(hitsObserved >= 1,
             $"Expected cache.hits >= 1 but got {hitsObserved}");
     }
 
     // -------------------------------------------------------------------------
-    // OM-03: cache.misses — increments on GetAsync returning null
+    // OM-03: cache.misses — increments on a TryGetAsync miss
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CacheMisses_IncrementOnGetAsync_UnknownKey()
+    public async Task CacheMisses_IncrementOnTryGetAsync_UnknownKey()
     {
         var key = "svc:entity:miss-test-" + Guid.NewGuid();
 
         using var listener = BuildListener(out var counters, out _);
 
-        var result = await _cache.GetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(key);
 
         listener.RecordObservableInstruments();
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
         var missesObserved = await WaitForCounterAsync(counters, "cache.misses", 1, listener);
         Assert.True(missesObserved >= 1,
             $"Expected cache.misses >= 1 but got {missesObserved}");
@@ -297,7 +297,7 @@ public sealed class OtelMetricsTests : IDisposable
 
         // Trigger metric recording so instruments are published
         var key = "svc:entity:instrument-test-" + Guid.NewGuid();
-        await _cache.GetAsync<string>(key); // miss — triggers cache.misses
+        await _cache.TryGetAsync<string>(key); // miss — triggers cache.misses
 
         listener.RecordObservableInstruments();
 

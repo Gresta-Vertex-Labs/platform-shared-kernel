@@ -154,9 +154,9 @@ public sealed class AotSerializerRegressionTests
             typeof(AotRegressionDto), jsonOpts);
         Assert.NotNull(appTypeInfo);
 
-        // The combined resolver must also resolve the infrastructure type (CacheInvalidationMessage).
+        // The combined resolver must also resolve the encrypted cache entry type (byte[]).
         var infraTypeInfo = jsonOpts.TypeInfoResolver.GetTypeInfo(
-            typeof(CacheInvalidationMessage), jsonOpts);
+            typeof(byte[]), jsonOpts);
         Assert.NotNull(infraTypeInfo);
     }
 
@@ -170,7 +170,7 @@ public sealed class AotSerializerRegressionTests
     {
         // Set up combined options with a real SerializerContext.
         var ctx = AotRegressionSerializerContext.Default;
-        var combined = JsonTypeInfoResolver.Combine(ctx, CacheInvalidationMessageJsonContext.Default);
+        var combined = JsonTypeInfoResolver.Combine(ctx, EncryptedCacheEntryJsonContext.Default);
         var originalOpts = new JsonSerializerOptions { TypeInfoResolver = combined };
 
         // Simulate what the OLD broken code did: overwrite with a default reflection serializer.
@@ -229,9 +229,9 @@ public sealed class AotSerializerRegressionTests
             typeof(AotRegressionDto), jsonOpts);
         Assert.NotNull(appTypeInfo);
 
-        // And the infrastructure context.
+        // And the encrypted cache entry context.
         var infraTypeInfo = jsonOpts.TypeInfoResolver.GetTypeInfo(
-            typeof(CacheInvalidationMessage), jsonOpts);
+            typeof(byte[]), jsonOpts);
         Assert.NotNull(infraTypeInfo);
     }
 

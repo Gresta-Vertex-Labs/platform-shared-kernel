@@ -10,7 +10,7 @@ namespace SharedKernel.Caching.FusionCache.Tests;
 ///
 /// Verifies that when <c>L1SizeLimit</c> is set to N, the in-process MemoryCache evicts
 /// entries once the limit is exceeded, and that a lookup for an evicted entry returns
-/// <see langword="null"/> (or the new value, depending on eviction order).
+/// a miss.
 /// </summary>
 public sealed class L1SizeLimitTests
 {
@@ -52,8 +52,8 @@ public sealed class L1SizeLimitTests
         var liveCount = 0;
         for (var i = 0; i <= limit; i++)
         {
-            var result = await cache.GetAsync<string>($"size-test:entry:{i}");
-            if (result is not null)
+            var result = await cache.TryGetAsync<string>($"size-test:entry:{i}");
+            if (result.IsHit)
                 liveCount++;
         }
 
@@ -90,8 +90,8 @@ public sealed class L1SizeLimitTests
         // All entries must be retrievable when exactly at the limit.
         for (var i = 0; i < limit; i++)
         {
-            var result = await cache.GetAsync<string>($"exact:entry:{i}");
-            Assert.NotNull(result);
+            var result = await cache.TryGetAsync<string>($"exact:entry:{i}");
+            Assert.True(result.IsHit);
         }
     }
 

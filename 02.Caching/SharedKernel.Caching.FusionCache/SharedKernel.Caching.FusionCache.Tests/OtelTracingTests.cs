@@ -81,41 +81,41 @@ public sealed class OtelTracingTests : IDisposable
             (string?)a.GetTagItem("cache.outcome") == outcome);
 
     // -------------------------------------------------------------------------
-    // OT-02: GetAsync hit — span "cache.get", ActivityKind.Client, outcome "hit"
+    // OT-02: TryGetAsync hit — span "cache.get", ActivityKind.Client, outcome "hit"
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetAsync_Hit_ProducesSpanWithHitOutcome()
+    public async Task TryGetAsync_Hit_ProducesSpanWithHitOutcome()
     {
-        const string key = "svc:entity:get-hit-" + nameof(GetAsync_Hit_ProducesSpanWithHitOutcome);
+        const string key = "svc:entity:get-hit-" + nameof(TryGetAsync_Hit_ProducesSpanWithHitOutcome);
 
         // Populate the cache first, outside the listener's capture window.
         await _cache.SetAsync(key, "value", CachePolicy.Default);
 
         using var listener = BuildListener(out var activities);
 
-        var result = await _cache.GetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(key);
 
-        Assert.Equal("value", result);
+        Assert.Equal("value", result.Value);
         Assert.True(
             HasMatchingSpan(activities, "cache.get", ActivityKind.Client, "svc:entity", "hit"),
             "Expected a cache.get span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=hit.");
     }
 
     // -------------------------------------------------------------------------
-    // OT-02: GetAsync miss — span "cache.get", ActivityKind.Client, outcome "miss"
+    // OT-02: TryGetAsync miss — span "cache.get", ActivityKind.Client, outcome "miss"
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetAsync_Miss_ProducesSpanWithMissOutcome()
+    public async Task TryGetAsync_Miss_ProducesSpanWithMissOutcome()
     {
         var key = "svc:entity:get-miss-" + Guid.NewGuid();
 
         using var listener = BuildListener(out var activities);
 
-        var result = await _cache.GetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(key);
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
         Assert.True(
             HasMatchingSpan(activities, "cache.get", ActivityKind.Client, "svc:entity", "miss"),
             "Expected a cache.get span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=miss.");

@@ -53,50 +53,63 @@ internal sealed class AsyncOnlyEncryptionKeyProvider : IEncryptionKeyProvider
 /// A minimal, dictionary-backed <see cref="ICacheService"/> double giving tests direct control over
 /// (and visibility into) exactly what <see cref="EncryptedCacheService"/> stores/reads at the inner
 /// layer — e.g. moving a raw stored entry (an <see cref="EncryptedPayload"/> in its storage format)
-/// from one key to another to simulate a replay (AA-07), or inspecting stored length (AA-09).
+/// from one key to another to simulate a replay, or inspecting stored length. Counts the calls the
+/// decorator makes so eviction/recompute paths can be asserted.
 /// </summary>
 internal sealed class InMemoryDictionaryCacheService : ICacheService
 {
-    private readonly Dictionary<string, object?> _store = new();
+    private readonly Dictionary<string, object?> _store = new(StringComparer.Ordinal);
 
-    public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default) =>
-        new(_store.TryGetValue(key, out var value) ? (T?)value : default);
+    public int GetOrSetCalls { get; private set; }
+
+    public int FactoryCalls { get; private set; }
+
+    public int RemoveCalls { get; private set; }
+
+    public ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default) =>
+        new(_store.TryGetValue(key, out var value) ? CacheLookup<T>.Hit((T)value!) : CacheLookup<T>.Miss);
+
+    public async ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
+        IEnumerable<string> keys,
+        CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, CacheLookup<T>>(StringComparer.Ordinal);
+        foreach (var key in keys)
+            result[key] = await TryGetAsync<T>(key, ct);
+
+        return result;
+    }
+
+    public ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default) =>
+        GetOrSetAsync(key, (_, token) => factory(token), policy, ct);
+
+    public async ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default)
+    {
+        GetOrSetCalls++;
+        if (_store.TryGetValue(key, out var existing))
+            return (T)existing!;
+
+        FactoryCalls++;
+        var context = new CacheFactoryContext(key, policy);
+        T value = await factory(context, ct).ConfigureAwait(false);
+        if (!context.IsCachingSkipped)
+            _store[key] = value;
+
+        return value;
+    }
 
     public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
     {
         _store[key] = value;
         return ValueTask.CompletedTask;
-    }
-
-    public async ValueTask<T> GetOrSetAsync<T>(
-        string key,
-        Func<CancellationToken, ValueTask<T>> factory,
-        CachePolicy policy,
-        CancellationToken ct = default)
-    {
-        if (_store.TryGetValue(key, out var existing))
-            return (T)existing!;
-
-        T value = await factory(ct).ConfigureAwait(false);
-        _store[key] = value;
-        return value;
-    }
-
-    public ValueTask RemoveAsync(string key, CancellationToken ct = default)
-    {
-        _store.Remove(key);
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) => ValueTask.CompletedTask;
-
-    public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct = default)
-    {
-        var result = new Dictionary<string, T?>();
-        foreach (var key in keys)
-            result[key] = _store.TryGetValue(key, out var value) ? (T?)value : default;
-
-        return new ValueTask<IReadOnlyDictionary<string, T?>>(result);
     }
 
     public ValueTask SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct = default)
@@ -106,54 +119,87 @@ internal sealed class InMemoryDictionaryCacheService : ICacheService
 
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask RemoveAsync(string key, CancellationToken ct = default)
+    {
+        RemoveCalls++;
+        _store.Remove(key);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ExpireAsync(string key, CancellationToken ct = default) => RemoveAsync(key, ct);
+
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default) => ValueTask.CompletedTask;
+
+    public ValueTask ClearAsync(CancellationToken ct = default)
+    {
+        _store.Clear();
+        return ValueTask.CompletedTask;
+    }
 }
 
 /// <summary>
 /// A bespoke <see cref="ICacheService"/> double that captures the <c>byte[]</c>-typed
-/// factory <see cref="EncryptedCacheService.GetOrSetAsync{T}"/> passes down to
-/// <see cref="GetOrSetAsync{T}"/>, so AA-08's eager-refresh proof can re-invoke that exact closure
-/// from an unrelated execution context afterwards. Every other member is unused by that test and
-/// throws if called.
+/// factory <see cref="EncryptedCacheService"/> passes down to the inner <c>GetOrSetAsync</c>, so
+/// the eager-refresh proof can re-invoke that exact closure from an unrelated execution context
+/// afterwards. Every other member is unused by that test and throws if called.
 /// </summary>
 internal sealed class FactoryCapturingCacheService : ICacheService
 {
-    public Func<CancellationToken, ValueTask<byte[]>>? CapturedFactory { get; private set; }
+    public Func<CacheFactoryContext, CancellationToken, ValueTask<byte[]>>? CapturedFactory { get; private set; }
+
+    public ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default)
+    {
+        if (typeof(T) == typeof(byte[]))
+            CapturedFactory = (Func<CacheFactoryContext, CancellationToken, ValueTask<byte[]>>)(object)factory;
+
+        return factory(new CacheFactoryContext(key, policy), ct);
+    }
 
     public ValueTask<T> GetOrSetAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T>> factory,
         CachePolicy policy,
-        CancellationToken ct = default)
-    {
-        if (typeof(T) == typeof(byte[]))
-            CapturedFactory = (Func<CancellationToken, ValueTask<byte[]>>)(object)factory;
+        CancellationToken ct = default) =>
+        throw new NotSupportedException("Not used by this test.");
 
-        return factory(ct);
-    }
+    public ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default) =>
+        throw new NotSupportedException("Not used by this test.");
 
-    public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default) =>
+    public ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 
     public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 
+    public ValueTask SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct = default) =>
+        throw new NotSupportedException("Not used by this test.");
+
     public ValueTask RemoveAsync(string key, CancellationToken ct = default) =>
+        throw new NotSupportedException("Not used by this test.");
+
+    public ValueTask ExpireAsync(string key, CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 
     public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 
-    public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct = default) =>
+    public ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 
-    public ValueTask SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct = default) =>
+    public ValueTask ClearAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("Not used by this test.");
 }
 
 /// <summary>
-/// Unit tests for <see cref="EncryptedCacheService"/> (Phase 46/WO-081) — key-bound AAD, asynchronous
-/// crypto, compression composition, tamper/decrypt-failure handling, and
-/// <c>AddCacheEncryption()</c> DI wiring.
+/// Unit tests for <see cref="EncryptedCacheService"/> — key-bound AAD, asynchronous crypto,
+/// compression composition, tamper/decrypt-failure handling, and <c>AddCacheEncryption()</c> DI wiring.
 /// </summary>
 public sealed class EncryptedCacheServiceTests
 {
@@ -166,30 +212,50 @@ public sealed class EncryptedCacheServiceTests
         bool compressionEnabled = false) =>
         new(inner, encryption, new JsonSerializerOptions(), compressionEnabled, NullLogger<EncryptedCacheService>.Instance);
 
+    private static async Task<byte[]> StoredBytesAsync(ICacheService inner, string key) =>
+        (await inner.TryGetAsync<byte[]>(key)).Value;
+
     // -------------------------------------------------------------------------
     // Round trip
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task SetAsync_ThenGetAsync_RoundTripsCorrectly()
+    public async Task SetAsync_ThenTryGetAsync_RoundTripsCorrectly()
     {
         var sut = CreateSut(new InMemoryDictionaryCacheService(), CreateRealEncryptionService());
         var original = new EncryptedCacheServiceTestPayload("secret-value", 42);
 
         await sut.SetAsync("key-1", original, CachePolicy.Default);
-        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("key-1");
+        var result = await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("key-1");
 
-        Assert.Equal(original, result);
+        Assert.Equal(original, result.Value);
     }
 
     [Fact]
-    public async Task GetAsync_UnknownKey_ReturnsDefault()
+    public async Task TryGetAsync_UnknownKey_IsMiss()
     {
         var sut = CreateSut(new InMemoryDictionaryCacheService(), CreateRealEncryptionService());
 
-        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("unknown-key");
+        var result = await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("unknown-key");
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
+    }
+
+    [Fact]
+    public async Task SetAsync_NullAndZero_RoundTripAsHits()
+    {
+        var sut = CreateSut(new InMemoryDictionaryCacheService(), CreateRealEncryptionService());
+
+        await sut.SetAsync<string?>("null-key", null, CachePolicy.Default);
+        await sut.SetAsync("zero-key", 0, CachePolicy.Default);
+
+        var cachedNull = await sut.TryGetAsync<string?>("null-key");
+        var cachedZero = await sut.TryGetAsync<int>("zero-key");
+
+        Assert.True(cachedNull.IsHit);
+        Assert.Null(cachedNull.Value);
+        Assert.True(cachedZero.IsHit);
+        Assert.Equal(0, cachedZero.Value);
     }
 
     [Fact]
@@ -198,31 +264,38 @@ public sealed class EncryptedCacheServiceTests
         var sut = CreateSut(new InMemoryDictionaryCacheService(), CreateRealEncryptionService());
         var calls = 0;
 
-        var result = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
-            "gos-1",
-            async _ =>
-            {
-                calls++;
-                await Task.Yield();
-                return new EncryptedCacheServiceTestPayload("computed", 7);
-            },
-            CachePolicy.Default);
+        async ValueTask<EncryptedCacheServiceTestPayload> Factory(CancellationToken _)
+        {
+            calls++;
+            await Task.Yield();
+            return new EncryptedCacheServiceTestPayload("computed", 7);
+        }
 
-        Assert.Equal("computed", result.Value);
-        Assert.Equal(1, calls);
+        var first = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>("gos-1", Factory, CachePolicy.Default);
+        var second = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>("gos-1", Factory, CachePolicy.Default);
 
-        var second = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
-            "gos-1",
-            async _ =>
-            {
-                calls++;
-                await Task.Yield();
-                return new EncryptedCacheServiceTestPayload("computed", 7);
-            },
-            CachePolicy.Default);
-
+        Assert.Equal("computed", first.Value);
         Assert.Equal("computed", second.Value);
         Assert.Equal(1, calls); // second call is a cache hit — factory not invoked again.
+    }
+
+    [Fact]
+    public async Task GetOrSetAsync_ContextFactory_SkipCaching_PassesThroughToInner()
+    {
+        var inner = new InMemoryDictionaryCacheService();
+        var sut = CreateSut(inner, CreateRealEncryptionService());
+
+        var result = await sut.GetOrSetAsync<string>(
+            "skip-key",
+            (context, _) =>
+            {
+                context.SkipCaching();
+                return ValueTask.FromResult("uncached");
+            },
+            CachePolicy.Default);
+
+        Assert.Equal("uncached", result);
+        Assert.False((await inner.TryGetAsync<byte[]>("skip-key")).IsHit);
     }
 
     [Fact]
@@ -233,15 +306,15 @@ public sealed class EncryptedCacheServiceTests
 
         await sut.RemoveAsync("rm-1");
 
-        Assert.Null(await sut.GetAsync<EncryptedCacheServiceTestPayload>("rm-1"));
+        Assert.False((await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("rm-1")).IsHit);
     }
 
     // -------------------------------------------------------------------------
-    // AA-07 — headline test: cross-key replay fails authentication
+    // Cross-key replay fails authentication
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetAsync_PayloadReplayedUnderDifferentKey_FailsAuthentication_TreatedAsCacheMiss()
+    public async Task TryGetAsync_PayloadReplayedUnderDifferentKey_FailsAuthentication_TreatedAsCacheMiss()
     {
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
@@ -249,35 +322,33 @@ public sealed class EncryptedCacheServiceTests
         await sut.SetAsync("key-a", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
 
         // Take the raw stored entry written under key-a's AAD and place it, byte-for-byte,
-        // under a different key — simulating a replay/corruption where the ciphertext itself is
-        // untouched but the key it's read back under has changed.
-        var storedUnderA = await inner.GetAsync<byte[]>("key-a");
-        await inner.SetAsync("key-b", storedUnderA, CachePolicy.Default);
+        // under a different key — the ciphertext itself is untouched but the key it's read back
+        // under has changed.
+        await inner.SetAsync("key-b", await StoredBytesAsync(inner, "key-a"), CachePolicy.Default);
 
-        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("key-b");
+        var result = await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("key-b");
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
     }
 
     [Fact]
-    public async Task GetAsync_PayloadReplayedUnderDifferentKey_EvictsTheCorruptEntry()
+    public async Task TryGetAsync_PayloadReplayedUnderDifferentKey_EvictsTheCorruptEntry()
     {
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
 
         await sut.SetAsync("key-a", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
-        var storedUnderA = await inner.GetAsync<byte[]>("key-a");
-        await inner.SetAsync("key-b", storedUnderA, CachePolicy.Default);
+        await inner.SetAsync("key-b", await StoredBytesAsync(inner, "key-a"), CachePolicy.Default);
 
-        await sut.GetAsync<EncryptedCacheServiceTestPayload>("key-b");
+        await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("key-b");
 
-        // Best-effort eviction (AA-06) — the corrupt entry must no longer be present at the inner
-        // layer, so it does not fail identically again on a subsequent read.
-        Assert.Null(await inner.GetAsync<byte[]>("key-b"));
+        // Best-effort eviction — the corrupt entry must no longer be present at the inner layer,
+        // so it does not fail identically again on a subsequent read.
+        Assert.False((await inner.TryGetAsync<byte[]>("key-b")).IsHit);
     }
 
     [Fact]
-    public async Task GetAsync_TamperedCiphertext_TreatedAsCacheMiss()
+    public async Task TryGetAsync_TamperedCiphertext_TreatedAsCacheMiss()
     {
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
@@ -285,17 +356,17 @@ public sealed class EncryptedCacheServiceTests
         await sut.SetAsync("tamper-key", new EncryptedCacheServiceTestPayload("secret", 1), CachePolicy.Default);
 
         // The ciphertext is the tail of the storage format — flip its last byte.
-        var tampered = (byte[])(await inner.GetAsync<byte[]>("tamper-key"))!.Clone();
+        var tampered = (byte[])(await StoredBytesAsync(inner, "tamper-key")).Clone();
         tampered[^1] ^= 0xFF;
         await inner.SetAsync("tamper-key", tampered, CachePolicy.Default);
 
-        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("tamper-key");
+        var result = await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("tamper-key");
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
     }
 
     [Fact]
-    public async Task GetAsync_StoredValueIsNotAnEncryptedPayload_TreatedAsCacheMiss_AndEvicted()
+    public async Task TryGetAsync_StoredValueIsNotAnEncryptedPayload_TreatedAsCacheMiss_AndEvicted()
     {
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
@@ -303,10 +374,10 @@ public sealed class EncryptedCacheServiceTests
         // Bytes that never went through EncryptedCacheService, e.g. written by a service without encryption.
         await inner.SetAsync("plain-key", "{\"Value\":\"x\",\"Number\":1}"u8.ToArray(), CachePolicy.Default);
 
-        var result = await sut.GetAsync<EncryptedCacheServiceTestPayload>("plain-key");
+        var result = await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("plain-key");
 
-        Assert.Null(result);
-        Assert.Null(await inner.GetAsync<byte[]>("plain-key"));
+        Assert.False(result.IsHit);
+        Assert.False((await inner.TryGetAsync<byte[]>("plain-key")).IsHit);
     }
 
     [Fact]
@@ -318,7 +389,7 @@ public sealed class EncryptedCacheServiceTests
 
         await sut.SetAsync("format-key", new EncryptedCacheServiceTestPayload("v", 1), CachePolicy.Default);
 
-        byte[]? stored = await inner.GetAsync<byte[]>("format-key");
+        byte[] stored = await StoredBytesAsync(inner, "format-key");
         Assert.True(EncryptedPayload.TryParse(stored, out EncryptedPayload? payload));
         Assert.Equal("cache-v7", payload.KeyId);
 
@@ -327,27 +398,94 @@ public sealed class EncryptedCacheServiceTests
     }
 
     [Fact]
-    public async Task GetManyAsync_MapsDecryptFailureAndAbsentKey_ToNull_ValidKeyStillDecrypts()
+    public async Task TryGetManyAsync_MapsDecryptFailureAndAbsentKey_ToMiss_ValidKeyStillDecrypts()
     {
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
 
         await sut.SetAsync("valid-key", new EncryptedCacheServiceTestPayload("ok", 1), CachePolicy.Default);
         await sut.SetAsync("replay-source", new EncryptedCacheServiceTestPayload("secret", 2), CachePolicy.Default);
-        var storedForReplaySource = await inner.GetAsync<byte[]>("replay-source");
-        await inner.SetAsync("replayed-key", storedForReplaySource, CachePolicy.Default);
+        await inner.SetAsync("replayed-key", await StoredBytesAsync(inner, "replay-source"), CachePolicy.Default);
 
-        var results = await sut.GetManyAsync<EncryptedCacheServiceTestPayload>(
+        var results = await sut.TryGetManyAsync<EncryptedCacheServiceTestPayload>(
             new[] { "valid-key", "replayed-key", "missing-key" });
 
-        Assert.Equal("ok", results["valid-key"]!.Value);
-        Assert.Null(results["replayed-key"]);
-        Assert.Null(results["missing-key"]);
         Assert.Equal(3, results.Count);
+        Assert.Equal("ok", results["valid-key"].Value.Value);
+        Assert.False(results["replayed-key"].IsHit);
+        Assert.False(results["missing-key"].IsHit);
     }
 
     // -------------------------------------------------------------------------
-    // AA-08 — every member works against a key provider that only completes asynchronously
+    // Corrupted entry in GetOrSetAsync: evict and recompute through the inner service
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetOrSetAsync_CorruptedStoredEntry_EvictsAndRecomputesOnceThroughInner_ReturningFreshValue()
+    {
+        var inner = new InMemoryDictionaryCacheService();
+        var encryption = CreateRealEncryptionService();
+        var sut = CreateSut(inner, encryption);
+
+        await sut.SetAsync("corrupt-key", new EncryptedCacheServiceTestPayload("stale", 1), CachePolicy.Default);
+        var corrupted = (byte[])(await StoredBytesAsync(inner, "corrupt-key")).Clone();
+        corrupted[^1] ^= 0xFF;
+        await inner.SetAsync("corrupt-key", corrupted, CachePolicy.Default);
+
+        var factoryCalls = 0;
+        var result = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
+            "corrupt-key",
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult(new EncryptedCacheServiceTestPayload("fresh", 2));
+            },
+            CachePolicy.Default);
+
+        Assert.Equal(new EncryptedCacheServiceTestPayload("fresh", 2), result);
+        Assert.Equal(1, factoryCalls);
+        Assert.Equal(1, inner.RemoveCalls);
+        Assert.Equal(2, inner.GetOrSetCalls);  // the corrupt hit, then one recompute
+        Assert.Equal(1, inner.FactoryCalls);   // the recompute ran through the inner service's factory path
+
+        // The recomputed entry is now stored encrypted and readable, so the next call is a plain hit.
+        Assert.Equal("fresh", (await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("corrupt-key")).Value.Value);
+        var again = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
+            "corrupt-key",
+            _ => throw new InvalidOperationException("must not recompute"),
+            CachePolicy.Default);
+        Assert.Equal("fresh", again.Value);
+    }
+
+    [Fact]
+    public async Task GetOrSetAsync_CorruptedEntry_WithRealFusionCache_RecomputesOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = "corrupt-test");
+        using var provider = services.BuildServiceProvider();
+        var inner = provider.GetRequiredService<ICacheService>();
+        var sut = CreateSut(inner, CreateRealEncryptionService());
+
+        await inner.SetAsync("svc:entity:corrupt", "not an encrypted payload"u8.ToArray(), CachePolicy.Default);
+
+        var factoryCalls = 0;
+        var result = await sut.GetOrSetAsync<string>(
+            "svc:entity:corrupt",
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult("fresh");
+            },
+            CachePolicy.Default);
+
+        Assert.Equal("fresh", result);
+        Assert.Equal(1, factoryCalls);
+        Assert.Equal("fresh", (await sut.TryGetAsync<string>("svc:entity:corrupt")).Value);
+    }
+
+    // -------------------------------------------------------------------------
+    // Every member works against a key provider that only completes asynchronously
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -357,12 +495,11 @@ public sealed class EncryptedCacheServiceTests
         var sut = CreateSut(new InMemoryDictionaryCacheService(), encryption, compressionEnabled: true);
 
         await sut.SetAsync("k1", new EncryptedCacheServiceTestPayload("v1", 1), CachePolicy.Default);
-        var got = await sut.GetAsync<EncryptedCacheServiceTestPayload>("k1");
-        Assert.Equal("v1", got!.Value);
+        Assert.Equal("v1", (await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k1")).Value.Value);
 
-        var many = await sut.GetManyAsync<EncryptedCacheServiceTestPayload>(new[] { "k1", "missing" });
-        Assert.Equal("v1", many["k1"]!.Value);
-        Assert.Null(many["missing"]);
+        var many = await sut.TryGetManyAsync<EncryptedCacheServiceTestPayload>(new[] { "k1", "missing" });
+        Assert.Equal("v1", many["k1"].Value.Value);
+        Assert.False(many["missing"].IsHit);
 
         await sut.SetManyAsync(
             new Dictionary<string, EncryptedCacheServiceTestPayload>
@@ -372,30 +509,37 @@ public sealed class EncryptedCacheServiceTests
             },
             CachePolicy.Default);
 
-        Assert.Equal("v2", (await sut.GetAsync<EncryptedCacheServiceTestPayload>("k2"))!.Value);
-        Assert.Equal("v3", (await sut.GetAsync<EncryptedCacheServiceTestPayload>("k3"))!.Value);
+        Assert.Equal("v2", (await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k2")).Value.Value);
+        Assert.Equal("v3", (await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k3")).Value.Value);
 
         var orSet = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
-            "k4", async _ => new EncryptedCacheServiceTestPayload("v4", 4), CachePolicy.Default);
+            "k4", _ => ValueTask.FromResult(new EncryptedCacheServiceTestPayload("v4", 4)), CachePolicy.Default);
         Assert.Equal("v4", orSet.Value);
 
         await sut.RemoveAsync("k1");
-        Assert.Null(await sut.GetAsync<EncryptedCacheServiceTestPayload>("k1"));
+        Assert.False((await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k1")).IsHit);
+
+        await sut.ExpireAsync("k2");
+        Assert.False((await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k2")).IsHit);
+
+        await sut.ClearAsync();
+        Assert.False((await sut.TryGetAsync<EncryptedCacheServiceTestPayload>("k3")).IsHit);
     }
 
     [Fact]
     public async Task GetOrSetAsync_WrappedFactory_ReinvokedFromUnrelatedExecutionContext_StillEncryptsCorrectly()
     {
         // Proves the closure EncryptedCacheService.GetOrSetAsync builds needs no ambient/AsyncLocal
-        // context: capture the exact byte[]-typed factory it hands to the inner
-        // ICacheService, then invoke that SAME closure again from a background Task.Run — simulating
-        // FusionCache re-invoking it on its own eager-refresh continuation — and prove it still
-        // produces an entry that decrypts correctly under the original key's AAD.
+        // context: capture the exact byte[]-typed factory it hands to the inner ICacheService, then
+        // invoke that SAME closure again from a background Task.Run — simulating FusionCache
+        // re-invoking it on its own eager-refresh continuation — and prove it still produces an
+        // entry that decrypts correctly under the original key's AAD.
         var innerCache = new FactoryCapturingCacheService();
         var encryption = CreateRealEncryptionService();
         var sut = CreateSut(innerCache, encryption);
 
         const string key = "eager-refresh-key";
+        var policy = CachePolicy.Default.WithEagerRefresh(0.9);
         var result = await sut.GetOrSetAsync<EncryptedCacheServiceTestPayload>(
             key,
             async _ =>
@@ -403,13 +547,13 @@ public sealed class EncryptedCacheServiceTests
                 await Task.Yield();
                 return new EncryptedCacheServiceTestPayload("first-value", 1);
             },
-            CachePolicy.Default.WithEagerRefresh(0.9));
+            policy);
 
         Assert.Equal("first-value", result.Value);
         Assert.NotNull(innerCache.CapturedFactory);
 
         byte[] refreshedEntry = await Task.Run(
-            () => innerCache.CapturedFactory!(CancellationToken.None).AsTask());
+            () => innerCache.CapturedFactory!(new CacheFactoryContext(key, policy), CancellationToken.None).AsTask());
 
         byte[] associatedData = System.Text.Encoding.UTF8.GetBytes(key);
         Assert.True(EncryptedPayload.TryParse(refreshedEntry, out EncryptedPayload? refreshedPayload));
@@ -421,7 +565,7 @@ public sealed class EncryptedCacheServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // AA-09 — compress-then-encrypt / decrypt-then-decompress ordering
+    // Compress-then-encrypt / decrypt-then-decompress ordering
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -439,16 +583,15 @@ public sealed class EncryptedCacheServiceTests
         await withCompression.SetAsync("k", highlyCompressible, CachePolicy.Default);
         await withoutCompression.SetAsync("k", highlyCompressible, CachePolicy.Default);
 
-        var compressedPayload = await innerCompressed.GetAsync<byte[]>("k");
-        var uncompressedPayload = await innerUncompressed.GetAsync<byte[]>("k");
+        var compressedPayload = await StoredBytesAsync(innerCompressed, "k");
+        var uncompressedPayload = await StoredBytesAsync(innerUncompressed, "k");
 
         Assert.True(
-            compressedPayload!.Length < uncompressedPayload!.Length,
+            compressedPayload.Length < uncompressedPayload.Length,
             "Compressing before encrypting a highly-compressible payload must produce meaningfully shorter ciphertext.");
 
         // Round trip still holds — decrypt-then-decompress correctly recovers the original value.
-        var result = await withCompression.GetAsync<string>("k");
-        Assert.Equal(highlyCompressible, result);
+        Assert.Equal(highlyCompressible, (await withCompression.TryGetAsync<string>("k")).Value);
     }
 
     [Fact]
@@ -475,9 +618,8 @@ public sealed class EncryptedCacheServiceTests
 
         var value = new EncryptedCacheServiceTestPayload(new string('a', 500), 999);
         await cache.SetAsync("compress-order-test", value, CachePolicy.Default);
-        var result = await cache.GetAsync<EncryptedCacheServiceTestPayload>("compress-order-test");
 
-        Assert.Equal(value, result);
+        Assert.Equal(value, (await cache.TryGetAsync<EncryptedCacheServiceTestPayload>("compress-order-test")).Value);
     }
 
     [Fact]
@@ -525,8 +667,8 @@ public sealed class EncryptedCacheServiceTests
         services.AddSingleton(CreateRealEncryptionService());
 
         // Deliberately never calls AddSharedKernelCaching — CachingBuilder is constructed directly
-        // (internal, InternalsVisibleTo-accessible) to prove AddCacheEncryption's new prerequisite
-        // guard fires even when the ISymmetricEncryptionService guard above it already passed.
+        // (internal, InternalsVisibleTo-accessible) so the ICacheService prerequisite guard fires
+        // even though the ISymmetricEncryptionService guard above it already passed.
         ICachingBuilder builder = new CachingBuilder(services);
 
         var ex = Assert.Throws<InvalidOperationException>(() => builder.AddCacheEncryption());
@@ -551,7 +693,7 @@ public sealed class EncryptedCacheServiceTests
 
         var value = new EncryptedCacheServiceTestPayload("through-builder", 5);
         await cache.SetAsync("builder-key", value, CachePolicy.Default);
-        Assert.Equal(value, await cache.GetAsync<EncryptedCacheServiceTestPayload>("builder-key"));
+        Assert.Equal(value, (await cache.TryGetAsync<EncryptedCacheServiceTestPayload>("builder-key")).Value);
     }
 
     [Fact]
@@ -565,9 +707,8 @@ public sealed class EncryptedCacheServiceTests
         builder.AddCacheEncryption();
 
         using var provider = services.BuildServiceProvider();
-        var cache = provider.GetRequiredService<ICacheService>();
 
-        Assert.IsType<EncryptedCacheService>(cache);
+        Assert.IsType<EncryptedCacheService>(provider.GetRequiredService<ICacheService>());
     }
 
     [Fact]
@@ -588,7 +729,7 @@ public sealed class EncryptedCacheServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // AA-11 — composition with AddTenantCacheService: tenant-scoped key binds AAD
+    // Composition with AddTenantCacheService: the tenant-scoped key binds the AAD
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -607,20 +748,18 @@ public sealed class EncryptedCacheServiceTests
         await tenantCache.SetAsync("tenant-a", "orders", "1", "secret-a", CachePolicy.Default);
         await tenantCache.SetAsync("tenant-b", "orders", "1", "secret-b", CachePolicy.Default);
 
-        Assert.Equal("secret-a", await tenantCache.GetAsync<string>("tenant-a", "orders", "1"));
-        Assert.Equal("secret-b", await tenantCache.GetAsync<string>("tenant-b", "orders", "1"));
+        Assert.Equal("secret-a", (await tenantCache.TryGetAsync<string>("tenant-a", "orders", "1")).Value);
+        Assert.Equal("secret-b", (await tenantCache.TryGetAsync<string>("tenant-b", "orders", "1")).Value);
     }
 
     [Fact]
     public async Task TenantScopedKey_UsedAsAad_CrossTenantReplayOfSameEntityId_FailsAuthentication()
     {
-        // Demonstrates, rather than merely asserting in prose, the composition benefit this
-        // redesign gains over the retired serializer-level approach: ITenantCacheKeyProvider's
-        // tenant-scoped key string is exactly what EncryptedCacheService receives and binds as AAD,
-        // so a raw payload replayed from one tenant's key to another tenant's key for the identical
-        // (entity, id) pair fails to decrypt — even though the underlying ciphertext bytes were
-        // never altered.
-        var keyProvider = new TenantCacheKeyProvider(Options.Create(new CachingCoreOptions { ServiceName = "svc" }));
+        // ITenantCacheKeyProvider's tenant-scoped key string is exactly what EncryptedCacheService
+        // receives and binds as AAD, so a raw payload replayed from one tenant's key to another
+        // tenant's key for the identical (entity, id) pair fails to decrypt — even though the
+        // underlying ciphertext bytes were never altered.
+        ITenantCacheKeyProvider keyProvider = new CacheKeyProvider(Options.Create(new CachingOptions { ServiceName = "svc" }));
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
 
@@ -631,13 +770,10 @@ public sealed class EncryptedCacheServiceTests
         await sut.SetAsync(tenantAKey, "secret-a", CachePolicy.Default);
 
         // Simulate the raw payload landing under tenant B's key for the same (entity, id) pair —
-        // a hypothetical routing/replay bug, not something the normal ITenantCacheService surface
-        // can produce on its own, but exactly the scenario key-bound AAD must defend against.
-        var storedForA = await inner.GetAsync<byte[]>(tenantAKey);
-        await inner.SetAsync(tenantBKey, storedForA, CachePolicy.Default);
+        // a hypothetical routing/replay bug, not something the ITenantCacheService surface can
+        // produce on its own, but exactly the scenario key-bound AAD must defend against.
+        await inner.SetAsync(tenantBKey, await StoredBytesAsync(inner, tenantAKey), CachePolicy.Default);
 
-        var result = await sut.GetAsync<string>(tenantBKey);
-
-        Assert.Null(result);
+        Assert.False((await sut.TryGetAsync<string>(tenantBKey)).IsHit);
     }
 }

@@ -8,13 +8,15 @@ namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="TenantCacheService"/> using an in-process FusionCache instance —
-/// key isolation across tenants, cross-tenant tag-invalidation isolation, round-trip behaviour,
-/// and DI registration via <see cref="TenantCacheServiceCachingBuilderExtensions.AddTenantCacheService"/>.
+/// key isolation across tenants, tag isolation (tenant-to-tenant and global-to-tenant),
+/// tenant-wide removal, round-trip behaviour, and DI registration via
+/// <see cref="TenantCacheServiceCachingBuilderExtensions.AddTenantCacheService"/>.
 /// </summary>
 public sealed class TenantCacheServiceTests : IDisposable
 {
     private readonly ServiceProvider _provider;
     private readonly ITenantCacheService _tenantCache;
+    private readonly ICacheService _cache;
 
     public TenantCacheServiceTests()
     {
@@ -24,6 +26,7 @@ public sealed class TenantCacheServiceTests : IDisposable
                 .AddTenantCacheService();
         _provider = services.BuildServiceProvider();
         _tenantCache = _provider.GetRequiredService<ITenantCacheService>();
+        _cache = _provider.GetRequiredService<ICacheService>();
     }
 
     public void Dispose() => _provider.Dispose();
@@ -33,58 +36,68 @@ public sealed class TenantCacheServiceTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task SetAsync_ThenGetAsync_ReturnsStoredValue()
+    public async Task SetAsync_ThenTryGetAsync_ReturnsStoredValue()
     {
         await _tenantCache.SetAsync("tenant-a", "invoice", "42", "hello", CachePolicy.Default);
 
-        var result = await _tenantCache.GetAsync<string>("tenant-a", "invoice", "42");
+        var result = await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "42");
 
-        Assert.Equal("hello", result);
+        Assert.Equal("hello", result.Value);
     }
 
     [Fact]
-    public async Task GetAsync_UnknownEntry_ReturnsNull()
+    public async Task TryGetAsync_UnknownEntry_IsMiss()
     {
-        var result = await _tenantCache.GetAsync<string>("tenant-a", "invoice", "unknown-" + Guid.NewGuid());
+        var result = await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "unknown-" + Guid.NewGuid());
 
-        Assert.Null(result);
+        Assert.False(result.IsHit);
     }
 
     [Fact]
-    public async Task GetOrSetAsync_CacheMiss_InvokesFactoryAndCaches()
+    public async Task SetAsync_StoresUnderTenantScopedKey()
+    {
+        await _tenantCache.SetAsync("tenant-a", "invoice", "key-shape", "hello", CachePolicy.Default);
+
+        Assert.True((await _cache.TryGetAsync<string>("test-svc:@tenant-a:invoice:key-shape")).IsHit);
+        Assert.False((await _cache.TryGetAsync<string>("test-svc:invoice:key-shape")).IsHit);
+    }
+
+    [Fact]
+    public async Task GetOrSetAsync_CacheMiss_InvokesFactoryOnceAndCaches()
     {
         var factoryCalls = 0;
 
-        var result = await _tenantCache.GetOrSetAsync<string>(
-            "tenant-a",
-            "invoice",
-            "gos-1",
-            async _ =>
-            {
-                factoryCalls++;
-                await Task.Yield();
-                return "computed";
-            },
-            CachePolicy.Default);
+        async ValueTask<string> Factory(CancellationToken _)
+        {
+            factoryCalls++;
+            await Task.Yield();
+            return "computed";
+        }
 
-        Assert.Equal("computed", result);
-        Assert.Equal(1, factoryCalls);
+        var first = await _tenantCache.GetOrSetAsync<string>("tenant-a", "invoice", "gos-1", Factory, CachePolicy.Default);
+        var second = await _tenantCache.GetOrSetAsync<string>("tenant-a", "invoice", "gos-1", Factory, CachePolicy.Default);
 
-        // Second call is a cache hit — factory not invoked again.
-        var second = await _tenantCache.GetOrSetAsync<string>(
-            "tenant-a",
-            "invoice",
-            "gos-1",
-            async _ =>
-            {
-                factoryCalls++;
-                await Task.Yield();
-                return "computed";
-            },
-            CachePolicy.Default);
-
+        Assert.Equal("computed", first);
         Assert.Equal("computed", second);
         Assert.Equal(1, factoryCalls);
+    }
+
+    [Fact]
+    public async Task GetOrSetAsync_ContextOverload_SkipCaching_DoesNotStore()
+    {
+        var factoryCalls = 0;
+
+        ValueTask<string> Factory(CacheFactoryContext context, CancellationToken _)
+        {
+            factoryCalls++;
+            context.SkipCaching();
+            return ValueTask.FromResult("not-cached");
+        }
+
+        Assert.Equal("not-cached", await _tenantCache.GetOrSetAsync<string>("tenant-a", "invoice", "skip-1", Factory, CachePolicy.Default));
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "skip-1")).IsHit);
+        Assert.Equal("not-cached", await _tenantCache.GetOrSetAsync<string>("tenant-a", "invoice", "skip-1", Factory, CachePolicy.Default));
+        Assert.Equal(2, factoryCalls);
     }
 
     [Fact]
@@ -94,12 +107,23 @@ public sealed class TenantCacheServiceTests : IDisposable
 
         await _tenantCache.RemoveAsync("tenant-a", "invoice", "rm-1");
 
-        var result = await _tenantCache.GetAsync<string>("tenant-a", "invoice", "rm-1");
-        Assert.Null(result);
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "rm-1")).IsHit);
+    }
+
+    [Fact]
+    public async Task ExpireAsync_NextGetOrSetRecomputes()
+    {
+        await _tenantCache.SetAsync("tenant-a", "invoice", "exp-1", "old", CachePolicy.Default.WithoutFailSafe());
+
+        await _tenantCache.ExpireAsync("tenant-a", "invoice", "exp-1");
+
+        var result = await _tenantCache.GetOrSetAsync<string>(
+            "tenant-a", "invoice", "exp-1", _ => ValueTask.FromResult("new"), CachePolicy.Default.WithoutFailSafe());
+        Assert.Equal("new", result);
     }
 
     // -------------------------------------------------------------------------
-    // TC-05 — Tenant key isolation: two tenants, same (entity, id), never collide
+    // Tenant key isolation
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -108,11 +132,8 @@ public sealed class TenantCacheServiceTests : IDisposable
         await _tenantCache.SetAsync("tenant-a", "invoice", "42", "value-for-a", CachePolicy.Default);
         await _tenantCache.SetAsync("tenant-b", "invoice", "42", "value-for-b", CachePolicy.Default);
 
-        var forA = await _tenantCache.GetAsync<string>("tenant-a", "invoice", "42");
-        var forB = await _tenantCache.GetAsync<string>("tenant-b", "invoice", "42");
-
-        Assert.Equal("value-for-a", forA);
-        Assert.Equal("value-for-b", forB);
+        Assert.Equal("value-for-a", (await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "42")).Value);
+        Assert.Equal("value-for-b", (await _tenantCache.TryGetAsync<string>("tenant-b", "invoice", "42")).Value);
     }
 
     [Fact]
@@ -123,123 +144,112 @@ public sealed class TenantCacheServiceTests : IDisposable
 
         await _tenantCache.RemoveAsync("tenant-a", "invoice", "shared-id");
 
-        Assert.Null(await _tenantCache.GetAsync<string>("tenant-a", "invoice", "shared-id"));
-        Assert.Equal("value-for-b", await _tenantCache.GetAsync<string>("tenant-b", "invoice", "shared-id"));
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "invoice", "shared-id")).IsHit);
+        Assert.Equal("value-for-b", (await _tenantCache.TryGetAsync<string>("tenant-b", "invoice", "shared-id")).Value);
     }
 
     // -------------------------------------------------------------------------
-    // TC-06 — Cross-tenant tag isolation
+    // Tag isolation
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task RemoveByTagAsync_TenantB_DoesNotEvictTenantA_SameTagName()
+    public async Task RemoveByTagAsync_TenantA_DoesNotEvictTenantB_SameTagName()
     {
-        const string tag = "orders";
-        var policy = CachePolicy.Default.WithTags(tag);
+        var policy = CachePolicy.Default.WithTags("orders");
 
         await _tenantCache.SetAsync("tenant-a", "order", "1", "a-order-1", policy);
         await _tenantCache.SetAsync("tenant-b", "order", "1", "b-order-1", policy);
 
-        // Tenant B invalidates its own "orders" tag.
-        await _tenantCache.RemoveByTagAsync("tenant-b", tag);
+        await _tenantCache.RemoveByTagAsync("tenant-a", "orders");
 
-        // Tenant A's identically-named tag must survive untouched.
-        Assert.Equal("a-order-1", await _tenantCache.GetAsync<string>("tenant-a", "order", "1"));
-
-        // Tenant B's entry is gone.
-        Assert.Null(await _tenantCache.GetAsync<string>("tenant-b", "order", "1"));
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "order", "1")).IsHit);
+        Assert.Equal("b-order-1", (await _tenantCache.TryGetAsync<string>("tenant-b", "order", "1")).Value);
     }
 
     [Fact]
     public async Task RemoveByTagAsync_ScopedToOwnTenant_EvictsAllOwnTaggedEntries()
     {
-        const string tag = "orders";
-        var policy = CachePolicy.Default.WithTags(tag);
+        var policy = CachePolicy.Default.WithTags("orders");
 
         await _tenantCache.SetAsync("tenant-a", "order", "1", "a-1", policy);
         await _tenantCache.SetAsync("tenant-a", "order", "2", "a-2", policy);
         await _tenantCache.SetAsync("tenant-a", "order", "3", "a-3", CachePolicy.Default); // untagged
 
-        await _tenantCache.RemoveByTagAsync("tenant-a", tag);
+        await _tenantCache.RemoveByTagAsync("tenant-a", "orders");
 
-        Assert.Null(await _tenantCache.GetAsync<string>("tenant-a", "order", "1"));
-        Assert.Null(await _tenantCache.GetAsync<string>("tenant-a", "order", "2"));
-        Assert.Equal("a-3", await _tenantCache.GetAsync<string>("tenant-a", "order", "3"));
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "order", "1")).IsHit);
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "order", "2")).IsHit);
+        Assert.Equal("a-3", (await _tenantCache.TryGetAsync<string>("tenant-a", "order", "3")).Value);
+    }
+
+    [Fact]
+    public async Task GlobalRemoveByTag_WithSameTagName_DoesNotEvictTenantEntries()
+    {
+        var policy = CachePolicy.Default.WithTags("orders");
+
+        await _tenantCache.SetAsync("tenant-a", "order", "g-1", "tenant-value", policy);
+        await _cache.SetAsync("test-svc:order:g-1", "global-value", policy);
+
+        await _cache.RemoveByTagAsync("orders");
+
+        Assert.False((await _cache.TryGetAsync<string>("test-svc:order:g-1")).IsHit);
+        Assert.Equal("tenant-value", (await _tenantCache.TryGetAsync<string>("tenant-a", "order", "g-1")).Value);
+    }
+
+    [Fact]
+    public async Task GlobalRemoveByTag_NamedLikeATenantTag_CannotEvictTenantEntries()
+    {
+        // Tenant tags carry the '@' marker, which a global policy tag may not start with, so a
+        // global tag spelled "{tenant}:{tag}" is a different tag from the tenant's own.
+        await _tenantCache.SetAsync("tenant-a", "order", "g-2", "tenant-value", CachePolicy.Default.WithTags("orders"));
+        await _cache.SetAsync("test-svc:order:g-2", "global-value", CachePolicy.Default.WithTags("tenant-a:orders", "tenant-a"));
+
+        await _cache.RemoveByTagAsync("tenant-a:orders");
+        await _cache.RemoveByTagAsync("tenant-a");
+
+        Assert.Throws<ArgumentException>(() => CachePolicy.Default.WithTags("@tenant-a:orders"));
+        Assert.Throws<ArgumentException>(() => CachePolicy.Default.WithTags("@tenant-a"));
+        Assert.False((await _cache.TryGetAsync<string>("test-svc:order:g-2")).IsHit);
+        Assert.Equal("tenant-value", (await _tenantCache.TryGetAsync<string>("tenant-a", "order", "g-2")).Value);
+    }
+
+    [Fact]
+    public async Task RemoveTenantAsync_RemovesAllEntriesOfThatTenantOnly()
+    {
+        await _tenantCache.SetAsync("tenant-a", "order", "1", "a-tagged", CachePolicy.Default.WithTags("orders"));
+        await _tenantCache.SetAsync("tenant-a", "customer", "2", "a-untagged", CachePolicy.Default);
+        await _tenantCache.SetAsync("tenant-b", "order", "1", "b-tagged", CachePolicy.Default.WithTags("orders"));
+        await _tenantCache.SetAsync("tenant-b", "customer", "2", "b-untagged", CachePolicy.Default);
+        await _cache.SetAsync("test-svc:order:1", "global", CachePolicy.Default);
+
+        await _tenantCache.RemoveTenantAsync("tenant-a");
+
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "order", "1")).IsHit);
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "customer", "2")).IsHit);
+        Assert.Equal("b-tagged", (await _tenantCache.TryGetAsync<string>("tenant-b", "order", "1")).Value);
+        Assert.Equal("b-untagged", (await _tenantCache.TryGetAsync<string>("tenant-b", "customer", "2")).Value);
+        Assert.Equal("global", (await _cache.TryGetAsync<string>("test-svc:order:1")).Value);
+    }
+
+    [Fact]
+    public async Task RemoveTenantAsync_AppliesToEntriesWrittenThroughGetOrSet()
+    {
+        await _tenantCache.GetOrSetAsync<string>("tenant-a", "order", "gos-t", _ => ValueTask.FromResult("a"), CachePolicy.Default);
+
+        await _tenantCache.RemoveTenantAsync("tenant-a");
+
+        Assert.False((await _tenantCache.TryGetAsync<string>("tenant-a", "order", "gos-t")).IsHit);
     }
 
     // -------------------------------------------------------------------------
-    // TC-07 — Additive DI registration
+    // DI registration
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void AddTenantCacheService_RegistersITenantCacheService()
+    public void AddTenantCacheService_RegistersSingleton()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "svc")
-                .AddTenantCacheService();
-
-        using var provider = services.BuildServiceProvider();
-
-        Assert.NotNull(provider.GetService<ITenantCacheService>());
-    }
-
-    [Fact]
-    public void AddTenantCacheService_DoesNotRemoveOrOverride_PriorAddTenantCacheKeyProviderRegistration()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "svc")
-                .AddTenantCacheKeyProvider();
-
-        using var providerBefore = services.BuildServiceProvider();
-        var keyProviderBefore = providerBefore.GetRequiredService<ITenantCacheKeyProvider>();
-
-        // Now additively call AddTenantCacheService on the SAME service collection.
-        services.AddSharedKernelCaching(o => o.ServiceName = "svc")
-                .AddTenantCacheService();
-
-        using var providerAfter = services.BuildServiceProvider();
-        var keyProviderAfter = providerAfter.GetRequiredService<ITenantCacheKeyProvider>();
-        var tenantCacheService = providerAfter.GetRequiredService<ITenantCacheService>();
-
-        // The ITenantCacheKeyProvider registration type is unaffected — still the same
-        // implementation type registered by the original standalone AddTenantCacheKeyProvider()
-        // call, not replaced or removed by the later AddTenantCacheService() call.
-        Assert.IsType<TenantCacheKeyProvider>(keyProviderBefore);
-        Assert.IsType<TenantCacheKeyProvider>(keyProviderAfter);
-        Assert.NotNull(tenantCacheService);
-    }
-
-    [Fact]
-    public void AddTenantCacheService_WithoutPriorAddTenantCacheKeyProvider_StillRegistersKeyProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "svc")
-                .AddTenantCacheService();
-
-        using var provider = services.BuildServiceProvider();
-
-        // AddTenantCacheService alone (with no standalone AddTenantCacheKeyProvider() call) still
-        // makes ITenantCacheKeyProvider resolvable — TenantCacheService depends on it internally.
-        Assert.NotNull(provider.GetService<ITenantCacheKeyProvider>());
-        Assert.NotNull(provider.GetService<ITenantCacheService>());
-    }
-
-    [Fact]
-    public void AddTenantCacheService_RegistersAsSingleton()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "svc")
-                .AddTenantCacheService();
-
-        using var provider = services.BuildServiceProvider();
-        var first = provider.GetRequiredService<ITenantCacheService>();
-        var second = provider.GetRequiredService<ITenantCacheService>();
-
-        Assert.Same(first, second);
+        Assert.IsType<TenantCacheService>(_tenantCache);
+        Assert.Same(_tenantCache, _provider.GetRequiredService<ITenantCacheService>());
     }
 
     [Fact]
@@ -251,9 +261,7 @@ public sealed class TenantCacheServiceTests : IDisposable
                 .AddTenantCacheService()
                 .AddTenantCacheService();
 
-        using var provider = services.BuildServiceProvider();
-
-        Assert.NotNull(provider.GetRequiredService<ITenantCacheService>());
+        Assert.Single(services, d => d.ServiceType == typeof(ITenantCacheService));
     }
 
     [Fact]
@@ -270,28 +278,20 @@ public sealed class TenantCacheServiceTests : IDisposable
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task GetAsync_NullOrWhitespaceTenantId_ThrowsArgumentException(string tenantId)
+    public async Task TryGetAsync_NullOrWhitespaceTenantId_ThrowsArgumentException(string tenantId)
     {
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            _tenantCache.GetAsync<string>(tenantId, "invoice", "1").AsTask());
+            _tenantCache.TryGetAsync<string>(tenantId, "invoice", "1").AsTask());
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task RemoveByTagAsync_NullOrWhitespaceTenantId_ThrowsArgumentException(string tenantId)
+    public async Task RemoveByTagAsync_NullOrWhitespaceTenantIdOrTag_ThrowsArgumentException(string value)
     {
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _tenantCache.RemoveByTagAsync(tenantId, "some-tag").AsTask());
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task RemoveByTagAsync_NullOrWhitespaceTag_ThrowsArgumentException(string tag)
-    {
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _tenantCache.RemoveByTagAsync("tenant-a", tag).AsTask());
+        await Assert.ThrowsAsync<ArgumentException>(() => _tenantCache.RemoveByTagAsync(value, "some-tag").AsTask());
+        await Assert.ThrowsAsync<ArgumentException>(() => _tenantCache.RemoveByTagAsync("tenant-a", value).AsTask());
+        await Assert.ThrowsAsync<ArgumentException>(() => _tenantCache.RemoveTenantAsync(value).AsTask());
     }
 
     [Fact]
@@ -299,5 +299,12 @@ public sealed class TenantCacheServiceTests : IDisposable
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
             _tenantCache.SetAsync("tenant-a", "invoice", "1", "value", null!).AsTask());
+    }
+
+    [Fact]
+    public async Task SetAsync_PolicyAlreadyScopedToTenant_Throws()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _tenantCache.SetAsync("tenant-a", "invoice", "1", "value", CachePolicy.Default.ForTenant("tenant-a")).AsTask());
     }
 }

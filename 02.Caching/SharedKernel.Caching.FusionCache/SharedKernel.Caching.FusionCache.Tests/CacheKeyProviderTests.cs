@@ -8,197 +8,126 @@ using Xunit;
 namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
-/// Tests for <see cref="CacheKeyProvider"/> — key format, edge cases,
-/// and DI registration via <see cref="CachingServiceCollectionExtensions.AddSharedKernelCaching"/>.
+/// Tests for <see cref="CacheKeyProvider"/> — that it applies the configured service name to the
+/// shared <see cref="CacheKeyFormat"/>, and that <see cref="CachingServiceCollectionExtensions.AddSharedKernelCaching"/>
+/// registers one instance for both key-provider interfaces.
 /// </summary>
+/// <remarks>
+/// The key format itself (escaping, tenant marker, collision rules) is covered by
+/// <c>SharedKernel.Caching.Abstractions.Tests</c>; these tests only verify the provider's mapping onto it.
+/// </remarks>
 public sealed class CacheKeyProviderTests
 {
     // -------------------------------------------------------------------------
-    // Key format — basic cases
+    // Mapping onto CacheKeyFormat
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void BuildKey_WithoutExtraSegments_ProducesServiceEntityIdFormat()
+    public void BuildKey_UsesConfiguredServiceName()
     {
         var provider = CreateProvider("order-svc");
 
-        var key = provider.BuildKey("invoice", "42");
-
-        Assert.Equal("order-svc:invoice:42", key);
+        Assert.Equal("order-svc:invoice:42", provider.BuildKey("invoice", "42"));
+        Assert.Equal(CacheKeyFormat.BuildKey("order-svc", "invoice", "42", "en-GB"), provider.BuildKey("invoice", "42", "en-GB"));
     }
 
     [Fact]
-    public void BuildKey_WithOneExtraSegment_AppendsWithColon()
+    public void BuildTenantKey_UsesConfiguredServiceName()
     {
         var provider = CreateProvider("order-svc");
 
-        var key = provider.BuildKey("invoice", "42", "v2");
-
-        Assert.Equal("order-svc:invoice:42:v2", key);
+        Assert.Equal("order-svc:@tenant-a:invoice:42", provider.BuildTenantKey("tenant-a", "invoice", "42"));
+        Assert.Equal(
+            CacheKeyFormat.BuildTenantKey("order-svc", "tenant-a", "invoice", "42", "en-GB"),
+            provider.BuildTenantKey("tenant-a", "invoice", "42", "en-GB"));
     }
 
     [Fact]
-    public void BuildKey_WithMultipleExtraSegments_AppendsAllWithColons()
+    public void BuildTenantKey_DifferentTenants_ProduceDifferentKeys_AndNeverTheGlobalKey()
     {
-        var provider = CreateProvider("my-service");
+        var provider = CreateProvider("order-svc");
 
-        var key = provider.BuildKey("user-profile", "usr-001", "en-GB", "tenant-99");
+        var keyA = provider.BuildTenantKey("tenant-a", "invoice", "42");
+        var keyB = provider.BuildTenantKey("tenant-b", "invoice", "42");
+        var global = provider.BuildKey("invoice", "42");
 
-        Assert.Equal("my-service:user-profile:usr-001:en-GB:tenant-99", key);
-    }
-
-    [Fact]
-    public void BuildKey_ServiceNameIsFirstSegment()
-    {
-        var provider = CreateProvider("catalog");
-
-        var key = provider.BuildKey("product", "sku-x");
-
-        Assert.StartsWith("catalog:", key, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BuildKey_DoesNotNormaliseCase()
-    {
-        var provider = CreateProvider("MyService");
-
-        var key = provider.BuildKey("Entity", "ID-001");
-
-        Assert.Equal("MyService:Entity:ID-001", key);
-    }
-
-    // -------------------------------------------------------------------------
-    // Argument validation
-    // -------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void BuildKey_NullOrWhitespaceEntity_ThrowsArgumentException(string entity)
-    {
-        var provider = CreateProvider("svc");
-
-        Assert.Throws<ArgumentException>(() => provider.BuildKey(entity, "123"));
+        Assert.NotEqual(keyA, keyB);
+        Assert.NotEqual(global, keyA);
+        Assert.NotEqual(global, keyB);
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void BuildKey_NullOrWhitespaceId_ThrowsArgumentException(string id)
+    public void BuildKey_NullOrWhitespaceEntityOrId_ThrowsArgumentException(string value)
     {
         var provider = CreateProvider("svc");
 
-        Assert.Throws<ArgumentException>(() => provider.BuildKey("entity", id));
+        Assert.Throws<ArgumentException>(() => provider.BuildKey(value, "123"));
+        Assert.Throws<ArgumentException>(() => provider.BuildKey("entity", value));
+        Assert.Throws<ArgumentException>(() => provider.BuildTenantKey(value, "entity", "id"));
     }
 
     // -------------------------------------------------------------------------
-    // ServiceName validation — via IValidateOptions resolved from DI
+    // DI registration
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ServiceName_NullOrWhitespace_FailsValidation()
+    public void AddSharedKernelCaching_OneInstanceServesBothKeyProviderInterfaces()
     {
-        // CachingOptionsValidator is internal; accessible via InternalsVisibleTo.
-        var validator = new CachingOptionsValidator();
+        using var provider = BuildProvider("test-svc");
 
-        var resultNull = validator.Validate(null, new CachingOptions { ServiceName = null! });
-        Assert.True(resultNull.Failed);
-        Assert.Contains("ServiceName", resultNull.FailureMessage);
-
-        var resultWhitespace = validator.Validate(null, new CachingOptions { ServiceName = "   " });
-        Assert.True(resultWhitespace.Failed);
-        Assert.Contains("ServiceName", resultWhitespace.FailureMessage);
-    }
-
-    [Fact]
-    public void ServiceName_Valid_PassesValidation()
-    {
-        var validator = new CachingOptionsValidator();
-
-        var result = validator.Validate(null, new CachingOptions { ServiceName = "my-service" });
-
-        Assert.True(result.Succeeded);
-    }
-
-    // -------------------------------------------------------------------------
-    // DI registration sanity
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void AddSharedKernelCaching_RegistersICacheKeyProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-
-        using var provider = services.BuildServiceProvider();
-        var keyProvider = provider.GetService<ICacheKeyProvider>();
-
-        Assert.NotNull(keyProvider);
-    }
-
-    [Fact]
-    public void AddSharedKernelCaching_ICacheKeyProvider_IsSingleton()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-
-        using var provider = services.BuildServiceProvider();
-        var first = provider.GetRequiredService<ICacheKeyProvider>();
-        var second = provider.GetRequiredService<ICacheKeyProvider>();
-
-        Assert.Same(first, second);
-    }
-
-    [Fact]
-    public void AddSharedKernelCaching_ICacheKeyProvider_UsesServiceNameFromOptions()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => o.ServiceName = "resolved-svc");
-
-        using var provider = services.BuildServiceProvider();
         var keyProvider = provider.GetRequiredService<ICacheKeyProvider>();
+        var tenantKeyProvider = provider.GetRequiredService<ITenantCacheKeyProvider>();
 
-        var key = keyProvider.BuildKey("order", "7");
-        Assert.Equal("resolved-svc:order:7", key);
+        Assert.IsType<CacheKeyProvider>(keyProvider);
+        Assert.Same(keyProvider, tenantKeyProvider);
+        Assert.Same(keyProvider, provider.GetRequiredService<ICacheKeyProvider>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCaching_KeyProviders_UseServiceNameFromOptions()
+    {
+        using var provider = BuildProvider("resolved-svc");
+
+        Assert.Equal("resolved-svc:order:7", provider.GetRequiredService<ICacheKeyProvider>().BuildKey("order", "7"));
+        Assert.Equal(
+            "resolved-svc:@t1:order:7",
+            provider.GetRequiredService<ITenantCacheKeyProvider>().BuildTenantKey("t1", "order", "7"));
     }
 
     [Fact]
     public void AddSharedKernelCaching_CustomICacheKeyProvider_OverridesDefault()
     {
-        // If a consumer registers their own ICacheKeyProvider *after* AddSharedKernelCaching,
-        // the last registration wins (standard DI behavior).
+        // A consumer registration after AddSharedKernelCaching wins (standard DI behavior).
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSharedKernelCaching(o => o.ServiceName = "svc");
-
-        // Override with a custom stub registered after the default.
         services.AddSingleton<ICacheKeyProvider>(new CustomKeyProvider());
 
         using var provider = services.BuildServiceProvider();
-        var keyProvider = provider.GetRequiredService<ICacheKeyProvider>();
 
-        Assert.IsType<CustomKeyProvider>(keyProvider);
+        Assert.IsType<CustomKeyProvider>(provider.GetRequiredService<ICacheKeyProvider>());
+        Assert.IsType<CacheKeyProvider>(provider.GetRequiredService<ITenantCacheKeyProvider>());
     }
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static ICacheKeyProvider CreateProvider(string serviceName)
+    private static ITenantCacheKeyProvider CreateProvider(string serviceName) =>
+        new CacheKeyProvider(Options.Create(new CachingOptions { ServiceName = serviceName }));
+
+    private static ServiceProvider BuildProvider(string serviceName)
     {
-        var options = Options.Create(new CachingOptions { ServiceName = serviceName });
-        return new CacheKeyProvider(options);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = serviceName);
+        return services.BuildServiceProvider();
     }
 
     private sealed class CustomKeyProvider : ICacheKeyProvider
     {
-        public string BuildKey(string entity, string id, params string[] extraSegments) =>
-            $"custom:{entity}:{id}";
-
-        public string BuildKey(string entity, string id, int version, params string[] extraSegments) =>
-            version > 0 ? $"custom:{entity}:{id}:v{version}" : $"custom:{entity}:{id}";
+        public string BuildKey(string entity, string id, params string[] segments) => $"custom:{entity}:{id}";
     }
 }
