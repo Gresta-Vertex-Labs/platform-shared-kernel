@@ -55,7 +55,7 @@ composition root.
 | --- | --- | --- |
 | `SharedKernel.Application` | CQRS vocabulary (`ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`/`IStreamQuery<TResponse>`), the handler-alias interfaces, the `IRequestContext` seam, the domain-event-to-MediatR bridge | `SharedKernel.Primitives`, `SharedKernel.Domain`, `MediatR` |
 | `SharedKernel.Application.Behaviors` | Eight pipeline behaviors (Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing) plus `ApplicationBehaviorsBuilder`/`PipelineStage` | `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation` |
-| `SharedKernel.Application.Behaviors.Caching` | `CachingBehavior<,>` + `ICacheableQuery<TResponse>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` — the **only** package in this domain permitted a `SharedKernel.Caching.Abstractions` reference | `SharedKernel.Application.Behaviors`, `SharedKernel.Caching.Abstractions` |
+| `SharedKernel.Application.Behaviors.Caching` | `CachingBehavior<,>` + `ICacheableQuery<TValue>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` — the **only** package in this domain permitted a `SharedKernel.Caching.Abstractions` reference | `SharedKernel.Application.Behaviors`, `SharedKernel.Caching.Abstractions` |
 
 Every test project is nested inside the package it tests and references **only that package** — never
 `16.Testing` or `00.Governance`'s `SharedKernel.ArchitectureTests` (both packages currently depend on
@@ -171,7 +171,7 @@ No other reflection appears in either package. `ApplicationBehaviorsBuilder.AddB
 
 | Namespace | Types |
 | --- | --- |
-| `Caching` | `ICacheableQuery<TResponse>` (`CacheKey`, `CachePolicy`); `CachingBehavior<,>` |
+| `Caching` | `ICacheableQuery<TValue>` (`CacheKey`, `CachePolicy`; also an `IQuery<TValue>`); `CachingBehavior<,>`, which caches the `TValue` of a successful `Result<TValue>` |
 | `CacheInvalidation` | `IInvalidatesCache` (`CacheKeysToInvalidate`, `CacheTagsToInvalidate` defaulting to empty); `CacheInvalidationBehavior<,>` |
 | `Extensions` | `CachingBehaviorsExtensions.AddCachingBehaviors(ApplicationBehaviorsBuilder)` |
 
@@ -330,29 +330,27 @@ them.
 
 ---
 
-## Known limitation — `CachingBehavior` and the L2 serializer
+## `CachingBehavior` caches the value, not the `Result`
 
-`CachingBehavior<,>` (`SharedKernel.Application.Behaviors.Caching`) caches the **whole** `TResponse`
-(typically `Result<T>`) through the context overload of `ICacheService.GetOrSetAsync<TResponse>`: the
-handler runs in the factory, and a failed `Result` calls `CacheFactoryContext.SkipCaching()` so it is
-returned but never stored (P-547). The cached value is still the whole `Result<T>`, not its payload.
+`CachingBehavior<,>` (`SharedKernel.Application.Behaviors.Caching`) stores the `TValue` of a successful
+`Result<TValue>` and rebuilds `Result<TValue>.Success(value)` on a hit (P-549). The query declares
+`ICacheableQuery<TValue>`, which is also an `IQuery<TValue>`. The behavior is constrained to the non-generic
+`ICacheableQuery` base, whose internal `GetOrSetAsync<TResponse>` is implemented by the generic interface, where
+`TValue` is known, so the typed cache call needs no reflection. A consumer cannot implement the non-generic base
+alone: its internal member is inaccessible outside the assembly.
 
-This works today in FusionCache's **L1** in-process `MemoryCache`, which stores the object by reference —
-no serialization involved. It is **not proven to work over L2 (Redis)**. Verified by reading
-`02.Caching/SharedKernel.Caching.FusionCache`'s `CachingServiceCollectionExtensions.AddSharedKernelCaching`:
-when the consumer supplies no `CachingOptions.SerializerContext` (the default), `AddFusionCacheSystemTextJsonSerializer()`
-is registered with **no** `JsonSerializerOptions` override — plain, reflection-based `System.Text.Json`,
-the serializer FusionCache's L2 path uses to turn a cached value into Redis bytes and back.
-`Result`/`Result<T>` (`01.Core/SharedKernel.Primitives`) both have only `private` constructors and
-get-only properties with no `init` setters, so reflection-based STJ cannot construct either on
-deserialize — a genuine Redis L2 round-trip of a cached `Result<T>` is expected to throw.
-`Idempotency/IdempotencyResponseSerializer` already solves the identical problem with two hand-written
-`JsonConverter<Result>`/`JsonConverter<Result<T>>` plus a `JsonConverterFactory`, but that class is
-`internal` to the Idempotency namespace and `CachingBehavior` does not reuse it; `02.Caching`'s default
-serializer has no equivalent registered either. **Still open.** The P-547 `02.Caching` redesign changed
-how `CachingBehavior` calls the cache, not what it serializes (this package's publish stays deferred —
-see `state-map.md`): either `02.Caching`'s default serializer needs `Result`/`Result<T>` converters, or
-`CachingBehavior` needs to cache the unwrapped payload instead of the whole `Result<T>`.
+The handler still runs inside the context overload of `ICacheService.GetOrSetAsync<TValue>`. A failed `Result` is
+captured in the factory, skipped with `CacheFactoryContext.SkipCaching()` and returned by that call only; a query
+waiting on the same key finds nothing cached and runs the handler itself.
+
+Why: `Result`/`Result<T>` have private constructors and `Value`/`Error` properties that throw in the opposite
+state, so reflection-based `System.Text.Json` cannot even **write** a cached `Result<T>` — verified, the
+FusionCache serializer throws `FusionCacheSerializationException` on the L2 write. Caching the value keeps
+`01.Core`'s `Result` free of serialization concerns. `CachingBehaviorDistributedCacheTests` proves the round
+trip with two FusionCache instances sharing one distributed cache.
+
+Rule: `TValue` must round-trip through `System.Text.Json`, and a service with a cache `SerializerContext` adds
+`TValue` to it.
 
 ---
 
@@ -380,7 +378,7 @@ Changes here that silently break another layer. Check the right column before me
 | `Idempotency.IRequestIdempotencyStore`'s contract | `18.Idempotency`'s store implementations; `16.Testing`'s fake (both migrated onto the stateless `reservationToken`/`bool`-returning shape, same day as `SK.05.P544`) |
 | `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence`'s real `IAuditTrailWriter` bridge adapter; `16.Testing`'s fake |
 | `Context.IRequestContext`'s shape | Every consuming service's composition-root bridge; `12.Security.Abstractions.IUserContext`/`ITenantProvider` mapping |
-| `ICacheableQuery<TResponse>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format; the L2 serialization gap noted above |
+| `ICacheableQuery<TValue>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format |
 | `ApplicationBehaviorsBuilder`'s registration order | `00.Governance`'s pipeline-order architecture test (mid-migration as of `SK.05.P544`) |
 | Any public API | `PublicAPI.Unshipped.txt` in the affected package, that package's own `README.md` |
 
@@ -416,8 +414,7 @@ Changes here that silently break another layer. Check the right column before me
   `05.Application` had reached a feed, so this was a breaking rewrite by user ruling, not an additive
   release. Package split: `SharedKernel.Application` (vocabulary + `IRequestContext` + domain-event
   bridge), `SharedKernel.Application.Behaviors` (eight core behaviors), and a new
-  `SharedKernel.Application.Behaviors.Caching` (the caching pair, deferred publish — see the L2
-  serializer limitation above). Removed fire-and-forget, resilience, every streaming behavior, parallel
+  `SharedKernel.Application.Behaviors.Caching` (the caching pair, published after `02.Caching`; it caches the query value, see above). Removed fire-and-forget, resilience, every streaming behavior, parallel
   domain-event dispatch, and dual approval outright. Redesigned the idempotency contract
   (`IRequestIdempotencyStore`), added `IQueryBase`, added the nested-command guard (`ICommandScope`/
   `CommandScopeBehavior`), made authorization fail closed on an empty permission declaration, and made

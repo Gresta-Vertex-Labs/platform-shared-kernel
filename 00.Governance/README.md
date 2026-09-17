@@ -1226,10 +1226,9 @@ A command must not implement `ICacheableQuery<TResponse>`.
 using SharedKernel.Application.Behaviors.Caching;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Primitives.Results;
 
 // Flagged: SK0017
-public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>, ICacheableQuery<Result<Guid>>
+public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>, ICacheableQuery<Guid>
 {
     public string CacheKey => $"orders:{OrderId}:cancel";
     public CachePolicy CachePolicy => CachePolicy.Default;

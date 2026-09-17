@@ -967,7 +967,7 @@ Format when blocked — replace placeholder with table:
 | C-96 | Verify `19.Scheduling`'s `ScheduledCommandJob<TCommand>` MediatR bridge against the redesigned vocabulary (shape unchanged) | P-544 | 19.Scheduling (cross-domain) | `◐` |
 | C-97 | Migrate sample/consuming-service code referencing removed surface (fire-and-forget, resilience, streaming behaviors, dual approval, the old idempotency/authorization seam names) | P-544 | samples (cross-domain) | `◐` |
 | P-31 | Add/extend consumer-verify projects for `SharedKernel.Application` and `SharedKernel.Application.Behaviors` against the packed `.nupkg`; publish both to the feed | P-544 | SharedKernel.Application, SharedKernel.Application.Behaviors | `○` |
-| P-32 | Publish `SharedKernel.Application.Behaviors.Caching` — deferred until the `02.Caching` pre-publish pass resolves the `Result<T>` L2 serializer gap (see `CLAUDE.md`'s Known Limitation), or `CachingBehavior` is changed to cache the unwrapped payload instead | P-544 | SharedKernel.Application.Behaviors.Caching | `○` |
+| P-32 | Publish `SharedKernel.Application.Behaviors.Caching` — the `Result<T>` L2 serializer gap is closed by root P-549 (`CachingBehavior` caches the unwrapped value); publish with or after the `02.Caching` provider packages | P-544 | SharedKernel.Application.Behaviors.Caching | `○` |
 
 ---
 

@@ -42,9 +42,8 @@ vocabulary should not inherit FluentValidation; a service that wants behaviors s
 duplicate-submission guard in a second handler. Add `.Caching` only when a measured read is worth caching.
 
 **Publication status.** `SharedKernel.Application` and `SharedKernel.Application.Behaviors` publish together.
-`.Caching` is finished and tested but held back until `02.Caching`'s own pre-publish pass, because a cached
-`Result<T>` cannot currently be read back from a Redis L2 cache — see its README for the detail and the
-workaround.
+`.Caching` is finished and tested and is published after the `02.Caching` provider packages. It caches a
+query's value rather than its `Result<T>`, so entries round-trip through a Redis L2 cache.
 
 ### Docs in this folder
 
