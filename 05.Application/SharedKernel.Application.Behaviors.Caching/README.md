@@ -14,14 +14,14 @@ cache dependency on behalf of services that never cache anything. Reference this
 
 | You get | So that |
 | --- | --- |
-| `CachingBehavior` over `ICacheableQuery<TResponse>` | A hot query is served from cache without the handler knowing a cache exists |
+| `CachingBehavior` over `ICacheableQuery<TValue>` | A hot query is served from cache, local or Redis, without the handler knowing a cache exists |
 | A failed `Result` is never cached | A transient `NotFound` doesn't get pinned for the whole expiry window |
 | `CacheInvalidationBehavior` over `IInvalidatesCache` | A command declares what it makes stale, and eviction is not the handler's problem |
 | Eviction deferred to after the commit | Nothing evicts on the strength of a write that has not landed yet |
 | Optional per-tenant key and tag scoping | One tenant cannot read or invalidate another tenant's entry |
 
-> **Not published yet.** This package is finished and tested, but held back until the `02.Caching` pass —
-> see [Known limitation](#known-limitation-l2-and-resultt) before adopting it.
+> **Not published yet.** This package is finished and tested; it is published after the `02.Caching`
+> provider packages it is used with.
 
 ## Contents
 
@@ -30,7 +30,7 @@ cache dependency on behalf of services that never cache anything. Reference this
 - [Caching a query](#caching-a-query)
 - [Invalidating after a command](#invalidating-after-a-command)
 - [Tenant scoping](#tenant-scoping)
-- [Known limitation: L2 and `Result<T>`](#known-limitation-l2-and-resultt)
+- [Distributed cache and `Result<T>`](#distributed-cache-and-resultt)
 - [Reference](#reference)
 - [Pitfalls](#pitfalls)
 - [Testing](#testing)
@@ -59,7 +59,7 @@ registered.
 
 ```csharp
 // A query that may be served from cache.
-public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>, ICacheableQuery<Result<OrderDto>>
+public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
 {
     public string CacheKey => $"order:{OrderId}";
     public CachePolicy CachePolicy => CachePolicy.For(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10))
@@ -79,30 +79,34 @@ both requests exactly as before.
 
 ## Caching a query
 
-`ICacheableQuery<TResponse>` is self-supplied: the query computes its own key, because only it knows the
+`ICacheableQuery<TValue>` is self-supplied: the query computes its own key, because only it knows the
 parameters that discriminate one result from another.
 
 ```csharp
-public interface ICacheableQuery<TResponse>
+public interface ICacheableQuery<TValue> : ICacheableQuery, IQuery<TValue>
 {
+    // from ICacheableQuery:
     CachePolicy CachePolicy { get; }
     string CacheKey { get; }
 }
 ```
 
-Declare `TResponse` as the **whole response type**, `Result<OrderDto>`, not `OrderDto` — that is what the
-pipeline actually passes through.
+It is also an `IQuery<TValue>`, so a query declares it alone. `TValue` is the value inside the query's
+`Result<TValue>`, and it is the type stored in the cache.
 
-What the behavior does, in order:
+What the behavior does, in one `ICacheService.GetOrSetAsync` call:
 
-1. Reads the (tenant-scoped) key. A hit returns immediately and the handler never runs.
-2. On a miss, runs the handler.
-3. Stores the response **only if it is not a failed `Result`**, under the query's own `CachePolicy`.
+1. Looks up the (tenant-scoped) key. A hit rebuilds `Result<TValue>.Success(value)` and the handler never runs.
+2. On a miss, runs the handler while holding the key, so identical concurrent queries do not all run it.
+3. Stores the **value** of a successful result under the query's `CachePolicy`. A failed `Result` is
+   returned and never stored; a query waiting on the same key then runs the handler itself.
 
-**No stampede protection.** The cache abstraction's `GetOrSetAsync` has no way to say "do not cache this
-outcome", so this behavior uses an explicit get-then-set instead. That is a deliberate trade: never caching a
-failure is worth more than collapsing concurrent misses. For a genuinely hot key where the herd matters more,
-call `ICacheService.GetOrSetAsync` inside the handler and leave the behavior off that query.
+Eager refresh and factory timeouts are switched off on the policy, because both could run the handler after
+the request's DI scope is gone. Fail-safe, durations, tags and jitter are kept.
+
+**The value crosses the distributed cache as JSON.** `TValue` must round-trip through `System.Text.Json`, and a
+service that registers a `SerializerContext` for its cache must add `TValue` to it. The `Result` itself is never
+serialized.
 
 ## Invalidating after a command
 
@@ -143,9 +147,11 @@ the response the caller already earned.
 
 ## Tenant scoping
 
-When an `IRequestContext` is registered and carries a `TenantId`, both behaviors prefix keys and tags with
-`tenant:{tenantId}:`. A query declaring `order:42` reads `tenant:{id}:order:42`, and a command invalidating
-the tag `orders` clears `tenant:{id}:orders` only.
+When an `IRequestContext` is registered and carries a `TenantId`, both behaviors scope keys and tags to
+the tenant in `CacheKeyFormat`'s tenant format, `@{tenant}:{key}`, with both parts escaped. A query declaring
+`order:42` reads `@{id}:order%3A42`, and a command invalidating the tag `orders` clears `@{id}:orders` only. Every
+tenant-scoped query result also carries the tenant-wide tag `@{id}`, so `ITenantCacheService.RemoveTenantAsync`
+removes it.
 
 With no `IRequestContext` registered, or a null `TenantId`, keys are used exactly as declared — correct for a
 single-tenant service, and the reason the dependency is optional.
@@ -155,23 +161,22 @@ Two things follow:
 - **A cached entry cannot leak across tenants** even if two tenants' queries compute the same key.
 - **A tag cannot cross-invalidate**: one tenant's command never clears another's entries.
 
-## Known limitation: L2 and `Result<T>`
+## Distributed cache and `Result<T>`
 
-`CachingBehavior` caches the whole response — a `Result<T>`. That works in the in-process L1 cache, which
-stores the object by reference. It is expected to **fail on a genuine Redis L2 round trip**, because
-FusionCache's default serializer is reflection-based `System.Text.Json` and `Result<T>` has only private
-constructors, so it cannot be read back.
+The behavior caches the query's **value**, never the `Result<TValue>`. `Result<T>` has private constructors and
+properties that throw in the opposite state, so `System.Text.Json` cannot write it, let alone read it back:
+caching the whole result fails as soon as FusionCache serializes it for Redis. Caching the value avoids that, and
+a hit rebuilds `Result<TValue>.Success(value)`.
 
-Until that is resolved in the `02.Caching` pass, this package is not published. If you vendor it in the
-meantime, either keep the cache L1-only, or register a serializer that can handle `Result<T>` (the converters
-in `SharedKernel.Application.Behaviors`' idempotency serializer solve the same problem).
+The package's tests prove the round trip with two FusionCache instances sharing one distributed cache: the value
+written by the first is read back by the second without running the handler.
 
 ## Reference
 
 | Type | Applies to | Shape |
 | --- | --- | --- |
-| `ICacheableQuery<TResponse>` | queries | `CacheKey`, `CachePolicy` |
-| `CachingBehavior<TRequest,TResponse>` | `IQueryBase` + `ICacheableQuery<TResponse>` | Query stage; get, run on miss, set on success |
+| `ICacheableQuery<TValue>` | queries returning `Result<TValue>` | `CacheKey`, `CachePolicy`; also an `IQuery<TValue>` |
+| `CachingBehavior<TRequest,TResponse>` | `IQueryBase` + `ICacheableQuery` | Query stage; one stampede-protected get-or-set of the value; failures not cached |
 | `IInvalidatesCache` | commands | `CacheKeysToInvalidate`, `CacheTagsToInvalidate` |
 | `CacheInvalidationBehavior<TRequest,TResponse>` | `ICommandBase` + `IInvalidatesCache` | Command stage; evicts after commit via `ICommandScope` |
 | `AddCachingBehaviors()` | — | Registers both, requires `ICacheService` |
@@ -182,8 +187,9 @@ marker on one — the behavior never resolves for it. Analyzer `SK0017` flags th
 
 ## Pitfalls
 
-**Declaring `ICacheableQuery<OrderDto>` instead of `ICacheableQuery<Result<OrderDto>>`.** The constraint will
-not match and the behavior silently never runs for that query.
+**A value type that does not round-trip through JSON.** L1 hides it; the first read from Redis fails. Give `TValue`
+a constructor or setters `System.Text.Json` can use, and add it to the cache's `SerializerContext` if the service
+registers one.
 
 **A key that omits a discriminating parameter.** `$"orders:{Status}"` on a query that also filters by customer
 serves one customer's results to another. The key must include everything the result depends on — including
@@ -222,6 +228,6 @@ recorded its removal after `FakeUnitOfWork.SaveChangesCallCount` moved.
 | **Depends on** | `SharedKernel.Application.Behaviors`, `SharedKernel.Caching.Abstractions` |
 | **Target** | `net10.0` |
 | **Public API** | Tracked; an unrecorded change fails the build |
-| **Status** | Complete and tested; publication deferred pending the `02.Caching` pass |
+| **Status** | Complete and tested; not yet published |
 
 Maintainer rules live in [`05.Application/CLAUDE.md`](../CLAUDE.md).
