@@ -9,94 +9,52 @@ using ZiggyCreatures.Caching.Fusion;
 namespace SharedKernel.Caching.FusionCache.Implementations;
 
 /// <summary>
-/// <see cref="ICacheService"/> implementation backed by FusionCache.
-/// Provides L1 in-process memory cache with optional L2 Redis distributed backplane,
-/// stampede protection, background refresh, and fail-safe semantics.
+/// <see cref="ICacheService"/> implementation backed by FusionCache: an in-process memory layer
+/// plus the optional Redis distributed layer and backplane added by <c>AddRedisL2</c>.
 /// </summary>
 /// <remarks>
 /// Emits <see cref="System.Diagnostics.Metrics"/> instruments under the meter
-/// <c>SharedKernel.Caching</c> (version <c>1.0</c>), and distributed-trace spans
-/// (Phase 41) under the identically-named/versioned <see cref="ActivitySource"/> —
-/// deliberately the same instrumentation-scope name and version as the meter, since
-/// OTel treats the trace and metric surfaces of one component as one instrumentation
-/// scope. Consumers attach a <see cref="MeterListener"/>/<see cref="ActivityListener"/>
-/// or configure an OTel metrics/tracing exporter to receive these signals.
+/// <c>SharedKernel.Caching</c> (version <c>1.0</c>), and distributed-trace spans under the
+/// identically-named/versioned <see cref="ActivitySource"/> — deliberately the same
+/// instrumentation-scope name and version as the meter, since OTel treats the trace and metric
+/// surfaces of one component as one instrumentation scope.
 /// </remarks>
 internal sealed partial class FusionCacheService : ICacheService
 {
-    // ---------------------------------------------------------------------------
-    // Batch operation concurrency — Phase 40 (P-303).
-    //
-    // GetManyAsync/SetManyAsync fan out per-key L2 round-trips via
-    // Parallel.ForEachAsync instead of a strictly sequential await-per-key loop,
-    // so a batch over N keys no longer costs N fully serialized L2 round-trips
-    // when Redis L2 is active. Fixed, not exposed as a CachingOptions knob —
-    // this phase deliberately does not grow the public API surface; a future
-    // phase can promote this to a configurable option if telemetry ever shows
-    // 16 is wrong for a given workload.
-    // ---------------------------------------------------------------------------
-
+    // Batch reads and writes fan out per-key L2 round-trips instead of awaiting them one by one.
+    // Fixed rather than configurable until telemetry shows a workload for which 16 is wrong.
     private const int MaxBatchConcurrency = 16;
 
-    // ---------------------------------------------------------------------------
-    // OTel Metrics — static readonly, AOT-safe, shared across all instances.
-    // BCL guarantees negligible overhead when no listener is attached.
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// The meter for all SharedKernel.Caching metrics.
-    /// Consumers attach a <see cref="MeterListener"/> or configure an OTel metrics
-    /// exporter to receive these metrics.
-    /// </summary>
+    // OTel metrics and tracing — static, shared across instances; negligible cost without a listener.
     private static readonly Meter _meter = new("SharedKernel.Caching", "1.0");
 
-    /// <summary>Counts cache hits (L1 memory hits from FusionCache events).</summary>
     private static readonly Counter<long> _cacheHits =
         _meter.CreateCounter<long>(
             "cache.hits",
             description: "Number of cache hits. Tag cache.key_prefix = {service}:{entity}.");
 
-    /// <summary>Counts cache misses (L1 memory misses from FusionCache events).</summary>
     private static readonly Counter<long> _cacheMisses =
         _meter.CreateCounter<long>(
             "cache.misses",
             description: "Number of cache misses. Tag cache.key_prefix = {service}:{entity}.");
 
-    /// <summary>Records factory execution duration in milliseconds on cache miss.</summary>
     private static readonly Histogram<double> _factoryDuration =
         _meter.CreateHistogram<double>(
             "cache.factory.duration",
             unit: "ms",
             description: "Factory execution duration in milliseconds. Tag cache.key_prefix = {service}:{entity}.");
 
-    /// <summary>Counts errors (factory exceptions or SetAsync exceptions).</summary>
     private static readonly Counter<long> _cacheErrors =
         _meter.CreateCounter<long>(
             "cache.errors",
             description: "Number of cache errors. Tag cache.error_type = exception type name.");
 
-    /// <summary>Counts L1 memory evictions (subscribed via FusionCache Events.Memory.Eviction).</summary>
     private static readonly Counter<long> _cacheEvictions =
         _meter.CreateCounter<long>(
             "cache.evictions",
             description: "Number of L1 memory evictions. Tag cache.eviction_reason = EvictionReason name.");
 
-    // ---------------------------------------------------------------------------
-    // OTel Tracing — Phase 41 (P-304). Static readonly, AOT-safe, shared across
-    // all instances. Same instrumentation-scope name/version as _meter above —
-    // deliberately, since OTel treats the trace and metric surfaces of one
-    // component as one instrumentation scope. BCL guarantees negligible overhead
-    // when no listener is attached (StartActivity returns null).
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// The activity source for all SharedKernel.Caching distributed-trace spans.
-    /// Consumers attach an <see cref="ActivityListener"/> or configure an OTel
-    /// tracing exporter to receive these spans.
-    /// </summary>
     private static readonly ActivitySource _activitySource = new("SharedKernel.Caching", "1.0");
-
-    // ---------------------------------------------------------------------------
 
     private readonly IFusionCache _cache;
     private readonly ILogger<FusionCacheService> _logger;
@@ -106,16 +64,12 @@ internal sealed partial class FusionCacheService : ICacheService
         _cache = cache;
         _logger = logger;
 
-        // Subscribe to FusionCache memory events for hit/miss/eviction.
-        // Prefer event subscription over call-site instrumentation to avoid duplication.
+        // Subscribe to FusionCache memory events for hit/miss/eviction instead of instrumenting
+        // every call site.
         _cache.Events.Memory.Hit += OnMemoryHit;
         _cache.Events.Memory.Miss += OnMemoryMiss;
         _cache.Events.Memory.Eviction += OnMemoryEviction;
     }
-
-    // ---------------------------------------------------------------------------
-    // FusionCache event handlers
-    // ---------------------------------------------------------------------------
 
     private static void OnMemoryHit(object? sender, ZiggyCreatures.Caching.Fusion.Events.FusionCacheEntryHitEventArgs e)
     {
@@ -138,11 +92,8 @@ internal sealed partial class FusionCacheService : ICacheService
             new KeyValuePair<string, object?>("cache.eviction_reason", e.Reason.ToString()));
     }
 
-    // ---------------------------------------------------------------------------
-    // Key prefix extraction — {service}:{entity} from {service}:{entity}:{id}[:...]
-    // Never includes the id segment to avoid high-cardinality Prometheus labels.
-    // ---------------------------------------------------------------------------
-
+    // {service}:{entity} from {service}:{entity}:{id}[:...], or {service}:@{tenant} for a tenant key.
+    // Never includes the id segment, to avoid high-cardinality metric labels.
     internal static string ExtractKeyPrefix(string key)
     {
         if (string.IsNullOrEmpty(key))
@@ -150,16 +101,13 @@ internal sealed partial class FusionCacheService : ICacheService
 
         var firstColon = key.IndexOf(':', StringComparison.Ordinal);
         if (firstColon < 0)
-            return key; // single-segment key — return as-is
+            return key;
 
         var secondColon = key.IndexOf(':', firstColon + 1);
-        return secondColon < 0
-            ? key                                   // two segments — return whole key
-            : key[..secondColon];                   // three or more — truncate after second segment
+        return secondColon < 0 ? key : key[..secondColon];
     }
 
-    /// <inheritdoc />
-    public async ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default)
+    public async ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
@@ -172,48 +120,58 @@ internal sealed partial class FusionCacheService : ICacheService
         if (!result.HasValue)
         {
             Log.CacheMiss(_logger, key);
-            // TryGetAsync does not fire FusionCache's Memory.Miss event, so we
-            // instrument the miss path directly here for GetAsync callers.
-            _cacheMisses.Add(1,
-                new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
+            // TryGetAsync does not raise FusionCache's Memory.Miss event.
+            _cacheMisses.Add(1, new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
         }
 
         activity?.SetTag("cache.outcome", result.HasValue ? "hit" : "miss");
 
-        return result.HasValue ? result.Value : default;
+        return result.HasValue ? CacheLookup<T>.Hit(result.Value) : CacheLookup<T>.Miss;
     }
 
-    /// <inheritdoc />
-    public async ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
+    public async ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
+        IEnumerable<string> keys,
+        CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(keys);
 
-        using var activity = _activitySource.StartActivity("cache.set", ActivityKind.Client);
-        activity?.SetTag("cache.key_prefix", ExtractKeyPrefix(key));
-
-        var entryOptions = BuildEntryOptions(policy);
-        IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
-
-        try
+        var distinctKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in keys)
         {
-            await _cache.SetAsync(key, value, entryOptions, tags, token: ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _cacheErrors.Add(1,
-                new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
+            ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(keys));
+            distinctKeys.Add(key);
         }
 
-        Log.CacheSet(_logger, key);
+        var result = new ConcurrentDictionary<string, CacheLookup<T>>(StringComparer.Ordinal);
+
+        await Parallel.ForEachAsync(
+            distinctKeys,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxBatchConcurrency, CancellationToken = ct },
+            async (key, token) =>
+            {
+                var entry = await _cache.TryGetAsync<T>(key, token: token).ConfigureAwait(false);
+                result[key] = entry.HasValue ? CacheLookup<T>.Hit(entry.Value) : CacheLookup<T>.Miss;
+
+                if (!entry.HasValue)
+                    Log.CacheMiss(_logger, key);
+            }).ConfigureAwait(false);
+
+        return result;
     }
 
-    /// <inheritdoc />
-    public async ValueTask<T> GetOrSetAsync<T>(
+    public ValueTask<T> GetOrSetAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        return GetOrSetAsync(key, (_, token) => factory(token), policy, ct);
+    }
+
+    public async ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
         CachePolicy policy,
         CancellationToken ct = default)
     {
@@ -226,30 +184,28 @@ internal sealed partial class FusionCacheService : ICacheService
         activity?.SetTag("cache.key_prefix", keyPrefix);
 
         var entryOptions = BuildEntryOptions(policy);
-        IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
+        var tags = policy.Tags.Count > 0 ? policy.Tags : null;
 
-        // Tracks whether the factory ran (a miss) or FusionCache satisfied the
-        // request from L1/L2 without invoking it (a hit) — set from inside the
-        // factory lambda below, alongside the existing Log.FactoryInvoked call.
+        // Set from inside the factory: a miss runs it, a hit (L1 or L2) does not.
         var factoryInvoked = false;
 
-        // Adapt ValueTask<T> factory to FusionCache's Task<T> factory via async/await.
-        // The state machine allocation occurs only on actual cache misses — not on every call.
-        // Stopwatch measures factory elapsed time for the cache.factory.duration histogram.
         var result = await _cache.GetOrSetAsync<T>(
             key,
-            async token =>
+            async (fusionContext, token) =>
             {
                 factoryInvoked = true;
                 Log.FactoryInvoked(_logger, key);
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    var value = await factory(token).ConfigureAwait(false);
+                    var context = new CacheFactoryContext(key, policy);
+                    var value = await factory(context, token).ConfigureAwait(false);
                     sw.Stop();
                     _factoryDuration.Record(
                         sw.Elapsed.TotalMilliseconds,
                         new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
+
+                    ApplyFactoryDecision(context, fusionContext.Options);
                     return value;
                 }
                 catch (Exception ex)
@@ -271,56 +227,32 @@ internal sealed partial class FusionCacheService : ICacheService
         return result;
     }
 
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Phase 40 (P-303): fans out per-key L2 round-trips via
-    /// <see cref="Parallel.ForEachAsync{TSource}(IEnumerable{TSource}, ParallelOptions, Func{TSource, CancellationToken, ValueTask})"/>,
-    /// bounded by <see cref="MaxBatchConcurrency"/> concurrent in-flight requests,
-    /// accumulating into a <see cref="ConcurrentDictionary{TKey, TValue}"/> — a plain
-    /// <see cref="Dictionary{TKey, TValue}"/> is not thread-safe for concurrent writes
-    /// from multiple parallel bodies. The empty-input short-circuit (Phase 22) still
-    /// holds: <c>Parallel.ForEachAsync</c> over an empty source completes immediately
-    /// with no iterations, returning an empty dictionary with no special-casing needed.
-    /// </remarks>
-    public async ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
-        IEnumerable<string> keys,
-        CancellationToken ct = default)
+    public async ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(keys);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(policy);
 
-        var result = new ConcurrentDictionary<string, T?>();
+        using var activity = _activitySource.StartActivity("cache.set", ActivityKind.Client);
+        activity?.SetTag("cache.key_prefix", ExtractKeyPrefix(key));
 
-        await Parallel.ForEachAsync(
-            keys,
-            new ParallelOptions { MaxDegreeOfParallelism = MaxBatchConcurrency, CancellationToken = ct },
-            async (key, token) =>
-            {
-                ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        var entryOptions = BuildEntryOptions(policy);
+        var tags = policy.Tags.Count > 0 ? policy.Tags : null;
 
-                var entry = await _cache.TryGetAsync<T>(key, token: token).ConfigureAwait(false);
-                result[key] = entry.HasValue ? entry.Value : default;
+        try
+        {
+            await _cache.SetAsync(key, value, entryOptions, tags, token: ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _cacheErrors.Add(1,
+                new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
 
-                if (!entry.HasValue)
-                    Log.CacheMiss(_logger, key);
-            }).ConfigureAwait(false);
-
-        return result;
+        Log.CacheSet(_logger, key);
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Phase 40 (P-303): fans out per-key L2 writes via
-    /// <see cref="Parallel.ForEachAsync{TSource}(IEnumerable{TSource}, ParallelOptions, Func{TSource, CancellationToken, ValueTask})"/>,
-    /// bounded by <see cref="MaxBatchConcurrency"/> concurrent in-flight writes. The
-    /// single <see cref="CachePolicy"/>-applies-to-all-entries contract (Phase 22) is
-    /// unchanged — the FusionCache entry options and tags derived from the policy are
-    /// computed once before the fan-out begins, not per entry. Accepted trade-off:
-    /// unlike the prior strictly-sequential loop, a failure on one entry no longer
-    /// guarantees entries after it were never attempted — up to
-    /// <see cref="MaxBatchConcurrency"/> entries beyond the failing one may already be
-    /// in flight (and may complete) by the time the failure surfaces to the caller.
-    /// </remarks>
     public async ValueTask SetManyAsync<T>(
         IReadOnlyDictionary<string, T> entries,
         CachePolicy policy,
@@ -329,22 +261,22 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(policy);
 
+        foreach (var key in entries.Keys)
+            ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(entries));
+
         var entryOptions = BuildEntryOptions(policy);
-        IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
+        var tags = policy.Tags.Count > 0 ? policy.Tags : null;
 
         await Parallel.ForEachAsync(
             entries,
             new ParallelOptions { MaxDegreeOfParallelism = MaxBatchConcurrency, CancellationToken = ct },
             async (entry, token) =>
             {
-                ArgumentException.ThrowIfNullOrWhiteSpace(entry.Key);
-
                 await _cache.SetAsync(entry.Key, entry.Value, entryOptions, tags, token: token).ConfigureAwait(false);
                 Log.CacheSet(_logger, entry.Key);
             }).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask RemoveAsync(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -353,7 +285,14 @@ internal sealed partial class FusionCacheService : ICacheService
         Log.CacheRemoved(_logger, key);
     }
 
-    /// <inheritdoc />
+    public async ValueTask ExpireAsync(string key, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        await _cache.ExpireAsync(key, token: ct).ConfigureAwait(false);
+        Log.CacheExpired(_logger, key);
+    }
+
     public async ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tag);
@@ -362,53 +301,102 @@ internal sealed partial class FusionCacheService : ICacheService
         Log.CacheTagRemoved(_logger, tag);
     }
 
-    // Converts a CachePolicy to FusionCache entry options.
-    // Throws InvalidOperationException when NeverExpire and SlidingWindow are combined.
-    private static FusionCacheEntryOptions BuildEntryOptions(CachePolicy policy)
+    public async ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default)
     {
-        // Guard: NeverExpire + SlidingWindow is a logical contradiction — an entry that
-        // never expires on an absolute TTL should not also have an idle expiration window.
-        if (policy.L1Duration == TimeSpan.MaxValue && policy.SlidingWindow.HasValue)
-            throw new InvalidOperationException(
-                "CachePolicy.Sliding is incompatible with CachePolicy.NeverExpire.");
+        ArgumentNullException.ThrowIfNull(tags);
 
-        var options = new FusionCacheEntryOptions(policy.L1Duration)
+        var distinctTags = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tag in tags)
         {
-            IsFailSafeEnabled = policy.FailSafeEnabled,
-            // Size = 1 so every entry counts as one unit against the MemoryCache SizeLimit
-            // set via CachingOptions.L1SizeLimit (entry count — not bytes).
+            ArgumentException.ThrowIfNullOrWhiteSpace(tag, nameof(tags));
+            distinctTags.Add(tag);
+        }
+
+        if (distinctTags.Count == 0)
+            return;
+
+        await _cache.RemoveByTagAsync(distinctTags, token: ct).ConfigureAwait(false);
+
+        foreach (var tag in distinctTags)
+            Log.CacheTagRemoved(_logger, tag);
+    }
+
+    public async ValueTask ClearAsync(CancellationToken ct = default)
+    {
+        await _cache.ClearAsync(allowFailSafe: false, token: ct).ConfigureAwait(false);
+        Log.CacheCleared(_logger);
+    }
+
+    // Converts a CachePolicy to FusionCache entry options.
+    internal static FusionCacheEntryOptions BuildEntryOptions(CachePolicy policy)
+    {
+        var options = new FusionCacheEntryOptions
+        {
+            IsFailSafeEnabled = policy.IsFailSafeEnabled,
+            // Size = 1 so every entry counts as one unit against CachingOptions.L1SizeLimit (an entry count, not bytes).
             Size = 1,
         };
 
-        // Sliding expiration approximation for L1.
-        //
-        // FusionCache 2.6.0 does not expose a native sliding-expiration property on
-        // FusionCacheEntryOptions. We approximate idle-TTL behaviour by setting the
-        // L1 MemoryCacheDuration to SlidingWindow and enabling an aggressive
-        // EagerRefreshThreshold (0.9). Each access near the end of the SlidingWindow
-        // triggers a background re-validation that effectively resets the L1 TTL as
-        // long as the entry continues to be accessed.
-        //
-        // The absolute ceiling is the L1Duration set on the policy (constructor arg above).
-        // For CachePolicy.Sliding() this is CachePolicy.Default's 5 min.
-        // L2 Redis does not support sliding expiry — L2 entries expire at the
-        // absolute L2Duration ceiling. This L1-only limitation is documented on
-        // CachePolicy.SlidingWindow and CachePolicy.Sliding.
-        if (policy.SlidingWindow.HasValue)
-            options.SetMemoryCacheDuration(policy.SlidingWindow.Value);
+        SetDurations(options, policy.L1Duration, policy.L2Duration);
 
-        // L2 distributed cache duration — sets the distributed cache TTL
-        options.SetDistributedCacheDuration(policy.L2Duration);
+        if (policy.FailSafeMaxDuration is { } failSafeMax)
+        {
+            options.FailSafeMaxDuration = failSafeMax;
+            options.DistributedCacheFailSafeMaxDuration = failSafeMax;
+        }
 
-        // Eager refresh: trigger background refresh at the configured fraction of TTL.
-        // When SlidingWindow is set, use 0.9 as the threshold for the approximation
-        // (access near end of SlidingWindow triggers background refresh, resetting TTL).
-        if (policy.SlidingWindow.HasValue)
-            options.EagerRefreshThreshold = 0.9f;
-        else if (policy.EagerRefreshThreshold.HasValue)
-            options.EagerRefreshThreshold = (float)policy.EagerRefreshThreshold.Value;
+        if (policy.FactorySoftTimeout is { } softTimeout)
+            options.FactorySoftTimeout = softTimeout;
+
+        if (policy.FactoryHardTimeout is { } hardTimeout)
+            options.FactoryHardTimeout = hardTimeout;
+
+        if (policy.EagerRefreshThreshold is { } threshold)
+            options.EagerRefreshThreshold = (float)threshold;
+
+        if (policy.JitterMaxDuration is { } jitter)
+            options.JitterMaxDuration = jitter;
+
+        if (policy.IsLocalOnly)
+        {
+            // A process-local entry must neither reach L2 nor tell other nodes to evict their own copies.
+            options.SkipDistributedCacheRead = true;
+            options.SkipDistributedCacheWrite = true;
+            options.SkipBackplaneNotifications = true;
+        }
 
         return options;
+    }
+
+    // Applies what the factory decided through its CacheFactoryContext to the options FusionCache
+    // uses for this one write.
+    internal static void ApplyFactoryDecision(CacheFactoryContext context, FusionCacheEntryOptions options)
+    {
+        if (context.IsCachingSkipped)
+        {
+            options.SkipMemoryCacheWrite = true;
+            options.SkipDistributedCacheWrite = true;
+            options.SkipBackplaneNotifications = true;
+            return;
+        }
+
+        if (context.L1DurationOverride is { } l1 && context.L2DurationOverride is { } l2)
+            SetDurations(options, l1, l2);
+    }
+
+    private static void SetDurations(FusionCacheEntryOptions options, TimeSpan l1Duration, TimeSpan l2Duration)
+    {
+        // TimeSpan.MaxValue means "never expires by time"; FusionCache represents that with
+        // DateTimeOffset.MaxValue instead of overflowing now + MaxValue.
+        if (l1Duration == TimeSpan.MaxValue)
+            options.SetDurationInfinite();
+        else
+            options.Duration = l1Duration;
+
+        if (l2Duration == TimeSpan.MaxValue)
+            options.SetDistributedCacheDurationInfinite();
+        else
+            options.DistributedCacheDuration = l2Duration;
     }
 
     // Source-generated log methods for hot-path logging.
@@ -433,5 +421,13 @@ internal sealed partial class FusionCacheService : ICacheService
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 14, Level = LogLevel.Debug,
             Message = "Cache entries removed for tag '{Tag}'")]
         internal static partial void CacheTagRemoved(ILogger logger, string tag);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 16, Level = LogLevel.Debug,
+            Message = "Cache entry expired for key '{Key}'")]
+        internal static partial void CacheExpired(ILogger logger, string key);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 17, Level = LogLevel.Warning,
+            Message = "Cache cleared: every entry of this cache was removed")]
+        internal static partial void CacheCleared(ILogger logger);
     }
 }

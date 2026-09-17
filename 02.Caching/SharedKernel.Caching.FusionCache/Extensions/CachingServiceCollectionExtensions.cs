@@ -48,7 +48,9 @@ public static class CachingServiceCollectionExtensions
             optionsBuilder.Configure(configure);
 
         // Register custom validator for rules data annotations cannot express (e.g. ServiceName).
-        services.TryAddSingleton<IValidateOptions<CachingOptions>, CachingOptionsValidator>();
+        // TryAddEnumerable, not TryAddSingleton: ValidateDataAnnotations() above has already added an
+        // IValidateOptions<CachingOptions>, so TryAddSingleton would silently skip this validator.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<CachingOptions>, CachingOptionsValidator>());
 
         // Resolve CachingOptions synchronously so we can read SerializerContext before
         // building the DI container (options are configured above via Configure delegate).
@@ -57,9 +59,8 @@ public static class CachingServiceCollectionExtensions
         configure?.Invoke(tempOptions);
 
         // Build the JsonSerializerOptions for the FusionCache STJ serializer.
-        // When SerializerContext is set, combine it with the internal CacheInvalidationMessage
-        // context (and EncryptedCacheEntryJsonContext, for encrypted entries) so FusionCache's L2
-        // serializer is fully NativeAOT-safe.
+        // When SerializerContext is set, combine it with EncryptedCacheEntryJsonContext (for encrypted
+        // entries) so FusionCache's L2 serializer is NativeAOT-safe.
         JsonSerializerOptions? resolvedJsonOptions = null;
         if (tempOptions.SerializerContext is not null)
         {
@@ -67,7 +68,6 @@ public static class CachingServiceCollectionExtensions
             {
                 TypeInfoResolver = JsonTypeInfoResolver.Combine(
                     tempOptions.SerializerContext,
-                    CacheInvalidationMessageJsonContext.Default,
                     EncryptedCacheEntryJsonContext.Default),
             };
         }
@@ -112,14 +112,11 @@ public static class CachingServiceCollectionExtensions
         // Register ICacheService as a singleton backed by FusionCacheService.
         services.TryAddSingleton<ICacheService, FusionCacheService>();
 
-        // Register ICacheKeyProvider with the default platform-standard implementation.
-        // Consumers may override by registering their own ICacheKeyProvider after this call.
-        services.TryAddSingleton<ICacheKeyProvider, CacheKeyProvider>();
-
-        // Register CachingCoreOptions in sync with CachingOptions so that sibling provider
-        // packages (e.g. SharedKernel.Caching.Redis) can resolve IOptions<CachingCoreOptions>
-        // without taking a dependency on SharedKernel.Caching.FusionCache.
-        services.Configure<CachingCoreOptions>(o => o.ServiceName = tempOptions.ServiceName);
+        // One key provider serves both interfaces, so global and tenant keys share the single
+        // validated CachingOptions.ServiceName. Consumers may override either registration.
+        services.TryAddSingleton<CacheKeyProvider>();
+        services.TryAddSingleton<ICacheKeyProvider>(sp => sp.GetRequiredService<CacheKeyProvider>());
+        services.TryAddSingleton<ITenantCacheKeyProvider>(sp => sp.GetRequiredService<CacheKeyProvider>());
 
         return new CachingBuilder(services);
     }

@@ -17,8 +17,8 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 /// </para>
 /// <para>
 /// <c>AddSharedKernelCaching</c> will automatically combine your context with the internal
-/// <c>CacheInvalidationMessageJsonContext</c> via <c>JsonTypeInfoResolver.Combine</c>, ensuring
-/// that both your application types and the infrastructure invalidation payload are handled by
+/// <c>EncryptedCacheEntryJsonContext</c> via <c>JsonTypeInfoResolver.Combine</c>, ensuring
+/// that both your application types and the encrypted-entry payload are handled by
 /// source-generated contexts — no reflection is used anywhere in the serialization path.
 /// </para>
 /// <para>

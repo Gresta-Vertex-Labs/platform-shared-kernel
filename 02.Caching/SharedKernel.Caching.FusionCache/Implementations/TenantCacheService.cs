@@ -3,37 +3,15 @@ using SharedKernel.Caching.Abstractions;
 namespace SharedKernel.Caching.FusionCache.Implementations;
 
 /// <summary>
-/// Default <see cref="ITenantCacheService"/> implementation. Composes <see cref="ICacheService"/>
-/// and <see cref="ITenantCacheKeyProvider"/> — every method builds the tenant-scoped key via
-/// <see cref="ITenantCacheKeyProvider.BuildTenantKey"/> and delegates to the wrapped
-/// <see cref="ICacheService"/>. Carries zero duplicated key-formatting logic.
+/// <see cref="ITenantCacheService"/> over <see cref="ICacheService"/>: builds every key with
+/// <see cref="ITenantCacheKeyProvider.BuildTenantKey"/> and scopes every policy with
+/// <see cref="CachePolicy.ForTenant"/>, so each entry also carries its tenant-wide tag.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <strong>Tag tenant-scoping.</strong> <see cref="SetAsync{T}"/> rewrites every tag on the
-/// supplied <see cref="CachePolicy"/> to <c>{tenantId}:{tag}</c> before delegating to
-/// <see cref="ICacheService.SetAsync{T}"/>, and <see cref="RemoveByTagAsync"/> applies the
-/// identical rewrite before calling <see cref="ICacheService.RemoveByTagAsync"/>. FusionCache
-/// tags live in a global namespace that <see cref="ITenantCacheKeyProvider"/> never touches —
-/// without this rewrite, two tenants both tagging <c>"orders"</c> would share one FusionCache
-/// tag, and one tenant's <see cref="RemoveByTagAsync"/> call would invalidate the other
-/// tenant's <c>"orders"</c>-tagged entries too.
-/// </para>
-/// <para>
-/// Zero dependency on <c>12.Security</c> or <c>IHttpContextAccessor</c> — <c>tenantId</c> is
-/// always the caller's explicit argument.
-/// </para>
-/// </remarks>
 internal sealed class TenantCacheService : ITenantCacheService
 {
     private readonly ICacheService _cache;
     private readonly ITenantCacheKeyProvider _keyProvider;
 
-    /// <summary>
-    /// Initialises a new instance of <see cref="TenantCacheService"/>.
-    /// </summary>
-    /// <param name="cache">The wrapped, non-tenant-aware cache service.</param>
-    /// <param name="keyProvider">The tenant-aware key provider used to build every key.</param>
     public TenantCacheService(ICacheService cache, ITenantCacheKeyProvider keyProvider)
     {
         ArgumentNullException.ThrowIfNull(cache);
@@ -43,33 +21,9 @@ internal sealed class TenantCacheService : ITenantCacheService
         _keyProvider = keyProvider;
     }
 
-    /// <inheritdoc />
-    public ValueTask<T?> GetAsync<T>(string tenantId, string entity, string id, CancellationToken ct = default)
-    {
-        var key = _keyProvider.BuildTenantKey(tenantId, entity, id);
-        return _cache.GetAsync<T>(key, ct);
-    }
+    public ValueTask<CacheLookup<T>> TryGetAsync<T>(string tenantId, string entity, string id, CancellationToken ct = default) =>
+        _cache.TryGetAsync<T>(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
-    /// <inheritdoc />
-    public ValueTask SetAsync<T>(
-        string tenantId,
-        string entity,
-        string id,
-        T value,
-        CachePolicy policy,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        // BuildTenantKey validates tenantId (throws ArgumentException on null/whitespace) before
-        // ScopeTagsToTenant below ever reads it, so no separate tenantId guard is needed here.
-        var key = _keyProvider.BuildTenantKey(tenantId, entity, id);
-        var scopedPolicy = ScopeTagsToTenant(policy, tenantId);
-
-        return _cache.SetAsync(key, value, scopedPolicy, ct);
-    }
-
-    /// <inheritdoc />
     public ValueTask<T> GetOrSetAsync<T>(
         string tenantId,
         string entity,
@@ -80,48 +34,41 @@ internal sealed class TenantCacheService : ITenantCacheService
     {
         ArgumentNullException.ThrowIfNull(policy);
 
-        // BuildTenantKey validates tenantId (throws ArgumentException on null/whitespace) before
-        // ScopeTagsToTenant below ever reads it, so no separate tenantId guard is needed here.
-        var key = _keyProvider.BuildTenantKey(tenantId, entity, id);
-        var scopedPolicy = ScopeTagsToTenant(policy, tenantId);
-
-        return _cache.GetOrSetAsync(key, factory, scopedPolicy, ct);
+        string key = _keyProvider.BuildTenantKey(tenantId, entity, id);
+        return _cache.GetOrSetAsync(key, factory, policy.ForTenant(tenantId), ct);
     }
 
-    /// <inheritdoc />
-    public ValueTask RemoveAsync(string tenantId, string entity, string id, CancellationToken ct = default)
+    public ValueTask<T> GetOrSetAsync<T>(
+        string tenantId,
+        string entity,
+        string id,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default)
     {
-        var key = _keyProvider.BuildTenantKey(tenantId, entity, id);
-        return _cache.RemoveAsync(key, ct);
+        ArgumentNullException.ThrowIfNull(policy);
+
+        string key = _keyProvider.BuildTenantKey(tenantId, entity, id);
+        return _cache.GetOrSetAsync(key, factory, policy.ForTenant(tenantId), ct);
     }
 
-    /// <inheritdoc />
-    public ValueTask RemoveByTagAsync(string tenantId, string tag, CancellationToken ct = default)
+    public ValueTask SetAsync<T>(string tenantId, string entity, string id, T value, CachePolicy policy, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+        ArgumentNullException.ThrowIfNull(policy);
 
-        var scopedTag = ScopeTagToTenant(tenantId, tag);
-        return _cache.RemoveByTagAsync(scopedTag, ct);
+        string key = _keyProvider.BuildTenantKey(tenantId, entity, id);
+        return _cache.SetAsync(key, value, policy.ForTenant(tenantId), ct);
     }
 
-    /// <summary>
-    /// Returns a copy of <paramref name="policy"/> with every tag rewritten to its tenant-scoped
-    /// form (<c>{tenantId}:{tag}</c>). Returns <paramref name="policy"/> unchanged when it carries
-    /// no tags — avoids an unnecessary record copy on the (common) untagged path.
-    /// </summary>
-    private static CachePolicy ScopeTagsToTenant(CachePolicy policy, string tenantId)
-    {
-        if (policy.Tags.Length == 0)
-            return policy;
+    public ValueTask RemoveAsync(string tenantId, string entity, string id, CancellationToken ct = default) =>
+        _cache.RemoveAsync(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
-        var scopedTags = new string[policy.Tags.Length];
-        for (var i = 0; i < policy.Tags.Length; i++)
-            scopedTags[i] = ScopeTagToTenant(tenantId, policy.Tags[i]);
+    public ValueTask ExpireAsync(string tenantId, string entity, string id, CancellationToken ct = default) =>
+        _cache.ExpireAsync(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
-        return policy.WithTags(scopedTags);
-    }
+    public ValueTask RemoveByTagAsync(string tenantId, string tag, CancellationToken ct = default) =>
+        _cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(tenantId, tag), ct);
 
-    /// <summary>Rewrites a single tag to its tenant-scoped form: <c>{tenantId}:{tag}</c>.</summary>
-    private static string ScopeTagToTenant(string tenantId, string tag) => $"{tenantId}:{tag}";
+    public ValueTask RemoveTenantAsync(string tenantId, CancellationToken ct = default) =>
+        _cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantWideTag(tenantId), ct);
 }

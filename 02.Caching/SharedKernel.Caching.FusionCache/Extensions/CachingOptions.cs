@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO.Compression;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
+using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.Caching.FusionCache.Extensions;
 
@@ -49,11 +50,12 @@ public sealed class CachingOptions
     /// produced by <c>ICacheKeyProvider</c> in the format <c>{service}:{entity}:{id}</c>.
     /// </summary>
     /// <remarks>
-    /// Defaults to <c>"app"</c>. Must be explicitly set to a meaningful service name in production
-    /// to avoid key collisions between services sharing a Redis backplane.
-    /// Validation fails if this is null or whitespace.
+    /// Required, with no default, so services sharing a Redis instance can never collide on a
+    /// forgotten default. Must satisfy <c>CacheKeyFormat.IsValidServiceName</c>: 1 to 64 lowercase
+    /// ASCII letters, digits, <c>.</c>, <c>_</c> or <c>-</c>, starting with a letter or digit. Host
+    /// startup fails otherwise.
     /// </remarks>
-    public string ServiceName { get; set; } = "app";
+    public string ServiceName { get; set; } = string.Empty;
 
     /// <summary>
     /// When <see langword="true"/>, the <c>CacheWarmupHostedService</c> integrates with the
@@ -93,10 +95,9 @@ public sealed class CachingOptions
     /// When set, <c>AddSharedKernelCaching</c> passes a combined
     /// <see cref="System.Text.Json.JsonSerializerOptions"/> to
     /// <c>WithSystemTextJsonSerializer()</c> using
-    /// <c>JsonTypeInfoResolver.Combine(SerializerContext, CacheInvalidationMessageJsonContext.Default)</c>.
-    /// This ensures that both the application's cached types and the internal
-    /// <c>CacheInvalidationMessage</c> type are handled by the source-generated context,
-    /// keeping the serializer fully NativeAOT-safe.
+    /// <c>JsonTypeInfoResolver.Combine(SerializerContext, EncryptedCacheEntryJsonContext.Default)</c>,
+    /// so the application's cached types and the internal encrypted-entry type are both handled by
+    /// source-generated contexts, keeping the serializer NativeAOT-safe.
     /// </para>
     /// <para>
     /// When <see langword="null"/> (the default), FusionCache falls back to reflection-based
@@ -166,8 +167,9 @@ internal sealed class CachingOptionsValidator : IValidateOptions<CachingOptions>
     /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, CachingOptions options)
     {
-        if (string.IsNullOrWhiteSpace(options.ServiceName))
-            return ValidateOptionsResult.Fail("CachingOptions.ServiceName must not be null or whitespace.");
+        if (!CacheKeyFormat.IsValidServiceName(options.ServiceName))
+            return ValidateOptionsResult.Fail(
+                "CachingOptions.ServiceName must be set to 1 to 64 lowercase ASCII letters, digits, '.', '_' or '-', starting with a letter or digit.");
 
         return ValidateOptionsResult.Success;
     }
