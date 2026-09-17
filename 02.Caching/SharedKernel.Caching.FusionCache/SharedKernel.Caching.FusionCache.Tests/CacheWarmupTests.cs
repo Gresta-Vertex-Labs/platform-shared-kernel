@@ -1,222 +1,325 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.FusionCache.Tests.Telemetry;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="CacheWarmupHostedService"/> and
-/// <c>AddCacheWarmup&lt;TStrategy&gt;</c> DI extension.
-/// Covers: execution ordering, failure isolation, timing logging, DI idempotence.
+/// Tests for <c>AddCacheWarmup&lt;TStrategy&gt;</c> and the internal warmup lifecycle service, driven
+/// through a real <see cref="IHost"/> so the host's own <c>StartingAsync</c>/<c>StartAsync</c>/<c>StopAsync</c>
+/// ordering is what is under test.
 /// </summary>
 public sealed class CacheWarmupTests
 {
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
     // -------------------------------------------------------------------------
-    // Test strategy implementations
+    // Test doubles
     // -------------------------------------------------------------------------
 
-    private sealed class RecordingStrategy(string name, int order, Action? onWarmup = null)
-        : ICacheWarmupStrategy
+    /// <summary>The ordered record of what happened, shared by strategies and the probe service.</summary>
+    private sealed class EventLog
     {
-        private int _callCount;
+        private readonly ConcurrentQueue<string> _events = new();
 
-        public string Name { get; } = name;
-        public int Order { get; } = order;
-        public int CallCount => _callCount;
+        public void Add(string entry) => _events.Enqueue(entry);
 
-        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
+        public IReadOnlyList<string> Entries => _events.ToArray();
+    }
+
+    private sealed class RecordingStrategy(string name, int order, EventLog log) : ICacheWarmupStrategy
+    {
+        public string Name => name;
+        public int Order => order;
+
+        public async ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
         {
-            Interlocked.Increment(ref _callCount);
-            onWarmup?.Invoke();
-            return ValueTask.CompletedTask;
+            await cache.SetAsync($"svc:warmup:{name}", name, CachePolicy.Default, ct);
+            log.Add(name);
         }
     }
 
-    private sealed class OrderCapturingStrategy(
-        string name,
-        int order,
-        List<string> executionLog)
-        : ICacheWarmupStrategy
+    private sealed class ThrowingStrategy(string name, int order, EventLog log) : ICacheWarmupStrategy
     {
-        public string Name { get; } = name;
-        public int Order { get; } = order;
+        public string Name => name;
+        public int Order => order;
 
         public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
         {
-            executionLog.Add(Name);
-            return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class ThrowingStrategy(string name, int order) : ICacheWarmupStrategy
-    {
-        public string Name { get; } = name;
-        public int Order { get; } = order;
-
-        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) =>
+            log.Add(name + ":threw");
             throw new InvalidOperationException($"Strategy '{name}' intentionally failed.");
+        }
     }
 
-    private sealed class SlowStrategy(string name, int order, TimeSpan delay)
-        : ICacheWarmupStrategy
+    /// <summary>Takes a noticeable time, then records completion.</summary>
+    private sealed class SlowStrategy(EventLog log, TimeSpan delay) : ICacheWarmupStrategy
     {
-        public string Name { get; } = name;
-        public int Order { get; } = order;
+        public string Name => "slow";
+        public int Order => 0;
 
-        public async ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) =>
-            await Task.Delay(delay, ct);
-    }
-
-    // -------------------------------------------------------------------------
-    // Helper
-    // -------------------------------------------------------------------------
-
-    private static (IServiceProvider Provider, ICacheService Cache) BuildProvider(
-        Action<IServiceCollection>? extra = null,
-        bool waitForWarmup = false)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = waitForWarmup; });
-        extra?.Invoke(services);
-        var provider = services.BuildServiceProvider();
-        return (provider, provider.GetRequiredService<ICacheService>());
-    }
-
-    // -------------------------------------------------------------------------
-    // Ordering
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task Strategies_AreExecuted_InAscendingOrderOrder()
-    {
-        var executionLog = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-
-        // Register in reverse order to confirm sorting takes effect.
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("StrategyC", order: 30, executionLog));
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("StrategyA", order: 10, executionLog));
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("StrategyB", order: 20, executionLog));
-
-        // Register the hosted service manually (not via AddCacheWarmup) to control strategy setup.
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await hostedService.StartAsync(cts.Token);
-        await hostedService.StartedAsync(cts.Token);
-
-        Assert.Equal(["StrategyA", "StrategyB", "StrategyC"], executionLog);
-    }
-
-    [Fact]
-    public async Task Strategies_WithSameOrder_AreAllExecuted()
-    {
-        var executionLog = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("X", order: 1, executionLog));
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("Y", order: 1, executionLog));
-
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await hostedService.StartAsync(cts.Token);
-        await hostedService.StartedAsync(cts.Token);
-
-        Assert.Equal(2, executionLog.Count);
-        Assert.Contains("X", executionLog);
-        Assert.Contains("Y", executionLog);
-    }
-
-    // -------------------------------------------------------------------------
-    // Failure isolation
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task FailedStrategy_DoesNotAbortSubsequentStrategies()
-    {
-        var executionLog = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("Before", order: 1, executionLog));
-        services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("Failing", order: 2));
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("After", order: 3, executionLog));
-
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        // Must not throw despite the middle strategy failing.
-        await hostedService.StartAsync(cts.Token);
-        await hostedService.StartedAsync(cts.Token);
-
-        Assert.Equal(["Before", "After"], executionLog);
-    }
-
-    [Fact]
-    public async Task AllStrategiesFailing_DoesNotThrow()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // WaitForWarmup=true so StartedAsync awaits completion before returning.
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-
-        services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("FailA", order: 1));
-        services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("FailB", order: 2));
-
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        // Both throw — neither should propagate.
-        var exception = await Record.ExceptionAsync(async () =>
+        public async ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
         {
-            await hostedService.StartAsync(cts.Token);
-            await hostedService.StartedAsync(cts.Token);
+            log.Add("warmup-started");
+            await Task.Delay(delay, ct);
+            log.Add("warmup-completed");
+        }
+    }
+
+    /// <summary>Runs until cancelled, reporting that it started and how it ended.</summary>
+    private sealed class BlockingStrategy : ICacheWarmupStrategy
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Completed { get; private set; }
+
+        public string Name => "blocking";
+        public int Order => 0;
+
+        public async ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
+        {
+            Started.TrySetResult();
+            try
+            {
+                await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
+                Completed = true;
+            }
+            catch (OperationCanceledException)
+            {
+                Cancelled.TrySetResult();
+                throw;
+            }
+        }
+    }
+
+    /// <summary>A hosted service registered after the warmup; records when the host starts it.</summary>
+    private sealed class ProbeHostedService(EventLog log) : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            log.Add("probe-started");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class StrategyA : ICacheWarmupStrategy
+    {
+        public string Name => "A";
+        public int Order => 1;
+        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) => ValueTask.CompletedTask;
+    }
+
+    private sealed class StrategyB : ICacheWarmupStrategy
+    {
+        public string Name => "B";
+        public int Order => 2;
+        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) => ValueTask.CompletedTask;
+    }
+
+    private static IHost BuildHost(bool waitForWarmup, Action<IServiceCollection, ICachingBuilder> configure, ILoggerProvider? logs = null)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Services.AddLogging(b =>
+        {
+            b.SetMinimumLevel(LogLevel.Trace);
+            if (logs is not null)
+                b.AddProvider(logs);
         });
 
-        Assert.Null(exception);
+        var caching = builder.Services.AddSharedKernelCaching(o =>
+        {
+            o.ServiceName = "svc";
+            o.WaitForWarmup = waitForWarmup;
+        });
+        configure(builder.Services, caching);
+
+        return builder.Build();
+    }
+
+    // -------------------------------------------------------------------------
+    // WaitForWarmup = true
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task WaitForWarmup_True_WarmupCompletesBeforeHostStartReturns_AndBeforeOtherHostedServicesStart()
+    {
+        var log = new EventLog();
+        using var host = BuildHost(waitForWarmup: true, (services, caching) =>
+        {
+            services.AddSingleton(log);
+            services.AddSingleton<ICacheWarmupStrategy>(new SlowStrategy(log, TimeSpan.FromMilliseconds(300)));
+            caching.AddCacheWarmup<StrategyA>();
+            // Registered after the warmup, like a web server or a consumer would be.
+            services.AddHostedService<ProbeHostedService>();
+        });
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        Assert.Equal(["warmup-started", "warmup-completed", "probe-started"], log.Entries);
+
+        await host.StopAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task WaitForWarmup_True_StrategiesRunInAscendingOrder_AndFillTheCache()
+    {
+        var log = new EventLog();
+        using var host = BuildHost(waitForWarmup: true, (services, caching) =>
+        {
+            // Registered out of order to prove sorting.
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("C", 30, log));
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("A", 10, log));
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("B", 20, log));
+            caching.AddCacheWarmup<StrategyA>();
+        });
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        Assert.Equal(["A", "B", "C"], log.Entries);
+        var cache = host.Services.GetRequiredService<ICacheService>();
+        Assert.Equal("B", (await cache.TryGetAsync<string>("svc:warmup:B")).Value);
+
+        await host.StopAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task WaitForWarmup_True_ThrowingStrategy_IsLoggedAndSkipped_OthersStillRun()
+    {
+        var log = new EventLog();
+        var logs = new CapturingLoggerProvider();
+        using var host = BuildHost(waitForWarmup: true, (services, caching) =>
+        {
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("before", 1, log));
+            services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("failing", 2, log));
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("after", 3, log));
+            caching.AddCacheWarmup<StrategyA>();
+        }, logs);
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        Assert.Equal(["before", "failing:threw", "after"], log.Entries);
+        var failure = Assert.Single(logs.Logs, l => l.Level == LogLevel.Error && l.Message.Contains("failing", StringComparison.Ordinal));
+        Assert.IsType<InvalidOperationException>(failure.Exception);
+        Assert.Contains(logs.Logs, l => l.Message == "Cache warmup completed");
+
+        await host.StopAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task WaitForWarmup_True_CancelledStartup_PropagatesCancellation_AndDoesNotStartOtherServices()
+    {
+        var log = new EventLog();
+        var blocking = new BlockingStrategy();
+        using var host = BuildHost(waitForWarmup: true, (services, caching) =>
+        {
+            services.AddSingleton(log);
+            services.AddSingleton<ICacheWarmupStrategy>(blocking);
+            caching.AddCacheWarmup<StrategyA>();
+            services.AddHostedService<ProbeHostedService>();
+        });
+
+        using var cts = new CancellationTokenSource();
+        var start = host.StartAsync(cts.Token);
+        await blocking.Started.Task.WaitAsync(Timeout);
+
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => start.WaitAsync(Timeout));
+        await blocking.Cancelled.Task.WaitAsync(Timeout);
+        Assert.False(blocking.Completed);
+        Assert.DoesNotContain("probe-started", log.Entries);
+    }
+
+    [Fact]
+    public async Task NoStrategiesRegistered_HostStartsNormally()
+    {
+        var log = new EventLog();
+        using var host = BuildHost(waitForWarmup: true, (services, _) =>
+        {
+            services.AddSingleton(log);
+            // The warmup service with no strategy registered.
+            services.AddSingleton<IHostedService, CacheWarmupHostedService>();
+            services.AddHostedService<ProbeHostedService>();
+        });
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        Assert.Equal(["probe-started"], log.Entries);
+
+        await host.StopAsync().WaitAsync(Timeout);
+    }
+
+    // -------------------------------------------------------------------------
+    // WaitForWarmup = false
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task WaitForWarmup_False_HostStartReturnsBeforeWarmupFinishes_AndStopCancelsIt()
+    {
+        var log = new EventLog();
+        var blocking = new BlockingStrategy();
+        using var host = BuildHost(waitForWarmup: false, (services, caching) =>
+        {
+            services.AddSingleton(log);
+            services.AddSingleton<ICacheWarmupStrategy>(blocking);
+            caching.AddCacheWarmup<StrategyA>();
+            services.AddHostedService<ProbeHostedService>();
+        });
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        // Start returned while the strategy is still running, and the other hosted service started.
+        await blocking.Started.Task.WaitAsync(Timeout);
+        Assert.False(blocking.Completed);
+        Assert.Contains("probe-started", log.Entries);
+
+        await host.StopAsync().WaitAsync(Timeout);
+
+        // StopAsync cancelled the background warmup and awaited it.
+        Assert.True(blocking.Cancelled.Task.IsCompleted, "StopAsync must cancel the running warmup before it returns.");
+        Assert.False(blocking.Completed);
+    }
+
+    [Fact]
+    public async Task WaitForWarmup_False_WarmupStillRunsInTheBackground_WithFailuresSkipped()
+    {
+        var log = new EventLog();
+        var logs = new CapturingLoggerProvider();
+        using var host = BuildHost(waitForWarmup: false, (services, caching) =>
+        {
+            services.AddSingleton<ICacheWarmupStrategy>(new ThrowingStrategy("failing", 1, log));
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("after", 2, log));
+            caching.AddCacheWarmup<StrategyA>();
+        }, logs);
+
+        await host.StartAsync().WaitAsync(Timeout);
+
+        Assert.True(await Eventually.HoldsAsync(() => logs.Logs.Any(l => l.Message == "Cache warmup completed")));
+        Assert.Equal(["failing:threw", "after"], log.Entries);
+
+        await host.StopAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task WaitForWarmup_False_StopAfterWarmupFinished_Completes()
+    {
+        var log = new EventLog();
+        using var host = BuildHost(waitForWarmup: false, (services, caching) =>
+        {
+            services.AddSingleton<ICacheWarmupStrategy>(new RecordingStrategy("quick", 1, log));
+            caching.AddCacheWarmup<StrategyA>();
+        });
+
+        await host.StartAsync().WaitAsync(Timeout);
+        Assert.True(await Eventually.HoldsAsync(() => log.Entries.Contains("quick")));
+
+        await host.StopAsync().WaitAsync(Timeout);
     }
 
     // -------------------------------------------------------------------------
@@ -228,48 +331,28 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-        builder.AddCacheWarmup<RecordingStrategy_A>();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc").AddCacheWarmup<StrategyA>();
 
         using var provider = services.BuildServiceProvider();
         var strategies = provider.GetServices<ICacheWarmupStrategy>().ToList();
 
-        Assert.Single(strategies);
-        Assert.IsType<RecordingStrategy_A>(strategies[0]);
+        Assert.IsType<StrategyA>(Assert.Single(strategies));
+        Assert.Same(strategies[0], provider.GetServices<ICacheWarmupStrategy>().Single());
     }
 
     [Fact]
-    public void AddCacheWarmup_RegistersCacheWarmupHostedService()
+    public void AddCacheWarmup_RegistersOneLifecycleHostedService_RegardlessOfStrategyCount()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-        builder.AddCacheWarmup<RecordingStrategy_A>();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
+            .AddCacheWarmup<StrategyA>()
+            .AddCacheWarmup<StrategyB>();
 
-        using var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<IHostedService>().ToList();
-
-        Assert.Contains(hostedServices, s => s is CacheWarmupHostedService);
-    }
-
-    [Fact]
-    public void AddCacheWarmup_CalledTwice_RegistersHostedServiceOnlyOnce()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-        builder.AddCacheWarmup<RecordingStrategy_A>();
-        builder.AddCacheWarmup<RecordingStrategy_B>();
-
-        using var provider = services.BuildServiceProvider();
-
-        var warmupHostedServices = provider
-            .GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .ToList();
-
-        // Exactly one CacheWarmupHostedService regardless of how many strategies.
-        Assert.Single(warmupHostedServices);
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IHostedService));
+        Assert.Equal(typeof(CacheWarmupHostedService), descriptor.ImplementationType);
+        Assert.True(typeof(IHostedLifecycleService).IsAssignableFrom(descriptor.ImplementationType));
+        Assert.False(descriptor.ImplementationType!.IsPublic);
     }
 
     [Fact]
@@ -277,14 +360,13 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-        builder.AddCacheWarmup<RecordingStrategy_A>();
-        builder.AddCacheWarmup<RecordingStrategy_A>(); // duplicate
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
+            .AddCacheWarmup<StrategyA>()
+            .AddCacheWarmup<StrategyA>();
 
         using var provider = services.BuildServiceProvider();
-        var strategies = provider.GetServices<ICacheWarmupStrategy>().ToList();
 
-        Assert.Single(strategies);
+        Assert.Single(provider.GetServices<ICacheWarmupStrategy>());
     }
 
     [Fact]
@@ -292,122 +374,16 @@ public sealed class CacheWarmupTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
-        builder.AddCacheWarmup<RecordingStrategy_A>();
-        builder.AddCacheWarmup<RecordingStrategy_B>();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
+            .AddCacheWarmup<StrategyA>()
+            .AddCacheWarmup<StrategyB>();
 
         using var provider = services.BuildServiceProvider();
-        var strategies = provider.GetServices<ICacheWarmupStrategy>().ToList();
 
-        Assert.Equal(2, strategies.Count);
-    }
-
-    // -------------------------------------------------------------------------
-    // WaitForWarmup = true — StartedAsync awaits warmup before returning
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task WaitForWarmup_True_StartedAsync_AwaitsWarmupCompletion()
-    {
-        var completedNames = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new OrderCapturingStrategy("WarmOne", order: 1, completedNames));
-
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await hostedService.StartAsync(cts.Token);
-        await hostedService.StartedAsync(cts.Token);
-
-        // After StartedAsync returns, warmup must be done.
-        Assert.Contains("WarmOne", completedNames);
+        Assert.Equal(2, provider.GetServices<ICacheWarmupStrategy>().Count());
     }
 
     [Fact]
-    public async Task WaitForWarmup_False_StartedAsync_ReturnsImmediately()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = false; });
-
-        // Use a slow strategy — StartedAsync should return before it finishes when WaitForWarmup=false.
-        services.AddSingleton<ICacheWarmupStrategy>(
-            new SlowStrategy("SlowOne", order: 1, delay: TimeSpan.FromMinutes(10)));
-
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        await hostedService.StartAsync(cts.Token);
-
-        // Should complete immediately without waiting for the slow warmup.
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        await hostedService.StartedAsync(cts.Token);
-        elapsed.Stop();
-
-        Assert.True(elapsed.ElapsedMilliseconds < 500,
-            $"StartedAsync should return immediately when WaitForWarmup=false, but took {elapsed.ElapsedMilliseconds}ms");
-
-        // Stop the service to cancel the background warmup.
-        await hostedService.StopAsync(CancellationToken.None);
-    }
-
-    // -------------------------------------------------------------------------
-    // No strategies registered
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task NoStrategiesRegistered_CompletesSuccessfully()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching(o => { o.ServiceName = "test-svc"; o.WaitForWarmup = true; });
-        services.AddSingleton<IHostedService, CacheWarmupHostedService>();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>()
-            .OfType<CacheWarmupHostedService>()
-            .Single();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        var exception = await Record.ExceptionAsync(async () =>
-        {
-            await hostedService.StartAsync(cts.Token);
-            await hostedService.StartedAsync(cts.Token);
-        });
-
-        Assert.Null(exception);
-    }
-
-    // -------------------------------------------------------------------------
-    // Helper strategy types for DI registration tests (must be concrete types)
-    // -------------------------------------------------------------------------
-
-    private sealed class RecordingStrategy_A : ICacheWarmupStrategy
-    {
-        public string Name => "RecordingA";
-        public int Order => 1;
-        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) => ValueTask.CompletedTask;
-    }
-
-    private sealed class RecordingStrategy_B : ICacheWarmupStrategy
-    {
-        public string Name => "RecordingB";
-        public int Order => 2;
-        public ValueTask WarmupAsync(ICacheService cache, CancellationToken ct) => ValueTask.CompletedTask;
-    }
+    public void AddCacheWarmup_NullBuilder_Throws() =>
+        Assert.Throws<ArgumentNullException>(() => ((ICachingBuilder)null!).AddCacheWarmup<StrategyA>());
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -5,50 +6,27 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Primitives.Logging;
-using System.Diagnostics;
 
 namespace SharedKernel.Caching.FusionCache;
 
 /// <summary>
-/// A hosted service that executes all registered <see cref="ICacheWarmupStrategy"/> instances
-/// at service startup, ordered by <see cref="ICacheWarmupStrategy.Order"/> ascending.
+/// Runs every registered <see cref="ICacheWarmupStrategy"/> once, in ascending
+/// <see cref="ICacheWarmupStrategy.Order"/>. A failing strategy is logged and the next one runs.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Each strategy is executed sequentially. If a strategy throws, the exception is caught,
-/// logged at <see cref="LogLevel.Error"/>, and execution continues with the next strategy.
-/// A failed strategy never crashes the host or aborts remaining strategies.
-/// </para>
-/// <para>
-/// When <c>CachingOptions.WaitForWarmup</c> is <see langword="true"/>, this service implements
-/// <see cref="IHostedLifecycleService"/> and delays the host's <c>StartedAsync</c> phase until
-/// all warmup strategies have completed, ensuring Kubernetes readiness probes do not pass
-/// until the cache is primed.
-/// </para>
-/// <para>
-/// Register via <c>ICachingBuilder.AddCacheWarmup&lt;TStrategy&gt;()</c>.
-/// </para>
+/// With <see cref="CachingOptions.WaitForWarmup"/>, warmup runs in <see cref="StartingAsync"/>, which the
+/// host completes for every lifecycle service before it starts any hosted service, including the web
+/// server, so no traffic and no readiness arrive until the cache is warm. Otherwise warmup runs in the
+/// background from <see cref="StartAsync"/> and is cancelled on shutdown.
 /// </remarks>
-public sealed partial class CacheWarmupHostedService : BackgroundService, IHostedLifecycleService
+internal sealed partial class CacheWarmupHostedService : IHostedLifecycleService, IDisposable
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IOptions<CachingOptions> _options;
     private readonly ILogger<CacheWarmupHostedService> _logger;
+    private readonly CancellationTokenSource _stopping = new();
+    private Task _backgroundWarmup = Task.CompletedTask;
 
-    // TaskCompletionSource initialized at construction time so StartedAsync can always await
-    // the correct Task regardless of the execution order of StartAsync / ExecuteAsync.
-    private readonly TaskCompletionSource _warmupCompletion =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    /// <summary>
-    /// Initialises a new instance of <see cref="CacheWarmupHostedService"/>.
-    /// </summary>
-    /// <param name="serviceProvider">
-    /// The DI service provider used to resolve <see cref="ICacheWarmupStrategy"/> and
-    /// <see cref="ICacheService"/> instances.
-    /// </param>
-    /// <param name="options">Caching configuration options.</param>
-    /// <param name="logger">Logger for warmup lifecycle events.</param>
     public CacheWarmupHostedService(
         IServiceProvider serviceProvider,
         IOptions<CachingOptions> options,
@@ -63,64 +41,46 @@ public sealed partial class CacheWarmupHostedService : BackgroundService, IHoste
         _logger = logger;
     }
 
-    // -------------------------------------------------------------------------
-    // IHostedLifecycleService — all except StartedAsync are no-ops
-    // -------------------------------------------------------------------------
-
-    /// <inheritdoc />
-    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <summary>
-    /// When <c>CachingOptions.WaitForWarmup</c> is <see langword="true"/>, awaits warmup
-    /// completion before the host signals readiness. This ensures Kubernetes readiness probes
-    /// do not pass until all registered warmup strategies have finished.
-    /// </summary>
-    /// <param name="cancellationToken">
-    /// A cancellation token that is cancelled when the host is stopping.
-    /// </param>
-    public async Task StartedAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        if (_options.Value.WaitForWarmup)
-        {
-            Log.WaitingForWarmupCompletion(_logger);
+        if (!_options.Value.WaitForWarmup)
+            return;
 
-            await _warmupCompletion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
+        Log.WaitingForWarmupCompletion(_logger);
+        await RunWarmupAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (!_options.Value.WaitForWarmup)
+            _backgroundWarmup = Task.Run(() => RunBackgroundWarmupAsync(_stopping.Token), CancellationToken.None);
+
+        return Task.CompletedTask;
+    }
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _stopping.CancelAsync().ConfigureAwait(false);
+        await _backgroundWarmup.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <inheritdoc />
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    // -------------------------------------------------------------------------
-    // BackgroundService
-    // -------------------------------------------------------------------------
+    public void Dispose() => _stopping.Dispose();
 
-    /// <summary>
-    /// Resolves all registered <see cref="ICacheWarmupStrategy"/> instances, orders them by
-    /// <see cref="ICacheWarmupStrategy.Order"/> ascending, and executes each sequentially.
-    /// Per-strategy exceptions are logged and do not abort execution of subsequent strategies.
-    /// </summary>
-    /// <param name="stoppingToken">A token that fires when the host is shutting down.</param>
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private async Task RunBackgroundWarmupAsync(CancellationToken ct)
     {
         try
         {
-            await RunWarmupAsync(stoppingToken).ConfigureAwait(false);
-            _warmupCompletion.TrySetResult();
+            await RunWarmupAsync(ct).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            _warmupCompletion.TrySetCanceled(stoppingToken);
-        }
-        catch (Exception ex)
-        {
-            // Warmup-level unhandled exception (beyond per-strategy isolation) — complete the
-            // TCS so StartedAsync doesn't hang, then re-throw to let the host handle it.
-            _warmupCompletion.TrySetException(ex);
-            throw;
+            // Shutdown before warmup finished.
         }
     }
 
@@ -146,7 +106,7 @@ public sealed partial class CacheWarmupHostedService : BackgroundService, IHoste
             if (ct.IsCancellationRequested)
             {
                 Log.WarmupCancelled(_logger, strategy.Name);
-                break;
+                ct.ThrowIfCancellationRequested();
             }
 
             var sw = Stopwatch.StartNew();
@@ -155,13 +115,14 @@ public sealed partial class CacheWarmupHostedService : BackgroundService, IHoste
             try
             {
                 await strategy.WarmupAsync(cache, ct).ConfigureAwait(false);
-                sw.Stop();
-
                 Log.StrategyCompleted(_logger, strategy.Name, sw.ElapsedMilliseconds);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                sw.Stop();
                 Log.StrategyFailed(_logger, strategy.Name, sw.ElapsedMilliseconds, ex);
             }
         }
@@ -172,35 +133,35 @@ public sealed partial class CacheWarmupHostedService : BackgroundService, IHoste
     private static partial class Log
     {
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 0, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: WaitForWarmup=true — awaiting warmup completion before host signals readiness.")]
+            Message = "Cache warmup: WaitForWarmup is on; host startup waits until warmup completes")]
         internal static partial void WaitingForWarmupCompletion(ILogger logger);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 1, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: No warmup strategies registered.")]
+            Message = "Cache warmup: no strategies registered")]
         internal static partial void NoWarmupStrategiesRegistered(ILogger logger);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 2, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: Starting cache warmup — {StrategyCount} strategy(ies) registered.")]
+            Message = "Cache warmup starting with {StrategyCount} strategies")]
         internal static partial void WarmupStarting(ILogger logger, int strategyCount);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 3, Level = LogLevel.Warning,
-            Message = "CacheWarmupHostedService: Warmup cancelled before executing strategy '{StrategyName}'.")]
+            Message = "Cache warmup cancelled before strategy {StrategyName}")]
         internal static partial void WarmupCancelled(ILogger logger, string strategyName);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 4, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: Executing strategy '{StrategyName}' (Order={Order}).")]
+            Message = "Cache warmup running strategy {StrategyName} (order {Order})")]
         internal static partial void StrategyExecuting(ILogger logger, string strategyName, int order);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 5, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: Strategy '{StrategyName}' completed in {ElapsedMs}ms.")]
+            Message = "Cache warmup strategy {StrategyName} completed in {ElapsedMs} ms")]
         internal static partial void StrategyCompleted(ILogger logger, string strategyName, long elapsedMs);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 6, Level = LogLevel.Error,
-            Message = "CacheWarmupHostedService: Strategy '{StrategyName}' failed after {ElapsedMs}ms — continuing with next strategy.")]
+            Message = "Cache warmup strategy {StrategyName} failed after {ElapsedMs} ms; continuing with the next strategy")]
         internal static partial void StrategyFailed(ILogger logger, string strategyName, long elapsedMs, Exception exception);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 7, Level = LogLevel.Information,
-            Message = "CacheWarmupHostedService: Cache warmup complete.")]
+            Message = "Cache warmup completed")]
         internal static partial void WarmupCompleted(ILogger logger);
     }
 }

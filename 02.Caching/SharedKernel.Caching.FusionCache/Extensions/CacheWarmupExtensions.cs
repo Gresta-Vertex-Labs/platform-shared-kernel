@@ -7,53 +7,42 @@ using SharedKernel.Caching.Abstractions;
 namespace SharedKernel.Caching.FusionCache.Extensions;
 
 /// <summary>
-/// Extension methods on <see cref="ICachingBuilder"/> for registering cache warmup strategies.
+/// <see cref="ICachingBuilder"/> extension methods for cache warmup at startup.
 /// </summary>
 public static class CacheWarmupExtensions
 {
     /// <summary>
-    /// Registers <typeparamref name="TStrategy"/> as an <see cref="ICacheWarmupStrategy"/>
-    /// singleton and ensures that <see cref="CacheWarmupHostedService"/> is registered exactly
-    /// once (idempotent — safe to call multiple times for different strategies).
+    /// Registers <typeparamref name="TStrategy"/> to run once at startup and fill the cache.
     /// </summary>
-    /// <typeparam name="TStrategy">
-    /// A concrete <see cref="ICacheWarmupStrategy"/> implementation to register. Must have a
-    /// public constructor whose parameters are resolvable from the DI container.
-    /// </typeparam>
-    /// <param name="builder">The caching builder returned by <c>AddSharedKernelCaching</c>.</param>
-    /// <returns>The same <see cref="ICachingBuilder"/> for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// Multiple strategies can be registered by calling <c>AddCacheWarmup</c> repeatedly.
-    /// They are executed in ascending <see cref="ICacheWarmupStrategy.Order"/> during startup.
+    /// Strategies run in ascending <see cref="ICacheWarmupStrategy.Order"/>; a failing strategy is logged
+    /// and the next one runs. Calling this for several strategy types registers each once.
     /// </para>
     /// <para>
-    /// Set <c>CachingOptions.WaitForWarmup = true</c> to delay host readiness until all
-    /// strategies complete. Example:
-    /// <code>
-    /// services.AddSharedKernelCaching(options => { options.WaitForWarmup = true; })
-    ///         .AddCacheWarmup&lt;MyProductCatalogWarmup&gt;()
-    ///         .AddCacheWarmup&lt;MyUserPreferencesWarmup&gt;();
-    /// </code>
+    /// By default warmup runs in the background after startup. Set <see cref="CachingOptions.WaitForWarmup"/>
+    /// to hold host startup, and therefore traffic and readiness, until every strategy has run.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TStrategy">The strategy type, resolved from the container as a singleton.</typeparam>
+    /// <param name="builder">The caching builder.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <example>
+    /// <code>
+    /// services.AddSharedKernelCaching(o =&gt; { o.ServiceName = "catalog"; o.WaitForWarmup = true; })
+    ///         .AddCacheWarmup&lt;CurrencyWarmup&gt;()
+    ///         .AddCacheWarmup&lt;CategoryTreeWarmup&gt;();
+    /// </code>
+    /// </example>
     public static ICachingBuilder AddCacheWarmup<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStrategy>(
         this ICachingBuilder builder)
         where TStrategy : class, ICacheWarmupStrategy
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        var services = builder.Services;
-
-        // Register the strategy using TryAddEnumerable so multiple strategies of different
-        // types can coexist and the same type is not registered twice.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICacheWarmupStrategy, TStrategy>());
-
-        // Guard: register CacheWarmupHostedService exactly once, regardless of how many times
-        // AddCacheWarmup<T> is called. TryAddEnumerable prevents duplicate hosted service
-        // registrations for the same concrete type.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, CacheWarmupHostedService>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ICacheWarmupStrategy, TStrategy>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, CacheWarmupHostedService>());
 
         return builder;
     }
