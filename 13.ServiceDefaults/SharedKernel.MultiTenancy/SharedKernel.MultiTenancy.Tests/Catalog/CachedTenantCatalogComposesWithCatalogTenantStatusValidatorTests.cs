@@ -1,5 +1,6 @@
 using NSubstitute;
 using SharedKernel.MultiTenancy.Catalog;
+using SharedKernel.Testing.Caching;
 
 namespace SharedKernel.MultiTenancy.Tests.Catalog;
 
@@ -17,7 +18,8 @@ public sealed class CachedTenantCatalogComposesWithCatalogTenantStatusValidatorT
 
         // Both constructors accept the ITenantCatalog interface only — this compiles and behaves
         // correctly with zero changes to either type, per P-472's own explicit acceptance criterion.
-        var validator = new CatalogTenantStatusValidator(new CachedTenantCatalog(inner));
+        var validator = new CatalogTenantStatusValidator(
+            new CachedTenantCatalog(inner, new FakeCacheService(), new FakeTenantCacheKeyProvider()));
 
         var isActive = await validator.IsActiveAsync(tenantId, CancellationToken.None);
 
