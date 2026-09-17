@@ -1,44 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Mutual-TLS client-certificate authentication scheme for SharedKernel security: IMtlsCertificateValidator extensibility point, MtlsUserContext, RFC 8705 certificate-bound (cnf.x5t#S256) access-token validation, and AddMtlsAuthentication composing alongside JWT Bearer/API-key via the same ServiceDescriptor-capture decorator mechanism as SharedKernel.Security.ApiKey. A sibling provider package, never OIDC, never references .Oidc/.ApiKey. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
-    <PackageTags>shared-kernel;security;mtls;mutual-tls;client-certificate;open-banking;identity</PackageTags>
-    <PackageReleaseNotes>2.0.0 (BREAKING default-behavior change, fintech/FAPI-hardening pass): MtlsAuthenticationOptions.AllowedCertificateTypes now defaults to CertificateTypes.Chained (was CertificateTypes.All) — a self-signed client certificate is now rejected by the framework's own pre-filter before IMtlsCertificateValidator ever runs. MtlsAuthenticationOptions.RevocationMode now defaults to X509RevocationMode.Offline (was X509RevocationMode.NoCheck) — locally cached CRL data is now checked by default, with no new outbound network dependency. If your service legitimately relies on the old permissive defaults (e.g. a private-PKI Open Banking QWAC/QSEAL trust chain using self-signed or CRL-unchecked certificates), opt back in explicitly via AddMtlsAuthentication's configureOptions delegate. See WO-060 (P-386).</PackageReleaseNotes>
+    <Description>Client certificate (mutual TLS) authentication for machine clients in ASP.NET Core, mapped to SharedKernel's IUserContext. Chain validation against the system store or a private certificate authority, revocation, client-authentication key usage and validity checks, then an IMtlsCertificateValidator that decides which client a certificate belongs to. The validator runs ahead of any custom certificate events, so they cannot skip it.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;security;mtls;mutual-tls;client-certificate;x509;authentication;open-banking</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      Microsoft.AspNetCore.App shared framework: supplies Microsoft.Extensions.Logging.Abstractions
-      ([LoggerMessage]) and Microsoft.AspNetCore.Http/DependencyInjection. A FrameworkReference, not a
-      NuGet PackageReference — mirrors SharedKernel.Security.ApiKey's identical "framework-provided, not
-      a NuGet dependency" precedent (12.Security/CLAUDE.md Technology Stack).
-    -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-  <ItemGroup>
-    <!--
-      CORRECTED at Core-phase implementation time (WO-058, C-33): Microsoft.AspNetCore.Authentication.Certificate
-      (CertificateAuthenticationHandler) is NOT part of the Microsoft.AspNetCore.App shared framework —
-      verified directly against the installed shared-framework directory, which carries no
-      Microsoft.AspNetCore.Authentication.Certificate.dll. It ships only as a standalone NuGet package.
-      The original design's "framework-provided handler" framing (12.Security/CLAUDE.md Technology Stack)
-      was incorrect and is corrected here; version pinned to match SharedKernel.Security.Oidc's
-      Microsoft.AspNetCore.Authentication.JwtBearer pin for consistency across the domain's provider packages.
-    -->
+    <!-- The certificate authentication handler ships as a NuGet package, not in the shared framework. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      Grants SharedKernel.Security.Mtls.Tests direct access to internal types (MtlsAuthenticationHandler,
-      MtlsClaimTypes) so the certificate-validated event handler and the
-      RFC 8705 cnf.x5t#S256 binding check can be proven directly (WO-058, T-25/T-26) — mirrors
-      SharedKernel.Security.ApiKey's identical InternalsVisibleTo grant.
-    -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SharedKernel.Security.Mtls.Tests</_Parameter1>
-    </AssemblyAttribute>
+    <InternalsVisibleTo Include="SharedKernel.Security.Mtls.Tests" />
   </ItemGroup>
 </Project>

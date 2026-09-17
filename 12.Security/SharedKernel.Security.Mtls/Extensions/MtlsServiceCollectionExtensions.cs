@@ -1,98 +1,86 @@
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions.Abstractions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.Security.Mtls.Authentication;
 using SharedKernel.Security.Mtls.Options;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.Security.Mtls.Extensions;
 
-/// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering mutual-TLS client-certificate
-/// authentication.
-/// </summary>
+/// <summary>Registers client certificate authentication.</summary>
 public static class MtlsServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the mutual-TLS client-certificate authentication scheme, composing it alongside an
-    /// already-registered JWT Bearer/API-key scheme via the same <see cref="ServiceDescriptor"/>-capture
-    /// decorator mechanism <c>AddApiKeyAuthentication</c> already established.
+    /// Registers the <c>Certificate</c> authentication scheme with <typeparamref name="TValidator"/>, and
+    /// <see cref="IUserContext"/> and <see cref="ITenantProvider"/> when not already registered.
     /// </summary>
-    /// <typeparam name="TValidator">
-    /// The consumer-supplied <see cref="IMtlsCertificateValidator"/> implementation. This package never
-    /// dictates a CA trust store, revocation-check mechanism, or certificate storage.
-    /// </typeparam>
+    /// <typeparam name="TValidator">Decides which client a trusted certificate belongs to.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="configureOptions">Optional configuration for <see cref="MtlsAuthenticationOptions"/>.</param>
-    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <param name="configure">Adjusts the certificate checks; validated at startup.</param>
+    /// <returns>The same service collection.</returns>
     /// <remarks>
     /// <para>
-    /// This scheme is for mutual-TLS client-certificate scenarios only. It does not perform certificate
-    /// issuance, CA management, or revocation checking (CRL/OCSP) — those remain the consuming service's
-    /// own concern, identical in spirit to <c>.ApiKey</c>'s key-issuance/rotation/storage disclaimer
-    /// (WO-058, P-377).
+    /// The scheme is not made the default. Select it per endpoint, for example
+    /// <c>[Authorize(AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]</c>. Kestrel must request
+    /// client certificates, or the proxy that terminates TLS must forward them.
     /// </para>
     /// <para>
-    /// This package cannot reference <c>SharedKernel.Security.Oidc</c> or <c>SharedKernel.Security.ApiKey</c>
-    /// (sibling providers never reference each other), so it captures whatever <see cref="IUserContext"/>
-    /// factory is already registered and layers its own certificate-aware resolution on top.
+    /// A certificate caller is a <see cref="IdentityKind.ServicePrincipal"/> whose subject id is the client id from the
+    /// validator. Tokens bound to a certificate (RFC 8705) are checked by <c>SharedKernel.Security.Oidc</c>.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddMtlsAuthentication<TValidator>(
         this IServiceCollection services,
-        Action<MtlsAuthenticationOptions>? configureOptions = null)
+        Action<MtlsAuthenticationOptions>? configure = null)
         where TValidator : class, IMtlsCertificateValidator
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddOptions<MtlsAuthenticationOptions>()
+            .Configure(configure ?? (_ => { }))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<MtlsAuthenticationOptions>, MtlsSettingsValidator>());
+
         services.AddHttpContextAccessor();
-        services.AddScoped<IMtlsCertificateValidator, TValidator>();
+        services.TryAddScoped<IMtlsCertificateValidator, TValidator>();
 
-        var options = new MtlsAuthenticationOptions();
-        configureOptions?.Invoke(options);
+        services.AddAuthentication().AddCertificate(MtlsAuthenticationDefaults.AuthenticationScheme);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<CertificateAuthenticationOptions>, ConfigureCertificateOptions>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPostConfigureOptions<CertificateAuthenticationOptions>, ConfigureCertificateOptions>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<CertificateAuthenticationOptions>, ConfigureCertificateOptions>());
+        services.AddOptions<CertificateAuthenticationOptions>(MtlsAuthenticationDefaults.AuthenticationScheme).ValidateOnStart();
 
-        RegisterSchemeAwareUserContext(services);
-
-        services
-            .AddAuthentication()
-            .AddCertificate(MtlsAuthenticationOptions.DefaultScheme, certificateOptions =>
-            {
-                certificateOptions.AllowedCertificateTypes = options.AllowedCertificateTypes;
-                certificateOptions.RevocationMode = options.RevocationMode;
-                certificateOptions.Events = new CertificateAuthenticationEvents
-                {
-                    OnCertificateValidated = MtlsAuthenticationHandler.HandleCertificateValidatedAsync,
-                };
-            });
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, MtlsUserContextMapper>());
+        RemoveAnonymousPlaceholder(services);
+        services.TryAddScoped<IUserContext>(ResolveUserContext);
+        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 
         return services;
     }
 
-    private static void RegisterSchemeAwareUserContext(IServiceCollection services)
+    // A registered AnonymousUserContext instance is a placeholder (for example from the persistence builder) that an
+    // authentication package replaces, whichever was registered first.
+    private static void RemoveAnonymousPlaceholder(IServiceCollection services)
     {
-        // Capture whatever IUserContext factory is already registered (typically OidcUserContext- or
-        // ApiKeyUserContext-backed) so the scheme-aware factory below can delegate to it for
-        // non-certificate-authenticated requests without ever referencing SharedKernel.Security.Oidc
-        // or SharedKernel.Security.ApiKey — sibling provider packages never reference each other.
-        var previousUserContext = services.LastOrDefault(d => d.ServiceType == typeof(IUserContext));
-
-        services.AddScoped<IUserContext>(sp =>
+        foreach (ServiceDescriptor placeholder in services
+            .Where(d => d.ServiceType == typeof(IUserContext) && !d.IsKeyedService && d.ImplementationInstance is AnonymousUserContext)
+            .ToList())
         {
-            var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
+            services.Remove(placeholder);
+        }
+    }
 
-            if (user is not null
-                && string.Equals(user.Identity?.AuthenticationType, MtlsAuthenticationOptions.DefaultScheme, StringComparison.Ordinal))
-            {
-                return new MtlsUserContext(user);
-            }
+    private static IUserContext ResolveUserContext(IServiceProvider services) =>
+        UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>());
 
-            if (previousUserContext?.ImplementationFactory is { } previousFactory)
-            {
-                return (IUserContext)previousFactory(sp);
-            }
-
-            return AnonymousUserContext.Instance;
-        });
+    private sealed class MtlsSettingsValidator : IValidateOptions<MtlsAuthenticationOptions>
+    {
+        public ValidateOptionsResult Validate(string? name, MtlsAuthenticationOptions options) =>
+            ConfigureCertificateOptions.ValidateSettings(options);
     }
 }
