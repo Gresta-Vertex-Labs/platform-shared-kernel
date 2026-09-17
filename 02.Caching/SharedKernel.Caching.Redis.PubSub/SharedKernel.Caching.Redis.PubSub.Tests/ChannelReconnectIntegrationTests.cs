@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.PubSub.Extensions;
 using StackExchange.Redis;

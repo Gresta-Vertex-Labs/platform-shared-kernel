@@ -1,19 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Ephemeral Redis Pub/Sub signaling and cache invalidation (IRedisChannelService, ICacheInvalidationBus, CacheInvalidationReceiver). At-most-once delivery, no durability guarantees — not a substitute for SharedKernel.Messaging.* (07.Messaging). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or hash store packages.</Description>
-    <PackageTags>shared-kernel;caching;redis;pubsub;cache-invalidation;aot</PackageTags>
+    <Description>Ephemeral Redis Pub/Sub signaling (IRedisChannelService). At-most-once delivery, no durability guarantees — not a substitute for SharedKernel.Messaging.* (07.Messaging). Cache entries are synchronized across instances by the FusionCache backplane of SharedKernel.Caching.Redis, not by this package. Depends on SharedKernel.Caching.Redis.Core for connection management.</Description>
+    <PackageTags>shared-kernel;caching;redis;pubsub</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <!-- DI abstractions — required for ICachingBuilder extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <!-- Optional Polly circuit breaker pipeline injection -->
     <PackageReference Include="Polly.Core" />
     <!-- Redis client — Pub/Sub commands -->
     <PackageReference Include="StackExchange.Redis" />
-    <!-- Caching abstractions — ICachingBuilder, IRedisChannelService, ICacheInvalidationBus, CachingCoreOptions -->
+    <!-- Caching abstractions — ICachingBuilder -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) and AddRedisCircuitBreaker (Polly v8 ResiliencePipeline) -->
     <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
