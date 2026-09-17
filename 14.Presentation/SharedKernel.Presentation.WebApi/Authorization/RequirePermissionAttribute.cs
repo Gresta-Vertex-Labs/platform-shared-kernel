@@ -8,7 +8,7 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// <para>
 /// Same shape and composition semantics as <see cref="RequireRoleAttribute"/>, evaluated by
 /// <see cref="AuthorizationRequirementEndpointFilter"/> against
-/// <see cref="SharedKernel.Security.Abstractions.Abstractions.IUserContext.HasPermission"/>
+/// <see cref="SharedKernel.Security.Abstractions.IUserContext.HasPermission"/>
 /// instead of <c>HasRole</c>.
 /// </para>
 /// <para>

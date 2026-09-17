@@ -160,7 +160,9 @@ result type is a platform violation, not just a style preference.
 `[RequireRole]`/`[RequirePermission]` let you gate an entire endpoint on the caller's roles or
 permissions without hand-rolling an `if (!userContext.HasRole(...))` check in every handler. Both
 attributes evaluate through `IUserContext.HasRole`/`HasPermission` (`12.Security.Abstractions`) —
-the same claim-mapping-aware, case-insensitive resolution the rest of the platform uses.
+the same resolution the rest of the platform uses: the authentication package's `IUserContextMapper`
+reads its configured claim types, and roles and permissions are compared ordinally (case-sensitive,
+since OAuth scopes are case-sensitive).
 
 > **This filter does not auto-attach to every mapped endpoint.** Unlike
 > `AddSharedKernelSignalR`'s global hub filters (`HubOptions.AddFilter<T>()`, which every hub gets
@@ -230,9 +232,10 @@ app.MapControllers()
 
 Never combine the built-in ASP.NET Core `[Authorize(Roles = "...")]` with `[RequireRole]`/
 `[RequirePermission]` on different endpoints of the same service. The built-in attribute reads
-`ClaimTypes.Role` directly off the `ClaimsPrincipal`, bypassing this platform's `ClaimMapping`-aware
-`HasRole`/`HasPermission` resolution — exactly the claim-shape fragility fixed for short-name JWT
-claims in `WO-057`/`P-366` (`12.Security.Oidc`). An endpoint guarded by `[Authorize(Roles=...)]`
+the identity's role claim type directly off the `ClaimsPrincipal`, bypassing this platform's
+`IUserContextMapper`-based `HasRole`/`HasPermission` resolution — each authentication package maps
+roles and permissions from its own configured claim types, which a raw `ClaimsPrincipal` check does
+not follow. An endpoint guarded by `[Authorize(Roles=...)]`
 can silently behave differently from one guarded by `[RequireRole(...)]` against the identical
 token. Always use `[RequireRole]`/`[RequirePermission]`.
 

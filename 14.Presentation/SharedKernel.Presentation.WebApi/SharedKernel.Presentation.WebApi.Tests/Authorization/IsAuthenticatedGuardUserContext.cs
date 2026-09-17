@@ -1,4 +1,4 @@
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Authorization;
 
@@ -18,17 +18,25 @@ namespace SharedKernel.Presentation.WebApi.Tests.Authorization;
 /// </remarks>
 internal sealed class IsAuthenticatedGuardUserContext : IUserContext
 {
-    public Guid UserId => Guid.Empty;
+    public string? SubjectId => null;
+
+    public string? ClientId => null;
+
+    public Guid? TenantId => null;
+
+    public string? SessionId => null;
+
+    public string? Name => null;
+
+    public string? FindClaim(string claimType) => null;
+
+    public IReadOnlyList<string> FindClaims(string claimType) => [];
 
     public string? Email => null;
-
-    public string? Username => null;
 
     public IReadOnlyCollection<string> Roles => [];
 
     public IReadOnlyCollection<string> Permissions => [];
-
-    public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
 
     public bool IsAuthenticated =>
         throw new InvalidOperationException(

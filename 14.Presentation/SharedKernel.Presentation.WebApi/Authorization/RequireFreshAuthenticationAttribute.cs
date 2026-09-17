@@ -14,7 +14,7 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// <para>
 /// Evaluated by <see cref="AuthorizationRequirementEndpointFilter"/> — the same global filter that
 /// evaluates <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/> — against
-/// <see cref="SharedKernel.Security.Abstractions.Abstractions.IUserContext.IsAuthenticationFresherThan"/>.
+/// <see cref="SharedKernel.Security.Abstractions.IUserContext.IsAuthenticationFresherThan"/>.
 /// Rejects a request whose <c>AuthTime</c> is older than <see cref="MaxAge"/> or absent with
 /// <see cref="SharedKernel.Primitives.Errors.Error.Forbidden(string, string)"/> (403) — the same
 /// rejection shape <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/>

@@ -6,7 +6,7 @@ using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.WebApi.Authorization;
 

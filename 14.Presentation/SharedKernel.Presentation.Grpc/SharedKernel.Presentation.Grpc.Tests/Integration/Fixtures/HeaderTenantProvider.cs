@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 

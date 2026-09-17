@@ -15,7 +15,7 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// Methods listed within this attribute are OR'd — the caller needs any one of them, mirroring
 /// <see cref="RequireRoleAttribute"/>'s composition rule. Evaluated by
 /// <see cref="AuthorizationRequirementEndpointFilter"/> against
-/// <see cref="SharedKernel.Security.Abstractions.Abstractions.IUserContext.WasAuthenticatedWith"/>,
+/// <see cref="SharedKernel.Security.Abstractions.IUserContext.WasAuthenticatedWith"/>,
 /// rejecting with <see cref="SharedKernel.Primitives.Errors.Error.Forbidden(string, string)"/> (403)
 /// on no match. Composes AND-across with every other attribute this filter evaluates.
 /// </para>

@@ -19,10 +19,10 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// </para>
 /// <para>
 /// Evaluated by <see cref="AuthorizationRequirementEndpointFilter"/> against
-/// <see cref="SharedKernel.Security.Abstractions.Abstractions.IUserContext.HasRole"/> — never
+/// <see cref="SharedKernel.Security.Abstractions.IUserContext.HasRole"/> — never
 /// <see cref="System.Security.Claims.ClaimTypes.Role"/> or the built-in ASP.NET Core
 /// <c>[Authorize(Roles = "...")]</c> attribute, which reads <c>ClaimTypes.Role</c> directly and
-/// bypasses this platform's claim-mapping-aware, case-insensitive role resolution.
+/// bypasses this platform's claim-mapping-aware role resolution. Role names are compared ordinally (case-sensitive).
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true, Inherited = true)]

@@ -9,7 +9,7 @@ using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.Grpc.Interceptors;
 

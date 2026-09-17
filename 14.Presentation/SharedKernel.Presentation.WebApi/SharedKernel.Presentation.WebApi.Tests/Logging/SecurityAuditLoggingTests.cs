@@ -9,7 +9,7 @@ using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.RateLimiting;
 using SharedKernel.Presentation.WebApi.Tests.Authorization;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Logging;
 using SharedKernel.Testing.Security;
 using Xunit;

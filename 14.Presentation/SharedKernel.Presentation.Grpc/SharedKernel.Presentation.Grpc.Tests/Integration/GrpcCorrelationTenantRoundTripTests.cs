@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Grpc.Extensions;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Security;
 using Xunit;
 

@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Security;
 using Xunit;
@@ -55,7 +55,7 @@ public class GrpcAuthorizationInterceptorIntegrationTests
     {
         await using var factory = new GrpcTestWebApplicationFactory();
         await using var anonymous = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.AddSingleton<IUserContext>(new FakeUserContext { IsAuthenticated = false, IdentityKind = IdentityKind.Anonymous, Roles = [] })));
+            services.AddSingleton<IUserContext>(new FakeUserContext { IdentityKind = IdentityKind.Anonymous, SubjectId = null, Roles = [] })));
 
         var client = GrpcClientHelper.CreateClient(anonymous);
 
