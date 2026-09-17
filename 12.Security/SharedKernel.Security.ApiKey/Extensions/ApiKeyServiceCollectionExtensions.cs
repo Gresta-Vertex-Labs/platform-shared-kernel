@@ -1,118 +1,128 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using SharedKernel.Security.Abstractions.Abstractions;
+using Microsoft.Extensions.Primitives;
+using SharedKernel.Cryptography.Random;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.Security.ApiKey.Authentication;
+using SharedKernel.Security.ApiKey.Keys;
 using SharedKernel.Security.ApiKey.Options;
 using SharedKernel.Security.ApiKey.Validation;
 
 namespace SharedKernel.Security.ApiKey.Extensions;
 
-/// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering API-key authentication.
-/// </summary>
+/// <summary>Registers API key authentication.</summary>
 public static class ApiKeyServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the API-key authentication scheme, composing it alongside an already-registered JWT
-    /// Bearer scheme (e.g. from <c>AddSharedKernelSecurity</c>/<c>AddAzureB2CAuthentication</c>) via a
-    /// policy/forwarding scheme, so a host can accept either credential type on the same set of endpoints
-    /// without one scheme silently shadowing the other.
+    /// Registers managed API keys: the <c>ApiKey</c> scheme, <see cref="ApiKeyGenerator"/>, and a validator over
+    /// <typeparamref name="TStore"/> that checks the checksum, hash, expiry and revocation.
     /// </summary>
-    /// <typeparam name="TValidator">
-    /// The consumer-supplied <see cref="IApiKeyValidator"/> implementation. This package never dictates
-    /// a key storage mechanism.
-    /// </typeparam>
+    /// <typeparam name="TStore">The store holding key records.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="configureOptions">Optional configuration for <see cref="ApiKeyAuthenticationOptions"/>.</param>
-    /// <param name="fallbackAuthenticationScheme">
-    /// The authentication scheme to forward to when no API-key credential is present on the request.
-    /// Defaults to <c>"Bearer"</c> — the scheme name <c>AddSharedKernelSecurity</c>/
-    /// <c>AddAzureB2CAuthentication</c> register via
-    /// <c>Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme</c>.
-    /// <c>SharedKernel.Security.ApiKey</c> deliberately never references the
-    /// <c>Microsoft.AspNetCore.Authentication.JwtBearer</c> NuGet package (see this domain's package
-    /// reference rules), so that constant cannot be referenced directly here — override this parameter
-    /// if the JWT Bearer scheme was registered under a non-default name.
-    /// </param>
-    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <param name="configureKeys">Sets <see cref="ManagedApiKeyOptions.Prefix"/>, which is validated at startup.</param>
+    /// <param name="configureScheme">Adjusts the scheme options, such as the header name.</param>
+    /// <returns>The same service collection.</returns>
+    /// <remarks>See <see cref="AddApiKeyAuthentication{TValidator}"/> for how the scheme is selected.</remarks>
+    public static IServiceCollection AddManagedApiKeyAuthentication<TStore>(
+        this IServiceCollection services,
+        Action<ManagedApiKeyOptions> configureKeys,
+        Action<ApiKeyAuthenticationOptions>? configureScheme = null)
+        where TStore : class, IApiKeyStore
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureKeys);
+
+        services.AddOptions<ManagedApiKeyOptions>()
+            .Configure(configureKeys)
+            .Validate(options => ApiKeyFormat.IsValidPrefix(options.Prefix),
+                "ManagedApiKeyOptions.Prefix must be 2-32 lowercase letters, digits and single underscores, starting with a letter.")
+            .ValidateOnStart();
+
+        services.AddClock();
+        services.TryAddSingleton<ISecureRandomGenerator, SecureRandomGenerator>();
+        services.TryAddSingleton<ApiKeyGenerator>();
+        services.TryAddScoped<IApiKeyStore, TStore>();
+
+        return services.AddApiKeyAuthentication<ManagedApiKeyValidator>(configureScheme);
+    }
+
+    /// <summary>Registers the <c>ApiKey</c> scheme with a custom validator.</summary>
+    /// <typeparam name="TValidator">The validator.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureScheme">Adjusts the scheme options, such as the header name.</param>
+    /// <returns>The same service collection.</returns>
     /// <remarks>
     /// <para>
-    /// Call this method after <c>AddSharedKernelSecurity</c>/<c>AddAzureB2CAuthentication</c> so the
-    /// scheme-aware <see cref="IUserContext"/> factory registered here can correctly delegate to the
-    /// already-registered OIDC-backed factory for non-API-key-authenticated requests, without this
-    /// package ever referencing <c>SharedKernel.Security.Oidc</c> — sibling provider packages never
-    /// reference each other.
+    /// The <c>ApiKeyOrDefault</c> forwarding scheme becomes the default scheme. A request with the API key header is
+    /// authenticated by the <c>ApiKey</c> scheme; any other request by the scheme that was the default before (for
+    /// example <c>Bearer</c> from <c>AddOidcAuthentication</c>), in whichever order the two were registered.
+    /// </para>
+    /// <para>
+    /// Registers <see cref="IUserContext"/> and <see cref="ITenantProvider"/> when not already registered. An API key
+    /// caller is a <see cref="IdentityKind.ServicePrincipal"/> whose subject id is the client id.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddApiKeyAuthentication<TValidator>(
         this IServiceCollection services,
-        Action<ApiKeyAuthenticationOptions>? configureOptions = null,
-        string fallbackAuthenticationScheme = "Bearer")
+        Action<ApiKeyAuthenticationOptions>? configureScheme = null)
         where TValidator : class, IApiKeyValidator
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(fallbackAuthenticationScheme);
 
         services.AddHttpContextAccessor();
-        services.AddScoped<IApiKeyValidator, TValidator>();
+        services.TryAddScoped<IApiKeyValidator, TValidator>();
 
-        RegisterSchemeAwareUserContext(services);
+        var forwarding = new ApiKeyForwarding();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPostConfigureOptions<AuthenticationOptions>>(forwarding));
 
-        var builder = services.AddAuthentication(ApiKeyAuthenticationOptions.CompositeSchemeName);
+        services.AddAuthentication()
+            .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
+                ApiKeyAuthenticationDefaults.AuthenticationScheme,
+                configureScheme ?? (_ => { }))
+            .AddPolicyScheme(ApiKeyAuthenticationDefaults.ForwardingScheme, displayName: null, options =>
+                options.ForwardDefaultSelector = context => SelectScheme(context, ResolveFallback(context.RequestServices)));
 
-        builder.AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
-            ApiKeyAuthenticationOptions.DefaultScheme,
-            configureOptions ?? (_ => { }));
-
-        builder.AddPolicyScheme(
-            ApiKeyAuthenticationOptions.CompositeSchemeName,
-            "SharedKernel composite (JWT Bearer or API key)",
-            policyOptions =>
-            {
-                policyOptions.ForwardDefaultSelector = context =>
-                {
-                    var apiKeyOptions = context.RequestServices
-                        .GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>()
-                        .Get(ApiKeyAuthenticationOptions.DefaultScheme);
-
-                    var hasHeader = context.Request.Headers.ContainsKey(apiKeyOptions.HeaderName);
-                    var hasQuery = !string.IsNullOrEmpty(apiKeyOptions.QueryParameterName)
-                        && context.Request.Query.ContainsKey(apiKeyOptions.QueryParameterName);
-
-                    return hasHeader || hasQuery
-                        ? ApiKeyAuthenticationOptions.DefaultScheme
-                        : fallbackAuthenticationScheme;
-                };
-            });
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, ApiKeyUserContextMapper>());
+        RemoveAnonymousPlaceholder(services);
+        services.TryAddScoped<IUserContext>(ResolveUserContext);
+        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 
         return services;
     }
 
-    private static void RegisterSchemeAwareUserContext(IServiceCollection services)
+    private static string? ResolveFallback(IServiceProvider services) =>
+        services.GetServices<IPostConfigureOptions<AuthenticationOptions>>().OfType<ApiKeyForwarding>().FirstOrDefault()?.FallbackScheme;
+
+    private static string SelectScheme(HttpContext context, string? fallback)
     {
-        // Capture whatever IUserContext factory is already registered (typically OidcUserContext-backed,
-        // via AddSharedKernelSecurity/AddAzureB2CAuthentication) so the scheme-aware factory below can
-        // delegate to it for non-API-key-authenticated requests without ever referencing
-        // SharedKernel.Security.Oidc — sibling provider packages never reference each other.
-        var previousUserContext = services.LastOrDefault(d => d.ServiceType == typeof(IUserContext));
+        string header = context.RequestServices
+            .GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>()
+            .Get(ApiKeyAuthenticationDefaults.AuthenticationScheme)
+            .HeaderName;
 
-        services.AddScoped<IUserContext>(sp =>
-        {
-            var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
-
-            if (user is not null
-                && string.Equals(user.Identity?.AuthenticationType, ApiKeyAuthenticationOptions.DefaultScheme, StringComparison.Ordinal))
-            {
-                return new ApiKeyUserContext(user);
-            }
-
-            if (previousUserContext?.ImplementationFactory is { } previousFactory)
-            {
-                return (IUserContext)previousFactory(sp);
-            }
-
-            return AnonymousUserContext.Instance;
-        });
+        return context.Request.Headers.TryGetValue(header, out StringValues values) && values.Any(value => !string.IsNullOrWhiteSpace(value))
+            ? ApiKeyAuthenticationDefaults.AuthenticationScheme
+            : fallback ?? ApiKeyAuthenticationDefaults.AuthenticationScheme;
     }
+
+    // A registered AnonymousUserContext instance is a placeholder (for example from the persistence builder) that an
+    // authentication package replaces, whichever was registered first.
+    private static void RemoveAnonymousPlaceholder(IServiceCollection services)
+    {
+        foreach (ServiceDescriptor placeholder in services
+            .Where(d => d.ServiceType == typeof(IUserContext) && !d.IsKeyedService && d.ImplementationInstance is AnonymousUserContext)
+            .ToList())
+        {
+            services.Remove(placeholder);
+        }
+    }
+
+    private static IUserContext ResolveUserContext(IServiceProvider services) =>
+        UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>());
 }

@@ -1,32 +1,29 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Pre-shared-key / machine-client authentication scheme for SharedKernel security: IApiKeyValidator extensibility point, constant-time key comparison via SharedKernel.Cryptography FixedTimeComparison, ApiKeyAuthenticationHandler, and AddApiKeyAuthentication composing alongside JWT Bearer via a policy/forwarding scheme. Never OIDC. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
-    <PackageTags>shared-kernel;security;api-key;authentication;machine-client;identity</PackageTags>
-    <PackageReleaseNotes>Unreleased (BREAKING, tracks the SharedKernel.Cryptography redesign): ApiKeyRotationComparer is removed — use SharedKernel.Cryptography.FixedTimeComparison.AreEqualToAny, which likewise evaluates every candidate; ApiKeyAuthenticationHandler no longer takes an IHmacSigner, so API-key authentication no longer needs one registered. 1.2.0 (non-breaking, additive): adds public ApiKeyRotationComparer.AnyMatch(string, IReadOnlyList&lt;string&gt;) — a constant-time, always-evaluate-every-candidate comparator for an IApiKeyValidator implementation that must accept more than one simultaneously-active key per client during a rotation window. Built on the same IHmacSigner-based technique as the existing internal ConstantTimeKeyComparer, but public since a consumer's own IApiKeyValidator implementation cannot reach an internal type. See WO-060 (P-389). 1.1.0 (non-breaking, tracks SharedKernel.Security.Abstractions 3.0.0): ApiKeyUserContext now implements the six new step-up-authentication IUserContext members as empty/null/false — a pre-shared key carries no OIDC authentication-context concept. IApiKeyValidator/ApiKeyValidationResult contracts unchanged. See WO-058 (P-375/P-376).</PackageReleaseNotes>
+    <Description>API key authentication for machine clients in ASP.NET Core, mapped to SharedKernel's IUserContext. Managed keys have a recognizable format (prefix, key id, 190-bit secret, checksum) that secret scanners can detect, are generated from a cryptographic random source, stored only as a SHA-256 hash, and checked for expiry and revocation; a custom IApiKeyValidator can replace the managed store. Composes with a bearer token scheme as the default authentication scheme.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;security;api-key;authentication;machine-client;service-principal</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      Microsoft.AspNetCore.App shared framework: supplies Microsoft.AspNetCore.Authentication.Abstractions
-      (AuthenticationHandler<TOptions>, ILogger/[LoggerMessage] via Microsoft.Extensions.Logging.Abstractions).
-      A FrameworkReference, not a NuGet PackageReference — satisfies SC-10's "no other third-party NuGet
-      dependencies" constraint (12.Security/CLAUDE.md Technology Stack: "framework-provided, not a NuGet
-      dependency").
-    -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      Grants SharedKernel.Security.ApiKey.Tests direct access to internal types (e.g.
-      Samples/RotationWindowApiKeyValidatorSample) so the rotation-window recipe can be proven directly
-      rather than only described in the README.
-    -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SharedKernel.Security.ApiKey.Tests</_Parameter1>
-    </AssemblyAttribute>
+    <InternalsVisibleTo Include="SharedKernel.Security.ApiKey.Tests" />
   </ItemGroup>
 </Project>
