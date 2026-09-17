@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Polly;
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core;
 using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 

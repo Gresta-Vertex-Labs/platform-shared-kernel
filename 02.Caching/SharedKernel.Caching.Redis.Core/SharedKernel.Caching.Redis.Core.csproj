@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Foundational Redis connection layer for SharedKernel.Caching: IConnectionMultiplexer registration (AddRedisConnection), ConnectionHealthState tracking (RedisConnectionHealthTracker), and an opt-in Polly v8 ResiliencePipeline factory (AddRedisCircuitBreaker). Dependency root for SharedKernel.Caching.Redis, .DistributedLocking, .HashStore, and .PubSub. AOT-compatible.</Description>
-    <PackageTags>shared-kernel;caching;redis;connection;resilience;circuit-breaker;aot</PackageTags>
+    <Description>Foundational Redis connection layer for SharedKernel.Caching: IConnectionMultiplexer registration (AddRedisConnection), ConnectionHealthState tracking (RedisConnectionHealthTracker), and an opt-in Polly v8 ResiliencePipeline factory (AddRedisCircuitBreaker). Dependency root for SharedKernel.Caching.Redis, .DistributedLocking, .HashStore, and .PubSub.</Description>
+    <PackageTags>shared-kernel;caching;redis;connection;resilience;circuit-breaker</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <!-- DI abstractions — required for IServiceCollection extension signatures -->
@@ -15,8 +15,6 @@
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <!-- RedisConnectionOptions.ValidateOnStart() host-startup validation (Phase 45) -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
-    <!-- Caching abstractions — ConnectionHealthState (Phase 26) -->
-    <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
   </ItemGroup>

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using SharedKernel.Caching.Abstractions;
 using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 

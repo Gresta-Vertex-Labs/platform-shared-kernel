@@ -1,4 +1,6 @@
-namespace SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core;
+
+namespace SharedKernel.Caching.Redis.PubSub;
 
 /// <summary>
 /// Provides ephemeral, non-durable Redis Pub/Sub fanout for cache-adjacent signaling.

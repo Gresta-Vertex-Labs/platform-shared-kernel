@@ -1,4 +1,4 @@
-namespace SharedKernel.Caching.Abstractions;
+namespace SharedKernel.Caching.Redis.HashStore;
 
 /// <summary>
 /// AOT-safe typed wrapper over <see cref="IRedisHashService"/> for a specific DTO type

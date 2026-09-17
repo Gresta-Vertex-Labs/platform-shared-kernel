@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization.Metadata;
 
-namespace SharedKernel.Caching.Abstractions;
+namespace SharedKernel.Caching.Redis.HashStore;
 
 /// <summary>
 /// Provides structured field-value storage using Redis Hash data structures.

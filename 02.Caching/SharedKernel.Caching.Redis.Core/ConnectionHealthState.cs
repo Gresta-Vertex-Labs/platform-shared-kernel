@@ -1,4 +1,4 @@
-namespace SharedKernel.Caching.Abstractions;
+namespace SharedKernel.Caching.Redis.Core;
 
 /// <summary>
 /// Represents the current connection health of a Redis channel service instance.
