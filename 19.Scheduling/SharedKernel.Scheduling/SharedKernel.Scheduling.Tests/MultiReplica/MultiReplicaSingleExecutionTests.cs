@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Scheduling.Extensions;
@@ -47,7 +48,8 @@ public sealed class MultiReplicaSingleExecutionTests : IAsyncLifetime
         // execution ACROSS replicas rather than merely within one.
         services.AddSingleton(sharedRecorder);
 
-        new TestCachingBuilder(services).AddRedisDistributedLocking(_redis.ConnectionString);
+        services.AddRedisConnection(o => o.ConnectionString = _redis.ConnectionString);
+        services.AddRedisDistributedLocking();
 
         // 150ms — comfortably inside SchedulingOptions.TickInterval's [Range] floor of 100ms.
         ISchedulingBuilder builder = services.AddSharedKernelScheduling(o => o.TickInterval = TimeSpan.FromMilliseconds(150));

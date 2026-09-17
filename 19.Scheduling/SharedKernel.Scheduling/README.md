@@ -82,8 +82,8 @@ implementation) **before** calling `AddSharedKernelScheduling` to get exactly-on
 across every replica of your service:
 
 ```csharp
-services.AddSharedKernelCaching()
-    .AddRedisDistributedLocking("localhost:6379");
+services.AddRedisConnection(configuration)   // SharedKernel:Caching:Redis — the shared Redis connection
+    .AddRedisDistributedLocking();
 
 services.AddSharedKernelScheduling(...);
 ```

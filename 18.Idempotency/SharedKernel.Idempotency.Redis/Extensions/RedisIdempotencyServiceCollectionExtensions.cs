@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Idempotency.Redis.KeyStore;
 using SharedKernel.Idempotency.Redis.MessageStore;
 using SharedKernel.Idempotency.Redis.Options;
@@ -27,12 +28,16 @@ public static class RedisIdempotencyServiceCollectionExtensions
     /// <see langword="null"/> the defaults are used.
     /// </param>
     /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><c>AddRedisConnection</c> has not been called.</exception>
     /// <remarks>
     /// <para>
     /// Resolves the shared <see cref="StackExchange.Redis.IConnectionMultiplexer"/> registered by
-    /// <c>02.Caching.Redis.Core</c>'s <c>AddRedisConnection</c> — call that method (directly, or
-    /// transitively via any <c>02.Caching.Redis.*</c> package) before this one. This package never
-    /// constructs its own multiplexer.
+    /// <c>02.Caching.Redis.Core</c>'s <c>AddRedisConnection(IConfiguration)</c> or
+    /// <c>AddRedisConnection(Action&lt;RedisConnectionOptions&gt;)</c> — call it once, before this method,
+    /// or this method throws <see cref="InvalidOperationException"/>. This package never constructs its
+    /// own multiplexer, so TLS, timeouts and the <c>IRedisConnectionProbe</c> readiness check are the
+    /// shared connection's.
     /// </para>
     /// <para>
     /// Registers a startup-time <see cref="Microsoft.Extensions.Hosting.IHostedService"/>
@@ -57,6 +62,7 @@ public static class RedisIdempotencyServiceCollectionExtensions
         Action<RedisIdempotencyOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.EnsureRedisConnectionRegistered(nameof(AddSharedKernelRedisIdempotency));
 
         services
             .AddOptions<RedisIdempotencyOptions>()

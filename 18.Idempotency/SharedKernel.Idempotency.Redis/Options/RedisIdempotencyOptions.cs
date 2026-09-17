@@ -11,7 +11,7 @@ namespace SharedKernel.Idempotency.Redis.Options;
 /// <see cref="System.ComponentModel.DataAnnotations.Validator.TryValidateObject(object,ValidationContext,System.Collections.Generic.ICollection{ValidationResult}?,bool)"/>-backed
 /// <c>ValidateDataAnnotations().ValidateOnStart()</c>, the same fail-fast mechanism
 /// <c>01.Core/SharedKernel.Configuration</c>'s <c>AddValidatedOptions</c> promotes — this package
-/// configures it directly (mirroring <c>SharedKernel.Caching.Redis.Core</c>'s own
+/// configures it directly (mirroring the delegate overload of <c>SharedKernel.Caching.Redis.Core</c>'s
 /// <c>AddRedisConnection</c>) because its DI surface is action-based
 /// (<c>Action&lt;RedisIdempotencyOptions&gt;</c>), not <see cref="Microsoft.Extensions.Configuration.IConfigurationSection"/>-based.
 /// </remarks>

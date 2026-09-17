@@ -11,7 +11,8 @@ root `CLAUDE.md` Folder Map entry for `18.Idempotency` for why this domain exist
 ## Quick start
 
 ```csharp
-services.AddRedisConnection("localhost:6379");   // 02.Caching.Redis.Core — shared IConnectionMultiplexer
+services.AddRedisConnection(configuration);   // 02.Caching.Redis.Core — shared connection, bound from SharedKernel:Caching:Redis
+// or in code: services.AddRedisConnection(o => o.ConnectionString = "localhost:6379");
 services.AddSharedKernelRedisIdempotency(o =>
 {
     o.InFlightTtl = TimeSpan.FromSeconds(30);
@@ -107,7 +108,7 @@ remains a singleton underneath — only the thin store wrapper is scoped.
 var host = Host.CreateDefaultBuilder()
     .ConfigureServices(services =>
     {
-        services.AddRedisConnection(connectionString);
+        services.AddRedisConnection(o => o.ConnectionString = connectionString);
         services.AddSharedKernelRedisIdempotency();
         services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
     })
