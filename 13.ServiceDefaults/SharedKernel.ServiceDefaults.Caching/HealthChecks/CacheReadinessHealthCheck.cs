@@ -29,7 +29,7 @@ internal sealed class CacheReadinessHealthCheck(ICacheService cacheService) : IH
             using var timeoutCts = new CancellationTokenSource(ProbeTimeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-            await cacheService.GetAsync<string>(ProbeKey, linkedCts.Token).ConfigureAwait(false);
+            await cacheService.TryGetAsync<string>(ProbeKey, linkedCts.Token).ConfigureAwait(false);
 
             return HealthCheckResult.Healthy("Cache probe succeeded.");
         }

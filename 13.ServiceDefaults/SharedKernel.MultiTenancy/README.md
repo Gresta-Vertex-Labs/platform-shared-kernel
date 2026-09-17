@@ -55,7 +55,7 @@ public class OrderService(ITenantProvider tenants)
 
 **`DatabaseTenantCatalog`** — queries a consumer-owned tenant directory table via `IDbConnectionFactory`, reusing `DatabaseTenantResolutionStrategy`'s exact parameterized-query pattern.
 
-**`CachedTenantCatalog`** — a short (30s default), bounded-TTL in-memory decorator over any `ITenantCatalog`. Call `InvalidateTenantAsync` immediately after changing a tenant's status — do not rely on the TTL alone for a suspended/offboarded tenant.
+**`CachedTenantCatalog`** — a short (30s default), bounded-TTL decorator over any `ITenantCatalog`, stored in the service's `ICacheService`. Call `InvalidateTenantAsync` immediately after changing a tenant's status — do not rely on the TTL alone for a suspended/offboarded tenant. With a distributed cache and backplane (`AddRedisL2`) the invalidation reaches every instance; without one, other instances fall back to the TTL. Fail-safe is off, so an unreachable catalog database never serves a stale `Active` descriptor.
 
 **`CatalogTenantStatusValidator`** — the first real default implementation of `ITenantStatusValidator` above, backed by `ITenantCatalog`. Fails closed: a tenant absent from the catalog is treated identically to `Suspended`/`Offboarded`.
 
@@ -68,30 +68,13 @@ builder.Services.AddScoped<IDbConnectionFactory, NpgsqlConnectionFactory>();
 builder.Services.AddScoped<ITenantCatalog>(sp =>
 {
     var database = new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>());
-    return new CachedTenantCatalog(database); // 30s default TTL
+    return new CachedTenantCatalog(
+        database,
+        sp.GetRequiredService<ICacheService>(),
+        sp.GetRequiredService<ICacheKeyProvider>()); // 30s default TTL
 });
 
 builder.Services.AddScoped<ITenantStatusValidator, CatalogTenantStatusValidator>();
-```
-
-Opt-in cross-instance cache invalidation (so a status change on one replica evicts every replica's cached copy, not just the one that made the change):
-
-```csharp
-builder.Services.AddScoped<ITenantCatalog>(sp =>
-{
-    var database = new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>());
-    var cached = new CachedTenantCatalog(database)
-        .WithCrossInstanceInvalidation(sp.GetRequiredService<ICacheInvalidationBus>());
-    return cached;
-});
-
-// Elsewhere, wherever you already wire your own Redis Pub/Sub subscription
-// (ICacheInvalidationBus itself is publish-only — this is the consumer-side receive half):
-await channelService.SubscribeAsync("your-tenant-invalidation-channel", async message =>
-{
-    var tenantId = ParseTenantId(message);
-    cachedTenantCatalog.HandleCrossInstanceInvalidationSignal(tenantId);
-});
 ```
 
 ## Security note — strategy order matters
