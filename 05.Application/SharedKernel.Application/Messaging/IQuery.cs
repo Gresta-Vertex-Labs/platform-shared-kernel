@@ -10,9 +10,8 @@ namespace SharedKernel.Application.Messaging;
 /// <remarks>
 /// Implements <see cref="IQueryBase"/>, never <see cref="ICommandBase"/> — command-stage behaviors in
 /// <c>SharedKernel.Application.Behaviors</c> (transaction, idempotency, auditing) never apply to
-/// queries. Queries that want automatic caching additionally implement
-/// <c>ICacheableQuery&lt;TResponse&gt;</c> (<c>SharedKernel.Application.Behaviors.Caching</c>) —
-/// typically as <c>ICacheableQuery&lt;Result&lt;TResponse&gt;&gt;</c>, matching the same
-/// <see cref="IRequest{TResponse}"/> contract this interface already implements.
+/// queries. A query that wants automatic caching implements
+/// <c>ICacheableQuery&lt;TResponse&gt;</c> (<c>SharedKernel.Application.Behaviors.Caching</c>) instead,
+/// which is itself an <see cref="IQuery{TResponse}"/>.
 /// </remarks>
 public interface IQuery<TResponse> : IQueryBase, IRequest<Result<TResponse>>;

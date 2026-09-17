@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Application.Behaviors.Caching.csproj" />
+    <!-- A real FusionCache over a shared distributed cache proves the cached value survives serialization. -->
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

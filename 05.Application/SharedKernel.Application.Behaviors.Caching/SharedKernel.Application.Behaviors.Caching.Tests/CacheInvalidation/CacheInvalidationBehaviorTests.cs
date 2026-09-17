@@ -28,7 +28,7 @@ public sealed class CacheInvalidationBehaviorTests
         public IReadOnlyCollection<string> CacheTagsToInvalidate => ["widgets"];
     }
 
-    private sealed record WidgetQuery : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record WidgetQuery : ICacheableQuery<string>
     {
         public CachePolicy CachePolicy => CachePolicy.Default.WithTags("widgets");
         public string CacheKey => "widget:1";

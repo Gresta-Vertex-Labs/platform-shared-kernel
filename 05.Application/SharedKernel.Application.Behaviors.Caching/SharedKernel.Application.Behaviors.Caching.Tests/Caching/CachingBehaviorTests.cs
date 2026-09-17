@@ -9,24 +9,30 @@ namespace SharedKernel.Application.Behaviors.Caching.Tests.Caching;
 
 public sealed class CachingBehaviorTests
 {
-    private sealed record TestQuery(string Id) : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record TestQuery(string Id) : ICacheableQuery<string>
     {
         public CachePolicy CachePolicy => CachePolicy.Default;
         public string CacheKey => $"widget:{Id}";
     }
 
-    private sealed record TaggedQuery : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record TaggedQuery : ICacheableQuery<string>
     {
         public CachePolicy CachePolicy => CachePolicy.Default.WithTags("widgets");
         public string CacheKey => "widget:tagged";
     }
 
-    private sealed record ConfiguredPolicyQuery(CachePolicy CachePolicy) : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record ConfiguredPolicyQuery(CachePolicy CachePolicy) : ICacheableQuery<string>
     {
         public string CacheKey => "widget:configured";
     }
 
-    private sealed record RawKeyQuery(string CacheKey) : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record MismatchedQuery : ICacheableQuery<string>, MediatR.IRequest<int>
+    {
+        public CachePolicy CachePolicy => CachePolicy.Default;
+        public string CacheKey => "widget:mismatched";
+    }
+
+    private sealed record RawKeyQuery(string CacheKey) : ICacheableQuery<string>
     {
         public CachePolicy CachePolicy => CachePolicy.Default;
     }
@@ -66,6 +72,36 @@ public sealed class CachingBehaviorTests
 
         nextCalled.Should().BeFalse();
         second.Value.Should().Be("widget-1");
+    }
+
+    [Fact]
+    public async Task Handle_Success_CachesTheValueNotTheResult()
+    {
+        var cache = new FakeCacheService();
+        var behavior = new CachingBehavior<TestQuery, Result<string>>(cache);
+
+        await behavior.Handle(new TestQuery("1"), () => Task.FromResult(Result<string>.Success("widget-1")), CancellationToken.None);
+
+        (await cache.TryGetAsync<string>("widget:1")).TryGetValue(out var cached).Should().BeTrue();
+        cached.Should().Be("widget-1");
+        (await cache.TryGetAsync<Result<string>>("widget:1")).IsHit.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Handle_ResponseIsNotTheQueryResult_ThrowsWithoutInvokingNext()
+    {
+        var cache = new FakeCacheService();
+        var behavior = new CachingBehavior<MismatchedQuery, int>(cache);
+        var nextCalled = false;
+
+        var act = async () => await behavior.Handle(new MismatchedQuery(), () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(1);
+        }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*must return Result<String>*");
+        nextCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -221,8 +257,8 @@ public sealed class CachingBehaviorTests
 
         await cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(tenantA.ToString("D"), "widgets"));
 
-        (await cache.TryGetAsync<Result<string>>(CacheKeyFormat.BuildTenantTag(tenantA.ToString("D"), "widget:tagged"))).IsHit.Should().BeFalse();
-        (await cache.TryGetAsync<Result<string>>(CacheKeyFormat.BuildTenantTag(tenantB.ToString("D"), "widget:tagged"))).IsHit.Should().BeTrue();
+        (await cache.TryGetAsync<string>(CacheKeyFormat.BuildTenantTag(tenantA.ToString("D"), "widget:tagged"))).IsHit.Should().BeFalse();
+        (await cache.TryGetAsync<string>(CacheKeyFormat.BuildTenantTag(tenantB.ToString("D"), "widget:tagged"))).IsHit.Should().BeTrue();
     }
 
     [Fact]
@@ -263,6 +299,6 @@ public sealed class CachingBehaviorTests
         // ever be accepted at this generic parameter; there is no reachable runtime case to test.
         typeof(ICommand).Should().NotBeAssignableTo<IQueryBase>();
         typeof(TestQuery).Should().BeAssignableTo<IQueryBase>();
-        typeof(TestQuery).Should().BeAssignableTo<ICacheableQuery<Result<string>>>();
+        typeof(TestQuery).Should().BeAssignableTo<ICacheableQuery<string>>();
     }
 }

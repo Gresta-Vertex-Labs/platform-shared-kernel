@@ -9,7 +9,8 @@ SharedKernel.Application.Behaviors.Caching.CachingBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Caching.CachingBehavior<TRequest, TResponse>.CachingBehavior(SharedKernel.Caching.Abstractions.ICacheService! cacheService, SharedKernel.Application.Context.IRequestContext? requestContext = null) -> void
 SharedKernel.Application.Behaviors.Caching.CachingBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Caching.Extensions.CachingBehaviorsExtensions
-SharedKernel.Application.Behaviors.Caching.ICacheableQuery<TResponse>
-SharedKernel.Application.Behaviors.Caching.ICacheableQuery<TResponse>.CacheKey.get -> string!
-SharedKernel.Application.Behaviors.Caching.ICacheableQuery<TResponse>.CachePolicy.get -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Application.Behaviors.Caching.ICacheableQuery
+SharedKernel.Application.Behaviors.Caching.ICacheableQuery<TValue>
+SharedKernel.Application.Behaviors.Caching.ICacheableQuery.CacheKey.get -> string!
+SharedKernel.Application.Behaviors.Caching.ICacheableQuery.CachePolicy.get -> SharedKernel.Caching.Abstractions.CachePolicy!
 static SharedKernel.Application.Behaviors.Caching.Extensions.CachingBehaviorsExtensions.AddCachingBehaviors(this SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder! builder) -> SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder!

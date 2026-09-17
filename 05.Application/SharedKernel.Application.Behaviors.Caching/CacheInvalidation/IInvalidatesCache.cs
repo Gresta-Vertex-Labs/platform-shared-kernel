@@ -6,7 +6,7 @@ namespace SharedKernel.Application.Behaviors.CacheInvalidation;
 /// Marks a command as declaring the cache key(s)/tag(s) it renders stale on success.
 /// </summary>
 /// <remarks>
-/// Mirrors <see cref="ICacheableQuery{TResponse}"/>'s exact self-supplied pattern — the command
+/// Mirrors <see cref="ICacheableQuery{TValue}"/>'s exact self-supplied pattern — the command
 /// instance alone holds the discriminating parameters (e.g. the entity ID it just mutated), so it
 /// computes and supplies its own key list; <see cref="CacheInvalidationBehavior{TRequest,TResponse}"/>
 /// never derives keys itself. Tag-based eviction (<see cref="CacheTagsToInvalidate"/>) is an

@@ -2,24 +2,29 @@ using MediatR;
 using SharedKernel.Application.Context;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Behaviors.Caching;
 
 /// <summary>
 /// Wraps the inner pipeline in a cache lookup for queries implementing
-/// <see cref="ICacheableQuery{TResponse}"/>.
+/// <see cref="ICacheableQuery{TValue}"/>.
 /// </summary>
 /// <typeparam name="TRequest">
-/// The query type, constrained to <see cref="IQueryBase"/> and <see cref="ICacheableQuery{TResponse}"/>.
+/// The query type, constrained to <see cref="IQueryBase"/> and <see cref="ICacheableQuery"/>.
 /// </typeparam>
-/// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
+/// <typeparam name="TResponse">The response type returned by the pipeline, <c>Result&lt;TValue&gt;</c>.</typeparam>
 /// <remarks>
+/// <para>
+/// <b>Caches the value, not the <c>Result</c>.</b> A successful <c>Result&lt;TValue&gt;</c> is stored
+/// as its <c>TValue</c> and rebuilt on a hit, so the entry round-trips through the distributed cache's
+/// JSON serializer like any other value.
+/// </para>
 /// <para>
 /// <b>Stampede-protected, never caches a failure.</b> The handler runs inside
 /// <see cref="ICacheService.GetOrSetAsync{T}(string, Func{CacheFactoryContext, CancellationToken, ValueTask{T}}, CachePolicy, CancellationToken)"/>,
-/// so concurrent identical queries run it once. A failed <c>Result</c> is returned to every waiting
-/// caller but skipped for caching through <see cref="CacheFactoryContext.SkipCaching"/>.
+/// so concurrent identical queries do not all run it at once. A failed <c>Result</c> is returned to
+/// the caller and skipped for caching through <see cref="CacheFactoryContext.SkipCaching"/>; a query
+/// waiting on the same key then runs the handler itself.
 /// </para>
 /// <para>
 /// <b>No background handler runs.</b> Eager refresh and factory timeouts would let the cache run the
@@ -37,10 +42,11 @@ namespace SharedKernel.Application.Behaviors.Caching;
 /// </remarks>
 public sealed class CachingBehavior<TRequest, TResponse>(ICacheService cacheService, IRequestContext? requestContext = null)
     : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : IQueryBase, ICacheableQuery<TResponse>, IRequest<TResponse>
+    where TRequest : IQueryBase, ICacheableQuery, IRequest<TResponse>
 {
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">The query's cache key is empty, or starts with <c>@</c> outside a tenant scope.</exception>
+    /// <exception cref="InvalidOperationException"><typeparamref name="TResponse"/> is not the query's <c>Result&lt;TValue&gt;</c>.</exception>
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
@@ -52,17 +58,6 @@ public sealed class CachingBehavior<TRequest, TResponse>(ICacheService cacheServ
             .WithoutEagerRefresh()
             .WithFactoryTimeouts(softTimeout: null, hardTimeout: null);
 
-        return await cacheService.GetOrSetAsync<TResponse>(
-            key,
-            async (context, _) =>
-            {
-                var response = await next().ConfigureAwait(false);
-                if (response is IHasSuccessFlag { IsSuccess: false })
-                    context.SkipCaching();
-
-                return response;
-            },
-            policy,
-            cancellationToken).ConfigureAwait(false);
+        return await request.GetOrSetAsync(cacheService, key, policy, next, cancellationToken).ConfigureAwait(false);
     }
 }

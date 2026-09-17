@@ -12,7 +12,7 @@ namespace SharedKernel.Application.Behaviors.Caching.Tests.Extensions;
 
 public sealed class CachingBehaviorsExtensionsTests
 {
-    private sealed record TestQuery : IQuery<string>, ICacheableQuery<Result<string>>
+    private sealed record TestQuery : ICacheableQuery<string>
     {
         public CachePolicy CachePolicy => CachePolicy.Default;
         public string CacheKey => "key";
