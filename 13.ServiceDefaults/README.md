@@ -9,7 +9,7 @@ Host composition layer for Platform.SharedKernel microservices.
   | --- | --- |
   | `.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
   | `.Caching` | `AddCacheReadinessCheck()` |
-  | `.Caching.Redis` | `AddRedisHealthCheck(connectionString)` |
+  | `.Caching.Redis` | `AddRedisHealthCheck()` |
   | `.Messaging` | `AddMessagingReadinessCheck()` |
   | `.Storage` | `AddStorageReadinessCheck(bucket)` |
   | `.Search` | `AddSearchReadinessCheck(indexName)` |
@@ -55,7 +55,7 @@ builder.AddSharedKernelRateLimiting();                 // optional — see "Rate
 // Opt-in dependency-specific health checks — only what this service actually uses:
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<MyDbContext>()             // [pkg .Persistence]
-    .AddRedisHealthCheck(redisConnectionString)           // [pkg .Caching.Redis]
+    .AddRedisHealthCheck()                                // [pkg .Caching.Redis] — needs AddRedisConnection
     .AddMessagingReadinessCheck()                         // [pkg .Messaging]
     .AddStorageReadinessCheck("my-bucket")                // [pkg .Storage]
     .AddSearchReadinessCheck("products-index")            // [pkg .Search]

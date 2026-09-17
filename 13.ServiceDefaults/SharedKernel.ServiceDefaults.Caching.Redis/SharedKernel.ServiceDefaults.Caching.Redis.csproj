@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Redis connectivity health check for Platform.SharedKernel microservices: AddRedisHealthCheck(connectionString), built on AspNetCore.HealthChecks.Redis. Registered on /health/ready only. Kept apart from SharedKernel.ServiceDefaults.Caching because it alone brings StackExchange.Redis, which a service using only an in-memory cache must not restore. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <Description>Redis readiness health check for Platform.SharedKernel microservices: AddRedisHealthCheck, which pings the shared connection registered by SharedKernel.Caching.Redis.Core's AddRedisConnection through IRedisConnectionProbe and opens no connection of its own. Registered on /health/ready only. Kept apart from SharedKernel.ServiceDefaults.Caching because it alone brings the Redis client, which a service using only an in-memory cache must not restore. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;redis</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
@@ -11,10 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="AspNetCore.HealthChecks.Redis" />
-    <PackageReference Include="StackExchange.Redis" />
+    <!-- IRedisConnectionProbe only: the readiness check reuses the shared connection (13 → 02 is within the 01–12 range). -->
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Caching.Redis.Tests" />

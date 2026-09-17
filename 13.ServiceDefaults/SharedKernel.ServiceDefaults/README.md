@@ -23,7 +23,7 @@ so a service restores only the integrations it actually uses.
 | --- | --- | --- |
 | EF Core or a Dapper connection factory | `SharedKernel.ServiceDefaults.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
 | A cache through `ICacheService` | `SharedKernel.ServiceDefaults.Caching` | `AddCacheReadinessCheck()` |
-| Redis | `SharedKernel.ServiceDefaults.Caching.Redis` | `AddRedisHealthCheck(connectionString)` |
+| Redis | `SharedKernel.ServiceDefaults.Caching.Redis` | `AddRedisHealthCheck()` |
 | A message bus | `SharedKernel.ServiceDefaults.Messaging` | `AddMessagingReadinessCheck()` |
 | Object storage (S3, MinIO, OBS) | `SharedKernel.ServiceDefaults.Storage` | `AddStorageReadinessCheck(bucket)` |
 | A search index (Meilisearch, Elasticsearch) | `SharedKernel.ServiceDefaults.Search` | `AddSearchReadinessCheck(indexName)` |

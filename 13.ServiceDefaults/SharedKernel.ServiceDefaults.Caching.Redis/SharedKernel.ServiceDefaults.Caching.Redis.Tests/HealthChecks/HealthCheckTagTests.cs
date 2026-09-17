@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
+using SharedKernel.Caching.Redis.Core.Health;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
 namespace SharedKernel.ServiceDefaults.Caching.Redis.Tests.HealthChecks;
@@ -11,8 +12,9 @@ public sealed class HealthCheckTagTests
     public void AddRedisHealthCheck_RegistersWithReadyRedisCacheTags_NeverLive()
     {
         var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IRedisConnectionProbe>());
 
-        services.AddHealthChecks().AddRedisHealthCheck("localhost:6379");
+        services.AddHealthChecks().AddRedisHealthCheck();
 
         var registrations = GetRegistrations(services);
         var registration = Assert.Single(registrations, r => r.Name == "redis");
