@@ -3,47 +3,33 @@ using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.Caching.Redis.HashStore;
 
-/// <summary>
-/// Internal AOT-safe implementation of <see cref="ITypedHashStore{T}"/>.
-/// Captures <see cref="JsonTypeInfo{T}"/> at construction time and delegates all
-/// operations to the underlying <see cref="IRedisHashService"/>.
-/// </summary>
-/// <typeparam name="T">The DTO type stored in the Redis hash.</typeparam>
-internal sealed class TypedHashStore<T> : ITypedHashStore<T>
+/// <summary><see cref="ITypedHashStore{T}"/> that passes a fixed <see cref="JsonTypeInfo{T}"/> to <see cref="IRedisHashService"/>.</summary>
+internal sealed class TypedHashStore<T>(IRedisHashService hashService, JsonTypeInfo<T> typeInfo) : ITypedHashStore<T>
 {
-    private readonly IRedisHashService _hashService;
-    private readonly JsonTypeInfo<T> _typeInfo;
+    public ValueTask<CacheLookup<T>> GetFieldAsync(string key, string field, CancellationToken ct = default) =>
+        hashService.GetFieldAsync(key, field, typeInfo, ct);
 
-    /// <summary>
-    /// Initialises a new <see cref="TypedHashStore{T}"/>.
-    /// </summary>
-    /// <param name="hashService">The underlying Redis hash service.</param>
-    /// <param name="typeInfo">The STJ type info for <typeparamref name="T"/>, captured once at startup.</param>
-    public TypedHashStore(IRedisHashService hashService, JsonTypeInfo<T> typeInfo)
-    {
-        ArgumentNullException.ThrowIfNull(hashService);
-        ArgumentNullException.ThrowIfNull(typeInfo);
-        _hashService = hashService;
-        _typeInfo = typeInfo;
-    }
+    public ValueTask<IReadOnlyDictionary<string, T>> GetFieldsAsync(string key, IEnumerable<string> fields, CancellationToken ct = default) =>
+        hashService.GetFieldsAsync(key, fields, typeInfo, ct);
 
-    /// <inheritdoc />
-    public ValueTask<T?> GetFieldAsync(string key, string field, CancellationToken ct = default) =>
-        _hashService.GetFieldAsync(key, field, _typeInfo, ct);
-
-    /// <inheritdoc />
-    public ValueTask SetFieldAsync(string key, string field, T value, CancellationToken ct = default) =>
-        _hashService.SetFieldAsync(key, field, value, _typeInfo, ct);
-
-    /// <inheritdoc />
     public ValueTask<IReadOnlyDictionary<string, T>> GetAllFieldsAsync(string key, CancellationToken ct = default) =>
-        _hashService.GetAllFieldsAsync(key, _typeInfo, ct);
+        hashService.GetAllFieldsAsync(key, typeInfo, ct);
 
-    /// <inheritdoc />
-    public ValueTask DeleteFieldAsync(string key, string field, CancellationToken ct = default) =>
-        _hashService.DeleteFieldAsync(key, field, ct);
+    public ValueTask SetFieldAsync(string key, string field, T value, TimeSpan? timeToLive = null, CancellationToken ct = default) =>
+        hashService.SetFieldAsync(key, field, value, typeInfo, timeToLive, ct);
 
-    /// <inheritdoc />
-    public ValueTask<long> IncrementFieldAsync(string key, string field, long delta = 1, CancellationToken ct = default) =>
-        _hashService.IncrementFieldAsync(key, field, delta, ct);
+    public ValueTask SetFieldsAsync(string key, IReadOnlyDictionary<string, T> values, TimeSpan? timeToLive = null, CancellationToken ct = default) =>
+        hashService.SetFieldsAsync(key, values, typeInfo, timeToLive, ct);
+
+    public ValueTask<long> IncrementFieldAsync(string key, string field, long delta = 1, TimeSpan? timeToLive = null, CancellationToken ct = default) =>
+        hashService.IncrementFieldAsync(key, field, delta, timeToLive, ct);
+
+    public ValueTask<bool> DeleteFieldAsync(string key, string field, CancellationToken ct = default) =>
+        hashService.DeleteFieldAsync(key, field, ct);
+
+    public ValueTask<bool> DeleteAsync(string key, CancellationToken ct = default) =>
+        hashService.DeleteAsync(key, ct);
+
+    public ValueTask<bool> ExpireAsync(string key, TimeSpan? timeToLive, CancellationToken ct = default) =>
+        hashService.ExpireAsync(key, timeToLive, ct);
 }

@@ -1,205 +1,138 @@
-using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Redis.Core.Extensions;
-using SharedKernel.Caching.Redis.HashStore.Extensions;
-using Testcontainers.Redis;
+using StackExchange.Redis;
 using Xunit;
 
 namespace SharedKernel.Caching.Redis.HashStore.Tests;
 
-// ---------------------------------------------------------------------------
-// Test model and STJ source-gen context
-// ---------------------------------------------------------------------------
+/// <summary>
+/// <see cref="ITypedHashStore{T}"/> passes every call, with its fixed JSON contract, to <see cref="IRedisHashService"/>.
+/// </summary>
+public sealed class TypedHashStoreDelegationTests
+{
+    private static readonly JsonTypeInfo<TestPayload> Payload = TestJsonContext.Default.TestPayload;
 
-/// <summary>Test DTO used in ITypedHashStore integration tests.</summary>
-internal sealed record TestDto(string Title, int Value);
+    private readonly IRedisHashService _inner = Substitute.For<IRedisHashService>();
+    private readonly TypedHashStore<TestPayload> _store;
+    private readonly CancellationToken _ct = new CancellationTokenSource().Token;
 
-[JsonSerializable(typeof(TestDto))]
-[JsonSourceGenerationOptions(WriteIndented = false)]
-internal sealed partial class TestDtoJsonContext : JsonSerializerContext { }
+    public TypedHashStoreDelegationTests() => _store = new TypedHashStore<TestPayload>(_inner, Payload);
+
+    [Fact]
+    public async Task GetFieldAsync_Delegates()
+    {
+        var expected = CacheLookup<TestPayload>.Hit(new TestPayload("A", 1));
+        _inner.GetFieldAsync("k", "f", Payload, _ct).Returns(expected);
+
+        Assert.Equal(expected, await _store.GetFieldAsync("k", "f", _ct));
+    }
+
+    [Fact]
+    public async Task GetFieldsAsync_Delegates()
+    {
+        string[] fields = ["a", "b"];
+        IReadOnlyDictionary<string, TestPayload> expected = new Dictionary<string, TestPayload> { ["a"] = new("A", 1) };
+        _inner.GetFieldsAsync("k", fields, Payload, _ct).Returns(expected);
+
+        Assert.Same(expected, await _store.GetFieldsAsync("k", fields, _ct));
+    }
+
+    [Fact]
+    public async Task GetAllFieldsAsync_Delegates()
+    {
+        IReadOnlyDictionary<string, TestPayload> expected = new Dictionary<string, TestPayload>();
+        _inner.GetAllFieldsAsync("k", Payload, _ct).Returns(expected);
+
+        Assert.Same(expected, await _store.GetAllFieldsAsync("k", _ct));
+    }
+
+    [Fact]
+    public async Task SetFieldAsync_Delegates()
+    {
+        var value = new TestPayload("A", 1);
+        var ttl = TimeSpan.FromSeconds(9);
+
+        await _store.SetFieldAsync("k", "f", value, ttl, _ct);
+
+        await _inner.Received(1).SetFieldAsync("k", "f", value, Payload, ttl, _ct);
+    }
+
+    [Fact]
+    public async Task SetFieldsAsync_Delegates()
+    {
+        var values = new Dictionary<string, TestPayload> { ["a"] = new("A", 1) };
+        var ttl = TimeSpan.FromSeconds(9);
+
+        await _store.SetFieldsAsync("k", values, ttl, _ct);
+
+        await _inner.Received(1).SetFieldsAsync("k", values, Payload, ttl, _ct);
+    }
+
+    [Fact]
+    public async Task IncrementFieldAsync_Delegates()
+    {
+        var ttl = TimeSpan.FromSeconds(9);
+        _inner.IncrementFieldAsync("k", "f", 3, ttl, _ct).Returns(42L);
+
+        Assert.Equal(42L, await _store.IncrementFieldAsync("k", "f", 3, ttl, _ct));
+    }
+
+    [Fact]
+    public async Task DeleteFieldAsync_DeleteAsync_ExpireAsync_Delegate()
+    {
+        var ttl = TimeSpan.FromSeconds(9);
+        _inner.DeleteFieldAsync("k", "f", _ct).Returns(true);
+        _inner.DeleteAsync("k", _ct).Returns(true);
+        _inner.ExpireAsync("k", ttl, _ct).Returns(true);
+        _inner.ExpireAsync("k", null, _ct).Returns(true);
+
+        Assert.True(await _store.DeleteFieldAsync("k", "f", _ct));
+        Assert.True(await _store.DeleteAsync("k", _ct));
+        Assert.True(await _store.ExpireAsync("k", ttl, _ct));
+        Assert.True(await _store.ExpireAsync("k", null, _ct));
+    }
+}
 
 /// <summary>
-/// Integration tests for <see cref="ITypedHashStore{T}"/> backed by Redis via Testcontainers.
-/// Verifies all five methods: SetField, GetField, GetAllFields, DeleteField, and IncrementField.
+/// <see cref="ITypedHashStore{T}"/> registered through <c>AddTypedHashStore</c>, against a real Redis server.
 /// </summary>
 [Collection("Redis")]
-public sealed class TypedHashStoreIntegrationTests : IAsyncLifetime
+public sealed class TypedHashStoreIntegrationTests(RedisFixture fixture)
 {
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private ITypedHashStore<TestPayload> Store => fixture.PayloadStore;
 
-    private ServiceProvider? _provider;
-
-    public async Task InitializeAsync()
-    {
-        await _redisContainer.StartAsync();
-
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // AddRedisConnection registers IConnectionMultiplexer — required by RedisHashService.
-        services.AddRedisConnection(_redisContainer.GetConnectionString());
-
-        var builder = new TestCachingBuilder(services);
-        builder
-            .AddRedisHashService()
-            .AddTypedHashStore(TestDtoJsonContext.Default.TestDto);
-
-        _provider = services.BuildServiceProvider();
-    }
-
-    public async Task DisposeAsync()
-    {
-        if (_provider is not null)
-            await _provider.DisposeAsync();
-        await _redisContainer.DisposeAsync();
-    }
-
-    private ITypedHashStore<TestDto> Store =>
-        _provider!.GetRequiredService<ITypedHashStore<TestDto>>();
-
-    private static string Key() => "typed:hash:" + Guid.NewGuid();
-
-    // ---------------------------------------------------------------------------
-    // SetFieldAsync / GetFieldAsync round-trip
-    // ---------------------------------------------------------------------------
+    private IDatabase Database => fixture.Database;
 
     [Fact]
-    public async Task SetFieldAsync_GetFieldAsync_RoundTrip_ReturnsStoredValue()
+    public async Task Writes_AreReadableThroughTheHashServiceWithTheSameContract()
     {
-        var key = Key();
-        var expected = new TestDto("hello", 42);
-
-        await Store.SetFieldAsync(key, "item", expected);
-        var actual = await Store.GetFieldAsync(key, "item");
-
-        Assert.NotNull(actual);
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public async Task GetFieldAsync_NonExistentKey_ReturnsNull()
-    {
-        var result = await Store.GetFieldAsync(Key(), "missing");
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetFieldAsync_NonExistentField_ReturnsNull()
-    {
-        var key = Key();
-        await Store.SetFieldAsync(key, "field-a", new TestDto("A", 1));
-
-        var result = await Store.GetFieldAsync(key, "field-b");
-        Assert.Null(result);
-    }
-
-    // ---------------------------------------------------------------------------
-    // GetAllFieldsAsync
-    // ---------------------------------------------------------------------------
-
-    [Fact]
-    public async Task GetAllFieldsAsync_MultipleFields_ReturnsAll()
-    {
-        var key = Key();
-        var first = new TestDto("first", 10);
-        var second = new TestDto("second", 20);
+        var key = RedisFixture.NewKey("typed-round-trip");
+        var first = new TestPayload("first", 10);
+        var second = new TestPayload("second", 20);
 
         await Store.SetFieldAsync(key, "f1", first);
-        await Store.SetFieldAsync(key, "f2", second);
+        await Store.SetFieldsAsync(key, new Dictionary<string, TestPayload> { ["f2"] = second });
 
-        var all = await Store.GetAllFieldsAsync(key);
-
-        Assert.Equal(2, all.Count);
-        Assert.Equal(first, all["f1"]);
-        Assert.Equal(second, all["f2"]);
+        Assert.Equal(CacheLookup<TestPayload>.Hit(first), await fixture.HashService.GetFieldAsync(key, "f1", TestJsonContext.Default.TestPayload));
+        Assert.Equal(CacheLookup<TestPayload>.Hit(second), await Store.GetFieldAsync(key, "f2"));
+        Assert.False((await Store.GetFieldAsync(key, "absent")).IsHit);
+        Assert.Equal(2, (await Store.GetAllFieldsAsync(key)).Count);
+        Assert.Equal(["f2"], (await Store.GetFieldsAsync(key, ["f2", "f2", "absent"])).Keys);
     }
 
     [Fact]
-    public async Task GetAllFieldsAsync_NonExistentKey_ReturnsEmptyDictionary()
+    public async Task TimeToLive_DeleteAndExpire_BehaveAsTheHashService()
     {
-        var result = await Store.GetAllFieldsAsync(Key());
-        Assert.Empty(result);
-    }
+        var key = RedisFixture.NewKey("typed-ttl");
 
-    // ---------------------------------------------------------------------------
-    // DeleteFieldAsync
-    // ---------------------------------------------------------------------------
+        await Store.SetFieldAsync(key, "f", new TestPayload("A", 1), TimeSpan.FromSeconds(30));
+        Assert.NotNull(await Database.KeyTimeToLiveAsync(key));
 
-    [Fact]
-    public async Task DeleteFieldAsync_ExistingField_RemovesIt()
-    {
-        var key = Key();
-        await Store.SetFieldAsync(key, "to-delete", new TestDto("X", 0));
+        Assert.True(await Store.ExpireAsync(key, null));
+        Assert.Null(await Database.KeyTimeToLiveAsync(key));
 
-        await Store.DeleteFieldAsync(key, "to-delete");
-
-        var result = await Store.GetFieldAsync(key, "to-delete");
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task DeleteFieldAsync_NonExistentField_DoesNotThrow()
-    {
-        // No-op — must not throw.
-        await Store.DeleteFieldAsync(Key(), "ghost");
-    }
-
-    // ---------------------------------------------------------------------------
-    // IncrementFieldAsync
-    // ---------------------------------------------------------------------------
-
-    [Fact]
-    public async Task IncrementFieldAsync_NewField_StartsAtDelta()
-    {
-        var key = Key();
-        var result = await Store.IncrementFieldAsync(key, "counter", 5);
-        Assert.Equal(5L, result);
-    }
-
-    [Fact]
-    public async Task IncrementFieldAsync_ExistingField_Accumulates()
-    {
-        var key = Key();
-        await Store.IncrementFieldAsync(key, "counter", 10);
-        var result = await Store.IncrementFieldAsync(key, "counter", 3);
-        Assert.Equal(13L, result);
-    }
-
-    [Fact]
-    public async Task IncrementFieldAsync_NegativeDelta_Decrements()
-    {
-        var key = Key();
-        await Store.IncrementFieldAsync(key, "counter", 10);
-        var result = await Store.IncrementFieldAsync(key, "counter", -4);
-        Assert.Equal(6L, result);
-    }
-
-    // ---------------------------------------------------------------------------
-    // DI registration guard
-    // ---------------------------------------------------------------------------
-
-    [Fact]
-    public void AddTypedHashStore_WithoutRedisHashService_ThrowsInvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        var builder = new TestCachingBuilder(services);
-
-        // IRedisHashService is not registered — guard must fire.
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => builder.AddTypedHashStore(TestDtoJsonContext.Default.TestDto));
-
-        Assert.Contains("AddTypedHashStore", ex.Message);
-        Assert.Contains("AddRedisHashService", ex.Message);
-    }
-
-    [Fact]
-    public void AddTypedHashStore_IsSingleton_ReturnsSameInstance()
-    {
-        var instance1 = _provider!.GetRequiredService<ITypedHashStore<TestDto>>();
-        var instance2 = _provider!.GetRequiredService<ITypedHashStore<TestDto>>();
-        Assert.Same(instance1, instance2);
+        Assert.True(await Store.DeleteFieldAsync(key, "f"));
+        Assert.False(await Store.DeleteAsync(key));
     }
 }

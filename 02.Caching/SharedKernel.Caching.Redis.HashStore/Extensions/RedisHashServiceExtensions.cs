@@ -1,103 +1,70 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Polly;
-using SharedKernel.Caching.Abstractions;
-using StackExchange.Redis;
+using SharedKernel.Caching.Redis.Core.Extensions;
 
 namespace SharedKernel.Caching.Redis.HashStore.Extensions;
 
 /// <summary>
-/// <see cref="ICachingBuilder"/> extension methods for registering the Redis Hash service.
+/// <see cref="IServiceCollection"/> extension methods that register the Redis hash store over the shared connection.
 /// </summary>
 public static class RedisHashServiceExtensions
 {
-    /// <summary>
-    /// Registers <see cref="IRedisHashService"/> as a singleton backed by StackExchange.Redis hash commands.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Requires that <c>IConnectionMultiplexer</c> is already registered in the service collection.
-    /// Call <c>AddRedisConnection</c> (directly, or transitively via <c>AddRedisL2</c>,
-    /// <c>AddRedisDistributedLocking</c>, or <c>AddRedisChannelService</c>) first to satisfy this dependency.
-    /// </para>
-    /// <para>
-    /// The service shares the existing <c>IConnectionMultiplexer</c> singleton — no additional Redis
-    /// connections are created.
-    /// </para>
-    /// </remarks>
-    /// <param name="builder">The caching builder returned by <c>AddSharedKernelCaching</c>.</param>
-    /// <returns>The same <paramref name="builder"/> to allow further chaining.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when <c>IConnectionMultiplexer</c> has not been registered. Call
-    /// <c>AddRedisConnection</c> (directly, or transitively via <c>AddRedisL2</c>,
-    /// <c>AddRedisDistributedLocking</c>, or <c>AddRedisChannelService</c>) first.
-    /// </exception>
-    public static ICachingBuilder AddRedisHashService(this ICachingBuilder builder)
+    /// <summary>Registers <see cref="IRedisHashService"/> over the shared Redis connection.</summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><c>AddRedisConnection</c> has not been called.</exception>
+    /// <remarks>Calling it more than once has no further effect.</remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddRedisConnection(builder.Configuration)
+    ///     .AddRedisHashService();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddRedisHashService(this IServiceCollection services)
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(services);
+        services.EnsureRedisConnectionRegistered(nameof(AddRedisHashService));
 
-        // Guard: IConnectionMultiplexer must already be registered.
-        var multiplexerDescriptor = builder.Services
-            .FirstOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
-
-        if (multiplexerDescriptor is null)
-        {
-            throw new InvalidOperationException(
-                "AddRedisHashService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisChannelService) to be called first to register IConnectionMultiplexer.");
-        }
-
-        // Use a factory registration so the optional ResiliencePipeline (circuit breaker)
-        // is resolved from DI when present. When not registered (Enabled = false), the
-        // pipeline parameter is null and RedisHashService operates without Polly overhead.
-        builder.Services.TryAddSingleton<IRedisHashService>(sp =>
-            new RedisHashService(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetService<ResiliencePipeline>()));
-
-        return builder;
+        services.TryAddSingleton<IRedisHashService, RedisHashService>();
+        return services;
     }
 
     /// <summary>
-    /// Registers <see cref="ITypedHashStore{T}"/> as a singleton, capturing
-    /// <paramref name="typeInfo"/> once at registration time.
+    /// Registers <see cref="ITypedHashStore{T}"/> for <typeparamref name="T"/>, and <see cref="IRedisHashService"/>
+    /// when it is not registered yet.
     /// </summary>
-    /// <typeparam name="T">The DTO type to store in the Redis hash.</typeparam>
-    /// <param name="builder">The caching builder returned by <c>AddSharedKernelCaching</c>.</param>
-    /// <param name="typeInfo">
-    /// The STJ <see cref="JsonTypeInfo{T}"/> for <typeparamref name="T"/>.
-    /// Typically obtained from a source-generated context, e.g.
-    /// <c>MyAppSerializerContext.Default.OrderDto</c>.
-    /// </param>
-    /// <returns>The same <paramref name="builder"/> to allow further chaining.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> or <paramref name="typeInfo"/> is <see langword="null"/>.
-    /// </exception>
+    /// <typeparam name="T">The type of every field value.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="typeInfo">The JSON contract for <typeparamref name="T"/>, typically from a source-generated context.</param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="typeInfo"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <c>IRedisHashService</c> has not been registered.
-    /// Call <c>AddRedisHashService</c> before <c>AddTypedHashStore&lt;T&gt;</c>.
+    /// <c>AddRedisConnection</c> has not been called, or a store for <typeparamref name="T"/> is already registered.
     /// </exception>
-    public static ICachingBuilder AddTypedHashStore<T>(
-        this ICachingBuilder builder,
-        JsonTypeInfo<T> typeInfo)
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddRedisConnection(builder.Configuration)
+    ///     .AddTypedHashStore(AppJsonContext.Default.SessionDto)
+    ///     .AddTypedHashStore(AppJsonContext.Default.Int64);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddTypedHashStore<T>(this IServiceCollection services, JsonTypeInfo<T> typeInfo)
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(typeInfo);
+        services.AddRedisHashService();
 
-        // Guard: IRedisHashService must already be registered.
-        var hashServiceDescriptor = builder.Services
-            .FirstOrDefault(d => d.ServiceType == typeof(IRedisHashService));
-
-        if (hashServiceDescriptor is null)
+        if (services.Any(d => d.ServiceType == typeof(ITypedHashStore<T>)))
         {
             throw new InvalidOperationException(
-                "AddTypedHashStore<T> requires AddRedisHashService to be called first.");
+                $"An ITypedHashStore<{typeof(T).Name}> is already registered; register one store per type.");
         }
 
-        // Register a singleton factory that captures typeInfo at registration time.
-        builder.Services.AddSingleton<ITypedHashStore<T>>(
-            sp => new TypedHashStore<T>(sp.GetRequiredService<IRedisHashService>(), typeInfo));
-
-        return builder;
+        services.AddSingleton<ITypedHashStore<T>>(sp => new TypedHashStore<T>(sp.GetRequiredService<IRedisHashService>(), typeInfo));
+        return services;
     }
 }
