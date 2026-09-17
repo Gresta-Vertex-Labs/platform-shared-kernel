@@ -1630,7 +1630,7 @@ public class SecureDefaultsAssertionTests
     /// <see cref="SecureDefaultsAssertion"/> method proves a STRUCTURAL fact via Mono.Cecil IL
     /// inspection, never executing the assembly under test. "Compression ran before encryption" is
     /// a COMPUTED BEHAVIOR of <c>EncryptedCacheService</c>'s own runtime branch
-    /// (<c>_compressionEnabled</c>, captured once at registration time by <c>AddCacheEncryption()</c>
+    /// (<c>_compression</c>, the <c>CacheCompressionOptions</c> captured at resolution time by <c>AddCacheEncryption()</c>
     /// from whether the PRE-<c>AddCacheEncryption()</c> <c>IFusionCacheSerializer</c> registration was
     /// a <c>BrotliCacheSerializer</c>) whose concrete representation is not something a sound,
     /// representation-agnostic static IL technique could honestly prove — mirroring
@@ -1658,7 +1658,7 @@ public class SecureDefaultsAssertionTests
     /// It writes a highly-compressible payload (8192 repeated characters) through the composed
     /// pipeline and captures the intercepted <c>EncryptedPayload</c> storage bytes' length. It
     /// separately encrypts the SAME plaintext JSON bytes a bare System.Text.Json serialization step
-    /// would produce — using <c>JsonSerializerDefaults.Web</c>, the exact fallback
+    /// would produce — using default <c>JsonSerializerOptions</c> (General defaults), the exact options
     /// <c>EncryptedCacheService</c> itself uses when no <c>CachingOptions.SerializerContext</c> is
     /// configured (which this test does not configure) — with the SAME cache-key-derived AAD
     /// <c>EncryptedCacheService</c> uses, directly via
@@ -1687,8 +1687,8 @@ public class SecureDefaultsAssertionTests
     /// <para>
     /// <strong>Non-vacuous, re-verified at re-lock time.</strong> Verified by a temporary sanity
     /// check during this re-lock — removing <c>.AddBrotliCompression()</c> from the chain (so
-    /// <c>EncryptedCacheService</c>'s <c>_compressionEnabled</c> resolves to
-    /// <see langword="false"/>, reproducing "compression silently stopped being wired into the
+    /// <c>EncryptedCacheService</c>'s <c>_compression</c> resolves to
+    /// <see langword="null"/>, reproducing "compression silently stopped being wired into the
     /// pipeline") — confirmed the size assertion then genuinely fails, then reverted before commit.
     /// </para>
     /// </remarks>
@@ -1750,10 +1750,10 @@ public class SecureDefaultsAssertionTests
                      "corrupted or no-op output");
 
         // Baseline: the SAME plaintext JSON bytes EncryptedCacheService itself produces when no
-        // CachingOptions.SerializerContext is configured (the JsonSerializerDefaults.Web fallback),
+        // CachingOptions.SerializerContext is configured (default JsonSerializerOptions, General defaults),
         // encrypted with the SAME cache-key-derived AAD EncryptedCacheService uses, but with no
         // compression.
-        var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions();
         var plaintextBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload, jsonOptions);
         var associatedData = System.Text.Encoding.UTF8.GetBytes(key);
         var baseline = await encryptionService.EncryptAsync(plaintextBytes, associatedData);
