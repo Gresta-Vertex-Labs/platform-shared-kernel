@@ -36,6 +36,7 @@
   </Folder>
   <Folder Name="/02.Caching/">
     <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.Tests/SharedKernel.Caching.Abstractions.Tests.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/SharedKernel.Caching.Redis.Core.Tests.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.csproj" />

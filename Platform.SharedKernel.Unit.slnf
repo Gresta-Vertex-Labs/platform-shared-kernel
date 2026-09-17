@@ -33,6 +33,7 @@
       "01.Core/SharedKernel.Validation.FluentValidation/SharedKernel.Validation.FluentValidation.csproj",
       "01.Core/SharedKernel.Validation/SharedKernel.Validation.Tests/SharedKernel.Validation.Tests.csproj",
       "01.Core/SharedKernel.Validation/SharedKernel.Validation.csproj",
+      "02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.Tests/SharedKernel.Caching.Abstractions.Tests.csproj",
       "02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj",
       "02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/SharedKernel.Caching.FusionCache.Tests.csproj",
       "02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.csproj",
