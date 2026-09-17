@@ -9,13 +9,10 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Payloads at or above <see cref="CachingOptions.CompressionOptions.L2ThresholdBytes"/> are
-/// compressed with Brotli and prefixed with the two-byte magic marker <c>0x42 0x52</c> ("BR" in
-/// ASCII). On read, the magic prefix is detected and the payload is decompressed transparently
-/// before being forwarded to the inner serializer. The actual encode/decode mechanics live in
-/// <see cref="BrotliPayloadCodec"/> (Phase 46/WO-081), shared with
-/// <c>Encryption.EncryptedCacheService</c> — this type's own external behavior is unchanged by
-/// that extraction.
+/// Payloads at or above <see cref="CacheCompressionOptions.ThresholdBytes"/> are
+/// compressed with Brotli and prefixed with the two-byte marker <c>0x42 0x52</c> ("BR"). On read,
+/// the marker is detected and the payload decompressed before the inner serializer sees it. The
+/// codec (<see cref="BrotliPayloadCodec"/>) is shared with <c>Encryption.EncryptedCacheService</c>.
 /// </para>
 /// <para>
 /// Payloads below the threshold, and any payloads written before compression was enabled, are
@@ -33,7 +30,7 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
 {
     private readonly IFusionCacheSerializer _inner;
-    private readonly CachingOptions.CompressionOptions _options;
+    private readonly CacheCompressionOptions _options;
 
     /// <summary>
     /// Initialises a new instance of <see cref="BrotliCacheSerializer"/>.
@@ -47,29 +44,23 @@ internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
     /// </param>
     internal BrotliCacheSerializer(
         IFusionCacheSerializer inner,
-        CachingOptions.CompressionOptions options)
+        CacheCompressionOptions options)
     {
         _inner = inner;
         _options = options;
     }
 
-    /// <summary>
-    /// The wrapped inner serializer this instance decorates.
-    /// </summary>
-    /// <remarks>
-    /// Added Phase 46/WO-081: <c>AddCacheEncryption()</c> uses this to unwrap Brotli compression
-    /// from the registered <see cref="IFusionCacheSerializer"/> when both features are opted in —
-    /// compression duty moves to <c>Encryption.EncryptedCacheService</c> at that point, since
-    /// encryption must see plaintext bytes before compression can safely run. See
-    /// "Cache-value encryption rules" in <c>02.Caching/CLAUDE.md</c>.
-    /// </remarks>
+    // AddCacheEncryption unwraps compression from the serializer and moves it into
+    // EncryptedCacheService, which must compress plaintext before encrypting it.
     public IFusionCacheSerializer Inner => _inner;
+
+    public CacheCompressionOptions Options => _options;
 
     /// <inheritdoc />
     public byte[] Serialize<T>(T? obj)
     {
         var payload = _inner.Serialize(obj);
-        return BrotliPayloadCodec.Compress(payload, _options.L2ThresholdBytes, _options.Level);
+        return BrotliPayloadCodec.Compress(payload, _options.ThresholdBytes, _options.Level);
     }
 
     /// <inheritdoc />
@@ -83,7 +74,7 @@ internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
     public async ValueTask<byte[]> SerializeAsync<T>(T? obj, CancellationToken token = default)
     {
         var payload = await _inner.SerializeAsync(obj, token).ConfigureAwait(false);
-        return BrotliPayloadCodec.Compress(payload, _options.L2ThresholdBytes, _options.Level);
+        return BrotliPayloadCodec.Compress(payload, _options.ThresholdBytes, _options.Level);
     }
 
     /// <inheritdoc />

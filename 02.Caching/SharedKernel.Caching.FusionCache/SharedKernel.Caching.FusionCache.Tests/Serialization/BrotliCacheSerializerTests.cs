@@ -25,10 +25,10 @@ public sealed class BrotliCacheSerializerTests
     private static FusionCacheSystemTextJsonSerializer CreateInner() =>
         new FusionCacheSystemTextJsonSerializer();
 
-    private static CachingOptions.CompressionOptions DefaultOptions(
+    private static CacheCompressionOptions DefaultOptions(
         int thresholdBytes = 128,
         CompressionLevel level = CompressionLevel.Fastest) =>
-        new() { Enabled = true, L2ThresholdBytes = thresholdBytes, Level = level };
+        new() { ThresholdBytes = thresholdBytes, Level = level };
 
     // -------------------------------------------------------------------------
     // B-04 Test 1: Compressed round-trip (payload above threshold)
@@ -255,13 +255,72 @@ public sealed class BrotliCacheSerializerTests
         var services = new ServiceCollection();
         services.AddLogging();
         var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
-        builder.AddBrotliCompression(o => o.L2ThresholdBytes = 512);
+        builder.AddBrotliCompression(o => o.ThresholdBytes = 512);
 
         using var provider = services.BuildServiceProvider();
         var serializer = provider.GetRequiredService<IFusionCacheSerializer>();
 
         // The resolved serializer must be a BrotliCacheSerializer (internal type accessible via InternalsVisibleTo)
         Assert.IsType<BrotliCacheSerializer>(serializer);
+    }
+
+    [Fact]
+    public void CacheCompressionOptions_Defaults_Are1024BytesAndFastest()
+    {
+        var options = new CacheCompressionOptions();
+
+        Assert.Equal(1024, options.ThresholdBytes);
+        Assert.Equal(CompressionLevel.Fastest, options.Level);
+    }
+
+    [Fact]
+    public void AddBrotliCompression_WithoutConfigure_UsesDefaultOptions_AndWrapsTheStjSerializer()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test").AddBrotliCompression();
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = Assert.IsType<BrotliCacheSerializer>(provider.GetRequiredService<IFusionCacheSerializer>());
+
+        Assert.Equal(1024, serializer.Options.ThresholdBytes);
+        Assert.Equal(CompressionLevel.Fastest, serializer.Options.Level);
+        Assert.Same(provider.GetRequiredService<FusionCacheSystemTextJsonSerializer>(), serializer.Inner);
+    }
+
+    [Fact]
+    public void AddBrotliCompression_ConfiguredThresholdAndLevel_ReachTheSerializer()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test")
+            .AddBrotliCompression(o =>
+            {
+                o.ThresholdBytes = 2048;
+                o.Level = CompressionLevel.SmallestSize;
+            });
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = Assert.IsType<BrotliCacheSerializer>(provider.GetRequiredService<IFusionCacheSerializer>());
+
+        Assert.Equal(2048, serializer.Options.ThresholdBytes);
+        Assert.Equal(CompressionLevel.SmallestSize, serializer.Options.Level);
+    }
+
+    [Fact]
+    public void Serialize_PayloadExactlyAtThreshold_IsCompressed_OneByteBelow_IsNot()
+    {
+        var inner = CreateInner();
+        var probe = inner.Serialize(new BrotliTestPayload(new string('x', 300), 1));
+
+        var atThreshold = new BrotliCacheSerializer(inner, DefaultOptions(thresholdBytes: probe.Length));
+        var aboveThreshold = new BrotliCacheSerializer(inner, DefaultOptions(thresholdBytes: probe.Length + 1));
+
+        byte[] compressed = atThreshold.Serialize(new BrotliTestPayload(new string('x', 300), 1));
+        byte[] passthrough = aboveThreshold.Serialize(new BrotliTestPayload(new string('x', 300), 1));
+
+        Assert.Equal([0x42, 0x52], compressed[..2]);
+        Assert.Equal(probe, passthrough);
     }
 
     [Fact]
@@ -272,7 +331,7 @@ public sealed class BrotliCacheSerializerTests
         var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
 
         Assert.Throws<ArgumentException>(() =>
-            builder.AddBrotliCompression(o => o.L2ThresholdBytes = 0));
+            builder.AddBrotliCompression(o => o.ThresholdBytes = 0));
     }
 
     [Fact]
@@ -283,7 +342,7 @@ public sealed class BrotliCacheSerializerTests
         var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
 
         Assert.Throws<ArgumentException>(() =>
-            builder.AddBrotliCompression(o => o.L2ThresholdBytes = -1));
+            builder.AddBrotliCompression(o => o.ThresholdBytes = -1));
     }
 
     [Fact]

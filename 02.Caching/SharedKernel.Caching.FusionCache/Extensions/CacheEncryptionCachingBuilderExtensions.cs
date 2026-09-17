@@ -10,67 +10,48 @@ using ZiggyCreatures.Caching.Fusion.Serialization;
 namespace SharedKernel.Caching.FusionCache.Extensions;
 
 /// <summary>
-/// <see cref="ICachingBuilder"/> extension methods for enabling opt-in AES-GCM encryption of
-/// cached values.
+/// <see cref="ICachingBuilder"/> extension methods for opt-in AES-GCM encryption of cached values.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Phase 46/WO-081:</b> this method now wraps the registered <see cref="ICacheService"/> with
-/// <see cref="EncryptedCacheService"/> — not the registered <c>IFusionCacheSerializer</c> with the
-/// (now retired) <c>CacheEncryptionSerializer</c>. See <see cref="EncryptedCacheService"/>'s own
-/// remarks, and "Cache-value encryption rules" in <c>02.Caching/CLAUDE.md</c>, for the structural
-/// reason: <c>IFusionCacheSerializer</c> never receives the cache key, so a serializer-level
-/// decorator cannot derive key-bound associated data (AAD) — only an <see cref="ICacheService"/>-level
-/// decorator can.
-/// </para>
-/// </remarks>
 public static class CacheEncryptionCachingBuilderExtensions
 {
     /// <summary>
-    /// Wraps the currently-registered <see cref="ICacheService"/> with
-    /// <see cref="EncryptedCacheService"/>, so that every cached value is AES-GCM encrypted with
-    /// associated data derived from its cache key before being written to L1/L2, and transparently
-    /// decrypted (with the same key-derived AAD) on read.
+    /// Encrypts every cached value with AES-GCM before it is stored, in both cache layers, and
+    /// decrypts it on read. The cache key is the associated data, so an entry cannot be replayed under
+    /// another key or another tenant's key.
     /// </summary>
-    /// <param name="builder">The <see cref="ICachingBuilder"/> to configure.</param>
-    /// <returns>The same <see cref="ICachingBuilder"/> to allow further chaining.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="ISymmetricEncryptionService"/> is not already registered (register an
-    /// <see cref="IEncryptionKeyProvider"/> and call <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c>
-    /// from <c>01.Core/SharedKernel.Cryptography</c> first),
-    /// or when no <see cref="ICacheService"/> is registered yet (call <c>AddSharedKernelCaching()</c>
-    /// first).
-    /// </exception>
     /// <remarks>
     /// <para>
-    /// Must be called <em>after</em> <c>AddBrotliCompression()</c> when both are used. When the
-    /// currently-registered <c>IFusionCacheSerializer</c> is a <c>BrotliCacheSerializer</c>, this
-    /// method unwraps it back to its inner serializer (compression duty moves to
-    /// <see cref="EncryptedCacheService"/>, which compresses plaintext before encrypting it and
-    /// decompresses after decrypting) — producing compress-then-encrypt on write and
-    /// decrypt-then-decompress on read, identical to Phase 42's guarantee. Calling
-    /// <c>AddBrotliCompression()</c> after this method has already been called still throws
-    /// <see cref="InvalidOperationException"/> — that guard is unchanged.
+    /// Use it when cached values are sensitive and the cache (typically Redis) is shared or managed by
+    /// others. TLS already protects values in transit; this protects them at rest in the cache.
     /// </para>
     /// <para>
-    /// Disabled by default — <c>AddSharedKernelCaching</c>/<c>AddRedisL2</c> behavior is unchanged
-    /// unless this method is explicitly called.
+    /// Call it last, after <c>AddBrotliCompression</c> when both are used: values are then compressed
+    /// before they are encrypted, with the configured threshold and level. An entry that fails to
+    /// decrypt (tampered, or written under another key) is removed and treated as a miss.
     /// </para>
     /// <para>
-    /// Example:
+    /// Changing to or from encryption changes the stored format, so existing distributed entries are
+    /// recomputed once after the deployment.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The caching builder.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="ISymmetricEncryptionService"/> is not registered (call
+    /// <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c> first), or
+    /// <c>AddSharedKernelCaching</c> has not been called.
+    /// </exception>
+    /// <example>
     /// <code>
     /// services.AddSingleton&lt;IEncryptionKeyProvider&gt;(keyProvider);
     /// services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption();
-    /// services.AddSharedKernelCaching(o => { o.ServiceName = "my-service"; })
+    /// services.AddSharedKernelCaching(o =&gt; o.ServiceName = "payments")
     ///         .AddRedisL2(connectionString)
-    ///         .AddBrotliCompression(o => { o.L2ThresholdBytes = 2048; })   // compression first (innermost)
-    ///         .AddCacheEncryption();                                       // encryption last (outermost)
+    ///         .AddBrotliCompression()
+    ///         .AddCacheEncryption();
     /// </code>
-    /// </para>
-    /// </remarks>
+    /// </example>
     public static ICachingBuilder AddCacheEncryption(this ICachingBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -127,18 +108,16 @@ public static class CacheEncryptionCachingBuilderExtensions
             var jsonOptions = sp.GetRequiredService<CacheSerializationOptions>().Value;
             var logger = sp.GetRequiredService<ILogger<EncryptedCacheService>>();
 
-            // Re-inspect the ORIGINAL pre-replacement serializer registration (not the one just
-            // replaced above) to determine whether compression duty needs to move here.
+            // Compression moves here when it was configured, so plaintext is compressed before it is
+            // encrypted, with the same threshold and level.
             var originalSerializer = (IFusionCacheSerializer)resolveExistingSerializer(sp);
-            bool compressionEnabled = originalSerializer is BrotliCacheSerializer;
+            CacheCompressionOptions? compression = (originalSerializer as BrotliCacheSerializer)?.Options;
 
-            return new EncryptedCacheService(innerCache, encryptionService, jsonOptions, compressionEnabled, logger);
+            return new EncryptedCacheService(innerCache, encryptionService, jsonOptions, compression, logger);
         }));
 
-        // Marker so AddBrotliCompression() can detect, at registration time, that encryption has
-        // already been applied and refuse to silently discard it by rewrapping the raw base
-        // serializer out from underneath it. Unchanged from Phase 42.
-        builder.Services.TryAddSingleton(new CacheEncryptionOptions());
+        // Lets AddBrotliCompression detect that encryption is already in place and refuse to run after it.
+        builder.Services.TryAddSingleton(new CacheEncryptionMarker());
 
         return builder;
     }

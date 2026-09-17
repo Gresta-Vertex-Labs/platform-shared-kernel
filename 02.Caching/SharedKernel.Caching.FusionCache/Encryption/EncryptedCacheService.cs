@@ -1,8 +1,9 @@
-using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Caching.FusionCache.Serialization;
 using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
@@ -35,7 +36,8 @@ namespace SharedKernel.Caching.FusionCache.Encryption;
 /// </para>
 /// <para>
 /// <b>Compression composition.</b> When Brotli compression is also enabled this decorator compresses
-/// plaintext before encrypting and decompresses after decrypting, reusing <see cref="BrotliPayloadCodec"/>.
+/// plaintext before encrypting, with the configured threshold and level, and decompresses after
+/// decrypting, reusing <see cref="BrotliPayloadCodec"/>.
 /// </para>
 /// <para>
 /// <b>Tamper/mismatched-AAD handling.</b> An entry that fails to decrypt is logged, evicted and
@@ -48,14 +50,14 @@ internal sealed partial class EncryptedCacheService : ICacheService
     private readonly ICacheService _inner;
     private readonly ISymmetricEncryptionService _encryption;
     private readonly JsonSerializerOptions _jsonOptions;
-    private readonly bool _compressionEnabled;
+    private readonly CacheCompressionOptions? _compression;
     private readonly ILogger<EncryptedCacheService> _logger;
 
     public EncryptedCacheService(
         ICacheService inner,
         ISymmetricEncryptionService encryption,
         JsonSerializerOptions jsonOptions,
-        bool compressionEnabled,
+        CacheCompressionOptions? compression,
         ILogger<EncryptedCacheService> logger)
     {
         ArgumentNullException.ThrowIfNull(inner);
@@ -66,7 +68,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
         _inner = inner;
         _encryption = encryption;
         _jsonOptions = jsonOptions;
-        _compressionEnabled = compressionEnabled;
+        _compression = compression;
         _logger = logger;
     }
 
@@ -196,8 +198,8 @@ internal sealed partial class EncryptedCacheService : ICacheService
     {
         byte[] plaintext = JsonSerializer.SerializeToUtf8Bytes(value, _jsonOptions);
 
-        if (_compressionEnabled)
-            plaintext = BrotliPayloadCodec.Compress(plaintext, thresholdBytes: 0, CompressionLevel.Fastest);
+        if (_compression is not null)
+            plaintext = BrotliPayloadCodec.Compress(plaintext, _compression.ThresholdBytes, _compression.Level);
 
         byte[] associatedData = Encoding.UTF8.GetBytes(key);
         EncryptedPayload payload = await _encryption.EncryptAsync(plaintext, associatedData, ct).ConfigureAwait(false);
@@ -218,7 +220,8 @@ internal sealed partial class EncryptedCacheService : ICacheService
         if (decryptResult.IsFailure)
             return Result<T>.Failure(decryptResult.Error);
 
-        byte[] plaintext = _compressionEnabled
+        // Payloads below the threshold carry no marker and are returned unchanged.
+        byte[] plaintext = _compression is not null
             ? BrotliPayloadCodec.Decompress(decryptResult.Value)
             : decryptResult.Value;
 
@@ -228,7 +231,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
 
     private async ValueTask HandleDecryptFailureAsync(string key, Error error, CancellationToken ct)
     {
-        Log.DecryptFailed(_logger, key, error.Message);
+        Log.DecryptFailed(_logger, FusionCacheService.ExtractKeyPrefix(key), error.Code);
 
         try
         {
@@ -244,7 +247,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
     private static partial class Log
     {
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 15, Level = LogLevel.Warning,
-            Message = "Cache entry for key '{Key}' failed to decrypt ({Reason}) — treating as a cache miss and evicting the corrupt entry.")]
-        internal static partial void DecryptFailed(ILogger logger, string key, string reason);
+            Message = "Cache entry for {KeyPrefix} failed to decrypt ({Reason}) — treating as a cache miss and evicting the corrupt entry.")]
+        internal static partial void DecryptFailed(ILogger logger, string keyPrefix, string reason);
     }
 }

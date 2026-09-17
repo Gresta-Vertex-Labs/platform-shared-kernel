@@ -5,19 +5,10 @@ using System.Runtime.CompilerServices;
 namespace SharedKernel.Caching.FusionCache.Serialization;
 
 /// <summary>
-/// Shared Brotli compress/decompress codec, extracted from <see cref="BrotliCacheSerializer"/>
-/// (Phase 46/WO-081) so the identical magic-byte-prefixed wire shape and
-/// <see cref="BrotliEncoder"/>/<see cref="ArrayPool{T}"/> mechanics can be reused by
-/// <c>Encryption.EncryptedCacheService</c> without either type depending on the other.
+/// The Brotli codec shared by <see cref="BrotliCacheSerializer"/> and
+/// <c>Encryption.EncryptedCacheService</c>: a two-byte "BR" marker followed by the compressed bytes.
+/// Payloads without the marker are returned unchanged, so uncompressed entries stay readable.
 /// </summary>
-/// <remarks>
-/// <see cref="BrotliCacheSerializer"/>'s own external behavior is unchanged by this extraction —
-/// it still applies a byte-length threshold before compressing. <c>EncryptedCacheService</c> calls
-/// <see cref="Compress(byte[], int, CompressionLevel)"/> with <c>thresholdBytes: 0</c> so every
-/// payload is compressed unconditionally once encryption is opted in — the same "once a caller has
-/// explicitly opted in, apply it uniformly" reasoning the retired <c>CacheEncryptionSerializer</c>
-/// already documented for encryption itself never having a size threshold.
-/// </remarks>
 internal static class BrotliPayloadCodec
 {
     // Magic bytes prepended to every compressed payload: ASCII "BR" (0x42, 0x52).

@@ -210,7 +210,24 @@ public sealed class EncryptedCacheServiceTests
         ICacheService inner,
         ISymmetricEncryptionService encryption,
         bool compressionEnabled = false) =>
-        new(inner, encryption, new JsonSerializerOptions(), compressionEnabled, NullLogger<EncryptedCacheService>.Instance);
+        CreateSut(inner, encryption, compressionEnabled ? new CacheCompressionOptions() : null);
+
+    private static EncryptedCacheService CreateSut(
+        ICacheService inner,
+        ISymmetricEncryptionService encryption,
+        CacheCompressionOptions? compression) =>
+        new(inner, encryption, new JsonSerializerOptions(), compression, NullLogger<EncryptedCacheService>.Instance);
+
+    private static bool HasBrotliMarker(byte[] bytes) => bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x52;
+
+    // Decrypts what EncryptedCacheService handed its inner cache, returning the plaintext before decompression.
+    private static async Task<byte[]> StoredPlaintextAsync(ICacheService inner, ISymmetricEncryptionService encryption, string key)
+    {
+        Assert.True(EncryptedPayload.TryParse(await StoredBytesAsync(inner, key), out EncryptedPayload? payload));
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, System.Text.Encoding.UTF8.GetBytes(key));
+        Assert.True(decrypted.IsSuccess);
+        return decrypted.Value;
+    }
 
     private static async Task<byte[]> StoredBytesAsync(ICacheService inner, string key) =>
         (await inner.TryGetAsync<byte[]>(key)).Value;
@@ -595,6 +612,122 @@ public sealed class EncryptedCacheServiceTests
     }
 
     [Fact]
+    public async Task Compression_HonoursThreshold_SmallPayloadStoredUncompressed_LargePayloadCompressed()
+    {
+        var encryption = CreateRealEncryptionService();
+        var inner = new InMemoryDictionaryCacheService();
+        var sut = CreateSut(inner, encryption, new CacheCompressionOptions { ThresholdBytes = 256 });
+
+        var small = new string('s', 20);   // ~22 JSON bytes, below the threshold
+        var large = new string('l', 4000); // ~4002 JSON bytes, above the threshold
+
+        await sut.SetAsync("small", small, CachePolicy.Default);
+        await sut.SetAsync("large", large, CachePolicy.Default);
+
+        byte[] smallPlaintext = await StoredPlaintextAsync(inner, encryption, "small");
+        byte[] largePlaintext = await StoredPlaintextAsync(inner, encryption, "large");
+
+        Assert.False(HasBrotliMarker(smallPlaintext));
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(small), smallPlaintext);
+        Assert.True(HasBrotliMarker(largePlaintext));
+        Assert.True(largePlaintext.Length < 200, $"Expected a compressed plaintext, got {largePlaintext.Length} bytes.");
+
+        // Both remain readable: the unmarked small payload is not run through the decompressor.
+        Assert.Equal(small, (await sut.TryGetAsync<string>("small")).Value);
+        Assert.Equal(large, (await sut.TryGetAsync<string>("large")).Value);
+    }
+
+    [Fact]
+    public async Task Compression_PayloadWrittenWithoutCompression_StaysReadableAfterCompressionIsEnabled()
+    {
+        var encryption = CreateRealEncryptionService();
+        var inner = new InMemoryDictionaryCacheService();
+        var large = new string('l', 4000);
+
+        await CreateSut(inner, encryption, compression: null).SetAsync("k", large, CachePolicy.Default);
+
+        var withCompression = CreateSut(inner, encryption, new CacheCompressionOptions { ThresholdBytes = 16 });
+        Assert.Equal(large, (await withCompression.TryGetAsync<string>("k")).Value);
+    }
+
+    [Fact]
+    public async Task Compression_LevelIsHonoured_SmallestSizeIsNotLargerThanFastest()
+    {
+        var encryption = CreateRealEncryptionService();
+        var fastInner = new InMemoryDictionaryCacheService();
+        var smallestInner = new InMemoryDictionaryCacheService();
+
+        // Text with structure but not a single repeated character, so the quality setting matters.
+        var text = string.Join(",", Enumerable.Range(0, 2000).Select(i => $"item-{i % 97}-{i % 13}"));
+
+        await CreateSut(fastInner, encryption, new CacheCompressionOptions { ThresholdBytes = 16, Level = System.IO.Compression.CompressionLevel.Fastest })
+            .SetAsync("k", text, CachePolicy.Default);
+        await CreateSut(smallestInner, encryption, new CacheCompressionOptions { ThresholdBytes = 16, Level = System.IO.Compression.CompressionLevel.SmallestSize })
+            .SetAsync("k", text, CachePolicy.Default);
+
+        byte[] fast = await StoredPlaintextAsync(fastInner, encryption, "k");
+        byte[] smallest = await StoredPlaintextAsync(smallestInner, encryption, "k");
+
+        Assert.True(HasBrotliMarker(fast));
+        Assert.True(HasBrotliMarker(smallest));
+        Assert.True(smallest.Length < fast.Length, $"SmallestSize ({smallest.Length}) should beat Fastest ({fast.Length}).");
+    }
+
+    [Fact]
+    public async Task AddBrotliCompression_ThenAddCacheEncryption_PassesConfiguredThresholdToEncryptedCacheService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var encryption = CreateRealEncryptionService();
+        services.AddSingleton(encryption);
+
+        // Registered before AddSharedKernelCaching so its TryAdd leaves it in place; AddCacheEncryption wraps it.
+        var inner = new InMemoryDictionaryCacheService();
+        services.AddSingleton<ICacheService>(inner);
+
+        services.AddSharedKernelCaching(o => o.ServiceName = "test")
+            .AddBrotliCompression(o => o.ThresholdBytes = 512)
+            .AddCacheEncryption();
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICacheService>();
+
+        var belowThreshold = new string('b', 300); // ~302 JSON bytes: below 512, above the 16-byte test values elsewhere
+        var aboveThreshold = new string('a', 3000);
+
+        await cache.SetAsync("below", belowThreshold, CachePolicy.Default);
+        await cache.SetAsync("above", aboveThreshold, CachePolicy.Default);
+
+        Assert.False(HasBrotliMarker(await StoredPlaintextAsync(inner, encryption, "below")));
+        Assert.True(HasBrotliMarker(await StoredPlaintextAsync(inner, encryption, "above")));
+        Assert.Equal(belowThreshold, (await cache.TryGetAsync<string>("below")).Value);
+        Assert.Equal(aboveThreshold, (await cache.TryGetAsync<string>("above")).Value);
+    }
+
+    [Fact]
+    public async Task AddCacheEncryption_WithoutBrotliCompression_NeverCompresses()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var encryption = CreateRealEncryptionService();
+        services.AddSingleton(encryption);
+        var inner = new InMemoryDictionaryCacheService();
+        services.AddSingleton<ICacheService>(inner);
+
+        services.AddSharedKernelCaching(o => o.ServiceName = "test").AddCacheEncryption();
+
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICacheService>();
+
+        var large = new string('a', 10_000);
+        await cache.SetAsync("k", large, CachePolicy.Default);
+
+        byte[] plaintext = await StoredPlaintextAsync(inner, encryption, "k");
+        Assert.False(HasBrotliMarker(plaintext));
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(large), plaintext);
+    }
+
+    [Fact]
     public async Task AddBrotliCompression_ThenAddCacheEncryption_UnwrapsSerializer_AndRoundTripsCorrectly()
     {
         var services = new ServiceCollection();
@@ -603,7 +736,7 @@ public sealed class EncryptedCacheServiceTests
         var builder = services.AddSharedKernelCaching(o => o.ServiceName = "test");
 
         builder
-            .AddBrotliCompression(o => o.L2ThresholdBytes = 16)
+            .AddBrotliCompression(o => o.ThresholdBytes = 16)
             .AddCacheEncryption();
 
         using var provider = services.BuildServiceProvider();
@@ -633,7 +766,7 @@ public sealed class EncryptedCacheServiceTests
         builder.AddCacheEncryption();
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            builder.AddBrotliCompression(o => o.L2ThresholdBytes = 1024));
+            builder.AddBrotliCompression(o => o.ThresholdBytes = 1024));
 
         Assert.Contains("AddBrotliCompression() before AddCacheEncryption()", ex.Message);
     }
@@ -712,7 +845,7 @@ public sealed class EncryptedCacheServiceTests
     }
 
     [Fact]
-    public void AddCacheEncryption_RegistersCacheEncryptionOptionsMarker()
+    public void AddCacheEncryption_RegistersCacheEncryptionMarker_Once()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -721,11 +854,7 @@ public sealed class EncryptedCacheServiceTests
 
         builder.AddCacheEncryption();
 
-        using var provider = services.BuildServiceProvider();
-        var marker = provider.GetService<CacheEncryptionOptions>();
-
-        Assert.NotNull(marker);
-        Assert.True(marker.Enabled);
+        Assert.Single(services, d => d.ServiceType == typeof(CacheEncryptionMarker));
     }
 
     // -------------------------------------------------------------------------
