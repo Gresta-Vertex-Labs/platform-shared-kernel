@@ -6,38 +6,82 @@ namespace SharedKernel.Security.ApiKey.Tests.Validation;
 public sealed class ApiKeyValidationResultTests
 {
     [Fact]
-    public void Invalid_IsNotValid_AndCarriesNoData()
+    public void Success_AllValues_ArePreserved()
     {
-        var result = ApiKeyValidationResult.Invalid;
+        var tenantId = Guid.NewGuid();
+
+        ApiKeyValidationResult result = ApiKeyValidationResult.Success("client", tenantId, ["admin"], ["orders:read"], "KEYID");
+
+        Assert.True(result.IsValid);
+        Assert.Equal("client", result.ClientId);
+        Assert.Equal(tenantId, result.TenantId);
+        Assert.Equal(["admin"], result.Roles);
+        Assert.Equal(["orders:read"], result.Permissions);
+        Assert.Equal("KEYID", result.KeyId);
+        Assert.Null(result.FailureReason);
+    }
+
+    [Fact]
+    public void Success_OnlyClientId_DefaultsToEmptyGrants()
+    {
+        ApiKeyValidationResult result = ApiKeyValidationResult.Success("client");
+
+        Assert.Null(result.TenantId);
+        Assert.Empty(result.Roles);
+        Assert.Empty(result.Permissions);
+        Assert.Null(result.KeyId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Success_BlankClientId_Throws(string clientId)
+    {
+        Assert.Throws<ArgumentException>(() => ApiKeyValidationResult.Success(clientId));
+    }
+
+    [Fact]
+    public void Success_NullClientId_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => ApiKeyValidationResult.Success(null!));
+    }
+
+    [Fact]
+    public void Success_EmptyTenantId_Throws()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => ApiKeyValidationResult.Success("client", Guid.Empty));
+
+        Assert.Equal("tenantId", exception.ParamName);
+    }
+
+    [Fact]
+    public void Failure_Defaults_AreRejectedWithoutIdentity()
+    {
+        ApiKeyValidationResult result = ApiKeyValidationResult.Failure();
 
         Assert.False(result.IsValid);
+        Assert.Equal("Rejected", result.FailureReason);
         Assert.Null(result.ClientId);
-        Assert.Null(result.Roles);
-        Assert.Null(result.Permissions);
+        Assert.Null(result.TenantId);
+        Assert.Null(result.KeyId);
+        Assert.Empty(result.Roles);
+        Assert.Empty(result.Permissions);
     }
 
     [Fact]
-    public void Valid_WithNoArguments_IsValidWithNullOptionalData()
+    public void Failure_ReasonAndKeyId_ArePreserved()
     {
-        var result = ApiKeyValidationResult.Valid();
+        ApiKeyValidationResult result = ApiKeyValidationResult.Failure("Expired", "KEYID");
 
-        Assert.True(result.IsValid);
-        Assert.Null(result.ClientId);
-        Assert.Null(result.Roles);
-        Assert.Null(result.Permissions);
+        Assert.Equal("Expired", result.FailureReason);
+        Assert.Equal("KEYID", result.KeyId);
     }
 
-    [Fact]
-    public void Valid_WithClientIdRolesAndPermissions_CarriesThemThrough()
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Failure_BlankReason_Throws(string reason)
     {
-        var roles = new[] { "admin" };
-        var permissions = new[] { "orders:read" };
-
-        var result = ApiKeyValidationResult.Valid("client-123", roles, permissions);
-
-        Assert.True(result.IsValid);
-        Assert.Equal("client-123", result.ClientId);
-        Assert.Same(roles, result.Roles);
-        Assert.Same(permissions, result.Permissions);
+        Assert.Throws<ArgumentException>(() => ApiKeyValidationResult.Failure(reason));
     }
 }

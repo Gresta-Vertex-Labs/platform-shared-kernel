@@ -1,174 +1,277 @@
-using System.Security.Claims;
+using System.Net;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions.Abstractions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Random;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.Security.ApiKey.Authentication;
 using SharedKernel.Security.ApiKey.Extensions;
+using SharedKernel.Security.ApiKey.Keys;
 using SharedKernel.Security.ApiKey.Options;
+using SharedKernel.Security.ApiKey.Tests.TestSupport;
 using SharedKernel.Security.ApiKey.Validation;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Security;
 using Xunit;
 
 namespace SharedKernel.Security.ApiKey.Tests.Extensions;
 
 public sealed class ApiKeyServiceCollectionExtensionsTests
 {
-    // ---- IApiKeyValidator registration ----
+    [Fact]
+    public void AddManagedApiKeyAuthentication_RegistersManagedServices()
+    {
+        var services = new ServiceCollection();
+
+        services.AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(keys => keys.Prefix = "acme_live");
+
+        AssertRegistered<IClock>(services, ServiceLifetime.Singleton);
+        AssertRegistered<ISecureRandomGenerator>(services, ServiceLifetime.Singleton, typeof(SecureRandomGenerator));
+        AssertRegistered<ApiKeyGenerator>(services, ServiceLifetime.Singleton);
+        AssertRegistered<IApiKeyStore>(services, ServiceLifetime.Scoped, typeof(InMemoryApiKeyStore));
+        AssertRegistered<IApiKeyValidator>(services, ServiceLifetime.Scoped, typeof(ManagedApiKeyValidator));
+        AssertRegistered<IUserContext>(services, ServiceLifetime.Scoped);
+        AssertRegistered<ITenantProvider>(services, ServiceLifetime.Scoped, typeof(UserContextTenantProvider));
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContextMapper) && d.ImplementationType == typeof(ApiKeyUserContextMapper));
+    }
 
     [Fact]
-    public void AddApiKeyAuthentication_RegistersIApiKeyValidator_AsScoped()
+    public void AddManagedApiKeyAuthentication_ExistingClockAndStore_AreKept()
+    {
+        var clock = new FakeClock();
+        var store = new InMemoryApiKeyStore();
+        var services = new ServiceCollection();
+        services.AddSingleton<IClock>(clock);
+        services.AddSingleton<IApiKeyStore>(store);
+
+        services.AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(keys => keys.Prefix = "acme_live");
+
+        Assert.Same(clock, Assert.Single(services, d => d.ServiceType == typeof(IClock)).ImplementationInstance);
+        Assert.Same(store, Assert.Single(services, d => d.ServiceType == typeof(IApiKeyStore)).ImplementationInstance);
+    }
+
+    [Fact]
+    public void AddApiKeyAuthentication_ExistingUserContextAndTenantProvider_AreKept()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IUserContext>(SystemUserContext.Instance);
+        services.AddScoped<ITenantProvider, FixedTenantProvider>();
+
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+
+        ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
+        Assert.Same(SystemUserContext.Instance, userContext.ImplementationInstance);
+        ServiceDescriptor tenantProvider = Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider));
+        Assert.Equal(typeof(FixedTenantProvider), tenantProvider.ImplementationType);
+    }
+
+    [Fact]
+    public void AddApiKeyAuthentication_AnonymousPlaceholder_IsReplacedByResolver()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+
+        ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
+        Assert.Null(userContext.ImplementationInstance);
+        Assert.NotNull(userContext.ImplementationFactory);
+        Assert.Equal(ServiceLifetime.Scoped, userContext.Lifetime);
+    }
+
+    [Fact]
+    public void AddApiKeyAuthentication_KeyedAnonymousRegistration_IsKept()
+    {
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<IUserContext>("audit", AnonymousUserContext.Instance);
+
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContext) && d.IsKeyedService);
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContext) && !d.IsKeyedService);
+    }
+
+    [Fact]
+    public async Task AddApiKeyAuthentication_AnonymousPlaceholder_ResolvesApiKeyCallerAtRuntime()
+    {
+        await using ApiKeyTestHost host = await ApiKeyTestHost.StartAsync(services =>
+        {
+            services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+            services.AddApiKeyAuthentication<AcceptingValidator>();
+        });
+
+        CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller", AcceptingValidator.Key));
+
+        Assert.Equal(IdentityKind.ServicePrincipal, caller.IdentityKind);
+        Assert.Equal("custom-client", caller.SubjectId);
+    }
+
+    [Fact]
+    public async Task AddApiKeyAuthentication_CustomValidator_ReceivesKeyAndBuildsCaller()
+    {
+        var tenantId = Guid.NewGuid();
+        var validator = new AcceptingValidator(tenantId);
+        await using ApiKeyTestHost host = await ApiKeyTestHost.StartAsync(services =>
+        {
+            services.AddSingleton<AcceptingValidator>(validator);
+            services.AddScoped<IApiKeyValidator>(sp => sp.GetRequiredService<AcceptingValidator>());
+            services.AddApiKeyAuthentication<AcceptingValidator>();
+        });
+
+        CallerSnapshot accepted = await host.GetCallerAsync(host.Get("/caller", AcceptingValidator.Key));
+        using HttpResponseMessage rejected = await host.Client.SendAsync(host.Get("/protected", "some-other-key"));
+
+        Assert.Equal(IdentityKind.ServicePrincipal, accepted.IdentityKind);
+        Assert.Equal("custom-client", accepted.SubjectId);
+        Assert.Equal(tenantId, accepted.TenantId);
+        Assert.Equal(["reader"], accepted.Roles);
+        Assert.Equal(["orders:read"], accepted.Permissions);
+        Assert.Null(accepted.KeyId);
+        Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+        Assert.Equal([AcceptingValidator.Key, "some-other-key"], validator.PresentedKeys);
+    }
+
+    [Fact]
+    public async Task AddApiKeyAuthentication_CustomValidatorByType_IsResolvedPerRequest()
+    {
+        await using ApiKeyTestHost host = await ApiKeyTestHost.StartAsync(services => services.AddApiKeyAuthentication<AcceptingValidator>());
+
+        using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", AcceptingValidator.Key));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Acme")]
+    [InlineData("acme__live")]
+    [InlineData("9acme")]
+    public async Task AddManagedApiKeyAuthentication_InvalidPrefix_HostStartFails(string prefix)
+    {
+        using IHost host = BuildHost(services =>
+        {
+            services.AddSingleton<IApiKeyStore>(new InMemoryApiKeyStore());
+            services.AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(keys => keys.Prefix = prefix);
+        });
+
+        OptionsValidationException exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("Prefix", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddManagedApiKeyAuthentication_ValidPrefix_HostStarts()
+    {
+        using IHost host = BuildHost(services =>
+        {
+            services.AddSingleton<IApiKeyStore>(new InMemoryApiKeyStore());
+            services.AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(keys => keys.Prefix = "acme_live");
+        });
+
+        await host.StartAsync();
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void AddManagedApiKeyAuthentication_NullArguments_Throw()
+    {
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddManagedApiKeyAuthentication<InMemoryApiKeyStore>(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddApiKeyAuthentication<AcceptingValidator>());
+    }
+
+    [Fact]
+    public void AddApiKeyAuthentication_CalledTwice_RegistersOneForwardingAndOneMapper()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddApiKeyAuthentication<DummyValidator>();
 
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IApiKeyValidator));
-        Assert.NotNull(descriptor);
-        Assert.Equal(ServiceLifetime.Scoped, descriptor!.Lifetime);
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPostConfigureOptions<AuthenticationOptions>) && d.ImplementationInstance is ApiKeyForwarding);
+        Assert.Single(services, d => d.ServiceType == typeof(IUserContextMapper));
     }
 
-    // ---- IUserContext registration ----
-
     [Fact]
-    public void AddApiKeyAuthentication_RegistersIUserContext_AsScoped()
+    public void AddApiKeyAuthentication_Schemes_AreRegistered()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddApiKeyAuthentication<DummyValidator>();
+        services.AddApiKeyAuthentication<AcceptingValidator>();
+        using ServiceProvider provider = services.BuildServiceProvider();
 
-        var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(IUserContext));
-        Assert.NotNull(descriptor);
-        Assert.Equal(ServiceLifetime.Scoped, descriptor!.Lifetime);
+        AuthenticationOptions options = provider.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+        ApiKeyAuthenticationOptions scheme = provider.GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>()
+            .Get(ApiKeyAuthenticationDefaults.AuthenticationScheme);
+
+        Assert.Contains(options.Schemes, s => s.Name == ApiKeyAuthenticationDefaults.AuthenticationScheme);
+        Assert.Contains(options.Schemes, s => s.Name == ApiKeyAuthenticationDefaults.ForwardingScheme);
+        Assert.Equal(ApiKeyAuthenticationDefaults.ForwardingScheme, options.DefaultScheme);
+        Assert.Equal(ApiKeyAuthenticationDefaults.HeaderName, scheme.HeaderName);
     }
 
-    [Fact]
-    public void ResolvingIUserContext_WithoutHttpContext_ReturnsAnonymousUserContext_WhenNoPreviousFactory()
+    private static IHost BuildHost(Action<IServiceCollection> configureServices) =>
+        new HostBuilder()
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(configureServices)
+                .Configure(app => app.UseAuthentication()))
+            .Build();
+
+    private static void AssertRegistered<TService>(IServiceCollection services, ServiceLifetime lifetime, Type? implementationType = null)
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddApiKeyAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
-
-        using var scope = provider.CreateScope();
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<AnonymousUserContext>(userContext);
+        ServiceDescriptor descriptor = Assert.Single(services, d => d.ServiceType == typeof(TService) && !d.IsKeyedService);
+        Assert.Equal(lifetime, descriptor.Lifetime);
+        if (implementationType is not null)
+        {
+            Assert.Equal(implementationType, descriptor.ImplementationType);
+        }
     }
 
-    [Fact]
-    public void ResolvingIUserContext_WithApiKeyAuthenticatedPrincipal_ReturnsApiKeyUserContext()
+    private sealed class FixedTenantProvider : ITenantProvider
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddApiKeyAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
-
-        using var scope = provider.CreateScope();
-        var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var identity = new ClaimsIdentity([], ApiKeyAuthenticationOptions.DefaultScheme);
-        accessor.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
-
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<ApiKeyUserContext>(userContext);
-        Assert.Equal(IdentityKind.ServicePrincipal, userContext.IdentityKind);
+        public Guid TenantId => Guid.Parse("11111111-1111-1111-1111-111111111111");
     }
 
-    [Fact]
-    public void ResolvingIUserContext_WithNonApiKeyPrincipal_DelegatesToPreviouslyRegisteredFactory()
+    private sealed class AcceptingValidator(Guid? tenantId) : IApiKeyValidator
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // Simulates AddSharedKernelSecurity() having already registered a scoped IUserContext factory —
-        // deliberately not referencing SharedKernel.Security.Oidc from this test project, mirroring the
-        // sibling-provider-independence the production code itself must preserve.
-        services.AddScoped<IUserContext>(_ => new MarkerUserContext());
-        services.AddApiKeyAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        public const string Key = "custom-key-0001";
 
-        using var scope = provider.CreateScope();
-        var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var identity = new ClaimsIdentity([], "Bearer");
-        accessor.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+        private readonly Lock _gate = new();
+        private readonly List<string> _presented = [];
 
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
+        public AcceptingValidator()
+            : this(null)
+        {
+        }
 
-        Assert.IsType<MarkerUserContext>(userContext);
-    }
+        public IReadOnlyList<string> PresentedKeys
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _presented];
+                }
+            }
+        }
 
-    [Fact]
-    public void ResolvingIUserContext_WithNoHttpContext_DelegatesToPreviouslyRegisteredFactory()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddScoped<IUserContext>(_ => new MarkerUserContext());
-        services.AddApiKeyAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
+        public ValueTask<ApiKeyValidationResult> ValidateAsync(string presentedKey, CancellationToken cancellationToken)
+        {
+            lock (_gate)
+            {
+                _presented.Add(presentedKey);
+            }
 
-        using var scope = provider.CreateScope();
-        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
-
-        Assert.IsType<MarkerUserContext>(userContext);
-    }
-
-    // ---- Authentication scheme composition ----
-
-    [Fact]
-    public void AddApiKeyAuthentication_RegistersApiKeyAndCompositeSchemes()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddApiKeyAuthentication<DummyValidator>();
-        var provider = services.BuildServiceProvider();
-
-        var schemeProvider = provider.GetRequiredService<IAuthenticationSchemeProvider>();
-
-        var apiKeyScheme = schemeProvider.GetSchemeAsync(ApiKeyAuthenticationOptions.DefaultScheme).GetAwaiter().GetResult();
-        Assert.NotNull(apiKeyScheme);
-
-        var compositeScheme = schemeProvider.GetSchemeAsync(ApiKeyAuthenticationOptions.CompositeSchemeName).GetAwaiter().GetResult();
-        Assert.NotNull(compositeScheme);
-    }
-
-    // ---- Argument validation ----
-
-    [Fact]
-    public void AddApiKeyAuthentication_NullServices_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() =>
-            ApiKeyServiceCollectionExtensions.AddApiKeyAuthentication<DummyValidator>(null!));
-    }
-
-    [Fact]
-    public void AddApiKeyAuthentication_NullFallbackScheme_ThrowsArgumentNullException()
-    {
-        var services = new ServiceCollection();
-        Assert.Throws<ArgumentNullException>(() =>
-            services.AddApiKeyAuthentication<DummyValidator>(fallbackAuthenticationScheme: null!));
-    }
-
-    private sealed class DummyValidator : IApiKeyValidator
-    {
-        public Task<ApiKeyValidationResult> ValidateAsync(string presentedKey, CancellationToken cancellationToken) =>
-            Task.FromResult(ApiKeyValidationResult.Invalid);
-    }
-
-    private sealed class MarkerUserContext : IUserContext
-    {
-        public Guid UserId => Guid.Empty;
-        public string? Email => null;
-        public string? Username => "marker";
-        public IReadOnlyCollection<string> Roles => [];
-        public IReadOnlyCollection<string> Permissions => [];
-        public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
-        public bool IsAuthenticated => false;
-        public IdentityKind IdentityKind => IdentityKind.Anonymous;
-        public bool HasRole(string role) => false;
-        public bool HasPermission(string permission) => false;
-        public IReadOnlyCollection<string> AuthenticationMethods => [];
-        public string? AuthContextClassReference => null;
-        public DateTimeOffset? AuthTime => null;
-        public bool IsSenderConstrained => false;
-        public bool WasAuthenticatedWith(string method) => false;
-        public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
+            return ValueTask.FromResult(presentedKey == Key
+                ? ApiKeyValidationResult.Success("custom-client", tenantId, ["reader"], ["orders:read"])
+                : ApiKeyValidationResult.Failure("NotRegistered"));
+        }
     }
 }
