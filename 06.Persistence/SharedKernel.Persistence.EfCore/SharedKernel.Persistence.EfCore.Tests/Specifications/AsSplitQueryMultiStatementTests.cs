@@ -17,7 +17,7 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 
@@ -197,7 +197,7 @@ public sealed class AsSplitQueryMultiStatementTests
         var counter = new CommandCountingInterceptor();
 
         var userCtx = Substitute.For<IUserContext>();
-        userCtx.UserId.Returns(Guid.Empty);
+        userCtx.SubjectId.Returns((string?)null);
         userCtx.IsAuthenticated.Returns(false);
         var clock = new SystemClock();
 

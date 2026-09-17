@@ -16,7 +16,7 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;
 
@@ -124,7 +124,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
         var userContext = Substitute.For<IUserContext>();
         userContext.IsAuthenticated.Returns(true);
-        userContext.UserId.Returns(Guid.NewGuid());
+        userContext.SubjectId.Returns(Guid.NewGuid().ToString("D"));
 
         var clock = Substitute.For<IClock>();
         clock.UtcNow.Returns(DateTimeOffset.UtcNow);

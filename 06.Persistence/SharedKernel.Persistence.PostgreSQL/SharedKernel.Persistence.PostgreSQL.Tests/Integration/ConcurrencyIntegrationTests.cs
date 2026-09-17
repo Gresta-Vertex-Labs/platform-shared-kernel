@@ -15,7 +15,7 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
@@ -125,7 +125,7 @@ public sealed class ConcurrencyIntegrationTests
 
         var userContext = Substitute.For<IUserContext>();
         userContext.IsAuthenticated.Returns(true);
-        userContext.UserId.Returns(Guid.NewGuid());
+        userContext.SubjectId.Returns(Guid.NewGuid().ToString("D"));
 
         var clock = Substitute.For<IClock>();
         clock.UtcNow.Returns(DateTimeOffset.UtcNow);

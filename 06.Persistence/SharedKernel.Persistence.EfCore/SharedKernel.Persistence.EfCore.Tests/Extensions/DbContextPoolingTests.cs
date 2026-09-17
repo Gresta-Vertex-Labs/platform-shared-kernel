@@ -7,7 +7,7 @@ using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
@@ -18,12 +18,16 @@ namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 /// <summary>Mutable, scoped-DI-friendly <see cref="IUserContext"/> fake for pooling tests.</summary>
 internal sealed class MutableTestUserContext : IUserContext
 {
-    public Guid UserId { get; set; }
+    public string? SubjectId { get; set; }
+    public string? ClientId => null;
+    public Guid? TenantId => null;
+    public string? SessionId => null;
+    public string? Name => null;
     public string? Email => null;
-    public string? Username => null;
     public IReadOnlyCollection<string> Roles => [];
     public IReadOnlyCollection<string> Permissions => [];
-    public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
+    public string? FindClaim(string claimType) => null;
+    public IReadOnlyList<string> FindClaims(string claimType) => [];
     public bool IsAuthenticated => true;
     public IdentityKind IdentityKind => IdentityKind.User;
     public bool HasRole(string role) => false;
@@ -60,11 +64,8 @@ public sealed class DbContextPoolingTests
         services.AddScoped<IUserContext, MutableTestUserContext>();
         services.AddScoped<ITenantProvider, MutableTestTenantProvider>();
 
-        // Deliberately NOT calling .WithMultiTenancy() here — it registers NoOpTenantProvider via
-        // AddScoped (not TryAddScoped), which would shadow the MutableTestTenantProvider registered
-        // above (last registration wins for GetRequiredService<T> resolution). This test supplies
-        // its own real ITenantProvider directly, which is exactly the scenario .WithMultiTenancy()
-        // exists to be overridden for.
+        // Deliberately NOT calling .WithMultiTenancy() here: this test supplies its own ITenantProvider
+        // directly, which is exactly the scenario .WithMultiTenancy()'s default exists to be overridden for.
         services
             .AddSharedKernelEfCore<SoftDeletableTenantedDbContext>(options => options
                 .UseSqlite(connection)
@@ -90,7 +91,7 @@ public sealed class DbContextPoolingTests
         // Act — Request A: scope 1, Tenant A / User A.
         using (var scopeA = provider.CreateScope())
         {
-            ((MutableTestUserContext)scopeA.ServiceProvider.GetRequiredService<IUserContext>()).UserId = userAId;
+            ((MutableTestUserContext)scopeA.ServiceProvider.GetRequiredService<IUserContext>()).SubjectId = userAId.ToString("D");
             ((MutableTestTenantProvider)scopeA.ServiceProvider.GetRequiredService<ITenantProvider>()).TenantId = tenantAId;
 
             var ctxA = scopeA.ServiceProvider.GetRequiredService<SoftDeletableTenantedDbContext>();
@@ -106,7 +107,7 @@ public sealed class DbContextPoolingTests
         // concurrent, usage — no second slot was ever needed).
         using (var scopeB = provider.CreateScope())
         {
-            ((MutableTestUserContext)scopeB.ServiceProvider.GetRequiredService<IUserContext>()).UserId = userBId;
+            ((MutableTestUserContext)scopeB.ServiceProvider.GetRequiredService<IUserContext>()).SubjectId = userBId.ToString("D");
             ((MutableTestTenantProvider)scopeB.ServiceProvider.GetRequiredService<ITenantProvider>()).TenantId = tenantBId;
 
             var ctxB = scopeB.ServiceProvider.GetRequiredService<SoftDeletableTenantedDbContext>();

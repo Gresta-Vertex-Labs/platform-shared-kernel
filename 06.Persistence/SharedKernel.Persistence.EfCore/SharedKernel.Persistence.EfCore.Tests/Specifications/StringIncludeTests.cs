@@ -14,7 +14,7 @@ using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 using NSubstitute;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 
@@ -133,7 +133,7 @@ public sealed class StringIncludeTests
     private static StringIncludeDbContext CreateContext()
     {
         var userCtx = Substitute.For<IUserContext>();
-        userCtx.UserId.Returns(Guid.Empty);
+        userCtx.SubjectId.Returns((string?)null);
         userCtx.IsAuthenticated.Returns(false);
         var clock = new SystemClock();
 

@@ -9,7 +9,7 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Conventions;
 
@@ -33,7 +33,7 @@ public sealed class XminConcurrencyTokenConventionTests
 
         var userContext = Substitute.For<IUserContext>();
         userContext.IsAuthenticated.Returns(false);
-        userContext.UserId.Returns(Guid.Empty);
+        userContext.SubjectId.Returns((string?)null);
 
         var clock = Substitute.For<IClock>();
         clock.UtcNow.Returns(DateTimeOffset.UtcNow);

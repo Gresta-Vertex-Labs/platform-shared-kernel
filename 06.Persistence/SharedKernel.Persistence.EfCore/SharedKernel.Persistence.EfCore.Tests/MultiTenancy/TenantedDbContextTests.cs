@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.MultiTenancy;
 
@@ -58,7 +58,7 @@ public sealed class TenantedDbContextTests
     [Fact]
     public async Task Query_WithGuidEmptyTenantProvider_ReturnsZeroRows()
     {
-        // Arrange — P-092: NoOpTenantProvider returns Guid.Empty → filter matches no rows
+        // Arrange — P-092: the default tenant provider returns Guid.Empty → filter matches no rows
         var tenant = Guid.NewGuid();
         var dbName = $"tenanted-empty-{Guid.NewGuid():N}";
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";

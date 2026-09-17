@@ -4,7 +4,7 @@ using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
@@ -70,14 +70,13 @@ public sealed class AuditInterceptorTests
     }
 
     [Fact]
-    public async Task SaveChanges_AuthenticatedWithGuidEmpty_WritesSystem()
+    public async Task SaveChanges_AuthenticatedWithoutSubject_WritesSystem()
     {
-        // Arrange — P-091: IsAuthenticated == true but UserId == Guid.Empty → "system"
+        // Arrange — P-091: IsAuthenticated == true but no SubjectId → "system"
         var mock = Substitute.For<IUserContext>();
-        mock.UserId.Returns(Guid.Empty);
+        mock.SubjectId.Returns((string?)null);
         mock.IsAuthenticated.Returns(true);
         mock.Roles.Returns([]);
-        mock.Claims.Returns(new Dictionary<string, string>());
 
         using var ctx = TestDbContextFactory.CreateTestDbContext(userContext: mock);
         var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());

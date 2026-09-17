@@ -5,7 +5,7 @@ using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using MicrosoftOptions = Microsoft.Extensions.Options.Options;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -107,12 +107,11 @@ internal static class TestDbContextFactory
     public static IUserContext CreateAuthenticatedUserContext(Guid userId)
     {
         var mock = Substitute.For<IUserContext>();
-        mock.UserId.Returns(userId);
+        mock.SubjectId.Returns(userId.ToString("D"));
         mock.IsAuthenticated.Returns(true);
         mock.Email.Returns((string?)null);
-        mock.Username.Returns((string?)null);
+        mock.Name.Returns((string?)null);
         mock.Roles.Returns([]);
-        mock.Claims.Returns(new Dictionary<string, string>());
         mock.HasRole(Arg.Any<string>()).Returns(false);
         return mock;
     }
@@ -121,12 +120,11 @@ internal static class TestDbContextFactory
     public static IUserContext CreateUnauthenticatedUserContext()
     {
         var mock = Substitute.For<IUserContext>();
-        mock.UserId.Returns(Guid.Empty);
+        mock.SubjectId.Returns((string?)null);
         mock.IsAuthenticated.Returns(false);
         mock.Email.Returns((string?)null);
-        mock.Username.Returns((string?)null);
+        mock.Name.Returns((string?)null);
         mock.Roles.Returns([]);
-        mock.Claims.Returns(new Dictionary<string, string>());
         mock.HasRole(Arg.Any<string>()).Returns(false);
         return mock;
     }

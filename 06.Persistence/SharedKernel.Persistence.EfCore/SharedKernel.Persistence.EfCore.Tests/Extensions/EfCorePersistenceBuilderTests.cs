@@ -5,7 +5,7 @@ using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
@@ -71,15 +71,15 @@ public sealed class EfCorePersistenceBuilderTests
         var specEval = scope.ServiceProvider.GetService(typeof(ISpecificationEvaluator<TestAggregate>));
         specEval.Should().NotBeNull();
 
-        // No-op IUserContext: IsAuthenticated=false, UserId=Guid.Empty
+        // Placeholder IUserContext: AnonymousUserContext, IsAuthenticated=false, no subject
         var userCtx = scope.ServiceProvider.GetService<IUserContext>();
         userCtx.Should().NotBeNull();
         userCtx!.IsAuthenticated.Should().BeFalse();
-        userCtx.UserId.Should().Be(Guid.Empty);
+        userCtx.SubjectId.Should().BeNull();
     }
 
     [Fact]
-    public void Build_MultiTenancy_RegistersNoOpTenantProvider()
+    public void Build_MultiTenancy_RegistersEmptyTenantProviderByDefault()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -93,7 +93,7 @@ public sealed class EfCorePersistenceBuilderTests
 
         var provider = services.BuildServiceProvider();
 
-        // Assert — P-092: NoOpTenantProvider returns Guid.Empty
+        // Assert — P-092: without a tenant the default provider returns Guid.Empty
         using var scope = provider.CreateScope();
         var tenantProvider = scope.ServiceProvider.GetService<ITenantProvider>();
         tenantProvider.Should().NotBeNull();
@@ -122,7 +122,7 @@ public sealed class EfCorePersistenceBuilderTests
         using var scope = provider.CreateScope();
         var userCtx = scope.ServiceProvider.GetService<IUserContext>();
         userCtx.Should().NotBeNull();
-        userCtx!.UserId.Should().Be(customId);
+        userCtx!.SubjectId.Should().Be(customId.ToString("D"));
         userCtx.IsAuthenticated.Should().BeTrue();
     }
 }
@@ -133,12 +133,16 @@ public sealed class EfCorePersistenceBuilderTests
 
 internal sealed class CustomUserContext(Guid userId) : IUserContext
 {
-    public Guid UserId { get; } = userId;
+    public string? SubjectId { get; } = userId.ToString("D");
+    public string? ClientId => null;
+    public Guid? TenantId => null;
+    public string? SessionId => null;
+    public string? Name => null;
     public string? Email => null;
-    public string? Username => null;
     public IReadOnlyCollection<string> Roles => [];
     public IReadOnlyCollection<string> Permissions => [];
-    public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
+    public string? FindClaim(string claimType) => null;
+    public IReadOnlyList<string> FindClaims(string claimType) => [];
     public bool IsAuthenticated => true;
     public IdentityKind IdentityKind => IdentityKind.User;
     public bool HasRole(string role) => false;
