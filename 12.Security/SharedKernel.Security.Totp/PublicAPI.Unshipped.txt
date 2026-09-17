@@ -1,0 +1,58 @@
+#nullable enable
+SharedKernel.Security.Totp.IRecoveryCodeStore
+SharedKernel.Security.Totp.IRecoveryCodeStore.GetUnusedAsync(string! subjectId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyList<SharedKernel.Security.Totp.StoredRecoveryCode!>!>
+SharedKernel.Security.Totp.IRecoveryCodeStore.TryMarkUsedAsync(string! subjectId, string! codeId, System.DateTimeOffset usedAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Security.Totp.ITotpStepUpStore
+SharedKernel.Security.Totp.ITotpStepUpStore.GetLastVerifiedAsync(string! subjectId, string! sessionId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.DateTimeOffset?>
+SharedKernel.Security.Totp.ITotpStepUpStore.RecordAsync(string! subjectId, string! sessionId, System.DateTimeOffset verifiedAt, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+SharedKernel.Security.Totp.StoredRecoveryCode
+SharedKernel.Security.Totp.StoredRecoveryCode.<Clone>$() -> SharedKernel.Security.Totp.StoredRecoveryCode!
+SharedKernel.Security.Totp.StoredRecoveryCode.Deconstruct(out string! Id, out string! Lookup, out string! Hash) -> void
+SharedKernel.Security.Totp.StoredRecoveryCode.Equals(SharedKernel.Security.Totp.StoredRecoveryCode? other) -> bool
+SharedKernel.Security.Totp.StoredRecoveryCode.Hash.get -> string!
+SharedKernel.Security.Totp.StoredRecoveryCode.Hash.init -> void
+SharedKernel.Security.Totp.StoredRecoveryCode.Id.get -> string!
+SharedKernel.Security.Totp.StoredRecoveryCode.Id.init -> void
+SharedKernel.Security.Totp.StoredRecoveryCode.Lookup.get -> string!
+SharedKernel.Security.Totp.StoredRecoveryCode.Lookup.init -> void
+SharedKernel.Security.Totp.StoredRecoveryCode.StoredRecoveryCode(string! Id, string! Lookup, string! Hash) -> void
+SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeResult.Invalid = 0 -> SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeResult.NoSession = 4 -> SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeResult.Replayed = 2 -> SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeResult.Throttled = 3 -> SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeResult.Verified = 1 -> SharedKernel.Security.Totp.TotpChallengeResult
+SharedKernel.Security.Totp.TotpChallengeService
+SharedKernel.Security.Totp.TotpChallengeService.RedeemRecoveryCodeAsync(SharedKernel.Security.Abstractions.IUserContext! user, string! code, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Security.Totp.TotpChallengeResult>
+SharedKernel.Security.Totp.TotpChallengeService.TotpChallengeService(SharedKernel.Cryptography.Totp.ITotpVerifier! verifier, SharedKernel.Security.Totp.ITotpStepUpStore! stepUps, SharedKernel.Security.Totp.IRecoveryCodeStore! recoveryCodes, SharedKernel.Cryptography.Hashing.IOneWayHasher! hasher, SharedKernel.Primitives.Clocks.IClock! clock, Microsoft.Extensions.Options.IOptions<SharedKernel.Security.Totp.TotpStepUpOptions!>! options, Microsoft.Extensions.Logging.ILogger<SharedKernel.Security.Totp.TotpChallengeService!>! logger, SharedKernel.Cryptography.Totp.ITotpAttemptThrottle? throttle = null) -> void
+SharedKernel.Security.Totp.TotpChallengeService.VerifyCodeAsync(SharedKernel.Security.Abstractions.IUserContext! user, System.ReadOnlyMemory<byte> secret, string! code, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Security.Totp.TotpChallengeResult>
+SharedKernel.Security.Totp.TotpEnrollment
+SharedKernel.Security.Totp.TotpEnrollment.Parameters.get -> SharedKernel.Cryptography.Totp.TotpParameters!
+SharedKernel.Security.Totp.TotpEnrollment.ProvisioningUri.get -> System.Uri!
+SharedKernel.Security.Totp.TotpEnrollment.RecoveryCodes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Security.Totp.TotpEnrollment.Secret.get -> byte[]!
+SharedKernel.Security.Totp.TotpEnrollment.SecretBase32.get -> string!
+SharedKernel.Security.Totp.TotpEnrollment.StoredRecoveryCodes.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Security.Totp.StoredRecoveryCode!>!
+SharedKernel.Security.Totp.TotpEnrollmentService
+SharedKernel.Security.Totp.TotpEnrollmentService.ConfirmAsync(SharedKernel.Security.Abstractions.IUserContext! user, System.ReadOnlyMemory<byte> secret, string! code, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Security.Totp.TotpChallengeResult>
+SharedKernel.Security.Totp.TotpEnrollmentService.Create(string! issuer, string! accountName, SharedKernel.Cryptography.Totp.TotpParameters? parameters = null, int secretLengthBytes = 20, int recoveryCodeCount = 10) -> SharedKernel.Security.Totp.TotpEnrollment!
+SharedKernel.Security.Totp.TotpEnrollmentService.TotpEnrollmentService(SharedKernel.Cryptography.Random.ISecureRandomGenerator! random, SharedKernel.Cryptography.Totp.IRecoveryCodeGenerator! recoveryCodes, SharedKernel.Cryptography.Hashing.IOneWayHasher! hasher, SharedKernel.Cryptography.Totp.ITotpVerifier! verifier, Microsoft.Extensions.Logging.ILogger<SharedKernel.Security.Totp.TotpEnrollmentService!>! logger, SharedKernel.Cryptography.Totp.ITotpAttemptThrottle? throttle = null) -> void
+SharedKernel.Security.Totp.TotpServiceCollectionExtensions
+SharedKernel.Security.Totp.TotpStepUpClaimsTransformation
+SharedKernel.Security.Totp.TotpStepUpClaimsTransformation.TotpStepUpClaimsTransformation(System.Collections.Generic.IEnumerable<SharedKernel.Security.Abstractions.IUserContextMapper!>! mappers, SharedKernel.Security.Totp.ITotpStepUpStore! store, SharedKernel.Primitives.Clocks.IClock! clock, Microsoft.Extensions.Options.IOptions<SharedKernel.Security.Totp.TotpStepUpOptions!>! options, Microsoft.AspNetCore.Authentication.IClaimsTransformation? inner = null) -> void
+SharedKernel.Security.Totp.TotpStepUpClaimsTransformation.TransformAsync(System.Security.Claims.ClaimsPrincipal! principal) -> System.Threading.Tasks.Task<System.Security.Claims.ClaimsPrincipal!>!
+SharedKernel.Security.Totp.TotpStepUpOptions
+SharedKernel.Security.Totp.TotpStepUpOptions.AuthenticationMethod.get -> string!
+SharedKernel.Security.Totp.TotpStepUpOptions.AuthenticationMethod.set -> void
+SharedKernel.Security.Totp.TotpStepUpOptions.AuthenticationMethodClaimType.get -> string!
+SharedKernel.Security.Totp.TotpStepUpOptions.AuthenticationMethodClaimType.set -> void
+SharedKernel.Security.Totp.TotpStepUpOptions.FreshnessWindow.get -> System.TimeSpan
+SharedKernel.Security.Totp.TotpStepUpOptions.FreshnessWindow.set -> void
+SharedKernel.Security.Totp.TotpStepUpOptions.TotpStepUpOptions() -> void
+override SharedKernel.Security.Totp.StoredRecoveryCode.Equals(object? obj) -> bool
+override SharedKernel.Security.Totp.StoredRecoveryCode.GetHashCode() -> int
+override SharedKernel.Security.Totp.StoredRecoveryCode.ToString() -> string!
+override SharedKernel.Security.Totp.TotpEnrollment.ToString() -> string!
+static SharedKernel.Security.Totp.StoredRecoveryCode.operator !=(SharedKernel.Security.Totp.StoredRecoveryCode? left, SharedKernel.Security.Totp.StoredRecoveryCode? right) -> bool
+static SharedKernel.Security.Totp.StoredRecoveryCode.operator ==(SharedKernel.Security.Totp.StoredRecoveryCode? left, SharedKernel.Security.Totp.StoredRecoveryCode? right) -> bool
+static SharedKernel.Security.Totp.TotpServiceCollectionExtensions.AddTotpStepUp<TStepUpStore, TRecoveryCodeStore>(this SharedKernel.Cryptography.Extensions.ICryptographyBuilder! cryptography, System.Action<SharedKernel.Security.Totp.TotpStepUpOptions!>? configure = null) -> SharedKernel.Cryptography.Extensions.ICryptographyBuilder!
