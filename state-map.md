@@ -2448,6 +2448,40 @@ The user ruled:
 
 ---
 
+### P-547 — Caching: `SharedKernel.Caching.Abstractions` Pre-First-Publish Redesign (BREAKING API + BEHAVIOUR)
+
+**Status:** `◐` In progress — code, migrations and verification complete (solution builds with 0 errors; unit lane 64 and integration lane 18 test assemblies green; caching consumer-verify 5/5 against packed packages); publish pending
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 02.Caching (with migrations in 00.Governance, 05.Application, 13.ServiceDefaults, 16.Testing, 19.Scheduling)
+**Depends on:** P-544
+
+#### What is needed
+Finalize `SharedKernel.Caching.Abstractions` before its first feed publish, and migrate every consumer in the same pass. It is the root of 13 unpublished packages, including every other `02.Caching` package and `SharedKernel.Application.Behaviors.Caching`, which P-544 held back.
+
+#### Why this is needed
+A full review found defects that would ship as contract:
+
+- Lock renewal releases the lock and then re-acquires it, so another holder can take it in between. RedLock.net 2.3.2 already extends a held lock every `expiry/2` until disposed (confirmed by decompiling), so `RenewAsync` is unnecessary as well as unsafe.
+- The abstraction has no lease that expires on its own. `SharedKernel.Scheduling` therefore never disposes its per-occurrence lock handle, which leaves a RedLock keep-alive timer extending the lock for the life of the process.
+- A contended lock and an unreachable lock store both return `null`; the scheduler reads both as "another replica ran it", so a Redis outage silently skips every job on every replica.
+- The fencing token is reachable only by casting to `IFencedLock`, and it is fetched with a separate call after acquisition; if that call throws, the acquired lock is never disposed.
+- Nothing escapes `:` in key segments or tags: a global key equals a tenant key with the same parts, a global tag `tenant-a:orders` evicts tenant A's entries, and tenant `a` + tag `b:x` equals tenant `a:b` + tag `x`.
+- The service name has two sources (`CachingOptions` and `CachingCoreOptions`) copied once at registration; the `"app"` default is never validated and registration bypasses `AddValidatedOptions`.
+- `GetAsync<T>` cannot distinguish a miss from a cached `default`/`null`; `GetManyAsync` has the same flaw.
+- `CachePolicy.Sliding` is not sliding expiration; `CachePolicy.Tags` is a caller-owned mutable array with reference equality and unvalidated elements; `KeyVersion` is ignored by `ICacheService`.
+- `ICacheInvalidationBus` publishes only to the sender's own replicas (already covered by the FusionCache Redis backplane), `All` is a no-op, and its only production user (`CachedTenantCatalog`) keeps tenants in its own dictionaries, so its cross-instance invalidation never evicts anything.
+- `GetOrSetAsync` cannot skip caching a result, so `CachingBehavior` uses get-then-set with no stampede protection.
+- Provider-specific contracts (`IRedisChannelService`, `IRedisHashService`, `ITypedHashStore`, `ConnectionHealthState`) and provider names in docs live in the abstractions package; it has no test project and no public API tracking.
+
+The user ruled:
+
+- Keep `ICacheService`/`ITenantCacheService`; fix the defects and extend them: `TryGetAsync`, a factory context that can skip caching or adapt the duration, `ExpireAsync`, multi-tag removal, `ClearAsync`, factory timeouts, fail-safe maximum duration, jitter and per-entry L2 skip. `Sliding` and `KeyVersion` are removed from `CachePolicy`.
+- Redis-specific contracts move into their provider packages; the abstractions package becomes provider-neutral.
+- Distributed locks are redesigned: one acquisition returning a handle with fencing token, held state and a lock-lost token, kept alive until disposed; `IRenewableLock`/`RenewAsync` removed; a separate lease that expires on its own; an unreachable store throws instead of returning `null`.
+- `ICacheInvalidationBus`, `CacheInvalidationMessage` and the Pub/Sub receiver are removed; cross-replica invalidation relies on the FusionCache backplane, and `CachedTenantCatalog` moves onto `ICacheService`.
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
