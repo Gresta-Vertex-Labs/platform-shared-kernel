@@ -1,0 +1,138 @@
+#nullable enable
+const SharedKernel.Caching.Abstractions.CacheKeyFormat.Separator = ':' -> char
+const SharedKernel.Caching.Abstractions.CacheKeyFormat.TenantMarker = '@' -> char
+override SharedKernel.Caching.Abstractions.CacheLookup<T>.Equals(object? obj) -> bool
+override SharedKernel.Caching.Abstractions.CacheLookup<T>.GetHashCode() -> int
+override SharedKernel.Caching.Abstractions.CacheLookup<T>.ToString() -> string!
+override SharedKernel.Caching.Abstractions.CachePolicy.Equals(object? obj) -> bool
+override SharedKernel.Caching.Abstractions.CachePolicy.GetHashCode() -> int
+override SharedKernel.Caching.Abstractions.CachePolicy.ToString() -> string!
+override SharedKernel.Caching.Abstractions.DistributedLease.Equals(object? obj) -> bool
+override SharedKernel.Caching.Abstractions.DistributedLease.GetHashCode() -> int
+override SharedKernel.Caching.Abstractions.DistributedLease.ToString() -> string!
+override SharedKernel.Caching.Abstractions.DistributedLockOptions.Equals(object? obj) -> bool
+override SharedKernel.Caching.Abstractions.DistributedLockOptions.GetHashCode() -> int
+override SharedKernel.Caching.Abstractions.DistributedLockOptions.ToString() -> string!
+SharedKernel.Caching.Abstractions.CacheFactoryContext
+SharedKernel.Caching.Abstractions.CacheFactoryContext.CacheFactoryContext(string! key, SharedKernel.Caching.Abstractions.CachePolicy! policy) -> void
+SharedKernel.Caching.Abstractions.CacheFactoryContext.IsCachingSkipped.get -> bool
+SharedKernel.Caching.Abstractions.CacheFactoryContext.Key.get -> string!
+SharedKernel.Caching.Abstractions.CacheFactoryContext.L1DurationOverride.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CacheFactoryContext.L2DurationOverride.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CacheFactoryContext.Policy.get -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CacheFactoryContext.SetDurations(System.TimeSpan l1Duration, System.TimeSpan l2Duration) -> void
+SharedKernel.Caching.Abstractions.CacheFactoryContext.SkipCaching() -> void
+SharedKernel.Caching.Abstractions.CacheKeyFormat
+SharedKernel.Caching.Abstractions.CacheLookup<T>
+SharedKernel.Caching.Abstractions.CacheLookup<T>.CacheLookup() -> void
+SharedKernel.Caching.Abstractions.CacheLookup<T>.Equals(SharedKernel.Caching.Abstractions.CacheLookup<T> other) -> bool
+SharedKernel.Caching.Abstractions.CacheLookup<T>.GetValueOrDefault(T fallback) -> T
+SharedKernel.Caching.Abstractions.CacheLookup<T>.IsHit.get -> bool
+SharedKernel.Caching.Abstractions.CacheLookup<T>.TryGetValue(out T value) -> bool
+SharedKernel.Caching.Abstractions.CacheLookup<T>.Value.get -> T
+SharedKernel.Caching.Abstractions.CachePolicy
+SharedKernel.Caching.Abstractions.CachePolicy.<Clone>$() -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.EagerRefreshThreshold.get -> double?
+SharedKernel.Caching.Abstractions.CachePolicy.Equals(SharedKernel.Caching.Abstractions.CachePolicy? other) -> bool
+SharedKernel.Caching.Abstractions.CachePolicy.FactoryHardTimeout.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CachePolicy.FactorySoftTimeout.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CachePolicy.FailSafeMaxDuration.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CachePolicy.ForTenant(string! tenantId) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.IsFailSafeEnabled.get -> bool
+SharedKernel.Caching.Abstractions.CachePolicy.IsLocalOnly.get -> bool
+SharedKernel.Caching.Abstractions.CachePolicy.IsTenantScoped.get -> bool
+SharedKernel.Caching.Abstractions.CachePolicy.JitterMaxDuration.get -> System.TimeSpan?
+SharedKernel.Caching.Abstractions.CachePolicy.L1Duration.get -> System.TimeSpan
+SharedKernel.Caching.Abstractions.CachePolicy.L2Duration.get -> System.TimeSpan
+SharedKernel.Caching.Abstractions.CachePolicy.LocalOnly() -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Caching.Abstractions.CachePolicy.WithEagerRefresh(double threshold = 0.9) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithFactoryTimeouts(System.TimeSpan? softTimeout, System.TimeSpan? hardTimeout) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithFailSafe(System.TimeSpan maxDuration) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithJitter(System.TimeSpan maxDuration) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithoutEagerRefresh() -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithoutFailSafe() -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.CachePolicy.WithTags(params string![]! tags) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.DistributedLease
+SharedKernel.Caching.Abstractions.DistributedLease.<Clone>$() -> SharedKernel.Caching.Abstractions.DistributedLease!
+SharedKernel.Caching.Abstractions.DistributedLease.DistributedLease(string! resource, long fencingToken, System.DateTimeOffset expiresAt) -> void
+SharedKernel.Caching.Abstractions.DistributedLease.Equals(SharedKernel.Caching.Abstractions.DistributedLease? other) -> bool
+SharedKernel.Caching.Abstractions.DistributedLease.ExpiresAt.get -> System.DateTimeOffset
+SharedKernel.Caching.Abstractions.DistributedLease.FencingToken.get -> long
+SharedKernel.Caching.Abstractions.DistributedLease.Resource.get -> string!
+SharedKernel.Caching.Abstractions.DistributedLockOptions
+SharedKernel.Caching.Abstractions.DistributedLockOptions.<Clone>$() -> SharedKernel.Caching.Abstractions.DistributedLockOptions!
+SharedKernel.Caching.Abstractions.DistributedLockOptions.DistributedLockOptions() -> void
+SharedKernel.Caching.Abstractions.DistributedLockOptions.Equals(SharedKernel.Caching.Abstractions.DistributedLockOptions? other) -> bool
+SharedKernel.Caching.Abstractions.DistributedLockOptions.Expiry.get -> System.TimeSpan
+SharedKernel.Caching.Abstractions.DistributedLockOptions.Expiry.init -> void
+SharedKernel.Caching.Abstractions.DistributedLockOptions.RetryInterval.get -> System.TimeSpan
+SharedKernel.Caching.Abstractions.DistributedLockOptions.RetryInterval.init -> void
+SharedKernel.Caching.Abstractions.DistributedLockOptions.WaitTime.get -> System.TimeSpan
+SharedKernel.Caching.Abstractions.DistributedLockOptions.WaitTime.init -> void
+SharedKernel.Caching.Abstractions.DistributedLockUnavailableException
+SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.DistributedLockUnavailableException() -> void
+SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.DistributedLockUnavailableException(string! message) -> void
+SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.DistributedLockUnavailableException(string! message, System.Exception? innerException) -> void
+SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.Resource.get -> string?
+SharedKernel.Caching.Abstractions.ICacheKeyProvider
+SharedKernel.Caching.Abstractions.ICacheKeyProvider.BuildKey(string! entity, string! id, params string![]! segments) -> string!
+SharedKernel.Caching.Abstractions.ICacheService
+SharedKernel.Caching.Abstractions.ICacheService.ClearAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.ExpireAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.GetOrSetAsync<T>(string! key, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ICacheService.GetOrSetAsync<T>(string! key, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ICacheService.RemoveAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.RemoveByTagAsync(string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.RemoveByTagsAsync(System.Collections.Generic.IEnumerable<string!>! tags, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.SetAsync<T>(string! key, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.SetManyAsync<T>(System.Collections.Generic.IReadOnlyDictionary<string!, T>! entries, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICacheService.TryGetAsync<T>(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
+SharedKernel.Caching.Abstractions.ICacheService.TryGetManyAsync<T>(System.Collections.Generic.IEnumerable<string!>! keys, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, SharedKernel.Caching.Abstractions.CacheLookup<T>>!>
+SharedKernel.Caching.Abstractions.ICacheWarmupStrategy
+SharedKernel.Caching.Abstractions.ICacheWarmupStrategy.Name.get -> string!
+SharedKernel.Caching.Abstractions.ICacheWarmupStrategy.Order.get -> int
+SharedKernel.Caching.Abstractions.ICacheWarmupStrategy.WarmupAsync(SharedKernel.Caching.Abstractions.ICacheService! cache, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ICachingBuilder
+SharedKernel.Caching.Abstractions.ICachingBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Caching.Abstractions.IDistributedLock
+SharedKernel.Caching.Abstractions.IDistributedLock.FencingToken.get -> long
+SharedKernel.Caching.Abstractions.IDistributedLock.IsHeld.get -> bool
+SharedKernel.Caching.Abstractions.IDistributedLock.LostToken.get -> System.Threading.CancellationToken
+SharedKernel.Caching.Abstractions.IDistributedLock.Resource.get -> string!
+SharedKernel.Caching.Abstractions.IDistributedLockService
+SharedKernel.Caching.Abstractions.IDistributedLockService.TryAcquireAsync(string! resource, SharedKernel.Caching.Abstractions.DistributedLockOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.IDistributedLock?>
+SharedKernel.Caching.Abstractions.IDistributedLockService.TryAcquireLeaseAsync(string! resource, System.TimeSpan duration, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.DistributedLease?>
+SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider
+SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider.BuildTenantKey(string! tenantId, string! entity, string! id, params string![]! segments) -> string!
+SharedKernel.Caching.Abstractions.ITenantCacheService
+SharedKernel.Caching.Abstractions.ITenantCacheService.ExpireAsync(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(string! tenantId, string! entity, string! id, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(string! tenantId, string! entity, string! id, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveAsync(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveByTagAsync(string! tenantId, string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveTenantAsync(string! tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.SetAsync<T>(string! tenantId, string! entity, string! id, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.TryGetAsync<T>(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildKey(string! serviceName, string! entity, string! id, params System.ReadOnlySpan<string!> segments) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantKey(string! serviceName, string! tenantId, string! entity, string! id, params System.ReadOnlySpan<string!> segments) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantTag(string! tenantId, string! tag) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantWideTag(string! tenantId) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.Escape(string! part) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.IsValidServiceName(string? serviceName) -> bool
+static SharedKernel.Caching.Abstractions.CacheLookup<T>.Hit(T value) -> SharedKernel.Caching.Abstractions.CacheLookup<T>
+static SharedKernel.Caching.Abstractions.CacheLookup<T>.Miss.get -> SharedKernel.Caching.Abstractions.CacheLookup<T>
+static SharedKernel.Caching.Abstractions.CacheLookup<T>.operator !=(SharedKernel.Caching.Abstractions.CacheLookup<T> left, SharedKernel.Caching.Abstractions.CacheLookup<T> right) -> bool
+static SharedKernel.Caching.Abstractions.CacheLookup<T>.operator ==(SharedKernel.Caching.Abstractions.CacheLookup<T> left, SharedKernel.Caching.Abstractions.CacheLookup<T> right) -> bool
+static SharedKernel.Caching.Abstractions.CachePolicy.Default.get -> SharedKernel.Caching.Abstractions.CachePolicy!
+static SharedKernel.Caching.Abstractions.CachePolicy.For(System.TimeSpan duration) -> SharedKernel.Caching.Abstractions.CachePolicy!
+static SharedKernel.Caching.Abstractions.CachePolicy.For(System.TimeSpan l1Duration, System.TimeSpan l2Duration) -> SharedKernel.Caching.Abstractions.CachePolicy!
+static SharedKernel.Caching.Abstractions.CachePolicy.NeverExpire.get -> SharedKernel.Caching.Abstractions.CachePolicy!
+static SharedKernel.Caching.Abstractions.CachePolicy.operator !=(SharedKernel.Caching.Abstractions.CachePolicy? left, SharedKernel.Caching.Abstractions.CachePolicy? right) -> bool
+static SharedKernel.Caching.Abstractions.CachePolicy.operator ==(SharedKernel.Caching.Abstractions.CachePolicy? left, SharedKernel.Caching.Abstractions.CachePolicy? right) -> bool
+static SharedKernel.Caching.Abstractions.DistributedLease.operator !=(SharedKernel.Caching.Abstractions.DistributedLease? left, SharedKernel.Caching.Abstractions.DistributedLease? right) -> bool
+static SharedKernel.Caching.Abstractions.DistributedLease.operator ==(SharedKernel.Caching.Abstractions.DistributedLease? left, SharedKernel.Caching.Abstractions.DistributedLease? right) -> bool
+static SharedKernel.Caching.Abstractions.DistributedLockOptions.Default.get -> SharedKernel.Caching.Abstractions.DistributedLockOptions!
+static SharedKernel.Caching.Abstractions.DistributedLockOptions.operator !=(SharedKernel.Caching.Abstractions.DistributedLockOptions? left, SharedKernel.Caching.Abstractions.DistributedLockOptions? right) -> bool
+static SharedKernel.Caching.Abstractions.DistributedLockOptions.operator ==(SharedKernel.Caching.Abstractions.DistributedLockOptions? left, SharedKernel.Caching.Abstractions.DistributedLockOptions? right) -> bool
+static SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.ForResource(string! resource, System.Exception? innerException = null) -> SharedKernel.Caching.Abstractions.DistributedLockUnavailableException!
