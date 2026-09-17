@@ -1,26 +1,35 @@
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
-/// Defines a single cache warmup strategy that pre-populates L1 cache entries at service startup,
-/// before the host signals readiness to receive traffic.
+/// A startup routine that fills the cache before the service takes traffic, so the first requests
+/// after a deployment do not all miss at once.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implement this interface to provide a named, ordered warmup routine that executes during
-/// the startup phase. Multiple strategies can be registered and will be executed in ascending
-/// <see cref="Order"/> sequence.
+/// The provider runs every registered strategy once at startup, in ascending <see cref="Order"/>.
+/// With the FusionCache provider, register a strategy with <c>AddCacheWarmup&lt;TStrategy&gt;()</c>
+/// and set <c>CachingOptions.WaitForWarmup</c> to hold readiness until all strategies finish.
 /// </para>
 /// <para>
-/// Register strategies via <c>ICachingBuilder.AddCacheWarmup&lt;TStrategy&gt;()</c>. Set
-/// <c>CachingOptions.WaitForWarmup = true</c> to ensure the pod does not receive Kubernetes
-/// traffic until all warmup strategies complete.
-/// </para>
-/// <para>
-/// A failing strategy must not crash the host. The runner (<c>CacheWarmupHostedService</c>)
-/// catches all exceptions per strategy, logs them at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>,
-/// and continues with the next strategy.
+/// A failing strategy must not stop the host: the provider logs the exception and continues with the
+/// next strategy. Honour the cancellation token, which is cancelled when the host shuts down.
 /// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// public sealed class CurrencyWarmup(ICurrencyRepository currencies, ICacheKeyProvider keys) : ICacheWarmupStrategy
+/// {
+///     public string Name =&gt; "currencies";
+///     public int Order =&gt; 0;
+///
+///     public async ValueTask WarmupAsync(ICacheService cache, CancellationToken ct)
+///     {
+///         foreach (Currency currency in await currencies.ListAsync(ct))
+///             await cache.SetAsync(keys.BuildKey("currency", currency.Code), currency, CachePolicy.NeverExpire, ct);
+///     }
+/// }
+/// </code>
+/// </example>
 public interface ICacheWarmupStrategy
 {
     /// <summary>

@@ -1,88 +1,102 @@
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
-/// Provides a unified hybrid cache surface backed by FusionCache.
-/// Supports in-process L1 memory cache and optional distributed L2 Redis backplane
-/// with built-in stampede protection, background refresh, and fail-safe.
+/// A hybrid cache: an in-process memory layer (L1) in front of an optional distributed layer (L2),
+/// with stampede protection, fail-safe and eager refresh. The main entry point of this package.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Callers <b>must</b> prefer <see cref="GetOrSetAsync{T}"/> over separate
-/// <see cref="GetAsync{T}"/> + <see cref="SetAsync{T}"/> calls. The sequential
-/// get-then-set pattern is a cache-stampede bug — it provides no stampede protection.
+/// <b>Which member.</b> Read through <see cref="GetOrSetAsync{T}(string, Func{CacheFactoryContext, CancellationToken, ValueTask{T}}, CachePolicy, CancellationToken)"/>:
+/// it computes a missing value once per key however many callers miss at the same time. Use
+/// <see cref="TryGetAsync{T}"/> only to read without computing, and <see cref="SetAsync{T}"/> only
+/// to store a value you already have. A <c>TryGetAsync</c> followed by <c>SetAsync</c> is a cache
+/// stampede waiting to happen.
 /// </para>
 /// <para>
-/// Cache keys are prefix-namespaced by the consuming service, not by this package.
-/// Convention: <c>"{service}:{entity}:{id}"</c>. Use <see cref="ICacheKeyProvider"/>
-/// to construct keys rather than building strings inline.
+/// <b>Keys.</b> Build keys with <see cref="ICacheKeyProvider"/>, which prefixes the service name
+/// and escapes each part (<see cref="CacheKeyFormat"/>). For data that belongs to a tenant use
+/// <see cref="ITenantCacheService"/> instead of this interface.
+/// </para>
+/// <para>
+/// <b>Distribution.</b> When a distributed layer and backplane are configured, entries are shared by
+/// every instance of the service, and <see cref="RemoveAsync"/>, <see cref="ExpireAsync"/>, tag
+/// removal and <see cref="ClearAsync"/> reach every instance. Without one, every call affects this
+/// process only.
+/// </para>
+/// <para>
+/// <b>Implementations</b> are thread-safe singletons. The platform implementation is
+/// <c>SharedKernel.Caching.FusionCache</c> (<c>AddSharedKernelCaching</c>), with
+/// <c>SharedKernel.Caching.Redis</c> (<c>AddRedisL2</c>) for the distributed layer.
 /// </para>
 /// </remarks>
+/// <example>
+/// <code>
+/// public sealed class ProductReader(ICacheService cache, ICacheKeyProvider keys, IProductRepository products)
+/// {
+///     public ValueTask&lt;Product?&gt; GetAsync(Guid id, CancellationToken ct) =&gt;
+///         cache.GetOrSetAsync(
+///             keys.BuildKey("product", id.ToString("D")),
+///             token =&gt; products.FindAsync(id, token),
+///             CachePolicy.Default.WithTags("products"),
+///             ct);
+/// }
+/// </code>
+/// </example>
 public interface ICacheService
 {
-    /// <summary>
-    /// Attempts to retrieve the cached value for <paramref name="key"/>.
-    /// Returns <see langword="null"/> when the key is not present in either L1 or L2.
-    /// </summary>
-    /// <typeparam name="T">The type of the cached value.</typeparam>
-    /// <param name="key">The non-empty cache key.</param>
+    /// <summary>Reads the entry for <paramref name="key"/> without computing it.</summary>
+    /// <remarks>
+    /// A cached <see langword="null"/> or <see langword="default"/> is a hit, so a cached "not found"
+    /// is distinguishable from a key that was never cached. Checks L1, then L2.
+    /// </remarks>
+    /// <typeparam name="T">The type the value was stored as.</typeparam>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The cached value, or <see langword="null"/> if not found.</returns>
-    ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default);
+    /// <returns>A hit carrying the value, or <see cref="CacheLookup{T}.Miss"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
+    /// <example>
+    /// <code>
+    /// CacheLookup&lt;int&gt; lookup = await cache.TryGetAsync&lt;int&gt;(key, ct);
+    /// if (lookup.TryGetValue(out int count)) { /* hit, even when count is 0 */ }
+    /// </code>
+    /// </example>
+    ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default);
+
+    /// <summary>Reads several entries without computing them.</summary>
+    /// <remarks>Duplicate keys are read once. Each lookup is independent; there is no atomic snapshot.</remarks>
+    /// <typeparam name="T">The type the values were stored as.</typeparam>
+    /// <param name="keys">The cache keys. Must not be <see langword="null"/>; no key may be null or whitespace.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>One lookup per distinct key, hit or miss.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="keys"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A key is null or whitespace.</exception>
+    ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
+        IEnumerable<string> keys,
+        CancellationToken ct = default);
 
     /// <summary>
-    /// Stores <paramref name="value"/> in the cache under <paramref name="key"/>
-    /// using the supplied <paramref name="policy"/>.
-    /// </summary>
-    /// <typeparam name="T">The type of the value to cache.</typeparam>
-    /// <param name="key">The non-empty cache key.</param>
-    /// <param name="value">The value to store.</param>
-    /// <param name="policy">Cache policy controlling TTL, tags, and refresh behaviour.</param>
-    /// <param name="ct">Cancellation token.</param>
-    ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns the cached value for <paramref name="key"/> if present; otherwise invokes
-    /// <paramref name="factory"/>, caches the result using <paramref name="policy"/>, and returns it.
+    /// Returns the entry for <paramref name="key"/>, or computes it with <paramref name="factory"/>,
+    /// stores it with <paramref name="policy"/> and returns it.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the preferred method for all cache reads. FusionCache ensures the factory is
-    /// called exactly once even under concurrent requests for the same key (stampede protection).
+    /// The factory runs at most once per key at a time; concurrent callers wait for its result. Use a
+    /// nullable <typeparamref name="T"/> to cache "not found".
     /// </para>
     /// <para>
-    /// <b>Negative-result caching:</b> To cache the <em>absence</em> of an entity (preventing
-    /// repeated expensive lookups for missing records), call this method with <c>T = string?</c>
-    /// (or any nullable type). When the factory returns <see langword="null"/>, that null result
-    /// is stored as a genuine cache entry — subsequent calls return <see langword="null"/> directly
-    /// without invoking the factory again. Do not use <see cref="CachePolicy.NeverExpire"/> for
-    /// this pattern; use a bounded TTL so stale absences eventually expire.
-    /// Example: <c>await cache.GetOrSetAsync&lt;MyEntity?&gt;(key, async ct =&gt; await db.FindAsync(id, ct), policy)</c>
-    /// </para>
-    /// <para>
-    /// <b>Migration note (breaking change):</b> The factory delegate was changed from
-    /// <c>Func&lt;CancellationToken, Task&lt;T&gt;&gt;</c> to <c>Func&lt;CancellationToken, ValueTask&lt;T&gt;&gt;</c>
-    /// to align with .NET 10 async conventions and eliminate per-call <c>.AsTask()</c> allocations.
-    /// If you have an existing <c>Task&lt;T&gt;</c> factory, wrap it:
-    /// <c>async ct =&gt; await existingFactory(ct)</c>.
+    /// If the factory throws, nothing is stored and the exception reaches the caller, unless fail-safe
+    /// serves the previous value. To decide per result whether to store it, use the overload whose
+    /// factory receives a <see cref="CacheFactoryContext"/>.
     /// </para>
     /// </remarks>
-    /// <typeparam name="T">
-    /// The type of the cached value. Use a nullable type (<c>T?</c>) to enable negative-result
-    /// caching (caching the absence of an entity as a genuine cache hit).
-    /// </typeparam>
-    /// <param name="key">The non-empty cache key.</param>
-    /// <param name="factory">
-    /// Async delegate invoked on cache miss. Must not be <see langword="null"/>.
-    /// The delegate receives the ambient <see cref="CancellationToken"/> and returns a
-    /// <see cref="ValueTask{T}"/>. May return <see langword="null"/> when <typeparamref name="T"/>
-    /// is nullable — the null result will be cached as a genuine entry.
-    /// </param>
-    /// <param name="policy">Cache policy controlling TTL, tags, and refresh behaviour.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>
-    /// The cached or freshly-computed value; <see langword="null"/> when <typeparamref name="T"/>
-    /// is nullable and the factory returned <see langword="null"/>.
-    /// </returns>
+    /// <typeparam name="T">The type of the value.</typeparam>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
+    /// <param name="factory">Computes the value on a miss.</param>
+    /// <param name="policy">How the computed value is stored.</param>
+    /// <param name="ct">Cancellation token, also passed to the factory.</param>
+    /// <returns>The cached or freshly computed value.</returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> or <paramref name="policy"/> is <see langword="null"/>.</exception>
     ValueTask<T> GetOrSetAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T>> factory,
@@ -90,76 +104,114 @@ public interface ICacheService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Removes the entry for <paramref name="key"/> from all cache layers.
-    /// No-ops silently if the key does not exist.
+    /// Returns the entry for <paramref name="key"/>, or computes it with <paramref name="factory"/>,
+    /// which decides through its <see cref="CacheFactoryContext"/> whether and how long the value is stored.
     /// </summary>
-    /// <param name="key">The non-empty cache key.</param>
+    /// <remarks>
+    /// <para>
+    /// The computed value always reaches the caller and every concurrent caller waiting on the key. The
+    /// context controls only the write: <see cref="CacheFactoryContext.SkipCaching"/> stores nothing,
+    /// <see cref="CacheFactoryContext.SetDurations"/> replaces the policy's durations.
+    /// </para>
+    /// <para>
+    /// Typical use: skip caching a failed <c>Result</c>, or cache settled data longer than live data.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The type of the value.</typeparam>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
+    /// <param name="factory">Computes the value on a miss and records its caching decision.</param>
+    /// <param name="policy">How the value is stored unless the factory overrides it.</param>
+    /// <param name="ct">Cancellation token, also passed to the factory.</param>
+    /// <returns>The cached or freshly computed value.</returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> or <paramref name="policy"/> is <see langword="null"/>.</exception>
+    /// <example>
+    /// <code>
+    /// Result&lt;Order&gt; order = await cache.GetOrSetAsync(
+    ///     key,
+    ///     async (context, token) =&gt;
+    ///     {
+    ///         Result&lt;Order&gt; loaded = await orders.LoadAsync(id, token);
+    ///         if (loaded.IsFailure)
+    ///             context.SkipCaching();
+    ///         return loaded;
+    ///     },
+    ///     CachePolicy.For(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10)),
+    ///     ct);
+    /// </code>
+    /// </example>
+    ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default);
+
+    /// <summary>Stores <paramref name="value"/> under <paramref name="key"/>, replacing any existing entry.</summary>
+    /// <remarks>Prefer <c>GetOrSetAsync</c> when the value is computed on demand; use this to push a value you already have, such as the result of a write.</remarks>
+    /// <typeparam name="T">The type of the value.</typeparam>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
+    /// <param name="value">The value to store; may be <see langword="null"/>.</param>
+    /// <param name="policy">How the value is stored.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="policy"/> is <see langword="null"/>.</exception>
+    ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default);
+
+    /// <summary>Stores several entries with the same policy.</summary>
+    /// <remarks>Not atomic: a failure can leave some entries written. Use separate <see cref="SetAsync{T}"/> calls when entries need different policies.</remarks>
+    /// <typeparam name="T">The type of the values.</typeparam>
+    /// <param name="entries">The entries. Must not be <see langword="null"/>; no key may be null or whitespace.</param>
+    /// <param name="policy">How every value is stored.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="entries"/> or <paramref name="policy"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A key is null or whitespace.</exception>
+    ValueTask SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct = default);
+
+    /// <summary>Removes the entry for <paramref name="key"/> from every layer. Does nothing when it is absent.</summary>
+    /// <remarks>
+    /// The next read recomputes, and fail-safe has nothing to fall back to. When the source of truth
+    /// may be briefly unavailable, prefer <see cref="ExpireAsync"/>.
+    /// </remarks>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
     ValueTask RemoveAsync(string key, CancellationToken ct = default);
 
     /// <summary>
-    /// Removes all cache entries that carry the specified <paramref name="tag"/>.
+    /// Marks the entry for <paramref name="key"/> as expired. Does nothing when it is absent.
     /// </summary>
     /// <remarks>
-    /// Tag-based eviction is the recommended pattern for invalidating groups of related entries
-    /// (e.g., all entries belonging to a tenant or entity type).
+    /// The next <c>GetOrSetAsync</c> recomputes the value, but if the factory fails, fail-safe can
+    /// still serve the expired one.
     /// </remarks>
-    /// <param name="tag">The tag whose entries should be evicted.</param>
+    /// <param name="key">The cache key. Must not be null or whitespace.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is null or whitespace.</exception>
+    ValueTask ExpireAsync(string key, CancellationToken ct = default);
+
+    /// <summary>Removes every entry that carries <paramref name="tag"/>.</summary>
+    /// <remarks>Tags are attached with <see cref="CachePolicy.WithTags"/>. For a tenant's tag use <see cref="ITenantCacheService.RemoveByTagAsync"/>.</remarks>
+    /// <param name="tag">The tag. Must not be null or whitespace.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentException"><paramref name="tag"/> is null or whitespace.</exception>
     ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default);
 
-    /// <summary>
-    /// Retrieves cached values for all supplied <paramref name="keys"/> in a single batch operation.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Every requested key is guaranteed to have a corresponding entry in the returned dictionary.
-    /// Keys that are not present in either the L1 or L2 cache map to <see langword="null"/>.
-    /// </para>
-    /// <para>
-    /// An empty <paramref name="keys"/> enumerable returns an empty dictionary immediately without
-    /// any cache interaction.
-    /// </para>
-    /// <para>
-    /// The underlying implementation iterates keys individually — there is no native batch API on
-    /// FusionCache. Each per-key operation benefits from stampede protection independently.
-    /// </para>
-    /// </remarks>
-    /// <typeparam name="T">The type of the cached values.</typeparam>
-    /// <param name="keys">The cache keys to retrieve. Must not be <see langword="null"/>.</param>
+    /// <summary>Removes every entry that carries any of <paramref name="tags"/>.</summary>
+    /// <remarks>An empty collection does nothing.</remarks>
+    /// <param name="tags">The tags. Must not be <see langword="null"/>; no tag may be null or whitespace.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>
-    /// A read-only dictionary mapping each requested key to its cached value, or
-    /// <see langword="null"/> when the key is not present in the cache.
-    /// </returns>
-    ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
-        IEnumerable<string> keys,
-        CancellationToken ct = default);
+    /// <exception cref="ArgumentNullException"><paramref name="tags"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A tag is null or whitespace.</exception>
+    ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default);
 
     /// <summary>
-    /// Stores multiple key-value entries in the cache in a single batch operation.
-    /// The same <paramref name="policy"/> is applied to every entry in the batch.
+    /// Removes every entry of this cache: all keys, all tenants, on every instance of the service.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A single <see cref="CachePolicy"/> governs all entries — there is no support for
-    /// per-key policies within a batch call. If different entries require different TTLs
-    /// or tags, use individual <see cref="SetAsync{T}"/> calls.
-    /// </para>
-    /// <para>
-    /// An empty <paramref name="entries"/> dictionary is a no-op; no cache interaction occurs.
-    /// </para>
+    /// A break-glass operation, for example after a data repair. Fail-safe cannot bring cleared values
+    /// back, so every key recomputes on its next read. To drop one tenant's entries use
+    /// <see cref="ITenantCacheService.RemoveTenantAsync"/>; to drop a group use tags.
     /// </remarks>
-    /// <typeparam name="T">The type of the values to cache.</typeparam>
-    /// <param name="entries">
-    /// A read-only dictionary of key-value pairs to store. Must not be <see langword="null"/>.
-    /// </param>
-    /// <param name="policy">
-    /// Cache policy controlling TTL, tags, and refresh behaviour. Applied uniformly to all entries.
-    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    ValueTask SetManyAsync<T>(
-        IReadOnlyDictionary<string, T> entries,
-        CachePolicy policy,
-        CancellationToken ct = default);
+    ValueTask ClearAsync(CancellationToken ct = default);
 }
