@@ -2526,6 +2526,41 @@ The user ruled:
 
 ---
 
+### P-550 — Caching: Redis packages Pre-First-Publish Pass (BREAKING API + BEHAVIOUR)
+
+**Status:** `✓` Shipped 2026-09-17 — Redis.Core 76, Redis 91, DistributedLocking 53, HashStore 63, PubSub 26 tests passing (real Redis), plus FusionCache 270, governance 324, Idempotency.Redis 35 and ServiceDefaults.Caching.Redis 10; published to GitHub Packages from one commit
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 02.Caching (with migrations in 00.Governance, 13.ServiceDefaults, 16.Testing and 18.Idempotency)
+**Depends on:** P-548, P-549
+
+#### What is needed
+Finalize `SharedKernel.Caching.Redis.Core`, `.Redis`, `.Redis.DistributedLocking`, `.Redis.HashStore` and `.Redis.PubSub` and publish them together.
+
+#### Why this is needed
+A review found, and verified against a real Redis where noted:
+
+- `RedisChannelService` re-subscribed every channel on `ConnectionRestored`, although StackExchange.Redis restores subscriptions itself; each reconnect added a duplicate handler (verified: one replay, two deliveries per message).
+- Subscribing a second handler to a channel left the first active, and `UnsubscribeAsync` removed only the second (verified: the first kept receiving after unsubscribe).
+- `AddRedisL2` built its distributed cache and backplane from the bare connection string, opening two extra connections: TLS/mTLS settings, the connect timeout and health tracking never applied to cache traffic.
+- The Polly circuit breaker registered by `RedisL2Options.CircuitBreaker` was never used by the cache; only the hash store and publish used it, and `MinimumThroughput` was never read.
+- A kept-alive lock was reported lost only after its expiry had passed while Redis was unreachable, so another replica could acquire it while `IsHeld` was still true.
+- Every registration took its own connection string: the last configure call won for the options, the first registration won for the multiplexer, and conflicting strings were ignored.
+- No configuration binding or validation for the L2 and lock options; the hash store and pub/sub registered only on `ICachingBuilder`; `AddTypedHashStore` registered duplicates; health started as `Connected`; `GetFieldAsync<int>` could not tell a missing field from zero; no public API tracking; thin, partly wrong READMEs.
+
+The user ruled:
+
+- One shared connection, configured once through `AddRedisConnection` (configuration or code); every Redis package reuses it and no other registration takes a connection string.
+- Remove the Polly circuit breaker; expose FusionCache's distributed-cache and backplane circuit breakers for L2.
+- Redesign pub/sub: disposable subscriptions, several handlers per channel, rely on StackExchange.Redis resubscription, typed `JsonTypeInfo<T>` overloads, health only in Redis.Core.
+- Additions: a readiness probe over the shared connection (used by `ServiceDefaults.Caching.Redis`), configuration binding with validated section-bound options, and hash store key expiry, key deletion, multi-field reads and writes and a lookup result that tells a missing field from a default value.
+- Lock hardening extras (key prefix, expiring fencing counters, lock metrics) were not selected; the late lock-loss report is fixed as a defect.
+- Public API tracking, XML documentation and full READMEs for all five packages.
+
+Found and fixed during implementation: `Microsoft.Extensions.Caching.StackExchangeRedis`'s `RedisCache` closes the connection its factory returns (through `IDatabase.Multiplexer`) when disposed, so the distributed layer is now an internal Redis-string cache handed only to FusionCache and not registered as `IDistributedCache`; the FusionCache backplane disposes its connection on unsubscribe, so it receives a wrapper that ignores `Close`/`Dispose`; hash-store writes with a time to live use a Lua script, not `MULTI`/`EXEC`, because Redis does not roll back a failed `HSET`; an expiry under 1 ms deletes instead of sending an invalid `SETEX 0`; a non-empty `KeyPrefix` also sets the backplane channel prefix.
+
+---
+
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
