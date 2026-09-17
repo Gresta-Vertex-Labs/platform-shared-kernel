@@ -1990,53 +1990,34 @@ public class SecureDefaultsAssertionTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-340 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): Re-points
-    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
-    /// <c>RedisConnectionCoreExtensions.AddRedisConnection</c> and confirms it still calls
+    /// T-340 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437, re-locked for the P-547
+    /// Redis redesign): Re-points <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at
+    /// the real, shipped <c>RedisConnectionCoreExtensions.AddRedisConnection(IServiceCollection,
+    /// Action&lt;RedisConnectionOptions&gt;)</c> overload and confirms it still calls
     /// <c>OptionsBuilderExtensions.ValidateOnStart</c> — proving <c>RedisConnectionOptions</c>'s
-    /// <c>[Required]</c>/<c>[Range]</c> <c>DataAnnotations</c> are genuinely enforced eagerly at
-    /// host-startup time, not merely decorative.
+    /// <c>DataAnnotations</c> and validator are genuinely enforced eagerly at host startup when the
+    /// connection is configured in code.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
-    /// tracked <c>02.Caching</c> P-436 (its own Phase 45, <c>RedisTransportHardening</c>) as
-    /// <c>○</c> Not started — CONFIRMED RESOLVED on disk before this phase's implementation
-    /// session: that domain had already shipped its full Phase 45 scope
-    /// (<c>RedisConnectionCoreExtensions.AddRedisConnection</c> wired to
-    /// <c>.ValidateDataAnnotations().ValidateOnStart()</c>) before this phase's implementation
-    /// session began, mirroring this file's own now-nine-times-repeated dependency-resolved-
-    /// before-implementation pattern.
+    /// <strong>Overload disambiguation (P-547).</strong> <c>AddRedisConnection</c> now has two
+    /// overloads, so the method is selected by exact parameter types. The configuration overload
+    /// validates through <c>AddValidatedOptions</c> instead; its lock is
+    /// <see cref="AssertMethodBodyInvokesMethod_RealAddRedisConnectionConfigurationOverload_ValidatesOnStartThroughAddValidatedOptions"/>.
     /// </para>
     /// <para>
-    /// <strong>Declaring-type/namespace correction applied.</strong> This phase's own
-    /// authoring-time Implementation Rule 6 named <c>calleeDeclaringType</c> as
-    /// <c>Microsoft.Extensions.Options.OptionsBuilderExtensions</c> — confirmed WRONG at
-    /// implementation time. The real extension method
+    /// <strong>Declaring-type/namespace correction applied.</strong> The real extension method
     /// <c>ValidateOnStart&lt;TOptions&gt;(this OptionsBuilder&lt;TOptions&gt;)</c> is declared in
     /// the <c>Microsoft.Extensions.Options</c> NuGet package, but under the
-    /// <c>Microsoft.Extensions.DependencyInjection</c> namespace — the real, shipped
-    /// <c>RedisConnectionCoreExtensions.AddRedisConnection</c> resolves it that way, confirmed by
-    /// direct inspection before this test was written, per this rule's own "confirm, never assume"
-    /// instruction. Rule 6/T-340's design-time text in <c>state-map.md</c> was corrected to match
-    /// in the same pass.
+    /// <c>Microsoft.Extensions.DependencyInjection</c> namespace — not
+    /// <c>Microsoft.Extensions.Options.OptionsBuilderExtensions</c> as this phase's authoring-time
+    /// Rule 6 first named it.
     /// </para>
     /// <para>
-    /// <strong>No new <c>ProjectReference</c> needed.</strong> Unlike every other GATING
-    /// real-assembly test's Cross-Domain Dependency resolution in this file,
-    /// <c>SharedKernel.Caching.Redis.Core</c> was already referenced by
-    /// <c>SharedKernel.ArchitectureTests.Tests.csproj</c> (added for
-    /// <c>RedisTopologyRulesTests</c>) — this test simply reuses that existing reference.
-    /// </para>
-    /// <para>
-    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
-    /// asserting a deliberately-wrong callee method name against this exact real method, confirmed
-    /// to fail, then reverted before commit. The real call site
-    /// (<c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...)
-    /// .ValidateDataAnnotations().ValidateOnStart()</c>) lives directly in
-    /// <c>AddRedisConnection</c>'s own IL body, not inside a lambda closure, so no
-    /// closure-scanning extension is exercised by this particular call site (that extension
-    /// remains proven by T-318/T-328/T-331's own real call sites).
+    /// <strong>Non-vacuous.</strong> The call site
+    /// (<c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(configure)
+    /// .ValidateDataAnnotations().ValidateOnStart()</c>) lives directly in the overload's own IL body,
+    /// so neither closure scanning nor sibling delegation can satisfy it by accident.
     /// </para>
     /// </remarks>
     [Fact]
@@ -2049,12 +2030,59 @@ public class SecureDefaultsAssertionTests
 
         var act = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "AddRedisConnection", calleeDeclaringType, "ValidateOnStart");
+                declaringType,
+                "AddRedisConnection",
+                calleeDeclaringType,
+                "ValidateOnStart",
+                [typeof(IServiceCollection), typeof(Action<SharedKernel.Caching.Redis.Core.RedisConnectionOptions>)]);
 
         act.Should().NotThrow(
-            because: "the real, shipped AddRedisConnection still calls ValidateOnStart() so " +
+            because: "the real, shipped delegate overload of AddRedisConnection still calls ValidateOnStart() so " +
                      "RedisConnectionOptions's DataAnnotations are genuinely enforced eagerly at " +
-                     "host startup (WO-065, P-436)");
+                     "host startup (WO-065, P-436, P-547)");
+    }
+
+    /// <summary>
+    /// T-340b (P-547): the configuration overload
+    /// <c>AddRedisConnection(IServiceCollection, IConfiguration, Action&lt;RedisConnectionOptions&gt;?)</c>
+    /// registers its options through <c>SharedKernel.Configuration</c>'s <c>AddValidatedOptions</c>,
+    /// and <c>AddValidatedOptions</c>'s shared binding helper calls <c>ValidateOnStart</c> — so a
+    /// connection bound from configuration is validated at host startup too.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> follows delegation only
+    /// within one type, so the chain is locked in two links: the overload calls
+    /// <c>OptionsExtensions.AddValidatedOptions</c>, and every <c>AddValidatedOptions</c> overload
+    /// funnels into the single private <c>OptionsExtensions.BindAndValidateOnStart</c>, which calls
+    /// <c>ValidateOnStart</c>. Removing either call fails this test.
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RealAddRedisConnectionConfigurationOverload_ValidatesOnStartThroughAddValidatedOptions()
+    {
+        var registersThroughAddValidatedOptions = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                typeof(SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions),
+                "AddRedisConnection",
+                typeof(SharedKernel.Configuration.Extensions.OptionsExtensions),
+                "AddValidatedOptions",
+                [
+                    typeof(IServiceCollection),
+                    typeof(IConfiguration),
+                    typeof(Action<SharedKernel.Caching.Redis.Core.RedisConnectionOptions>),
+                ]);
+
+        var addValidatedOptionsValidatesOnStart = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                typeof(SharedKernel.Configuration.Extensions.OptionsExtensions),
+                "BindAndValidateOnStart",
+                typeof(Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions),
+                "ValidateOnStart");
+
+        registersThroughAddValidatedOptions.Should().NotThrow(
+            because: "the configuration overload of AddRedisConnection must register RedisConnectionOptions " +
+                     "through AddValidatedOptions (P-547)");
+        addValidatedOptionsValidatesOnStart.Should().NotThrow(
+            because: "AddValidatedOptions arms ValidateOnStart for every options type it registers (P-530)");
     }
 
     // ---------------------------------------------------------------------------

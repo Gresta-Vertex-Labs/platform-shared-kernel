@@ -1972,8 +1972,8 @@ RedisTopologyRules  (static class — caching package topology and abstractions-
         Rationale: a provider-shaped contract needs no provider dependency to leak in. The
         provider contracts live with their providers — IRedisChannelService in
         SharedKernel.Caching.Redis.PubSub, IRedisHashService/ITypedHashStore<T> in
-        SharedKernel.Caching.Redis.HashStore, ConnectionHealthState in SharedKernel.Caching.Redis.Core
-        — each in that package's root namespace, pinned by
+        SharedKernel.Caching.Redis.HashStore, IRedisConnectionProbe in SharedKernel.Caching.Redis.Core.Health
+        — each in that package's namespace, pinned by
         RedisTopologyRulesTests.ProviderSpecificContract_IsDeclaredByItsProviderPackage.
 
     .DistributedLockingNeverReferencesRedLock(Assembly distributedLockingAssembly) → ConditionList
@@ -1988,8 +1988,8 @@ RedisTopologyRules  (static class — caching package topology and abstractions-
           (permitted; the shared foundation)
         - Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub →
           SharedKernel.Caching.Abstractions (permitted; ICachingBuilder and the contracts they implement)
-        - Redis.Core references no SharedKernel.Caching package at all (P-547); ConnectionHealthState
-          is its own type.
+        - Redis.Core references no SharedKernel.Caching package at all (P-547); its readiness probe
+          (IRedisConnectionProbe/RedisConnectionHealth) is its own type.
         Any additional exemption must be documented here before it is applied in code.
 
     Note: every factory method takes assemblies supplied by the consuming test project via
@@ -4522,7 +4522,14 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     payload, confirming a 95-byte stored output against an 8249-byte (16498/2) encrypt-only baseline,
     plus a round-trip-correctness precondition; Technique B
     (`AssertMethodBodyInvokesMethod_RealAddRedisConnection_ValidateOnStartCallSiteHolds`, T-340)
-    re-points the corrected callee at the real `AddRedisConnection`. Verified non-vacuous: a temporary
+    re-points the corrected callee at the real `AddRedisConnection`. **Re-locked for P-547:**
+    `AddRedisConnection` now has two overloads, so T-340 selects the
+    `(IServiceCollection, Action<RedisConnectionOptions>)` overload by parameter types (it calls
+    `ValidateOnStart` directly), and the companion
+    `AssertMethodBodyInvokesMethod_RealAddRedisConnectionConfigurationOverload_ValidatesOnStartThroughAddValidatedOptions`
+    locks the `(IServiceCollection, IConfiguration, Action<RedisConnectionOptions>?)` overload in two links —
+    it calls `OptionsExtensions.AddValidatedOptions`, and `OptionsExtensions.BindAndValidateOnStart` (where
+    every `AddValidatedOptions` overload ends) calls `ValidateOnStart`. Verified non-vacuous: a temporary
     sanity test (removed before commit) inverted Technique A's size expectation (confirmed to fail — 95
     actual vs. a required >16498) and pointed Technique B at a deliberately-wrong callee method name
     (confirmed to fail) against these same real types. 241/241 `SharedKernel.ArchitectureTests.Tests`
@@ -5371,7 +5378,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `RedisTopologyRules.PubSubNeverReferencesMessaging` and `RedisTopologyRules.MessagingNeverReferencesCaching` are directional converses of each other and must both be asserted — NetArchTest dependency checks are one-directional, so passing one does not imply the other passes. Both reuse the `"SharedKernel.Messaging"` / `"SharedKernel.Caching"` prefix-matching convention already established by `MessagingArchitectureRules` and `CachingAbstractionRules` respectively — these two terms have no trailing dot and are deliberately broad prefixes (they must match every sub-namespace of the respective capability).
 - `RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies` forbids every caching provider (`SharedKernel.Caching.Redis` prefix, `SharedKernel.Caching.FusionCache`), every provider library (`StackExchange.Redis`, `ZiggyCreatures`, `RedLockNet`, `Polly`, `Microsoft.Extensions.Caching`), the options and hosting stacks (`Microsoft.Extensions.Options`, `Microsoft.Extensions.Hosting` — added P-547, when options types and hosted services left the package), EF Core and MassTransit. The term `"SharedKernel.Caching.Redis"` is used WITHOUT a trailing dot deliberately — the abstractions package cannot self-collide with it, and the prefix catches all five Redis packages in one term. Because namespace terms cannot separate two assemblies sharing a namespace, it is always asserted together with `CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions`.
 - `AssemblyReferenceAllowListPredicate` (`Predicates/`, P-547) takes the allowed assembly simple names as `params string[]` and treats `System`, `System.*`, `mscorlib` and `netstandard` as always allowed. It checks `TypeDefinition.Module.AssemblyReferences`, so it fails every type once the assembly gains an unlisted reference — expected, since the violation is the assembly's. Reusable for any other package whose contract is "references only X".
-- `RedisTopologyRules.CachingAbstractionsDeclaresNoProviderSpecificTypes` matches simple type names against `Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection`. The companion theory `ProviderSpecificContract_IsDeclaredByItsProviderPackage` pins `IRedisChannelService` → `SharedKernel.Caching.Redis.PubSub`, `IRedisHashService`/`ITypedHashStore<T>` → `SharedKernel.Caching.Redis.HashStore`, and `ConnectionHealthState` → `SharedKernel.Caching.Redis.Core` (assembly and root namespace).
+- `RedisTopologyRules.CachingAbstractionsDeclaresNoProviderSpecificTypes` matches simple type names against `Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection`. The companion theory `ProviderSpecificContract_IsDeclaredByItsProviderPackage` pins `IRedisChannelService` → `SharedKernel.Caching.Redis.PubSub`, `IRedisHashService`/`ITypedHashStore<T>` → `SharedKernel.Caching.Redis.HashStore`, and `IRedisConnectionProbe` → `SharedKernel.Caching.Redis.Core` (assembly; namespace `SharedKernel.Caching.Redis.Core.Health`). `ConnectionHealthState`, `RedisConnectionHealthTracker` and the Redis circuit breaker were removed in the P-547 redesign; the theory now takes the expected namespace as a separate argument.
 - `RedisTopologyRules.DistributedLockingNeverReferencesRedLock` locks the Lua-script lock implementation in place: RedLock.net cannot issue a fencing token atomically with acquisition.
 - `RedisTopologyRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `CachingAbstractionRules.cs`. It introduces no new NuGet dependency — the project's existing `NetArchTest.Rules` and `Mono.Cecil` references cover every method.
 - In-memory fixture assemblies compiled via `CSharpCompilation`/`Assembly.LoadFrom` for `RedisTopologyRulesTests` MUST use assembly names that do not collide with real `ProjectReference`d assemblies already loaded in the test `AssemblyLoadContext` (e.g., name a `SharedKernel.Caching.Redis.HashStore`-shaped fixture `"Fixture.<Scenario>.SharedKernel.Caching.Redis.HashStore"`, not `"SharedKernel.Caching.Redis.HashStore"`). `Assembly.LoadFrom(path)` for a simple name matching an already-loaded assembly returns the ALREADY-LOADED real assembly, not the fixture, causing `CS0234`/missing-type failures. Cross-fixture `MetadataReference`s must be built via `MetadataReference.CreateFromImage(ImmutableArray<byte>)` from the in-memory emitted bytes, not `CreateFromFile(Assembly.Location)`.

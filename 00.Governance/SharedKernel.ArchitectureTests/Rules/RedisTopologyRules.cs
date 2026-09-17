@@ -29,8 +29,8 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Provider-specific contracts live in the package that implements them:
 /// <c>IRedisChannelService</c> in <c>SharedKernel.Caching.Redis.PubSub</c>,
 /// <c>IRedisHashService</c>/<c>ITypedHashStore&lt;T&gt;</c> in
-/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>ConnectionHealthState</c> in
-/// <c>SharedKernel.Caching.Redis.Core</c>.
+/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>IRedisConnectionProbe</c> in
+/// <c>SharedKernel.Caching.Redis.Core.Health</c>.
 /// </para>
 /// <para>
 /// <strong>Matching note:</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> compares
@@ -159,10 +159,10 @@ public static class RedisTopologyRules
     /// <summary>
     /// Matches a type name that names a caching provider or a provider-side concept. A
     /// provider-neutral contract has no Redis channel, hash store, FusionCache option, RedLock
-    /// handle, or connection health state — those belong to the provider packages
+    /// handle, or connection health check — those belong to the provider packages
     /// (<c>IRedisChannelService</c> in <c>.Redis.PubSub</c>, <c>IRedisHashService</c>/
-    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, <c>ConnectionHealthState</c> in
-    /// <c>.Redis.Core</c>).
+    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, <c>IRedisConnectionProbe</c> in
+    /// <c>.Redis.Core.Health</c>).
     /// </summary>
     private const string ProviderSpecificTypeNamePattern =
         "Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection";
@@ -182,7 +182,7 @@ public static class RedisTopologyRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Rationale:</strong> <c>Redis.Core</c> is the shared connection/health/resilience
+    /// <strong>Rationale:</strong> <c>Redis.Core</c> is the shared connection and health-probe
     /// foundation. A reference from Core to any capability package is a layering inversion —
     /// capability packages depend on Core, never the reverse.
     /// </para>
@@ -506,10 +506,10 @@ public static class RedisTopologyRules
     /// <strong>Rationale:</strong> the dependency rules above stop the abstractions package from
     /// <em>using</em> a provider, but a provider-shaped contract can be written with no provider
     /// dependency at all — <c>IRedisChannelService</c>, <c>IRedisHashService</c>,
-    /// <c>ITypedHashStore&lt;T&gt;</c> and <c>ConnectionHealthState</c> once lived here that way.
-    /// Those contracts now belong to the package that implements them:
-    /// <c>SharedKernel.Caching.Redis.PubSub</c>, <c>SharedKernel.Caching.Redis.HashStore</c> and
-    /// <c>SharedKernel.Caching.Redis.Core</c>.
+    /// <c>ITypedHashStore&lt;T&gt;</c> and a <c>ConnectionHealthState</c> enum once lived here that way.
+    /// Those contracts now belong to the package that implements them —
+    /// <c>SharedKernel.Caching.Redis.PubSub</c> and <c>SharedKernel.Caching.Redis.HashStore</c> — and
+    /// connection health is now <c>IRedisConnectionProbe</c> in <c>SharedKernel.Caching.Redis.Core.Health</c>.
     /// </para>
     /// <para>
     /// Matching is a case-sensitive regular expression over the simple type name, so compiler-
@@ -564,7 +564,7 @@ public static class RedisTopologyRules
     /// </remarks>
     /// <param name="distributedLockingAssembly">
     /// The <c>SharedKernel.Caching.Redis.DistributedLocking</c> assembly under test — supply via
-    /// <c>typeof(RedisLockOptions).Assembly</c>.
+    /// <c>typeof(RedisDistributedLockingExtensions).Assembly</c>.
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via <c>AssertRule</c> on
