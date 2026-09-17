@@ -39,8 +39,11 @@ public sealed class MinioContainerFixture : IAsyncLifetime
 {
     private const string DefaultBucketName = "sharedkernel-test-bucket";
 
+    // quay.io, not Docker Hub: MinIO removed the minio/minio repository from Docker Hub around
+    // 2026-09-12, so the unqualified reference fails to pull on any machine without a cached copy.
+    // Same release tag, same image — only the registry changed.
     private readonly MinioContainer _container = new MinioBuilder(
-        "minio/minio:RELEASE.2024-01-16T16-07-38Z").Build();
+        "quay.io/minio/minio:RELEASE.2024-01-16T16-07-38Z").Build();
 
     private bool _started;
 
