@@ -1,70 +1,56 @@
-using System.ComponentModel.DataAnnotations;
-using SharedKernel.Caching.Redis.Core;
+using SharedKernel.Configuration;
 
 namespace SharedKernel.Caching.Redis.Extensions;
 
 /// <summary>
-/// Configuration options for the Redis L2 distributed backplane.
-/// Bound to <c>SharedKernel:Caching:Redis</c> section in application configuration.
+/// Settings for the Redis distributed layer and backplane, bound from the
+/// <c>SharedKernel:Caching:Redis:L2</c> configuration section or set in code.
 /// </summary>
-public sealed class RedisL2Options
+/// <remarks>
+/// The connection itself (connection string, TLS, timeouts) is configured once with
+/// <c>AddRedisConnection</c>. Every setting here is read when the cache is first resolved and validated at
+/// host startup.
+/// </remarks>
+/// <example>
+/// <code>
+/// // appsettings.json
+/// // "SharedKernel": { "Caching": { "Redis": { "ConnectionString": "redis:6379",
+/// //                                          "L2": { "KeyPrefix": "staging:" } } } }
+/// </code>
+/// </example>
+public sealed class RedisL2Options : ISectionBoundOptions
 {
-    /// <summary>
-    /// The configuration section name used when binding these options from
-    /// <c>IConfiguration</c>.
-    /// </summary>
-    public const string SectionName = "SharedKernel:Caching:Redis";
+    /// <summary>Gets the configuration section path: <c>SharedKernel:Caching:Redis:L2</c>.</summary>
+    public static string SectionName => "SharedKernel:Caching:Redis:L2";
 
     /// <summary>
-    /// StackExchange.Redis connection string.
-    /// Required; must not be null or whitespace.
+    /// Gets or sets a prefix for every key the distributed layer writes. Defaults to empty.
     /// </summary>
-    [Required]
-    public string ConnectionString { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional Redis key prefix applied to all cache entries written to L2.
-    /// Useful when multiple services share the same Redis instance.
-    /// Defaults to an empty string (no prefix).
-    /// </summary>
+    /// <remarks>
+    /// Cache keys already start with the service name. Use a prefix only to separate environments or
+    /// deployments that share one Redis database. The stored key is <c>{KeyPrefix}v2:{cache key}</c> (FusionCache adds <c>v2:</c>), and the prefix
+    /// also becomes the backplane channel prefix, so notifications stay within the deployment. At most 64 characters.
+    /// </remarks>
     public string KeyPrefix { get; set; } = string.Empty;
 
     /// <summary>
-    /// Connection timeout in milliseconds for the Redis multiplexer.
-    /// Defaults to <c>5000</c> ms.
-    /// </summary>
-    [Range(100, 60_000, ErrorMessage = "ConnectTimeout must be between 100 ms and 60 000 ms.")]
-    public int ConnectTimeoutMs { get; set; } = 5_000;
-
-    /// <summary>
-    /// Opt-in Polly v8 circuit breaker configuration for Redis L2 operations.
-    /// When <see cref="RedisCircuitBreakerOptions.Enabled"/> is <see langword="false"/> (the
-    /// default), no Polly pipeline is registered and all existing behavior is preserved unchanged.
+    /// Gets or sets how long the cache stops using the distributed layer after an operation on it fails.
+    /// Defaults to 2 seconds; <see cref="TimeSpan.Zero"/> turns the circuit breaker off.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// As of Phase 33, this property is the canonical, top-level
-    /// <see cref="RedisCircuitBreakerOptions"/> type from
-    /// <c>SharedKernel.Caching.Redis.Core</c> — previously a class nested inside
-    /// <see cref="RedisL2Options"/>. This is a type relocation, not a rename:
-    /// <c>options.CircuitBreaker.Enabled = true</c> continues to compile unchanged.
-    /// </para>
-    /// <para>
-    /// When <see cref="RedisCircuitBreakerOptions.Enabled"/> is <see langword="true"/>, a Polly
-    /// <c>ResiliencePipeline</c> singleton is registered in DI via
-    /// <c>SharedKernel.Caching.Redis.Core.Extensions.RedisCircuitBreakerExtensions.AddRedisCircuitBreaker</c>.
-    /// When the circuit is open, Redis operations short-circuit immediately — FusionCache
-    /// fail-safe serves stale L1 data with zero Redis wait time, eliminating timeout
-    /// accumulation during outages.
-    /// </para>
-    /// <para>
-    /// FusionCache's own fail-safe is not replaced — the circuit breaker is complementary
-    /// and fires before the FusionCache timeout logic is reached.
-    /// </para>
-    /// <para>
-    /// <b>AOT compatibility:</b> Polly.Core 8.x is AOT-compatible. No reflection is used
-    /// by the circuit breaker strategy.
-    /// </para>
+    /// While the circuit is open, reads and writes use the memory cache only, with fail-safe values when the
+    /// policy allows them, so an unreachable Redis does not add a timeout to every request. Between zero and
+    /// 10 minutes.
     /// </remarks>
-    public RedisCircuitBreakerOptions CircuitBreaker { get; } = new();
+    public TimeSpan DistributedCacheCircuitBreakerDuration { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Gets or sets how long the cache stops using the backplane after an operation on it fails.
+    /// Defaults to 2 seconds; <see cref="TimeSpan.Zero"/> turns the circuit breaker off.
+    /// </summary>
+    /// <remarks>
+    /// While the circuit is open, removals and expirations are not sent to other instances, which keep their
+    /// memory entries until those expire. Between zero and 10 minutes.
+    /// </remarks>
+    public TimeSpan BackplaneCircuitBreakerDuration { get; set; } = TimeSpan.FromSeconds(2);
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -18,14 +19,10 @@ namespace SharedKernel.Caching.Redis.Tests;
 /// </para>
 ///
 /// <para>
-/// Verified effective L2 key format:
-/// <c>{KeyPrefix}v2:{user-key}</c>
-/// </para>
-/// <para>
-/// The <c>v2:</c> segment is a schema-version marker prepended by
-/// <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> (v10+) after the
-/// <c>InstanceName</c> (= <c>KeyPrefix</c>). It is not added by FusionCache or by
-/// the SharedKernel caching layer.
+/// Verified effective L2 key format: <c>{KeyPrefix}v2:{user-key}</c>, one Redis string per entry. The distributed
+/// layer (<c>RedisDistributedCache</c>) writes <c>{KeyPrefix}{key it is given}</c>; the <c>v2:</c> segment is
+/// FusionCache's own wire-format marker (<c>FusionCacheOptions.DistributedCacheKeyModifierMode</c>, default
+/// <c>Prefix</c>), prepended before the key reaches the distributed layer.
 /// </para>
 /// </summary>
 [Collection("Redis")]
@@ -34,16 +31,10 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
     private const string KeyPrefix = "myservice";
     private const string UserKey = "prefix-test:entry:1";
 
-    /// <summary>
-    /// The schema-version separator inserted by
-    /// <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> v10+
-    /// between the <c>InstanceName</c> (KeyPrefix) and the user key.
-    /// </summary>
-    private const string RedisSchemaVersionSeparator = "v2:";
+    /// <summary>FusionCache's distributed wire-format marker, prepended to every key it hands the distributed layer.</summary>
+    private const string FusionCacheWireFormatSegment = "v2:";
 
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7-alpine").Build();
 
     private ServiceProvider? _provider;
 
@@ -53,11 +44,9 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = _redisContainer.GetConnectionString());
         services.AddSharedKernelCaching(o => o.ServiceName = "prefix-test-svc")
-                .AddRedisL2(_redisContainer.GetConnectionString(), o =>
-                {
-                    o.KeyPrefix = KeyPrefix;
-                });
+                .AddRedisL2(o => o.KeyPrefix = KeyPrefix);
 
         _provider = services.BuildServiceProvider();
     }
@@ -78,13 +67,6 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
     /// Redis keyspace via <c>KeyExistsAsync</c> to confirm the effective key format is
     /// <c>{KeyPrefix}v2:{user-key}</c>.
     ///
-    /// <para>
-    /// The <c>v2:</c> schema-version separator is appended by
-    /// <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> v10+ after the
-    /// <c>InstanceName</c>. This is an implementation detail of that library — SharedKernel
-    /// does not add it.
-    /// </para>
-    ///
     /// The test fails if the expected key is not found, verifying that the prefix wiring is
     /// not silently dropped.
     /// </summary>
@@ -100,14 +82,15 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
         var db = Multiplexer.GetDatabase();
 
         // Effective key: {KeyPrefix}v2:{user-key}
-        // The "v2:" schema marker is prepended by Microsoft.Extensions.Caching.StackExchangeRedis v10+.
-        var expectedKey = $"{KeyPrefix}{RedisSchemaVersionSeparator}{UserKey}";
+        var expectedKey = $"{KeyPrefix}{FusionCacheWireFormatSegment}{UserKey}";
         var keyExists = await db.KeyExistsAsync(expectedKey);
 
         Assert.True(keyExists,
             $"Expected to find Redis key '{expectedKey}' but it was not present. " +
             $"This means the KeyPrefix '{KeyPrefix}' is not being applied to L2 entries, " +
-            $"or the key format has changed from the expected '{KeyPrefix}{RedisSchemaVersionSeparator}{{user-key}}'.");
+            $"or the key format has changed from the expected '{KeyPrefix}{FusionCacheWireFormatSegment}{{user-key}}'.");
+        Assert.Equal(RedisType.String, await db.KeyTypeAsync(expectedKey));
+        Assert.False(await db.KeyExistsAsync(FusionCacheWireFormatSegment + UserKey), "The unprefixed key must not be written.");
     }
 
     /// <summary>
@@ -144,7 +127,7 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
         var server = Multiplexer.GetServer(_redisContainer.GetConnectionString());
 
         // All keys written by this instance should start with {KeyPrefix}v2:.
-        var prefixedKeys = server.Keys(pattern: $"{KeyPrefix}{RedisSchemaVersionSeparator}*")
+        var prefixedKeys = server.Keys(pattern: $"{KeyPrefix}{FusionCacheWireFormatSegment}*")
             .Select(k => k.ToString())
             .ToList();
 
@@ -157,22 +140,21 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
 
     /// <summary>
     /// Verifies that when <c>KeyPrefix</c> is empty (default), entries are stored under
-    /// the schema-version key format <c>v2:{user-key}</c> without any additional prefix.
+    /// <c>v2:{user-key}</c> without any additional prefix.
     /// </summary>
     [Fact]
     public async Task SetAsync_WithoutKeyPrefix_RawRedisKeyHasNoExtraPrefix()
     {
         // Spin up a separate container + provider for the no-prefix scenario.
-        await using var container = new RedisBuilder()
-            .WithImage("redis:7-alpine")
-            .Build();
+        await using var container = new RedisBuilder("redis:7-alpine").Build();
 
         await container.StartAsync();
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = container.GetConnectionString());
         services.AddSharedKernelCaching(o => o.ServiceName = "noprefix-test-svc")
-                .AddRedisL2(container.GetConnectionString());  // no KeyPrefix
+                .AddRedisL2();  // no KeyPrefix
 
         await using var provider = services.BuildServiceProvider();
 
@@ -186,11 +168,11 @@ public sealed class L2KeyPrefixIntegrationTests : IAsyncLifetime
         var db = multiplexer.GetDatabase();
 
         // Without a KeyPrefix the effective key is just v2:{user-key}.
-        var expectedKey = $"{RedisSchemaVersionSeparator}{userKey}";
+        var expectedKey = $"{FusionCacheWireFormatSegment}{userKey}";
         var keyExists = await db.KeyExistsAsync(expectedKey);
 
         Assert.True(keyExists,
             $"Expected to find Redis key '{expectedKey}' but it was not present. " +
-            $"Redis schema-version key format may have changed.");
+            $"The L2 key format may have changed.");
     }
 }

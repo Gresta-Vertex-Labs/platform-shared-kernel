@@ -1,0 +1,13 @@
+#nullable enable
+SharedKernel.Caching.Redis.Extensions.RedisL2Options
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.BackplaneCircuitBreakerDuration.get -> System.TimeSpan
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.BackplaneCircuitBreakerDuration.set -> void
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.DistributedCacheCircuitBreakerDuration.get -> System.TimeSpan
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.DistributedCacheCircuitBreakerDuration.set -> void
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.KeyPrefix.get -> string!
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.KeyPrefix.set -> void
+SharedKernel.Caching.Redis.Extensions.RedisL2Options.RedisL2Options() -> void
+SharedKernel.Caching.Redis.Extensions.RedisServiceCollectionExtensions
+static SharedKernel.Caching.Redis.Extensions.RedisL2Options.SectionName.get -> string!
+static SharedKernel.Caching.Redis.Extensions.RedisServiceCollectionExtensions.AddRedisL2(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Caching.Redis.Extensions.RedisL2Options!>? configure = null) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.Redis.Extensions.RedisServiceCollectionExtensions.AddRedisL2(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder, System.Action<SharedKernel.Caching.Redis.Extensions.RedisL2Options!>? configure = null) -> SharedKernel.Caching.Abstractions.ICachingBuilder!

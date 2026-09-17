@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -21,7 +22,7 @@ namespace SharedKernel.Caching.Redis.Tests.Integration;
 /// constructs a single shared <see cref="ServiceProvider"/>, which cannot distinguish "works
 /// across pods" from "works within one process." This suite builds <strong>two</strong> fully
 /// independent DI containers — each with its own <c>IConnectionMultiplexer</c> (via its own
-/// <c>AddRedisConnection</c> call inside <c>AddRedisL2</c>), its own L1 <c>MemoryCache</c>, and
+/// <c>AddRedisConnection</c> call, shared by its distributed cache and backplane), its own L1 <c>MemoryCache</c>, and
 /// its own <c>IFusionCache</c> instance — both pointed at the same Testcontainers Redis
 /// connection string and the same <c>CachingOptions.ServiceName</c>.
 /// </para>
@@ -45,9 +46,7 @@ public sealed class CrossInstanceTagInvalidationTests : IAsyncLifetime
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7-alpine").Build();
 
     private ServiceProvider? _providerA;
     private ServiceProvider? _providerB;
@@ -88,9 +87,10 @@ public sealed class CrossInstanceTagInvalidationTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = connectionString);
         services
             .AddSharedKernelCaching(o => o.ServiceName = "cross-instance-svc")
-            .AddRedisL2(connectionString);
+            .AddRedisL2();
 
         return services.BuildServiceProvider();
     }
@@ -205,23 +205,23 @@ public sealed class CrossInstanceTagInvalidationTests : IAsyncLifetime
         await cacheA.GetOrSetAsync(localKey + ":gos", _ => ValueTask.FromResult("local-gos"), CachePolicy.Default.LocalOnly());
         await cacheA.SetAsync(sharedKey, "shared", CachePolicy.Default);
 
-        // The control entry proves L2 writes do land under "v2:{key}" in this topology.
+        // The control entry proves L2 writes land under "v2:{key}" (FusionCache's wire-format marker, no KeyPrefix) in this topology.
         var sharedWritten = await PollUntilAsync(
-            () => redis.KeyExistsAsync(RedisSchemaVersionPrefix + sharedKey),
+            () => redis.KeyExistsAsync(FusionCacheWireFormatSegment + sharedKey),
             exists => exists,
             PollTimeout,
             PollInterval);
         Assert.True(sharedWritten);
 
         Assert.Equal("local", (await cacheA.TryGetAsync<string>(localKey)).Value);
-        Assert.False(await redis.KeyExistsAsync(RedisSchemaVersionPrefix + localKey));
-        Assert.False(await redis.KeyExistsAsync(RedisSchemaVersionPrefix + localKey + ":gos"));
+        Assert.False(await redis.KeyExistsAsync(FusionCacheWireFormatSegment + localKey));
+        Assert.False(await redis.KeyExistsAsync(FusionCacheWireFormatSegment + localKey + ":gos"));
         Assert.Empty(RedisServerKeys(localKey));
         Assert.False((await cacheB.TryGetAsync<string>(localKey)).IsHit);
         Assert.Equal("shared", (await cacheB.TryGetAsync<string>(sharedKey)).Value);
     }
 
-    private const string RedisSchemaVersionPrefix = "v2:";
+    private const string FusionCacheWireFormatSegment = "v2:";
 
     private IEnumerable<RedisKey> RedisServerKeys(string fragment)
     {

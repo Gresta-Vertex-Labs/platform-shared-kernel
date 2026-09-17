@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using Xunit;
 
@@ -66,8 +67,9 @@ public sealed class L1FallbackTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = "localhost:6379");
         services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
-                .AddRedisL2("localhost:6379");
+                .AddRedisL2();
 
         using var provider = services.BuildServiceProvider();
 

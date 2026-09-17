@@ -4,22 +4,19 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <!-- Version floor raised to match SharedKernel.Testing -> SharedKernel.Application.Behaviors's transitive minimum (NU1605 downgrade guard) -->
-    <PackageReference Include="Polly.Core" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="NSubstitute" />
     <!-- Testcontainers Redis for integration tests -->
     <PackageReference Include="Testcontainers.Redis" />
     <!-- DI host for integration-style DI registration tests -->
-    <!-- Version floor raised to match SharedKernel.Testing's transitive minimum (NU1605 downgrade guard) -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <!-- Logging null provider for tests -->
-    <!-- Version floor raised to match SharedKernel.Testing -> Microsoft.Extensions.Http's transitive minimum (NU1605 downgrade guard) -->
+    <!-- Logging for tests -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- ConfigurationBuilder/AddInMemoryCollection for SharedKernel:Caching:Redis:L2 binding tests -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
@@ -27,7 +24,7 @@
     <ProjectReference Include="..\SharedKernel.Caching.Redis.csproj" />
     <!-- SharedKernel.Caching.FusionCache needed for L1FallbackTests and RedisL2IntegrationTests (AddSharedKernelCaching, CachePolicy) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
-    <!-- SharedKernel.Testing provides FakeCacheService, FakeDistributedLockService, FakeRenewableLock -->
+    <!-- SharedKernel.Testing provides FakeEncryptionKeyProvider -->
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>

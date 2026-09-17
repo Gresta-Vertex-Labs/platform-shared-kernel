@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using Testcontainers.Redis;
 using Xunit;
@@ -14,9 +15,7 @@ namespace SharedKernel.Caching.Redis.Tests;
 [Collection("Redis")]
 public sealed class RedisL2IntegrationTests : IAsyncLifetime
 {
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7-alpine").Build();
 
     private ServiceProvider? _provider;
 
@@ -26,8 +25,9 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = _redisContainer.GetConnectionString());
         services.AddSharedKernelCaching(o => o.ServiceName = "test-svc")
-                .AddRedisL2(_redisContainer.GetConnectionString());
+                .AddRedisL2();
 
         _provider = services.BuildServiceProvider();
     }

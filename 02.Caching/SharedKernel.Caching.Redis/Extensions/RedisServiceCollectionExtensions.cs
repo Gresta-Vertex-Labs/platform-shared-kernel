@@ -1,124 +1,148 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Configuration.Extensions;
+using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 
 namespace SharedKernel.Caching.Redis.Extensions;
 
 /// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering the Redis L2 distributed
-/// backplane for FusionCache.
+/// <see cref="ICachingBuilder"/> extension methods that add Redis as the distributed layer and backplane of
+/// the cache registered by <c>AddSharedKernelCaching</c>.
 /// </summary>
 public static class RedisServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds the Redis L2 distributed backplane to the FusionCache instance registered by
-    /// <c>AddSharedKernelCaching</c>. Must be called <b>after</b> <c>AddSharedKernelCaching</c>.
+    /// Adds Redis as the distributed layer and backplane, with <see cref="RedisL2Options"/> set in code (or left
+    /// at their defaults) and validated at startup.
     /// </summary>
-    /// <param name="builder">
-    /// The caching builder returned by <c>AddSharedKernelCaching</c>.
-    /// </param>
-    /// <param name="connectionString">
-    /// A StackExchange.Redis connection string (e.g., <c>"localhost:6379"</c>).
-    /// Must not be null or whitespace.
-    /// </param>
-    /// <param name="configure">
-    /// Optional delegate to customise <see cref="RedisL2Options"/>. When <see langword="null"/>
-    /// the defaults are used.
-    /// </param>
-    /// <returns>The same <paramref name="builder"/> to allow further chaining.</returns>
+    /// <param name="builder">The builder returned by <c>AddSharedKernelCaching</c>.</param>
+    /// <param name="configure">Optional changes to the defaults.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddRedisConnection</c> has not been called, or the distributed layer is already registered.
+    /// </exception>
     /// <remarks>
-    /// <para>
-    /// <b>Effective L2 key format:</b> <c>{KeyPrefix}v2:{user-key}</c>
-    /// </para>
-    /// <para>
-    /// <see cref="RedisL2Options.KeyPrefix"/> is passed to
-    /// <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> as its <c>InstanceName</c>.
-    /// That library (v10+) prepends the instance name and a schema-version marker (<c>v2:</c>)
-    /// to every key it writes to Redis. For example, a cache entry with user key
-    /// <c>"myservice:order:42"</c> and <c>KeyPrefix = "myapp"</c> will be stored in Redis
-    /// as <c>"myappv2:myservice:order:42"</c>.
-    /// </para>
-    /// <para>
-    /// When <see cref="RedisL2Options.KeyPrefix"/> is empty (the default) the effective
-    /// Redis key is <c>"v2:{user-key}"</c>.
-    /// </para>
-    /// <para>
-    /// No additional prefix is applied by FusionCache — the FusionCache
-    /// <c>CacheKeyPrefix</c> option is not set by <c>AddSharedKernelCaching</c> or
-    /// <c>AddRedisL2</c>. There is no double-prefixing: the layout is
-    /// <c>[InstanceName][v2:][user-key]</c>, contributed by three distinct layers
-    /// (configuration, Redis library, and caller), each exactly once.
-    /// </para>
+    /// Entries are written to Redis as well as to memory, so every instance of the service shares them, and the
+    /// backplane carries removals, expirations, tag evictions and clears to every instance. Both use the shared
+    /// connection from <c>AddRedisConnection</c>, so its TLS settings and timeouts apply. Entries created with
+    /// <see cref="CachePolicy.LocalOnly"/> stay in memory.
     /// </remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddRedisConnection(o => o.ConnectionString = "localhost:6379");
+    /// builder.Services.AddSharedKernelCaching(o => o.ServiceName = "orders").AddRedisL2();
+    /// </code>
+    /// </example>
     public static ICachingBuilder AddRedisL2(
         this ICachingBuilder builder,
-        string connectionString,
         Action<RedisL2Options>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-
-        var options = new RedisL2Options { ConnectionString = connectionString };
-        configure?.Invoke(options);
-
         var services = builder.Services;
+        EnsureCanRegister(services);
 
-        // Register the shared IConnectionMultiplexer singleton (and connection health tracker)
-        // via SharedKernel.Caching.Redis.Core, if not already registered. This allows
-        // RedisChannelService and RedisHashService to reuse the same connection — first
-        // caller wins (TryAddSingleton), idempotent across multiple Add* calls.
-        services.AddRedisConnection(options.ConnectionString, coreOptions =>
-        {
-            coreOptions.ConnectTimeoutMs = options.ConnectTimeoutMs;
-        });
+        var options = services.AddOptions<RedisL2Options>();
+        if (configure is not null)
+            options.Configure(configure);
+        options.ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RedisL2Options>, RedisL2OptionsValidator>());
 
-        // Register the Redis IDistributedCache for FusionCache L2 storage.
-        services.AddStackExchangeRedisCache(redisOptions =>
-        {
-            redisOptions.Configuration = options.ConnectionString;
-            if (!string.IsNullOrEmpty(options.KeyPrefix))
-                redisOptions.InstanceName = options.KeyPrefix;
-        });
-
-        // Wire the registered IDistributedCache into FusionCache as L2 +
-        // register the backplane for cross-node invalidation notifications.
-        //
-        // IMPORTANT (Phase 18 AOT fix): Do NOT call .WithSystemTextJsonSerializer() here.
-        // AddSharedKernelCaching already registered an IFusionCacheSerializer (potentially
-        // configured with the user's SerializerContext for NativeAOT safety) via
-        // WithRegisteredSerializer(). Calling .WithSystemTextJsonSerializer() again would
-        // silently overwrite that registration with a reflection-based default, causing
-        // NativeAOT builds to fail at runtime.
-        //
-        // .WithRegisteredSerializer() instructs FusionCache to resolve IFusionCacheSerializer
-        // from the DI container, picking up whatever AddSharedKernelCaching (and optionally
-        // AddBrotliCompression) registered — whether the plain STJ serializer or a BrotliCacheSerializer
-        // decorator wrapping it.
-        services
-            .AddFusionCache()
-            .WithRegisteredDistributedCache()
-            .WithRegisteredSerializer()
-            .WithStackExchangeRedisBackplane(backplaneOptions =>
-            {
-                backplaneOptions.Configuration = options.ConnectionString;
-            });
-
-        // Register the opt-in Polly v8 circuit breaker pipeline via
-        // SharedKernel.Caching.Redis.Core. When options.CircuitBreaker.Enabled = false
-        // (the default), no Polly types are registered and all existing behavior is
-        // preserved unchanged. The FailureRatio=1.0/MinimumThroughput mapping that
-        // emulates count-based circuit breaking lives in AddRedisCircuitBreaker.
-        services.AddRedisCircuitBreaker(cbOptions =>
-        {
-            cbOptions.Enabled = options.CircuitBreaker.Enabled;
-            cbOptions.FailureThreshold = options.CircuitBreaker.FailureThreshold;
-            cbOptions.SamplingDuration = options.CircuitBreaker.SamplingDuration;
-            cbOptions.BreakDuration = options.CircuitBreaker.BreakDuration;
-            cbOptions.MinimumThroughput = options.CircuitBreaker.MinimumThroughput;
-        });
-
+        AddCore(services);
         return builder;
     }
+
+    /// <summary>
+    /// Adds Redis as the distributed layer and backplane, with <see cref="RedisL2Options"/> bound from the
+    /// <c>SharedKernel:Caching:Redis:L2</c> section and validated at startup.
+    /// </summary>
+    /// <param name="builder">The builder returned by <c>AddSharedKernelCaching</c>.</param>
+    /// <param name="configuration">The configuration root that contains the section; the section is optional.</param>
+    /// <param name="configure">Optional changes applied after binding.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddRedisConnection</c> has not been called, or the distributed layer is already registered.
+    /// </exception>
+    /// <remarks>See <see cref="AddRedisL2(ICachingBuilder, Action{RedisL2Options}?)"/>.</remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddRedisConnection(builder.Configuration);
+    /// builder.Services.AddSharedKernelCaching(builder.Configuration).AddRedisL2(builder.Configuration);
+    /// </code>
+    /// </example>
+    public static ICachingBuilder AddRedisL2(
+        this ICachingBuilder builder,
+        IConfiguration configuration,
+        Action<RedisL2Options>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configuration);
+        var services = builder.Services;
+        EnsureCanRegister(services);
+
+        services.AddValidatedOptions<RedisL2Options, RedisL2OptionsValidator>(configuration);
+        if (configure is not null)
+            services.Configure(configure);
+
+        AddCore(services);
+        return builder;
+    }
+
+    private static void EnsureCanRegister(IServiceCollection services)
+    {
+        services.EnsureRedisConnectionRegistered(nameof(AddRedisL2));
+
+        if (services.Any(d => d.ServiceType == typeof(RedisL2Marker)))
+            throw new InvalidOperationException("AddRedisL2 has already been called for this service collection.");
+    }
+
+    private static void AddCore(IServiceCollection services)
+    {
+        services.AddSingleton<RedisL2Marker>();
+
+        services.AddOptions<FusionCacheOptions>()
+            .Configure<IOptions<RedisL2Options>>((cache, l2) =>
+            {
+                cache.DistributedCacheCircuitBreakerDuration = l2.Value.DistributedCacheCircuitBreakerDuration;
+                cache.BackplaneCircuitBreakerDuration = l2.Value.BackplaneCircuitBreakerDuration;
+
+                // A key prefix separates deployments sharing one Redis; their backplane notifications are separated too.
+                if (!string.IsNullOrEmpty(l2.Value.KeyPrefix))
+                    cache.BackplaneChannelPrefix = l2.Value.KeyPrefix;
+            });
+
+        // WithRegisteredSerializer keeps the serializer AddSharedKernelCaching registered, including its
+        // SerializerContext and any Brotli or encryption decoration; never replace it with a default one here.
+        services
+            .AddFusionCache()
+            .WithRegisteredOptions()
+            // Handed to FusionCache only, never registered as IDistributedCache: it runs on the shared connection
+            // and nothing else may dispose it.
+            .WithDistributedCache(sp => new RedisDistributedCache(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<IOptions<RedisL2Options>>().Value.KeyPrefix,
+                // FusionCache computes absolute expirations from the system clock, so the TTL must use the same clock.
+                TimeProvider.System))
+            .WithRegisteredSerializer()
+            // The backplane reuses the shared connection through a wrapper that ignores Close and Dispose, because
+            // the FusionCache backplane disposes the connection it is given when it unsubscribes.
+            .WithBackplane(sp => new RedisBackplane(
+                Options.Create(new RedisBackplaneOptions
+                {
+                    ConnectionMultiplexerFactory = () => Task.FromResult<IConnectionMultiplexer>(
+                        new SharedConnectionMultiplexer(sp.GetRequiredService<IConnectionMultiplexer>())),
+                }),
+                sp.GetRequiredService<ILogger<RedisBackplane>>()));
+    }
+
+    // Marks that AddRedisL2 has run, so a second call fails instead of stacking registrations.
+    private sealed class RedisL2Marker;
 }

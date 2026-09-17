@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Testing.Cryptography;
@@ -22,12 +23,9 @@ internal sealed record CacheEncryptionAtRestPayload(string Secret, int Number);
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> (the <c>IDistributedCache</c>
-/// implementation <c>AddRedisL2</c> is built on) stores every entry as a Redis <b>Hash</b> —
-/// fields <c>absexp</c>/<c>sldexp</c>/<c>data</c> — via its own internal Lua script, never a plain
-/// Redis string. The actual serialized payload lives in the hash's <c>data</c> field, so this test
-/// reads via <see cref="IDatabase.HashGetAsync(RedisKey, RedisValue, CommandFlags)"/>, not
-/// <c>StringGetAsync</c> (which would fail with a Redis <c>WRONGTYPE</c> error against this key).
+/// The distributed layer <c>AddRedisL2</c> hands to FusionCache (<c>RedisDistributedCache</c>) stores every
+/// entry as one Redis <b>string</b> at <c>{KeyPrefix}v2:{cache key}</c> (<c>v2:</c> is FusionCache's wire-format marker), so this test reads the stored bytes with
+/// <see cref="IDatabase.StringGetAsync(RedisKey, CommandFlags)"/>.
 /// </para>
 /// <para>
 /// <c>EncryptedCacheService</c> encrypts at the <c>ICacheService</c> level and stores each value as a
@@ -42,17 +40,8 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
 {
     private const string UserKey = "encryption-test:entry:1";
     private const string KeyId = "cache-at-rest-v1";
-    private const string RedisSchemaVersionSeparator = "v2:";
 
-    /// <summary>
-    /// The hash field name <c>Microsoft.Extensions.Caching.StackExchangeRedis</c> uses to store
-    /// the actual serialized payload bytes.
-    /// </summary>
-    private const string RedisDataField = "data";
-
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7-alpine").Build();
 
     private ServiceProvider? _provider;
 
@@ -68,9 +57,10 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
         services.AddSingleton<ISymmetricEncryptionService>(
             new AesGcmEncryptionService(new FakeEncryptionKeyProvider(KeyId)));
 
+        services.AddRedisConnection(o => o.ConnectionString = _redisContainer.GetConnectionString());
         services
             .AddSharedKernelCaching(o => o.ServiceName = "encryption-test-svc")
-            .AddRedisL2(_redisContainer.GetConnectionString())
+            .AddRedisL2()
             .AddCacheEncryption();
 
         _provider = services.BuildServiceProvider();
@@ -89,8 +79,8 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
 
     /// <summary>
     /// Writes a value through <see cref="ICacheService.SetAsync{T}"/> with cache encryption
-    /// enabled, then reads the same key's <c>data</c> hash field with a raw
-    /// <see cref="IDatabase.HashGetAsync(RedisKey, RedisValue, CommandFlags)"/> call — bypassing
+    /// enabled, then reads the same key with a raw
+    /// <see cref="IDatabase.StringGetAsync(RedisKey, CommandFlags)"/> call — bypassing
     /// FusionCache/the SharedKernel serializer pipeline entirely. Asserts the raw bytes are genuine
     /// AES-GCM ciphertext: they contain neither the plaintext value nor any readable JSON of the
     /// original DTO, and the stored value parses as an <c>EncryptedPayload</c> under the expected key id.
@@ -105,13 +95,15 @@ public sealed class CacheEncryptionAtRestTests : IAsyncLifetime
         await Task.Delay(500);
 
         var db = Multiplexer.GetDatabase();
-        var expectedKey = $"{RedisSchemaVersionSeparator}{UserKey}";
+        // FusionCache prefixes the key it hands the distributed layer with its "v2:" wire-format marker.
+        var expectedKey = "v2:" + UserKey;
 
-        RedisValue raw = await db.HashGetAsync(expectedKey, RedisDataField);
+        Assert.Equal(RedisType.String, await db.KeyTypeAsync(expectedKey));
+        RedisValue raw = await db.StringGetAsync(expectedKey);
 
         Assert.True(
             raw.HasValue,
-            $"Expected to find Redis hash field '{expectedKey}'.'{RedisDataField}' but it was not present.");
+            $"Expected to find Redis string key '{expectedKey}' but it was not present.");
 
         byte[] rawBytes = raw!;
 
