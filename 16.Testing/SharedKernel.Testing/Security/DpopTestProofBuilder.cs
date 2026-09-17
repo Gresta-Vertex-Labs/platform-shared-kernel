@@ -1,65 +1,54 @@
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
 namespace SharedKernel.Testing.Security;
 
-/// <summary>
-/// Fluent builder that constructs a genuinely well-formed RFC 9449 DPoP proof JWT for use as an input
-/// fixture in a consuming service's own integration test.
-/// </summary>
+/// <summary>Builds a signed DPoP proof (RFC 9449) for tests.</summary>
 /// <remarks>
 /// <para>
-/// Produces a real ES256 signature over a freshly generated BCL <see cref="ECDsa"/> P-256 key pair,
-/// hand-rolled base64url <c>header.payload.signature</c> — zero third-party JWT library dependency.
-/// Only <see cref="WithMismatchedAth"/>/<see cref="WithMissingAth"/>/<see cref="WithMalformedAth"/> ever
-/// corrupt the <c>ath</c> claim; every other binding (<c>htm</c>/<c>htu</c>/<c>iat</c>/<c>jti</c>/the
-/// embedded <c>jwk</c>) is always correctly formed, so a consuming integration test proves GENUINE
-/// rejection logic against <c>12.Security</c>'s real (internal, unreachable from this package under any
-/// circumstance) <c>DpopProofValidator</c>, never a strawman.
+/// Signs with ES256 over a P-256 key: a new key per builder, or the key passed to <see cref="WithKey"/> so several
+/// proofs share one key, as a real client's do. <see cref="DpopTestProof.JwkThumbprint"/> is the value to put in
+/// the access token's <c>cnf.jkt</c> claim.
 /// </para>
 /// <para>
-/// References ZERO <c>SharedKernel.Security.Oidc</c> types — this builder's entire job is producing a
-/// presentable INPUT FIXTURE (proof JWT + companion access token) for a consuming test's own real, wired
-/// up DPoP validation pipeline, never a fake OF the validator. Built entirely on BCL
-/// <see cref="System.Security.Cryptography"/>/<see cref="System.Text.Json"/> — no new
-/// <c>PackageReference</c>.
-/// </para>
-/// <para>
-/// The freshly generated ECDsa key pair (and, for <see cref="WithMismatchedAth"/>'s deviation, the
-/// SHA-256 content hash) are inherent cryptographic material — not a violation of this package's
-/// determinism convention, which governs test-assertion-relevant defaults (<c>iat</c>, <c>jti</c>,
-/// access-token string), all of which default to fixed/deterministic values below.
+/// Defaults are fixed (<c>iat</c> 2024-01-01T00:00:00Z, a sequential <c>jti</c>, access token
+/// <c>dpop-test-access-token</c>), so pair the proof with a fake clock.
 /// </para>
 /// </remarks>
 public sealed class DpopTestProofBuilder
 {
-    private const string HeaderType = "dpop+jwt";
-    private const string Algorithm = "ES256";
     private const string DefaultAccessToken = "dpop-test-access-token";
 
     private static readonly DateTimeOffset DefaultIssuedAt = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static int _jtiSequence;
 
-    private readonly int _instanceSequence = Interlocked.Increment(ref _jtiSequence);
-
+    private ECDsa? _key;
     private string _httpMethod = "POST";
     private string _httpUri = "https://api.example.test/resource";
     private DateTimeOffset _issuedAt = DefaultIssuedAt;
-    private string _jti;
+    private string _jti = $"dpop-test-jti-{Interlocked.Increment(ref _jtiSequence):D6}";
     private string _accessToken = DefaultAccessToken;
+    private string? _nonce;
+    private string _type = "dpop+jwt";
     private AthMode _athMode = AthMode.Correct;
     private string? _malformedAthValue;
 
-    /// <summary>Initializes a new <see cref="DpopTestProofBuilder"/>.</summary>
-    public DpopTestProofBuilder()
+    /// <summary>Signs with <paramref name="key"/> instead of a new key. The builder does not dispose it.</summary>
+    /// <param name="key">A P-256 key.</param>
+    /// <returns>The same builder.</returns>
+    public DpopTestProofBuilder WithKey(ECDsa key)
     {
-        _jti = $"dpop-test-jti-{_instanceSequence:D6}";
+        ArgumentNullException.ThrowIfNull(key);
+        _key = key;
+        return this;
     }
 
-    /// <summary>Sets the DPoP <c>htm</c> (HTTP method) claim. Defaults to <c>"POST"</c>.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the <c>htm</c> claim. Defaults to <c>POST</c>.</summary>
+    /// <param name="htm">The HTTP method.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithHttpMethod(string htm = "POST")
     {
         ArgumentNullException.ThrowIfNull(htm);
@@ -67,8 +56,9 @@ public sealed class DpopTestProofBuilder
         return this;
     }
 
-    /// <summary>Sets the DPoP <c>htu</c> (HTTP target URI, without query/fragment) claim.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the <c>htu</c> claim. Defaults to <c>https://api.example.test/resource</c>.</summary>
+    /// <param name="htu">The request URI.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithHttpUri(string htu)
     {
         ArgumentNullException.ThrowIfNull(htu);
@@ -76,22 +66,18 @@ public sealed class DpopTestProofBuilder
         return this;
     }
 
-    /// <summary>
-    /// Sets the DPoP <c>iat</c> (issued-at) claim. Defaults to a FIXED, non-real baseline instant —
-    /// never <see cref="DateTimeOffset.UtcNow"/>.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the <c>iat</c> claim.</summary>
+    /// <param name="iat">The issue time.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithIssuedAt(DateTimeOffset iat)
     {
         _issuedAt = iat;
         return this;
     }
 
-    /// <summary>
-    /// Sets the DPoP <c>jti</c> (unique proof identifier) claim. Defaults to a deterministic
-    /// per-instance incrementing sequence — never <see cref="Guid.NewGuid"/>.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the <c>jti</c> claim.</summary>
+    /// <param name="jti">The proof id.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithJti(string jti)
     {
         ArgumentNullException.ThrowIfNull(jti);
@@ -99,11 +85,9 @@ public sealed class DpopTestProofBuilder
         return this;
     }
 
-    /// <summary>
-    /// Sets the companion bearer access token the proof binds to via <c>ath</c>. Defaults to a fixed
-    /// deterministic test-token string.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the access token the <c>ath</c> claim is computed from.</summary>
+    /// <param name="accessToken">The encoded access token.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithAccessToken(string accessToken)
     {
         ArgumentNullException.ThrowIfNull(accessToken);
@@ -111,27 +95,45 @@ public sealed class DpopTestProofBuilder
         return this;
     }
 
-    /// <summary>
-    /// Negative path: emits an <c>ath</c> claim provably NOT equal to
-    /// <c>base64url(SHA-256(AccessToken))</c>.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the <c>nonce</c> claim.</summary>
+    /// <param name="nonce">The server-issued nonce.</param>
+    /// <returns>The same builder.</returns>
+    public DpopTestProofBuilder WithNonce(string nonce)
+    {
+        ArgumentNullException.ThrowIfNull(nonce);
+        _nonce = nonce;
+        return this;
+    }
+
+    /// <summary>Sets the <c>typ</c> header. Defaults to <c>dpop+jwt</c>.</summary>
+    /// <param name="type">The header value.</param>
+    /// <returns>The same builder.</returns>
+    public DpopTestProofBuilder WithType(string type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        _type = type;
+        return this;
+    }
+
+    /// <summary>Computes <c>ath</c> from a different token.</summary>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithMismatchedAth()
     {
         _athMode = AthMode.Mismatched;
         return this;
     }
 
-    /// <summary>Negative path: omits the <c>ath</c> claim from the payload entirely.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Omits <c>ath</c>.</summary>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithMissingAth()
     {
         _athMode = AthMode.Missing;
         return this;
     }
 
-    /// <summary>Negative path: sets <c>ath</c> to a caller-supplied, non-base64url raw string.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets <c>ath</c> to a raw value.</summary>
+    /// <param name="rawValue">The value.</param>
+    /// <returns>The same builder.</returns>
     public DpopTestProofBuilder WithMalformedAth(string rawValue)
     {
         ArgumentNullException.ThrowIfNull(rawValue);
@@ -140,74 +142,66 @@ public sealed class DpopTestProofBuilder
         return this;
     }
 
-    /// <summary>
-    /// Builds a genuinely well-formed, ES256-signed RFC 9449 DPoP proof JWT (unless a negative-path
-    /// <c>ath</c> method was called).
-    /// </summary>
+    /// <summary>Builds the signed proof.</summary>
+    /// <returns>The proof, the access token and the key's JWK and thumbprint.</returns>
     public DpopTestProof Build()
     {
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var publicParameters = ecdsa.ExportParameters(includePrivateParameters: false);
-
-        var x = Base64UrlEncode(publicParameters.Q.X!);
-        var y = Base64UrlEncode(publicParameters.Q.Y!);
-
-        var jwk = new Dictionary<string, string>
+        ECDsa key = _key ?? ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        try
         {
-            ["kty"] = "EC",
-            ["crv"] = "P-256",
-            ["x"] = x,
-            ["y"] = y,
-        };
-        var publicJwkJson = JsonSerializer.Serialize(jwk);
+            ECParameters parameters = key.ExportParameters(includePrivateParameters: false);
+            string x = Base64Url.EncodeToString(parameters.Q.X);
+            string y = Base64Url.EncodeToString(parameters.Q.Y);
 
-        var header = new Dictionary<string, object>
-        {
-            ["typ"] = HeaderType,
-            ["alg"] = Algorithm,
-            ["jwk"] = jwk,
-        };
+            // RFC 7638: the thumbprint input has the required members only, in lexicographic order, without spaces.
+            string thumbprintInput = $"{{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"{x}\",\"y\":\"{y}\"}}";
+            string thumbprint = Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes(thumbprintInput)));
 
-        var payload = new Dictionary<string, object>
-        {
-            ["jti"] = _jti,
-            ["htm"] = _httpMethod,
-            ["htu"] = _httpUri,
-            ["iat"] = _issuedAt.ToUnixTimeSeconds(),
-        };
+            var jwk = new Dictionary<string, string> { ["kty"] = "EC", ["crv"] = "P-256", ["x"] = x, ["y"] = y };
+            var header = new Dictionary<string, object> { ["typ"] = _type, ["alg"] = "ES256", ["jwk"] = jwk };
+            var payload = new Dictionary<string, object>
+            {
+                ["jti"] = _jti,
+                ["htm"] = _httpMethod,
+                ["htu"] = _httpUri,
+                ["iat"] = _issuedAt.ToUnixTimeSeconds(),
+            };
 
-        switch (_athMode)
-        {
-            case AthMode.Correct:
-                payload["ath"] = ComputeAth(_accessToken);
-                break;
-            case AthMode.Mismatched:
-                payload["ath"] = ComputeAth(_accessToken + "-tampered");
-                break;
-            case AthMode.Malformed:
-                payload["ath"] = _malformedAthValue!;
-                break;
-            case AthMode.Missing:
-                break;
-            default:
-                throw new InvalidOperationException($"Unknown ath mode '{_athMode}'.");
+            if (_nonce is not null)
+            {
+                payload["nonce"] = _nonce;
+            }
+
+            switch (_athMode)
+            {
+                case AthMode.Correct:
+                    payload["ath"] = ComputeAth(_accessToken);
+                    break;
+                case AthMode.Mismatched:
+                    payload["ath"] = ComputeAth(_accessToken + "-tampered");
+                    break;
+                case AthMode.Malformed:
+                    payload["ath"] = _malformedAthValue!;
+                    break;
+            }
+
+            string signingInput =
+                $"{Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(header))}.{Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(payload))}";
+            byte[] signature = key.SignData(Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256);
+
+            return new DpopTestProof($"{signingInput}.{Base64Url.EncodeToString(signature)}", _accessToken, JsonSerializer.Serialize(jwk), thumbprint);
         }
-
-        var encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(header)));
-        var encodedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload)));
-        var signingInput = $"{encodedHeader}.{encodedPayload}";
-
-        var signature = ecdsa.SignData(Encoding.UTF8.GetBytes(signingInput), HashAlgorithmName.SHA256);
-        var proofJwt = $"{signingInput}.{Base64UrlEncode(signature)}";
-
-        return new DpopTestProof(proofJwt, _accessToken, publicJwkJson);
+        finally
+        {
+            if (_key is null)
+            {
+                key.Dispose();
+            }
+        }
     }
 
     private static string ComputeAth(string accessToken) =>
-        Base64UrlEncode(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
-
-    private static string Base64UrlEncode(byte[] bytes) =>
-        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(accessToken)));
 
     private enum AthMode
     {
@@ -218,11 +212,9 @@ public sealed class DpopTestProofBuilder
     }
 }
 
-/// <summary>Return type of <see cref="DpopTestProofBuilder.Build"/>.</summary>
-/// <param name="ProofJwt">The full DPoP proof, <c>"header.payload.signature"</c>.</param>
-/// <param name="AccessToken">The companion bearer access-token string the proof is bound to.</param>
-/// <param name="PublicJwk">
-/// The JWK JSON embedded in the proof header — lets a consuming test independently verify <c>jkt</c>
-/// binding.
-/// </param>
-public sealed record DpopTestProof(string ProofJwt, string AccessToken, string PublicJwk);
+/// <summary>A DPoP proof built by <see cref="DpopTestProofBuilder"/>.</summary>
+/// <param name="ProofJwt">The proof, the value of the <c>DPoP</c> header.</param>
+/// <param name="AccessToken">The access token the proof's <c>ath</c> claim refers to.</param>
+/// <param name="PublicJwk">The signing key's public JWK as JSON.</param>
+/// <param name="JwkThumbprint">The key's RFC 7638 thumbprint, the access token's <c>cnf.jkt</c>.</param>
+public sealed record DpopTestProof(string ProofJwt, string AccessToken, string PublicJwk, string JwkThumbprint);

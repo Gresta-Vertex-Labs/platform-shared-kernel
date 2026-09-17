@@ -170,7 +170,7 @@ assembly fixture, not per test.
 | `Reporting/` | `InMemoryReportExporter<TRow>` |
 | `Scheduling/` | `InMemoryScheduledJobRegistry` |
 | `Search/` | `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor` |
-| `Security/` | `FakeUserContext`, `FakeTenantProvider`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `MtlsTestCertificateBuilder`, `ApiKeyRotationScenarioBuilder`, `FakeTotpChallengeStore` |
+| `Security/` | `FakeUserContext`, `FakeTenantProvider`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `MtlsTestCertificateBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore` |
 | `ServiceDefaults/` | `InMemoryTenantCatalog`, `StaticTenantProvider`, `FakeTenantResolutionStrategy`, `HealthCheckAssertionExtensions` |
 | `Storage/` | `InMemoryFileStorage`, `InMemoryBlobUriGenerator` |
 | `Validation/` | `ValidationSampleGenerator` — checksum-correct valid and invalid IBAN, PAN, national-id and similar samples |

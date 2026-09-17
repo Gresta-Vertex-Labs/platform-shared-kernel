@@ -1,4 +1,4 @@
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Testing.Security;
 

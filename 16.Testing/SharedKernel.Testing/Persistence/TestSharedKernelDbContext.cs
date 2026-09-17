@@ -4,7 +4,7 @@ using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Persistence;
@@ -15,7 +15,7 @@ namespace SharedKernel.Testing.Persistence;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Wires a no-op <see cref="IUserContext"/> (fixed <c>"test-user"</c>) so
+/// Wires a fixed authenticated <see cref="IUserContext"/> (subject <c>00000000-0000-0000-0000-000000000001</c>, name <c>"test-user"</c>) so
 /// <c>AuditInterceptor</c> resolves without a real HTTP context, and a deterministic
 /// <see cref="FakeClock"/> (fixed snapshot, never real time) for stable interceptor timestamps.
 /// </para>
@@ -30,8 +30,8 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
     protected TestSharedKernelDbContext(DbContextOptions options)
         : base(
             options,
-            new AuditInterceptor(NoOpUserContext.Instance, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
-            new SoftDeleteInterceptor(NoOpUserContext.Instance, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
+            new AuditInterceptor(TestUser, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
+            new SoftDeleteInterceptor(TestUser, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
             new ConcurrencyInterceptor())
     {
         // EF Core's internal per-context service provider does not expose the constructor-supplied
@@ -69,30 +69,6 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
     /// </summary>
     public Task EnsureCreatedAsync() => Database.EnsureCreatedAsync();
 
-    /// <summary>
-    /// Minimal no-op <see cref="IUserContext"/> used solely to satisfy <c>AuditInterceptor</c>'s
-    /// constructor requirement in test contexts that have no real HTTP request.
-    /// </summary>
-    private sealed class NoOpUserContext : IUserContext
-    {
-        public static readonly NoOpUserContext Instance = new();
-
-        public Guid UserId => Guid.Parse("00000000-0000-0000-0000-000000000001");
-        public string? Email => null;
-        public string? Username => "test-user";
-        public IReadOnlyCollection<string> Roles => [];
-        public IReadOnlyCollection<string> Permissions => [];
-        public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
-        public bool IsAuthenticated => true;
-        public IdentityKind IdentityKind => IdentityKind.User;
-
-        public bool HasRole(string role) => false;
-        public bool HasPermission(string permission) => false;
-        public IReadOnlyCollection<string> AuthenticationMethods => [];
-        public string? AuthContextClassReference => null;
-        public DateTimeOffset? AuthTime => null;
-        public bool IsSenderConstrained => false;
-        public bool WasAuthenticatedWith(string method) => false;
-        public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
-    }
+    // The fixed caller the audit interceptors record: subject "00000000-0000-0000-0000-000000000001".
+    private static readonly UserContext TestUser = new(IdentityKind.User, "00000000-0000-0000-0000-000000000001") { Name = "test-user" };
 }

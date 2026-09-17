@@ -1,90 +1,94 @@
 using System.Globalization;
 using System.Security.Claims;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Testing.Security;
 
 /// <summary>
-/// Fluent builder that composes a <see cref="ClaimsPrincipal"/> and/or an <see cref="IUserContext"/>
-/// test fixture from one shared set of identity fields.
+/// Builds a caller for tests, either as the <see cref="ClaimsPrincipal"/> an OIDC bearer token produces or as a
+/// <see cref="FakeUserContext"/>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="Build"/> and <see cref="BuildUserContext"/> are two INDEPENDENT, PARALLEL projections of
-/// the same fluent state — mirroring how production's <c>OidcUserContext</c> (parses a
-/// <see cref="ClaimsPrincipal"/>) and this package's own <see cref="FakeUserContext"/> (direct property
-/// assignment) are already two independent, deliberately-non-derived mechanisms for satisfying
-/// <see cref="IUserContext"/>. <see cref="BuildUserContext"/> NEVER constructs a
-/// <see cref="ClaimsPrincipal"/> first and parses it back through claim-mapping logic.
-/// </para>
-/// <para>
-/// References <c>SharedKernel.Security.Abstractions</c> only — never
-/// <c>SharedKernel.Security.Oidc</c>/<c>.ApiKey</c>/<c>.Mtls</c> (the concrete provider packages),
-/// mirroring this folder's established abstraction-only rule. The claim-type literals used by
-/// <see cref="Build"/> are private constants local to this builder — mirroring
-/// <c>SharedKernel.Security.Oidc</c>'s <c>ClaimMappingOptions</c> defaults ("sub"/"email"/"name"/
-/// "roles"/"scope"/"amr"/"acr"/"auth_time") without a reference to that package.
-/// </para>
-/// <para>
-/// SCOPE LOCK: no <c>.WithTenantId(...)</c> method exists — never asked for by this type's own
-/// acceptance criteria. SCOPE LOCK: no fluent support for WO-058/P-376's
-/// <see cref="IUserContext.IsSenderConstrained"/>/DPoP surface or WO-058/P-377's
-/// <c>SharedKernel.Security.Mtls</c> package — neither was named by this type's own acceptance criteria.
-/// </para>
+/// <see cref="Build"/> uses the short claim names from <see cref="SecurityClaimTypes"/> and the <c>Bearer</c>
+/// authentication type, matching what <c>SharedKernel.Security.Oidc</c> produces with its default claim settings.
 /// </remarks>
 public sealed class SecurityTestContextBuilder
 {
-    private const string SubClaimType = "sub";
-    private const string EmailClaimType = "email";
-    private const string NameClaimType = "name";
-    private const string RoleClaimType = "roles";
-    private const string PermissionClaimType = "scope";
-    private const string AmrClaimType = "amr";
-    private const string AcrClaimType = "acr";
-    private const string AuthTimeClaimType = "auth_time";
     private const string AuthenticationType = "Bearer";
-
-    private static readonly Guid DefaultUserId = new("11111111-1111-1111-1111-111111111111");
 
     private readonly List<string> _roles = [];
     private readonly List<string> _permissions = [];
     private readonly List<string> _authenticationMethods = [];
-    private readonly List<Claim> _additionalClaims = [];
+    private readonly List<KeyValuePair<string, string>> _additionalClaims = [];
 
-    private Guid _userId = DefaultUserId;
+    private string _subjectId = FakeUserContext.DefaultSubjectId;
+    private string? _clientId;
+    private Guid? _tenantId;
+    private string? _sessionId;
+    private string? _name;
     private string? _email;
-    private string? _username;
     private IdentityKind _identityKind = IdentityKind.User;
-    private bool _isAuthenticated = true;
     private string? _authContextClassReference;
     private DateTimeOffset? _authTime;
 
-    /// <summary>Sets the subject (<c>sub</c>) identity. Defaults to a fixed, non-empty test <see cref="Guid"/>.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder WithUserId(Guid userId)
+    /// <summary>Sets the subject id. Defaults to <see cref="FakeUserContext.DefaultSubjectId"/>.</summary>
+    /// <param name="subjectId">The subject id.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithSubjectId(string subjectId)
     {
-        _userId = userId;
+        ArgumentException.ThrowIfNullOrWhiteSpace(subjectId);
+        _subjectId = subjectId;
         return this;
     }
 
-    /// <summary>Sets the email (<c>email</c>) claim value.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the client id (<c>azp</c>).</summary>
+    /// <param name="clientId">The client id, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithClientId(string? clientId)
+    {
+        _clientId = clientId;
+        return this;
+    }
+
+    /// <summary>Sets the tenant (<c>tenant_id</c>).</summary>
+    /// <param name="tenantId">The tenant id, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithTenantId(Guid? tenantId)
+    {
+        _tenantId = tenantId;
+        return this;
+    }
+
+    /// <summary>Sets the session id (<c>sid</c>).</summary>
+    /// <param name="sessionId">The session id, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithSessionId(string? sessionId)
+    {
+        _sessionId = sessionId;
+        return this;
+    }
+
+    /// <summary>Sets the display name (<c>name</c>).</summary>
+    /// <param name="name">The name, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithName(string? name)
+    {
+        _name = name;
+        return this;
+    }
+
+    /// <summary>Sets the email address (<c>email</c>).</summary>
+    /// <param name="email">The email address, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithEmail(string? email)
     {
         _email = email;
         return this;
     }
 
-    /// <summary>Sets the username (<c>name</c>) claim value.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder WithUsername(string? username)
-    {
-        _username = username;
-        return this;
-    }
-
-    /// <summary>Replaces the role set with <paramref name="roles"/>.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Replaces the roles (<c>roles</c>).</summary>
+    /// <param name="roles">The roles.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithRoles(params string[] roles)
     {
         ArgumentNullException.ThrowIfNull(roles);
@@ -93,8 +97,9 @@ public sealed class SecurityTestContextBuilder
         return this;
     }
 
-    /// <summary>Replaces the permission (scope) set with <paramref name="permissions"/>.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Replaces the permissions (<c>scope</c>).</summary>
+    /// <param name="permissions">The permissions.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithPermissions(params string[] permissions)
     {
         ArgumentNullException.ThrowIfNull(permissions);
@@ -103,50 +108,9 @@ public sealed class SecurityTestContextBuilder
         return this;
     }
 
-    /// <summary>Sets the <see cref="IdentityKind"/> represented by this fixture. Defaults to <see cref="IdentityKind.User"/>.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder WithIdentityKind(IdentityKind identityKind)
-    {
-        _identityKind = identityKind;
-        return this;
-    }
-
-    /// <summary>Appends one additional claim. Additive — never replaces a previously-added claim.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder WithClaim(string type, string value)
-    {
-        ArgumentNullException.ThrowIfNull(type);
-        ArgumentNullException.ThrowIfNull(value);
-        _additionalClaims.Add(new Claim(type, value));
-        return this;
-    }
-
-    /// <summary>Appends every entry in <paramref name="claims"/> as an additional claim. Bulk additive.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder WithClaims(IReadOnlyDictionary<string, string> claims)
-    {
-        ArgumentNullException.ThrowIfNull(claims);
-        foreach (var (type, value) in claims)
-        {
-            _additionalClaims.Add(new Claim(type, value));
-        }
-
-        return this;
-    }
-
-    /// <summary>
-    /// Marks this fixture as unauthenticated — the fluent equivalent of <c>12.Security</c>'s own
-    /// "omit authenticationType" <see cref="ClaimsIdentity"/> pattern.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    public SecurityTestContextBuilder Unauthenticated()
-    {
-        _isAuthenticated = false;
-        return this;
-    }
-
-    /// <summary>Sets the OIDC Authentication Method Reference (<c>amr</c>) values.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Replaces the authentication methods (<c>amr</c>).</summary>
+    /// <param name="authenticationMethods">The methods, such as <c>pwd</c> and <c>otp</c>.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithAuthenticationMethods(params string[] authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(authenticationMethods);
@@ -155,115 +119,116 @@ public sealed class SecurityTestContextBuilder
         return this;
     }
 
-    /// <summary>Sets the OIDC Authentication Context Class Reference (<c>acr</c>) claim.</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets the authentication context class (<c>acr</c>).</summary>
+    /// <param name="authContextClassReference">The value, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithAuthContextClassReference(string? authContextClassReference)
     {
         _authContextClassReference = authContextClassReference;
         return this;
     }
 
-    /// <summary>Sets the UTC instant the authentication event actually occurred (the OIDC <c>auth_time</c> claim).</summary>
-    /// <returns>This instance, for fluent chaining.</returns>
+    /// <summary>Sets when the user authenticated (<c>auth_time</c>).</summary>
+    /// <param name="authTime">The time, or <see langword="null"/>.</param>
+    /// <returns>The same builder.</returns>
     public SecurityTestContextBuilder WithAuthTime(DateTimeOffset? authTime)
     {
         _authTime = authTime;
         return this;
     }
 
+    /// <summary>Sets the identity kind. Defaults to <see cref="IdentityKind.User"/>.</summary>
+    /// <param name="identityKind">The identity kind.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithIdentityKind(IdentityKind identityKind)
+    {
+        _identityKind = identityKind;
+        return this;
+    }
+
+    /// <summary>Makes the caller unauthenticated.</summary>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder Unauthenticated() => WithIdentityKind(IdentityKind.Anonymous);
+
+    /// <summary>Adds a claim.</summary>
+    /// <param name="type">The claim type.</param>
+    /// <param name="value">The claim value.</param>
+    /// <returns>The same builder.</returns>
+    public SecurityTestContextBuilder WithClaim(string type, string value)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(value);
+        _additionalClaims.Add(new KeyValuePair<string, string>(type, value));
+        return this;
+    }
+
     /// <summary>
-    /// Assembles a <see cref="ClaimsPrincipal"/> from the fluent state accumulated so far.
+    /// Builds the principal an OIDC bearer token for this caller produces. A service principal gets
+    /// <c>idtyp=app</c>; an unauthenticated caller gets an identity without an authentication type.
     /// </summary>
-    /// <remarks>
-    /// Roles emit ONE <see cref="Claim"/> per role (never a JSON-array-valued single claim).
-    /// Permissions emit ONE space-delimited <c>scope</c> claim. Authentication methods emit ONE
-    /// <see cref="Claim"/> per method. <see cref="DateTimeOffset.ToUnixTimeSeconds"/> encodes
-    /// <c>auth_time</c> as the OIDC NumericDate string. Every <see cref="WithClaim"/>/
-    /// <see cref="WithClaims"/> value is appended verbatim after the standard claims. Wraps into
-    /// <c>new ClaimsIdentity(claims, authenticationType: IsAuthenticated ? "Bearer" : null)</c> then
-    /// <c>new ClaimsPrincipal(identity)</c> — a non-null authenticationType is exactly what makes
-    /// <c>ClaimsPrincipal.Identity.IsAuthenticated</c> return <see langword="true"/>.
-    /// </remarks>
+    /// <returns>The principal.</returns>
     public ClaimsPrincipal Build()
     {
-        var claims = new List<Claim> { new(SubClaimType, _userId.ToString()) };
+        var claims = new List<Claim> { new(SecurityClaimTypes.Subject, _subjectId) };
 
-        if (_email is not null)
+        AddIfPresent(claims, SecurityClaimTypes.AuthorizedParty, _clientId);
+        AddIfPresent(claims, SecurityClaimTypes.TenantId, _tenantId?.ToString("D"));
+        AddIfPresent(claims, SecurityClaimTypes.SessionId, _sessionId);
+        AddIfPresent(claims, SecurityClaimTypes.Name, _name);
+        AddIfPresent(claims, SecurityClaimTypes.Email, _email);
+        AddIfPresent(claims, SecurityClaimTypes.AuthContextClassReference, _authContextClassReference);
+        AddIfPresent(claims, SecurityClaimTypes.AuthTime, _authTime?.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        AddIfPresent(claims, SecurityClaimTypes.Scope, _permissions.Count > 0 ? string.Join(' ', _permissions) : null);
+
+        claims.AddRange(_roles.Select(role => new Claim(SecurityClaimTypes.Roles, role)));
+        claims.AddRange(_authenticationMethods.Select(method => new Claim(SecurityClaimTypes.AuthenticationMethod, method)));
+
+        if (_identityKind == IdentityKind.ServicePrincipal)
         {
-            claims.Add(new Claim(EmailClaimType, _email));
+            claims.Add(new Claim("idtyp", "app"));
         }
 
-        if (_username is not null)
-        {
-            claims.Add(new Claim(NameClaimType, _username));
-        }
+        claims.AddRange(_additionalClaims.Select(claim => new Claim(claim.Key, claim.Value)));
 
-        foreach (var role in _roles)
-        {
-            claims.Add(new Claim(RoleClaimType, role));
-        }
-
-        if (_permissions.Count > 0)
-        {
-            claims.Add(new Claim(PermissionClaimType, string.Join(' ', _permissions)));
-        }
-
-        foreach (var method in _authenticationMethods)
-        {
-            claims.Add(new Claim(AmrClaimType, method));
-        }
-
-        if (_authContextClassReference is not null)
-        {
-            claims.Add(new Claim(AcrClaimType, _authContextClassReference));
-        }
-
-        if (_authTime is not null)
-        {
-            claims.Add(new Claim(
-                AuthTimeClaimType,
-                _authTime.Value.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-        }
-
-        claims.AddRange(_additionalClaims);
-
-        var identity = new ClaimsIdentity(claims, authenticationType: _isAuthenticated ? AuthenticationType : null);
+        var identity = new ClaimsIdentity(
+            claims,
+            _identityKind == IdentityKind.Anonymous ? null : AuthenticationType,
+            SecurityClaimTypes.Name,
+            SecurityClaimTypes.Roles);
         return new ClaimsPrincipal(identity);
     }
 
     /// <summary>
-    /// Projects the fluent state accumulated so far directly onto a new <see cref="FakeUserContext"/>.
+    /// Builds a <see cref="FakeUserContext"/> for this caller. <see cref="FakeUserContext.Claims"/> holds the same claims
+    /// <see cref="Build"/> emits, so <c>FindClaim</c> behaves as on a mapped token.
     /// </summary>
-    /// <remarks>
-    /// A DIRECT property-to-property projection of the SAME fluent state <see cref="Build"/> reads —
-    /// never by constructing a <see cref="ClaimsPrincipal"/> first and parsing it back. The returned
-    /// context's <see cref="IUserContext.Claims"/> dictionary carries only the entries added via
-    /// <see cref="WithClaim"/>/<see cref="WithClaims"/> (first value wins for a repeated claim type,
-    /// mirroring <see cref="IUserContext.Claims"/>'s own documented resolution rule) — the standard
-    /// identity fields (email/username/roles/…) are already surfaced through their own dedicated
-    /// <see cref="IUserContext"/> members and are not duplicated into the dictionary.
-    /// </remarks>
-    public IUserContext BuildUserContext()
+    /// <returns>The context.</returns>
+    public FakeUserContext BuildUserContext()
     {
-        var claims = new Dictionary<string, string>();
-        foreach (var claim in _additionalClaims)
-        {
-            claims.TryAdd(claim.Type, claim.Value);
-        }
-
+        bool hasSubject = _identityKind is IdentityKind.User or IdentityKind.ServicePrincipal;
         return new FakeUserContext
         {
-            UserId = _userId,
-            Email = _email,
-            Username = _username,
-            Roles = _roles.ToArray(),
-            Permissions = _permissions.ToArray(),
             IdentityKind = _identityKind,
-            Claims = claims,
-            IsAuthenticated = _isAuthenticated,
-            AuthenticationMethods = _authenticationMethods.ToArray(),
+            SubjectId = hasSubject ? _subjectId : null,
+            ClientId = _clientId,
+            TenantId = _tenantId,
+            SessionId = _sessionId,
+            Name = _name,
+            Email = _email,
+            Roles = [.. _roles],
+            Permissions = [.. _permissions],
+            AuthenticationMethods = [.. _authenticationMethods],
             AuthContextClassReference = _authContextClassReference,
             AuthTime = _authTime,
+            Claims = [.. Build().Claims.Select(claim => new KeyValuePair<string, string>(claim.Type, claim.Value))],
         };
+    }
+
+    private static void AddIfPresent(List<Claim> claims, string type, string? value)
+    {
+        if (value is not null)
+        {
+            claims.Add(new Claim(type, value));
+        }
     }
 }

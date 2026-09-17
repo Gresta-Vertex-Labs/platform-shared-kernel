@@ -172,13 +172,13 @@
       directly.
     -->
     <!--
-      TOTP challenge-freshness fake (S-57 partial, P-453/WO-069): Security/FakeTotpChallengeStore
-      (ITotpChallengeStore). Cryptography/FakeTotpReplayGuard needs no new reference —
-      SharedKernel.Cryptography is already referenced above (S-37). NOT yet a member of
-      Platform.SharedKernel.slnx as of this reference (12.Security's own scaffold pass registers it
-      centrally) — a ProjectReference by path builds fine regardless of solution membership.
+      In-memory stores for the security provider seams: Security/InMemoryTotpStores
+      (ITotpStepUpStore, IRecoveryCodeStore), Security/InMemoryApiKeyStore (IApiKeyStore) and
+      Security/InMemoryDpopReplayCache (IDpopReplayCache).
     -->
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Totp\SharedKernel.Security.Totp.csproj" />
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.ApiKey\SharedKernel.Security.ApiKey.csproj" />
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
     <!--
       gRPC server interceptor test harness (P-470/WO-074): Grpc/TestServerCallContext. First
       ProjectReference from 16.Testing to 14.Presentation — the new Grpc/ capability folder, mapped
