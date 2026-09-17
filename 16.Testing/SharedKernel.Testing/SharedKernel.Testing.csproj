@@ -15,6 +15,9 @@
   <ItemGroup>
     <!-- Caching test doubles — FakeCacheService implements ICacheService -->
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- FakeRedisChannelService implements IRedisChannelService; FakeRedisHashService/FakeTypedHashStore implement the hash store contracts -->
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj" />
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Redis.HashStore\SharedKernel.Caching.Redis.HashStore.csproj" />
     <!--
       Domain test helpers (S-02, P-035/P-181): EntityFaker<TEntity,TId>, DomainEventAssertions,
       BusinessRuleAssertions, SpecificationAssert, SingleValueObjectFaker, DomainVersionAssertions,

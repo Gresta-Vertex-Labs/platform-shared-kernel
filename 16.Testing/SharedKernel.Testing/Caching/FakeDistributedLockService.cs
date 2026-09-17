@@ -1,132 +1,201 @@
+using System.Collections.Concurrent;
 using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.Testing.Caching;
 
 /// <summary>
 /// In-memory fake implementation of <see cref="IDistributedLockService"/> for use in unit tests.
-/// Thread-safe, no external dependencies.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Locks are always granted immediately — there is no contention simulation.
-/// Pass a <c>simulateFailure</c> flag to constructors or use the
-/// <see cref="SimulateFailure"/> property to make all subsequent acquire calls return
-/// <see langword="null"/>.
+/// Enforces real exclusivity within the fake: a resource held by a lock or an unexpired lease
+/// makes further acquisitions return <see langword="null"/>. Fencing tokens increase per resource.
+/// Wait time is not simulated; every acquisition is a single attempt.
 /// </para>
 /// <para>
-/// <see cref="AcquireRenewableAsync"/> returns a <see cref="FakeRenewableLock"/> that
-/// tracks how many times <see cref="IRenewableLock.RenewAsync"/> has been called via
-/// <see cref="FakeRenewableLock.RenewalCount"/>.
+/// Lease expiry uses the <see cref="TimeProvider"/> passed to the constructor, so a test can
+/// advance a <c>FakeTimeProvider</c> to expire a lease.
 /// </para>
 /// </remarks>
 public sealed class FakeDistributedLockService : IDistributedLockService
 {
+    private readonly TimeProvider _timeProvider;
+    private readonly object _gate = new();
+    private readonly Dictionary<string, DateTimeOffset?> _held = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _fencingTokens = new(StringComparer.Ordinal);
+
+    /// <summary>Creates a fake that uses <see cref="TimeProvider.System"/> for lease expiry.</summary>
+    public FakeDistributedLockService()
+        : this(TimeProvider.System)
+    {
+    }
+
+    /// <summary>Creates a fake that uses <paramref name="timeProvider"/> for lease expiry.</summary>
+    /// <param name="timeProvider">The time source.</param>
+    public FakeDistributedLockService(TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        _timeProvider = timeProvider;
+    }
+
     /// <summary>
-    /// When <see langword="true"/>, both <see cref="AcquireAsync"/> and
-    /// <see cref="AcquireRenewableAsync"/> return <see langword="null"/> (simulating
-    /// a contended or unavailable lock).
+    /// Gets or sets a value indicating whether every acquisition returns <see langword="null"/>, as if
+    /// another holder had the resource.
     /// </summary>
-    public bool SimulateFailure { get; set; }
+    public bool SimulateContention { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether every acquisition throws
+    /// <see cref="DistributedLockUnavailableException"/>, as if the lock store were unreachable.
+    /// </summary>
+    public bool SimulateUnavailable { get; set; }
+
+    /// <summary>Gets every lock handed out, in acquisition order.</summary>
+    public IReadOnlyList<FakeDistributedLock> AcquiredLocks
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _acquiredLocks];
+            }
+        }
+    }
+
+    /// <summary>Gets every lease handed out, in acquisition order.</summary>
+    public IReadOnlyList<DistributedLease> AcquiredLeases
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _acquiredLeases];
+            }
+        }
+    }
+
+    private readonly List<FakeDistributedLock> _acquiredLocks = [];
+    private readonly List<DistributedLease> _acquiredLeases = [];
 
     /// <inheritdoc />
-    public Task<IAsyncDisposable?> AcquireAsync(
+    public ValueTask<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan expiry,
-        TimeSpan wait,
-        TimeSpan retry,
+        DistributedLockOptions? options = null,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ct.ThrowIfCancellationRequested();
 
-        if (SimulateFailure)
-            return Task.FromResult<IAsyncDisposable?>(null);
+        lock (_gate)
+        {
+            if (!TryClaim(resource, expiresAt: null))
+                return ValueTask.FromResult<IDistributedLock?>(null);
 
-        return Task.FromResult<IAsyncDisposable?>(new FakeLockHandle());
+            var handle = new FakeDistributedLock(resource, NextToken(resource), () => ReleaseLock(resource));
+            _acquiredLocks.Add(handle);
+            return ValueTask.FromResult<IDistributedLock?>(handle);
+        }
     }
 
     /// <inheritdoc />
-    public ValueTask<IRenewableLock?> AcquireRenewableAsync(
+    public ValueTask<DistributedLease?> TryAcquireLeaseAsync(
         string resource,
-        TimeSpan expiry,
-        TimeSpan wait,
-        TimeSpan retry,
+        TimeSpan duration,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, TimeSpan.Zero);
+        ct.ThrowIfCancellationRequested();
 
-        if (SimulateFailure)
-            return ValueTask.FromResult<IRenewableLock?>(null);
+        lock (_gate)
+        {
+            DateTimeOffset expiresAt = _timeProvider.GetUtcNow() + duration;
+            if (!TryClaim(resource, expiresAt))
+                return ValueTask.FromResult<DistributedLease?>(null);
 
-        return ValueTask.FromResult<IRenewableLock?>(new FakeRenewableLock());
+            var lease = new DistributedLease(resource, NextToken(resource), expiresAt);
+            _acquiredLeases.Add(lease);
+            return ValueTask.FromResult<DistributedLease?>(lease);
+        }
     }
 
-    // ----- nested types -----
-
-    /// <summary>
-    /// Minimal <see cref="IAsyncDisposable"/> returned by <see cref="AcquireAsync"/>.
-    /// </summary>
-    private sealed class FakeLockHandle : IAsyncDisposable
+    // Caller holds _gate. A null expiry marks a lock, which is held until released.
+    private bool TryClaim(string resource, DateTimeOffset? expiresAt)
     {
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        if (SimulateUnavailable)
+            throw DistributedLockUnavailableException.ForResource(resource);
+
+        if (SimulateContention)
+            return false;
+
+        if (_held.TryGetValue(resource, out var existing)
+            && (existing is null || existing > _timeProvider.GetUtcNow()))
+        {
+            return false;
+        }
+
+        _held[resource] = expiresAt;
+        return true;
+    }
+
+    private long NextToken(string resource) => _fencingTokens.AddOrUpdate(resource, 1, static (_, token) => token + 1);
+
+    private void ReleaseLock(string resource)
+    {
+        lock (_gate)
+        {
+            if (_held.TryGetValue(resource, out var expiresAt) && expiresAt is null)
+                _held.Remove(resource);
+        }
     }
 }
 
-/// <summary>
-/// Fake <see cref="IRenewableLock"/> for use in unit tests.
-/// Tracks how many times <see cref="RenewAsync"/> has been called via
-/// <see cref="RenewalCount"/>.
-/// </summary>
-/// <remarks>
-/// <see cref="IsAcquired"/> defaults to <see langword="true"/> and transitions to
-/// <see langword="false"/> after <see cref="IAsyncDisposable.DisposeAsync"/> is called
-/// or when <see cref="SimulateRenewalFailure"/> is <see langword="true"/>.
-/// </remarks>
-public sealed class FakeRenewableLock : IRenewableLock
+/// <summary>A lock handed out by <see cref="FakeDistributedLockService"/>.</summary>
+public sealed class FakeDistributedLock : IDistributedLock
 {
-    private bool _disposed;
+    private readonly Action _release;
+    private readonly CancellationTokenSource _lost = new();
+    private int _state;
 
-    /// <summary>
-    /// Gets the number of times <see cref="RenewAsync"/> has been called.
-    /// </summary>
-    public int RenewalCount { get; private set; }
-
-    /// <summary>
-    /// Gets or sets the fencing token reported by this fake lock.
-    /// </summary>
-    /// <remarks>
-    /// Minimal compile-time-only implementation of <c>02.Caching</c> Phase 43's
-    /// <c>IFencedLock.FencingToken</c> requirement (added to <c>IRenewableLock</c>).
-    /// Defaults to <c>1</c> and does not auto-increment on <see cref="RenewAsync"/> —
-    /// a caller-driven, behaviorally-faithful fake (auto-incrementing on renewal, with
-    /// dedicated test coverage) remains a queued follow-up for this domain, out of
-    /// <c>02.Caching</c>'s jurisdiction (see <c>02.Caching/CLAUDE.md</c>, Phase 43, FT-10).
-    /// </remarks>
-    public long FencingToken { get; set; } = 1;
-
-    /// <summary>
-    /// When <see langword="true"/>, <see cref="RenewAsync"/> returns
-    /// <see langword="false"/> and sets <see cref="IsAcquired"/> to
-    /// <see langword="false"/>, simulating a lost lock.
-    /// </summary>
-    public bool SimulateRenewalFailure { get; set; }
-
-    /// <inheritdoc />
-    public bool IsAcquired => !_disposed && !SimulateRenewalFailure;
-
-    /// <inheritdoc />
-    public ValueTask<bool> RenewAsync(CancellationToken ct = default)
+    internal FakeDistributedLock(string resource, long fencingToken, Action release)
     {
-        if (_disposed || SimulateRenewalFailure)
-            return ValueTask.FromResult(false);
+        Resource = resource;
+        FencingToken = fencingToken;
+        _release = release;
+    }
 
-        RenewalCount++;
-        return ValueTask.FromResult(true);
+    /// <inheritdoc />
+    public string Resource { get; }
+
+    /// <inheritdoc />
+    public long FencingToken { get; }
+
+    /// <inheritdoc />
+    public bool IsHeld => Volatile.Read(ref _state) == 0;
+
+    /// <summary>Gets a value indicating whether the lock was released by disposal.</summary>
+    public bool IsReleased => Volatile.Read(ref _state) == 2;
+
+    /// <inheritdoc />
+    public CancellationToken LostToken => _lost.Token;
+
+    /// <summary>Simulates losing the lock: <see cref="IsHeld"/> turns false and <see cref="LostToken"/> is cancelled.</summary>
+    public void SimulateLoss()
+    {
+        if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
+        {
+            _release();
+            _lost.Cancel();
+        }
     }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
-        _disposed = true;
+        if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
+            _release();
+
+        _lost.Cancel();
         return ValueTask.CompletedTask;
     }
 }

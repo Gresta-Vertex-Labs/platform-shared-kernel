@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Serialization.Metadata;
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.HashStore;
 
 namespace SharedKernel.Testing.Caching;
 

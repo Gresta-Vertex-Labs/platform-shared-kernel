@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core;
+using SharedKernel.Caching.Redis.PubSub;
 
 namespace SharedKernel.Testing.Caching;
 

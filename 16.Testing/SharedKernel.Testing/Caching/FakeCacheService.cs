@@ -9,55 +9,50 @@ namespace SharedKernel.Testing.Caching;
 /// </summary>
 /// <remarks>
 /// <para>
-/// All operations are synchronous in terms of observable state — calls complete as
-/// <see cref="ValueTask.CompletedTask"/> without any background work. TTL and tag
-/// semantics from <see cref="CachePolicy"/> are intentionally not enforced: this fake
-/// is designed for behavioural correctness testing, not expiry timing.
+/// Every call completes synchronously, with no background work. Durations, fail-safe, eager
+/// refresh, jitter and timeouts from <see cref="CachePolicy"/> are not simulated, so
+/// <see cref="ExpireAsync"/> removes the entry exactly like <see cref="RemoveAsync"/>.
 /// </para>
 /// <para>
-/// Tags are tracked per key so that <see cref="RemoveByTagAsync"/> correctly evicts
-/// all entries that were stored with a given tag.
+/// What is faithful: a hit versus a miss (including a cached <see langword="null"/>), tags and
+/// tag removal, and the factory's <see cref="CacheFactoryContext.SkipCaching"/> decision. Unlike
+/// the real cache, concurrent misses for one key may each run the factory.
 /// </para>
 /// </remarks>
 public sealed class FakeCacheService : ICacheService
 {
-    // Stores boxed values keyed by cache key.
-    private readonly ConcurrentDictionary<string, object?> _store = new();
+    private readonly ConcurrentDictionary<string, Entry> _store = new(StringComparer.Ordinal);
 
-    // Maps each key to its set of tags for tag-based eviction.
-    private readonly ConcurrentDictionary<string, HashSet<string>> _keyTags = new();
-
-    /// <summary>
-    /// Gets the total number of entries currently held in the fake cache.
-    /// Useful for asserting side-effects of batch operations in tests.
-    /// </summary>
+    /// <summary>Gets the number of entries currently held.</summary>
     public int Count => _store.Count;
 
+    /// <summary>Gets how many times a <c>GetOrSetAsync</c> factory has run.</summary>
+    public int FactoryInvocationCount => _factoryInvocationCount;
+
+    private int _factoryInvocationCount;
+
     /// <inheritdoc />
-    public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default)
+    public ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-        if (_store.TryGetValue(key, out var boxed) && boxed is T typed)
-            return ValueTask.FromResult<T?>(typed);
-
-        return ValueTask.FromResult<T?>(default);
+        return ValueTask.FromResult(Lookup<T>(key));
     }
 
     /// <inheritdoc />
-    public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
+    public ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
+        IEnumerable<string> keys,
+        CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(keys);
 
-        _store[key] = value;
+        var result = new Dictionary<string, CacheLookup<T>>(StringComparer.Ordinal);
+        foreach (var key in keys)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(keys));
+            result[key] = Lookup<T>(key);
+        }
 
-        if (policy.Tags.Length > 0)
-            _keyTags[key] = [.. policy.Tags];
-        else
-            _keyTags.TryRemove(key, out _);
-
-        return ValueTask.CompletedTask;
+        return ValueTask.FromResult<IReadOnlyDictionary<string, CacheLookup<T>>>(result);
     }
 
     /// <inheritdoc />
@@ -67,94 +62,45 @@ public sealed class FakeCacheService : ICacheService
         CachePolicy policy,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(factory);
+        return GetOrSetAsync(key, (_, token) => factory(token), policy, ct);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<T> GetOrSetAsync<T>(
+        string key,
+        Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+        CachePolicy policy,
+        CancellationToken ct = default)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(policy);
 
-        if (_store.TryGetValue(key, out var boxed) && boxed is T typed)
-            return ValueTask.FromResult(typed);
+        if (Lookup<T>(key).TryGetValue(out var cached))
+            return cached;
 
-        return GetOrSetInternalAsync(key, factory, policy, ct);
-    }
+        Interlocked.Increment(ref _factoryInvocationCount);
+        var context = new CacheFactoryContext(key, policy);
+        var value = await factory(context, ct).ConfigureAwait(false);
 
-    private async ValueTask<T> GetOrSetInternalAsync<T>(
-        string key,
-        Func<CancellationToken, ValueTask<T>> factory,
-        CachePolicy policy,
-        CancellationToken ct)
-    {
-        var value = await factory(ct).ConfigureAwait(false);
-        _store[key] = value;
-
-        if (policy.Tags.Length > 0)
-            _keyTags[key] = [.. policy.Tags];
+        if (!context.IsCachingSkipped)
+            _store[key] = new Entry(value, policy.Tags);
 
         return value;
     }
 
     /// <inheritdoc />
-    public ValueTask RemoveAsync(string key, CancellationToken ct = default)
+    public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(policy);
 
-        _store.TryRemove(key, out _);
-        _keyTags.TryRemove(key, out _);
-
+        _store[key] = new Entry(value, policy.Tags);
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
-
-        var keysToRemove = _keyTags
-            .Where(kvp => kvp.Value.Contains(tag))
-            .Select(kvp => kvp.Key)
-            .ToList();
-
-        foreach (var key in keysToRemove)
-        {
-            _store.TryRemove(key, out _);
-            _keyTags.TryRemove(key, out _);
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Every requested key is present in the returned dictionary.
-    /// Keys not found in the fake cache map to <see langword="null"/>.
-    /// An empty <paramref name="keys"/> enumerable returns an empty dictionary immediately.
-    /// </remarks>
-    public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
-        IEnumerable<string> keys,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(keys);
-
-        var result = new Dictionary<string, T?>();
-
-        foreach (var key in keys)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-            if (_store.TryGetValue(key, out var boxed) && boxed is T typed)
-                result[key] = typed;
-            else
-                result[key] = default;
-        }
-
-        return ValueTask.FromResult<IReadOnlyDictionary<string, T?>>(result);
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// The same <paramref name="policy"/> is applied to every entry — identical to calling
-    /// <see cref="SetAsync{T}"/> for each key individually with the same policy.
-    /// An empty <paramref name="entries"/> dictionary is a no-op.
-    /// </remarks>
     public ValueTask SetManyAsync<T>(
         IReadOnlyDictionary<string, T> entries,
         CachePolicy policy,
@@ -165,26 +111,84 @@ public sealed class FakeCacheService : ICacheService
 
         foreach (var (key, value) in entries)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-            _store[key] = value;
-
-            if (policy.Tags.Length > 0)
-                _keyTags[key] = [.. policy.Tags];
-            else
-                _keyTags.TryRemove(key, out _);
+            ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(entries));
+            _store[key] = new Entry(value, policy.Tags);
         }
 
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// Clears all entries from the fake cache. Useful for test isolation when the same
-    /// instance is reused across multiple test cases.
-    /// </summary>
+    /// <inheritdoc />
+    public ValueTask RemoveAsync(string key, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        _store.TryRemove(key, out _);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>The fake has no fail-safe, so expiring an entry removes it.</remarks>
+    public ValueTask ExpireAsync(string key, CancellationToken ct = default) => RemoveAsync(key, ct);
+
+    /// <inheritdoc />
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+        return RemoveByTagsAsync([tag], ct);
+    }
+
+    /// <inheritdoc />
+    public ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(tags);
+
+        var tagSet = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tag in tags)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(tag, nameof(tags));
+            tagSet.Add(tag);
+        }
+
+        foreach (var (key, entry) in _store)
+        {
+            if (entry.Tags.Any(tagSet.Contains))
+                _store.TryRemove(key, out _);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask ClearAsync(CancellationToken ct = default)
+    {
+        Clear();
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Gets the tags stored with <paramref name="key"/>, or <see langword="null"/> when the key is absent.</summary>
+    /// <param name="key">The cache key.</param>
+    /// <returns>The entry's tags, or <see langword="null"/>.</returns>
+    public IReadOnlyList<string>? GetTags(string key) => _store.TryGetValue(key, out var entry) ? entry.Tags : null;
+
+    /// <summary>Removes every entry and resets <see cref="FactoryInvocationCount"/>.</summary>
     public void Clear()
     {
         _store.Clear();
-        _keyTags.Clear();
+        Interlocked.Exchange(ref _factoryInvocationCount, 0);
     }
+
+    private CacheLookup<T> Lookup<T>(string key)
+    {
+        if (!_store.TryGetValue(key, out var entry))
+            return CacheLookup<T>.Miss;
+
+        return entry.Value switch
+        {
+            T typed => CacheLookup<T>.Hit(typed),
+            null when default(T) is null => CacheLookup<T>.Hit(default!),
+            _ => CacheLookup<T>.Miss,
+        };
+    }
+
+    private sealed record Entry(object? Value, IReadOnlyList<string> Tags);
 }

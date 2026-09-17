@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.HashStore;
+using SharedKernel.Caching.Redis.PubSub;
 
 namespace SharedKernel.Testing.Caching;
 
@@ -12,13 +14,13 @@ public static class CachingServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="FakeCacheService"/>, <see cref="FakeDistributedLockService"/>,
-    /// <see cref="FakeTenantCacheKeyProvider"/>, <see cref="FakeCacheInvalidationBus"/>,
-    /// <see cref="FakeRedisChannelService"/>, and <see cref="FakeRedisHashService"/> as
-    /// singletons.
+    /// <see cref="FakeTenantCacheKeyProvider"/> (as both <see cref="ICacheKeyProvider"/> and
+    /// <see cref="ITenantCacheKeyProvider"/>), <see cref="FakeRedisChannelService"/>, and
+    /// <see cref="FakeRedisHashService"/> as singletons.
     /// </summary>
     /// <remarks>
     /// Supersedes the manual per-fake <c>AddSingleton&lt;T&gt;</c> pattern for callers who want all
-    /// six fakes; that pattern remains valid for callers who want only a subset.
+    /// of these fakes; that pattern remains valid for callers who want only a subset.
     /// <see cref="FakeTypedHashStore{T}"/> and <see cref="FakeCacheWarmupStrategy"/> are not
     /// bundled into this call — see <see cref="AddFakeTypedHashStore{T}"/> and
     /// <see cref="AddFakeCacheWarmupStrategy"/>.
@@ -31,8 +33,9 @@ public static class CachingServiceCollectionExtensions
 
         services.AddSingleton<ICacheService, FakeCacheService>();
         services.AddSingleton<IDistributedLockService, FakeDistributedLockService>();
-        services.AddSingleton<ITenantCacheKeyProvider, FakeTenantCacheKeyProvider>();
-        services.AddSingleton<ICacheInvalidationBus, FakeCacheInvalidationBus>();
+        services.AddSingleton<FakeTenantCacheKeyProvider>();
+        services.AddSingleton<ICacheKeyProvider>(sp => sp.GetRequiredService<FakeTenantCacheKeyProvider>());
+        services.AddSingleton<ITenantCacheKeyProvider>(sp => sp.GetRequiredService<FakeTenantCacheKeyProvider>());
         services.AddSingleton<IRedisChannelService, FakeRedisChannelService>();
         services.AddSingleton<IRedisHashService, FakeRedisHashService>();
 

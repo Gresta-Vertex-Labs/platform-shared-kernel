@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.HashStore;
 
 namespace SharedKernel.Testing.Caching;
 

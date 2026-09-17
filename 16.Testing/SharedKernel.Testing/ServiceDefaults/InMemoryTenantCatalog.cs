@@ -33,11 +33,9 @@ namespace SharedKernel.Testing.ServiceDefaults;
 /// implementation type.
 /// </para>
 /// <para>
-/// <b>No cross-instance invalidation surface</b> — unlike <c>CachedTenantCatalog</c> (which exposes
-/// a consumer-wired <c>HandleCrossInstanceInvalidationSignal(Guid)</c> entry point, since
-/// <c>02.Caching.Abstractions</c>'s <c>ICacheInvalidationBus</c> is publish-only with no subscribe
-/// surface), this fake is a single-instance, single-process in-memory store with no caching layer
-/// to invalidate in the first place — a test simply calls <see cref="SeedTenant"/>/
+/// <b>No caching layer</b> — unlike <c>CachedTenantCatalog</c>, whose entries live in
+/// <c>ICacheService</c> and are invalidated with <c>InvalidateTenantAsync</c>, this fake is a
+/// single-process in-memory store with nothing to invalidate — a test simply calls <see cref="SeedTenant"/>/
 /// <see cref="MutateStatus"/> directly.
 /// </para>
 /// </remarks>
