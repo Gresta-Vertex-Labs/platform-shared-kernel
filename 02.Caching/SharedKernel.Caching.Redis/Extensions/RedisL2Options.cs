@@ -5,7 +5,7 @@ namespace SharedKernel.Caching.Redis.Extensions;
 
 /// <summary>
 /// Configuration options for the Redis L2 distributed backplane.
-/// Bound to <c>SharedKernelCaching:Redis</c> section in application configuration.
+/// Bound to <c>SharedKernel:Caching:Redis</c> section in application configuration.
 /// </summary>
 public sealed class RedisL2Options
 {
@@ -13,7 +13,7 @@ public sealed class RedisL2Options
     /// The configuration section name used when binding these options from
     /// <c>IConfiguration</c>.
     /// </summary>
-    public const string SectionName = "SharedKernelCaching:Redis";
+    public const string SectionName = "SharedKernel:Caching:Redis";
 
     /// <summary>
     /// StackExchange.Redis connection string.

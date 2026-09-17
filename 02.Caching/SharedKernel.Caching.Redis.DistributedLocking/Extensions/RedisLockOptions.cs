@@ -4,7 +4,7 @@ namespace SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 
 /// <summary>
 /// Configuration options for the Redis distributed locking service.
-/// Bound to <c>SharedKernelCaching:DistributedLock</c> section in application configuration.
+/// Bound to <c>SharedKernel:Caching:DistributedLocking</c> section in application configuration.
 /// </summary>
 public sealed class RedisLockOptions
 {
@@ -12,7 +12,7 @@ public sealed class RedisLockOptions
     /// The configuration section name used when binding these options from
     /// <c>IConfiguration</c>.
     /// </summary>
-    public const string SectionName = "SharedKernelCaching:DistributedLock";
+    public const string SectionName = "SharedKernel:Caching:DistributedLocking";
 
     /// <summary>
     /// StackExchange.Redis connection string for the locking Redis instance.

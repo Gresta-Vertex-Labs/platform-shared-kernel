@@ -22,7 +22,7 @@ created with `CachePolicy.LocalOnly()` stay in memory.
 
 ## Configuration
 
-### `AddRedisL2` (`SharedKernelCaching:Redis` section)
+### `AddRedisL2` (`SharedKernel:Caching:Redis` section)
 
 | Property | Default | Description |
 |----------|---------|-------------|

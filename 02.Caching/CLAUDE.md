@@ -295,7 +295,7 @@ AddRedisDistributedLocking(this IServiceCollection, string connectionString,
     // overload is the lock-only host entry point (no FusionCache, no ICachingBuilder needed).
 
 RedisLockOptions  (sealed class)
-    SectionName = "SharedKernelCaching:DistributedLock"
+    SectionName = "SharedKernel:Caching:DistributedLocking"
     ConnectionString  string  ([Required])
     ConnectTimeoutMs  int     ([Range(100, 60000)], default 5000)
 ```
@@ -372,7 +372,7 @@ AddRedisL2(this ICachingBuilder, string connectionString, Action<RedisL2Options>
     // AddRedisCircuitBreaker(...) from RedisL2Options.CircuitBreaker.
 
 RedisL2Options  (sealed class)
-    SectionName = "SharedKernelCaching:Redis"
+    SectionName = "SharedKernel:Caching:Redis"
     ConnectionString string, KeyPrefix string (""), ConnectTimeoutMs int (5000),
     CircuitBreaker RedisCircuitBreakerOptions { get; }
 ```
