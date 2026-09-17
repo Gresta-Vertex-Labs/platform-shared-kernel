@@ -1,4 +1,4 @@
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Security;
 using Xunit;
 

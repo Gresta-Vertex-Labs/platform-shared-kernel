@@ -1,308 +1,355 @@
-using SharedKernel.Security.Abstractions.Abstractions;
+using System.Globalization;
+using System.Security.Claims;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Security;
 using Xunit;
 
 namespace SharedKernel.Testing.SelfTests.Security;
 
-/// <summary>
-/// Proves <see cref="SecurityTestContextBuilder"/>'s identity-basics surface (T-79) and its
-/// AMR/ACR/AuthTime step-up-authentication surface (T-80).
-/// </summary>
-/// <remarks>
-/// Routed here per the D-52 fallback (mirroring <see cref="FakeUserContextTests"/>): neither
-/// <c>SharedKernel.Security.Abstractions.Tests.csproj</c> nor <c>SharedKernel.Security.Oidc.Tests.csproj</c>
-/// carries a <c>ProjectReference</c> to <c>SharedKernel.Testing</c>, so there is no real consumer in the
-/// owning domain to anchor against.
-/// </remarks>
 public sealed class SecurityTestContextBuilderTests
 {
-    // ----- T-79: identity basics -----
+    private static readonly Guid TenantId = Guid.Parse("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+    private static readonly DateTimeOffset AuthTime = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void Build_Default_IsAuthenticatedTrue()
+    public void Build_Default_AuthenticatedBearerIdentityWithDefaultSubject()
     {
         var principal = new SecurityTestContextBuilder().Build();
 
-        Assert.True(principal.Identity!.IsAuthenticated);
+        var identity = Assert.Single(principal.Identities);
+        Assert.True(identity.IsAuthenticated);
+        Assert.Equal("Bearer", identity.AuthenticationType);
+        Assert.Equal(FakeUserContext.DefaultSubjectId, identity.FindFirst("sub")!.Value);
     }
 
     [Fact]
-    public void Build_AfterUnauthenticated_IsAuthenticatedFalse()
+    public void Build_Default_EmitsOnlySubjectClaim()
+    {
+        var principal = new SecurityTestContextBuilder().Build();
+
+        var claim = Assert.Single(principal.Claims);
+        Assert.Equal(SecurityClaimTypes.Subject, claim.Type);
+    }
+
+    [Fact]
+    public void Build_IdentityNameAndRoleClaimTypes_AreShortNames()
+    {
+        var principal = new SecurityTestContextBuilder().WithName("Ada").WithRoles("admin").Build();
+
+        var identity = (ClaimsIdentity)principal.Identity!;
+        Assert.Equal("name", identity.NameClaimType);
+        Assert.Equal("roles", identity.RoleClaimType);
+        Assert.Equal("Ada", identity.Name);
+        Assert.True(principal.IsInRole("admin"));
+    }
+
+    [Fact]
+    public void Build_Unauthenticated_IdentityHasNoAuthenticationType()
     {
         var principal = new SecurityTestContextBuilder().Unauthenticated().Build();
+
+        Assert.False(principal.Identity!.IsAuthenticated);
+        Assert.Null(principal.Identity.AuthenticationType);
+    }
+
+    [Fact]
+    public void Build_WithIdentityKindAnonymous_SameAsUnauthenticated()
+    {
+        var principal = new SecurityTestContextBuilder().WithIdentityKind(IdentityKind.Anonymous).Build();
 
         Assert.False(principal.Identity!.IsAuthenticated);
     }
 
     [Fact]
-    public void Build_Roles_EmitOneClaimPerRole_UnderRolesClaimType()
+    public void Build_AllFields_EmitsShortNameClaims()
     {
-        var principal = new SecurityTestContextBuilder().WithRoles("Admin", "Editor").Build();
+        var principal = new SecurityTestContextBuilder()
+            .WithSubjectId("user-42")
+            .WithClientId("spa-client")
+            .WithTenantId(TenantId)
+            .WithSessionId("session-7")
+            .WithName("Ada")
+            .WithEmail("ada@example.test")
+            .WithAuthContextClassReference("urn:acr:silver")
+            .WithAuthTime(AuthTime)
+            .Build();
 
-        var roleClaims = principal.Claims.Where(c => c.Type == "roles").ToArray();
-
-        Assert.Equal(2, roleClaims.Length);
-        Assert.Contains(roleClaims, c => c.Value == "Admin");
-        Assert.Contains(roleClaims, c => c.Value == "Editor");
+        Assert.Equal("user-42", Single(principal, "sub"));
+        Assert.Equal("spa-client", Single(principal, "azp"));
+        Assert.Equal("3f2504e0-4f89-41d3-9a0c-0305e82c3301", Single(principal, "tenant_id"));
+        Assert.Equal("session-7", Single(principal, "sid"));
+        Assert.Equal("Ada", Single(principal, "name"));
+        Assert.Equal("ada@example.test", Single(principal, "email"));
+        Assert.Equal("urn:acr:silver", Single(principal, "acr"));
+        Assert.Equal(AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), Single(principal, "auth_time"));
     }
 
     [Fact]
-    public void Build_Permissions_EmitOneSpaceDelimitedScopeClaim()
+    public void Build_NullOptionalFields_EmitNoClaims()
     {
         var principal = new SecurityTestContextBuilder()
-            .WithPermissions("orders:write", "orders:read")
+            .WithClientId("c").WithClientId(null)
+            .WithTenantId(TenantId).WithTenantId(null)
+            .WithSessionId("s").WithSessionId(null)
+            .WithName("n").WithName(null)
+            .WithEmail("e").WithEmail(null)
+            .WithAuthContextClassReference("a").WithAuthContextClassReference(null)
+            .WithAuthTime(AuthTime).WithAuthTime(null)
             .Build();
 
-        var scopeClaims = principal.Claims.Where(c => c.Type == "scope").ToArray();
+        Assert.Equal(["sub"], principal.Claims.Select(claim => claim.Type));
+    }
 
-        Assert.Single(scopeClaims);
-        Assert.Equal("orders:write orders:read", scopeClaims[0].Value);
+    [Fact]
+    public void Build_Roles_OneClaimPerRoleInOrder()
+    {
+        var principal = new SecurityTestContextBuilder().WithRoles("Admin", "Editor").Build();
+
+        Assert.Equal(["Admin", "Editor"], principal.FindAll("roles").Select(claim => claim.Value));
+    }
+
+    [Fact]
+    public void Build_WithRolesCalledTwice_ReplacesRoles()
+    {
+        var principal = new SecurityTestContextBuilder().WithRoles("Admin").WithRoles("Viewer").Build();
+
+        Assert.Equal(["Viewer"], principal.FindAll("roles").Select(claim => claim.Value));
+    }
+
+    [Fact]
+    public void Build_Permissions_OneSpaceDelimitedScopeClaim()
+    {
+        var principal = new SecurityTestContextBuilder().WithPermissions("orders:write", "orders:read").Build();
+
+        Assert.Equal("orders:write orders:read", Single(principal, "scope"));
     }
 
     [Fact]
     public void Build_NoPermissions_EmitsNoScopeClaim()
     {
-        var principal = new SecurityTestContextBuilder().Build();
+        var principal = new SecurityTestContextBuilder().WithPermissions("a").WithPermissions().Build();
 
-        Assert.DoesNotContain(principal.Claims, c => c.Type == "scope");
+        Assert.Empty(principal.FindAll("scope"));
     }
 
     [Fact]
-    public void Build_WithClaim_IsAdditive_AndAppearsVerbatim()
+    public void Build_AuthenticationMethods_OneClaimPerMethod()
+    {
+        var principal = new SecurityTestContextBuilder().WithAuthenticationMethods("pwd", "otp").Build();
+
+        Assert.Equal(["pwd", "otp"], principal.FindAll("amr").Select(claim => claim.Value));
+    }
+
+    [Fact]
+    public void Build_WithClaim_AppendedVerbatimInOrder()
     {
         var principal = new SecurityTestContextBuilder()
-            .WithClaim("custom-a", "value-a")
-            .WithClaim("custom-b", "value-b")
+            .WithClaim("groups", "b")
+            .WithClaim("groups", "a")
             .Build();
 
-        Assert.Contains(principal.Claims, c => c.Type == "custom-a" && c.Value == "value-a");
-        Assert.Contains(principal.Claims, c => c.Type == "custom-b" && c.Value == "value-b");
+        Assert.Equal(["b", "a"], principal.FindAll("groups").Select(claim => claim.Value));
     }
 
     [Fact]
-    public void Build_WithClaims_IsBulkAdditive_AndAppearsVerbatim()
+    public void Build_ServicePrincipal_EmitsIdtypApp()
     {
-        var principal = new SecurityTestContextBuilder()
-            .WithClaim("custom-a", "value-a")
-            .WithClaims(new Dictionary<string, string> { ["custom-b"] = "value-b", ["custom-c"] = "value-c" })
-            .Build();
+        var principal = new SecurityTestContextBuilder().WithIdentityKind(IdentityKind.ServicePrincipal).Build();
 
-        Assert.Contains(principal.Claims, c => c.Type == "custom-a" && c.Value == "value-a");
-        Assert.Contains(principal.Claims, c => c.Type == "custom-b" && c.Value == "value-b");
-        Assert.Contains(principal.Claims, c => c.Type == "custom-c" && c.Value == "value-c");
+        Assert.True(principal.HasClaim("idtyp", "app"));
+        Assert.True(principal.Identity!.IsAuthenticated);
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.User)]
+    [InlineData(IdentityKind.Anonymous)]
+    public void Build_NotServicePrincipal_EmitsNoIdtyp(IdentityKind kind)
+    {
+        var principal = new SecurityTestContextBuilder().WithIdentityKind(kind).Build();
+
+        Assert.Empty(principal.FindAll("idtyp"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void WithSubjectId_NullOrWhitespace_Throws(string? subjectId)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new SecurityTestContextBuilder().WithSubjectId(subjectId!));
     }
 
     [Fact]
-    public void BuildUserContext_ReturnsFakeUserContext()
+    public void WithClaim_NullTypeOrValue_ThrowsArgumentNull()
+    {
+        var builder = new SecurityTestContextBuilder();
+
+        Assert.Throws<ArgumentNullException>(() => builder.WithClaim(null!, "v"));
+        Assert.Throws<ArgumentNullException>(() => builder.WithClaim("t", null!));
+    }
+
+    [Fact]
+    public void BuildUserContext_Default_AuthenticatedUserWithDefaultSubject()
     {
         var context = new SecurityTestContextBuilder().BuildUserContext();
 
-        Assert.IsType<FakeUserContext>(context);
-    }
-
-    [Fact]
-    public void BuildUserContext_ProjectsEveryFluentField_Exactly()
-    {
-        var userId = Guid.NewGuid();
-
-        var context = new SecurityTestContextBuilder()
-            .WithUserId(userId)
-            .WithEmail("user@test.com")
-            .WithUsername("test-user")
-            .WithRoles("Admin", "Editor")
-            .WithPermissions("orders:write")
-            .WithIdentityKind(IdentityKind.ServicePrincipal)
-            .BuildUserContext();
-
-        Assert.Equal(userId, context.UserId);
-        Assert.Equal("user@test.com", context.Email);
-        Assert.Equal("test-user", context.Username);
-        Assert.Equal(2, context.Roles.Count);
-        Assert.Contains("Admin", context.Roles);
-        Assert.Contains("Editor", context.Roles);
-        Assert.Single(context.Permissions);
-        Assert.Contains("orders:write", context.Permissions);
-        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal(IdentityKind.User, context.IdentityKind);
         Assert.True(context.IsAuthenticated);
-    }
-
-    [Fact]
-    public void BuildUserContext_AfterUnauthenticated_IsAuthenticatedFalse()
-    {
-        var context = new SecurityTestContextBuilder().Unauthenticated().BuildUserContext();
-
-        Assert.False(context.IsAuthenticated);
-    }
-
-    [Fact]
-    public void BuildUserContext_WithClaim_AppearsVerbatimInClaimsDictionary()
-    {
-        var context = new SecurityTestContextBuilder()
-            .WithClaim("custom-a", "value-a")
-            .WithClaims(new Dictionary<string, string> { ["custom-b"] = "value-b" })
-            .BuildUserContext();
-
-        Assert.Equal("value-a", context.Claims["custom-a"]);
-        Assert.Equal("value-b", context.Claims["custom-b"]);
-    }
-
-    [Fact]
-    public void BuildUserContext_ClaimsDictionary_NeverDerivedFromClaimsPrincipal_ContainsOnlyWithClaimEntries()
-    {
-        // Anchor "independence" proof: if BuildUserContext() were reimplemented by constructing a
-        // ClaimsPrincipal via Build() and parsing it back (e.g. dumping every claim into a dictionary),
-        // the standard identity claim types below ("sub"/"email"/"name"/"roles"/"scope") would leak
-        // into .Claims. They must not — only WithClaim/WithClaims entries ever appear there.
-        var context = new SecurityTestContextBuilder()
-            .WithUserId(Guid.NewGuid())
-            .WithEmail("user@test.com")
-            .WithUsername("test-user")
-            .WithRoles("Admin")
-            .WithPermissions("orders:write")
-            .WithClaim("custom", "value")
-            .BuildUserContext();
-
-        Assert.Single(context.Claims);
-        Assert.Equal("value", context.Claims["custom"]);
-        Assert.False(context.Claims.ContainsKey("sub"));
-        Assert.False(context.Claims.ContainsKey("email"));
-        Assert.False(context.Claims.ContainsKey("name"));
-        Assert.False(context.Claims.ContainsKey("roles"));
-        Assert.False(context.Claims.ContainsKey("scope"));
-    }
-
-    [Fact]
-    public void BuildUserContext_StandardFields_ComeFromDedicatedFluentState_NotFromAWithClaimOverride()
-    {
-        // A second independence proof: seed a WithClaim under the SAME claim type Build() uses for
-        // Email ("email"), with a DIFFERENT value than .WithEmail(...). A naive reimplementation that
-        // derived BuildUserContext() by parsing the ClaimsPrincipal's "email" claim could still
-        // accidentally pass this if it picked the right claim — but proves the dedicated FakeUserContext
-        // field, never the principal, is the actual source of truth for the standard identity members,
-        // while the WithClaim-injected value still surfaces verbatim in .Claims under its own key.
-        var context = new SecurityTestContextBuilder()
-            .WithEmail("dedicated@test.com")
-            .WithClaim("email", "from-with-claim@test.com")
-            .BuildUserContext();
-
-        Assert.Equal("dedicated@test.com", context.Email);
-        Assert.Equal("from-with-claim@test.com", context.Claims["email"]);
-    }
-
-    // ----- T-80: AMR/ACR/AuthTime -----
-
-    [Fact]
-    public void Build_AuthenticationMethods_EmitDiscretePerMethodClaims_NeverSpaceDelimited()
-    {
-        var principal = new SecurityTestContextBuilder()
-            .WithAuthenticationMethods("pwd", "otp")
-            .Build();
-
-        var amrClaims = principal.Claims.Where(c => c.Type == "amr").ToArray();
-
-        Assert.Equal(2, amrClaims.Length);
-        Assert.Contains(amrClaims, c => c.Value == "pwd");
-        Assert.Contains(amrClaims, c => c.Value == "otp");
-        Assert.DoesNotContain(amrClaims, c => c.Value.Contains(' '));
-    }
-
-    [Fact]
-    public void Build_AuthContextClassReference_EmitsAcrClaim()
-    {
-        var principal = new SecurityTestContextBuilder()
-            .WithAuthContextClassReference("urn:mace:incommon:iap:silver")
-            .Build();
-
-        Assert.Contains(principal.Claims, c => c.Type == "acr" && c.Value == "urn:mace:incommon:iap:silver");
-    }
-
-    [Fact]
-    public void Build_AuthTime_EmitsAuthTimeClaim_AsUnixSecondsNumericDate()
-    {
-        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
-
-        var principal = new SecurityTestContextBuilder().WithAuthTime(authTime).Build();
-
-        var claim = Assert.Single(principal.Claims, c => c.Type == "auth_time");
-        Assert.Equal(
-            authTime.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
-            claim.Value);
-    }
-
-    [Fact]
-    public void Build_NoAuthTime_EmitsNoAuthTimeClaim()
-    {
-        var principal = new SecurityTestContextBuilder().Build();
-
-        Assert.DoesNotContain(principal.Claims, c => c.Type == "auth_time");
-    }
-
-    [Fact]
-    public void BuildUserContext_ProjectsAmrAcrAuthTime_Exactly()
-    {
-        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
-
-        var context = new SecurityTestContextBuilder()
-            .WithAuthenticationMethods("pwd", "otp")
-            .WithAuthContextClassReference("urn:test:acr")
-            .WithAuthTime(authTime)
-            .BuildUserContext();
-
-        Assert.Equal(2, context.AuthenticationMethods.Count);
-        Assert.Contains("pwd", context.AuthenticationMethods);
-        Assert.Contains("otp", context.AuthenticationMethods);
-        Assert.Equal("urn:test:acr", context.AuthContextClassReference);
-        Assert.Equal(authTime, context.AuthTime);
-    }
-
-    [Fact]
-    public void BuildUserContext_Defaults_AuthenticationMethodsEmpty_AcrNull_AuthTimeNull()
-    {
-        var context = new SecurityTestContextBuilder().BuildUserContext();
-
+        Assert.Equal(FakeUserContext.DefaultSubjectId, context.SubjectId);
+        Assert.Null(context.ClientId);
+        Assert.Null(context.TenantId);
+        Assert.Empty(context.Roles);
+        Assert.Empty(context.Permissions);
         Assert.Empty(context.AuthenticationMethods);
-        Assert.Null(context.AuthContextClassReference);
         Assert.Null(context.AuthTime);
     }
 
     [Fact]
-    public void WasAuthenticatedWith_MatchesCaseInsensitively_AgainstMultiValueAuthenticationMethods()
+    public void BuildUserContext_AllFields_ProjectedExactly()
     {
         var context = new SecurityTestContextBuilder()
+            .WithSubjectId("user-42")
+            .WithClientId("spa-client")
+            .WithTenantId(TenantId)
+            .WithSessionId("session-7")
+            .WithName("Ada")
+            .WithEmail("ada@example.test")
+            .WithRoles("Admin", "Editor")
+            .WithPermissions("orders:write")
             .WithAuthenticationMethods("pwd", "otp")
+            .WithAuthContextClassReference("urn:acr:silver")
+            .WithAuthTime(AuthTime)
+            .WithClaim("groups", "finance")
             .BuildUserContext();
 
-        Assert.True(context.WasAuthenticatedWith("PWD"));
-        Assert.True(context.WasAuthenticatedWith("Otp"));
-        Assert.False(context.WasAuthenticatedWith("mfa"));
+        Assert.Equal("user-42", context.SubjectId);
+        Assert.Equal("spa-client", context.ClientId);
+        Assert.Equal(TenantId, context.TenantId);
+        Assert.Equal("session-7", context.SessionId);
+        Assert.Equal("Ada", context.Name);
+        Assert.Equal("ada@example.test", context.Email);
+        Assert.Equal(["Admin", "Editor"], context.Roles);
+        Assert.Equal(["orders:write"], context.Permissions);
+        Assert.Equal(["pwd", "otp"], context.AuthenticationMethods);
+        Assert.Equal("urn:acr:silver", context.AuthContextClassReference);
+        Assert.Equal(AuthTime, context.AuthTime);
+        Assert.Equal("finance", context.FindClaim("groups"));
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Anonymous, false)]
+    [InlineData(IdentityKind.System, true)]
+    public void BuildUserContext_KindWithoutSubject_SubjectIdNull(IdentityKind kind, bool authenticated)
+    {
+        var context = new SecurityTestContextBuilder().WithSubjectId("user-42").WithIdentityKind(kind).BuildUserContext();
+
+        Assert.Equal(kind, context.IdentityKind);
+        Assert.Equal(authenticated, context.IsAuthenticated);
+        Assert.Null(context.SubjectId);
     }
 
     [Fact]
-    public void IsAuthenticationFresherThan_ExplicitNow_WithinMaxAge_ReturnsTrue()
+    public void BuildUserContext_ServicePrincipal_KeepsSubject()
     {
-        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
-        var now = authTime.AddMinutes(4);
-        var context = new SecurityTestContextBuilder().WithAuthTime(authTime).BuildUserContext();
+        var context = new SecurityTestContextBuilder()
+            .WithSubjectId("svc-1")
+            .WithIdentityKind(IdentityKind.ServicePrincipal)
+            .BuildUserContext();
 
-        Assert.True(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), now));
+        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal("svc-1", context.SubjectId);
     }
 
     [Fact]
-    public void IsAuthenticationFresherThan_ExplicitNow_BeyondMaxAge_ReturnsFalse()
+    public void BuildUserContext_BuilderChangedAfterBuild_EarlierContextUnchanged()
     {
-        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
-        var now = authTime.AddMinutes(6);
-        var context = new SecurityTestContextBuilder().WithAuthTime(authTime).BuildUserContext();
+        var builder = new SecurityTestContextBuilder().WithRoles("Admin").WithClaim("groups", "a");
+        var context = builder.BuildUserContext();
 
-        Assert.False(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), now));
+        builder.WithRoles("Viewer").WithClaim("groups", "b");
+
+        Assert.Equal(["Admin"], context.Roles);
+        Assert.Equal(["a"], context.FindClaims("groups"));
     }
 
     [Fact]
-    public void IsAuthenticationFresherThan_NullAuthTime_AlwaysReturnsFalse()
+    public void BuildUserContext_SameInputs_ChecksAgreeWithPrincipalClaims()
     {
-        var context = new SecurityTestContextBuilder().BuildUserContext();
-        var now = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var builder = new SecurityTestContextBuilder()
+            .WithRoles("Admin")
+            .WithPermissions("orders:write")
+            .WithAuthenticationMethods("otp")
+            .WithAuthTime(AuthTime);
 
-        Assert.False(context.IsAuthenticationFresherThan(TimeSpan.FromDays(365), now));
+        var context = builder.BuildUserContext();
+        var principal = builder.Build();
+
+        Assert.True(context.HasRole("Admin"));
+        Assert.True(principal.IsInRole("Admin"));
+        Assert.True(context.HasPermission("orders:write"));
+        Assert.Contains("orders:write", Single(principal, "scope").Split(' '));
+        Assert.True(context.WasAuthenticatedWith("otp"));
+        Assert.True(principal.HasClaim("amr", "otp"));
+        Assert.True(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), AuthTime.AddMinutes(5)));
     }
+
+    // Mirrors SharedKernel.Security.Oidc's default claim mapping (sub, azp, tenant_id, sid, name, email, roles,
+    // space-delimited scope, amr, acr, auth_time, idtyp=app), which this project cannot reference directly.
+    [Theory]
+    [InlineData(IdentityKind.User)]
+    [InlineData(IdentityKind.ServicePrincipal)]
+    public void Build_MappedLikeOidcDefaults_MatchesBuildUserContext(IdentityKind kind)
+    {
+        var builder = new SecurityTestContextBuilder()
+            .WithIdentityKind(kind)
+            .WithSubjectId("subject-42")
+            .WithClientId("client-9")
+            .WithTenantId(TenantId)
+            .WithSessionId("session-7")
+            .WithName("Ada")
+            .WithEmail("ada@example.test")
+            .WithRoles("Admin", "Editor")
+            .WithPermissions("orders:read", "orders:write")
+            .WithAuthenticationMethods("pwd", "otp")
+            .WithAuthContextClassReference("urn:acr:silver")
+            .WithAuthTime(AuthTime);
+
+        var expected = builder.BuildUserContext();
+        var identity = (ClaimsIdentity)builder.Build().Identity!;
+
+        Assert.True(identity.IsAuthenticated);
+        Assert.Equal("Bearer", identity.AuthenticationType);
+        Assert.Equal(expected.IdentityKind == IdentityKind.ServicePrincipal, identity.HasClaim("idtyp", "app"));
+        Assert.Equal(expected.SubjectId, identity.FindFirst(SecurityClaimTypes.Subject)?.Value);
+        Assert.Equal(expected.ClientId, identity.FindFirst(SecurityClaimTypes.AuthorizedParty)?.Value);
+        Assert.Equal(expected.TenantId, Guid.Parse(identity.FindFirst(SecurityClaimTypes.TenantId)!.Value));
+        Assert.Equal(expected.SessionId, identity.FindFirst(SecurityClaimTypes.SessionId)?.Value);
+        Assert.Equal(expected.Name, identity.FindFirst(SecurityClaimTypes.Name)?.Value);
+        Assert.Equal(expected.Email, identity.FindFirst(SecurityClaimTypes.Email)?.Value);
+        Assert.Equal(expected.Roles, identity.FindAll(SecurityClaimTypes.Roles).Select(claim => claim.Value));
+        Assert.Equal(
+            expected.Permissions,
+            identity.FindAll(SecurityClaimTypes.Scope).SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal(expected.AuthenticationMethods, identity.FindAll(SecurityClaimTypes.AuthenticationMethod).Select(claim => claim.Value));
+        Assert.Equal(expected.AuthContextClassReference, identity.FindFirst(SecurityClaimTypes.AuthContextClassReference)?.Value);
+        Assert.Equal(
+            expected.AuthTime,
+            DateTimeOffset.FromUnixTimeSeconds(long.Parse(identity.FindFirst(SecurityClaimTypes.AuthTime)!.Value, CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
+    public void BuildUserContext_FindClaimStandardClaim_MatchesBuildPrincipal()
+    {
+        var builder = new SecurityTestContextBuilder().WithTenantId(TenantId).WithRoles("Admin");
+
+        var context = builder.BuildUserContext();
+        var principal = builder.Build();
+
+        Assert.Equal(principal.FindFirst("sub")?.Value, context.FindClaim("sub"));
+        Assert.Equal(principal.FindFirst("tenant_id")?.Value, context.FindClaim("tenant_id"));
+        Assert.Equal(principal.FindAll("roles").Select(claim => claim.Value), context.FindClaims("roles"));
+    }
+
+    private static string Single(ClaimsPrincipal principal, string claimType) =>
+        Assert.Single(principal.FindAll(claimType)).Value;
 }

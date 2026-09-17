@@ -5,7 +5,7 @@ using SharedKernel.Presentation.Grpc.Interceptors;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Security;
 

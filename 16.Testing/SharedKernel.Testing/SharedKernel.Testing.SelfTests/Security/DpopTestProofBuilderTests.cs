@@ -150,6 +150,169 @@ public sealed class DpopTestProofBuilderTests
         Assert.Equal("configured-token", proof.AccessToken);
     }
 
+    [Fact]
+    public void WithKey_SameKeyAcrossBuilders_SameThumbprintAndJwk()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        var first = new DpopTestProofBuilder().WithKey(key).Build();
+        var second = new DpopTestProofBuilder().WithKey(key).WithJti("other").Build();
+
+        Assert.Equal(first.JwkThumbprint, second.JwkThumbprint);
+        Assert.Equal(first.PublicJwk, second.PublicJwk);
+        Assert.NotEqual(first.ProofJwt, second.ProofJwt);
+    }
+
+    [Fact]
+    public void Build_WithoutKey_NewKeyPerBuild()
+    {
+        var first = new DpopTestProofBuilder().Build();
+        var second = new DpopTestProofBuilder().Build();
+
+        Assert.NotEqual(first.JwkThumbprint, second.JwkThumbprint);
+    }
+
+    [Fact]
+    public void WithKey_JwkCarriesSuppliedPublicKeyAndSignatureVerifiesWithIt()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var parameters = key.ExportParameters(includePrivateParameters: false);
+
+        var proof = new DpopTestProofBuilder().WithKey(key).Build();
+
+        using var jwk = JsonDocument.Parse(proof.PublicJwk);
+        Assert.Equal(Base64UrlEncode(parameters.Q.X!), jwk.RootElement.GetProperty("x").GetString());
+        Assert.Equal(Base64UrlEncode(parameters.Q.Y!), jwk.RootElement.GetProperty("y").GetString());
+        var parts = proof.ProofJwt.Split('.');
+        Assert.True(key.VerifyData(Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}"), Base64UrlDecode(parts[2]), HashAlgorithmName.SHA256));
+    }
+
+    [Fact]
+    public void Build_SuppliedKey_NotDisposed()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        new DpopTestProofBuilder().WithKey(key).Build();
+
+        var exception = Record.Exception(() => key.SignData([1, 2, 3], HashAlgorithmName.SHA256));
+        Assert.Null(exception);
+        Assert.NotNull(new DpopTestProofBuilder().WithKey(key).Build());
+    }
+
+    [Fact]
+    public void WithKey_NullKey_ThrowsArgumentNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => new DpopTestProofBuilder().WithKey(null!));
+    }
+
+    [Fact]
+    public void JwkThumbprint_EqualsRfc7638ThumbprintComputedByIdentityModel()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        var jwk = new Microsoft.IdentityModel.Tokens.JsonWebKey(proof.PublicJwk);
+        var expected = Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(jwk.ComputeJwkThumbprint());
+
+        Assert.Equal(expected, proof.JwkThumbprint);
+    }
+
+    [Fact]
+    public void JwkThumbprint_EqualsRfc7638ThumbprintComputedByHand()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        using var jwk = JsonDocument.Parse(proof.PublicJwk);
+        var root = jwk.RootElement;
+        var canonical =
+            $"{{\"crv\":\"{root.GetProperty("crv").GetString()}\",\"kty\":\"{root.GetProperty("kty").GetString()}\"," +
+            $"\"x\":\"{root.GetProperty("x").GetString()}\",\"y\":\"{root.GetProperty("y").GetString()}\"}}";
+
+        Assert.Equal("P-256", root.GetProperty("crv").GetString());
+        Assert.Equal("EC", root.GetProperty("kty").GetString());
+        Assert.Equal(Base64UrlEncode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))), proof.JwkThumbprint);
+    }
+
+    [Fact]
+    public void PublicJwk_HasNoPrivateKeyMember()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        using var jwk = JsonDocument.Parse(proof.PublicJwk);
+        Assert.False(jwk.RootElement.TryGetProperty("d", out _));
+        using var header = JsonDocument.Parse(Encoding.UTF8.GetString(Base64UrlDecode(proof.ProofJwt.Split('.')[0])));
+        Assert.False(header.RootElement.GetProperty("jwk").TryGetProperty("d", out _));
+    }
+
+    [Fact]
+    public void Header_EmbeddedJwk_EqualsPublicJwk()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        var header = DecodeHeader(proof.ProofJwt);
+        var embedded = JsonSerializer.Deserialize<Dictionary<string, string>>(header["jwk"].GetRawText())!;
+        var published = JsonSerializer.Deserialize<Dictionary<string, string>>(proof.PublicJwk)!;
+
+        Assert.Equal(published.OrderBy(pair => pair.Key), embedded.OrderBy(pair => pair.Key));
+    }
+
+    [Fact]
+    public void WithNonce_EmitsNonceClaimAndSignatureStaysValid()
+    {
+        var proof = new DpopTestProofBuilder().WithNonce("server-nonce-1").Build();
+
+        Assert.Equal("server-nonce-1", DecodePayload(proof.ProofJwt)["nonce"].GetString());
+        Assert.True(VerifySignature(proof.ProofJwt, proof.PublicJwk));
+    }
+
+    [Fact]
+    public void Build_WithoutNonce_OmitsNonceClaim()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        Assert.False(DecodePayload(proof.ProofJwt).ContainsKey("nonce"));
+    }
+
+    [Fact]
+    public void WithType_SetsTypHeaderAndSignatureStaysValid()
+    {
+        var proof = new DpopTestProofBuilder().WithType("JWT").Build();
+
+        Assert.Equal("JWT", DecodeHeader(proof.ProofJwt)["typ"].GetString());
+        Assert.True(VerifySignature(proof.ProofJwt, proof.PublicJwk));
+    }
+
+    [Fact]
+    public void Build_Defaults_MethodUriIssuedAtAndAccessToken()
+    {
+        var proof = new DpopTestProofBuilder().Build();
+
+        var payload = DecodePayload(proof.ProofJwt);
+        Assert.Equal("POST", payload["htm"].GetString());
+        Assert.Equal("https://api.example.test/resource", payload["htu"].GetString());
+        Assert.Equal(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds(), payload["iat"].GetInt64());
+        Assert.Equal("dpop-test-access-token", proof.AccessToken);
+    }
+
+    [Fact]
+    public void Build_TamperedPayload_SignatureNoLongerVerifies()
+    {
+        var proof = new DpopTestProofBuilder().WithHttpMethod("GET").Build();
+        var parts = proof.ProofJwt.Split('.');
+        var tamperedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(Base64UrlDecode(parts[1])).Replace("\"GET\"", "\"PUT\"")));
+
+        Assert.False(VerifySignature($"{parts[0]}.{tamperedPayload}.{parts[2]}", proof.PublicJwk));
+    }
+
+    [Fact]
+    public void WithMalformedAth_Null_ThrowsArgumentNull()
+    {
+        var builder = new DpopTestProofBuilder();
+
+        Assert.Throws<ArgumentNullException>(() => builder.WithMalformedAth(null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithNonce(null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithType(null!));
+    }
+
     private static bool VerifySignature(string proofJwt, string publicJwkJson)
     {
         var parts = proofJwt.Split('.');
