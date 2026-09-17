@@ -1643,7 +1643,7 @@ public class SecureDefaultsAssertionTests
     /// <strong>Black-box, representation-agnostic, at the correct layer.</strong> This test makes no
     /// assumption about <c>EncryptedCacheService</c>'s internal shape beyond the public
     /// <c>ICachingBuilder.AddBrotliCompression()</c>/<c>.AddCacheEncryption()</c> entry points and
-    /// the resulting <c>ICacheService.SetAsync</c>/<c>GetAsync</c> round trip. Because
+    /// the resulting <c>ICacheService.SetAsync</c>/<c>TryGetAsync</c> round trip. Because
     /// <c>EncryptedCacheService</c> wraps <c>ICacheService</c> rather than the serializer, the test
     /// registers its own minimal in-memory <c>ICacheService</c> double
     /// (<see cref="SpyInnerCacheService"/>) BEFORE calling <c>AddSharedKernelCaching()</c> — that
@@ -1671,7 +1671,7 @@ public class SecureDefaultsAssertionTests
     /// </para>
     /// <para>
     /// <strong>Round-trip-correctness precondition</strong> (Implementation Rule 3). Reading the
-    /// same key back through the composed pipeline's own <c>GetAsync</c> path must recover the
+    /// same key back through the composed pipeline's own <c>TryGetAsync</c> path must recover the
     /// original payload exactly — guarding against the size-reduction assertion accidentally
     /// passing against corrupted or no-op output rather than genuine compress-then-encrypt
     /// behavior.
@@ -1740,8 +1740,10 @@ public class SecureDefaultsAssertionTests
         var pipelineLength = pipelineStoredBytes!.Length;
 
         // Round-trip-correctness precondition (Implementation Rule 3).
-        var roundTripped = await cache.GetAsync<string>(key);
-        roundTripped.Should().Be(
+        var roundTripped = await cache.TryGetAsync<string>(key);
+        roundTripped.IsHit.Should().BeTrue(
+            because: "the entry was just written through the composed pipeline");
+        roundTripped.Value.Should().Be(
             payload,
             because: "the composed pipeline's read path must recover the original payload " +
                      "exactly, guarding against the size assertion below passing against " +
@@ -1785,8 +1787,8 @@ public class SecureDefaultsAssertionTests
         /// </summary>
         public byte[]? LastStoredBytes { get; private set; }
 
-        public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default) =>
-            new(_store.TryGetValue(key, out object? value) ? (T?)value : default);
+        public ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default) =>
+            new(_store.TryGetValue(key, out object? value) ? CacheLookup<T>.Hit((T)value!) : CacheLookup<T>.Miss);
 
         public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
         {
@@ -1798,17 +1800,27 @@ public class SecureDefaultsAssertionTests
             return ValueTask.CompletedTask;
         }
 
-        public async ValueTask<T> GetOrSetAsync<T>(
+        public ValueTask<T> GetOrSetAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T>> factory,
+            CachePolicy policy,
+            CancellationToken ct = default) =>
+            GetOrSetAsync(key, (_, token) => factory(token), policy, ct);
+
+        public async ValueTask<T> GetOrSetAsync<T>(
+            string key,
+            Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
             CachePolicy policy,
             CancellationToken ct = default)
         {
             if (_store.TryGetValue(key, out object? existing))
                 return (T)existing!;
 
-            T value = await factory(ct).ConfigureAwait(false);
-            await SetAsync(key, value, policy, ct).ConfigureAwait(false);
+            var context = new CacheFactoryContext(key, policy);
+            T value = await factory(context, ct).ConfigureAwait(false);
+            if (!context.IsCachingSkipped)
+                await SetAsync(key, value, policy, ct).ConfigureAwait(false);
+
             return value;
         }
 
@@ -1818,16 +1830,26 @@ public class SecureDefaultsAssertionTests
             return ValueTask.CompletedTask;
         }
 
+        public ValueTask ExpireAsync(string key, CancellationToken ct = default) => RemoveAsync(key, ct);
+
         public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) => ValueTask.CompletedTask;
 
-        public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
+        public ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask ClearAsync(CancellationToken ct = default)
+        {
+            _store.Clear();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
             IEnumerable<string> keys,
             CancellationToken ct = default)
         {
-            IReadOnlyDictionary<string, T?> result = keys.ToDictionary(
+            IReadOnlyDictionary<string, CacheLookup<T>> result = keys.Distinct().ToDictionary(
                 k => k,
-                k => _store.TryGetValue(k, out object? v) ? (T?)v : default);
-            return new ValueTask<IReadOnlyDictionary<string, T?>>(result);
+                k => _store.TryGetValue(k, out object? v) ? CacheLookup<T>.Hit((T)v!) : CacheLookup<T>.Miss);
+            return new ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>>(result);
         }
 
         public ValueTask SetManyAsync<T>(

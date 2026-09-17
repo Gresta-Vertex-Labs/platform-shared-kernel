@@ -9,7 +9,9 @@ namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
 /// SK0007 — Fires when a <see cref="TypeSyntax"/> whose simple name is
-/// <c>IRedisChannelService</c> appears as a constructor parameter, field declaration, or property
+/// <c>IRedisChannelService</c> (declared in <c>SharedKernel.Caching.Redis.PubSub</c>; matched
+/// whether written bare, namespace-qualified, or <c>global::</c>-qualified) appears as a
+/// constructor parameter, field declaration, or property
 /// declaration inside a <see cref="ClassDeclarationSyntax"/> whose own name, or any enclosing
 /// namespace identifier, contains one of the case-sensitive substrings <c>Command</c>,
 /// <c>Event</c>, <c>DomainEvent</c>, or <c>IntegrationEvent</c>.
@@ -164,6 +166,9 @@ public sealed class RedisChannelServiceMessagingSubstituteAnalyzer : AnalyzerBas
             IdentifierNameSyntax identifier => identifier.Identifier.Text,
             GenericNameSyntax generic => generic.Identifier.Text,
             NullableTypeSyntax nullable => GetTypeName(nullable.ElementType),
+            // SharedKernel.Caching.Redis.PubSub.IRedisChannelService and global::... forms
+            QualifiedNameSyntax qualified => GetTypeName(qualified.Right),
+            AliasQualifiedNameSyntax aliasQualified => GetTypeName(aliasQualified.Name),
             _ => typeSyntax.ToString(),
         };
     }

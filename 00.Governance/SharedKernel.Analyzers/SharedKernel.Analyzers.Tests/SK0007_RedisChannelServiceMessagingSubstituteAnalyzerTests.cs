@@ -60,6 +60,70 @@ public class SK0007_RedisChannelServiceMessagingSubstituteAnalyzerTests
         await test.RunAsync();
     }
 
+    /// <summary>
+    /// Fire path: the interface declared in its real namespace, <c>SharedKernel.Caching.Redis.PubSub</c>,
+    /// and imported with a <c>using</c> directive triggers SK0007 in a command-context class.
+    /// </summary>
+    [Fact]
+    public async Task FirePath_IRedisChannelServiceFromPubSubNamespaceViaUsing_ReportsDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<RedisChannelServiceMessagingSubstituteAnalyzer, DefaultVerifier>
+        {
+            TestCode = """
+                namespace SharedKernel.Caching.Redis.PubSub
+                {
+                    public interface IRedisChannelService { }
+                }
+
+                namespace Application.Commands
+                {
+                    using SharedKernel.Caching.Redis.PubSub;
+
+                    public class PlaceOrderCommandHandler
+                    {
+                        public PlaceOrderCommandHandler({|SK0007:IRedisChannelService|} redisChannel) { }
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// Fire path: a namespace-qualified or <c>global::</c>-qualified reference to
+    /// <c>SharedKernel.Caching.Redis.PubSub.IRedisChannelService</c> triggers SK0007 — qualifying
+    /// the name must not evade the rule.
+    /// </summary>
+    [Fact]
+    public async Task FirePath_QualifiedIRedisChannelService_ReportsDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<RedisChannelServiceMessagingSubstituteAnalyzer, DefaultVerifier>
+        {
+            TestCode = """
+                namespace SharedKernel.Caching.Redis.PubSub
+                {
+                    public interface IRedisChannelService { }
+                }
+
+                namespace Application.Events
+                {
+                    public class OrderPlacedEventHandler
+                    {
+                        private readonly {|SK0007:SharedKernel.Caching.Redis.PubSub.IRedisChannelService|} _channel;
+
+                        public {|SK0007:global::SharedKernel.Caching.Redis.PubSub.IRedisChannelService?|} Channel { get; set; }
+
+                        public OrderPlacedEventHandler({|SK0007:SharedKernel.Caching.Redis.PubSub.IRedisChannelService|} channel)
+                        {
+                            _channel = channel;
+                        }
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
+
     // ---------------------------------------------------------------------------
     // T-21 — Pass path: IRedisChannelService in a non-messaging class
     // ---------------------------------------------------------------------------

@@ -134,7 +134,27 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default)
+        // Every other eviction member is recorded too, so a behavior that switched to one of them
+        // would still show up in the observed order rather than throwing.
+        public ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default)
+        {
+            CallOrder.Add(nameof(RemoveByTagsAsync));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ExpireAsync(string key, CancellationToken ct = default)
+        {
+            CallOrder.Add(nameof(ExpireAsync));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ClearAsync(CancellationToken ct = default)
+        {
+            CallOrder.Add(nameof(ClearAsync));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<CacheLookup<T>> TryGetAsync<T>(string key, CancellationToken ct = default)
             => throw new NotSupportedException("Not exercised by this ordering lock.");
 
         public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
@@ -147,7 +167,14 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
             CancellationToken ct = default)
             => throw new NotSupportedException("Not exercised by this ordering lock.");
 
-        public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
+        public ValueTask<T> GetOrSetAsync<T>(
+            string key,
+            Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
+            CachePolicy policy,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by this ordering lock.");
+
+        public ValueTask<IReadOnlyDictionary<string, CacheLookup<T>>> TryGetManyAsync<T>(
             IEnumerable<string> keys,
             CancellationToken ct = default)
             => throw new NotSupportedException("Not exercised by this ordering lock.");

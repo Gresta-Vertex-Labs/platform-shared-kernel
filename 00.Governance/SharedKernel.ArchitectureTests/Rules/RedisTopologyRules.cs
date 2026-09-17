@@ -1,5 +1,6 @@
 using System.Reflection;
 using NetArchTest.Rules;
+using SharedKernel.ArchitectureTests.Predicates;
 
 namespace SharedKernel.ArchitectureTests.Rules;
 
@@ -12,12 +13,24 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </summary>
 /// <remarks>
 /// <para>
-/// All five factory methods accept <see cref="Assembly"/> or <c>params Assembly[]</c> and return
-/// <see cref="ConditionList"/> — consistent with the established <see cref="Helpers.ArchitectureRuleBase"/>
-/// API. Every check is a pure assembly-dependency-graph predicate using
+/// Every factory method accepts <see cref="Assembly"/> or <c>params Assembly[]</c> and returns
+/// <see cref="ConditionList"/> (or one per assembly) — consistent with the established
+/// <see cref="Helpers.ArchitectureRuleBase"/> API. The dependency checks use
 /// <c>.Should().NotHaveDependencyOn(...)</c>, in the same style as
-/// <see cref="CachingAbstractionRules"/>. No Mono.Cecil, no <c>ICustomRule</c>, and no new SK
-/// diagnostic IDs are introduced by this class.
+/// <see cref="CachingAbstractionRules"/>; <see cref="CachingAbstractionsDeclaresNoProviderSpecificTypes"/>
+/// matches type names, and <see cref="CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions"/>
+/// reads the compiled assembly references through
+/// <see cref="Predicates.AssemblyReferenceAllowListPredicate"/>. No SK diagnostic IDs are
+/// introduced by this class.
+/// </para>
+/// <para>
+/// <strong>Provider-neutral contract.</strong> <c>SharedKernel.Caching.Abstractions</c> holds only
+/// provider-neutral contracts (cache, tenant cache, key format, distributed locks and leases).
+/// Provider-specific contracts live in the package that implements them:
+/// <c>IRedisChannelService</c> in <c>SharedKernel.Caching.Redis.PubSub</c>,
+/// <c>IRedisHashService</c>/<c>ITypedHashStore&lt;T&gt;</c> in
+/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>ConnectionHealthState</c> in
+/// <c>SharedKernel.Caching.Redis.Core</c>.
 /// </para>
 /// <para>
 /// <strong>Matching note:</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> compares
@@ -48,8 +61,8 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
-///     <c>Redis.Core</c> → <c>SharedKernel.Caching.Abstractions</c> (permitted; Core implements
-///     abstraction-facing health/connection contracts).
+///     <c>Redis.Core</c> → <c>SharedKernel.Caching.Abstractions</c> (permitted; the shared
+///     connection layer may use the provider-neutral contracts).
 ///   </description></item>
 ///   <item><description>
 ///     <c>Redis</c> (L2), <c>Redis.DistributedLocking</c>, <c>Redis.HashStore</c>,
@@ -115,16 +128,51 @@ public static class RedisTopologyRules
     };
 
     /// <summary>
-    /// The four infrastructure-family terms that must never appear as a dependency of
-    /// <c>SharedKernel.Caching.Abstractions</c>.
+    /// The namespace terms that must never appear as a dependency of
+    /// <c>SharedKernel.Caching.Abstractions</c>: every caching provider package and provider
+    /// library (FusionCache, Redis, RedLock.net, Polly), the options and hosting stacks the
+    /// provider-neutral contract deliberately does without, and the persistence/messaging families.
     /// </summary>
     private static readonly string[] AbstractionsForbiddenTerms =
     [
         "SharedKernel.Caching.Redis",
+        "SharedKernel.Caching.FusionCache",
         "StackExchange.Redis",
+        "ZiggyCreatures",
+        "RedLockNet",
+        "Polly",
+        "Microsoft.Extensions.Caching",
+        "Microsoft.Extensions.Options",
+        "Microsoft.Extensions.Hosting",
         "Microsoft.EntityFrameworkCore",
         "MassTransit",
     ];
+
+    /// <summary>
+    /// The only non-BCL assembly <c>SharedKernel.Caching.Abstractions</c> may reference —
+    /// <c>ICachingBuilder</c> exposes <c>IServiceCollection</c> so provider packages can chain
+    /// registrations.
+    /// </summary>
+    private const string DependencyInjectionAbstractionsAssemblyName =
+        "Microsoft.Extensions.DependencyInjection.Abstractions";
+
+    /// <summary>
+    /// Matches a type name that names a caching provider or a provider-side concept. A
+    /// provider-neutral contract has no Redis channel, hash store, FusionCache option, RedLock
+    /// handle, or connection health state — those belong to the provider packages
+    /// (<c>IRedisChannelService</c> in <c>.Redis.PubSub</c>, <c>IRedisHashService</c>/
+    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, <c>ConnectionHealthState</c> in
+    /// <c>.Redis.Core</c>).
+    /// </summary>
+    private const string ProviderSpecificTypeNamePattern =
+        "Redis|Fusion|RedLock|StackExchange|Garnet|Valkey|Memcache|Connection";
+
+    /// <summary>
+    /// The namespace root of RedLock.net (<c>RedLockNet.SERedis</c>, <c>RedLockNet.Abstractions</c>),
+    /// which <c>SharedKernel.Caching.Redis.DistributedLocking</c> replaced with its own atomic Lua
+    /// scripts.
+    /// </summary>
+    private const string RedLockNetNamespaceRoot = "RedLockNet";
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that <c>SharedKernel.Caching.Redis.Core</c>
@@ -263,8 +311,8 @@ public static class RedisTopologyRules
     /// <remarks>
     /// <para>
     /// <strong>Rationale:</strong> codifies the Issue 3 boundary — <c>Redis.PubSub</c> is an
-    /// ephemeral, no-delivery-guarantee signaling channel (<c>ICacheInvalidationBus</c> /
-    /// <c>IRedisChannelService</c>) and must never become a backdoor path into the durable
+    /// ephemeral, no-delivery-guarantee signaling channel (<c>IRedisChannelService</c>) and must
+    /// never become a backdoor path into the durable
     /// <c>IMessageBus</c> abstraction.
     /// </para>
     /// <para>
@@ -339,35 +387,42 @@ public static class RedisTopologyRules
             .NotHaveDependencyOn("SharedKernel.Caching");
 
     /// <summary>
-    /// Returns a <see cref="ConditionList"/> re-verifying that
-    /// <c>SharedKernel.Caching.Abstractions</c> has zero dependencies beyond
-    /// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c>, across the now five-package
-    /// Redis topology.
+    /// Returns a <see cref="ConditionList"/> asserting that no type in
+    /// <c>SharedKernel.Caching.Abstractions</c> depends on a caching provider, a provider library,
+    /// the options or hosting stacks, or the persistence/messaging families.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Rationale:</strong> confirms that the five-package split did not introduce a
-    /// transitive dependency from any new capability package back into the abstraction the
-    /// capability packages themselves implement. Same shape as
-    /// <see cref="SharedKernelLayeringRules.CoreReferencesNothing"/>, scoped to
+    /// <strong>Rationale:</strong> the abstractions package is the provider-neutral contract every
+    /// provider implements. A dependency on any provider — or on a library only a provider needs —
+    /// drags that provider into every consumer and lets provider concepts leak into the contract.
+    /// Same shape as <see cref="SharedKernelLayeringRules.CoreReferencesNothing"/>, scoped to
     /// <c>SharedKernel.Caching.Abstractions</c>.
     /// </para>
     /// <para>
     /// Asserts <c>.Should().NotHaveDependencyOn(term)</c> for each of:
     /// <c>"SharedKernel.Caching.Redis"</c> (covers the L2 package and all four
     /// <c>Redis.Core</c>/<c>.DistributedLocking</c>/<c>.HashStore</c>/<c>.PubSub</c> capability
-    /// packages by prefix), <c>"StackExchange.Redis"</c>, <c>"Microsoft.EntityFrameworkCore"</c>,
-    /// and <c>"MassTransit"</c>.
+    /// packages by prefix), <c>"SharedKernel.Caching.FusionCache"</c>, <c>"StackExchange.Redis"</c>,
+    /// <c>"ZiggyCreatures"</c> (FusionCache), <c>"RedLockNet"</c>, <c>"Polly"</c>,
+    /// <c>"Microsoft.Extensions.Caching"</c>, <c>"Microsoft.Extensions.Options"</c>,
+    /// <c>"Microsoft.Extensions.Hosting"</c>, <c>"Microsoft.EntityFrameworkCore"</c>, and
+    /// <c>"MassTransit"</c>.
+    /// </para>
+    /// <para>
+    /// Namespace terms cannot separate two assemblies that share a namespace; pair this rule with
+    /// <see cref="CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions"/>, which pins the
+    /// exact assembly set.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong> <c>SharedKernel.Caching.Abstractions</c> references
-    /// <c>StackExchange.Redis</c> directly (e.g., to expose a Redis-specific type on an interface).
+    /// <c>StackExchange.Redis</c> directly (e.g., to expose a Redis-specific type on an interface),
+    /// or binds a configuration type through <c>IOptions&lt;T&gt;</c>.
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong> <c>SharedKernel.Caching.Abstractions</c> references only
-    /// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> (and
-    /// <c>Microsoft.Extensions.Options</c>); all Redis-specific types live in the capability
-    /// packages that implement the abstraction interfaces.
+    /// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c>; options, connection state and
+    /// every Redis-specific type live in the provider packages that implement the contract.
     /// </para>
     /// </remarks>
     /// <param name="abstractionsAssembly">
@@ -396,4 +451,130 @@ public static class RedisTopologyRules
 
         return conditionList;
     }
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that the compiled
+    /// <c>SharedKernel.Caching.Abstractions</c> assembly references no assembly other than the .NET
+    /// base class library and <c>Microsoft.Extensions.DependencyInjection.Abstractions</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Rationale:</strong> a deny-list of namespaces only catches the dependencies someone
+    /// thought to list. This allow-list reads the assembly's actual references, so any new package
+    /// dependency — a provider, <c>Microsoft.Extensions.Options</c>, a logging or hosting package,
+    /// another SharedKernel package — fails until the contract is deliberately widened here.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> an options type bound with <c>IOptions&lt;T&gt;</c>, a
+    /// <c>BackgroundService</c>, or a reference to <c>SharedKernel.Primitives</c> added to the
+    /// abstractions package.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> the package references
+    /// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> for <c>ICachingBuilder</c> and
+    /// nothing else; configuration and hosting live in the provider packages.
+    /// </para>
+    /// <para>
+    /// An assembly with no types passes vacuously; callers should pass the real compiled assembly.
+    /// </para>
+    /// </remarks>
+    /// <param name="abstractionsAssembly">
+    /// The <c>SharedKernel.Caching.Abstractions</c> assembly under test — supply via
+    /// <c>typeof(ICacheService).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> ready for assertion via <c>AssertRule</c> on
+    /// <see cref="Helpers.ArchitectureRuleBase"/>. When it fails, every type of the assembly is
+    /// reported, because the violation belongs to the assembly rather than to one type.
+    /// </returns>
+    public static ConditionList CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions(
+        Assembly abstractionsAssembly) =>
+        Types
+            .InAssembly(abstractionsAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName));
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that <c>SharedKernel.Caching.Abstractions</c>
+    /// declares no provider-specific type: no type whose name mentions Redis, FusionCache,
+    /// RedLock, StackExchange, Garnet, Valkey, Memcache, or a connection.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Rationale:</strong> the dependency rules above stop the abstractions package from
+    /// <em>using</em> a provider, but a provider-shaped contract can be written with no provider
+    /// dependency at all — <c>IRedisChannelService</c>, <c>IRedisHashService</c>,
+    /// <c>ITypedHashStore&lt;T&gt;</c> and <c>ConnectionHealthState</c> once lived here that way.
+    /// Those contracts now belong to the package that implements them:
+    /// <c>SharedKernel.Caching.Redis.PubSub</c>, <c>SharedKernel.Caching.Redis.HashStore</c> and
+    /// <c>SharedKernel.Caching.Redis.Core</c>.
+    /// </para>
+    /// <para>
+    /// Matching is a case-sensitive regular expression over the simple type name, so compiler-
+    /// generated and nested types are checked too.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> <c>public interface IRedisStreamService</c> or
+    /// <c>public enum ConnectionHealthState</c> declared in <c>SharedKernel.Caching.Abstractions</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> the provider package declares its own contract in its
+    /// own namespace, e.g. <c>SharedKernel.Caching.Redis.PubSub.IRedisChannelService</c>.
+    /// </para>
+    /// </remarks>
+    /// <param name="abstractionsAssembly">
+    /// The <c>SharedKernel.Caching.Abstractions</c> assembly under test — supply via
+    /// <c>typeof(ICacheService).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> ready for assertion via <c>AssertRule</c> on
+    /// <see cref="Helpers.ArchitectureRuleBase"/>.
+    /// </returns>
+    public static ConditionList CachingAbstractionsDeclaresNoProviderSpecificTypes(Assembly abstractionsAssembly) =>
+        Types
+            .InAssembly(abstractionsAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveNameMatching(ProviderSpecificTypeNamePattern);
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that
+    /// <c>SharedKernel.Caching.Redis.DistributedLocking</c> has no dependency on RedLock.net
+    /// (<c>RedLockNet.*</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Rationale:</strong> the lock service issues its fencing token atomically with the
+    /// acquisition, keeps a held lock alive and reports its loss, all inside server-side Lua
+    /// scripts. RedLock.net acquires through its own multi-step protocol, which cannot issue a
+    /// token in the same atomic step, so reintroducing it would reopen the gap between "lock
+    /// acquired" and "token issued" that a stale holder can exploit.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> <c>RedisDistributedLockService</c> constructed over
+    /// <c>RedLockNet.IDistributedLockFactory</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> acquisition, extension and release run as Lua scripts
+    /// over <c>StackExchange.Redis</c>'s <c>IDatabase</c>.
+    /// </para>
+    /// </remarks>
+    /// <param name="distributedLockingAssembly">
+    /// The <c>SharedKernel.Caching.Redis.DistributedLocking</c> assembly under test — supply via
+    /// <c>typeof(RedisLockOptions).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> ready for assertion via <c>AssertRule</c> on
+    /// <see cref="Helpers.ArchitectureRuleBase"/>.
+    /// </returns>
+    public static ConditionList DistributedLockingNeverReferencesRedLock(Assembly distributedLockingAssembly) =>
+        Types
+            .InAssembly(distributedLockingAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn(RedLockNetNamespaceRoot);
 }
