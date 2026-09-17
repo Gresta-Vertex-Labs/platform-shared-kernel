@@ -232,7 +232,6 @@
       build (19.Scheduling/state-map.md D-06, WO-073/P-464).
     -->
     <PackageVersion Include="Quartz" Version="3.18.1" />
-    <PackageVersion Include="RedLock.net" Version="2.3.2" />
     <!-- Test-only, SharedKernel.Analyzers.Tests (SK0033/WO-079/P-486): fixture compilation proving
          a Riok.Mapperly [Mapper] partial class does NOT trigger the AutoMapper-scoped analyzer.
          Never a production PackageReference of any SharedKernel.* package. -->

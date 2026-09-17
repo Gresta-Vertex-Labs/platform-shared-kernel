@@ -1,15 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Distributed mutual-exclusion locking over Redis via RedLock.net. Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), hash store, or pub/sub packages.</Description>
-    <PackageTags>shared-kernel;caching;redis;redlock;distributed-locking;aot</PackageTags>
+    <Description>Redis implementation of IDistributedLockService: locks kept alive until released and reported when lost, self-expiring leases, and fencing tokens issued atomically with each acquisition by server-side Lua scripts. Works on a single Redis primary or Redis Cluster. Depends on SharedKernel.Caching.Redis.Core for connection management.</Description>
+    <PackageTags>shared-kernel;caching;redis;distributed-lock;lease;fencing-token</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <!-- DI abstractions — required for IServiceCollection extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <!-- RedLock.net distributed locking over Redis -->
-    <PackageReference Include="RedLock.net" />
-    <!-- Caching abstractions — ICachingBuilder, IDistributedLockService, IRenewableLock -->
+    <!-- Caching abstractions — ICachingBuilder, IDistributedLockService, IDistributedLock -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) -->
     <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
