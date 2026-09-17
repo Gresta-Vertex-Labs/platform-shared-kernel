@@ -1,0 +1,8 @@
+#nullable enable
+SharedKernel.Caching.Redis.PubSub.Extensions.RedisChannelServiceExtensions
+SharedKernel.Caching.Redis.PubSub.IRedisChannelService
+SharedKernel.Caching.Redis.PubSub.IRedisChannelService.PublishAsync(string! channel, string! message, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<long>
+SharedKernel.Caching.Redis.PubSub.IRedisChannelService.PublishAsync<T>(string! channel, T message, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<long>
+SharedKernel.Caching.Redis.PubSub.IRedisChannelService.SubscribeAsync(string! channel, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.IAsyncDisposable!>
+SharedKernel.Caching.Redis.PubSub.IRedisChannelService.SubscribeAsync<T>(string! channel, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Func<T, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.IAsyncDisposable!>
+static SharedKernel.Caching.Redis.PubSub.Extensions.RedisChannelServiceExtensions.AddRedisChannelService(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

@@ -1,71 +1,80 @@
-using SharedKernel.Caching.Redis.Core;
+using System.Text.Json.Serialization.Metadata;
 
 namespace SharedKernel.Caching.Redis.PubSub;
 
 /// <summary>
-/// Provides ephemeral, non-durable Redis Pub/Sub fanout for cache-adjacent signaling.
+/// Publishes and subscribes to Redis Pub/Sub channels for loss-tolerant, in-the-moment signals.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This service is scoped to <b>cache-adjacent ephemeral signaling only</b>: cache invalidation
-/// signals, lightweight broadcast notifications, and other transient coordination patterns where
-/// message loss is tolerable. It must <b>never</b> be used for durable, ordered, or
-/// guaranteed-delivery messaging — that is the responsibility of <c>07.Messaging</c>
-/// (<c>SharedKernel.Messaging</c> / MassTransit).
+/// <b>At most once, no durability.</b> A message reaches only subscribers connected at that moment; one
+/// published while a subscriber is disconnected is lost for it. Never use it for work that must happen: use
+/// <c>SharedKernel.Messaging</c> for that. Cache entries need no signal of their own; the cache backplane
+/// already reaches every instance.
 /// </para>
 /// <para>
-/// Because this service is ephemeral, non-durable: if a subscriber is offline when a message
-/// is published, the message is silently dropped. Receivers that require at-least-once delivery
-/// must use <c>07.Messaging</c> instead.
+/// <b>Subscriptions.</b> Each call to <c>SubscribeAsync</c> creates an independent subscription, so a channel
+/// can have several. A subscription handles its messages one at a time, in the order Redis delivered them, and
+/// ends when disposed. After a reconnect the connection restores every subscription on its own.
 /// </para>
 /// <para>
-/// All handler exceptions are caught and logged internally — they are never propagated to the
-/// Redis subscriber thread.
+/// <b>Failures.</b> A handler that throws is logged and the subscription continues with the next message; a
+/// typed message that cannot be deserialized is logged and skipped. Channel names are literal, never patterns.
 /// </para>
 /// </remarks>
 public interface IRedisChannelService
 {
-    /// <summary>
-    /// Reflects the current StackExchange.Redis connection state; intended for health check consumption.
-    /// </summary>
-    /// <remarks>
-    /// The value transitions automatically in response to <c>IConnectionMultiplexer.ConnectionRestored</c>
-    /// and <c>IConnectionMultiplexer.ConnectionFailed</c> events. Reads are non-blocking; writes use
-    /// volatile semantics — no lock is held during property access.
-    /// </remarks>
-    ConnectionHealthState ConnectionHealth { get; }
+    /// <summary>Publishes a text message.</summary>
+    /// <param name="channel">The channel name.</param>
+    /// <param name="message">The message.</param>
+    /// <param name="ct">A token checked before the message is sent.</param>
+    /// <returns>
+    /// How many client connections received it; several subscriptions on one connection count once. On Redis Cluster
+    /// only connections to the same node are counted.
+    /// </returns>
+    ValueTask<long> PublishAsync(string channel, string message, CancellationToken ct = default);
 
-    /// <summary>
-    /// Publishes <paramref name="message"/> to the specified Redis <paramref name="channel"/>.
-    /// </summary>
-    /// <param name="channel">
-    /// The literal channel name. Must not be null or whitespace.
-    /// </param>
-    /// <param name="message">The string payload to publish.</param>
-    /// <param name="ct">Cancellation token.</param>
-    ValueTask PublishAsync(string channel, string message, CancellationToken ct = default);
+    /// <summary>Publishes a message serialized as JSON.</summary>
+    /// <typeparam name="T">The message type.</typeparam>
+    /// <param name="channel">The channel name.</param>
+    /// <param name="message">The message.</param>
+    /// <param name="typeInfo">The JSON contract for <typeparamref name="T"/>.</param>
+    /// <param name="ct">A token checked before the message is sent.</param>
+    /// <returns>How many client connections received it; several subscriptions on one connection count once.</returns>
+    ValueTask<long> PublishAsync<T>(string channel, T message, JsonTypeInfo<T> typeInfo, CancellationToken ct = default);
 
-    /// <summary>
-    /// Subscribes <paramref name="handler"/> to the specified Redis <paramref name="channel"/>.
-    /// </summary>
-    /// <remarks>
-    /// The handler is invoked asynchronously on each received message. If the handler throws,
-    /// the exception is caught, logged, and processing continues — the subscriber thread is
-    /// never exposed to handler failures.
-    /// </remarks>
-    /// <param name="channel">The literal channel name to subscribe to.</param>
+    /// <summary>Subscribes a handler to text messages on a channel.</summary>
+    /// <param name="channel">The channel name.</param>
     /// <param name="handler">
-    /// Async callback invoked with the raw message string on each publication.
-    /// Must not be <see langword="null"/>.
+    /// Called for each message. Its token is cancelled when the subscription is disposed.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
-    ValueTask SubscribeAsync(string channel, Func<string, ValueTask> handler, CancellationToken ct = default);
+    /// <param name="ct">A token to cancel subscribing.</param>
+    /// <returns>The subscription; dispose it to stop receiving messages.</returns>
+    /// <remarks>Disposal waits for a running handler to finish, unless it is called from inside that handler.</remarks>
+    ValueTask<IAsyncDisposable> SubscribeAsync(
+        string channel,
+        Func<string, CancellationToken, ValueTask> handler,
+        CancellationToken ct = default);
 
-    /// <summary>
-    /// Unsubscribes from the specified Redis <paramref name="channel"/> and removes any
-    /// registered handler. No-ops if not currently subscribed.
-    /// </summary>
-    /// <param name="channel">The literal channel name to unsubscribe from.</param>
-    /// <param name="ct">Cancellation token.</param>
-    ValueTask UnsubscribeAsync(string channel, CancellationToken ct = default);
+    /// <summary>Subscribes a handler to JSON messages on a channel.</summary>
+    /// <typeparam name="T">The message type.</typeparam>
+    /// <param name="channel">The channel name.</param>
+    /// <param name="typeInfo">The JSON contract for <typeparamref name="T"/>.</param>
+    /// <param name="handler">
+    /// Called for each message that deserializes. Its token is cancelled when the subscription is disposed.
+    /// </param>
+    /// <param name="ct">A token to cancel subscribing.</param>
+    /// <returns>The subscription; dispose it to stop receiving messages.</returns>
+    /// <remarks>
+    /// When <typeparamref name="T"/> is a reference type or a nullable value type, a message whose JSON is the
+    /// literal <c>null</c> deserializes successfully and reaches the handler as <see langword="null"/> (the default of
+    /// <typeparamref name="T"/>), even though the handler's parameter is declared non-nullable. Check for it when
+    /// publishers may send <c>null</c>. For a non-nullable value type, <c>null</c> does not deserialize and the
+    /// message is skipped.
+    /// </remarks>
+    ValueTask<IAsyncDisposable> SubscribeAsync<T>(
+        string channel,
+        JsonTypeInfo<T> typeInfo,
+        Func<T, CancellationToken, ValueTask> handler,
+        CancellationToken ct = default);
 }

@@ -1,25 +1,34 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Ephemeral Redis Pub/Sub signaling (IRedisChannelService). At-most-once delivery, no durability guarantees — not a substitute for SharedKernel.Messaging.* (07.Messaging). Cache entries are synchronized across instances by the FusionCache backplane of SharedKernel.Caching.Redis, not by this package. Depends on SharedKernel.Caching.Redis.Core for connection management.</Description>
-    <PackageTags>shared-kernel;caching;redis;pubsub</PackageTags>
+    <Description>Redis Pub/Sub over the shared connection from SharedKernel.Caching.Redis.Core, for loss-tolerant signals: text or JSON messages, several independent subscriptions per channel that handle messages one at a time in delivery order and end when disposed, and subscriptions restored automatically after a reconnect. At most once and not durable; not a substitute for SharedKernel.Messaging.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;caching;redis;pubsub;signals</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: text and JSON overloads of PublishAsync and SubscribeAsync share the optional CancellationToken. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <!-- DI abstractions — required for ICachingBuilder extension signatures -->
+    <!-- IServiceCollection extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <!-- Optional Polly circuit breaker pipeline injection -->
-    <PackageReference Include="Polly.Core" />
-    <!-- Redis client — Pub/Sub commands -->
-    <PackageReference Include="StackExchange.Redis" />
-    <!-- Caching abstractions — ICachingBuilder -->
-    <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
-    <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) and AddRedisCircuitBreaker (Polly v8 ResiliencePipeline) -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The shared IConnectionMultiplexer -->
     <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
-    <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
+    <!-- LoggingEventIdRanges.Caching -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Allow internal types (RedisChannelService, OnConnectionRestored/Failed) to be accessed from the test project -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Caching.Redis.PubSub.Tests</_Parameter1>
     </AssemblyAttribute>

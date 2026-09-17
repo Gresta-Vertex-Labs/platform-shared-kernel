@@ -9,25 +9,18 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="NSubstitute" />
     <!-- Testcontainers Redis for integration tests -->
     <PackageReference Include="Testcontainers.Redis" />
     <!-- DI host for integration-style DI registration tests -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <!-- Logging null provider and capturing logger helpers for tests -->
+    <!-- Logging host for the capturing logger provider -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
-    <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) tests -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
-    <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
+    <!-- StackExchange.Redis — admin commands (CLIENT KILL, PUBSUB NUMSUB) and connection events in tests -->
     <PackageReference Include="StackExchange.Redis" />
-    <!-- Optional Polly circuit breaker pipeline injection tests -->
-    <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.Redis.PubSub.csproj" />
-    <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) and AddRedisCircuitBreaker -->
+    <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
-    <!-- SharedKernel.Testing provides FakeCacheService (ICacheService double for CacheInvalidationReceiver tests) -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>
