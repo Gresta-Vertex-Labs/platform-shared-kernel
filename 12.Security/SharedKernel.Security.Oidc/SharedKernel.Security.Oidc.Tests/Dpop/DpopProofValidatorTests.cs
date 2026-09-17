@@ -1,507 +1,581 @@
-using System.Security.Claims;
+using System.Buffers.Text;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using SharedKernel.Security.Oidc.Dpop;
+using SharedKernel.Security.Oidc.Options;
+using SharedKernel.Security.Oidc.Tests.Infrastructure;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Security;
 using Xunit;
 
 namespace SharedKernel.Security.Oidc.Tests.Dpop;
 
-public sealed class DpopProofValidatorTests
+public sealed class DpopProofValidatorTests : IDisposable
 {
-    private const string RequestMethod = "GET";
-    private const string RequestUrl = "https://api.example.com/orders";
+    private const string AccessToken = "dpop-test-access-token";
 
-    // WO-060 (C-38/P-385): the access token every test's proof is bound to via its "ath" claim, and
-    // that BuildContext puts on the request's Authorization header by default — so a proof/context pair
-    // built from the same-named defaults resolve a matching ath without every call site needing to pass
-    // it explicitly.
-    private const string DefaultAccessToken = "test-access-token-value";
+    private static readonly DateTimeOffset Now = HandmadeProof.DefaultIssuedAt;
 
-    private static string ComputeAth(string accessToken) =>
-        Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
+    private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    private readonly OidcAuthenticationOptions _options = new();
+    private readonly FakeClock _clock = new(Now);
+    private readonly RecordingReplayCache _replayCache = new();
+    private readonly DpopNonceService _nonces;
 
-    private sealed class TestReplayCache : IDpopProofReplayCache
+    public DpopProofValidatorTests()
     {
-        private readonly HashSet<string> _seen = [];
-
-        public bool RejectAll { get; set; }
-
-        public Task<bool> TryConsumeAsync(string jti, DateTimeOffset proofExpiresAt, CancellationToken ct) =>
-            Task.FromResult(!RejectAll && _seen.Add(jti));
+        _nonces = new DpopNonceService(
+            new EphemeralDataProtectionProvider(),
+            _clock,
+            new StaticOptionsMonitor<OidcAuthenticationOptions>(_options));
     }
 
-    private static (ECDsaSecurityKey Key, string Kty, string Crv, string X, string Y) CreateKeyMaterial()
+    public void Dispose() => _key.Dispose();
+
+    [Fact]
+    public async Task ValidateAsync_ProofWithoutKid_Succeeds()
     {
-        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
-        return (new ECDsaSecurityKey(ecdsa), jwk.Kty, jwk.Crv, jwk.X, jwk.Y);
+        DpopTestProof proof = new DpopTestProofBuilder().WithKey(_key).WithAccessToken(AccessToken).Build();
+
+        DpopResult result = await ValidateAsync(proof.ProofJwt, proof.JwkThumbprint);
+
+        Assert.True(result.IsValid, result.Reason);
     }
 
-    private static string ComputeExpectedJkt(string kty, string crv, string x, string y)
+    [Fact]
+    public async Task ValidateAsync_ValidProof_Succeeds()
     {
-        var publicJwk = new JsonWebKey { Kty = kty, Crv = crv, X = x, Y = y };
-        return Base64UrlEncoder.Encode(publicJwk.ComputeJwkThumbprint());
+        DpopResult result = await ValidateAsync(Proof().Build());
+
+        Assert.True(result.IsValid, result.Reason);
+        Assert.Null(result.Error);
+        Assert.Null(result.Reason);
     }
 
-    private static string BuildProof(
-        ECDsaSecurityKey key,
-        string kty,
-        string crv,
-        string x,
-        string y,
-        string? htm = RequestMethod,
-        string? htu = RequestUrl,
-        long? iatOverride = null,
-        string? jti = null,
-        string? typOverride = "dpop+jwt",
-        string? accessTokenForAth = DefaultAccessToken)
+    [Fact]
+    public async Task ValidateAsync_ValidProof_RecordsHashedProofIdUntilLifetimePlusSkew()
     {
-        var handler = new JsonWebTokenHandler();
-        var claims = new Dictionary<string, object>();
-        if (htm is not null)
-        {
-            claims["htm"] = htm;
-        }
+        await ValidateAsync(Proof().WithJti("jti-visible").Build());
 
-        if (htu is not null)
-        {
-            claims["htu"] = htu;
-        }
-
-        claims["iat"] = iatOverride ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        claims["jti"] = jti ?? Guid.NewGuid().ToString("N");
-        if (accessTokenForAth is not null)
-        {
-            claims["ath"] = ComputeAth(accessTokenForAth);
-        }
-
-        var headerClaims = new Dictionary<string, object>();
-        if (typOverride is not null)
-        {
-            headerClaims["typ"] = typOverride;
-        }
-
-        headerClaims["jwk"] = new Dictionary<string, object>
-        {
-            ["kty"] = kty,
-            ["crv"] = crv,
-            ["x"] = x,
-            ["y"] = y,
-        };
-
-        var descriptor = new SecurityTokenDescriptor
-        {
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256),
-            Claims = claims,
-            AdditionalHeaderClaims = headerClaims,
-        };
-
-        return handler.CreateToken(descriptor);
+        (string proofId, DateTimeOffset expiresAt) = Assert.Single(_replayCache.Entries);
+        Assert.Equal(Now + TimeSpan.FromSeconds(65), expiresAt);
+        Assert.Equal(43, proofId.Length);
+        Assert.DoesNotContain("jti-visible", proofId, StringComparison.Ordinal);
     }
 
-    private static TokenValidatedContext BuildContext(
-        string? dpopHeaderValue,
-        string? cnfJkt,
-        IDpopProofReplayCache replayCache,
-        string? accessToken = DefaultAccessToken)
+    [Fact]
+    public async Task ValidateAsync_NoProofHeader_FailsMissingProof()
     {
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Method = RequestMethod;
-        httpContext.Request.Scheme = "https";
-        httpContext.Request.Host = new HostString("api.example.com");
-        httpContext.Request.Path = "/orders";
+        DpopResult result = await ValidateAsync(proofs: []);
 
-        if (dpopHeaderValue is not null)
+        AssertFailure(result, "MissingProof");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_BlankProofHeader_FailsMissingProof()
+    {
+        DpopResult result = await ValidateAsync("  ");
+
+        AssertFailure(result, "MissingProof");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_TwoProofHeaders_FailsMultipleProofs()
+    {
+        string proof = Proof().Build();
+
+        DpopResult result = await ValidateAsync(proofs: [proof, proof]);
+
+        AssertFailure(result, "MultipleProofs");
+        Assert.Empty(_replayCache.Entries);
+    }
+
+    [Theory]
+    [InlineData("not-a-jwt")]
+    [InlineData("a.b.c")]
+    public async Task ValidateAsync_MalformedProof_FailsMalformedProof(string proof)
+    {
+        DpopResult result = await ValidateAsync(proof);
+
+        AssertFailure(result, "MalformedProof");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SymmetricAlgorithm_FailsAlgorithmNotAllowed()
+    {
+        DpopResult result = await ValidateAsync(HandmadeProof.SignHs256(AccessToken));
+
+        AssertFailure(result, "AlgorithmNotAllowed");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AlgNone_FailsAlgorithmNotAllowed()
+    {
+        DpopResult result = await ValidateAsync(HandmadeProof.Unsigned(_key, AccessToken));
+
+        AssertFailure(result, "AlgorithmNotAllowed");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_HeaderAlgDiffersFromKey_IsRejected()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithHeader("alg", "RS256").Build());
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ConfiguredAlgorithms_ReplaceDefaults()
+    {
+        _options.Dpop.ValidAlgorithms = ["PS256"];
+
+        DpopResult result = await ValidateAsync(Proof().Build());
+
+        AssertFailure(result, "AlgorithmNotAllowed");
+    }
+
+    [Theory]
+    [InlineData("JWT")]
+    [InlineData("at+jwt")]
+    public async Task ValidateAsync_WrongType_FailsInvalidType(string type)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithHeader("typ", type).Build());
+
+        AssertFailure(result, "InvalidType");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_TypeInOtherCase_Succeeds()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithHeader("typ", "DPoP+JWT").Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NoJwkHeader_FailsMissingKey()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutJwk().Build());
+
+        AssertFailure(result, "MissingKey");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_JwkNotAnObject_FailsMissingKey()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithHeader("jwk", "kid-1").Build());
+
+        AssertFailure(result, "MissingKey");
+    }
+
+    [Theory]
+    [InlineData("d")]
+    [InlineData("p")]
+    [InlineData("q")]
+    [InlineData("dp")]
+    [InlineData("dq")]
+    [InlineData("qi")]
+    [InlineData("oth")]
+    [InlineData("k")]
+    public async Task ValidateAsync_JwkWithPrivateMember_FailsPrivateKeyInProof(string member)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithJwkMember(member, "AQAB").Build());
+
+        AssertFailure(result, "PrivateKeyInProof");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_JwkWithRealPrivateKey_FailsPrivateKeyInProof()
+    {
+        ECParameters parameters = _key.ExportParameters(includePrivateParameters: true);
+
+        DpopResult result = await ValidateAsync(Proof().WithJwkMember("d", Base64Url.EncodeToString(parameters.D)).Build());
+
+        AssertFailure(result, "PrivateKeyInProof");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_RsaKeyBelow2048Bits_FailsWeakKey()
+    {
+        using var rsa = RSA.Create(1024);
+
+        DpopResult result = await ValidateAsync(HandmadeProof.SignRs256(rsa, AccessToken));
+
+        AssertFailure(result, "WeakKey");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_Rsa2048Key_Succeeds()
+    {
+        using var rsa = RSA.Create(2048);
+        RSAParameters parameters = rsa.ExportParameters(includePrivateParameters: false);
+        var jwk = new JsonWebKey { Kty = "RSA", N = Base64Url.EncodeToString(parameters.Modulus), E = Base64Url.EncodeToString(parameters.Exponent) };
+
+        DpopResult result = await ValidateAsync(HandmadeProof.SignRs256(rsa, AccessToken), Base64Url.EncodeToString(jwk.ComputeJwkThumbprint()));
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_UnsupportedKeyType_FailsUnsupportedKeyType()
+    {
+        string proof = Proof()
+            .WithHeader("jwk", new Dictionary<string, object> { ["kty"] = "OKP", ["crv"] = "Ed25519", ["x"] = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" })
+            .Build();
+
+        DpopResult result = await ValidateAsync(proof);
+
+        AssertFailure(result, "UnsupportedKeyType");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SignedByOtherKeyThanJwk_FailsInvalidSignature()
+    {
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        DpopResult result = await ValidateAsync(Proof().SignedBy(other).Build());
+
+        AssertFailure(result, "InvalidSignature");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_TamperedPayload_FailsInvalidSignature()
+    {
+        string[] original = Proof().Build().Split('.');
+        string[] other = Proof().WithMethod("DELETE").Build().Split('.');
+
+        DpopResult result = await ValidateAsync($"{original[0]}.{other[1]}.{original[2]}");
+
+        AssertFailure(result, "InvalidSignature");
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("post")]
+    public async Task ValidateAsync_MethodDiffers_FailsMethodMismatch(string htm)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithMethod(htm).Build());
+
+        AssertFailure(result, "MethodMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_MissingMethod_FailsMethodMismatch()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutClaim("htm").Build());
+
+        AssertFailure(result, "MethodMismatch");
+    }
+
+    [Theory]
+    [InlineData("https://api.example.test/other")]
+    [InlineData("https://api.example.test/Resource")]
+    [InlineData("https://api.example.test/resource/")]
+    [InlineData("https://attacker.example.test/resource")]
+    [InlineData("http://api.example.test/resource")]
+    [InlineData("https://api.example.test:8443/resource")]
+    [InlineData("not a uri")]
+    public async Task ValidateAsync_UriDiffers_FailsUriMismatch(string htu)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithUri(htu).Build());
+
+        AssertFailure(result, "UriMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_MissingUri_FailsUriMismatch()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutClaim("htu").Build());
+
+        AssertFailure(result, "UriMismatch");
+    }
+
+    [Theory]
+    [InlineData("HTTPS://API.EXAMPLE.TEST/resource")]
+    [InlineData("https://api.example.test:443/resource")]
+    [InlineData("https://api.example.test/resource?page=2")]
+    [InlineData("https://api.example.test/resource#fragment")]
+    public async Task ValidateAsync_UriEquivalentAfterNormalization_Succeeds(string htu)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithUri(htu).Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_RequestHasQueryString_IgnoresQuery()
+    {
+        DpopResult result = await ValidateAsync(Proof().Build(), configure: request => request.QueryString = new QueryString("?page=3"));
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_RequestWithPathBase_ComparesFullPath()
+    {
+        string proof = Proof().WithUri("https://api.example.test/orders/resource").Build();
+
+        DpopResult result = await ValidateAsync(proof, configure: request => request.PathBase = "/orders");
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_MissingIssuedAt_FailsMissingIssuedAt()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutClaim("iat").Build());
+
+        AssertFailure(result, "MissingIssuedAt");
+    }
+
+    [Theory]
+    [InlineData(-66)]
+    [InlineData(6)]
+    [InlineData(-3600)]
+    public async Task ValidateAsync_IssuedAtOutsideWindow_FailsExpired(int offsetSeconds)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithIssuedAt(Now.AddSeconds(offsetSeconds)).Build());
+
+        AssertFailure(result, "Expired");
+    }
+
+    [Theory]
+    [InlineData(-65)]
+    [InlineData(0)]
+    [InlineData(5)]
+    public async Task ValidateAsync_IssuedAtInsideWindow_Succeeds(int offsetSeconds)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithIssuedAt(Now.AddSeconds(offsetSeconds)).Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ConfiguredProofLifetime_IsUsed()
+    {
+        _options.Dpop.ProofLifetime = TimeSpan.FromSeconds(10);
+
+        DpopResult result = await ValidateAsync(Proof().WithIssuedAt(Now.AddSeconds(-16)).Build());
+
+        AssertFailure(result, "Expired");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_MissingJti_FailsInvalidJti()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutClaim("jti").Build());
+
+        AssertFailure(result, "InvalidJti");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_EmptyJti_FailsInvalidJti()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithJti(string.Empty).Build());
+
+        AssertFailure(result, "InvalidJti");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_JtiLongerThan256_FailsInvalidJti()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithJti(new string('j', 257)).Build());
+
+        AssertFailure(result, "InvalidJti");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_Jti256Characters_Succeeds()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithJti(new string('j', 256)).Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_KeyDiffersFromConfirmation_FailsKeyMismatch()
+    {
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        DpopResult result = await ValidateAsync(Proof().Build(), HandmadeProof.Thumbprint(other));
+
+        AssertFailure(result, "KeyMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AthForOtherToken_FailsAccessTokenHashMismatch()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithClaim("ath", HandmadeProof.Ath(AccessToken + "-tampered")).Build());
+
+        AssertFailure(result, "AccessTokenHashMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_MissingAth_FailsAccessTokenHashMismatch()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithoutClaim("ath").Build());
+
+        AssertFailure(result, "AccessTokenHashMismatch");
+    }
+
+    [Theory]
+    [InlineData("not-the-hash")]
+    [InlineData("")]
+    public async Task ValidateAsync_MalformedAth_FailsAccessTokenHashMismatch(string ath)
+    {
+        DpopResult result = await ValidateAsync(Proof().WithClaim("ath", ath).Build());
+
+        AssertFailure(result, "AccessTokenHashMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ProofForDifferentAccessToken_FailsAccessTokenHashMismatch()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithAccessToken("another-token").Build());
+
+        AssertFailure(result, "AccessTokenHashMismatch");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NonceRequiredButMissing_FailsWithUseNonce()
+    {
+        _options.Dpop.RequireNonce = true;
+
+        DpopResult result = await ValidateAsync(Proof().Build());
+
+        Assert.False(result.IsValid);
+        Assert.Equal("use_dpop_nonce", result.Error);
+        Assert.Equal("NonceInvalid", result.Reason);
+        Assert.Empty(_replayCache.Entries);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NonceRequiredAndIssued_Succeeds()
+    {
+        _options.Dpop.RequireNonce = true;
+
+        DpopResult result = await ValidateAsync(Proof().WithNonce(_nonces.Create()).Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NonceNotRequired_IgnoresInvalidNonce()
+    {
+        DpopResult result = await ValidateAsync(Proof().WithNonce("forged").Build());
+
+        Assert.True(result.IsValid, result.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NonceFromOtherKeyRing_FailsWithUseNonce()
+    {
+        _options.Dpop.RequireNonce = true;
+        var otherService = new DpopNonceService(new EphemeralDataProtectionProvider(), _clock, new StaticOptionsMonitor<OidcAuthenticationOptions>(_options));
+
+        DpopResult result = await ValidateAsync(Proof().WithNonce(otherService.Create()).Build());
+
+        Assert.Equal("use_dpop_nonce", result.Error);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ExpiredNonce_FailsWithUseNonce()
+    {
+        _options.Dpop.RequireNonce = true;
+        string nonce = _nonces.Create();
+        _clock.Advance(TimeSpan.FromMinutes(6));
+
+        DpopResult result = await ValidateAsync(Proof().WithIssuedAt(_clock.UtcNow).WithNonce(nonce).Build());
+
+        Assert.Equal("use_dpop_nonce", result.Error);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SameProofTwice_FailsReplayed()
+    {
+        string proof = Proof().Build();
+
+        DpopResult first = await ValidateAsync(proof);
+        DpopResult second = await ValidateAsync(proof);
+
+        Assert.True(first.IsValid, first.Reason);
+        AssertFailure(second, "Replayed");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SameJtiFromDifferentKeys_AreIndependent()
+    {
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        DpopResult first = await ValidateAsync(Proof().WithJti("shared").Build());
+        DpopResult second = await ValidateAsync(new HandmadeProof(other, AccessToken).WithJti("shared").Build(), HandmadeProof.Thumbprint(other));
+
+        Assert.True(first.IsValid, first.Reason);
+        Assert.True(second.IsValid, second.Reason);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ReplayCacheThrows_FailsClosed()
+    {
+        var validator = new DpopProofValidator(new ThrowingReplayCache(), _nonces);
+        HttpContext context = CreateContext([Proof().Build()]);
+
+        DpopResult result = await validator.ValidateAsync(context, AccessToken, HandmadeProof.Thumbprint(_key), _options.Dpop, Now);
+
+        AssertFailure(result, "ReplayCacheUnavailable");
+    }
+
+    private static void AssertFailure(DpopResult result, string reason)
+    {
+        Assert.False(result.IsValid);
+        Assert.Equal("invalid_dpop_proof", result.Error);
+        Assert.Equal(reason, result.Reason);
+    }
+
+    private HandmadeProof Proof() => new(_key, AccessToken);
+
+    private Task<DpopResult> ValidateAsync(string proof, string? expectedThumbprint = null, Action<HttpRequest>? configure = null) =>
+        ValidateAsync([proof], expectedThumbprint, configure);
+
+    private async Task<DpopResult> ValidateAsync(string[] proofs, string? expectedThumbprint = null, Action<HttpRequest>? configure = null)
+    {
+        HttpContext context = CreateContext(proofs);
+        configure?.Invoke(context.Request);
+        var validator = new DpopProofValidator(_replayCache, _nonces);
+        return await validator.ValidateAsync(context, AccessToken, expectedThumbprint ?? HandmadeProof.Thumbprint(_key), _options.Dpop, _clock.UtcNow);
+    }
+
+    private static DefaultHttpContext CreateContext(string[] proofs)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("api.example.test");
+        context.Request.Path = "/resource";
+        if (proofs.Length > 0)
         {
-            httpContext.Request.Headers["DPoP"] = dpopHeaderValue;
+            context.Request.Headers["DPoP"] = proofs;
         }
-
-        if (accessToken is not null)
-        {
-            httpContext.Request.Headers.Authorization = $"Bearer {accessToken}";
-        }
-
-        var services = new ServiceCollection();
-        services.AddSingleton(replayCache);
-        services.AddOptions<DpopOptions>();
-        httpContext.RequestServices = services.BuildServiceProvider();
-
-        var claims = new List<Claim>();
-        if (cnfJkt is not null)
-        {
-            claims.Add(new Claim("cnf", JsonSerializer.Serialize(new { jkt = cnfJkt })));
-        }
-
-        var scheme = new AuthenticationScheme(JwtBearerDefaults.AuthenticationScheme, null, typeof(JwtBearerHandler));
-        var context = new TokenValidatedContext(httpContext, scheme, new JwtBearerOptions())
-        {
-            Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer")),
-        };
 
         return context;
     }
 
-    [Fact]
-    public async Task ValidProof_WithMatchingJkt_UnseenJti_ResolvesIsSenderConstrained()
+    private sealed class RecordingReplayCache : IDpopReplayCache
     {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var proof = BuildProof(key, kty, crv, x, y);
-        var context = BuildContext(proof, jkt, new TestReplayCache());
+        private readonly ConcurrentDictionary<string, DateTimeOffset> _entries = new(StringComparer.Ordinal);
 
-        await DpopProofValidator.ValidateAsync(context);
+        public IReadOnlyList<(string ProofId, DateTimeOffset ExpiresAt)> Entries => [.. _entries.Select(entry => (entry.Key, entry.Value))];
 
-        Assert.Null(context.Result);
-        var identity = Assert.IsType<ClaimsIdentity>(context.Principal!.Identity);
-        Assert.Contains(identity.Claims, c => c.Type == "sk_dpop_bound" && string.Equals(c.Value, bool.TrueString, StringComparison.OrdinalIgnoreCase));
+        public ValueTask<bool> TryAddAsync(string proofId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(_entries.TryAdd(proofId, expiresAt));
     }
 
-    [Fact]
-    public async Task MissingProofHeader_Rejects()
+    private sealed class ThrowingReplayCache : IDpopReplayCache
     {
-        var context = BuildContext(dpopHeaderValue: null, cnfJkt: "irrelevant", new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task MalformedProof_Rejects()
-    {
-        var context = BuildContext(dpopHeaderValue: "not-a-jwt", cnfJkt: "irrelevant", new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task WrongTyp_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var proof = BuildProof(key, kty, crv, x, y, typOverride: "jwt");
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task HtmMismatch_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var proof = BuildProof(key, kty, crv, x, y, htm: "POST");
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task HtuMismatch_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var proof = BuildProof(key, kty, crv, x, y, htu: "https://api.example.com/other");
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task ExpiredIat_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var staleIat = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds();
-        var proof = BuildProof(key, kty, crv, x, y, iatOverride: staleIat);
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task JktMismatch_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var proof = BuildProof(key, kty, crv, x, y);
-        // cnf.jkt deliberately does not match the proof's embedded jwk thumbprint.
-        var context = BuildContext(proof, cnfJkt: "wrong-thumbprint-value", new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task MissingConfirmationClaim_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var proof = BuildProof(key, kty, crv, x, y);
-        var context = BuildContext(proof, cnfJkt: null, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task ReplayedJti_Rejects_OnSecondUse()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        var jti = Guid.NewGuid().ToString("N");
-        var replayCache = new TestReplayCache();
-
-        var proof1 = BuildProof(key, kty, crv, x, y, jti: jti);
-        var context1 = BuildContext(proof1, jkt, replayCache);
-        await DpopProofValidator.ValidateAsync(context1);
-        Assert.Null(context1.Result);
-
-        var proof2 = BuildProof(key, kty, crv, x, y, jti: jti);
-        var context2 = BuildContext(proof2, jkt, replayCache);
-        await DpopProofValidator.ValidateAsync(context2);
-
-        Assert.NotNull(context2.Result);
-    }
-
-    [Fact]
-    public async Task TamperedSignature_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var (otherKey, _, _, _, _) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        // Sign with a DIFFERENT key than the one embedded in the jwk header — signature verification
-        // against the embedded public key must fail.
-        var proof = BuildProof(otherKey, kty, crv, x, y);
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    // ---- ath (access-token-hash) binding — WO-060, P-385, T-29/T-30/T-31 ----
-
-    [Fact]
-    public async Task AthBoundToDifferentAccessToken_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        // The proof is otherwise COMPLETELY valid — correct htm/htu/iat/jkt/jti, a genuine signature —
-        // and fails ONLY because its "ath" claim is bound to a DIFFERENT access token than the one
-        // actually presented on this request (BuildContext still presents DefaultAccessToken).
-        var proof = BuildProof(key, kty, crv, x, y, accessTokenForAth: "a-completely-different-access-token");
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task MissingAth_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-        // Otherwise fully valid proof (correct htm/htu/iat/jkt/jti, real signature) — the "ath" claim
-        // is simply absent.
-        var proof = BuildProof(key, kty, crv, x, y, accessTokenForAth: null);
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task MalformedAth_Rejects()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-
-        // Otherwise fully valid proof, except "ath" is present as the WRONG JSON shape (a numeric
-        // value where a base64url-encoded string is expected) — TryGetPayloadValue<string> fails to
-        // read it, which must reject exactly like a missing/mismatched ath, never throw.
-        var proof = BuildProofWithRawClaims(
-            key,
-            kty,
-            crv,
-            x,
-            y,
-            extraPayloadClaims: new Dictionary<string, object> { ["ath"] = 123456 });
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    // ---- DPoP proof-JWT algorithm allowlist — WO-060, P-387, T-34/T-35 ----
-
-    [Fact]
-    public async Task DisallowedProofAlgorithm_Rejects_BeforeAnyOtherBindingIsChecked()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-
-        // The proof JWT is itself signed with HS256 (a symmetric algorithm outside the default
-        // ["PS256", "ES256"] allowlist). The embedded "jwk" header still advertises the EC key, so
-        // every OTHER check (typ/htm/htu/iat/jkt) would otherwise pass — only the algorithm allowlist
-        // must be what rejects this proof, and it must do so before jwk/signature evaluation.
-        var handler = new JsonWebTokenHandler();
-        var symmetricKey = new SymmetricSecurityKey(new byte[32]);
-        var claims = new Dictionary<string, object>
-        {
-            ["htm"] = RequestMethod,
-            ["htu"] = RequestUrl,
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            ["jti"] = Guid.NewGuid().ToString("N"),
-            ["ath"] = ComputeAth(DefaultAccessToken),
-        };
-        var headerClaims = new Dictionary<string, object>
-        {
-            ["typ"] = "dpop+jwt",
-            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
-        };
-        var proof = handler.CreateToken(new SecurityTokenDescriptor
-        {
-            SigningCredentials = new SigningCredentials(symmetricKey, SecurityAlgorithms.HmacSha256),
-            Claims = claims,
-            AdditionalHeaderClaims = headerClaims,
-        });
-
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task NoneAlgorithmProof_Rejects_BeforeAnyOtherBindingIsChecked()
-    {
-        var (key, kty, crv, x, y) = CreateKeyMaterial();
-        var jkt = ComputeExpectedJkt(kty, crv, x, y);
-
-        // An unsigned ("alg": "none") proof JWT — every other claim is otherwise well-formed and
-        // would pass every subsequent check; only the algorithm allowlist must reject it, before any
-        // signature verification is even attempted (there is none to attempt).
-        var handler = new JsonWebTokenHandler();
-        var claims = new Dictionary<string, object>
-        {
-            ["htm"] = RequestMethod,
-            ["htu"] = RequestUrl,
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            ["jti"] = Guid.NewGuid().ToString("N"),
-            ["ath"] = ComputeAth(DefaultAccessToken),
-        };
-        var headerClaims = new Dictionary<string, object>
-        {
-            ["typ"] = "dpop+jwt",
-            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
-        };
-        var proof = handler.CreateToken(new SecurityTokenDescriptor
-        {
-            Claims = claims,
-            AdditionalHeaderClaims = headerClaims,
-        });
-
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.NotNull(context.Result);
-    }
-
-    [Fact]
-    public async Task Ps256SignedProof_Accepted_NoRegressionForFapiCompliantDefault()
-    {
-        using var rsa = RSA.Create(2048);
-        var key = new RsaSecurityKey(rsa);
-        var jwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(key);
-        var jkt = Base64UrlEncoder.Encode(new JsonWebKey { Kty = jwk.Kty, N = jwk.N, E = jwk.E }.ComputeJwkThumbprint());
-
-        var handler = new JsonWebTokenHandler();
-        var claims = new Dictionary<string, object>
-        {
-            ["htm"] = RequestMethod,
-            ["htu"] = RequestUrl,
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            ["jti"] = Guid.NewGuid().ToString("N"),
-            ["ath"] = ComputeAth(DefaultAccessToken),
-        };
-        var headerClaims = new Dictionary<string, object>
-        {
-            ["typ"] = "dpop+jwt",
-            ["jwk"] = new Dictionary<string, object> { ["kty"] = jwk.Kty, ["n"] = jwk.N, ["e"] = jwk.E },
-        };
-        var proof = handler.CreateToken(new SecurityTokenDescriptor
-        {
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSsaPssSha256),
-            Claims = claims,
-            AdditionalHeaderClaims = headerClaims,
-        });
-
-        var context = BuildContext(proof, jkt, new TestReplayCache());
-
-        await DpopProofValidator.ValidateAsync(context);
-
-        Assert.Null(context.Result);
-    }
-
-    private static string BuildProofWithRawClaims(
-        ECDsaSecurityKey key,
-        string kty,
-        string crv,
-        string x,
-        string y,
-        IDictionary<string, object> extraPayloadClaims)
-    {
-        var handler = new JsonWebTokenHandler();
-        var claims = new Dictionary<string, object>
-        {
-            ["htm"] = RequestMethod,
-            ["htu"] = RequestUrl,
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            ["jti"] = Guid.NewGuid().ToString("N"),
-        };
-
-        foreach (var (claimType, value) in extraPayloadClaims)
-        {
-            claims[claimType] = value;
-        }
-
-        var headerClaims = new Dictionary<string, object>
-        {
-            ["typ"] = "dpop+jwt",
-            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
-        };
-
-        var descriptor = new SecurityTokenDescriptor
-        {
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256),
-            Claims = claims,
-            AdditionalHeaderClaims = headerClaims,
-        };
-
-        return handler.CreateToken(descriptor);
+        public ValueTask<bool> TryAddAsync(string proofId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Replay store unavailable.");
     }
 }
