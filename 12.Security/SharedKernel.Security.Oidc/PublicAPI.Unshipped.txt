@@ -1,0 +1,99 @@
+#nullable enable
+SharedKernel.Security.Oidc.Dpop.IDpopReplayCache
+SharedKernel.Security.Oidc.Dpop.IDpopReplayCache.TryAddAsync(string! proofId, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder
+SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder.AddDpop<TReplayCache>() -> SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder!
+SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder.AddTokenRevocation<TCheck>() -> SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder!
+SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder.AddTokenRevocationCache<TCache>() -> SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder!
+SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Security.Oidc.Extensions.OidcServiceCollectionExtensions
+SharedKernel.Security.Oidc.OidcAuthenticationDefaults
+SharedKernel.Security.Oidc.Options.DpopMode
+SharedKernel.Security.Oidc.Options.DpopMode.Allowed = 0 -> SharedKernel.Security.Oidc.Options.DpopMode
+SharedKernel.Security.Oidc.Options.DpopMode.Required = 1 -> SharedKernel.Security.Oidc.Options.DpopMode
+SharedKernel.Security.Oidc.Options.DpopOptions
+SharedKernel.Security.Oidc.Options.DpopOptions.ClockSkew.get -> System.TimeSpan
+SharedKernel.Security.Oidc.Options.DpopOptions.ClockSkew.set -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.DpopOptions() -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.Mode.get -> SharedKernel.Security.Oidc.Options.DpopMode
+SharedKernel.Security.Oidc.Options.DpopOptions.Mode.set -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.NonceLifetime.get -> System.TimeSpan
+SharedKernel.Security.Oidc.Options.DpopOptions.NonceLifetime.set -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.ProofLifetime.get -> System.TimeSpan
+SharedKernel.Security.Oidc.Options.DpopOptions.ProofLifetime.set -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.RequireNonce.get -> bool
+SharedKernel.Security.Oidc.Options.DpopOptions.RequireNonce.set -> void
+SharedKernel.Security.Oidc.Options.DpopOptions.ValidAlgorithms.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.DpopOptions.ValidAlgorithms.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Audiences.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Audiences.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Authority.get -> string!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Authority.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Claims.get -> SharedKernel.Security.Oidc.Options.OidcClaimOptions!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Claims.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ClockSkew.get -> System.TimeSpan
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ClockSkew.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Dpop.get -> SharedKernel.Security.Oidc.Options.DpopOptions!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Dpop.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.OidcAuthenticationOptions() -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.RequireHttpsMetadata.get -> bool
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.RequireHttpsMetadata.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Revocation.get -> SharedKernel.Security.Oidc.Options.TokenRevocationOptions!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.Revocation.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidAlgorithms.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidAlgorithms.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidIssuers.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidIssuers.set -> void
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidTokenTypes.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.ValidTokenTypes.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.ApplicationTokenClaims.get -> System.Collections.Generic.Dictionary<string!, string!>!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.ApplicationTokenClaims.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthContextClassReferenceClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthContextClassReferenceClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthTimeClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthTimeClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthenticationMethodClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.AuthenticationMethodClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.ClientIdClaimTypes.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.ClientIdClaimTypes.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.EmailClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.EmailClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.NameClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.NameClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.OidcClaimOptions() -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.PermissionClaimTypes.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.PermissionClaimTypes.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.RoleClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.RoleClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.SessionIdClaimTypes.get -> System.Collections.Generic.List<string!>!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.SessionIdClaimTypes.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.SubjectClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.SubjectClaimType.set -> void
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.TenantClaimType.get -> string!
+SharedKernel.Security.Oidc.Options.OidcClaimOptions.TenantClaimType.set -> void
+SharedKernel.Security.Oidc.Options.TokenRevocationOptions
+SharedKernel.Security.Oidc.Options.TokenRevocationOptions.NotRevokedCacheDuration.get -> System.TimeSpan
+SharedKernel.Security.Oidc.Options.TokenRevocationOptions.NotRevokedCacheDuration.set -> void
+SharedKernel.Security.Oidc.Options.TokenRevocationOptions.TokenRevocationOptions() -> void
+SharedKernel.Security.Oidc.Revocation.ITokenRevocationCache
+SharedKernel.Security.Oidc.Revocation.ITokenRevocationCache.GetAsync(string! tokenHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool?>
+SharedKernel.Security.Oidc.Revocation.ITokenRevocationCache.SetAsync(string! tokenHash, bool isRevoked, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+SharedKernel.Security.Oidc.Revocation.ITokenRevocationCheck
+SharedKernel.Security.Oidc.Revocation.ITokenRevocationCheck.IsRevokedAsync(SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.ClientId.get -> string?
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.ExpiresAt.get -> System.DateTimeOffset
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.SessionId.get -> string?
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.SubjectId.get -> string?
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.Token.get -> string!
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.TokenHash.get -> string!
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.TokenId.get -> string?
+SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.TokenRevocationRequest(string! token, string! tokenHash, string? tokenId, string? subjectId, string? clientId, string? sessionId, System.DateTimeOffset expiresAt) -> void
+const SharedKernel.Security.Oidc.OidcAuthenticationDefaults.AuthenticationScheme = "Bearer" -> string!
+const SharedKernel.Security.Oidc.OidcAuthenticationDefaults.DpopNonceHeader = "DPoP-Nonce" -> string!
+const SharedKernel.Security.Oidc.OidcAuthenticationDefaults.DpopScheme = "DPoP" -> string!
+override SharedKernel.Security.Oidc.Revocation.TokenRevocationRequest.ToString() -> string!
+static SharedKernel.Security.Oidc.Extensions.OidcServiceCollectionExtensions.AddOidcAuthentication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Security.Oidc.Extensions.OidcAuthenticationBuilder!
+static SharedKernel.Security.Oidc.Options.OidcAuthenticationOptions.SectionName.get -> string!

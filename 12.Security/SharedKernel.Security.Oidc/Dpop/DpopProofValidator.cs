@@ -1,324 +1,228 @@
-using System.Security.Claims;
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using SharedKernel.Security.Oidc.Logging;
+using SharedKernel.Security.Oidc.Internal;
+using SharedKernel.Security.Oidc.Options;
 
 namespace SharedKernel.Security.Oidc.Dpop;
 
-/// <summary>
-/// Validates DPoP (RFC 9449) sender-constrained proof JWTs against the current HTTP request and the
-/// access token's <c>cnf.jkt</c> confirmation claim.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Runs inside <c>JwtBearerEvents.OnTokenValidated</c>, after standard signature/issuer/audience/lifetime
-/// validation succeeds, and only when <c>SecurityAuthenticationBuilder.RequireDpop&lt;TReplayCache&gt;()</c>
-/// was called.
-/// </para>
-/// <para>
-/// Parses the request's <c>DPoP</c> header as a <c>typ: dpop+jwt</c> proof JWT, verifies its embedded
-/// <c>jwk</c> signature, validates <c>htm</c>/<c>htu</c>/<c>iat</c> freshness, computes
-/// <c>jkt</c> (base64url SHA-256 thumbprint of the canonical JWK) and compares it against the access
-/// token's <c>cnf.jkt</c> confirmation claim, and consults the request-scoped
-/// <see cref="IDpopProofReplayCache"/> resolved from <c>HttpContext.RequestServices</c> (WO-058, C-30).
-/// </para>
-/// </remarks>
-internal static class DpopProofValidator
+// Checks a DPoP proof against the request and the access token it accompanies (RFC 9449 section 4.3).
+internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonceService nonces)
 {
-    private const string ProofHeaderName = "DPoP";
-    private const string ExpectedTyp = "dpop+jwt";
-    private const string ConfirmationClaimType = "cnf";
-    private const string JktPropertyName = "jkt";
-    private const string LoggerCategoryName = "SharedKernel.Security.Oidc.Dpop.DpopProofValidator";
+    internal const string InvalidProof = "invalid_dpop_proof";
+    internal const string UseNonce = "use_dpop_nonce";
 
-    private static readonly JsonWebTokenHandler Handler = new();
+    private const string ProofType = "dpop+jwt";
+    private const int MaxJtiLength = 256;
+    private const int MinRsaKeyBits = 2048;
 
-    /// <summary>
-    /// Validates the DPoP proof presented on the current request against <paramref name="context"/>'s
-    /// already-validated access token, failing <paramref name="context"/> on any violation.
-    /// </summary>
-    /// <param name="context">The <c>OnTokenValidated</c> context for the current request.</param>
-    internal static async Task ValidateAsync(TokenValidatedContext context)
+    private static readonly JsonWebTokenHandler Handler = new() { MapInboundClaims = false };
+
+    // Members a public JWK must not carry: RSA and EC private parts, and symmetric key material.
+    private static readonly string[] PrivateKeyMembers = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+
+    public async Task<DpopResult> ValidateAsync(
+        HttpContext context,
+        string accessToken,
+        string expectedJwkThumbprint,
+        DpopOptions options,
+        DateTimeOffset now)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
-        var services = context.HttpContext.RequestServices;
-        var logger = services.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategoryName);
-        var dpopOptions = services.GetRequiredService<IOptions<DpopOptions>>().Value;
-
-        if (!context.HttpContext.Request.Headers.TryGetValue(ProofHeaderName, out var headerValues)
-            || headerValues.Count == 0
-            || string.IsNullOrWhiteSpace(headerValues[0]))
+        StringValues headers = context.Request.Headers[OidcAuthenticationDefaults.DpopScheme];
+        if (headers.Count != 1 || string.IsNullOrWhiteSpace(headers[0]))
         {
-            Reject(context, logger, "MissingProof");
-            return;
+            return DpopResult.Fail(InvalidProof, headers.Count > 1 ? "MultipleProofs" : "MissingProof");
         }
 
-        var proofToken = headerValues[0]!;
-
+        string proof = headers[0]!;
         JsonWebToken proofJwt;
         try
         {
-            proofJwt = Handler.ReadJsonWebToken(proofToken);
+            proofJwt = Handler.ReadJsonWebToken(proof);
         }
-        catch (Exception ex) when (ex is SecurityTokenMalformedException or ArgumentException or FormatException)
+        catch (Exception ex) when (ex is SecurityTokenMalformedException or ArgumentException)
         {
-            Reject(context, logger, "MalformedProof");
-            return;
-        }
-
-        // WO-060 (C-41): reject an out-of-allowlist proof-JWT signing algorithm — including a crafted
-        // "alg": "none" — BEFORE any other DPoP check runs, so an alg-confusion/downgrade attempt never
-        // reaches typ/jwk parsing or embedded-jwk signature evaluation at all.
-        if (!IsAlgorithmAllowed(proofJwt.Alg, dpopOptions.ValidAlgorithms))
-        {
-            Reject(context, logger, "AlgorithmNotAllowed");
-            return;
+            return DpopResult.Fail(InvalidProof, "MalformedProof");
         }
 
-        if (!proofJwt.TryGetHeaderValue<string>("typ", out var typ) || !string.Equals(typ, ExpectedTyp, StringComparison.Ordinal))
+        IReadOnlyList<string> algorithms = OidcDefaults.ValidAlgorithms(options);
+        if (!algorithms.Contains(proofJwt.Alg, StringComparer.Ordinal))
         {
-            Reject(context, logger, "InvalidTyp");
-            return;
+            return DpopResult.Fail(InvalidProof, "AlgorithmNotAllowed");
         }
 
-        JsonWebKey jwk;
-        try
+        if (!string.Equals(proofJwt.Typ, ProofType, StringComparison.OrdinalIgnoreCase))
         {
-            var headerJson = Base64UrlEncoder.Decode(proofJwt.EncodedHeader);
-            using var headerDoc = JsonDocument.Parse(headerJson);
-            if (!headerDoc.RootElement.TryGetProperty("jwk", out var jwkElement))
-            {
-                Reject(context, logger, "MissingJwk");
-                return;
-            }
-
-            jwk = JsonWebKey.Create(jwkElement.GetRawText());
-        }
-        catch (JsonException)
-        {
-            Reject(context, logger, "MalformedProof");
-            return;
+            return DpopResult.Fail(InvalidProof, "InvalidType");
         }
 
-        var validationParameters = new TokenValidationParameters
+        if (!TryReadPublicKey(proofJwt, out JsonWebKey? key, out string? keyFailure))
         {
+            return DpopResult.Fail(InvalidProof, keyFailure);
+        }
+
+        TokenValidationResult signature = await Handler.ValidateTokenAsync(proof, new TokenValidationParameters
+        {
+            IssuerSigningKey = key,
+            ValidAlgorithms = algorithms,
+            RequireSignedTokens = true,
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = false,
-            RequireSignedTokens = true,
-            IssuerSigningKey = jwk,
-        };
+            RequireExpirationTime = false,
 
-        TokenValidationResult validationResult;
+            // Proofs carry no kid; without this IdentityModel ignores IssuerSigningKey. It is the only candidate.
+            TryAllIssuerSigningKeys = true,
+        }).ConfigureAwait(false);
+
+        if (!signature.IsValid)
+        {
+            return DpopResult.Fail(InvalidProof, "InvalidSignature");
+        }
+
+        if (!proofJwt.TryGetPayloadValue("htm", out string? method)
+            || !string.Equals(method, context.Request.Method, StringComparison.Ordinal))
+        {
+            return DpopResult.Fail(InvalidProof, "MethodMismatch");
+        }
+
+        if (!proofJwt.TryGetPayloadValue("htu", out string? uri) || !UriMatches(uri, context.Request))
+        {
+            return DpopResult.Fail(InvalidProof, "UriMismatch");
+        }
+
+        if (!proofJwt.TryGetPayloadValue("iat", out long issuedAtSeconds))
+        {
+            return DpopResult.Fail(InvalidProof, "MissingIssuedAt");
+        }
+
+        DateTimeOffset issuedAt = DateTimeOffset.FromUnixTimeSeconds(issuedAtSeconds);
+        if (issuedAt > now + options.ClockSkew || issuedAt < now - options.ProofLifetime - options.ClockSkew)
+        {
+            return DpopResult.Fail(InvalidProof, "Expired");
+        }
+
+        if (!proofJwt.TryGetPayloadValue("jti", out string? jti) || string.IsNullOrEmpty(jti) || jti.Length > MaxJtiLength)
+        {
+            return DpopResult.Fail(InvalidProof, "InvalidJti");
+        }
+
+        string thumbprint = Base64Url.EncodeToString(key.ComputeJwkThumbprint());
+        if (!string.Equals(thumbprint, expectedJwkThumbprint, StringComparison.Ordinal))
+        {
+            return DpopResult.Fail(InvalidProof, "KeyMismatch");
+        }
+
+        string expectedHash = Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(accessToken)));
+        if (!proofJwt.TryGetPayloadValue("ath", out string? tokenHash)
+            || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expectedHash), Encoding.ASCII.GetBytes(tokenHash ?? string.Empty)))
+        {
+            return DpopResult.Fail(InvalidProof, "AccessTokenHashMismatch");
+        }
+
+        if (options.RequireNonce)
+        {
+            proofJwt.TryGetPayloadValue("nonce", out string? nonce);
+            if (!nonces.IsValid(nonce))
+            {
+                return DpopResult.Fail(UseNonce, "NonceInvalid");
+            }
+        }
+
+        string proofId = Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes($"{thumbprint}.{jti}")));
+        DateTimeOffset retainUntil = issuedAt + options.ProofLifetime + options.ClockSkew;
+        bool firstUse;
         try
         {
-            validationResult = await Handler.ValidateTokenAsync(proofToken, validationParameters).ConfigureAwait(false);
+            firstUse = await replayCache.TryAddAsync(proofId, retainUntil, context.RequestAborted).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Reject(context, logger, "InvalidSignature");
-            return;
+            return DpopResult.Fail(InvalidProof, "ReplayCacheUnavailable");
         }
 
-        if (!validationResult.IsValid)
+        if (!firstUse)
         {
-            Reject(context, logger, "InvalidSignature");
-            return;
+            return DpopResult.Fail(InvalidProof, "Replayed");
         }
 
-        if (!proofJwt.TryGetPayloadValue<string>("htm", out var htm)
-            || !string.Equals(htm, context.HttpContext.Request.Method, StringComparison.OrdinalIgnoreCase))
-        {
-            Reject(context, logger, "HtmMismatch");
-            return;
-        }
-
-        var expectedHtu = $"{context.HttpContext.Request.Scheme}://{context.HttpContext.Request.Host}{context.HttpContext.Request.PathBase}{context.HttpContext.Request.Path}";
-        if (!proofJwt.TryGetPayloadValue<string>("htu", out var htu) || !string.Equals(htu, expectedHtu, StringComparison.Ordinal))
-        {
-            Reject(context, logger, "HtuMismatch");
-            return;
-        }
-
-        if (!proofJwt.TryGetPayloadValue<long>("iat", out var iatSeconds))
-        {
-            Reject(context, logger, "MissingIat");
-            return;
-        }
-
-        var proofIssuedAt = DateTimeOffset.FromUnixTimeSeconds(iatSeconds);
-        var freshnessWindow = TimeSpan.FromSeconds(dpopOptions.ProofFreshnessWindowSeconds);
-        var age = DateTimeOffset.UtcNow - proofIssuedAt;
-        if (age < TimeSpan.Zero)
-        {
-            age = -age;
-        }
-
-        if (age > freshnessWindow)
-        {
-            Reject(context, logger, "Expired");
-            return;
-        }
-
-        if (!proofJwt.TryGetPayloadValue<string>("jti", out var jti) || string.IsNullOrWhiteSpace(jti))
-        {
-            Reject(context, logger, "MissingJti");
-            return;
-        }
-
-        byte[] thumbprint;
-        try
-        {
-            thumbprint = jwk.ComputeJwkThumbprint();
-        }
-        catch (Exception)
-        {
-            Reject(context, logger, "InvalidJwk");
-            return;
-        }
-
-        var jkt = Base64UrlEncoder.Encode(thumbprint);
-        var expectedJkt = TryReadConfirmationJkt(context.Principal);
-
-        if (expectedJkt is null || !string.Equals(jkt, expectedJkt, StringComparison.Ordinal))
-        {
-            Reject(context, logger, "JktMismatch");
-            return;
-        }
-
-        if (!ValidateAccessTokenHash(proofJwt, context))
-        {
-            Reject(context, logger, "AthMismatch");
-            return;
-        }
-
-        var replayCache = services.GetRequiredService<IDpopProofReplayCache>();
-        var proofExpiresAt = proofIssuedAt + freshnessWindow;
-        var isFirstUse = await replayCache.TryConsumeAsync(jti, proofExpiresAt, context.HttpContext.RequestAborted).ConfigureAwait(false);
-        if (!isFirstUse)
-        {
-            Reject(context, logger, "Replayed");
-            return;
-        }
-
-        if (context.Principal?.Identity is ClaimsIdentity identity)
-        {
-            identity.AddClaim(new Claim(DpopClaimTypes.SenderConstrained, bool.TrueString));
-        }
+        return DpopResult.Success;
     }
 
-    private static string? TryReadConfirmationJkt(ClaimsPrincipal? principal)
+    private static bool TryReadPublicKey(
+        JsonWebToken proof,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out JsonWebKey? key,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out string? failure)
     {
-        var cnfClaim = principal?.FindFirst(ConfirmationClaimType);
-        if (cnfClaim is null)
-        {
-            return null;
-        }
-
+        key = null;
         try
         {
-            using var cnfDoc = JsonDocument.Parse(cnfClaim.Value);
-            return cnfDoc.RootElement.TryGetProperty(JktPropertyName, out var jktElement)
-                ? jktElement.GetString()
-                : null;
+            using JsonDocument header = JsonDocument.Parse(Base64Url.DecodeFromChars(proof.EncodedHeader));
+            if (!header.RootElement.TryGetProperty("jwk", out JsonElement jwk) || jwk.ValueKind != JsonValueKind.Object)
+            {
+                failure = "MissingKey";
+                return false;
+            }
+
+            foreach (string member in PrivateKeyMembers)
+            {
+                if (jwk.TryGetProperty(member, out _))
+                {
+                    failure = "PrivateKeyInProof";
+                    return false;
+                }
+            }
+
+            key = JsonWebKey.Create(jwk.GetRawText());
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
-            return null;
+            failure = "MalformedKey";
+            return false;
         }
+
+        switch (key.Kty)
+        {
+            case JsonWebAlgorithmsKeyTypes.EllipticCurve:
+                break;
+            case JsonWebAlgorithmsKeyTypes.RSA when string.IsNullOrEmpty(key.N) || Base64Url.DecodeFromChars(key.N).Length * 8 < MinRsaKeyBits:
+                failure = "WeakKey";
+                return false;
+            case JsonWebAlgorithmsKeyTypes.RSA:
+                break;
+            default:
+                failure = "UnsupportedKeyType";
+                return false;
+        }
+
+        failure = null;
+        return true;
     }
 
-    /// <summary>
-    /// Validates the DPoP proof JWT's <c>ath</c> (access-token-hash) claim against the current request's
-    /// raw bearer access token (RFC 9449 §4.3).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>ath</c> is a fifth binding, alongside <c>htm</c>/<c>htu</c>/<c>iat</c>/<c>jkt</c>/<c>jti</c>,
-    /// that cryptographically ties the DPoP proof to the SPECIFIC access token it accompanies — distinct
-    /// from <c>jkt</c>, which ties the proof to the client's DPoP key, not to any one token.
-    /// </para>
-    /// <para>
-    /// Computes <c>base64url(SHA-256(raw bearer access token))</c> and compares it CONSTANT-TIME (via
-    /// <c>System.Security.Cryptography.CryptographicOperations.FixedTimeEquals</c>, the same primitive
-    /// <c>01.Core/SharedKernel.Cryptography</c>'s <c>FixedTimeComparison</c> is built on) against
-    /// <paramref name="proofJwt"/>'s own <c>ath</c> claim (WO-060, P-385).
-    /// </para>
-    /// </remarks>
-    /// <param name="proofJwt">The parsed and signature-verified DPoP proof JWT.</param>
-    /// <param name="context">The <c>OnTokenValidated</c> context for the current request.</param>
-    private static bool ValidateAccessTokenHash(JsonWebToken proofJwt, TokenValidatedContext context)
+    // RFC 9449 section 4.3 check 9: compare with the request URI, ignoring query and fragment, after syntax-based
+    // normalization (case-insensitive scheme and host, default port omitted).
+    private static bool UriMatches(string? htu, HttpRequest request)
     {
-        if (!proofJwt.TryGetPayloadValue<string>("ath", out var presentedAth) || string.IsNullOrWhiteSpace(presentedAth))
+        if (!Uri.TryCreate(htu, UriKind.Absolute, out Uri? claimed)
+            || !Uri.TryCreate(UriHelper.BuildAbsolute(request.Scheme, request.Host, request.PathBase, request.Path), UriKind.Absolute, out Uri? actual))
         {
             return false;
         }
 
-        var rawAccessToken = ResolveRawAccessToken(context);
-        if (string.IsNullOrEmpty(rawAccessToken))
-        {
-            return false;
-        }
-
-        var expectedAthBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawAccessToken));
-        var expectedAth = Base64UrlEncoder.Encode(expectedAthBytes);
-
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expectedAth),
-            Encoding.UTF8.GetBytes(presentedAth));
+        return Uri.Compare(claimed, actual, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0
+            && Uri.Compare(claimed, actual, UriComponents.Path, UriFormat.Unescaped, StringComparison.Ordinal) == 0;
     }
+}
 
-    /// <summary>
-    /// Resolves the raw bearer access-token string for the current request, used as the input to the
-    /// <c>ath</c> hash computation.
-    /// </summary>
-    /// <remarks>
-    /// Prefers <see cref="TokenValidatedContext.SecurityToken"/> (the already-parsed
-    /// <see cref="JsonWebToken"/> for the token that was just validated), falling back to the raw
-    /// <c>Authorization: Bearer</c> header when the security token is a different type.
-    /// </remarks>
-    private static string? ResolveRawAccessToken(TokenValidatedContext context)
-    {
-        if (context.SecurityToken is JsonWebToken accessTokenJwt)
-        {
-            return accessTokenJwt.EncodedToken;
-        }
+internal readonly record struct DpopResult(bool IsValid, string? Error, string? Reason)
+{
+    public static DpopResult Success => new(true, null, null);
 
-        var authorizationHeader = context.HttpContext.Request.Headers.Authorization.ToString();
-        const string bearerPrefix = "Bearer ";
-        var rawToken = authorizationHeader.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase)
-            ? authorizationHeader[bearerPrefix.Length..].Trim()
-            : authorizationHeader;
-
-        return string.IsNullOrWhiteSpace(rawToken) ? null : rawToken;
-    }
-
-    /// <summary>
-    /// Determines whether <paramref name="algorithm"/> is present in <paramref name="validAlgorithms"/>.
-    /// </summary>
-    /// <remarks>
-    /// A missing/empty <paramref name="algorithm"/> — including the header shape a crafted
-    /// <c>"alg": "none"</c> proof would present — never matches, since <paramref name="validAlgorithms"/>
-    /// never contains an empty string (WO-060, P-387).
-    /// </remarks>
-    private static bool IsAlgorithmAllowed(string? algorithm, IReadOnlyCollection<string> validAlgorithms) =>
-        !string.IsNullOrEmpty(algorithm) && validAlgorithms.Contains(algorithm, StringComparer.Ordinal);
-
-    private static void Reject(TokenValidatedContext context, ILogger? logger, string reason)
-    {
-        if (logger is not null)
-        {
-            SecurityLogEvents.DpopProofRejected(logger, reason);
-        }
-
-        context.Fail($"DPoP proof validation failed: {reason}");
-    }
+    public static DpopResult Fail(string error, string reason) => new(false, error, reason);
 }
