@@ -2386,7 +2386,7 @@ The user ruled:
 
 ### P-545 — Core: `SharedKernel.Cryptography`, `.Argon2` and `.KeyVault.Azure` Pre-First-Publish Redesign (BREAKING API + BEHAVIOUR + STORED FORMAT)
 
-**Status:** `◐` In progress — code, migrations and verification complete; publish pending
+**Status:** `●` Published — `SharedKernel.Cryptography`, `.Argon2` and `.KeyVault.Azure` published to GitHub Packages as `1.0.0-alpha.0.998` from commit `2d7c215` (2026-09-16)
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 01.Core (with migrations in 00.Governance, 02.Caching, 06.Persistence, 07.Messaging, 12.Security, 13.ServiceDefaults, 15.Integration, 16.Testing, 17.Workflows)
 **Depends on:** P-530, P-544
@@ -2413,6 +2413,38 @@ The user ruled:
 - Added: HKDF subkey derivation, envelope encryption, key-rotation helpers, PHC-format hashes with a composite migrating hasher, password pepper, fixed-time comparison and random helpers, and TOTP hardening (time-step replay, 6+ digits, 128-bit secrets, secret generator, normalization).
 - HOTP/TOTP stay in `SharedKernel.Cryptography`. Decryption failures split by cause: malformed or unauthenticated payloads are `Validation`, an unknown key id is `Unexpected`. Post-quantum algorithms are deferred.
 - `SharedKernel.Cryptography.Argon2` and `SharedKernel.Cryptography.KeyVault.Azure` get the same review and publish together with `SharedKernel.Cryptography`.
+
+---
+
+### P-546 — Security: All Five `SharedKernel.Security.*` Packages Pre-First-Publish Redesign (BREAKING API + BEHAVIOUR)
+
+**Status:** `◐` In progress — code, consumer migrations, test suites (827 security tests) and READMEs complete; 12 defects found by the new suites and 11 more found while documenting fixed; publish pending
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 12.Security (with migrations in 00.Governance, 06.Persistence, 13.ServiceDefaults, 14.Presentation, 16.Testing)
+**Depends on:** P-545
+
+#### What is needed
+Finalize `SharedKernel.Security.Abstractions`, `.Oidc`, `.ApiKey`, `.Mtls` and `.Totp` before their first feed publish, and migrate every consumer in the same pass.
+
+#### Why this is needed
+A full review found defects that would ship as contract:
+
+- `JwtBearerOptions.MapInboundClaims` defaults to `true` in .NET 10 and was never turned off, so with a real token `sub`, `roles`, `email` and `amr` were renamed and every human user resolved as a service principal with no roles (confirmed with a signed token).
+- `IUserContext.UserId` was a `Guid`; Entra, Auth0 and Okta subjects are not GUIDs, and Entra app-only tokens do carry a GUID `sub`, so users and service principals were misclassified both ways.
+- DPoP could not work with standard clients (the `DPoP` authorization scheme was never read), bound tokens were accepted as plain bearer tokens, and the sender-constrained flag was a claim an issuer could forge.
+- A certificate-bound token (RFC 8705) was checked only when the certificate scheme ran, so a stolen bound token was accepted on the bearer path.
+- The revocation check and its cache received the raw token as the cache key, and the cache documentation had the revocation delay backwards.
+- A TOTP step-up marked every session of the user as stepped up, including a stolen token; `TotpEnrollment.ToString()` printed the secret.
+- `IUserContext` composition wrapped earlier registrations in order-dependent chains that dropped type- or instance-registered contexts.
+- Configuration binding appends to non-empty default collections, so the algorithm allow-list could never be narrowed.
+- API keys were accepted from the query string; sample classes shipped in production assemblies; private certificate authorities could only be trusted by accepting self-signed certificates.
+
+The user ruled:
+
+- `IUserContext` identifies callers with a string `SubjectId`; `AddAzureB2CAuthentication` and Microsoft.Identity.Web are removed.
+- Default signing algorithms are RS256, PS256 and ES256 (asymmetric only).
+- Added managed API keys (format, generator, hashed store, expiry, revocation) and TOTP hardening (session binding, enrollment confirmation, recovery-code redemption).
+- DPoP and certificate-bound tokens are fixed in this pass rather than removed; multi-issuer support is not added.
 
 ---
 
@@ -3855,3 +3887,5 @@ The user ruled:
 - [2026-09-15] P-543 closed `●` — `SharedKernel.Contracts`, `SharedKernel.Primitives`, `SharedKernel.Analyzers` and `SharedKernel.ArchitectureTests` published as `1.0.0-alpha.0.935` from `9f3ee5f`; ConsumerVerify 5/5 against the feed (04.Contracts, 01.Core, 00.Governance) — user request
 - [2026-09-15] P-544 recorded `◐` — `SharedKernel.Application` and `.Behaviors` redesigned before first publish by user ruling: fire-and-forget, resilience, streaming behaviors, parallel domain events and dual approval removed; caching behaviors split into `.Behaviors.Caching`; `IRequestContext`, fail-closed authorization, validation as `Error.Validation(errors)` (new `Error.Details` in Primitives), success-only commit, nested-command guard, `IRequestIdempotencyStore` with fingerprint and reservation token; migrations in 00/06/13/14/16/17/18/19 and samples; solution 0 errors; publish pending (05.Application, 01.Core, 14.Presentation, 18.Idempotency, 16.Testing, 00.Governance) — user request
 - [2026-09-16] P-545 recorded `◐` — `SharedKernel.Cryptography`, `.Argon2` and `.KeyVault.Azure` redesigned before first publish by user ruling (split sync/async services, algorithm-explicit signing, HKDF, envelope encryption, rotation helpers, PHC hashes with pepper and migration, TOTP hardening); every consumer migrated; solution builds, unit filter green; publish pending (coordinator)
+- [2026-09-16] P-546 recorded `◐` — the five `SharedKernel.Security.*` packages redesigned before first publish by user ruling (string `SubjectId`, per-scheme `IUserContextMapper`, inbound claim renaming off, handler-enforced DPoP and certificate binding, B2C removed, managed API keys, session-bound TOTP step-up); every consumer migrated; solution builds and consumer suites green; security test suites, READMEs and publish pending (coordinator)
+- [2026-09-17] P-546 READMEs written for all five security packages and the 12.Security overview; defects found while documenting fixed (JWT settings weakened by a later PostConfigure now fail startup, subjectless tokens rejected, revocation subject uses the configured claim, empty tenant ids ignored, whitespace API key header falls back, mTLS validator exceptions and AuthenticationFailed overrides rejected, mTLS trust settings locked); 13.ServiceDefaults `StrategyOrder` configuration binding fixed; P-545 marked published (coordinator)
