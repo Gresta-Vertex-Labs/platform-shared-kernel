@@ -22,7 +22,10 @@ public sealed class SchedulerServiceProbeTests
     {
         var lockService = Substitute.For<IDistributedLockService>();
         lockService
-            .AcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("ISchedulerServiceProbe must never perform I/O."));
+        lockService
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("ISchedulerServiceProbe must never perform I/O."));
         return lockService;
     }

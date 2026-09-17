@@ -1,8 +1,3 @@
-#pragma warning disable CS0618 // AddRedisDistributedLocking(IServiceCollection) — the ICachingBuilder
-                               // overload lives in SharedKernel.Caching.FusionCache, an unrelated
-                               // dependency this test has no other reason to take; mirrors
-                               // 02.Caching.Redis.DistributedLocking.Tests's own RedLockIntegrationTests
-                               // precedent, which uses the identical obsolete-but-supported overload.
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
@@ -52,7 +47,7 @@ public sealed class MultiReplicaSingleExecutionTests : IAsyncLifetime
         // execution ACROSS replicas rather than merely within one.
         services.AddSingleton(sharedRecorder);
 
-        services.AddRedisDistributedLocking(_redis.ConnectionString);
+        new TestCachingBuilder(services).AddRedisDistributedLocking(_redis.ConnectionString);
 
         // 150ms — comfortably inside SchedulingOptions.TickInterval's [Range] floor of 100ms.
         ISchedulingBuilder builder = services.AddSharedKernelScheduling(o => o.TickInterval = TimeSpan.FromMilliseconds(150));
