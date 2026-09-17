@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Communication.Rest.Handlers;
 

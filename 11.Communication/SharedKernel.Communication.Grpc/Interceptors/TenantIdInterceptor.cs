@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
 

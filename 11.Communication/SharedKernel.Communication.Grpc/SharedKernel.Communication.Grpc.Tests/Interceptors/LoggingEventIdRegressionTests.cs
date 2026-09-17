@@ -2,7 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Communication.Grpc.Interceptors;
-using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Communication.Grpc.Tests.Interceptors;
 
