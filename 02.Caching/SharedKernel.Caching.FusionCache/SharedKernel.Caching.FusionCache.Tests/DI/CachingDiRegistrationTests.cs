@@ -41,13 +41,13 @@ public sealed class CachingDiRegistrationTests
         {
             o.ServiceName = "test-svc";
             o.L1SizeLimit = 500;
-            o.CacheName = "test-cache";
+            o.WaitForWarmup = true;
         });
 
         var options = provider.GetRequiredService<IOptions<CachingOptions>>().Value;
 
         Assert.Equal(500, options.L1SizeLimit);
-        Assert.Equal("test-cache", options.CacheName);
+        Assert.True(options.WaitForWarmup);
         Assert.NotNull(provider.GetService<ICacheService>());
     }
 
@@ -79,7 +79,7 @@ public sealed class CachingDiRegistrationTests
     [Fact]
     public void ServiceName_NotConfigured_FailsOnOptionsResolution()
     {
-        using var provider = BuildProvider(configure: null);
+        using var provider = BuildProvider(_ => { });
 
         var ex = Assert.Throws<OptionsValidationException>(() =>
             provider.GetRequiredService<IOptions<CachingOptions>>().Value);
@@ -136,7 +136,15 @@ public sealed class CachingDiRegistrationTests
         Assert.Equal(serviceName, provider.GetRequiredService<IOptions<CachingOptions>>().Value.ServiceName);
     }
 
-    private static ServiceProvider BuildProvider(Action<CachingOptions>? configure)
+    [Fact]
+    public void AddSharedKernelCaching_NullConfigureDelegate_Throws()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(() => services.AddSharedKernelCaching((Action<CachingOptions>)null!));
+    }
+
+    private static ServiceProvider BuildProvider(Action<CachingOptions> configure)
     {
         var services = new ServiceCollection();
         services.AddLogging();

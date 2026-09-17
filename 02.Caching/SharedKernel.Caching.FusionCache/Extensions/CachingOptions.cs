@@ -1,176 +1,140 @@
 using System.ComponentModel.DataAnnotations;
-using System.IO.Compression;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Configuration;
 
 namespace SharedKernel.Caching.FusionCache.Extensions;
 
 /// <summary>
-/// Configuration options for the SharedKernel caching infrastructure.
-/// Bound to <c>SharedKernelCaching</c> section in application configuration.
+/// Settings for the FusionCache implementation of <see cref="ICacheService"/>, bound from the
+/// <c>SharedKernel:Caching</c> configuration section or set in code.
 /// </summary>
-public sealed class CachingOptions
+/// <remarks>
+/// <para>
+/// Every setting is read when the cache is first resolved, after configuration binding and every
+/// <c>configure</c> delegate have run, and is validated at host startup.
+/// </para>
+/// <para>
+/// Service-wide defaults (<see cref="DistributedCacheSoftTimeout"/>, <see cref="DistributedCacheHardTimeout"/>,
+/// <see cref="FailSafeThrottleDuration"/>) apply to every entry; a <see cref="CachePolicy"/> controls
+/// everything else per entry.
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// // appsettings.json
+/// // "SharedKernel": { "Caching": { "ServiceName": "orders", "L1SizeLimit": 50000,
+/// //                                 "DistributedCacheSoftTimeout": "00:00:00.100" } }
+/// builder.Services.AddSharedKernelCaching(builder.Configuration);
+/// </code>
+/// </example>
+public sealed class CachingOptions : ISectionBoundOptions
 {
-    /// <summary>
-    /// The configuration section name used when binding these options from
-    /// <c>IConfiguration</c>.
-    /// </summary>
-    public const string SectionName = "SharedKernelCaching";
+    /// <summary>Gets the configuration section path: <c>SharedKernel:Caching</c>.</summary>
+    public static string SectionName => "SharedKernel:Caching";
 
     /// <summary>
-    /// Maximum number of entries the L1 in-process memory cache may hold simultaneously.
-    /// Defaults to <c>10 000</c>. Must be a positive integer.
+    /// Gets or sets the owning service's name, the prefix of every cache key. Required.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This is an <b>entry count</b> limit, not a byte limit. Each cache entry contributes
-    /// exactly 1 unit toward the limit regardless of payload size. When the limit is reached
-    /// the least-recently-used entries are evicted automatically by
-    /// <see cref="Microsoft.Extensions.Caching.Memory.MemoryCache"/>.
-    /// </para>
-    /// <para>
-    /// In Kubernetes deployments with strict memory limits, set this value explicitly to
-    /// bound per-pod L1 cache cardinality. A value of <c>10 000</c> (the default) is
-    /// appropriate for most services; reduce it for high-churn or memory-constrained pods.
-    /// </para>
+    /// 1 to 64 lowercase ASCII letters, digits, <c>.</c>, <c>_</c> or <c>-</c>, starting with a letter
+    /// or digit (<see cref="CacheKeyFormat.IsValidServiceName"/>). There is no default, so services that
+    /// share a Redis instance cannot collide on a forgotten one. Host startup fails when it is invalid.
+    /// </remarks>
+    public string ServiceName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the maximum number of entries the memory cache holds. Defaults to 10 000.
+    /// </summary>
+    /// <remarks>
+    /// An entry count, not bytes: every entry counts as one. Past the limit the memory cache evicts
+    /// entries, which the distributed layer (when configured) still holds. Lower it for
+    /// memory-constrained pods.
     /// </remarks>
     [Range(1, int.MaxValue, ErrorMessage = "L1SizeLimit must be at least 1.")]
     public int L1SizeLimit { get; set; } = 10_000;
 
     /// <summary>
-    /// Name of the FusionCache instance. Used to differentiate multiple cache instances in the
-    /// same DI container. Defaults to <c>"default"</c>.
-    /// </summary>
-    [Required]
-    public string CacheName { get; set; } = "default";
-
-    /// <summary>
-    /// The logical name of the owning service. Used as the first segment of every cache key
-    /// produced by <c>ICacheKeyProvider</c> in the format <c>{service}:{entity}:{id}</c>.
+    /// Gets or sets a value indicating whether host startup waits until every
+    /// <see cref="ICacheWarmupStrategy"/> has run. Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// Required, with no default, so services sharing a Redis instance can never collide on a
-    /// forgotten default. Must satisfy <c>CacheKeyFormat.IsValidServiceName</c>: 1 to 64 lowercase
-    /// ASCII letters, digits, <c>.</c>, <c>_</c> or <c>-</c>, starting with a letter or digit. Host
-    /// startup fails otherwise.
+    /// When <see langword="true"/>, warmup runs before any hosted service starts, including the web
+    /// server, so the service takes no traffic and reports no readiness until the cache is warm. A long
+    /// warmup therefore needs a Kubernetes <c>startupProbe</c> with enough headroom. When
+    /// <see langword="false"/>, warmup runs in the background after startup.
     /// </remarks>
-    public string ServiceName { get; set; } = string.Empty;
+    public bool WaitForWarmup { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/>, the <c>CacheWarmupHostedService</c> integrates with the
-    /// host lifecycle to delay the readiness signal until all registered
-    /// <c>ICacheWarmupStrategy</c> instances have completed. Defaults to <see langword="false"/>.
+    /// Gets or sets how long a distributed-layer operation may take before the cache falls back to an
+    /// expired value, or <see langword="null"/> for no limit. Applies to every entry.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Set this to <see langword="true"/> in combination with
-    /// <c>ICachingBuilder.AddCacheWarmup&lt;TStrategy&gt;()</c> to ensure Kubernetes readiness
-    /// probes do not pass until the L1 cache has been pre-populated.
-    /// </para>
-    /// <para>
-    /// When <see langword="false"/> (the default), warmup runs concurrently with normal
-    /// service startup and traffic may arrive before warmup completes.
-    /// </para>
+    /// Applies only when fail-safe is on and an expired value exists; otherwise
+    /// <see cref="DistributedCacheHardTimeout"/> applies. Must be positive and shorter than
+    /// <see cref="DistributedCacheHardTimeout"/> when both are set.
     /// </remarks>
-    public bool WaitForWarmup { get; set; } = false;
+    public TimeSpan? DistributedCacheSoftTimeout { get; set; }
 
     /// <summary>
-    /// Configuration for opt-in Brotli compression applied to the L2 Redis distributed cache
-    /// path. L1 in-process entries are never affected by this setting.
+    /// Gets or sets how long any distributed-layer operation may take before the cache continues
+    /// without it, or <see langword="null"/> for no limit. Applies to every entry. Must be positive.
     /// </summary>
-    /// <remarks>
-    /// Call <c>AddBrotliCompression()</c> on the returned <see cref="SharedKernel.Caching.Abstractions.ICachingBuilder"/>
-    /// to activate compression. Payloads smaller than <see cref="CompressionOptions.L2ThresholdBytes"/>
-    /// are stored uncompressed regardless of <see cref="CompressionOptions.Enabled"/>.
-    /// </remarks>
-    public CompressionOptions Compression { get; set; } = new();
+    /// <remarks>A slow or unreachable Redis then costs at most this long per operation.</remarks>
+    public TimeSpan? DistributedCacheHardTimeout { get; set; }
 
     /// <summary>
-    /// The application-level <see cref="JsonSerializerContext"/> to use when configuring the
-    /// FusionCache System.Text.Json serializer.
+    /// Gets or sets how long a value served by fail-safe is reused before the factory is tried again,
+    /// or <see langword="null"/> for the provider default (30 seconds). Applies to every entry. Must be positive.
+    /// </summary>
+    /// <remarks>Keeps a failing source from being hit on every request while it is down.</remarks>
+    public TimeSpan? FailSafeThrottleDuration { get; set; }
+
+    /// <summary>
+    /// Gets or sets a source-generated <see cref="JsonSerializerContext"/> covering every type the
+    /// service caches, or <see langword="null"/> to use reflection-based serialization.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// When set, <c>AddSharedKernelCaching</c> passes a combined
-    /// <see cref="System.Text.Json.JsonSerializerOptions"/> to
-    /// <c>WithSystemTextJsonSerializer()</c> using
-    /// <c>JsonTypeInfoResolver.Combine(SerializerContext, EncryptedCacheEntryJsonContext.Default)</c>,
-    /// so the application's cached types and the internal encrypted-entry type are both handled by
-    /// source-generated contexts, keeping the serializer NativeAOT-safe.
-    /// </para>
-    /// <para>
-    /// When <see langword="null"/> (the default), FusionCache falls back to reflection-based
-    /// System.Text.Json serialization — acceptable for non-AOT builds but will break NativeAOT.
-    /// </para>
-    /// <para>
-    /// Example (NativeAOT build):
-    /// <code>
-    /// [JsonSerializable(typeof(OrderDto))]
-    /// [JsonSerializable(typeof(CustomerDto))]
-    /// internal partial class MyAppSerializerContext : JsonSerializerContext { }
-    ///
-    /// services.AddSharedKernelCaching(o =>
-    /// {
-    ///     o.ServiceName = "my-service";
-    ///     o.SerializerContext = MyAppSerializerContext.Default;
-    /// });
-    /// </code>
-    /// </para>
+    /// Set it in code (it cannot be bound from configuration) when the service is trimmed or published
+    /// as NativeAOT. It is used for distributed entries and for the plaintext of encrypted entries.
     /// </remarks>
     public JsonSerializerContext? SerializerContext { get; set; }
-
-    // -------------------------------------------------------------------------
-    // Nested types
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Options that control opt-in Brotli compression for the L2 Redis distributed cache path.
-    /// </summary>
-    /// <remarks>
-    /// These settings are only effective when compression is activated via
-    /// <c>ICachingBuilder.AddBrotliCompression()</c>. L1 in-process cache entries are never
-    /// compressed.
-    /// </remarks>
-    public sealed class CompressionOptions
-    {
-        /// <summary>
-        /// Whether Brotli compression is enabled. Defaults to <see langword="false"/>.
-        /// </summary>
-        /// <remarks>
-        /// This flag is informational — the act of calling <c>AddBrotliCompression()</c> enables
-        /// the compressor. Setting this property without calling the extension method has no effect.
-        /// </remarks>
-        public bool Enabled { get; set; } = false;
-
-        /// <summary>
-        /// Minimum serialized payload size in bytes required to trigger compression.
-        /// Payloads strictly below this threshold are stored uncompressed.
-        /// Defaults to <c>1024</c> bytes. Must be greater than zero.
-        /// </summary>
-        public int L2ThresholdBytes { get; set; } = 1024;
-
-        /// <summary>
-        /// The Brotli compression level to apply. Defaults to <see cref="CompressionLevel.Fastest"/>
-        /// to minimise per-entry latency overhead in the cache hot path.
-        /// </summary>
-        public CompressionLevel Level { get; set; } = CompressionLevel.Fastest;
-    }
 }
 
 /// <summary>
-/// Validates <see cref="CachingOptions"/> beyond what data annotations can express.
-/// Registered automatically by <c>AddSharedKernelCaching</c>.
+/// Validates <see cref="CachingOptions"/> rules that data annotations cannot express.
 /// </summary>
 internal sealed class CachingOptionsValidator : IValidateOptions<CachingOptions>
 {
-    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, CachingOptions options)
     {
-        if (!CacheKeyFormat.IsValidServiceName(options.ServiceName))
-            return ValidateOptionsResult.Fail(
-                "CachingOptions.ServiceName must be set to 1 to 64 lowercase ASCII letters, digits, '.', '_' or '-', starting with a letter or digit.");
+        var failures = new List<string>();
 
-        return ValidateOptionsResult.Success;
+        if (!CacheKeyFormat.IsValidServiceName(options.ServiceName))
+        {
+            failures.Add(
+                "CachingOptions.ServiceName must be set to 1 to 64 lowercase ASCII letters, digits, '.', '_' or '-', starting with a letter or digit.");
+        }
+
+        RequirePositive(options.DistributedCacheSoftTimeout, nameof(CachingOptions.DistributedCacheSoftTimeout), failures);
+        RequirePositive(options.DistributedCacheHardTimeout, nameof(CachingOptions.DistributedCacheHardTimeout), failures);
+        RequirePositive(options.FailSafeThrottleDuration, nameof(CachingOptions.FailSafeThrottleDuration), failures);
+
+        if (options.DistributedCacheSoftTimeout is { } soft && options.DistributedCacheHardTimeout is { } hard && soft >= hard)
+        {
+            failures.Add("CachingOptions.DistributedCacheSoftTimeout must be shorter than DistributedCacheHardTimeout.");
+        }
+
+        return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private static void RequirePositive(TimeSpan? value, string property, List<string> failures)
+    {
+        if (value is { } duration && duration <= TimeSpan.Zero)
+        {
+            failures.Add($"CachingOptions.{property} must be positive.");
+        }
     }
 }

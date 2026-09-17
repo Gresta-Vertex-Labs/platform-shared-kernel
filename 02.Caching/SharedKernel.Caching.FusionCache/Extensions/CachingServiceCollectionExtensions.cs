@@ -1,123 +1,145 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Caching.FusionCache.Serialization;
+using SharedKernel.Configuration.Extensions;
 using ZiggyCreatures.Caching.Fusion;
+using ZiggyCreatures.Caching.Fusion.Serialization;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace SharedKernel.Caching.FusionCache.Extensions;
 
 /// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering the SharedKernel caching
-/// infrastructure.
+/// <see cref="IServiceCollection"/> extension methods that register the FusionCache implementation of
+/// the SharedKernel caching contracts.
 /// </summary>
 public static class CachingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the SharedKernel caching infrastructure backed by FusionCache L1 in-process
-    /// memory cache. Call <c>AddRedisL2</c> on the returned builder to also wire up the
-    /// distributed Redis L2 backplane.
+    /// Registers <see cref="ICacheService"/>, <see cref="ICacheKeyProvider"/> and
+    /// <see cref="ITenantCacheKeyProvider"/>, with <see cref="CachingOptions"/> bound from the
+    /// <c>SharedKernel:Caching</c> section of <paramref name="configuration"/> and validated at startup.
     /// </summary>
-    /// <param name="services">The service collection to configure.</param>
-    /// <param name="configure">
-    /// Optional delegate to customise <see cref="CachingOptions"/>. When <see langword="null"/>
-    /// the defaults are used.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ICachingBuilder"/> that can be used to chain additional registrations
-    /// (e.g., <c>AddRedisL2</c>).
-    /// </returns>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration root that contains the <c>SharedKernel:Caching</c> section.</param>
+    /// <param name="configure">Optional changes applied after binding, for settings such as <see cref="CachingOptions.SerializerContext"/> that configuration cannot express.</param>
+    /// <returns>A builder for chaining provider features such as <c>AddRedisL2</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddSharedKernelCaching(builder.Configuration)
+    ///     .AddTenantCacheService()
+    ///     .AddRedisL2(builder.Configuration.GetConnectionString("redis")!);
+    /// </code>
+    /// </example>
     public static ICachingBuilder AddSharedKernelCaching(
         this IServiceCollection services,
+        IConfiguration configuration,
         Action<CachingOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
-        // Register and validate CachingOptions.
-        var optionsBuilder = services
-            .AddOptions<CachingOptions>()
+        services.AddValidatedOptions<CachingOptions, CachingOptionsValidator>(configuration, validateDataAnnotations: true);
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
+
+        return AddCore(services);
+    }
+
+    /// <summary>
+    /// Registers <see cref="ICacheService"/>, <see cref="ICacheKeyProvider"/> and
+    /// <see cref="ITenantCacheKeyProvider"/>, with <see cref="CachingOptions"/> set in code and
+    /// validated at startup.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Sets the options; must at least set <see cref="CachingOptions.ServiceName"/>.</param>
+    /// <returns>A builder for chaining provider features such as <c>AddRedisL2</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddSharedKernelCaching(o => o.ServiceName = "orders");
+    /// </code>
+    /// </example>
+    public static ICachingBuilder AddSharedKernelCaching(
+        this IServiceCollection services,
+        Action<CachingOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        services.AddOptions<CachingOptions>()
+            .Configure(configure)
             .ValidateDataAnnotations()
             .ValidateOnStart();
-
-        if (configure is not null)
-            optionsBuilder.Configure(configure);
-
-        // Register custom validator for rules data annotations cannot express (e.g. ServiceName).
-        // TryAddEnumerable, not TryAddSingleton: ValidateDataAnnotations() above has already added an
-        // IValidateOptions<CachingOptions>, so TryAddSingleton would silently skip this validator.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<CachingOptions>, CachingOptionsValidator>());
 
-        // Resolve CachingOptions synchronously so we can read SerializerContext before
-        // building the DI container (options are configured above via Configure delegate).
-        // We build a temporary options instance to check SerializerContext.
-        var tempOptions = new CachingOptions();
-        configure?.Invoke(tempOptions);
+        return AddCore(services);
+    }
 
-        // Build the JsonSerializerOptions for the FusionCache STJ serializer.
-        // When SerializerContext is set, combine it with EncryptedCacheEntryJsonContext (for encrypted
-        // entries) so FusionCache's L2 serializer is NativeAOT-safe.
-        JsonSerializerOptions? resolvedJsonOptions = null;
-        if (tempOptions.SerializerContext is not null)
+    private static CachingBuilder AddCore(IServiceCollection services)
+    {
+        // One JsonSerializerOptions instance, built from the validated options, serves both FusionCache's
+        // distributed serializer and the plaintext step of EncryptedCacheService.
+        services.TryAddSingleton(sp => new CacheSerializationOptions
         {
-            resolvedJsonOptions = new JsonSerializerOptions
-            {
-                TypeInfoResolver = JsonTypeInfoResolver.Combine(
-                    tempOptions.SerializerContext,
-                    EncryptedCacheEntryJsonContext.Default),
-            };
-        }
-
-        // Registered unconditionally (Phase 46/WO-081) so Encryption.EncryptedCacheService can
-        // later reuse the exact same JsonSerializerOptions instance for its own T-to-plaintext-bytes
-        // step — see CacheSerializationOptions' remarks — instead of re-deriving a second one.
-        services.TryAddSingleton(new CacheSerializationOptions
-        {
-            Value = resolvedJsonOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            Value = CreateJsonOptions(sp.GetRequiredService<IOptions<CachingOptions>>().Value),
         });
 
-        // Register IFusionCacheSerializer in DI (and the concrete type separately) so that
-        // AddBrotliCompression can Replace IFusionCacheSerializer with a decorator factory that
-        // resolves the concrete STJ serializer as its inner without creating a circular dependency.
-        // AddFusionCacheSystemTextJsonSerializer registers via a factory — the concrete type
-        // registration below ensures BrotliCacheSerializer can resolve it by type, not by interface.
-        if (resolvedJsonOptions is not null)
-        {
-            services.TryAddSingleton(new FusionCacheSystemTextJsonSerializer(resolvedJsonOptions));
-            services.AddFusionCacheSystemTextJsonSerializer(resolvedJsonOptions);
-        }
-        else
-        {
-            services.TryAddSingleton<FusionCacheSystemTextJsonSerializer>();
-            services.AddFusionCacheSystemTextJsonSerializer();
-        }
+        // The concrete serializer is registered separately so AddBrotliCompression can decorate it
+        // without resolving IFusionCacheSerializer from inside its own factory.
+        services.TryAddSingleton(sp => new FusionCacheSystemTextJsonSerializer(sp.GetRequiredService<CacheSerializationOptions>().Value));
+        services.TryAddSingleton<IFusionCacheSerializer>(sp => sp.GetRequiredService<FusionCacheSystemTextJsonSerializer>());
 
-        // Wire FusionCache with a dedicated MemoryCache whose SizeLimit is controlled by
-        // CachingOptions.L1SizeLimit (an entry COUNT limit — each entry contributes Size = 1).
-        // Providing the MemoryCache directly (not via WithRegisteredMemoryCache) ensures the
-        // SizeLimit is isolated to this FusionCache instance and not shared with other
-        // IMemoryCache consumers in the DI container.
-        var sizeLimit = tempOptions.L1SizeLimit;
         services
             .AddFusionCache()
             .TryWithRegisteredLogger()
-            .WithMemoryCache(_ => new MemoryCache(new MemoryCacheOptions { SizeLimit = sizeLimit }))
-            .WithDefaultEntryOptions(o => o.Size = 1)
-            .WithRegisteredSerializer();
+            // A dedicated MemoryCache keeps L1SizeLimit from affecting other IMemoryCache users.
+            .WithMemoryCache(sp => new MemoryCache(new MemoryCacheOptions
+            {
+                SizeLimit = sp.GetRequiredService<IOptions<CachingOptions>>().Value.L1SizeLimit,
+            }))
+            .WithRegisteredSerializer()
+            .WithPostSetup((sp, cache) => ApplyDefaults(cache.DefaultEntryOptions, sp.GetRequiredService<IOptions<CachingOptions>>().Value));
 
-        // Register ICacheService as a singleton backed by FusionCacheService.
         services.TryAddSingleton<ICacheService, FusionCacheService>();
 
-        // One key provider serves both interfaces, so global and tenant keys share the single
-        // validated CachingOptions.ServiceName. Consumers may override either registration.
+        // One key provider serves both interfaces, so global and tenant keys share the validated
+        // CachingOptions.ServiceName. Consumers may override either registration.
         services.TryAddSingleton<CacheKeyProvider>();
         services.TryAddSingleton<ICacheKeyProvider>(sp => sp.GetRequiredService<CacheKeyProvider>());
         services.TryAddSingleton<ITenantCacheKeyProvider>(sp => sp.GetRequiredService<CacheKeyProvider>());
 
         return new CachingBuilder(services);
     }
+
+    // Every entry starts from these defaults; FusionCacheService copies them before applying a policy.
+    internal static void ApplyDefaults(FusionCacheEntryOptions defaults, CachingOptions options)
+    {
+        // Size = 1 so every entry counts as one unit against L1SizeLimit.
+        defaults.Size = 1;
+
+        if (options.DistributedCacheSoftTimeout is { } soft)
+            defaults.DistributedCacheSoftTimeout = soft;
+
+        if (options.DistributedCacheHardTimeout is { } hard)
+            defaults.DistributedCacheHardTimeout = hard;
+
+        if (options.FailSafeThrottleDuration is { } throttle)
+            defaults.FailSafeThrottleDuration = throttle;
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions(CachingOptions options) =>
+        options.SerializerContext is { } context
+            ? new JsonSerializerOptions { TypeInfoResolver = JsonTypeInfoResolver.Combine(context, EncryptedCacheEntryJsonContext.Default) }
+            : new JsonSerializerOptions();
 }

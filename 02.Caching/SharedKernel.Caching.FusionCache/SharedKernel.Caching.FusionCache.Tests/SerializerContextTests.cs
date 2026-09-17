@@ -105,6 +105,43 @@ public sealed class SerializerContextTests
         Assert.Null(options.SerializerContext);
     }
 
+    [Fact]
+    public void AddSharedKernelCaching_WithSerializerContext_SerializerUsesOnlyTheContext()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o =>
+        {
+            o.ServiceName = "test-svc";
+            o.SerializerContext = WireTestSerializerContext.Default;
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = provider.GetRequiredService<ZiggyCreatures.Caching.Fusion.Serialization.IFusionCacheSerializer>();
+
+        var dto = new WireTestDto("hello", 99);
+        Assert.Equal(dto, serializer.Deserialize<WireTestDto>(serializer.Serialize(dto)));
+
+        // A type outside the context has no metadata: no silent reflection fallback.
+        Assert.ThrowsAny<Exception>(() => serializer.Serialize(new Uri("https://example.test")));
+    }
+
+    [Fact]
+    public void AddSharedKernelCaching_SerializerOptions_AreBuiltWhenResolved_NotAtRegistration()
+    {
+        // The context is set by a Configure call registered after AddSharedKernelCaching: it must still apply.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelCaching(o => o.ServiceName = "test-svc");
+        services.Configure<CachingOptions>(o => o.SerializerContext = WireTestSerializerContext.Default);
+
+        using var provider = services.BuildServiceProvider();
+        var jsonOptions = provider.GetRequiredService<CacheSerializationOptions>().Value;
+
+        Assert.NotNull(jsonOptions.TypeInfoResolver);
+        Assert.NotNull(jsonOptions.TypeInfoResolver.GetTypeInfo(typeof(WireTestDto), jsonOptions));
+    }
+
     // -------------------------------------------------------------------------
     // CachingOptions property contract
     // -------------------------------------------------------------------------

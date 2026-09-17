@@ -1,31 +1,44 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>FusionCache L1 provider implementation for SharedKernel caching. Provides ICacheService backed by ZiggyCreatures.FusionCache with stampede protection, background eager-refresh, fail-safe stale serving, and tag-based eviction. L1-only by default; Redis distributed backplane is added via SharedKernel.Caching.Redis. AOT-compatible.</Description>
-    <PackageTags>shared-kernel;caching;fusioncache;l1-cache;stampede-protection;aot</PackageTags>
+    <Description>FusionCache implementation of the SharedKernel caching contracts: ICacheService, ITenantCacheService and the cache key providers, with stampede protection, fail-safe, eager refresh, factory-controlled caching, tenant-safe telemetry, service-wide distributed-cache timeouts, configuration binding validated at startup, optional Brotli compression, key-bound AES-GCM encryption and startup warmup. Add SharedKernel.Caching.Redis for the distributed layer and backplane.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;caching;fusioncache;hybrid-cache;stampede-protection;multi-tenancy</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: the two AddSharedKernelCaching overloads (configuration or delegate) share the optional configure parameter. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <!-- DI abstractions â€” required for IServiceCollection extension signatures -->
+    <!-- IServiceCollection extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <!-- Options validation via data annotations (ValidateDataAnnotations, ValidateOnStart) -->
+    <!-- ValidateDataAnnotations/ValidateOnStart for the delegate-only registration -->
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
-    <!-- Hosting abstractions â€” required for BackgroundService (CacheWarmupHostedService) and IHostedLifecycleService -->
+    <!-- IHostedLifecycleService for startup warmup -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
-    <!-- L1 in-process cache powered by FusionCache -->
     <PackageReference Include="ZiggyCreatures.FusionCache" />
-    <!-- AOT-safe STJ serialization for FusionCache entries -->
     <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Caching contracts: ICacheService, CachePolicy, ICacheKeyProvider, ICachingBuilder -->
+    <!-- The caching contracts this package implements -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
-    <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
+    <!-- AddValidatedOptions and ISectionBoundOptions for configuration binding -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!-- LoggingEventIdRanges.Caching -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <!-- ISymmetricEncryptionService — opt-in AES-GCM cache-value encryption (Phase 42, WO-065) -->
+    <!-- ISymmetricEncryptionService for opt-in cache-value encryption -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Expose internals to the nested test project -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Caching.FusionCache.Tests</_Parameter1>
     </AssemblyAttribute>
