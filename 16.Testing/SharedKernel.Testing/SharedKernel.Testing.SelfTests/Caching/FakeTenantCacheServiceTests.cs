@@ -6,40 +6,48 @@ using Xunit;
 namespace SharedKernel.Testing.SelfTests.Caching;
 
 /// <summary>
-/// Proves <see cref="FakeTenantCacheService"/> per D-212's scenarios and
-/// <see cref="CachingServiceCollectionExtensions.AddFakeTenantCacheService"/>'s registration shape.
+/// Proves <see cref="FakeTenantCacheService"/>'s tenant isolation, tenant tag scoping and key format,
+/// and <see cref="CachingServiceCollectionExtensions.AddFakeTenantCacheService"/>'s registration shape.
 /// </summary>
 public sealed class FakeTenantCacheServiceTests
 {
     [Fact]
-    public async Task GetAsync_DifferentTenants_SameEntityAndId_NeverCollide()
+    public async Task TryGetAsync_DifferentTenants_SameEntityAndId_NeverCollide()
     {
         var cache = new FakeTenantCacheService();
 
         await cache.SetAsync("tenant-a", "invoice", "42", 100, CachePolicy.Default);
 
-        var tenantAValue = await cache.GetAsync<int>("tenant-a", "invoice", "42");
-        var tenantBValue = await cache.GetAsync<int>("tenant-b", "invoice", "42");
+        var tenantA = await cache.TryGetAsync<int>("tenant-a", "invoice", "42");
+        var tenantB = await cache.TryGetAsync<int>("tenant-b", "invoice", "42");
 
-        Assert.Equal(100, tenantAValue);
-        Assert.Equal(0, tenantBValue);
+        Assert.Equal(CacheLookup<int>.Hit(100), tenantA);
+        Assert.False(tenantB.IsHit);
     }
 
     [Fact]
-    public async Task RemoveByTagAsync_ScopedToTenant_OtherTenantsTaggedEntriesSurvive()
+    public async Task SetAsync_StoresUnderRealTenantKeyFormat()
     {
         var cache = new FakeTenantCacheService();
 
-        await cache.SetAsync("tenant-a", "order", "1", "a-value", CachePolicy.Default.WithTags("orders"));
-        await cache.SetAsync("tenant-b", "order", "1", "b-value", CachePolicy.Default.WithTags("orders"));
+        await cache.SetAsync("tenant-a", "invoice", "42", 100, CachePolicy.Default);
 
-        await cache.RemoveByTagAsync("tenant-a", "orders");
+        var expectedKey = CacheKeyFormat.BuildTenantKey("test-svc", "tenant-a", "invoice", "42");
+        Assert.Equal(CacheLookup<int>.Hit(100), await cache.Cache.TryGetAsync<int>(expectedKey));
+        Assert.Equal(1, cache.Cache.Count);
+    }
 
-        var tenantAValue = await cache.GetAsync<string>("tenant-a", "order", "1");
-        var tenantBValue = await cache.GetAsync<string>("tenant-b", "order", "1");
+    [Fact]
+    public async Task SetAsync_ScopesPolicyTagsToTenant()
+    {
+        var cache = new FakeTenantCacheService();
 
-        Assert.Null(tenantAValue);
-        Assert.Equal("b-value", tenantBValue);
+        await cache.SetAsync("tenant-a", "order", "1", "v", CachePolicy.Default.WithTags("orders"));
+
+        var key = CacheKeyFormat.BuildTenantKey("test-svc", "tenant-a", "order", "1");
+        Assert.Equal(
+            [CacheKeyFormat.BuildTenantTag("tenant-a", "orders"), CacheKeyFormat.BuildTenantWideTag("tenant-a")],
+            cache.Cache.GetTags(key));
     }
 
     [Fact]
@@ -53,9 +61,26 @@ public sealed class FakeTenantCacheServiceTests
 
         await cache.RemoveByTagAsync("tenant-a", "shared-tag");
 
-        Assert.Equal(0, await cache.GetAsync<int>("tenant-a", "invoice", "1"));
-        Assert.Equal(0, await cache.GetAsync<int>("tenant-a", "invoice", "2"));
-        Assert.Equal(99, await cache.GetAsync<int>("tenant-b", "invoice", "1"));
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "invoice", "1")).IsHit);
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "invoice", "2")).IsHit);
+        Assert.Equal(CacheLookup<int>.Hit(99), await cache.TryGetAsync<int>("tenant-b", "invoice", "1"));
+    }
+
+    [Fact]
+    public async Task RemoveTenantAsync_RemovesEveryEntryOfThatTenantOnly()
+    {
+        var cache = new FakeTenantCacheService();
+
+        await cache.SetAsync("tenant-a", "invoice", "1", 1, CachePolicy.Default);
+        await cache.SetAsync("tenant-a", "order", "2", 2, CachePolicy.Default.WithTags("orders"));
+        await cache.SetAsync("tenant-b", "invoice", "1", 3, CachePolicy.Default);
+
+        await cache.RemoveTenantAsync("tenant-a");
+
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "invoice", "1")).IsHit);
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "order", "2")).IsHit);
+        Assert.Equal(CacheLookup<int>.Hit(3), await cache.TryGetAsync<int>("tenant-b", "invoice", "1"));
+        Assert.Equal(1, cache.Count);
     }
 
     [Fact]
@@ -76,6 +101,26 @@ public sealed class FakeTenantCacheServiceTests
         Assert.Equal(7, first);
         Assert.Equal(7, second);
         Assert.Equal(1, callCount);
+    }
+
+    [Fact]
+    public async Task GetOrSetAsync_ContextOverload_SkipCaching_NotStored()
+    {
+        var cache = new FakeTenantCacheService();
+
+        var value = await cache.GetOrSetAsync(
+            "tenant-a",
+            "invoice",
+            "1",
+            (context, _) =>
+            {
+                context.SkipCaching();
+                return ValueTask.FromResult(5);
+            },
+            CachePolicy.Default);
+
+        Assert.Equal(5, value);
+        Assert.Equal(0, cache.Count);
     }
 
     [Fact]
@@ -108,8 +153,22 @@ public sealed class FakeTenantCacheServiceTests
 
         await cache.RemoveAsync("tenant-a", "invoice", "1");
 
-        Assert.Null(await cache.GetAsync<string>("tenant-a", "invoice", "1"));
-        Assert.Equal("b", await cache.GetAsync<string>("tenant-b", "invoice", "1"));
+        Assert.False((await cache.TryGetAsync<string>("tenant-a", "invoice", "1")).IsHit);
+        Assert.Equal(CacheLookup<string>.Hit("b"), await cache.TryGetAsync<string>("tenant-b", "invoice", "1"));
+    }
+
+    [Fact]
+    public async Task ExpireAsync_IsTenantScoped()
+    {
+        var cache = new FakeTenantCacheService();
+
+        await cache.SetAsync("tenant-a", "invoice", "1", 1, CachePolicy.Default);
+        await cache.SetAsync("tenant-b", "invoice", "1", 2, CachePolicy.Default);
+
+        await cache.ExpireAsync("tenant-a", "invoice", "1");
+
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "invoice", "1")).IsHit);
+        Assert.True((await cache.TryGetAsync<int>("tenant-b", "invoice", "1")).IsHit);
     }
 
     [Fact]
@@ -123,8 +182,8 @@ public sealed class FakeTenantCacheServiceTests
         cache.Reset();
 
         Assert.Equal(0, cache.Count);
-        Assert.Equal(0, await cache.GetAsync<int>("tenant-a", "invoice", "1"));
-        Assert.Equal(0, await cache.GetAsync<int>("tenant-b", "invoice", "1"));
+        Assert.False((await cache.TryGetAsync<int>("tenant-a", "invoice", "1")).IsHit);
+        Assert.False((await cache.TryGetAsync<int>("tenant-b", "invoice", "1")).IsHit);
     }
 
     [Fact]
@@ -138,8 +197,7 @@ public sealed class FakeTenantCacheServiceTests
 
         await cache.RemoveByTagAsync("tenant-a", "tag-x");
 
-        // The entry survives because it is no longer associated with "tag-x".
-        Assert.Equal(2, await cache.GetAsync<int>("tenant-a", "invoice", "1"));
+        Assert.Equal(CacheLookup<int>.Hit(2), await cache.TryGetAsync<int>("tenant-a", "invoice", "1"));
     }
 
     [Fact]

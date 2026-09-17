@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.HashStore;
 using SharedKernel.Testing.Caching;
 using Xunit;
 

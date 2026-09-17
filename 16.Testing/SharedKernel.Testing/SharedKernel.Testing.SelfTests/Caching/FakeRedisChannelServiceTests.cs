@@ -1,4 +1,4 @@
-using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core;
 using SharedKernel.Testing.Caching;
 using Xunit;
 

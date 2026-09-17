@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.HashStore;
+using SharedKernel.Caching.Redis.PubSub;
 using SharedKernel.Testing.Caching;
 using Xunit;
 
@@ -29,10 +31,15 @@ public sealed class AddFakeCachingServicesTests
     }
 
     [Fact]
-    public void AddFakeCachingServices_RegistersFakeCacheInvalidationBus()
+    public void AddFakeCachingServices_BothKeyProviderInterfaces_ResolveToSameInstance()
     {
         var provider = BuildProvider();
-        Assert.IsType<FakeCacheInvalidationBus>(provider.GetRequiredService<ICacheInvalidationBus>());
+
+        var keyProvider = provider.GetRequiredService<ICacheKeyProvider>();
+        var tenantKeyProvider = provider.GetRequiredService<ITenantCacheKeyProvider>();
+
+        Assert.IsType<FakeTenantCacheKeyProvider>(keyProvider);
+        Assert.Same(keyProvider, tenantKeyProvider);
     }
 
     [Fact]
@@ -50,14 +57,25 @@ public sealed class AddFakeCachingServicesTests
     }
 
     [Fact]
-    public void AddFakeCachingServices_AllFourAreSingletons()
+    public void AddFakeCachingServices_RegistersNoCacheInvalidationBus()
+    {
+        var services = new ServiceCollection();
+        services.AddFakeCachingServices();
+
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType.Name.Contains("Invalidation", StringComparison.Ordinal)
+                || (descriptor.ImplementationType?.Name.Contains("Invalidation", StringComparison.Ordinal) ?? false));
+    }
+
+    [Fact]
+    public void AddFakeCachingServices_CoreServicesAreSingletons()
     {
         var provider = BuildProvider();
 
         Assert.Same(provider.GetRequiredService<ICacheService>(), provider.GetRequiredService<ICacheService>());
         Assert.Same(provider.GetRequiredService<IDistributedLockService>(), provider.GetRequiredService<IDistributedLockService>());
         Assert.Same(provider.GetRequiredService<ITenantCacheKeyProvider>(), provider.GetRequiredService<ITenantCacheKeyProvider>());
-        Assert.Same(provider.GetRequiredService<ICacheInvalidationBus>(), provider.GetRequiredService<ICacheInvalidationBus>());
     }
 
     [Fact]

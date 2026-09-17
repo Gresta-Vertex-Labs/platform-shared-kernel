@@ -46,9 +46,10 @@ public sealed class CacheEncryptionFakeCryptographyInteropTests
         var cache = provider.GetRequiredService<ICacheService>();
 
         await cache.SetAsync("interop-key", "secret-payload", CachePolicy.Default);
-        var result = await cache.GetAsync<string>("interop-key");
+        var result = await cache.TryGetAsync<string>("interop-key");
 
-        Assert.Equal("secret-payload", result);
+        Assert.True(result.IsHit);
+        Assert.Equal("secret-payload", result.Value);
     }
 
     [Fact]
