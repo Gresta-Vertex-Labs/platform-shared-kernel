@@ -196,3 +196,7 @@ as errors) and fails the build on an undocumented public member.
   `.Abstractions` (`.Oidc` now references it directly). mTLS: a throwing validator now rejects (new event 12301)
   instead of a 500, an app `OnAuthenticationFailed` can no longer overturn a validator rejection, and trust settings
   changed on `CertificateAuthenticationOptions` after registration fail startup.
+- [2026-09-17] Published all five packages as `1.0.0-alpha.0.1026` from `3471936`. Before publishing, CI on Linux
+  caught that `/issuer` parses as an absolute `file://` URI there; the authority must now be an absolute http or https
+  URL. Publishing a package whose SharedKernel dependencies were last published at a lower commit height needs
+  those dependencies republished from the same commit first (the workflow's feed dependency gate enforces it).
