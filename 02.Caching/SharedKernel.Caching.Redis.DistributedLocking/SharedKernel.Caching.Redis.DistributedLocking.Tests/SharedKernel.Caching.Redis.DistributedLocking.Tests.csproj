@@ -9,23 +9,18 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="NSubstitute" />
     <!-- Testcontainers Redis for integration tests -->
     <PackageReference Include="Testcontainers.Redis" />
     <!-- DI host for integration-style DI registration tests -->
-    <!-- Version floor raised to match SharedKernel.Testing's transitive minimum (NU1605 downgrade guard) -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- Logging null provider for tests -->
-    <!-- Version floor raised to match SharedKernel.Testing -> Microsoft.EntityFrameworkCore.Sqlite's transitive minimum (NU1605 downgrade guard) -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
-    <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
+    <!-- StackExchange.Redis — direct key inspection and manipulation in tests -->
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.Redis.DistributedLocking.csproj" />
     <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
-    <!-- SharedKernel.Testing provides FakeDistributedLockService, FakeRenewableLock -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>
