@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -32,7 +33,8 @@ public sealed class RedisFixture : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
-        new TestCachingBuilder(services).AddRedisDistributedLocking(_container.GetConnectionString());
+        services.AddRedisConnection(o => o.ConnectionString = _container.GetConnectionString());
+        new TestCachingBuilder(services).AddRedisDistributedLocking();
         _provider = services.BuildServiceProvider();
     }
 

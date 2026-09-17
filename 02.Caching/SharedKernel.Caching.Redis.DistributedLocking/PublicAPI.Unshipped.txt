@@ -1,0 +1,4 @@
+#nullable enable
+SharedKernel.Caching.Redis.DistributedLocking.Extensions.RedisDistributedLockingExtensions
+static SharedKernel.Caching.Redis.DistributedLocking.Extensions.RedisDistributedLockingExtensions.AddRedisDistributedLocking(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Caching.Redis.DistributedLocking.Extensions.RedisDistributedLockingExtensions.AddRedisDistributedLocking(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder) -> SharedKernel.Caching.Abstractions.ICachingBuilder!

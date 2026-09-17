@@ -7,72 +7,68 @@ using SharedKernel.Caching.Redis.DistributedLocking.Implementations;
 namespace SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 
 /// <summary>
-/// Extension methods for registering Redis-backed distributed locks and leases.
+/// Extension methods that register <see cref="IDistributedLockService"/> over the shared Redis connection.
 /// </summary>
 public static class RedisDistributedLockingExtensions
 {
     /// <summary>
-    /// Registers <see cref="IDistributedLockService"/> over Redis. Also registers the shared
-    /// <c>IConnectionMultiplexer</c> (first caller wins), so other Redis packages reuse the same
-    /// connection, and <see cref="TimeProvider.System"/> unless a <see cref="TimeProvider"/> is
-    /// already registered.
+    /// Registers <see cref="IDistributedLockService"/> over the shared Redis connection, for a host that also
+    /// uses the cache.
     /// </summary>
-    /// <param name="builder">The caching builder.</param>
-    /// <param name="connectionString">A StackExchange.Redis connection string. Must not be null or whitespace.</param>
-    /// <param name="configure">Optional delegate to customise <see cref="RedisLockOptions"/>.</param>
+    /// <param name="builder">The builder returned by <c>AddSharedKernelCaching</c>.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    public static ICachingBuilder AddRedisDistributedLocking(
-        this ICachingBuilder builder,
-        string connectionString,
-        Action<RedisLockOptions>? configure = null)
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><c>AddRedisConnection</c> has not been called.</exception>
+    /// <remarks>
+    /// Also registers <see cref="TimeProvider.System"/> unless a <see cref="TimeProvider"/> is already registered.
+    /// Calling it more than once has no further effect.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddRedisConnection(builder.Configuration);
+    /// builder.Services.AddSharedKernelCaching(builder.Configuration)
+    ///     .AddRedisL2()
+    ///     .AddRedisDistributedLocking();
+    /// </code>
+    /// </example>
+    public static ICachingBuilder AddRedisDistributedLocking(this ICachingBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        Register(builder.Services, connectionString, configure);
-
+        Register(builder.Services);
         return builder;
     }
 
     /// <summary>
-    /// Registers <see cref="IDistributedLockService"/> over Redis for a host that needs locks and
-    /// leases but no cache. Also registers the shared <c>IConnectionMultiplexer</c> (first caller
-    /// wins), so other Redis packages reuse the same connection, and <see cref="TimeProvider.System"/>
-    /// unless a <see cref="TimeProvider"/> is already registered.
+    /// Registers <see cref="IDistributedLockService"/> over the shared Redis connection, for a host that needs
+    /// locks and leases but no cache.
     /// </summary>
-    /// <remarks>
-    /// Performs the same registration as the <see cref="ICachingBuilder"/> overload. Use that overload
-    /// when the host also calls <c>AddSharedKernelCaching</c>.
-    /// </remarks>
     /// <param name="services">The service collection.</param>
-    /// <param name="connectionString">A StackExchange.Redis connection string. Must not be null or whitespace.</param>
-    /// <param name="configure">Optional delegate to customise <see cref="RedisLockOptions"/>.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddRedisDistributedLocking(
-        this IServiceCollection services,
-        string connectionString,
-        Action<RedisLockOptions>? configure = null)
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><c>AddRedisConnection</c> has not been called.</exception>
+    /// <remarks>
+    /// Also registers <see cref="TimeProvider.System"/> unless a <see cref="TimeProvider"/> is already registered.
+    /// Calling it more than once has no further effect.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddRedisConnection(builder.Configuration)
+    ///     .AddRedisDistributedLocking();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddRedisDistributedLocking(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        Register(services, connectionString, configure);
-
+        Register(services);
         return services;
     }
 
-    private static void Register(
-        IServiceCollection services,
-        string connectionString,
-        Action<RedisLockOptions>? configure)
+    private static void Register(IServiceCollection services)
     {
-        var options = new RedisLockOptions { ConnectionString = connectionString };
-        configure?.Invoke(options);
-
-        services.AddRedisConnection(options.ConnectionString, coreOptions =>
-        {
-            coreOptions.ConnectTimeoutMs = options.ConnectTimeoutMs;
-        });
+        services.EnsureRedisConnectionRegistered(nameof(AddRedisDistributedLocking));
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IDistributedLockService, RedisDistributedLockService>();

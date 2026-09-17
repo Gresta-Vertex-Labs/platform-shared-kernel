@@ -1,10 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Redis.Core;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Implementations;
-using StackExchange.Redis;
 using Xunit;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking.Tests.DI;
@@ -14,26 +12,24 @@ namespace SharedKernel.Caching.Redis.DistributedLocking.Tests.DI;
 /// </summary>
 public sealed class RedisDistributedLockingExtensionsTests
 {
-    private const string ConnectionString = "localhost:6379";
-
     [Fact]
-    public void CachingBuilderOverload_RegistersLockServiceTimeProviderAndConnection()
+    public void CachingBuilderOverload_RegistersLockServiceAndTimeProvider()
     {
-        var services = new ServiceCollection();
+        var services = WithConnection();
         var builder = new TestCachingBuilder(services);
 
-        var returned = builder.AddRedisDistributedLocking(ConnectionString);
+        var returned = builder.AddRedisDistributedLocking();
 
         Assert.Same(builder, returned);
         AssertLockingRegistered(services);
     }
 
     [Fact]
-    public void ServiceCollectionOverload_RegistersLockServiceTimeProviderAndConnection()
+    public void ServiceCollectionOverload_RegistersLockServiceAndTimeProvider()
     {
-        var services = new ServiceCollection();
+        var services = WithConnection();
 
-        var returned = services.AddRedisDistributedLocking(ConnectionString);
+        var returned = services.AddRedisDistributedLocking();
 
         Assert.Same(services, returned);
         AssertLockingRegistered(services);
@@ -42,11 +38,11 @@ public sealed class RedisDistributedLockingExtensionsTests
     [Fact]
     public void BothOverloads_RegisterTheSameServices()
     {
-        var viaBuilder = new ServiceCollection();
-        new TestCachingBuilder(viaBuilder).AddRedisDistributedLocking(ConnectionString);
+        var viaBuilder = WithConnection();
+        new TestCachingBuilder(viaBuilder).AddRedisDistributedLocking();
 
-        var viaServices = new ServiceCollection();
-        viaServices.AddRedisDistributedLocking(ConnectionString);
+        var viaServices = WithConnection();
+        viaServices.AddRedisDistributedLocking();
 
         Assert.Equal(
             viaBuilder.Select(sd => (sd.ServiceType, sd.Lifetime)),
@@ -54,60 +50,67 @@ public sealed class RedisDistributedLockingExtensionsTests
     }
 
     [Fact]
-    public void PreRegisteredTimeProvider_IsKept()
+    public void ServiceCollectionOverload_WithoutConnection_ThrowsInvalidOperationException()
     {
         var services = new ServiceCollection();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => services.AddRedisDistributedLocking());
+
+        Assert.Contains("AddRedisConnection", ex.Message);
+        Assert.Contains(nameof(RedisDistributedLockingExtensions.AddRedisDistributedLocking), ex.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void CachingBuilderOverload_WithoutConnection_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new TestCachingBuilder(services).AddRedisDistributedLocking());
+
+        Assert.Contains("AddRedisConnection", ex.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void PreRegisteredTimeProvider_IsKept()
+    {
+        var services = WithConnection();
         var timeProvider = new StubTimeProvider();
         services.AddSingleton<TimeProvider>(timeProvider);
 
-        services.AddRedisDistributedLocking(ConnectionString);
+        services.AddRedisDistributedLocking();
 
         var descriptor = Assert.Single(services, sd => sd.ServiceType == typeof(TimeProvider));
         Assert.Same(timeProvider, descriptor.ImplementationInstance);
     }
 
     [Fact]
-    public void CalledTwice_DoesNotDuplicateRegistrations()
+    public void CalledRepeatedlyThroughBothOverloads_DoesNotDuplicateRegistrations()
     {
-        var services = new ServiceCollection();
+        var services = WithConnection();
         var builder = new TestCachingBuilder(services);
 
-        builder.AddRedisDistributedLocking(ConnectionString);
-        services.AddRedisDistributedLocking(ConnectionString);
+        builder.AddRedisDistributedLocking();
+        var countAfterFirst = services.Count;
+        services.AddRedisDistributedLocking();
+        builder.AddRedisDistributedLocking();
+        services.AddRedisDistributedLocking();
 
+        Assert.Equal(countAfterFirst, services.Count);
         Assert.Single(services, sd => sd.ServiceType == typeof(IDistributedLockService));
         Assert.Single(services, sd => sd.ServiceType == typeof(TimeProvider));
-        Assert.Single(services, sd => sd.ServiceType == typeof(IConnectionMultiplexer));
-    }
-
-    [Fact]
-    public void Configure_ConnectTimeoutFlowsToConnectionOptions()
-    {
-        var services = new ServiceCollection();
-        services.AddRedisDistributedLocking(ConnectionString, o => o.ConnectTimeoutMs = 1_234);
-
-        using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<RedisConnectionOptions>>().Value;
-
-        Assert.Equal(ConnectionString, options.ConnectionString);
-        Assert.Equal(1_234, options.ConnectTimeoutMs);
     }
 
     [Fact]
     public void NullBuilderOrServices_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentNullException>(() => ((ICachingBuilder)null!).AddRedisDistributedLocking(ConnectionString));
-        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddRedisDistributedLocking(ConnectionString));
+        Assert.Throws<ArgumentNullException>(() => ((ICachingBuilder)null!).AddRedisDistributedLocking());
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddRedisDistributedLocking());
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void BlankConnectionString_ThrowsArgumentException(string connectionString)
-    {
-        Assert.Throws<ArgumentException>(() => new TestCachingBuilder(new ServiceCollection()).AddRedisDistributedLocking(connectionString));
-        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddRedisDistributedLocking(connectionString));
-    }
+    private static IServiceCollection WithConnection() =>
+        new ServiceCollection().AddRedisConnection(o => o.ConnectionString = "localhost:6379");
 
     private static void AssertLockingRegistered(IServiceCollection services)
     {
@@ -117,8 +120,6 @@ public sealed class RedisDistributedLockingExtensionsTests
 
         var timeProvider = Assert.Single(services, sd => sd.ServiceType == typeof(TimeProvider));
         Assert.Same(TimeProvider.System, timeProvider.ImplementationInstance);
-
-        Assert.Single(services, sd => sd.ServiceType == typeof(IConnectionMultiplexer));
     }
 
     private sealed class StubTimeProvider : TimeProvider;
@@ -135,11 +136,14 @@ public sealed class RedisDistributedLockingServiceCollectionTests(RedisFixture f
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddRedisDistributedLocking(fixture.ConnectionString);
+        services
+            .AddRedisConnection(o => o.ConnectionString = fixture.ConnectionString)
+            .AddRedisDistributedLocking();
         await using var provider = services.BuildServiceProvider();
 
         var lockService = provider.GetRequiredService<IDistributedLockService>();
         Assert.IsType<RedisDistributedLockService>(lockService);
+        Assert.Same(lockService, provider.GetRequiredService<IDistributedLockService>());
         Assert.Null(provider.GetService<ICacheService>());
 
         await using var handle = await lockService.TryAcquireAsync(RedisFixture.NewResource("service-collection"));

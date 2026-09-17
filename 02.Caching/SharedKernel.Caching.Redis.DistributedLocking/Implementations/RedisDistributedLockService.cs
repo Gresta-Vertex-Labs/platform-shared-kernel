@@ -50,10 +50,11 @@ internal sealed partial class RedisDistributedLockService : IDistributedLockServ
         {
             ct.ThrowIfCancellationRequested();
 
+            long requestedAt = _timeProvider.GetTimestamp();
             long fencingToken = await ClaimAsync(database, resource, owner, options.Expiry).ConfigureAwait(false);
             if (fencingToken > 0)
             {
-                var handle = new RedisDistributedLock(database, resource, owner, fencingToken, options.Expiry, _timeProvider, _logger);
+                var handle = new RedisDistributedLock(database, resource, owner, fencingToken, options.Expiry, requestedAt, _timeProvider, _logger);
                 handle.StartKeepAlive();
                 Log.LockAcquired(_logger, resource, fencingToken);
                 return handle;

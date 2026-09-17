@@ -15,6 +15,8 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- Logging null provider for tests -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- IDatabase substitute for the manual-clock loss-detection tests -->
+    <PackageReference Include="NSubstitute" />
     <!-- StackExchange.Redis — direct key inspection and manipulation in tests -->
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
