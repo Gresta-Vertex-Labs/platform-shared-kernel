@@ -2484,7 +2484,7 @@ The user ruled:
 
 ### P-548 — Caching: `SharedKernel.Caching.FusionCache` Pre-First-Publish Pass (BREAKING API + BEHAVIOUR)
 
-**Status:** `✓` Shipped 2026-09-17 — 270 FusionCache, 34 Redis and 69 caching/secure-defaults governance tests passing; published to GitHub Packages from the same commit as its dependencies
+**Status:** `✓` Shipped 2026-09-17 — 270 FusionCache, 34 Redis and 69 caching/secure-defaults governance tests passing; published to GitHub Packages as `1.0.0-alpha.0.1066` with Primitives, Configuration, Caching.Abstractions and Cryptography from the same commit
 **Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
 **Domain:** 02.Caching (with migrations in 00.Governance and 16.Testing)
 **Depends on:** P-547
