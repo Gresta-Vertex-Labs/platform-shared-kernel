@@ -30,8 +30,8 @@ namespace SharedKernel.Application.Behaviors.CacheInvalidation;
 /// <para>
 /// Tenant scoping mirrors <see cref="Caching.CachingBehavior{TRequest,TResponse}"/> exactly: when
 /// <see cref="IRequestContext"/> is registered and its <see cref="IRequestContext.TenantId"/> is
-/// non-null, every key and tag is rewritten as <c>tenant:{tenantId}:{value}</c> before eviction, so
-/// this can never evict another tenant's entries.
+/// non-null, every key and tag is scoped to that tenant in the same <c>@{tenant}:{value}</c> format before
+/// eviction, so this can never evict another tenant's entries.
 /// </para>
 /// </remarks>
 public sealed class CacheInvalidationBehavior<TRequest, TResponse>(
@@ -47,26 +47,26 @@ public sealed class CacheInvalidationBehavior<TRequest, TResponse>(
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
+        // Scope and validate before the handler runs: an invalid key must fail the command, not the
+        // post-commit callback after the change is already saved.
+        var tenantId = requestContext?.TenantId;
+        var keys = request.CacheKeysToInvalidate.Select(key => CacheScope.Key(tenantId, key)).ToArray();
+        var tags = request.CacheTagsToInvalidate.Select(tag => CacheScope.Tag(tenantId, tag)).ToArray();
+
         var response = await next().ConfigureAwait(false);
 
         if (response is not IHasSuccessFlag { IsSuccess: false })
         {
-            var tenantId = requestContext?.TenantId;
-            var keys = request.CacheKeysToInvalidate;
-            var tags = request.CacheTagsToInvalidate;
-
             commandScope.OnCompleted(async ct =>
             {
                 foreach (var key in keys)
                 {
-                    var scopedKey = tenantId is null ? key : $"tenant:{tenantId}:{key}";
-                    await cacheService.RemoveAsync(scopedKey, ct).ConfigureAwait(false);
+                    await cacheService.RemoveAsync(key, ct).ConfigureAwait(false);
                 }
 
                 foreach (var tag in tags)
                 {
-                    var scopedTag = tenantId is null ? tag : $"tenant:{tenantId}:{tag}";
-                    await cacheService.RemoveByTagAsync(scopedTag, ct).ConfigureAwait(false);
+                    await cacheService.RemoveByTagAsync(tag, ct).ConfigureAwait(false);
                 }
             });
         }
