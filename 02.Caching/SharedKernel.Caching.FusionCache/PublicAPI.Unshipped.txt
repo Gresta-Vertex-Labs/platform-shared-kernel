@@ -1,0 +1,35 @@
+#nullable enable
+SharedKernel.Caching.FusionCache.Extensions.BrotliCompressionExtensions
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions.CacheCompressionOptions() -> void
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions.Level.get -> System.IO.Compression.CompressionLevel
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions.Level.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions.ThresholdBytes.get -> int
+SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions.ThresholdBytes.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CacheEncryptionCachingBuilderExtensions
+SharedKernel.Caching.FusionCache.Extensions.CacheWarmupExtensions
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.CachingOptions() -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.DistributedCacheHardTimeout.get -> System.TimeSpan?
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.DistributedCacheHardTimeout.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.DistributedCacheSoftTimeout.get -> System.TimeSpan?
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.DistributedCacheSoftTimeout.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.FailSafeThrottleDuration.get -> System.TimeSpan?
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.FailSafeThrottleDuration.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.L1SizeLimit.get -> int
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.L1SizeLimit.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.SerializerContext.get -> System.Text.Json.Serialization.JsonSerializerContext?
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.SerializerContext.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.ServiceName.get -> string!
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.ServiceName.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.WaitForWarmup.get -> bool
+SharedKernel.Caching.FusionCache.Extensions.CachingOptions.WaitForWarmup.set -> void
+SharedKernel.Caching.FusionCache.Extensions.CachingServiceCollectionExtensions
+SharedKernel.Caching.FusionCache.Extensions.TenantCacheServiceCachingBuilderExtensions
+static SharedKernel.Caching.FusionCache.Extensions.BrotliCompressionExtensions.AddBrotliCompression(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder, System.Action<SharedKernel.Caching.FusionCache.Extensions.CacheCompressionOptions!>? configure = null) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.FusionCache.Extensions.CacheEncryptionCachingBuilderExtensions.AddCacheEncryption(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.FusionCache.Extensions.CacheWarmupExtensions.AddCacheWarmup<TStrategy>(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.FusionCache.Extensions.CachingOptions.SectionName.get -> string!
+static SharedKernel.Caching.FusionCache.Extensions.CachingServiceCollectionExtensions.AddSharedKernelCaching(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Caching.FusionCache.Extensions.CachingOptions!>? configure = null) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.FusionCache.Extensions.CachingServiceCollectionExtensions.AddSharedKernelCaching(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Caching.FusionCache.Extensions.CachingOptions!>! configure) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
+static SharedKernel.Caching.FusionCache.Extensions.TenantCacheServiceCachingBuilderExtensions.AddTenantCacheService(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
