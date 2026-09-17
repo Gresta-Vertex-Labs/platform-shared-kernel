@@ -35,8 +35,9 @@ public static class BrotliCompressionExtensions
     /// <exception cref="InvalidOperationException"><c>AddCacheEncryption</c> was already called; compression must be registered first so values are compressed before they are encrypted.</exception>
     /// <example>
     /// <code>
+    /// services.AddRedisConnection(configuration);
     /// services.AddSharedKernelCaching(o => o.ServiceName = "catalog")
-    ///         .AddRedisL2(connectionString)
+    ///         .AddRedisL2()
     ///         .AddBrotliCompression(o => o.ThresholdBytes = 2048);
     /// </code>
     /// </example>

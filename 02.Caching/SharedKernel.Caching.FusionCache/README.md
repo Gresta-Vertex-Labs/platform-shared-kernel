@@ -147,12 +147,16 @@ writes distributed entries._
 ### 1. Share the cache across instances
 
 ```csharp
+builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel:Caching:Redis, once
+
 builder.Services
     .AddSharedKernelCaching(builder.Configuration)
-    .AddRedisL2(builder.Configuration.GetConnectionString("redis")!);
+    .AddRedisL2();
 ```
 
-Entries are shared by every instance of the service. Removals, expirations, tag evictions and clears reach every
+The Redis connection (connection string, TLS, timeouts) is configured once with `AddRedisConnection` from
+[`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md);
+`AddRedisL2` takes no connection string. Entries are shared by every instance of the service. Removals, expirations, tag evictions and clears reach every
 instance through the backplane. See [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis/README.md).
 
 ### 2. Bound the cost of a slow Redis
@@ -180,7 +184,7 @@ instance through the backplane. See [`SharedKernel.Caching.Redis`](https://githu
 ```csharp
 builder.Services
     .AddSharedKernelCaching(builder.Configuration)
-    .AddRedisL2(redis)
+    .AddRedisL2()
     .AddBrotliCompression(o => o.ThresholdBytes = 2048);
 ```
 
@@ -197,7 +201,7 @@ builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetric
 builder.Services
     .AddSharedKernelCaching(builder.Configuration)
     .AddTenantCacheService()
-    .AddRedisL2(redis)
+    .AddRedisL2()
     .AddBrotliCompression()     // before encryption: values are compressed, then encrypted
     .AddCacheEncryption();      // last
 ```
@@ -339,7 +343,8 @@ reaches telemetry.
 ## AI quick reference
 
 ```text
-REGISTER      builder.Services.AddSharedKernelCaching(builder.Configuration)[.AddTenantCacheService()][.AddRedisL2(cs)]
+REGISTER      [builder.Services.AddRedisConnection(builder.Configuration);]  // once, only with Redis
+              builder.Services.AddSharedKernelCaching(builder.Configuration)[.AddTenantCacheService()][.AddRedisL2()]
               [.AddBrotliCompression(o => o.ThresholdBytes = n)][.AddCacheEncryption()][.AddCacheWarmup<T>()]
               Order: caching -> tenant -> redis -> brotli -> encryption. Code-only: AddSharedKernelCaching(o => o.ServiceName = "svc").
 CONFIG        Section SharedKernel:Caching. ServiceName required (lowercase a-z0-9._-). L1SizeLimit, DistributedCacheSoftTimeout,

@@ -72,9 +72,11 @@ dotnet add package SharedKernel.Caching.Abstractions
 Register a provider once:
 
 ```csharp
+builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel.Caching.Redis.Core (with Redis only)
+
 builder.Services
     .AddSharedKernelCaching(o => o.ServiceName = "orders")   // SharedKernel.Caching.FusionCache
-    .AddRedisL2(builder.Configuration.GetConnectionString("redis")!); // SharedKernel.Caching.Redis (optional)
+    .AddRedisL2();                                           // SharedKernel.Caching.Redis (optional)
 ```
 
 Then depend on the contracts:
@@ -168,7 +170,7 @@ stateDiagram-v2
     Busy --> [*]: returns null
     Held --> Held: kept alive by the provider
     Held --> Released: DisposeAsync
-    Held --> Lost: extension finds another owner, or the store stays unreachable past Expiry
+    Held --> Lost: extension finds another owner, or keeping it alive keeps failing
     Lost --> Released: DisposeAsync
     Released --> [*]
 ```
@@ -187,23 +189,31 @@ This package contains no implementation. The platform ships these providers:
 | Package | Registers | Registration |
 | --- | --- | --- |
 | `SharedKernel.Caching.FusionCache` | `ICacheService`, `ICacheKeyProvider`, `ITenantCacheKeyProvider`, optional `ITenantCacheService` | `AddSharedKernelCaching(o => o.ServiceName = "…")`, `.AddTenantCacheService()` |
-| `SharedKernel.Caching.Redis` | The Redis distributed layer and backplane | `.AddRedisL2(connectionString)` |
-| `SharedKernel.Caching.Redis.DistributedLocking` | `IDistributedLockService` over Redis | `services.AddRedisDistributedLocking(connectionString)` or `.AddRedisDistributedLocking(…)` on the caching builder |
+| `SharedKernel.Caching.Redis.Core` | The shared Redis connection every Redis provider uses | `services.AddRedisConnection(configuration)`, once, before any other Redis registration |
+| `SharedKernel.Caching.Redis` | The Redis distributed layer and backplane | `.AddRedisL2()` on the caching builder |
+| `SharedKernel.Caching.Redis.DistributedLocking` | `IDistributedLockService` over Redis | `services.AddRedisDistributedLocking()` or `.AddRedisDistributedLocking()` on the caching builder |
+
+No Redis registration other than `AddRedisConnection` takes a connection string; the connection is configured once in
+`SharedKernel:Caching:Redis`.
 
 A typical service:
 
 ```csharp
+builder.Services.AddRedisConnection(builder.Configuration);
+
 builder.Services
     .AddSharedKernelCaching(o => o.ServiceName = "orders")
     .AddTenantCacheService()
-    .AddRedisL2(redis)
-    .AddRedisDistributedLocking(redis);
+    .AddRedisL2()
+    .AddRedisDistributedLocking();
 ```
 
 A worker that only needs locks:
 
 ```csharp
-builder.Services.AddRedisDistributedLocking(redis);
+builder.Services
+    .AddRedisConnection(builder.Configuration)
+    .AddRedisDistributedLocking();
 ```
 
 `ServiceName` is required. It prefixes every key, so services that share a Redis instance never collide, and startup
@@ -465,7 +475,8 @@ LOCK           await using var h = await locks.TryAcquireAsync("svc:res:id", new
                null -> busy. Pass h.FencingToken to the write; link h.LostToken into work cancellation.
 LEASE          var l = await locks.TryAcquireLeaseAsync("svc:job:{occurrence}", duration, ct); null -> already claimed. Never release.
 OUTAGE         DistributedLockUnavailableException = store down. Never treat as busy.
-REGISTRATION   AddSharedKernelCaching(o => o.ServiceName = "svc").AddTenantCacheService().AddRedisL2(cs); services.AddRedisDistributedLocking(cs).
+REGISTRATION   services.AddRedisConnection(configuration) once (Redis only); AddSharedKernelCaching(o => o.ServiceName = "svc")
+               .AddTenantCacheService().AddRedisL2().AddRedisDistributedLocking(). No connection string on AddRedisL2/locking.
 FORBIDDEN      Provider types (IFusionCache, IConnectionMultiplexer) in application code; hand-built tenant keys; TryGet-then-Set.
 ```
 

@@ -7,10 +7,9 @@ namespace SharedKernel.Caching.Abstractions;
 /// caching registrations onto the service collection.
 /// </summary>
 /// <remarks>
-/// Extension methods on this interface (e.g., <c>AddRedisL2</c>, <c>AddRedisChannelService</c> and
-/// <c>AddRedisHashService</c>) are defined in their
-/// respective provider packages, keeping infrastructure dependencies isolated from the
-/// abstractions package.
+/// Extension methods on this interface (for example <c>AddTenantCacheService</c>, <c>AddRedisL2</c> and
+/// <c>AddRedisDistributedLocking</c>) are defined in their respective provider packages, keeping
+/// infrastructure dependencies isolated from the abstractions package.
 /// </remarks>
 public interface ICachingBuilder
 {

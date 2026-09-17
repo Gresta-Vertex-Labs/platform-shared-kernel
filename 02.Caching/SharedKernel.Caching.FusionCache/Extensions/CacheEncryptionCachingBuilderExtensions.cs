@@ -46,8 +46,9 @@ public static class CacheEncryptionCachingBuilderExtensions
     /// <code>
     /// services.AddSingleton&lt;IEncryptionKeyProvider&gt;(keyProvider);
     /// services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption();
+    /// services.AddRedisConnection(configuration);
     /// services.AddSharedKernelCaching(o =&gt; o.ServiceName = "payments")
-    ///         .AddRedisL2(connectionString)
+    ///         .AddRedisL2()
     ///         .AddBrotliCompression()
     ///         .AddCacheEncryption();
     /// </code>

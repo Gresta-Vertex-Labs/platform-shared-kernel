@@ -33,10 +33,11 @@ public static class CachingServiceCollectionExtensions
     /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
     /// <example>
     /// <code>
+    /// builder.Services.AddRedisConnection(builder.Configuration);
     /// builder.Services
     ///     .AddSharedKernelCaching(builder.Configuration)
     ///     .AddTenantCacheService()
-    ///     .AddRedisL2(builder.Configuration.GetConnectionString("redis")!);
+    ///     .AddRedisL2();
     /// </code>
     /// </example>
     public static ICachingBuilder AddSharedKernelCaching(
