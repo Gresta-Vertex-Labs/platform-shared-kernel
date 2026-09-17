@@ -150,7 +150,7 @@ assembly fixture, not per test.
 | Area | Types |
 | --- | --- |
 | `Application/` | `FakeRequestContext`, `FakeUnitOfWork`, `FakeRequestIdempotencyStore`, `FakeAuditTrailWriter`, `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
-| `Caching/` | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService`, `FakeRenewableLock`, `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>`, `FakeCacheInvalidationBus`, `FakeCacheWarmupStrategy`, `FakeTenantCacheKeyProvider` |
+| `Caching/` | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService`, `FakeDistributedLock`, `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>`, `FakeCacheWarmupStrategy`, `FakeTenantCacheKeyProvider` |
 | `Clocks/` | `FakeClock` |
 | `Communication/` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `MockServiceEndpointResolver`, `ActivityRecorder`, `AmbientActivityTestHelper`, `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
 | `Containers/` | `PostgreSqlContainerFixture`, `RedisContainerFixture`, `RabbitMqContainerFixture`, `MinioContainerFixture`, `ElasticsearchContainerFixture`, `MeilisearchContainerFixture`, `QdrantContainerFixture` |

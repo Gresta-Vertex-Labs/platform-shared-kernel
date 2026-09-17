@@ -20,7 +20,11 @@ public static class CachingServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// Supersedes the manual per-fake <c>AddSingleton&lt;T&gt;</c> pattern for callers who want all
-    /// of these fakes; that pattern remains valid for callers who want only a subset.
+    /// of these fakes; that pattern remains valid for callers who want only a subset. Unlike the real
+    /// Redis registrations, none of these needs <c>AddRedisConnection</c>. When a <see cref="TimeProvider"/>
+    /// is registered, <see cref="FakeDistributedLockService"/> and <see cref="FakeRedisHashService"/> use it
+    /// for lease and hash expiry; otherwise they use <see cref="TimeProvider.System"/>. Resolve the interface
+    /// and cast to the fake type to reach its assertion helpers.
     /// <see cref="FakeTypedHashStore{T}"/> and <see cref="FakeCacheWarmupStrategy"/> are not
     /// bundled into this call — see <see cref="AddFakeTypedHashStore{T}"/> and
     /// <see cref="AddFakeCacheWarmupStrategy"/>.
@@ -48,7 +52,8 @@ public static class CachingServiceCollectionExtensions
     /// <remarks>
     /// Matches the real <c>AddTypedHashStore&lt;T&gt;(JsonTypeInfo&lt;T&gt;)</c>'s own per-DTO-type
     /// registration shape (minus the type-info argument, which the fake never needs). Call once per
-    /// <typeparamref name="T"/> the test needs a typed hash store for.
+    /// <typeparamref name="T"/> the test needs a typed hash store for. Uses a registered
+    /// <see cref="TimeProvider"/> for expiry when one exists.
     /// </remarks>
     /// <typeparam name="T">The DTO type stored in the fake hash.</typeparam>
     /// <param name="services">The service collection to register against.</param>

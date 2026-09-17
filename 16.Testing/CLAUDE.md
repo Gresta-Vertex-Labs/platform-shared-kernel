@@ -182,89 +182,76 @@ FakeTenantCacheKeyProvider  (sealed class, implements ITenantCacheKeyProvider)  
           IHttpContextAccessor — safe in pure unit tests.
 
 FakeRedisChannelService  (sealed class, implements IRedisChannelService)
-    .ConnectionHealth                                          → ConnectionHealthState  (settable; default Connected)
-    .SimulateFailure                                           → bool  (settable, default false; when true, PublishAsync/
-                                                                   SubscribeAsync/UnsubscribeAsync all throw
-                                                                   InvalidOperationException instead of performing the
-                                                                   operation)
+    .SimulateFailure                                           → bool  (settable, default false; when true, both PublishAsync
+                                                                   overloads and both SubscribeAsync overloads throw
+                                                                   TimeoutException after argument validation — a failure
+                                                                   mode the real service documents)
     .PublishedMessages                                         → IReadOnlyList<(string Channel, string Message)>  (every
-                                                                   successful PublishAsync call, append-only, thread-safe)
-    .SubscribedChannels                                        → IReadOnlyList<string>  (every channel with at least one
-                                                                   active — not yet unsubscribed — handler)
-    .PublishAsync(string channel, string message, CancellationToken ct)                     → ValueTask
-        Records (channel, message) into PublishedMessages, then synchronously invokes every currently-
-        subscribed handler for that channel, in subscription order — genuine in-process pub/sub fan-out,
-        not merely a recorded call, so a single-process test can prove a publish/subscribe round trip
-        with no real Redis. A handler exception is caught and swallowed, never rethrown to the publisher
-        — mirrors RedisChannelService's own documented "handler exceptions must never propagate to the
-        Redis subscriber thread" rule (02.Caching's RedisChannelService rules).
-    .SubscribeAsync(string channel, Func<string, ValueTask> handler, CancellationToken ct)   → ValueTask
-        Registers handler for channel. A channel may accept more than one handler; PublishAsync invokes
-        all of them.
-    .UnsubscribeAsync(string channel, CancellationToken ct)                                  → ValueTask
-        Removes every handler registered for channel. Unsubscribing a channel with no active subscription
-        is a silent no-op (idempotent, mirrors this package's established idempotent-unsubscribe/-delete
-        convention).
-    .IsSubscribed(string channel)                                                            → bool
-    .Reset()                                                                                  → void  (clears
-                                                                   PublishedMessages and every subscription)
-    NOTE: Backing store is a thread-safe channel→handler-list map (ConcurrentDictionary<string,
-          ConcurrentBag<Func<string,ValueTask>>>, replaced wholesale on Unsubscribe rather than mutated
-          in place, to avoid a torn-bag read during a concurrent publish). Deliberately does NOT
-          replicate RedisChannelService's own reconnect/replay machinery (subscribing to
-          IConnectionMultiplexer.ConnectionRestored/ConnectionFailed and resubscribing every channel) —
-          ConnectionHealth is a plain settable property a test mutates directly to simulate what a
-          health-check consumer would read, never driven by a real connection event. The first Caching/
-          fake to simulate genuine cross-call interaction (publish → subscriber fan-out) rather than
-          purely passive call recording — see the new Implementation Rules bullet below.
+                                                                   successful publish, in order; typed messages as JSON)
+    .SubscribedChannels                                        → IReadOnlyList<string>  (channels with ≥1 undisposed subscription)
+    .HandlerExceptions                                         → IReadOnlyList<Exception>  (every exception a handler threw)
+    .SkippedMessages                                           → IReadOnlyList<(string Channel, string Message)>  (messages a
+                                                                   typed subscription could not deserialize)
+    .PublishAsync(string channel, string message, CancellationToken ct)                     → ValueTask<long>
+    .PublishAsync<T>(string channel, T message, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask<long>
+        Records the message, queues it on every subscription of the channel and returns how many there were.
+        When no delivery is already running for a subscription, the publisher delivers the message itself
+        before returning, so a single-flow test sees every handler run by the time the await completes. A
+        publish from inside a handler (or while another caller is delivering to that subscription) is queued
+        and handled by the running delivery after the current handler returns — no deadlock, no reordering.
+    .SubscribeAsync(string channel, Func<string, CancellationToken, ValueTask> handler, CancellationToken ct)  → ValueTask<IAsyncDisposable>
+    .SubscribeAsync<T>(string channel, JsonTypeInfo<T> typeInfo, Func<T, CancellationToken, ValueTask> handler, CancellationToken ct) → ValueTask<IAsyncDisposable>
+        Each call is an independent subscription handling its messages one at a time, in publish order.
+        Disposing it (idempotent) removes it, cancels the handler token, and waits for a running handler
+        unless called from inside that handler. Handler exceptions are recorded and delivery continues;
+        malformed typed messages are recorded in SkippedMessages and skipped.
+    .IsSubscribed(string channel) / .GetSubscriptionCount(string channel)                    → bool / int
+    .GetPublishedMessages(string channel) / .GetPublishedMessages<T>(string channel, JsonTypeInfo<T>) → IReadOnlyList<string> / IReadOnlyList<T>
+    .Reset()                                                                                  → void  (clears the
+                                                                   recordings and ends every subscription without waiting)
+    NOTE: Validation mirrors production (whitespace channel → ArgumentException, null message/handler/
+          typeInfo → ArgumentNullException, cancelled token → OperationCanceledException before anything is
+          recorded). The receiver count is the number of subscriptions on the fake, whereas Redis counts
+          connections. There is no connection, so nothing is lost or replayed; ConnectionHealth and
+          UnsubscribeAsync were removed with the P-547 Redis redesign (readiness now lives in
+          SharedKernel.Caching.Redis.Core's IRedisConnectionProbe).
 
 FakeRedisHashService  (sealed class, implements IRedisHashService)
-    .SimulateFailure                                           → bool  (settable, default false; when true, every member
-                                                                   throws InvalidOperationException instead of performing
-                                                                   the operation)
-    .GetFieldAsync<T>(string key, string field, JsonTypeInfo<T> typeInfo, CancellationToken ct)          → ValueTask<T?>
-    .SetFieldAsync<T>(string key, string field, T value, JsonTypeInfo<T> typeInfo, CancellationToken ct) → ValueTask
-    .GetAllFieldsAsync<T>(string key, JsonTypeInfo<T> typeInfo, CancellationToken ct)                    → ValueTask<IReadOnlyDictionary<string, T>>
-    .DeleteFieldAsync(string key, string field, CancellationToken ct)                                    → ValueTask
-    .IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)                     → ValueTask<long>
-    .Seed<T>(string key, string field, T value)                                                          → void  (test-setup
-                                                                   helper — pre-populates a field without going through
-                                                                   SetFieldAsync, mirrors Storage/InMemoryFileStorage.Seed)
-    .Reset()                                                                                              → void
-    NOTE: Backing store is a ConcurrentDictionary<(string Key, string Field), object?> keyed by (key,
-          field), storing the boxed value directly. typeInfo is accepted for signature parity only and
-          is NEVER invoked — this is an in-memory fake with no wire format to cross, unlike the real
-          RedisHashService, which uses JsonTypeInfo<T> for genuine STJ (de)serialization against Redis'
-          wire bytes. GetFieldAsync<T> on a missing (key, field) pair returns default(T); GetAllFieldsAsync<T>
-          returns every field currently stored under key whose boxed value is assignable to T (an empty
-          dictionary for a missing/empty key — never throws). DeleteFieldAsync on a missing (key, field)
-          pair is a silent no-op (idempotent). IncrementFieldAsync treats a missing field as 0 before
-          adding delta (matches Redis' own HINCRBY semantics), stores the result as a boxed long, and
-          returns it; incrementing a field that currently holds a non-long value throws
-          InvalidCastException — a fake-only guard surfacing a caller bug (using IncrementFieldAsync
-          against a field populated via SetFieldAsync<T> for T != long), standing in for the WRONGTYPE
-          error the real Redis command would raise in the equivalent case.
+    constructor() / constructor(TimeProvider timeProvider)     (expiry is measured with the time provider; default System)
+    .SimulateFailure                                           → bool  (settable; every member throws TimeoutException after
+                                                                   argument validation and the cancellation check)
+    .Keys                                                      → IReadOnlyList<string>  (live hash keys)
+    .GetFieldAsync<T>(key, field, JsonTypeInfo<T>, ct)                                  → ValueTask<CacheLookup<T>>
+    .GetFieldsAsync<T>(key, IEnumerable<string> fields, JsonTypeInfo<T>, ct)             → ValueTask<IReadOnlyDictionary<string, T>>
+    .GetAllFieldsAsync<T>(key, JsonTypeInfo<T>, ct)                                      → ValueTask<IReadOnlyDictionary<string, T>>
+    .SetFieldAsync<T>(key, field, T value, JsonTypeInfo<T>, TimeSpan? timeToLive, ct)    → ValueTask
+    .SetFieldsAsync<T>(key, IReadOnlyDictionary<string, T>, JsonTypeInfo<T>, TimeSpan? timeToLive, ct) → ValueTask
+    .IncrementFieldAsync(key, field, long delta = 1, TimeSpan? timeToLive, ct)          → ValueTask<long>
+    .DeleteFieldAsync(key, field, ct) / .DeleteAsync(key, ct)                            → ValueTask<bool>
+    .ExpireAsync(key, TimeSpan? timeToLive, ct)                                          → ValueTask<bool>
+    .ContainsKey(key) / .GetTimeToLive(key) / .GetRawField(key, field)                   → bool / TimeSpan? / string?
+    .Seed<T>(key, field, T value, JsonTypeInfo<T>) / .SeedRaw(key, field, string raw)    → void  (bypass SimulateFailure)
+    .Reset()                                                                             → void
+    NOTE: Values are stored as the JSON the real service writes, via the per-call JsonTypeInfo<T>, so a
+          type mismatch fails with JsonException as it does against Redis. Redis semantics reproduced: a
+          timeToLive expires the whole key and each such write restarts it (a write without one keeps the
+          existing expiry); an expired key is gone; deleting the last field removes the hash;
+          ExpireAsync(null) is PERSIST and returns true only when an expiry existed; IncrementFieldAsync
+          starts a missing field at 0 and throws InvalidOperationException for a non-integer field or on
+          overflow (standing in for the Redis server error). Validation matches RedisHashService: whitespace
+          key / null-or-empty field → ArgumentException, non-positive TTL → ArgumentOutOfRangeException,
+          empty SetFields → ArgumentException.
 
 FakeTypedHashStore<T>  (sealed class, implements ITypedHashStore<T>)
-    .SimulateFailure                                           → bool  (settable, default false; same shape as
-                                                                   FakeRedisHashService.SimulateFailure)
-    .GetFieldAsync(string key, string field, CancellationToken ct)                          → ValueTask<T?>
-    .SetFieldAsync(string key, string field, T value, CancellationToken ct)                 → ValueTask
-    .GetAllFieldsAsync(string key, CancellationToken ct)                                    → ValueTask<IReadOnlyDictionary<string, T>>
-    .DeleteFieldAsync(string key, string field, CancellationToken ct)                       → ValueTask
-    .IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)        → ValueTask<long>
-    .Seed(string key, string field, T value)                                                → void
-    .Reset()                                                                                 → void
-    NOTE: An INDEPENDENT fake with its own ConcurrentDictionary<(string Key, string Field), object?>
-          backing store — deliberately NOT a thin wrapper composing FakeRedisHashService internally.
-          Same GetField/missing-default, GetAllFields/type-filter,
-          idempotent-Delete, and Increment/InvalidCastException-on-type-mismatch semantics as
-          FakeRedisHashService above, minus the JsonTypeInfo<T> parameter — ITypedHashStore<T>'s whole
-          purpose is to be the AOT-safe, no-per-call-JsonTypeInfo<T> wrapper (02.Caching's own
-          ITypedHashStore rules), so the fake carries that simplification through faithfully. Register
-          one FakeTypedHashStore<T> per DTO type, exactly like the real AddTypedHashStore<T>(JsonTypeInfo<T>)
-          convention (02.Caching's own ITypedHashStore rules: "Register one ITypedHashStore<T> per DTO
-          type... Multiple types may be registered independently").
+    constructor() / constructor(TimeProvider timeProvider)
+    Same members as FakeRedisHashService minus the JsonTypeInfo<T> arguments and GetRawField/SeedRaw;
+    .Seed(key, field, T value).
+    NOTE: An INDEPENDENT fake (own storage, not a wrapper over FakeRedisHashService); both share the internal
+          FakeHashStorage engine for key/field/expiry semantics. Values are held as T, not serialized.
+          Counters are kept as long: IncrementFieldAsync throws InvalidOperationException on a field holding
+          anything else, and reading a counter from a store whose T is not long throws JsonException — stricter
+          than Redis, where "5" may still deserialize as another numeric type. Register one per T, like the
+          real AddTypedHashStore<T>(JsonTypeInfo<T>).
 
 FakeCacheWarmupStrategy  (sealed class, implements ICacheWarmupStrategy)
     constructor(string name, int order = 0, ConcurrentQueue<string>? executionLog = null)
@@ -3375,10 +3362,10 @@ SCOPE LOCK (P-485/WO-078): Localization/ references NOTHING beyond System.Global
 - `SpecificationAssert`/`SpecificationTestBuilder<T>` use `ISpecification<T>.Criteria.Compile()` — reflection-based expression compilation, acceptable in this test-only package, **never** acceptable in production code per `03.Domain`'s own documented constraint on `Specification<T>.IsSatisfiedBy`.
 - `FakeTenantResolutionStrategy` (`ServiceDefaults/`) is **structurally compatible** with `13.ServiceDefaults`'s `ITenantResolutionStrategy`, not a direct interface implementation — this package takes no project reference to `SharedKernel.MultiTenancy`. The same "structural, not direct" pattern applies to any future fake whose owning interface lives in a package this domain has chosen not to reference. **REVISED, narrowly and by name, at P-473/WO-075**: `ServiceDefaults/InMemoryTenantCatalog` is the ONE exception — it genuinely implements the real `ITenantCatalog` interface via a real `ProjectReference` to `SharedKernel.MultiTenancy`, per that phase's own explicit acceptance criteria. `StaticTenantProvider`/`FakeTenantResolutionStrategy` are UNCHANGED by this revision and remain duck-typed/reference-free — see the `ServiceDefaults/` Interface Contracts block's own SCOPE-LOCK REVISION note for the full rationale.
 - No static mutable state anywhere in this domain, with two documented exceptions: `Bogus.Randomizer.Seed` set via `FakerSeeding.Apply` (a deliberate, opt-in, process-wide determinism convention), and the single static, always-sampling `ActivityListener` registered by `AmbientActivityTestHelper` scoped to its own private `ActivitySource` (required so `ActivitySource.StartActivity` returns a real `Activity` in pure unit tests with no OTel host listening). Both are deliberate, opt-in, process-wide — never incidental shared state.
-- `Caching/FakeRedisChannelService` (P-306/WO-050) is the first fake in this package to perform genuine in-process cross-call interaction rather than pure passive recording — `PublishAsync` synchronously invokes every currently-subscribed handler for the same channel, so a publish/subscribe/unsubscribe round trip can be proven in a single process with no real Redis. `FakeDistributedLockService` (P-547) likewise enforces real cross-call exclusivity — a held lock or unexpired lease makes the next claim on that resource return `null` — so contention and fencing-token ordering are testable without Redis.
-- `Caching/FakeRedisHashService`/`FakeTypedHashStore<T>`'s `IncrementFieldAsync` throws `InvalidCastException` when the target field currently holds a value that is not a `long` — a fake-only guard standing in for the `WRONGTYPE` error a real Redis `HINCRBY` against a non-numeric field would raise; it is the first place in this domain a fake throws to surface a caller-side type-mismatch bug rather than returning a `default`/no-op.
+- `Caching/FakeRedisChannelService` (P-306/WO-050, rewritten for the P-547 Redis redesign) is the first fake in this package to perform genuine in-process cross-call interaction rather than pure passive recording — a publish delivers to every subscription on the channel before returning (unless a delivery for that subscription is already running, in which case the message is queued for it), each subscription handles messages one at a time and ends when its `IAsyncDisposable` is disposed, so a publish/subscribe/dispose round trip can be proven in a single process with no real Redis. `FakeDistributedLockService` (P-547) likewise enforces real cross-call exclusivity — a held lock or unexpired lease makes the next claim on that resource return `null` — so contention and fencing-token ordering are testable without Redis.
+- `Caching/FakeRedisHashService`/`FakeTypedHashStore<T>`'s `IncrementFieldAsync` throws `InvalidOperationException` when the target field does not hold an integer (or the increment would overflow) — a fake-only stand-in for the Redis server error a real `HINCRBY` raises; `FakeRedisHashService` stores real JSON so a type mismatch on read throws `JsonException` as production does. Both measure expiry with a constructor-injected `TimeProvider` (default `TimeProvider.System`), mirroring `FakeDistributedLockService`.
 - `Caching/FakeCacheWarmupStrategy`'s cross-instance execution-order proof is a caller-supplied `ConcurrentQueue<string>` passed to every constructor that should share one — never a static field. This is the domain's established pattern for proving multi-instance ordering without adding a third exception to the `No static mutable state` rule above.
-- `Caching/FakeTypedHashStore<T>` is deliberately independent of `Caching/FakeRedisHashService` — both maintain their own separate backing store. The one deliberate composition in this folder is `FakeTenantCacheService`, which wraps a `FakeCacheService` (exposed as `.Cache`) so tenant scoping is exercised through the same key and tag format as production (P-547).
+- `Caching/FakeTypedHashStore<T>` is deliberately independent of `Caching/FakeRedisHashService` — each owns its own storage instance; they share only the internal `FakeHashStorage` engine type (key/field/expiry rules), never state. The one deliberate composition in this folder is `FakeTenantCacheService`, which wraps a `FakeCacheService` (exposed as `.Cache`) so tenant scoping is exercised through the same key and tag format as production (P-547).
 - **A "test-fixture builder" is a distinct category from a "fake," and the two justify different cross-package reference footprints for the identical target folder.** `Security/DpopTestProofBuilder`/`MtlsTestCertificateBuilder` (P-391/WO-060) construct INPUT DATA (a proof JWT, an X.509 certificate) that a CONSUMING SERVICE's own test feeds into real, concrete-provider-owned validation logic (`SharedKernel.Security.Oidc`'s internal handler-enforced DPoP validation, `SharedKernel.Security.Mtls`'s `IMtlsCertificateValidator`/`MtlsAuthenticationOptions`) — this is fundamentally different from `FakeUserContext`/`SecurityTestContextBuilder`, which fake the ABSTRACTION (`IUserContext`) a consuming service depends on directly. Because a test-fixture builder never implements or invokes the concrete provider's own types, it can (and, per `Security/`'s own scope lock, must) stay built entirely on BCL primitives — no provider type is ever needed, even when the builder's whole purpose is to exercise that provider's hardened behavior. A third category, an in-memory implementation of a provider-owned store seam (`InMemoryApiKeyStore` → `IApiKeyStore`, `InMemoryDpopReplayCache` → `IDpopReplayCache`, `InMemoryTotpStepUpStore`/`InMemoryRecoveryCodeStore` → `.Totp`'s stores, P-546), does need the provider package, which is why `SharedKernel.Testing.csproj` references `SharedKernel.Security.ApiKey`/`.Oidc`/`.Totp`.
 - Constructing a real, cryptographically valid test fixture (a genuinely ES256-signed DPoP proof, a genuinely chained-or-self-signed X.509 certificate) is preferred over a syntactically-plausible stand-in whenever the underlying BCL primitive makes it no harder to do so — `DpopTestProofBuilder`/`MtlsTestCertificateBuilder` (P-391/WO-060) both generate real key material and real signatures/chains, corrupting ONLY the specific claim/property a negative-path test needs broken, so a consuming integration test proves genuine rejection logic against the real, unmodified validator rather than a strawman that happens to look wrong.
 - `InMemoryWebhookDispatcher`'s three interface methods deliberately default to **two distinct** unconfigured-outcome shapes — `DispatchAsync<TEvent>` defaults to an EMPTY result list, while `DispatchToSubscriptionAsync<TEvent>` AND `SendTestDeliveryAsync` (the latter added at C-123 correcting a design-phase drift, see the `Integration/` Interface Contracts block above) both default to a SYNTHETIC SUCCESS record — because each mirrors what the corresponding real production behavior would honestly look like with no test-supplied configuration (no subscriptions ever "just happen" to exist; a delivery a test didn't configure to fail didn't fail). No method ever throws for an unconfigured case — this is a DELIBERATE divergence from `InMemoryMessageBus.RequestAsync`'s "throw when unconfigured" shape, since `IWebhookDispatcher`'s own contract states delivery failure is always a returned record, never an exception; do not copy `RequestAsync`'s throwing pattern onto a fake whose real interface documents the opposite contract. `DispatchToSubscriptionAsync` and `SendTestDeliveryAsync` maintain INDEPENDENT recording lists (`DispatchedTo` vs. `TestDeliveries`) and independent configurable-result dictionaries — a ping delivery is observably distinct from a real event delivery, and this fake does not internally delegate one method through the other the way production does.
@@ -3459,7 +3446,8 @@ services.AddFakeCryptography();
 // IFeatureManager → FakeFeatureManager (IsEnabledAsync + GetVariantAsync/GetVariantAsync<TContext>)
 services.AddFakeFeatureManagement();
 
-// Typed hash store fake — call once per T needed, mirrors AddTypedHashStore<T>(JsonTypeInfo<T>)
+// Typed hash store fake — call once per T needed, mirrors AddTypedHashStore<T>(JsonTypeInfo<T>); uses a
+// registered TimeProvider for expiry when one exists (no AddRedisConnection needed)
 services.AddFakeTypedHashStore<MyDto>();
 
 // Cache warmup strategy fake — call once per named strategy (plain AddSingleton, CORRECTED from an

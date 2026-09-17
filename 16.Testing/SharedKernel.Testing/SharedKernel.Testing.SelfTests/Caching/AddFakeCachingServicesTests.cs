@@ -88,6 +88,22 @@ public sealed class AddFakeCachingServicesTests
     }
 
     [Fact]
+    public async Task AddFakeCachingServices_RegisteredTimeProvider_DrivesHashExpiry()
+    {
+        var time = new FakeRedisHashServiceTests.ManualTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddFakeCachingServices();
+        using var provider = services.BuildServiceProvider();
+        var hashes = provider.GetRequiredService<IRedisHashService>();
+
+        await hashes.SetFieldAsync("session", "a", "1", FakeRedisHashServiceTestJsonContext.Default.String, TimeSpan.FromMinutes(1));
+        time.Advance(TimeSpan.FromMinutes(1));
+
+        Assert.False((await hashes.GetFieldAsync("session", "a", FakeRedisHashServiceTestJsonContext.Default.String)).IsHit);
+    }
+
+    [Fact]
     public void AddFakeCachingServices_NullServices_Throws() =>
         Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddFakeCachingServices());
 

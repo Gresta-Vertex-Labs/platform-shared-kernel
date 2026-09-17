@@ -1,147 +1,215 @@
-using System.Collections.Concurrent;
+using System.Text.Json;
+using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.HashStore;
+using static SharedKernel.Testing.Caching.FakeHashStorage;
 
 namespace SharedKernel.Testing.Caching;
 
 /// <summary>
-/// In-memory fake implementation of <see cref="ITypedHashStore{T}"/> for use in unit tests.
-/// Thread-safe via <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+/// In-memory fake implementation of <see cref="ITypedHashStore{T}"/> for use in unit tests. Thread-safe.
 /// </summary>
+/// <typeparam name="T">The type of every field value.</typeparam>
 /// <remarks>
 /// <para>
-/// An <b>independent</b> fake with its own backing store — deliberately not a thin wrapper
-/// composing <see cref="FakeRedisHashService"/> internally, mirroring this folder's established
-/// convention that its fakes share no state with each other. Same missing-field-defaults, type
-/// filtering, idempotent-delete, and increment/<see cref="InvalidCastException"/>-on-type-mismatch
-/// semantics as <see cref="FakeRedisHashService"/>, minus the
-/// <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> parameter — matching
-/// <see cref="ITypedHashStore{T}"/>'s own purpose as the AOT-safe, no-per-call-type-info wrapper.
+/// An independent fake with its own storage, not a wrapper over <see cref="FakeRedisHashService"/>. Values are
+/// held as <typeparamref name="T"/> instances, not serialized, because the store has no JSON contract; key,
+/// field, time-to-live and expiry behave exactly as in <see cref="FakeRedisHashService"/>, including argument
+/// validation and the <see cref="TimeProvider"/> passed to the constructor.
 /// </para>
 /// <para>
-/// Register one <see cref="FakeTypedHashStore{T}"/> per DTO type, exactly like the real
-/// <c>AddTypedHashStore&lt;T&gt;(JsonTypeInfo&lt;T&gt;)</c> convention.
+/// <see cref="IncrementFieldAsync"/> keeps counters as <see cref="long"/>. It fails with
+/// <see cref="InvalidOperationException"/> on a field holding anything else, and reading a counter from a
+/// store whose <typeparamref name="T"/> is not <see cref="long"/> fails with <see cref="JsonException"/>. Against
+/// Redis a counter may still read as another numeric type; the fake is deliberately stricter.
 /// </para>
 /// <para>
-/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> This type must never be wired into a production DI
-/// container — <c>16.Testing</c> packages are never referenced by production code (root
-/// <c>CLAUDE.md</c> hard rule). Unlike <see cref="FakeRedisHashService"/>, it never accepts a
-/// <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> parameter at all — its
-/// backing store still holds boxed values directly rather than serialized wire bytes, so it never
-/// exercises the AOT-safe serialization path <see cref="ITypedHashStore{T}"/> exists to wrap.
+/// <b>TEST-ONLY.</b> Never register it in a production container.
 /// </para>
 /// </remarks>
-/// <typeparam name="T">The DTO type stored in the fake hash.</typeparam>
 public sealed class FakeTypedHashStore<T> : ITypedHashStore<T>
 {
-    private readonly ConcurrentDictionary<(string Key, string Field), object?> _store = new();
+    private readonly FakeHashStorage _storage;
+
+    /// <summary>Creates a fake that uses <see cref="TimeProvider.System"/> for expiry.</summary>
+    public FakeTypedHashStore()
+        : this(TimeProvider.System)
+    {
+    }
+
+    /// <summary>Creates a fake that uses <paramref name="timeProvider"/> for expiry.</summary>
+    /// <param name="timeProvider">The time source.</param>
+    public FakeTypedHashStore(TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        _storage = new FakeHashStorage(timeProvider);
+    }
 
     /// <summary>
-    /// When <see langword="true"/>, every member throws <see cref="InvalidOperationException"/>
-    /// instead of performing the operation.
+    /// Gets or sets a value indicating whether every operation throws <see cref="TimeoutException"/> after
+    /// argument validation, as if Redis did not answer.
     /// </summary>
     public bool SimulateFailure { get; set; }
 
+    /// <summary>Gets every hash key that currently exists (not deleted, not expired).</summary>
+    public IReadOnlyList<string> Keys => _storage.GetKeys();
+
     /// <inheritdoc />
-    public ValueTask<T?> GetFieldAsync(string key, string field, CancellationToken ct = default)
+    public ValueTask<CacheLookup<T>> GetFieldAsync(string key, string field, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        ValidateKeyAndField(key, field);
+        BeforeOperation(ct);
 
-        if (SimulateFailure)
-            throw new InvalidOperationException("Simulated Redis hash failure.");
-
-        if (_store.TryGetValue((key, field), out var boxed) && boxed is T typed)
-            return ValueTask.FromResult<T?>(typed);
-
-        return ValueTask.FromResult<T?>(default);
+        return ValueTask.FromResult(
+            _storage.TryGetField(key, field, out var value) ? CacheLookup<T>.Hit(Cast(value, key, field)) : CacheLookup<T>.Miss);
     }
 
     /// <inheritdoc />
-    public ValueTask SetFieldAsync(string key, string field, T value, CancellationToken ct = default)
+    public ValueTask<IReadOnlyDictionary<string, T>> GetFieldsAsync(string key, IEnumerable<string> fields, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        ValidateKey(key);
+        ArgumentNullException.ThrowIfNull(fields);
 
-        if (SimulateFailure)
-            throw new InvalidOperationException("Simulated Redis hash failure.");
+        var names = fields.Distinct(StringComparer.Ordinal).ToArray();
+        foreach (var name in names)
+            ValidateField(name);
 
-        _store[(key, field)] = value;
+        BeforeOperation(ct);
 
-        return ValueTask.CompletedTask;
-    }
-
-    /// <inheritdoc />
-    public ValueTask<IReadOnlyDictionary<string, T>> GetAllFieldsAsync(string key, CancellationToken ct = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-        if (SimulateFailure)
-            throw new InvalidOperationException("Simulated Redis hash failure.");
-
-        var result = new Dictionary<string, T>();
-
-        foreach (var ((entryKey, entryField), boxed) in _store)
-        {
-            if (entryKey == key && boxed is T typed)
-                result[entryField] = typed;
-        }
+        var result = new Dictionary<string, T>(names.Length, StringComparer.Ordinal);
+        foreach (var (field, value) in _storage.GetFields(key, names))
+            result[field] = Cast(value, key, field);
 
         return ValueTask.FromResult<IReadOnlyDictionary<string, T>>(result);
     }
 
     /// <inheritdoc />
-    public ValueTask DeleteFieldAsync(string key, string field, CancellationToken ct = default)
+    public ValueTask<IReadOnlyDictionary<string, T>> GetAllFieldsAsync(string key, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        ValidateKey(key);
+        BeforeOperation(ct);
 
-        if (SimulateFailure)
-            throw new InvalidOperationException("Simulated Redis hash failure.");
+        var result = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var (field, value) in _storage.GetAll(key))
+            result[field] = Cast(value, key, field);
 
-        // Idempotent — a missing (key, field) pair is a silent no-op.
-        _store.TryRemove((key, field), out _);
+        return ValueTask.FromResult<IReadOnlyDictionary<string, T>>(result);
+    }
 
+    /// <inheritdoc />
+    public ValueTask SetFieldAsync(string key, string field, T value, TimeSpan? timeToLive = null, CancellationToken ct = default)
+    {
+        ValidateKeyAndField(key, field);
+        ValidateTimeToLive(timeToLive);
+        BeforeOperation(ct);
+
+        _storage.Set(key, [new KeyValuePair<string, object?>(field, value)], timeToLive);
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public ValueTask<long> IncrementFieldAsync(string key, string field, long delta = 1, CancellationToken ct = default)
+    public ValueTask SetFieldsAsync(string key, IReadOnlyDictionary<string, T> values, TimeSpan? timeToLive = null, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        ValidateKey(key);
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count == 0)
+            throw new ArgumentException("At least one field is required.", nameof(values));
 
-        if (SimulateFailure)
-            throw new InvalidOperationException("Simulated Redis hash failure.");
+        var entries = new List<KeyValuePair<string, object?>>(values.Count);
+        foreach (var (field, value) in values)
+        {
+            ValidateField(field);
+            entries.Add(new KeyValuePair<string, object?>(field, value));
+        }
 
-        var updated = (long)_store.AddOrUpdate(
-            (key, field),
-            static (_, d) => d,
-            static (entry, existing, d) => existing switch
-            {
-                long current => current + d,
-                _ => throw new InvalidCastException(
-                    $"Field '{entry.Field}' in hash '{entry.Key}' does not hold a long value and cannot be incremented."),
-            },
-            delta)!;
+        ValidateTimeToLive(timeToLive);
+        BeforeOperation(ct);
+
+        _storage.Set(key, entries, timeToLive);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask<long> IncrementFieldAsync(string key, string field, long delta = 1, TimeSpan? timeToLive = null, CancellationToken ct = default)
+    {
+        ValidateKeyAndField(key, field);
+        ValidateTimeToLive(timeToLive);
+        BeforeOperation(ct);
+
+        var updated = _storage.Increment(
+            key,
+            field,
+            delta,
+            timeToLive,
+            value => value is long number
+                ? number
+                : throw new InvalidOperationException($"Field '{field}' of hash '{key}' does not hold an integer."),
+            number => number);
 
         return ValueTask.FromResult(updated);
     }
 
-    /// <summary>
-    /// Test-setup helper that pre-populates a field without going through
-    /// <see cref="SetFieldAsync"/>.
-    /// </summary>
-    /// <param name="key">The Redis key of the hash.</param>
-    /// <param name="field">The field name within the hash.</param>
-    /// <param name="value">The value to seed.</param>
-    public void Seed(string key, string field, T value)
+    /// <inheritdoc />
+    public ValueTask<bool> DeleteFieldAsync(string key, string field, CancellationToken ct = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        ValidateKeyAndField(key, field);
+        BeforeOperation(ct);
 
-        _store[(key, field)] = value;
+        return ValueTask.FromResult(_storage.DeleteField(key, field));
     }
 
-    /// <summary>Clears every stored field across every key.</summary>
-    public void Reset() => _store.Clear();
+    /// <inheritdoc />
+    public ValueTask<bool> DeleteAsync(string key, CancellationToken ct = default)
+    {
+        ValidateKey(key);
+        BeforeOperation(ct);
+
+        return ValueTask.FromResult(_storage.Delete(key));
+    }
+
+    /// <inheritdoc />
+    public ValueTask<bool> ExpireAsync(string key, TimeSpan? timeToLive, CancellationToken ct = default)
+    {
+        ValidateKey(key);
+        ValidateTimeToLive(timeToLive);
+        BeforeOperation(ct);
+
+        return ValueTask.FromResult(_storage.Expire(key, timeToLive));
+    }
+
+    /// <summary>Gets whether the hash exists (not deleted, not expired).</summary>
+    /// <param name="key">The hash key.</param>
+    /// <returns><see langword="true"/> when the hash has at least one field.</returns>
+    public bool ContainsKey(string key) => _storage.ContainsKey(key);
+
+    /// <summary>Gets how long until the hash expires.</summary>
+    /// <param name="key">The hash key.</param>
+    /// <returns>The remaining time, or <see langword="null"/> when the hash does not exist or has no expiry.</returns>
+    public TimeSpan? GetTimeToLive(string key) => _storage.GetTimeToLive(key);
+
+    /// <summary>Writes a field directly, bypassing <see cref="SimulateFailure"/>, for test setup.</summary>
+    /// <param name="key">The hash key.</param>
+    /// <param name="field">The field name.</param>
+    /// <param name="value">The value.</param>
+    public void Seed(string key, string field, T value)
+    {
+        ValidateKeyAndField(key, field);
+        _storage.Set(key, [new KeyValuePair<string, object?>(field, value)], timeToLive: null);
+    }
+
+    /// <summary>Removes every hash.</summary>
+    public void Reset() => _storage.Clear();
+
+    private void BeforeOperation(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (SimulateFailure)
+            throw new TimeoutException("Simulated Redis hash failure.");
+    }
+
+    private static T Cast(object? value, string key, string field) => value switch
+    {
+        T typed => typed,
+        null => default!,
+        _ => throw new JsonException($"Field '{field}' of hash '{key}' holds a {value.GetType().Name}, not a {typeof(T).Name}."),
+    };
 }
