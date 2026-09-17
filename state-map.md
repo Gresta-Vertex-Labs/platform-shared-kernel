@@ -2482,6 +2482,36 @@ The user ruled:
 
 ---
 
+### P-548 — Caching: `SharedKernel.Caching.FusionCache` Pre-First-Publish Pass (BREAKING API + BEHAVIOUR)
+
+**Status:** `✓` Shipped 2026-09-17 — 270 FusionCache, 34 Redis and 69 caching/secure-defaults governance tests passing; published to GitHub Packages from the same commit as its dependencies
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 02.Caching (with migrations in 00.Governance and 16.Testing)
+**Depends on:** P-547
+
+#### What is needed
+Finalize `SharedKernel.Caching.FusionCache` before its first feed publish.
+
+#### Why this is needed
+A review found defects that would ship as contract:
+
+- Metric and trace tags use the first two key segments, so tenant keys put the tenant id into every metric series; debug logs print full keys.
+- `L1SizeLimit` and `SerializerContext` are read from the configure delegate at registration time, so values bound from configuration validate but never take effect; registration bypasses `AddValidatedOptions`.
+- `CacheName`, `CachingOptions.Compression` and `Compression.Enabled` are never read.
+- `WaitForWarmup` waits in `StartedAsync`, after the web server already listens, so traffic and readiness can arrive before warmup.
+- Hit and miss metrics come from memory events only, so a distributed-layer hit counts as a miss.
+- The package claims AOT compatibility and "no reflection anywhere", while the encryption path serializes with reflection.
+- `CacheJsonSerializerContext` is an empty public class; `CacheWarmupHostedService` and `CacheEncryptionOptions` are public plumbing; no public API tracking.
+
+The user ruled:
+
+- Add an `IConfiguration` registration overload using `AddValidatedOptions` and `ISectionBoundOptions`; read every option when the cache is built; delete the dead options and move compression settings to a standalone options type.
+- Fix the package's own telemetry: tenant-safe key prefixes, no full keys in logs, hits tagged with the layer that answered, versions from the assembly; keep the `SharedKernel.Caching` instrumentation names.
+- `WaitForWarmup` blocks host startup until warmup completes; otherwise warmup runs in the background.
+- Add service-wide defaults for distributed-cache timeouts and fail-safe throttle; track the public API and make internal plumbing internal.
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
