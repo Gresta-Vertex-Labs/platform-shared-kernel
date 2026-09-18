@@ -41,7 +41,19 @@ Notable change (WO-059 / P-384): added ErrorType.Forbidden and the corresponding
 See 01.Core/CLAUDE.md's changelog for the full history of every change to this package.</PackageReleaseNotes>
     <PackageTags>shared-kernel;result;railway-oriented;clock;smart-enum;aot</PackageTags>
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- Publish bar: fail the build on an undocumented or untracked public member. -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

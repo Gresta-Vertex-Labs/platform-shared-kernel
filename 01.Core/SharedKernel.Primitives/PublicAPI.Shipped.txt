@@ -1,0 +1,180 @@
+#nullable enable
+const SharedKernel.Primitives.Errors.ErrorArgumentNames.PropertyName = "PropertyName" -> string!
+const SharedKernel.Primitives.Errors.ErrorArgumentNames.PropertyPath = "PropertyPath" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Conflict.Default = "conflict.default" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Conflict.Duplicate = "conflict.duplicate" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Domain.RuleViolated = "domain.rule.violated" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Forbidden.Default = "forbidden.default" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Forbidden.InsufficientPermission = "forbidden.insufficient_permission" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.NotFound.Default = "not_found.default" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Unauthorized.Default = "unauthorized.default" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Unauthorized.Expired = "unauthorized.expired" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Unexpected.Default = "unexpected.exception" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.Failed = "validation.failed" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.InvalidFormat = "validation.invalid_format" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.MaxLength = "validation.max_length" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.MinLength = "validation.min_length" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.OutOfRange = "validation.out_of_range" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Validation.Required = "validation.required" -> string!
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Application = 5000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Caching = 2000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Communication = 11000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Contracts = 4000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Core = 1000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Domain = 3000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.DomainRangeWidth = 1000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Governance = 0 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Idempotency = 18000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Integration = 15000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Intelligence = 10000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Messaging = 7000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.PackageSubBlockWidth = 100 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Persistence = 6000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation = 14000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Reporting = 20000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Scheduling = 19000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Search = 9000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Security = 12000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.ServiceDefaults = 13000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Storage = 8000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Testing = 16000 -> int
+const SharedKernel.Primitives.Logging.LoggingEventIdRanges.Workflows = 17000 -> int
+const SharedKernel.Primitives.Propagation.WellKnownBaggageKeys.CorrelationId = "correlation.id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownBaggageKeys.TenantId = "TenantId" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.CorrelationId = "X-Correlation-Id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.TenantId = "X-Tenant-Id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownTagKeys.CorrelationId = "correlation.id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownTagKeys.ErrorCode = "error.code" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownTagKeys.ErrorType = "error.type" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownTagKeys.TenantId = "tenant.id" -> string!
+override SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.ToString() -> string!
+override SharedKernel.Primitives.Enums.SmartEnumJsonConverter<TEnum, TValue>.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> TEnum?
+override SharedKernel.Primitives.Enums.SmartEnumJsonConverter<TEnum, TValue>.Write(System.Text.Json.Utf8JsonWriter! writer, TEnum? value, System.Text.Json.JsonSerializerOptions! options) -> void
+override SharedKernel.Primitives.Errors.Error.Equals(object? obj) -> bool
+override SharedKernel.Primitives.Errors.Error.GetHashCode() -> int
+override SharedKernel.Primitives.Errors.Error.ToString() -> string!
+override SharedKernel.Primitives.Results.ValidationResult.Equals(object? obj) -> bool
+override SharedKernel.Primitives.Results.ValidationResult.GetHashCode() -> int
+override SharedKernel.Primitives.Results.ValidationResult.ToString() -> string!
+override SharedKernel.Primitives.Results.ValidationResult<T>.Equals(object? obj) -> bool
+override SharedKernel.Primitives.Results.ValidationResult<T>.GetHashCode() -> int
+override SharedKernel.Primitives.Results.ValidationResult<T>.ToString() -> string!
+SharedKernel.Primitives.Clocks.ClockExtensions
+SharedKernel.Primitives.Clocks.IClock
+SharedKernel.Primitives.Clocks.IClock.Today.get -> System.DateOnly
+SharedKernel.Primitives.Clocks.IClock.UtcNow.get -> System.DateTimeOffset
+SharedKernel.Primitives.Clocks.SystemClock
+SharedKernel.Primitives.Clocks.SystemClock.SystemClock() -> void
+SharedKernel.Primitives.Clocks.SystemClock.SystemClock(System.TimeProvider! timeProvider) -> void
+SharedKernel.Primitives.Clocks.SystemClock.Today.get -> System.DateOnly
+SharedKernel.Primitives.Clocks.SystemClock.UtcNow.get -> System.DateTimeOffset
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.CompareTo(object? obj) -> int
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.CompareTo(TEnum? other) -> int
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.Name.get -> string!
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.SmartEnum(string! name, TValue value) -> void
+SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.Value.get -> TValue
+SharedKernel.Primitives.Enums.SmartEnumJsonConverter<TEnum, TValue>
+SharedKernel.Primitives.Enums.SmartEnumJsonConverter<TEnum, TValue>.SmartEnumJsonConverter() -> void
+SharedKernel.Primitives.Errors.Error
+SharedKernel.Primitives.Errors.Error.<Clone>$() -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Primitives.Errors.Error.Code.get -> string!
+SharedKernel.Primitives.Errors.Error.Code.init -> void
+SharedKernel.Primitives.Errors.Error.Deconstruct(out string! Code, out string! Message, out SharedKernel.Primitives.Errors.ErrorType Type) -> void
+SharedKernel.Primitives.Errors.Error.Details.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!
+SharedKernel.Primitives.Errors.Error.Equals(SharedKernel.Primitives.Errors.Error? other) -> bool
+SharedKernel.Primitives.Errors.Error.Error(string! Code, string! Message, SharedKernel.Primitives.Errors.ErrorType Type) -> void
+SharedKernel.Primitives.Errors.Error.Message.get -> string!
+SharedKernel.Primitives.Errors.Error.Message.init -> void
+SharedKernel.Primitives.Errors.Error.MessageArguments.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+SharedKernel.Primitives.Errors.Error.MessageArguments.init -> void
+SharedKernel.Primitives.Errors.Error.Type.get -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.Error.Type.init -> void
+SharedKernel.Primitives.Errors.ErrorArgumentNames
+SharedKernel.Primitives.Errors.ErrorCodes
+SharedKernel.Primitives.Errors.ErrorCodes.Conflict
+SharedKernel.Primitives.Errors.ErrorCodes.Domain
+SharedKernel.Primitives.Errors.ErrorCodes.Forbidden
+SharedKernel.Primitives.Errors.ErrorCodes.NotFound
+SharedKernel.Primitives.Errors.ErrorCodes.Unauthorized
+SharedKernel.Primitives.Errors.ErrorCodes.Unexpected
+SharedKernel.Primitives.Errors.ErrorCodes.Validation
+SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.BusinessRule = 6 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Conflict = 4 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Forbidden = 7 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.None = 0 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.NotFound = 3 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Unauthorized = 5 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Unexpected = 1 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Validation = 2 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Identifiers.IIdGenerator
+SharedKernel.Primitives.Identifiers.IIdGenerator.NewId() -> System.Guid
+SharedKernel.Primitives.Identifiers.UuidV7IdGenerator
+SharedKernel.Primitives.Identifiers.UuidV7IdGenerator.NewId() -> System.Guid
+SharedKernel.Primitives.Identifiers.UuidV7IdGenerator.UuidV7IdGenerator() -> void
+SharedKernel.Primitives.Logging.LoggingEventIdRanges
+SharedKernel.Primitives.Propagation.WellKnownBaggageKeys
+SharedKernel.Primitives.Propagation.WellKnownHeaders
+SharedKernel.Primitives.Propagation.WellKnownTagKeys
+SharedKernel.Primitives.Results.IFailureFactory<TSelf>
+SharedKernel.Primitives.Results.IFailureFactory<TSelf>.Failure(SharedKernel.Primitives.Errors.Error! error) -> TSelf
+SharedKernel.Primitives.Results.IHasSuccessFlag
+SharedKernel.Primitives.Results.IHasSuccessFlag.IsSuccess.get -> bool
+SharedKernel.Primitives.Results.IResultOfT<T>
+SharedKernel.Primitives.Results.IResultOfT<T>.IsFailure.get -> bool
+SharedKernel.Primitives.Results.IResultOfT<T>.IsSuccess.get -> bool
+SharedKernel.Primitives.Results.IResultOfT<T>.Value.get -> T
+SharedKernel.Primitives.Results.Result
+SharedKernel.Primitives.Results.Result.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Primitives.Results.Result.IsFailure.get -> bool
+SharedKernel.Primitives.Results.Result.IsSuccess.get -> bool
+SharedKernel.Primitives.Results.Result.Result() -> void
+SharedKernel.Primitives.Results.Result<T>
+SharedKernel.Primitives.Results.Result<T>.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Primitives.Results.Result<T>.IsFailure.get -> bool
+SharedKernel.Primitives.Results.Result<T>.IsSuccess.get -> bool
+SharedKernel.Primitives.Results.Result<T>.Value.get -> T
+SharedKernel.Primitives.Results.ValidationResult
+SharedKernel.Primitives.Results.ValidationResult.<Clone>$() -> SharedKernel.Primitives.Results.ValidationResult!
+SharedKernel.Primitives.Results.ValidationResult.Equals(SharedKernel.Primitives.Results.ValidationResult? other) -> bool
+SharedKernel.Primitives.Results.ValidationResult.Errors.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!
+SharedKernel.Primitives.Results.ValidationResult.IsValid.get -> bool
+SharedKernel.Primitives.Results.ValidationResult<T>
+SharedKernel.Primitives.Results.ValidationResult<T>.<Clone>$() -> SharedKernel.Primitives.Results.ValidationResult<T>!
+SharedKernel.Primitives.Results.ValidationResult<T>.Equals(SharedKernel.Primitives.Results.ValidationResult<T>? other) -> bool
+SharedKernel.Primitives.Results.ValidationResult<T>.Errors.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!
+SharedKernel.Primitives.Results.ValidationResult<T>.IsValid.get -> bool
+SharedKernel.Primitives.Results.ValidationResult<T>.Value.get -> T
+static readonly SharedKernel.Primitives.Errors.Error.None -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Clocks.ClockExtensions.AddClock(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.FromName(string! name) -> TEnum!
+static SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.FromValue(TValue value) -> TEnum!
+static SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.List.get -> System.Collections.Generic.IReadOnlyList<TEnum!>!
+static SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.TryFromName(string? name, out TEnum? result) -> bool
+static SharedKernel.Primitives.Enums.SmartEnum<TEnum, TValue>.TryFromValue(TValue? value, out TEnum? result) -> bool
+static SharedKernel.Primitives.Errors.Error.BusinessRule(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Conflict(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Forbidden(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.NotFound(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.operator !=(SharedKernel.Primitives.Errors.Error? left, SharedKernel.Primitives.Errors.Error? right) -> bool
+static SharedKernel.Primitives.Errors.Error.operator ==(SharedKernel.Primitives.Errors.Error? left, SharedKernel.Primitives.Errors.Error? right) -> bool
+static SharedKernel.Primitives.Errors.Error.Unauthorized(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Unexpected(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Validation(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Validation(System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>! errors) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Results.Result.Failure(SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Primitives.Results.Result
+static SharedKernel.Primitives.Results.Result.implicit operator SharedKernel.Primitives.Results.Result(SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Primitives.Results.Result
+static SharedKernel.Primitives.Results.Result.Success() -> SharedKernel.Primitives.Results.Result
+static SharedKernel.Primitives.Results.Result<T>.Failure(SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Primitives.Results.Result<T>!
+static SharedKernel.Primitives.Results.Result<T>.implicit operator SharedKernel.Primitives.Results.Result<T>!(SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Primitives.Results.Result<T>!
+static SharedKernel.Primitives.Results.Result<T>.implicit operator SharedKernel.Primitives.Results.Result<T>!(T value) -> SharedKernel.Primitives.Results.Result<T>!
+static SharedKernel.Primitives.Results.Result<T>.Success(T value) -> SharedKernel.Primitives.Results.Result<T>!
+static SharedKernel.Primitives.Results.ValidationResult.Failure(System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>! errors) -> SharedKernel.Primitives.Results.ValidationResult!
+static SharedKernel.Primitives.Results.ValidationResult.operator !=(SharedKernel.Primitives.Results.ValidationResult? left, SharedKernel.Primitives.Results.ValidationResult? right) -> bool
+static SharedKernel.Primitives.Results.ValidationResult.operator ==(SharedKernel.Primitives.Results.ValidationResult? left, SharedKernel.Primitives.Results.ValidationResult? right) -> bool
+static SharedKernel.Primitives.Results.ValidationResult.Success() -> SharedKernel.Primitives.Results.ValidationResult!
+static SharedKernel.Primitives.Results.ValidationResult<T>.Failure(System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>! errors) -> SharedKernel.Primitives.Results.ValidationResult<T>!
+static SharedKernel.Primitives.Results.ValidationResult<T>.operator !=(SharedKernel.Primitives.Results.ValidationResult<T>? left, SharedKernel.Primitives.Results.ValidationResult<T>? right) -> bool
+static SharedKernel.Primitives.Results.ValidationResult<T>.operator ==(SharedKernel.Primitives.Results.ValidationResult<T>? left, SharedKernel.Primitives.Results.ValidationResult<T>? right) -> bool
+static SharedKernel.Primitives.Results.ValidationResult<T>.Success(T value) -> SharedKernel.Primitives.Results.ValidationResult<T>!
