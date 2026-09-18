@@ -3,49 +3,47 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.DataPrivacy.DataSubjectRequests;
 
 /// <summary>
-/// Handles a data subject's export or erasure request (GDPR "right to access"/"right to
-/// erasure", KVKK's equivalent) against ONE service's own data.
+/// Exports or erases what ONE service holds about a data subject. Each service implements it
+/// against its own data.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implemented by each consuming service against its own data. <c>SharedKernel.DataPrivacy</c>
-/// ships no default implementation and no reflection-based generic one — a service's data shape
-/// is entirely its own, and there is no honest way to export or erase "everything about a subject"
-/// without knowing what that service actually stores.
+/// No default implementation ships: there is no honest generic way to find "everything about a
+/// person" without knowing what a service stores. Calling every service's handler for one request
+/// is the job of an orchestrator (a <c>17.Workflows</c> workflow or a <c>19.Scheduling</c> job),
+/// which this package does not provide.
 /// </para>
-/// <para>
-/// CROSS-SERVICE ERASURE ORCHESTRATION IS EXPLICITLY OUT OF SCOPE FOR THIS PACKAGE. Coordinating
-/// a single data-subject request across every service that might hold data about that subject —
-/// calling each service's own <see cref="IDataSubjectRequestHandler"/> in turn — is a plausible
-/// future composition built on top of this contract (a <c>19.Scheduling</c> job, or a
-/// <c>17.Workflows</c> durable workflow, once real per-service handlers exist), but it is not
-/// something this package attempts, ships, or assumes.
-/// </para>
+/// <para>Rules for an implementation:</para>
+/// <list type="bullet">
+/// <item><description>
+/// A subject this service knows nothing about is a success with nothing in it, never a failure, so
+/// an orchestrator can send every request to every service.
+/// </description></item>
+/// <item><description>
+/// The same <see cref="DataSubjectRequest.RequestId"/> again returns the first outcome.
+/// </description></item>
+/// <item><description>
+/// Data the service must keep (invoices kept for tax law, a legal hold) is reported in
+/// <see cref="DataSubjectErasureReceipt.Retained"/> with its legal basis; the rest is still erased.
+/// </description></item>
+/// <item><description>
+/// A failure <see cref="Result{T}"/> means the request could not be carried out now and should be
+/// retried or escalated, never that it was refused for legal reasons; see
+/// <see cref="DataPrivacyErrorCodes"/>.
+/// </description></item>
+/// </list>
 /// </remarks>
 public interface IDataSubjectRequestHandler
 {
-    /// <summary>
-    /// Exports every record this service holds about the given data subject.
-    /// </summary>
-    /// <param name="subjectId">The data subject's identifier, as known to this service.</param>
-    /// <param name="ct">A token to cancel the operation.</param>
-    /// <returns>
-    /// A successful <see cref="Result{T}"/> carrying the exported
-    /// <see cref="DataSubjectExportBundle"/>, or a failure <see cref="Result{T}"/> describing why
-    /// the export could not be produced (e.g. the subject is unknown to this service).
-    /// </returns>
-    Task<Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default);
+    /// <summary>Exports what this service holds about the request's data subject (right of access and portability).</summary>
+    /// <param name="request">The request.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The export, or the reason it could not be produced.</returns>
+    Task<Result<DataSubjectExport>> ExportAsync(DataSubjectRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Erases (or irreversibly anonymizes) every record this service holds about the given data
-    /// subject.
-    /// </summary>
-    /// <param name="subjectId">The data subject's identifier, as known to this service.</param>
-    /// <param name="ct">A token to cancel the operation.</param>
-    /// <returns>
-    /// A successful <see cref="Result{T}"/> carrying a <see cref="DataSubjectErasureReceipt"/>
-    /// describing what was erased, or a failure <see cref="Result{T}"/> describing why the erasure
-    /// could not be completed (e.g. a legal-hold or retention obligation blocks it).
-    /// </returns>
-    Task<Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default);
+    /// <summary>Erases or irreversibly anonymizes what this service holds about the request's data subject (right to erasure).</summary>
+    /// <param name="request">The request.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>What was erased, anonymized and kept, or the reason the erasure could not be carried out.</returns>
+    Task<Result<DataSubjectErasureReceipt>> EraseAsync(DataSubjectRequest request, CancellationToken cancellationToken = default);
 }

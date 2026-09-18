@@ -1,0 +1,217 @@
+#nullable enable
+abstract SharedKernel.DataPrivacy.Redaction.MaskingRedactor.Mask(string! value) -> string!
+const SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.TaxonomyName = "SharedKernel.Privacy" -> string!
+const SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes.RequestIdConflict = "data_privacy.request_id_conflict" -> string!
+const SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes.TemporarilyUnavailable = "data_privacy.temporarily_unavailable" -> string!
+const SharedKernel.DataPrivacy.Masking.PiiMasking.RedactedSentinel = "[REDACTED]" -> string!
+const SharedKernel.DataPrivacy.Masking.Pseudonymizer.MinimumKeyLength = 32 -> int
+const SharedKernel.DataPrivacy.Masking.Pseudonymizer.TokenLength = 22 -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Equals(object? obj) -> bool
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.GetHashCode() -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.ToString() -> string!
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Equals(object? obj) -> bool
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.GetHashCode() -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.ToString() -> string!
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Equals(object? obj) -> bool
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.GetHashCode() -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.ToString() -> string!
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.Equals(object? obj) -> bool
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.GetHashCode() -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.ToString() -> string!
+override SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.Equals(object? obj) -> bool
+override SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.GetHashCode() -> int
+override SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.ToString() -> string!
+override SharedKernel.DataPrivacy.Redaction.MaskingRedactor.GetRedactedLength(System.ReadOnlySpan<char> input) -> int
+override SharedKernel.DataPrivacy.Redaction.MaskingRedactor.Redact(System.ReadOnlySpan<char> source, System.Span<char> destination) -> int
+override SharedKernel.DataPrivacy.Redaction.PseudonymizingRedactor.GetRedactedLength(System.ReadOnlySpan<char> input) -> int
+override SharedKernel.DataPrivacy.Redaction.PseudonymizingRedactor.Redact(System.ReadOnlySpan<char> source, System.Span<char> destination) -> int
+override SharedKernel.DataPrivacy.Redaction.SuppressingRedactor.GetRedactedLength(System.ReadOnlySpan<char> input) -> int
+override SharedKernel.DataPrivacy.Redaction.SuppressingRedactor.Redact(System.ReadOnlySpan<char> source, System.Span<char> destination) -> int
+SharedKernel.DataPrivacy.Classification.AppearanceDataAttribute
+SharedKernel.DataPrivacy.Classification.AppearanceDataAttribute.AppearanceDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.BankAccountDataAttribute
+SharedKernel.DataPrivacy.Classification.BankAccountDataAttribute.BankAccountDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.BeliefDataAttribute
+SharedKernel.DataPrivacy.Classification.BeliefDataAttribute.BeliefDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.BiometricDataAttribute
+SharedKernel.DataPrivacy.Classification.BiometricDataAttribute.BiometricDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.CredentialDataAttribute
+SharedKernel.DataPrivacy.Classification.CredentialDataAttribute.CredentialDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.CriminalRecordDataAttribute
+SharedKernel.DataPrivacy.Classification.CriminalRecordDataAttribute.CriminalRecordDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.DateOfBirthDataAttribute
+SharedKernel.DataPrivacy.Classification.DateOfBirthDataAttribute.DateOfBirthDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.EmailAddressDataAttribute
+SharedKernel.DataPrivacy.Classification.EmailAddressDataAttribute.EmailAddressDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.EthnicOriginDataAttribute
+SharedKernel.DataPrivacy.Classification.EthnicOriginDataAttribute.EthnicOriginDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.FinancialDataAttribute
+SharedKernel.DataPrivacy.Classification.FinancialDataAttribute.FinancialDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.GeneticDataAttribute
+SharedKernel.DataPrivacy.Classification.GeneticDataAttribute.GeneticDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.HealthDataAttribute
+SharedKernel.DataPrivacy.Classification.HealthDataAttribute.HealthDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.IpAddressDataAttribute
+SharedKernel.DataPrivacy.Classification.IpAddressDataAttribute.IpAddressDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.LocationDataAttribute
+SharedKernel.DataPrivacy.Classification.LocationDataAttribute.LocationDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.MembershipDataAttribute
+SharedKernel.DataPrivacy.Classification.MembershipDataAttribute.MembershipDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.NationalIdDataAttribute
+SharedKernel.DataPrivacy.Classification.NationalIdDataAttribute.NationalIdDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.OnlineIdentifierDataAttribute
+SharedKernel.DataPrivacy.Classification.OnlineIdentifierDataAttribute.OnlineIdentifierDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PaymentCardDataAttribute
+SharedKernel.DataPrivacy.Classification.PaymentCardDataAttribute.PaymentCardDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PersonNameDataAttribute
+SharedKernel.DataPrivacy.Classification.PersonNameDataAttribute.PersonNameDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PhoneNumberDataAttribute
+SharedKernel.DataPrivacy.Classification.PhoneNumberDataAttribute.PhoneNumberDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PoliticalOpinionDataAttribute
+SharedKernel.DataPrivacy.Classification.PoliticalOpinionDataAttribute.PoliticalOpinionDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PostalAddressDataAttribute
+SharedKernel.DataPrivacy.Classification.PostalAddressDataAttribute.PostalAddressDataAttribute() -> void
+SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy
+SharedKernel.DataPrivacy.Classification.SexLifeDataAttribute
+SharedKernel.DataPrivacy.Classification.SexLifeDataAttribute.SexLifeDataAttribute() -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.<Clone>$() -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.AnonymizedRecords.get -> int
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.AnonymizedRecords.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.CompletedAt.get -> System.DateTimeOffset
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.CompletedAt.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.DataSubjectErasureReceipt(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! Request, string! Source, System.DateTimeOffset CompletedAt, int ErasedRecords, int AnonymizedRecords, System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData!>! Retained) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Deconstruct(out SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! Request, out string! Source, out System.DateTimeOffset CompletedAt, out int ErasedRecords, out int AnonymizedRecords, out System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData!>! Retained) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Equals(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt? other) -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.ErasedRecords.get -> int
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.ErasedRecords.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.IsComplete.get -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Request.get -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Request.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Retained.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData!>!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Retained.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Source.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.Source.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.<Clone>$() -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.DataSubjectExport(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! Request, string! Source, System.DateTimeOffset ExportedAt, System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord!>! Records) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Deconstruct(out SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! Request, out string! Source, out System.DateTimeOffset ExportedAt, out System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord!>! Records) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Equals(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport? other) -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.ExportedAt.get -> System.DateTimeOffset
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.ExportedAt.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Records.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord!>!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Records.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Request.get -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Request.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Source.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.Source.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.WriteTo(System.Text.Json.Utf8JsonWriter! writer) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.<Clone>$() -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Category.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Category.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Data.get -> System.Text.Json.JsonElement
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Data.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.DataSubjectRecord(string! Category, System.Text.Json.JsonElement Data) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Deconstruct(out string! Category, out System.Text.Json.JsonElement Data) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Equals(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord? other) -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Purpose.get -> string?
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Purpose.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.<Clone>$() -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.DataSubjectRequest(string! requestId, string! subjectId, System.DateTimeOffset requestedAt, string? tenantId = null) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.Equals(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest? other) -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.RequestedAt.get -> System.DateTimeOffset
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.RequestId.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.SubjectId.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.TenantId.get -> string?
+SharedKernel.DataPrivacy.DataSubjectRequests.IDataSubjectRequestHandler
+SharedKernel.DataPrivacy.DataSubjectRequests.IDataSubjectRequestHandler.EraseAsync(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt!>!>!
+SharedKernel.DataPrivacy.DataSubjectRequests.IDataSubjectRequestHandler.ExportAsync(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport!>!>!
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.<Clone>$() -> SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData!
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.Category.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.Category.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.Deconstruct(out string! Category, out string! LegalBasis, out System.DateTimeOffset? RetainUntil) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.Equals(SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData? other) -> bool
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.LegalBasis.get -> string!
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.LegalBasis.init -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.RetainedData(string! Category, string! LegalBasis, System.DateTimeOffset? RetainUntil) -> void
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.RetainUntil.get -> System.DateTimeOffset?
+SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.RetainUntil.init -> void
+SharedKernel.DataPrivacy.Masking.PiiMasking
+SharedKernel.DataPrivacy.Masking.Pseudonymizer
+SharedKernel.DataPrivacy.Masking.Pseudonymizer.Pseudonymize(string? value) -> string!
+SharedKernel.DataPrivacy.Masking.Pseudonymizer.Pseudonymize(System.ReadOnlySpan<char> value) -> string!
+SharedKernel.DataPrivacy.Masking.Pseudonymizer.Pseudonymizer(System.ReadOnlySpan<byte> key) -> void
+SharedKernel.DataPrivacy.Redaction.BankAccountRedactor
+SharedKernel.DataPrivacy.Redaction.BankAccountRedactor.BankAccountRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.CardNumberRedactor
+SharedKernel.DataPrivacy.Redaction.CardNumberRedactor.CardNumberRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.EmailRedactor
+SharedKernel.DataPrivacy.Redaction.EmailRedactor.EmailRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.IpAddressRedactor
+SharedKernel.DataPrivacy.Redaction.IpAddressRedactor.IpAddressRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.MaskingRedactor
+SharedKernel.DataPrivacy.Redaction.MaskingRedactor.MaskingRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.NationalIdRedactor
+SharedKernel.DataPrivacy.Redaction.NationalIdRedactor.NationalIdRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.PersonNameRedactor
+SharedKernel.DataPrivacy.Redaction.PersonNameRedactor.PersonNameRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.PhoneNumberRedactor
+SharedKernel.DataPrivacy.Redaction.PhoneNumberRedactor.PhoneNumberRedactor() -> void
+SharedKernel.DataPrivacy.Redaction.PrivacyRedactionBuilderExtensions
+SharedKernel.DataPrivacy.Redaction.PseudonymizingRedactor
+SharedKernel.DataPrivacy.Redaction.PseudonymizingRedactor.PseudonymizingRedactor(SharedKernel.DataPrivacy.Masking.Pseudonymizer! pseudonymizer) -> void
+SharedKernel.DataPrivacy.Redaction.SuppressingRedactor
+SharedKernel.DataPrivacy.Redaction.SuppressingRedactor.SuppressingRedactor() -> void
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.All.get -> System.Collections.Generic.IReadOnlyList<Microsoft.Extensions.Compliance.Classification.DataClassification>!
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Appearance.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.BankAccount.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Belief.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Biometric.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Credential.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.CriminalRecord.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.DateOfBirth.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.EmailAddress.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.EthnicOrigin.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Financial.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Genetic.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Health.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.IpAddress.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.IsSpecialCategory(Microsoft.Extensions.Compliance.Classification.DataClassification classification) -> bool
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Location.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.Membership.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.NationalId.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.OnlineIdentifier.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.PaymentCard.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.PersonName.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.PhoneNumber.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.PoliticalOpinion.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.PostalAddress.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.SexLife.get -> Microsoft.Extensions.Compliance.Classification.DataClassification
+static SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.SpecialCategories.get -> Microsoft.Extensions.Compliance.Classification.DataClassificationSet!
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.operator !=(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt.operator ==(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.operator !=(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport.operator ==(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.Create<T>(string! category, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord!
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.operator !=(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord.operator ==(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRecord? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.operator !=(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest.operator ==(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest? left, SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.operator !=(SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData? left, SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData? right) -> bool
+static SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData.operator ==(SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData? left, SharedKernel.DataPrivacy.DataSubjectRequests.RetainedData? right) -> bool
+static SharedKernel.DataPrivacy.Masking.PiiMasking.CardNumber(string? cardNumber) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Email(string? email) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Email(string? email, bool revealDomain) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Iban(string? iban) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.IpAddress(string? ipAddress) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.NationalId(string? nationalId) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Partial(string? value, int keepStart, int keepEnd) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.PersonName(string? name) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Phone(string? phoneNumber) -> string!
+static SharedKernel.DataPrivacy.Masking.PiiMasking.Suppress(string? value) -> string!
+static SharedKernel.DataPrivacy.Redaction.PrivacyRedactionBuilderExtensions.SetPrivacyRedactors(this Microsoft.Extensions.Compliance.Redaction.IRedactionBuilder! builder) -> Microsoft.Extensions.Compliance.Redaction.IRedactionBuilder!
+static SharedKernel.DataPrivacy.Redaction.PrivacyRedactionBuilderExtensions.SetPrivacyRedactors(this Microsoft.Extensions.Compliance.Redaction.IRedactionBuilder! builder, SharedKernel.DataPrivacy.Masking.Pseudonymizer! pseudonymizer) -> Microsoft.Extensions.Compliance.Redaction.IRedactionBuilder!

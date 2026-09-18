@@ -44,7 +44,7 @@ namespace SharedKernel.DataPrivacy.Tests.Masking;
 /// obfuscated/dynamically-constructed call (not a realistic risk in a hand-written,
 /// non-obfuscated, source-generator-free package like this one), and it does not (and cannot,
 /// alone) prove the *test* assembly is reflection-free —
-/// <see cref="SharedKernel.DataPrivacy.Tests.Classification.ClassificationAttributeTests"/> (T-59)
+/// <see cref="SharedKernel.DataPrivacy.Tests.Classification.TaxonomyTests"/>
 /// uses reflection deliberately and legitimately, in the TEST project only, which this test never
 /// inspects.
 /// </para>
@@ -113,10 +113,8 @@ public sealed class NoReflectionInProductionAssemblyTests
         Assert.True(
             violations.Count == 0,
             "SharedKernel.DataPrivacy.dll references reflection-invocation type(s) it must not "
-                + $"use in production code: {string.Join(", ", violations)}. See "
-                + $"{nameof(DataPrivacy.Classification.DataClassificationAttribute)}'s XML docs — "
-                + "these attributes and this package's helpers must never be read/invoked "
-                + "reflectively at runtime.");
+                + $"use in production code: {string.Join(", ", violations)}. Classification attributes are read by the logging source generator at compile time, "
+                + "never reflectively at runtime.");
     }
 
     [Fact]

@@ -1,10 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>PII/data-classification taxonomy and masking helpers for the SharedKernel: DataClassificationAttribute/SensitiveDataCategoryAttribute pure-metadata marker attributes (never read via reflection in production code — compile-time/analyzer and documentation use only), a PiiMasking static class (Email/Phone/Pan/Suppress — pure, allocation-minimal, null-safe, deterministic), and the IDataSubjectRequestHandler export/erasure contract (implemented by each consuming service against its own data; no default or reflection-based implementation ships, and no cross-service erasure orchestrator is provided). Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives only.</Description>
-    <PackageTags>shared-kernel;privacy;pii;gdpr;kvkk;data-classification;masking;data-subject-request;aot</PackageTags>
+    <Description>Personal-data classification, masking, log redaction and data-subject requests (GDPR/KVKK). A taxonomy of 23 kinds of personal data, including every GDPR/KVKK special category, built on Microsoft.Extensions.Compliance, with one attribute per kind usable on properties, fields and [LoggerMessage] parameters. SetPrivacyRedactors() plugs matching redactors into .NET log redaction, so a tagged value is masked or erased when it is logged. PiiMasking masks email addresses, phone numbers, card numbers (first 6 and last 4), IBANs, national IDs, names and IP addresses; Pseudonymizer replaces an identifier with a stable HMAC-SHA256 token. IDataSubjectRequestHandler is the contract each service implements to export or erase a person's data, with idempotent request ids and receipts that record what was kept and why. No reflection.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;privacy;pii;gdpr;kvkk;data-classification;redaction;masking;pseudonymization;data-subject-request;logging</PackageTags>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Overloads with optional parameters (SetPrivacyRedactors, Pseudonymize) are intentional. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Compliance.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>
