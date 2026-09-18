@@ -1,0 +1,58 @@
+{
+  // Turkish translations of SharedKernel.Validation's messages. Keys are ValidationErrorCodes;
+  // placeholders match ValidationMessages. English is each message's default text.
+  "validation": {
+    "required": "Bir değer girilmelidir.",
+    "iban": {
+      "invalid_format": "IBAN, iki harfli ülke kodu ve iki kontrol basamağıyla başlar; ardından harf ve rakamlar gelir. En fazla 34 karakterdir.",
+      "unsupported_country": "{country} IBAN kullanmıyor.",
+      "invalid_length": "{country} IBAN'ı {expected} karakter olmalıdır, girilen {actual} karakter.",
+      "invalid_bban": "Bu IBAN'daki hesap numarası {country} biçimine uymuyor.",
+      "invalid_check_digits": "IBAN kontrol basamakları hatalı. Yazım hatası olup olmadığını kontrol edin."
+    },
+    "bic": {
+      "invalid_format": "BIC 8 veya 11 karakterdir: 4 harfli banka kodu, 2 harfli ülke kodu, 2 karakterli konum kodu ve isteğe bağlı 3 karakterli şube kodu.",
+      "unknown_country": "Bu BIC'teki {country} geçerli bir ülke kodu değil."
+    },
+    "card_number": {
+      "invalid_format": "Kart numarası 12 ile 19 rakam arasındadır.",
+      "invalid_check_digit": "Kart numarası geçersiz. Yazım hatası olup olmadığını kontrol edin.",
+      "unknown_network": "Bu kart numarasının kart şeması belirlenemedi."
+    },
+    "country_code": {
+      "invalid_format": "Ülke kodu TR veya DE gibi iki harftir.",
+      "unknown": "{code} geçerli bir ülke kodu değil."
+    },
+    "currency_code": {
+      "invalid_format": "Para birimi kodu TRY veya EUR gibi üç harftir.",
+      "unknown": "{code} kullanımda olan bir para birimi kodu değil."
+    },
+    "phone_number": {
+      "invalid_format": "Telefon numarası uluslararası biçimde yazılmalıdır: + işareti, ülke kodu ve numara; en fazla 15 rakam."
+    },
+    "lei": {
+      "invalid_format": "LEI 20 karakterdir: 18 harf veya rakam ve ardından 2 kontrol basamağı.",
+      "invalid_check_digits": "LEI kontrol basamakları hatalı."
+    },
+    "aba_routing_number": {
+      "invalid_format": "Banka yönlendirme numarası 9 rakamdır.",
+      "invalid_prefix": "Banka yönlendirme numarası 00–12, 21–32, 61–72 veya 80 ile başlar.",
+      "invalid_check_digit": "Banka yönlendirme numarasının kontrol basamağı hatalı."
+    },
+    "sepa_creditor_id": {
+      "invalid_format": "SEPA alacaklı kimliği 2 harfli ülke kodu, 2 kontrol basamağı, 3 karakterli işletme kodu ve en fazla 28 karakterli ulusal kimlikten oluşur.",
+      "unknown_country": "Bu alacaklı kimliğindeki {country} geçerli bir ülke kodu değil.",
+      "invalid_check_digits": "Alacaklı kimliğinin kontrol basamakları hatalı."
+    },
+    "vat_number": {
+      "unsupported_country": "Vergi numarası desteklenen bir ülke önekiyle başlamalıdır; {country} bunlardan biri değil.",
+      "invalid_format": "Vergi numarası {country} biçimine uymuyor.",
+      "invalid_check_digit": "{country} vergi numarasının kontrol basamağı hatalı."
+    },
+    "national_id": {
+      "unsupported_country": "{country} kimlik numaraları doğrulanamıyor.",
+      "invalid_format": "Kimlik numarası {country} biçimine uymuyor.",
+      "invalid_check_digit": "{country} kimlik numarasının kontrol basamağı hatalı."
+    }
+  }
+}

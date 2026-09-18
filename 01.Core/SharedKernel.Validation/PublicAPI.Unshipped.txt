@@ -1,0 +1,277 @@
+#nullable enable
+const SharedKernel.Validation.Iban.RegistryRelease = "SWIFT IBAN Registry release 99 (December 2024)" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.AbaRoutingNumber.InvalidCheckDigit = "validation.aba_routing_number.invalid_check_digit" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.AbaRoutingNumber.InvalidFormat = "validation.aba_routing_number.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.AbaRoutingNumber.InvalidPrefix = "validation.aba_routing_number.invalid_prefix" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Bic.InvalidFormat = "validation.bic.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Bic.UnknownCountry = "validation.bic.unknown_country" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CardNumber.InvalidCheckDigit = "validation.card_number.invalid_check_digit" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CardNumber.InvalidFormat = "validation.card_number.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CardNumber.UnknownNetwork = "validation.card_number.unknown_network" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CountryCode.InvalidFormat = "validation.country_code.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CountryCode.Unknown = "validation.country_code.unknown" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CurrencyCode.InvalidFormat = "validation.currency_code.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.CurrencyCode.Unknown = "validation.currency_code.unknown" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Iban.InvalidBban = "validation.iban.invalid_bban" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Iban.InvalidCheckDigits = "validation.iban.invalid_check_digits" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Iban.InvalidFormat = "validation.iban.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Iban.InvalidLength = "validation.iban.invalid_length" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Iban.UnsupportedCountry = "validation.iban.unsupported_country" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Lei.InvalidCheckDigits = "validation.lei.invalid_check_digits" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.Lei.InvalidFormat = "validation.lei.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.NationalId.InvalidCheckDigit = "validation.national_id.invalid_check_digit" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.NationalId.InvalidFormat = "validation.national_id.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.NationalId.UnsupportedCountry = "validation.national_id.unsupported_country" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.PhoneNumber.InvalidFormat = "validation.phone_number.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.SepaCreditorId.InvalidCheckDigits = "validation.sepa_creditor_id.invalid_check_digits" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.SepaCreditorId.InvalidFormat = "validation.sepa_creditor_id.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.SepaCreditorId.UnknownCountry = "validation.sepa_creditor_id.unknown_country" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.VatNumber.InvalidCheckDigit = "validation.vat_number.invalid_check_digit" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.VatNumber.InvalidFormat = "validation.vat_number.invalid_format" -> string!
+const SharedKernel.Validation.ValidationErrorCodes.VatNumber.UnsupportedCountry = "validation.vat_number.unsupported_country" -> string!
+override SharedKernel.Validation.AbaRoutingNumber.GetHashCode() -> int
+override SharedKernel.Validation.AbaRoutingNumber.ToString() -> string!
+override SharedKernel.Validation.Bic.GetHashCode() -> int
+override SharedKernel.Validation.Bic.ToString() -> string!
+override SharedKernel.Validation.CardNumber.GetHashCode() -> int
+override SharedKernel.Validation.CardNumber.ToString() -> string!
+override SharedKernel.Validation.CountryCode.GetHashCode() -> int
+override SharedKernel.Validation.CountryCode.ToString() -> string!
+override SharedKernel.Validation.CurrencyCode.GetHashCode() -> int
+override SharedKernel.Validation.CurrencyCode.ToString() -> string!
+override SharedKernel.Validation.Iban.GetHashCode() -> int
+override SharedKernel.Validation.Iban.ToString() -> string!
+override SharedKernel.Validation.Lei.GetHashCode() -> int
+override SharedKernel.Validation.Lei.ToString() -> string!
+override SharedKernel.Validation.NationalId.GetHashCode() -> int
+override SharedKernel.Validation.NationalId.ToString() -> string!
+override SharedKernel.Validation.PhoneNumber.GetHashCode() -> int
+override SharedKernel.Validation.PhoneNumber.ToString() -> string!
+override SharedKernel.Validation.SepaCreditorId.GetHashCode() -> int
+override SharedKernel.Validation.SepaCreditorId.ToString() -> string!
+override SharedKernel.Validation.ValidatedValueJsonConverter<T>.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> T
+override SharedKernel.Validation.ValidatedValueJsonConverter<T>.Write(System.Text.Json.Utf8JsonWriter! writer, T value, System.Text.Json.JsonSerializerOptions! options) -> void
+override SharedKernel.Validation.VatNumber.GetHashCode() -> int
+override SharedKernel.Validation.VatNumber.ToString() -> string!
+SharedKernel.Guards.ValidationGuardExtensions
+SharedKernel.Validation.AbaRoutingNumber
+SharedKernel.Validation.AbaRoutingNumber.AbaRoutingNumber() -> void
+SharedKernel.Validation.AbaRoutingNumber.Equals(SharedKernel.Validation.AbaRoutingNumber other) -> bool
+SharedKernel.Validation.AbaRoutingNumber.Value.get -> string!
+SharedKernel.Validation.Bic
+SharedKernel.Validation.Bic.BankCode.get -> string!
+SharedKernel.Validation.Bic.Bic() -> void
+SharedKernel.Validation.Bic.BranchCode.get -> string?
+SharedKernel.Validation.Bic.CountryCode.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.Bic.Equals(SharedKernel.Validation.Bic other) -> bool
+SharedKernel.Validation.Bic.IsHeadOffice.get -> bool
+SharedKernel.Validation.Bic.LocationCode.get -> string!
+SharedKernel.Validation.Bic.Value.get -> string!
+SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.AmericanExpress = 3 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.DinersClub = 7 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Discover = 4 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Jcb = 5 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Maestro = 8 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Mastercard = 2 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Mir = 9 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Troy = 10 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.UnionPay = 6 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Unknown = 0 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNetwork.Visa = 1 -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNumber
+SharedKernel.Validation.CardNumber.CardNumber() -> void
+SharedKernel.Validation.CardNumber.Equals(SharedKernel.Validation.CardNumber other) -> bool
+SharedKernel.Validation.CardNumber.Iin.get -> string!
+SharedKernel.Validation.CardNumber.Last4.get -> string!
+SharedKernel.Validation.CardNumber.Masked.get -> string!
+SharedKernel.Validation.CardNumber.Network.get -> SharedKernel.Validation.CardNetwork
+SharedKernel.Validation.CardNumber.Value.get -> string!
+SharedKernel.Validation.CountryCode
+SharedKernel.Validation.CountryCode.CountryCode() -> void
+SharedKernel.Validation.CountryCode.Equals(SharedKernel.Validation.CountryCode other) -> bool
+SharedKernel.Validation.CountryCode.Value.get -> string!
+SharedKernel.Validation.CurrencyCode
+SharedKernel.Validation.CurrencyCode.CurrencyCode() -> void
+SharedKernel.Validation.CurrencyCode.Equals(SharedKernel.Validation.CurrencyCode other) -> bool
+SharedKernel.Validation.CurrencyCode.Value.get -> string!
+SharedKernel.Validation.Iban
+SharedKernel.Validation.Iban.Bban.get -> string!
+SharedKernel.Validation.Iban.CheckDigits.get -> string!
+SharedKernel.Validation.Iban.CountryCode.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.Iban.Equals(SharedKernel.Validation.Iban other) -> bool
+SharedKernel.Validation.Iban.Iban() -> void
+SharedKernel.Validation.Iban.ToPrintString() -> string!
+SharedKernel.Validation.Iban.Value.get -> string!
+SharedKernel.Validation.INationalIdValidator
+SharedKernel.Validation.INationalIdValidator.Country.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.INationalIdValidator.Validate(string! number) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Validation.IValidatedValue<TSelf>
+SharedKernel.Validation.IValidatedValue<TSelf>.Create(string? value) -> SharedKernel.Primitives.Results.Result<TSelf>!
+SharedKernel.Validation.IValidatedValue<TSelf>.Value.get -> string!
+SharedKernel.Validation.Lei
+SharedKernel.Validation.Lei.Equals(SharedKernel.Validation.Lei other) -> bool
+SharedKernel.Validation.Lei.Lei() -> void
+SharedKernel.Validation.Lei.Value.get -> string!
+SharedKernel.Validation.NationalId
+SharedKernel.Validation.NationalId.Country.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.NationalId.Equals(SharedKernel.Validation.NationalId other) -> bool
+SharedKernel.Validation.NationalId.Masked.get -> string!
+SharedKernel.Validation.NationalId.NationalId() -> void
+SharedKernel.Validation.NationalId.Value.get -> string!
+SharedKernel.Validation.NationalIdValidatorRegistry
+SharedKernel.Validation.NationalIdValidatorRegistry.Countries.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Validation.NationalIdValidatorRegistry.NationalIdValidatorRegistry(System.Collections.Generic.IEnumerable<SharedKernel.Validation.INationalIdValidator!>! validators) -> void
+SharedKernel.Validation.NationalIdValidatorRegistry.TryGetValidator(SharedKernel.Validation.CountryCode country, out SharedKernel.Validation.INationalIdValidator? validator) -> bool
+SharedKernel.Validation.PhoneNumber
+SharedKernel.Validation.PhoneNumber.Equals(SharedKernel.Validation.PhoneNumber other) -> bool
+SharedKernel.Validation.PhoneNumber.PhoneNumber() -> void
+SharedKernel.Validation.PhoneNumber.Value.get -> string!
+SharedKernel.Validation.SepaCreditorId
+SharedKernel.Validation.SepaCreditorId.BusinessCode.get -> string!
+SharedKernel.Validation.SepaCreditorId.CountryCode.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.SepaCreditorId.Equals(SharedKernel.Validation.SepaCreditorId other) -> bool
+SharedKernel.Validation.SepaCreditorId.NationalIdentifier.get -> string!
+SharedKernel.Validation.SepaCreditorId.SepaCreditorId() -> void
+SharedKernel.Validation.SepaCreditorId.Value.get -> string!
+SharedKernel.Validation.TurkishNationalIdValidator
+SharedKernel.Validation.TurkishNationalIdValidator.Country.get -> SharedKernel.Validation.CountryCode
+SharedKernel.Validation.TurkishNationalIdValidator.TurkishNationalIdValidator() -> void
+SharedKernel.Validation.TurkishNationalIdValidator.Validate(string! number) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Validation.ValidatedValueJsonConverter<T>
+SharedKernel.Validation.ValidatedValueJsonConverter<T>.ValidatedValueJsonConverter() -> void
+SharedKernel.Validation.ValidationErrorCodes
+SharedKernel.Validation.ValidationErrorCodes.AbaRoutingNumber
+SharedKernel.Validation.ValidationErrorCodes.Bic
+SharedKernel.Validation.ValidationErrorCodes.CardNumber
+SharedKernel.Validation.ValidationErrorCodes.CountryCode
+SharedKernel.Validation.ValidationErrorCodes.CurrencyCode
+SharedKernel.Validation.ValidationErrorCodes.Iban
+SharedKernel.Validation.ValidationErrorCodes.Lei
+SharedKernel.Validation.ValidationErrorCodes.NationalId
+SharedKernel.Validation.ValidationErrorCodes.PhoneNumber
+SharedKernel.Validation.ValidationErrorCodes.SepaCreditorId
+SharedKernel.Validation.ValidationErrorCodes.VatNumber
+SharedKernel.Validation.ValidationLocalizationExtensions
+SharedKernel.Validation.ValidationMessages
+SharedKernel.Validation.ValidationServiceCollectionExtensions
+SharedKernel.Validation.VatNumber
+SharedKernel.Validation.VatNumber.Equals(SharedKernel.Validation.VatNumber other) -> bool
+SharedKernel.Validation.VatNumber.Number.get -> string!
+SharedKernel.Validation.VatNumber.Prefix.get -> string!
+SharedKernel.Validation.VatNumber.Value.get -> string!
+SharedKernel.Validation.VatNumber.VatNumber() -> void
+static readonly SharedKernel.Validation.ValidationMessages.AbaRoutingNumberInvalidCheckDigit -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.AbaRoutingNumberInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.AbaRoutingNumberInvalidPrefix -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.BicInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.BicUnknownCountry -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.CardNumberInvalidCheckDigit -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.CardNumberInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.CardNumberUnknownNetwork -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.CountryCodeInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.CountryCodeUnknown -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.CurrencyCodeInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.CurrencyCodeUnknown -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.IbanInvalidBban -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.IbanInvalidCheckDigits -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.IbanInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.IbanInvalidLength -> SharedKernel.Localization.LocalizedMessage<string!, int, int>!
+static readonly SharedKernel.Validation.ValidationMessages.IbanUnsupportedCountry -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.LeiInvalidCheckDigits -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.LeiInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.NationalIdInvalidCheckDigit -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.NationalIdInvalidFormat -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.NationalIdUnsupportedCountry -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.PhoneNumberInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.Required -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.SepaCreditorIdInvalidCheckDigits -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.SepaCreditorIdInvalidFormat -> SharedKernel.Localization.LocalizedMessage!
+static readonly SharedKernel.Validation.ValidationMessages.SepaCreditorIdUnknownCountry -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.VatNumberInvalidCheckDigit -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.VatNumberInvalidFormat -> SharedKernel.Localization.LocalizedMessage<string!>!
+static readonly SharedKernel.Validation.ValidationMessages.VatNumberUnsupportedCountry -> SharedKernel.Localization.LocalizedMessage<string!>!
+static SharedKernel.Guards.ValidationGuardExtensions.Invalid<T>(this SharedKernel.Guards.IGuardClause! guard, string? value, string? paramName = null) -> SharedKernel.Primitives.Errors.Error?
+static SharedKernel.Guards.ValidationGuardExtensions.InvalidNationalId(this SharedKernel.Guards.IGuardClause! guard, string? value, SharedKernel.Validation.CountryCode country, SharedKernel.Validation.NationalIdValidatorRegistry? registry = null, string? paramName = null) -> SharedKernel.Primitives.Errors.Error?
+static SharedKernel.Validation.AbaRoutingNumber.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.AbaRoutingNumber>!
+static SharedKernel.Validation.AbaRoutingNumber.IsValid(string? value) -> bool
+static SharedKernel.Validation.AbaRoutingNumber.operator !=(SharedKernel.Validation.AbaRoutingNumber left, SharedKernel.Validation.AbaRoutingNumber right) -> bool
+static SharedKernel.Validation.AbaRoutingNumber.operator ==(SharedKernel.Validation.AbaRoutingNumber left, SharedKernel.Validation.AbaRoutingNumber right) -> bool
+static SharedKernel.Validation.AbaRoutingNumber.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.AbaRoutingNumber
+static SharedKernel.Validation.AbaRoutingNumber.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.AbaRoutingNumber result) -> bool
+static SharedKernel.Validation.Bic.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.Bic>!
+static SharedKernel.Validation.Bic.IsValid(string? value) -> bool
+static SharedKernel.Validation.Bic.operator !=(SharedKernel.Validation.Bic left, SharedKernel.Validation.Bic right) -> bool
+static SharedKernel.Validation.Bic.operator ==(SharedKernel.Validation.Bic left, SharedKernel.Validation.Bic right) -> bool
+static SharedKernel.Validation.Bic.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.Bic
+static SharedKernel.Validation.Bic.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.Bic result) -> bool
+static SharedKernel.Validation.CardNumber.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.CardNumber>!
+static SharedKernel.Validation.CardNumber.Create(string? value, bool requireKnownNetwork) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.CardNumber>!
+static SharedKernel.Validation.CardNumber.IsValid(string? value) -> bool
+static SharedKernel.Validation.CardNumber.operator !=(SharedKernel.Validation.CardNumber left, SharedKernel.Validation.CardNumber right) -> bool
+static SharedKernel.Validation.CardNumber.operator ==(SharedKernel.Validation.CardNumber left, SharedKernel.Validation.CardNumber right) -> bool
+static SharedKernel.Validation.CardNumber.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.CardNumber
+static SharedKernel.Validation.CardNumber.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.CardNumber result) -> bool
+static SharedKernel.Validation.CountryCode.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.CountryCode>!
+static SharedKernel.Validation.CountryCode.IsValid(string? value) -> bool
+static SharedKernel.Validation.CountryCode.operator !=(SharedKernel.Validation.CountryCode left, SharedKernel.Validation.CountryCode right) -> bool
+static SharedKernel.Validation.CountryCode.operator ==(SharedKernel.Validation.CountryCode left, SharedKernel.Validation.CountryCode right) -> bool
+static SharedKernel.Validation.CountryCode.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.CountryCode
+static SharedKernel.Validation.CountryCode.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.CountryCode result) -> bool
+static SharedKernel.Validation.CurrencyCode.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.CurrencyCode>!
+static SharedKernel.Validation.CurrencyCode.IsValid(string? value) -> bool
+static SharedKernel.Validation.CurrencyCode.operator !=(SharedKernel.Validation.CurrencyCode left, SharedKernel.Validation.CurrencyCode right) -> bool
+static SharedKernel.Validation.CurrencyCode.operator ==(SharedKernel.Validation.CurrencyCode left, SharedKernel.Validation.CurrencyCode right) -> bool
+static SharedKernel.Validation.CurrencyCode.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.CurrencyCode
+static SharedKernel.Validation.CurrencyCode.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.CurrencyCode result) -> bool
+static SharedKernel.Validation.Iban.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.Iban>!
+static SharedKernel.Validation.Iban.Create(string? value, bool allowUnregisteredCountry) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.Iban>!
+static SharedKernel.Validation.Iban.IsValid(string? value) -> bool
+static SharedKernel.Validation.Iban.operator !=(SharedKernel.Validation.Iban left, SharedKernel.Validation.Iban right) -> bool
+static SharedKernel.Validation.Iban.operator ==(SharedKernel.Validation.Iban left, SharedKernel.Validation.Iban right) -> bool
+static SharedKernel.Validation.Iban.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.Iban
+static SharedKernel.Validation.Iban.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.Iban result) -> bool
+static SharedKernel.Validation.Lei.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.Lei>!
+static SharedKernel.Validation.Lei.IsValid(string? value) -> bool
+static SharedKernel.Validation.Lei.operator !=(SharedKernel.Validation.Lei left, SharedKernel.Validation.Lei right) -> bool
+static SharedKernel.Validation.Lei.operator ==(SharedKernel.Validation.Lei left, SharedKernel.Validation.Lei right) -> bool
+static SharedKernel.Validation.Lei.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.Lei
+static SharedKernel.Validation.Lei.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.Lei result) -> bool
+static SharedKernel.Validation.NationalId.Create(SharedKernel.Validation.CountryCode country, string? value, SharedKernel.Validation.NationalIdValidatorRegistry? registry = null) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.NationalId>!
+static SharedKernel.Validation.NationalId.operator !=(SharedKernel.Validation.NationalId left, SharedKernel.Validation.NationalId right) -> bool
+static SharedKernel.Validation.NationalId.operator ==(SharedKernel.Validation.NationalId left, SharedKernel.Validation.NationalId right) -> bool
+static SharedKernel.Validation.NationalIdValidatorRegistry.Default.get -> SharedKernel.Validation.NationalIdValidatorRegistry!
+static SharedKernel.Validation.PhoneNumber.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.PhoneNumber>!
+static SharedKernel.Validation.PhoneNumber.IsValid(string? value) -> bool
+static SharedKernel.Validation.PhoneNumber.operator !=(SharedKernel.Validation.PhoneNumber left, SharedKernel.Validation.PhoneNumber right) -> bool
+static SharedKernel.Validation.PhoneNumber.operator ==(SharedKernel.Validation.PhoneNumber left, SharedKernel.Validation.PhoneNumber right) -> bool
+static SharedKernel.Validation.PhoneNumber.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.PhoneNumber
+static SharedKernel.Validation.PhoneNumber.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.PhoneNumber result) -> bool
+static SharedKernel.Validation.SepaCreditorId.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.SepaCreditorId>!
+static SharedKernel.Validation.SepaCreditorId.IsValid(string? value) -> bool
+static SharedKernel.Validation.SepaCreditorId.operator !=(SharedKernel.Validation.SepaCreditorId left, SharedKernel.Validation.SepaCreditorId right) -> bool
+static SharedKernel.Validation.SepaCreditorId.operator ==(SharedKernel.Validation.SepaCreditorId left, SharedKernel.Validation.SepaCreditorId right) -> bool
+static SharedKernel.Validation.SepaCreditorId.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.SepaCreditorId
+static SharedKernel.Validation.SepaCreditorId.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.SepaCreditorId result) -> bool
+static SharedKernel.Validation.ValidationLocalizationExtensions.AddValidationTranslations(this SharedKernel.Localization.LocalizationCatalogBuilder! builder) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+static SharedKernel.Validation.ValidationServiceCollectionExtensions.AddNationalIdValidator<TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Validation.ValidationServiceCollectionExtensions.AddSharedKernelValidation(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Validation.VatNumber.Create(SharedKernel.Validation.CountryCode country, string? number) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.VatNumber>!
+static SharedKernel.Validation.VatNumber.Create(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Validation.VatNumber>!
+static SharedKernel.Validation.VatNumber.IsValid(string? value) -> bool
+static SharedKernel.Validation.VatNumber.operator !=(SharedKernel.Validation.VatNumber left, SharedKernel.Validation.VatNumber right) -> bool
+static SharedKernel.Validation.VatNumber.operator ==(SharedKernel.Validation.VatNumber left, SharedKernel.Validation.VatNumber right) -> bool
+static SharedKernel.Validation.VatNumber.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Validation.VatNumber
+static SharedKernel.Validation.VatNumber.SupportedPrefixes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static SharedKernel.Validation.VatNumber.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Validation.VatNumber result) -> bool
+~override SharedKernel.Validation.AbaRoutingNumber.Equals(object obj) -> bool
+~override SharedKernel.Validation.Bic.Equals(object obj) -> bool
+~override SharedKernel.Validation.CardNumber.Equals(object obj) -> bool
+~override SharedKernel.Validation.CountryCode.Equals(object obj) -> bool
+~override SharedKernel.Validation.CurrencyCode.Equals(object obj) -> bool
+~override SharedKernel.Validation.Iban.Equals(object obj) -> bool
+~override SharedKernel.Validation.Lei.Equals(object obj) -> bool
+~override SharedKernel.Validation.NationalId.Equals(object obj) -> bool
+~override SharedKernel.Validation.PhoneNumber.Equals(object obj) -> bool
+~override SharedKernel.Validation.SepaCreditorId.Equals(object obj) -> bool
+~override SharedKernel.Validation.VatNumber.Equals(object obj) -> bool

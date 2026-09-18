@@ -1,14 +1,37 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Culture-independent financial and identity format validators for the SharedKernel: IBAN (mod-97 + per-country length table), BIC/SWIFT, payment-card PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164 phone numbers, a baseline VAT/tax-identifier format check, LEI (ISO 17442 mod-97-10), US ABA bank routing numbers ((3,7,1)-weighted checksum), SEPA Creditor Identifiers (mod-97-10), and a pluggable per-country national-identity-number registry (Turkey's TCKN ships as the built-in default). Every validator is dual-mode: a standalone IsValid/Validate call and a Guard.Against.* extension. Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Core (the Guard.Against.* extension surface, formerly SharedKernel.Guards, merged into SharedKernel.Core by P-505/WO-082).</Description>
-    <PackageTags>shared-kernel;validation;iban;bic;pan;luhn;iso4217;iso3166;e164;vat;lei;aba-routing-number;sepa-creditor-identifier;national-id;aot</PackageTags>
+    <Description>Validated value types for financial and identity data: Iban, Bic, CardNumber, CountryCode, CurrencyCode, PhoneNumber, Lei, AbaRoutingNumber, SepaCreditorId, VatNumber and NationalId. Each parses into a normalized value or returns a failed Result with a stable error code, never throws for bad input, binds from ASP.NET Core routes and reads and writes JSON. IBANs are checked against all 89 countries of the SWIFT registry including each country's account-number structure; VAT numbers against the format and check digit of every EU country, the UK, Switzerland, Norway and Türkiye (VKN); card numbers by Luhn check with detection of Visa, Mastercard, Amex, Discover, JCB, UnionPay, Diners Club, Maestro, Mir and Troy. Card and national ID numbers are masked in ToString. Every message can be translated through SharedKernel.Localization, and Turkish ships with the package.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;validation;value-objects;iban;bic;card-number;luhn;vat;vkn;tckn;lei;iso4217;iso3166;e164;sepa</PackageTags>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Overloads with optional parameters (Create with options, registry defaults) are intentional. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\SharedKernel.Localization\SharedKernel.Localization.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WithCulture="false": tr.json is named after a culture but must stay in the main assembly. -->
+    <EmbeddedResource Include="Localization\*.json" WithCulture="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

@@ -1,13 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>A thin FluentValidation rule-builder adapter over SharedKernel.Validation's culture-independent format validators: .MustBeValidIban(), .MustBeValidBic(), .MustBeValidPan(), .MustBeValidCurrencyCode(), .MustBeValidCountryCode(), .MustBeValidPhoneNumber(), .MustBeValidVatNumber(), .MustBeValidNationalId(), .MustBeValidLei(), .MustBeValidAbaRoutingNumber(), and .MustBeValidSepaCreditorIdentifier(). Every rule delegates to the matching SharedKernel.Validation static validator and surfaces the identical ValidationErrorCodes constant on failure, whether reached via the standalone call or through this adapter. Kept as a separate package so a FluentValidation-free consumer (a Temporal activity, a MediatR-free worker) never pulls FluentValidation in transitively via SharedKernel.Validation itself.</Description>
-    <PackageTags>shared-kernel;validation;fluentvalidation;iban;bic;pan;iso4217;iso3166;e164;vat;lei;aba-routing-number;sepa-creditor-identifier;national-id</PackageTags>
+    <Description>FluentValidation rules for the SharedKernel.Validation identifier types: MustBeValidIban, MustBeValidCardNumber, MustBeValidVatNumber, MustBeValidNationalId and more, plus MustBeValid&lt;T, TValue&gt; for any identifier. Each failure carries the identifier's specific error code, its translatable message values and the field path, never the rejected value, so card and national ID numbers stay out of validation results and logs. A separate package so code that does not use FluentValidation never depends on it.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;validation;fluentvalidation;iban;card-number;vat;national-id</PackageTags>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Optional parameters are intentional. RS0041: the rule signatures are deliberately nullable-oblivious, like FluentValidation's own. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027;RS0041</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Validation\SharedKernel.Validation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>
