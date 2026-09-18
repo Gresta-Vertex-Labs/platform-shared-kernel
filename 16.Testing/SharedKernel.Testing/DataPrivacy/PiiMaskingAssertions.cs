@@ -22,7 +22,7 @@ public static class PiiMaskingAssertions
     /// <param name="observedMasked">The value actually observed at the call site under test.</param>
     /// <param name="maskingFunction">
     /// The real masking function to re-invoke — e.g. <c>PiiMasking.Email</c>, <c>PiiMasking.Phone</c>,
-    /// <c>PiiMasking.Pan</c>, or <c>PiiMasking.Suppress</c>.
+    /// <c>PiiMasking.CardNumber</c>, or <c>PiiMasking.Suppress</c>.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="observedMasked"/> does not match what <paramref name="maskingFunction"/>

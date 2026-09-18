@@ -19,8 +19,8 @@ public sealed class PiiMaskingAssertionsTests
         PiiMaskingAssertions.ShouldBeMasked("+1 (555) 123-4567", "+* (***) ***-4567", PiiMasking.Phone);
 
     [Fact]
-    public void ShouldBeMasked_Pan_MatchingObservedValue_DoesNotThrow() =>
-        PiiMaskingAssertions.ShouldBeMasked("4111-1111-1111-1111", "****-****-****-1111", PiiMasking.Pan);
+    public void ShouldBeMasked_CardNumber_MatchingObservedValue_DoesNotThrow() =>
+        PiiMaskingAssertions.ShouldBeMasked("4111-1111-1111-1111", "4111-11**-****-1111", PiiMasking.CardNumber);
 
     [Fact]
     public void ShouldBeMasked_Suppress_MatchingObservedValue_DoesNotThrow() =>

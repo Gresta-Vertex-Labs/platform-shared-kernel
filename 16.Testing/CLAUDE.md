@@ -3274,14 +3274,16 @@ Implemented (P-475/WO-076, `SharedKernel.DataPrivacy` shipped P-474):
 
 ```text
 RecordingDataSubjectRequestHandler  (sealed class, implements IDataSubjectRequestHandler)
-    ctor(IClock? clock = null)
-    .SetExportResult(string subjectId, Result<DataSubjectExportBundle> result)   → void
+    ctor(IClock? clock = null, string source = "test-service")
+    .ExportRequests / .ErasureRequests                                          → IReadOnlyList<DataSubjectRequest>
+    .SetExportResult(string subjectId, Result<DataSubjectExport> result)        → void
     .SetErasureResult(string subjectId, Result<DataSubjectErasureReceipt> result) → void
-    ExportDataAsync(string subjectId, ct = default)                             → Task<Result<DataSubjectExportBundle>>
-    RequestErasureAsync(string subjectId, ct = default)                         → Task<Result<DataSubjectErasureReceipt>>
-    NOTE: Records every call (subjectId + timestamp via the injected IClock) into two separate lists;
-          defaults to a synthetic success, supporting BOTH success and failure outcomes per this
-          phase's own acceptance criterion.
+    ExportAsync(DataSubjectRequest request, ct = default)                       → Task<Result<DataSubjectExport>>
+    EraseAsync(DataSubjectRequest request, ct = default)                        → Task<Result<DataSubjectErasureReceipt>>
+    .ShouldHaveExported(subjectId) / .ShouldHaveErased(subjectId)
+    NOTE (P-554): Follows the handler contract: an unconfigured subject gets an empty export and a
+          complete receipt with zero counts; a repeated RequestId returns the first outcome. Records
+          every request, including repeats.
 
 PiiMaskingAssertions  (static class)
     .ShouldBeMasked(string? original, string masked, Func<string?, string> maskingFunction)  → void

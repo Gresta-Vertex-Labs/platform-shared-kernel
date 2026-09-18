@@ -12,59 +12,57 @@ using SharedKernel.Testing.Clocks;
 namespace SharedKernel.Testing.DataPrivacy;
 
 /// <summary>
-/// In-memory test double for <see cref="IDataSubjectRequestHandler"/>. Records every
-/// <see cref="ExportDataAsync"/>/<see cref="RequestErasureAsync"/> call for later assertion,
-/// returning a caller-configurable per-<c>subjectId</c> outcome.
+/// In-memory test double for <see cref="IDataSubjectRequestHandler"/>. Records every request and
+/// returns a configurable outcome per subject.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Defaults to a synthetic success for both operations — zero-configuration by default, mirroring
-/// <c>FakeUserContext</c>'s "most test setups need zero configuration" convention — while
-/// supporting BOTH success and failure outcomes per call via <see cref="SetExportResult"/>/
-/// <see cref="SetErasureResult"/>.
+/// Unconfigured subjects get what the contract prescribes for a subject the service knows nothing
+/// about: an empty export, and a receipt with nothing erased and nothing retained. Like a real
+/// handler, it returns the first outcome again when a <see cref="DataSubjectRequest.RequestId"/> is repeated.
 /// </para>
 /// <para>
-/// Timestamps are stamped via an injected <see cref="IClock"/> (defaulting to a fresh
-/// <see cref="FakeClock"/> for zero-config convenience), composable with a caller-supplied
-/// <see cref="FakeClock"/> the same way every other clock-aware fake in this package is.
+/// Timestamps come from the injected <see cref="IClock"/>, a fresh <see cref="FakeClock"/> by default.
 /// </para>
 /// </remarks>
 public sealed class RecordingDataSubjectRequestHandler : IDataSubjectRequestHandler
 {
     private readonly IClock _clock;
-    private readonly ConcurrentQueue<string> _exportRequests = new();
-    private readonly ConcurrentQueue<string> _erasureRequests = new();
-    private readonly ConcurrentDictionary<string, SharedKernel.Primitives.Results.Result<DataSubjectExportBundle>> _exportResults = new();
+    private readonly string _source;
+    private readonly ConcurrentQueue<DataSubjectRequest> _exportRequests = new();
+    private readonly ConcurrentQueue<DataSubjectRequest> _erasureRequests = new();
+    private readonly ConcurrentDictionary<string, SharedKernel.Primitives.Results.Result<DataSubjectExport>> _exportResults = new();
     private readonly ConcurrentDictionary<string, SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt>> _erasureResults = new();
+    private readonly ConcurrentDictionary<string, SharedKernel.Primitives.Results.Result<DataSubjectExport>> _completedExports = new();
+    private readonly ConcurrentDictionary<string, SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt>> _completedErasures = new();
 
-    /// <summary>Initialises a new <see cref="RecordingDataSubjectRequestHandler"/>.</summary>
-    /// <param name="clock">
-    /// The clock to stamp <see cref="DataSubjectExportBundle.ExportedAtUtc"/>/
-    /// <see cref="DataSubjectErasureReceipt.ErasedAtUtc"/> from. Defaults to a fresh
-    /// <see cref="FakeClock"/> when omitted.
-    /// </param>
-    public RecordingDataSubjectRequestHandler(IClock? clock = null) => _clock = clock ?? new FakeClock();
+    /// <summary>Initializes a new instance of the <see cref="RecordingDataSubjectRequestHandler"/> class.</summary>
+    /// <param name="clock">The clock for export and completion times; a fresh <see cref="FakeClock"/> when omitted.</param>
+    /// <param name="source">The service name written to every export and receipt.</param>
+    public RecordingDataSubjectRequestHandler(IClock? clock = null, string source = "test-service")
+    {
+        _clock = clock ?? new FakeClock();
+        _source = source;
+    }
 
-    /// <summary>Every <c>subjectId</c> recorded via <see cref="ExportDataAsync"/>, in call order.</summary>
-    public IReadOnlyList<string> ExportRequests => [.. _exportRequests];
+    /// <summary>Gets every export request, in call order, including repeats.</summary>
+    public IReadOnlyList<DataSubjectRequest> ExportRequests => [.. _exportRequests];
 
-    /// <summary>Every <c>subjectId</c> recorded via <see cref="RequestErasureAsync"/>, in call order.</summary>
-    public IReadOnlyList<string> ErasureRequests => [.. _erasureRequests];
+    /// <summary>Gets every erasure request, in call order, including repeats.</summary>
+    public IReadOnlyList<DataSubjectRequest> ErasureRequests => [.. _erasureRequests];
 
-    /// <summary>
-    /// Configures the result <see cref="ExportDataAsync"/> returns for <paramref name="subjectId"/>,
-    /// overriding the default synthetic success.
-    /// </summary>
-    public void SetExportResult(string subjectId, SharedKernel.Primitives.Results.Result<DataSubjectExportBundle> result)
+    /// <summary>Sets the outcome <see cref="ExportAsync"/> returns for <paramref name="subjectId"/>.</summary>
+    /// <param name="subjectId">The subject.</param>
+    /// <param name="result">The outcome.</param>
+    public void SetExportResult(string subjectId, SharedKernel.Primitives.Results.Result<DataSubjectExport> result)
     {
         ArgumentNullException.ThrowIfNull(subjectId);
         _exportResults[subjectId] = result;
     }
 
-    /// <summary>
-    /// Configures the result <see cref="RequestErasureAsync"/> returns for
-    /// <paramref name="subjectId"/>, overriding the default synthetic success.
-    /// </summary>
+    /// <summary>Sets the outcome <see cref="EraseAsync"/> returns for <paramref name="subjectId"/>.</summary>
+    /// <param name="subjectId">The subject.</param>
+    /// <param name="result">The outcome.</param>
     public void SetErasureResult(string subjectId, SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt> result)
     {
         ArgumentNullException.ThrowIfNull(subjectId);
@@ -72,47 +70,48 @@ public sealed class RecordingDataSubjectRequestHandler : IDataSubjectRequestHand
     }
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default)
+    public Task<SharedKernel.Primitives.Results.Result<DataSubjectExport>> ExportAsync(DataSubjectRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(subjectId);
-        _exportRequests.Enqueue(subjectId);
+        ArgumentNullException.ThrowIfNull(request);
+        _exportRequests.Enqueue(request);
 
-        var result = _exportResults.TryGetValue(subjectId, out var configured)
+        var result = _completedExports.GetOrAdd(request.RequestId, _ => _exportResults.TryGetValue(request.SubjectId, out var configured)
             ? configured
-            : SharedKernel.Primitives.Results.Result<DataSubjectExportBundle>.Success(
-                new DataSubjectExportBundle(subjectId, _clock.UtcNow, new Dictionary<string, object?>()));
+            : new DataSubjectExport(request, _source, _clock.UtcNow, []));
 
         return Task.FromResult(result);
     }
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default)
+    public Task<SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt>> EraseAsync(DataSubjectRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(subjectId);
-        _erasureRequests.Enqueue(subjectId);
+        ArgumentNullException.ThrowIfNull(request);
+        _erasureRequests.Enqueue(request);
 
-        var result = _erasureResults.TryGetValue(subjectId, out var configured)
+        var result = _completedErasures.GetOrAdd(request.RequestId, _ => _erasureResults.TryGetValue(request.SubjectId, out var configured)
             ? configured
-            : SharedKernel.Primitives.Results.Result<DataSubjectErasureReceipt>.Success(new DataSubjectErasureReceipt(subjectId, _clock.UtcNow, 0));
+            : new DataSubjectErasureReceipt(request, _source, _clock.UtcNow, 0, 0, []));
 
         return Task.FromResult(result);
     }
 
-    /// <summary>Asserts that <see cref="ExportDataAsync"/> was called for <paramref name="subjectId"/>.</summary>
-    /// <exception cref="InvalidOperationException">No matching export request was recorded.</exception>
+    /// <summary>Asserts that <see cref="ExportAsync"/> was called for <paramref name="subjectId"/>.</summary>
+    /// <param name="subjectId">The subject.</param>
+    /// <exception cref="InvalidOperationException">No export request was recorded for the subject.</exception>
     public void ShouldHaveExported(string subjectId)
     {
-        if (!_exportRequests.Contains(subjectId))
+        if (!_exportRequests.Any(r => r.SubjectId == subjectId))
         {
             throw new InvalidOperationException($"Expected an export request for subject '{subjectId}' but none was found.");
         }
     }
 
-    /// <summary>Asserts that <see cref="RequestErasureAsync"/> was called for <paramref name="subjectId"/>.</summary>
-    /// <exception cref="InvalidOperationException">No matching erasure request was recorded.</exception>
+    /// <summary>Asserts that <see cref="EraseAsync"/> was called for <paramref name="subjectId"/>.</summary>
+    /// <param name="subjectId">The subject.</param>
+    /// <exception cref="InvalidOperationException">No erasure request was recorded for the subject.</exception>
     public void ShouldHaveErased(string subjectId)
     {
-        if (!_erasureRequests.Contains(subjectId))
+        if (!_erasureRequests.Any(r => r.SubjectId == subjectId))
         {
             throw new InvalidOperationException($"Expected an erasure request for subject '{subjectId}' but none was found.");
         }

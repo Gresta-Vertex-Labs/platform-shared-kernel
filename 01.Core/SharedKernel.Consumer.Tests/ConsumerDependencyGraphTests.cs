@@ -1152,9 +1152,9 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
-    public void DataPrivacy_PiiMasking_Pan_KeepsOnlyLastFourDigits_ResolvedFromPackage()
+    public void DataPrivacy_PiiMasking_CardNumber_KeepsFirstSixAndLastFour_ResolvedFromPackage()
     {
-        Assert.Equal("****-****-****-1111", PiiMasking.Pan("4111-1111-1111-1111"));
+        Assert.Equal("4111-11**-****-1111", PiiMasking.CardNumber("4111-1111-1111-1111"));
     }
 
     [Fact]
@@ -1169,31 +1169,29 @@ public sealed class ConsumerDependencyGraphTests
         System.Reflection.PropertyInfo property =
             typeof(ConsumerClassifiedProfile).GetProperty(nameof(ConsumerClassifiedProfile.NationalId))!;
 
-        var classification = (DataClassificationAttribute?)Attribute.GetCustomAttribute(
-            property, typeof(DataClassificationAttribute));
-        var category = (SensitiveDataCategoryAttribute?)Attribute.GetCustomAttribute(
-            property, typeof(SensitiveDataCategoryAttribute));
+        var attribute = (Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute?)Attribute.GetCustomAttribute(
+            property, typeof(Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute));
 
-        Assert.Equal(DataClassification.Restricted, classification!.Classification);
-        Assert.Equal(SensitiveDataCategory.Pii, category!.Category);
+        Assert.Equal(PrivacyTaxonomy.NationalId, attribute!.Classification);
     }
 
     [Fact]
     public async Task DataPrivacy_IDataSubjectRequestHandler_ExportAndErasure_ResolvedFromPackage()
     {
         IDataSubjectRequestHandler handler = new ConsumerDataSubjectRequestHandler();
+        var request = new DataSubjectRequest("req-1", "subject-1", DateTimeOffset.UtcNow);
 
-        Result<DataSubjectExportBundle> export = await handler.ExportDataAsync("subject-1");
-        Result<DataSubjectErasureReceipt> erasure = await handler.RequestErasureAsync("subject-1");
+        Result<DataSubjectExport> export = await handler.ExportAsync(request);
+        Result<DataSubjectErasureReceipt> erasure = await handler.EraseAsync(request);
 
         Assert.True(export.IsSuccess);
-        Assert.Equal("subject-1", export.Value.SubjectId);
+        Assert.Equal("subject-1", export.Value.Request.SubjectId);
         Assert.True(erasure.IsSuccess);
-        Assert.Equal(1, erasure.Value.RecordsAffected);
+        Assert.Equal(1, erasure.Value.ErasedRecords);
     }
 
     [Fact]
-    public void DataPrivacy_NuspecDeclaresOnlyPrimitivesAsDependency_NoThirdPartyNuGetPackage_ResolvedFromPackage()
+    public void DataPrivacy_NuspecDeclaresPrimitivesAndComplianceAbstractionsOnly_ResolvedFromPackage()
     {
         string nupkgsDirectory = FindNupkgsDirectory();
 
@@ -1205,9 +1203,8 @@ public sealed class ConsumerDependencyGraphTests
         List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
             .Select(d => d.Attribute("id")!.Value)];
 
-        // The one and only dependency this package's architectural claim rests on.
-        Assert.Single(dependencyIds);
-        Assert.Contains("SharedKernel.Primitives", dependencyIds);
+        // SharedKernel.Primitives plus Microsoft's first-party compliance abstractions (P-554), nothing else.
+        Assert.Equal(["Microsoft.Extensions.Compliance.Abstractions", "SharedKernel.Primitives"], dependencyIds.Order());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1417,35 +1414,31 @@ internal sealed class ConsumerOptions
 }
 
 /// <summary>
-/// Minimal consumer-supplied type carrying both DataPrivacy classification attributes at once,
-/// proving <see cref="DataClassificationAttribute"/>/<see cref="SensitiveDataCategoryAttribute"/>
-/// resolve and apply correctly against the packed SharedKernel.DataPrivacy assembly.
+/// Minimal consumer-supplied type carrying a DataPrivacy classification attribute, proving it
+/// resolves and applies correctly against the packed SharedKernel.DataPrivacy assembly.
 /// </summary>
 internal sealed class ConsumerClassifiedProfile
 {
-    [DataClassification(DataClassification.Restricted)]
-    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
+    [NationalIdData]
     public string NationalId { get; init; } = string.Empty;
 }
 
 /// <summary>
 /// Minimal in-memory <see cref="IDataSubjectRequestHandler"/> for consumer-verification purposes
-/// only, proving the contract shape (and <see cref="DataSubjectExportBundle"/>/
+/// only, proving the contract shape (and <see cref="DataSubjectExport"/>/
 /// <see cref="DataSubjectErasureReceipt"/>) resolves against the packed SharedKernel.DataPrivacy
 /// assembly. A real implementation acts against a service's own persisted data.
 /// </summary>
 internal sealed class ConsumerDataSubjectRequestHandler : IDataSubjectRequestHandler
 {
-    public Task<Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default) =>
-        Task.FromResult(Result<DataSubjectExportBundle>.Success(
-            new DataSubjectExportBundle(subjectId, DateTimeOffset.UtcNow, new Dictionary<string, object?>
-            {
-                ["email"] = "consumer@example.com",
-            })));
+    public Task<Result<DataSubjectExport>> ExportAsync(DataSubjectRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result<DataSubjectExport>.Success(
+            new DataSubjectExport(request, "consumer", DateTimeOffset.UtcNow,
+                [new DataSubjectRecord("profile", System.Text.Json.JsonDocument.Parse("""{"email":"consumer@example.com"}""").RootElement)])));
 
-    public Task<Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default) =>
+    public Task<Result<DataSubjectErasureReceipt>> EraseAsync(DataSubjectRequest request, CancellationToken cancellationToken = default) =>
         Task.FromResult(Result<DataSubjectErasureReceipt>.Success(
-            new DataSubjectErasureReceipt(subjectId, DateTimeOffset.UtcNow, RecordsAffected: 1)));
+            new DataSubjectErasureReceipt(request, "consumer", DateTimeOffset.UtcNow, ErasedRecords: 1, AnonymizedRecords: 0, Retained: [])));
 }
 
 /// <summary>
