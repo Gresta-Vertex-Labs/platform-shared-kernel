@@ -182,7 +182,7 @@ Primitives, domain modelling and error handling.
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [SK0001](#sk0001-directdatetimeusage) | `DateTime` / `DateTimeOffset` `.Now` or `.UtcNow` read directly | Inject `IClock` |
-| [SK0002](#sk0002-directmicrosoftfeaturemanagerusage) | `Microsoft.FeatureManagement.IFeatureManager` referenced directly | Use `SharedKernel.FeatureManagement.Abstractions.IFeatureManager` |
+| [SK0002](#sk0002-directmicrosoftfeaturemanagerusage) | A Microsoft feature-management evaluator interface, or `OpenFeature.Api.Instance`, referenced directly | Inject `OpenFeature.IFeatureClient` and evaluate a `SharedKernel.FeatureManagement.FeatureFlag<T>` |
 | [SK0003](#sk0003-rawexceptionthrow) | `throw new Exception(...)` or `ApplicationException` | Return a `Result` failure, or throw a typed SharedKernel exception |
 | [SK0004](#sk0004-nullerrorreturn) | `null` returned where an `Error` is expected | Return `Error.None` |
 | [SK0005](#sk0005-stringonlyexceptionconstructor) | A SharedKernel exception constructed from a message string only | Pass an `Error` |
@@ -336,24 +336,28 @@ public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 
 **Category:** Usage · **Default severity:** Warning
 
-Depend on SharedKernel's `IFeatureManager` abstraction, not on `Microsoft.FeatureManagement.IFeatureManager`.
+Depend on OpenFeature's `IFeatureClient`, not on a Microsoft feature-management evaluator interface or the process-global OpenFeature `Api.Instance`.
+
+> Redesigned for P-555 (2026-09-18): `SharedKernel.FeatureManagement`'s own `IFeatureManager`/`FeatureDefinition`/`FeatureVariant` abstractions were deleted in favor of the CNCF-standard OpenFeature evaluator. This rule now points at that redesign.
 
 #### Why it matters
 
-SharedKernel wraps the Microsoft feature-management library behind its own `IFeatureManager` (namespace `SharedKernel.FeatureManagement.Abstractions`). Services that inject the Microsoft interface directly take a hard dependency on that library's API. A breaking change or a provider swap then has to be fixed in every service instead of in one adapter.
+`SharedKernel.FeatureManagement` registers OpenFeature's `IFeatureClient` (scoped) via `AddSharedKernelFeatureManagement(configuration)`, backed internally by `Microsoft.FeatureManagement`. Two ways of reaching past that seam are both wrong, for different reasons:
+
+- Injecting a Microsoft evaluator interface directly (`IFeatureManager`, `IVariantFeatureManager`, `IFeatureManagerSnapshot`, `IVariantFeatureManagerSnapshot`) takes a hard dependency on that library's API and skips the ambient user/tenant targeting, per-request evaluation consistency, fail-safe defaults, and telemetry the SharedKernel wiring adds.
+- Reading `OpenFeature.Api.Instance` — the process-global OpenFeature API — is not merely redundant, it is silently wrong: `AddSharedKernelFeatureManagement` registers an **isolated** `Api` instance in DI (`OpenFeature.Hosting`'s `CreateIsolated()`), so the global singleton has no provider attached. A client obtained from `Api.Instance` reports the OpenFeature "No-op Provider" and every evaluation quietly returns the caller-supplied default — no exception, no log.
 
 #### What it flags
 
-- A parameter declared as `Microsoft.FeatureManagement.IFeatureManager`. This covers method, constructor, primary constructor, and explicitly typed lambda parameters.
-- A field declared as that type.
-- A property declared as that type.
-- The comparison uses the fully qualified resolved type name. If the type cannot be resolved at all (for example, a missing package reference), any declaration whose simple type name is `IFeatureManager` is flagged instead.
+- A parameter, field, or property declared as `Microsoft.FeatureManagement.IFeatureManager`, `IVariantFeatureManager`, `IFeatureManagerSnapshot`, or `IVariantFeatureManagerSnapshot`. This covers method, constructor, primary constructor, and explicitly typed lambda parameters.
+- Any reference to the static property `OpenFeature.Api.Instance`, written bare (`Api.Instance`, after `using OpenFeature;`) or fully qualified (`OpenFeature.Api.Instance`) — both resolve to the same property symbol.
+- The declaration-shape comparison uses the fully qualified resolved type name. If the type cannot be resolved at all (for example, a missing package reference), any declaration whose simple type name matches one of the four forbidden interfaces is flagged instead. The `Api.Instance` shape has no such fallback — an unresolved member access is never flagged.
 
 #### What it does not flag
 
-- `SharedKernel.FeatureManagement.Abstractions.IFeatureManager`.
-- Other Microsoft feature-management interfaces, such as `IFeatureManagerSnapshot` or `IVariantFeatureManager`.
-- The Microsoft interface used as a generic type argument (`Lazy<IFeatureManager>`, `GetRequiredService<IFeatureManager>()`), a local variable, or a method return type.
+- `OpenFeature.IFeatureClient`.
+- The Microsoft interface used as a generic type argument, a local variable, or a method return type (the declaration-shape check only covers parameters, fields, and properties).
+- Code compiled inside `SharedKernel.FeatureManagement` itself — its internal OpenFeature provider adapter legitimately implements against `Microsoft.FeatureManagement.IVariantFeatureManager` to bridge it into OpenFeature.
 
 #### Example
 
@@ -368,30 +372,47 @@ public sealed class CheckoutService(IFeatureManager features)
 ```
 
 ```csharp
-// Compliant
-using SharedKernel.FeatureManagement.Abstractions;
+// Flagged: SK0002 — the isolated DI registration means this silently returns the default
+using OpenFeature;
 
-public sealed class CheckoutService(IFeatureManager features)
+public sealed class CheckoutService
 {
+    public Task<bool> IsExpressCheckoutEnabled() =>
+        Api.Instance.GetClient().GetBooleanValueAsync("ExpressCheckout", false);
+}
+```
+
+```csharp
+// Compliant
+using OpenFeature;
+using SharedKernel.FeatureManagement;
+
+public sealed class CheckoutService(IFeatureClient features)
+{
+    public static readonly FeatureFlag<bool> ExpressCheckout = FeatureFlag.Boolean("ExpressCheckout");
+
     public ValueTask<bool> IsExpressCheckoutEnabled(CancellationToken ct) =>
-        features.IsEnabledAsync("ExpressCheckout", ct);
+        features.IsEnabledAsync(ExpressCheckout, ct);
 }
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0002: Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly — use 'SharedKernel.FeatureManagement.Abstractions.IFeatureManager' instead
+warning SK0002: Do not reference 'Microsoft.FeatureManagement.IFeatureManager' directly. Bypassing IFeatureClient skips the ambient user/tenant targeting, per-request evaluation consistency, fail-safe defaults and telemetry that SharedKernel.FeatureManagement adds. Inject OpenFeature's 'OpenFeature.IFeatureClient' and evaluate a 'SharedKernel.FeatureManagement.FeatureFlag<T>' instead.
+```
+
+```text
+warning SK0002: Do not reference 'OpenFeature.Api.Instance' directly. AddSharedKernelFeatureManagement registers an isolated OpenFeature Api instance in DI, so Api.Instance has no provider attached and silently returns every flag's default. Inject OpenFeature's 'OpenFeature.IFeatureClient' and evaluate a 'SharedKernel.FeatureManagement.FeatureFlag<T>' instead.
 ```
 
 #### Suppressing
 
-A custom adapter that implements SharedKernel's `IFeatureManager` on top of the Microsoft library has to reference the Microsoft interface. Suppress it there only:
+`SharedKernel.FeatureManagement`'s own internal OpenFeature provider adapter is exempt automatically (its compiling assembly is `SharedKernel.FeatureManagement`). Anywhere else, a genuinely justified bridge to the Microsoft interface should be narrow and documented:
 
 ```csharp
-#pragma warning disable SK0002 // adapter: bridges Microsoft's manager to the SharedKernel abstraction
-public sealed class TenantFeatureManager(Microsoft.FeatureManagement.IFeatureManager inner)
-    : SharedKernel.FeatureManagement.Abstractions.IFeatureManager
+#pragma warning disable SK0002 // adapter: bridges Microsoft's evaluator into a custom OpenFeature provider
+public sealed class CustomFeatureProvider(Microsoft.FeatureManagement.IVariantFeatureManager inner)
 #pragma warning restore SK0002
 {
     // ...

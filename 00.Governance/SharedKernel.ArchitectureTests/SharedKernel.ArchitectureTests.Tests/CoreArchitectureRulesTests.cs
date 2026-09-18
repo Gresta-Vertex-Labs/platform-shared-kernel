@@ -279,7 +279,7 @@ public class CoreArchitectureRulesTests
             typeof(SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions).Assembly,
             typeof(SharedKernel.Cryptography.Argon2.Argon2CryptographyBuilderExtensions).Assembly,
             typeof(SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions).Assembly,
-            typeof(SharedKernel.FeatureManagement.Extensions.FeatureManagementExtensions).Assembly,
+            typeof(SharedKernel.FeatureManagement.FeatureFlag).Assembly,
             typeof(SharedKernel.Localization.LocalizationServiceCollectionExtensions).Assembly,
             typeof(SharedKernel.Validation.ValidationServiceCollectionExtensions).Assembly,
         };

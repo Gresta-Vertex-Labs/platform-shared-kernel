@@ -53,9 +53,23 @@ SK0001  DirectDateTimeUsage
 SK0002  DirectMicrosoftFeatureManagerUsage
     Category  : Usage
     Severity  : Warning
-    Trigger   : Reference to Microsoft.FeatureManagement.IFeatureManager in
-                constructor parameters, field declarations, or method signatures
-    Fix       : Inject SharedKernel.FeatureManagement.IFeatureManager instead
+    Trigger   : (redesigned P-555, the SharedKernel.FeatureManagement OpenFeature migration —
+                the package's own IFeatureManager/FeatureDefinition/FeatureVariant abstractions
+                were deleted, so this rule no longer points at them) Two independent shapes:
+                (1) a constructor/method parameter, field, or property declared as one of the
+                four Microsoft evaluator interfaces — Microsoft.FeatureManagement.IFeatureManager,
+                IVariantFeatureManager, IFeatureManagerSnapshot, or IVariantFeatureManagerSnapshot;
+                (2) any reference to the static property OpenFeature.Api.Instance (the process-
+                global OpenFeature API) — AddSharedKernelFeatureManagement registers an ISOLATED
+                Api instance in DI (OpenFeature.Hosting's CreateIsolated()), so Api.Instance has
+                no provider and silently returns every flag's default
+    Fix       : Inject OpenFeature's IFeatureClient (registered scoped by
+                AddSharedKernelFeatureManagement) and evaluate a typed
+                SharedKernel.FeatureManagement.FeatureFlag<T> instead
+    Exempt    : Compilations whose AssemblyName is exactly SharedKernel.FeatureManagement — the
+                package's own internal OpenFeature provider adapter
+                (Internal/MicrosoftFeatureManagementProvider.cs) legitimately bridges
+                Microsoft.FeatureManagement.IVariantFeatureManager into OpenFeature
 
 SK0003  RawExceptionThrow
     Category  : Design

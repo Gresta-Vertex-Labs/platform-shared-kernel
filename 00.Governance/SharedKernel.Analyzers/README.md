@@ -119,7 +119,7 @@ Primitives, domain modelling and error handling.
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [`SK0001`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0001-directdatetimeusage) | `DateTime` or `DateTimeOffset` `.Now`/`.UtcNow` accessed directly | Inject `IClock` |
-| [`SK0002`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0002-directmicrosoftfeaturemanagerusage) | `Microsoft.FeatureManagement.IFeatureManager` referenced directly | Use `SharedKernel.FeatureManagement.IFeatureManager` |
+| [`SK0002`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0002-directmicrosoftfeaturemanagerusage) | A Microsoft feature-management evaluator interface, or `OpenFeature.Api.Instance`, referenced directly | Inject `OpenFeature.IFeatureClient` and evaluate a `SharedKernel.FeatureManagement.FeatureFlag<T>` |
 | [`SK0003`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0003-rawexceptionthrow) | `throw new Exception(...)` or `ApplicationException` | Return `Result<T>.Failure(error)`, or throw a typed SharedKernel exception carrying an `Error` |
 | [`SK0004`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0004-nullerrorreturn) | `null` returned where an `Error` is expected | Return `Error.None` |
 | [`SK0005`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0005-stringonlyexceptionconstructor) | A `SharedKernelException` subclass constructed from a string only | Pass an `Error` payload |
