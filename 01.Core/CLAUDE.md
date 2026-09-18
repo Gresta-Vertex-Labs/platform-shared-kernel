@@ -22,8 +22,8 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
 | `SharedKernel.Cryptography` *(P-545 pre-publish redesign)* | AES-256-GCM encryption (async and synchronous services over async/sync key providers), rotation helpers, envelope encryption, HKDF subkeys, algorithm-carrying RSA/ECDSA signing, HMAC-SHA256, PHC one-way hashing (PBKDF2, pepper, rehash-on-verify), SHA-256 content hashing, fixed-time comparison, secure random, RFC 4226/6238 HOTP/TOTP with time-step replay protection and recovery codes. Public API tracked. | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, gzip keyed alternate; framed payloads carry the algorithm and uncompressed length so truncation fails instead of silently returning a partial result, with a raw mode for external interop; decompression bounded by `MaxDecompressedSize` against bombs (P-551) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
-| `SharedKernel.Validation` *(shipped, P-443/WO-067)* | Culture-independent format validators: IBAN, BIC, PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164, VAT baseline, pluggable per-country `INationalIdValidator` registry (TCKN default); dual-mode standalone `Result`/bool + `Guard.Against.*` extensions | `SharedKernel.Primitives`, `SharedKernel.Core` (re-pointed from the retired `SharedKernel.Guards`, P-506/WO-082) |
-| `SharedKernel.Validation.FluentValidation` *(shipped, P-444/WO-067)* | `IRuleBuilder<T,string>` rule adapter for every `SharedKernel.Validation` validator — the domain's only package with a third-party NuGet dependency | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
+| `SharedKernel.Validation` *(P-443; redesigned before first publish, P-553)* | Validated value types: `Iban` (89 SWIFT registry countries with BBAN structure), `Bic`, `CardNumber` (Luhn, 10 networks incl. Troy, masked `ToString`), `VatNumber` (EU27, XI, GB, CH, NO, TR VKN — format and check digit), `NationalId` (per-country registry, TCKN built in, masked), `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`; `IValidatedValue<T>` (`Create` → `Result<T>`, `IParsable`, JSON converter); one error code per failure with a `LocalizedMessage` each, Turkish bundled; `Guard.Against.Invalid<T>` | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Localization` |
+| `SharedKernel.Validation.FluentValidation` *(P-444; redesigned by P-553)* | `MustBeValid*()` rules for every identifier type plus `MustBeValid<T, TValue>()`; each failure carries the specific code, the error's values and the field path as placeholders, and never the rejected value; null passes | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
 | `SharedKernel.Cryptography.KeyVault.Azure` *(P-545 pre-publish redesign)* | Azure Key Vault encryption keys (data keys as secret versions, master-key wrap, envelope provider, readiness probe) and signing keys (remote async sign, local verify). Public API tracked. | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Security.KeyVault.Secrets`, `Azure.Identity` |
 | `SharedKernel.DataPrivacy` *(shipped, P-474/WO-076)* | `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` pure helpers, `IDataSubjectRequestHandler` | `SharedKernel.Primitives` |
 | `SharedKernel.Localization` *(P-482; redesigned before first publish, P-552)* | `LocalizedMessage.Define<T1…T4>` typed message definitions whose `ToError` carries named arguments on `Error.MessageArguments`; `MessageTemplate` named placeholders with culture-aware formats; immutable `InMemoryLocalizationCatalog` built and validated by `LocalizationCatalogBuilder` from code, JSON files, directories or embedded JSON; `StringLocalizerLocalizationCatalog` over `.resx`; `catalog.Localize(error, culture)` falling back to `Error.Message` | `SharedKernel.Primitives`, `Microsoft.Extensions.Localization.Abstractions` (NuGet) |
@@ -728,118 +728,56 @@ AddSharedKernelCompression(IConfiguration configuration)
       RawGZipPayloadCompressorKey ("GZip.Raw"). A consumer registration made BEFORE this call wins.
 ```
 
-### `SharedKernel.Validation` — public surface (P-443/WO-067, SHIPPED — eighth published package)
+### `SharedKernel.Validation` — public surface (P-443, redesigned before first publish by P-553)
 
 ```
-IbanValidator / BicValidator / PanValidator / IsoCurrencyValidator / IsoCountryValidator / E164PhoneValidator / VatValidator  (static classes)
-    IsValid(string? value)                                      → bool
-    Validate(string? value)                                     → Result   (non-generic — format checks carry no typed value payload)
-    — IbanValidator uses mod-97 + a per-country length table (not a fixed-length assumption)
-    — PanValidator additionally exposes DetectNetwork(string value) → CardNetwork
-    — VatValidator is a baseline cross-jurisdiction format check — XML docs must state VAT format varies
-      enormously per country and this is not an exhaustive per-country validator
-    — (P-521/WO-083, SHIPPED) IbanValidator/IsoCurrencyValidator/IsoCountryValidator each expose a documented
-      RegistryAsOf as-of/registry-version public constant ("Reviewed WO-067/P-443, 2026-09-02" — an honest
-      last-reviewed marker, not a formal ISO/SWIFT registry version number, since none of ISO 13616/4217/3166
-      publish one in that shape); IbanValidator.Validate/.IsValid gained an optional trailing
-      allowFallbackForUnknownCountry parameter (default false, unchanged behavior) that, when explicitly true,
-      falls back to mod-97-only validation (still bounded by ISO 13616's general 34-character length and
-      alphanumeric-BBAN shape) for a country the 78-entry table does not recognize instead of hard-rejecting
-      it — trading away only country-specific length checking, never checksum correctness. The `.FluentValidation`
-      adapter's matching `.MustBeValidIban(allowFallbackForUnknownCountry:)` overload remains out of scope
-
-LeiValidator / AbaRoutingNumberValidator / SepaCreditorIdentifierValidator  (static classes)
-    — (P-525/WO-083, design-locked, implementation pending) the identical dual-mode IsValid/Validate + Guard.Against.*
-      shape as every validator above: LeiValidator (ISO 17442 mod-97-10 over a 20-character alphanumeric
-      identifier), AbaRoutingNumberValidator (9-digit US routing number, (3,7,1)-weighted checksum),
-      SepaCreditorIdentifierValidator (country + check digits + business code + national identifier, an
-      IbanValidator-style rearrange-and-mod-97 approach)
-
-CardNetwork  (plain enum — not a SmartEnum, since BIN-range detection carries no per-value behavior beyond the name)
-    Unknown | Visa | Mastercard | Amex | Discover
-
-INationalIdValidator
-    .CountryCode                                                → string   (ISO 3166 alpha-2)
-    IsValid(string idNumber)                                    → bool
-
-INationalIdValidatorRegistry
-    TryGetValidator(string countryCode, out INationalIdValidator? validator) → bool
-
-NationalIdValidatorRegistry  (sealed class, implements INationalIdValidatorRegistry)
-    — ConcurrentDictionary-backed, thread-safe, pre-seeded with TckNationalIdValidator at "TR"
-
-TckNationalIdValidator  (sealed class, implements INationalIdValidator)
-    — Turkey's 11-digit TCKN checksum algorithm; the built-in default given this platform's primary market
-
-ValidationErrorCodes  (static class — package-local nested string-constant catalog, mirrors ErrorCodes's shape
-    but NEVER added to SharedKernel.Primitives.ErrorCodes)
-    ValidationErrorCodes.Iban.InvalidFormat / .InvalidCheckDigit / .InvalidLength
-    ValidationErrorCodes.Bic.InvalidFormat
-    ValidationErrorCodes.Pan.FailedLuhnCheck / .UnknownNetwork
-    ValidationErrorCodes.Currency.UnknownCode
-    ValidationErrorCodes.Country.UnknownCode
-    ValidationErrorCodes.Phone.InvalidFormat
-    ValidationErrorCodes.Vat.InvalidFormat
-    ValidationErrorCodes.NationalId.UnknownCountry / .InvalidChecksum
-    — (P-525/WO-083, design-locked, implementation pending) gains ValidationErrorCodes.Lei / .AbaRoutingNumber /
-      .SepaCreditorIdentifier nested classes, following this exact same convention
-
-GuardValidationExtensions  (static class — Guard.Against.* extensions on IGuardClause, functional path only;
-    Guard.Throw.* parity is intentionally out of scope — the Guard.Throw nested class (now living in
-    SharedKernel.Core, under the unchanged SharedKernel.Guards namespace, since P-505/WO-082) is hardcoded
-    and cannot be extended from an outside package)
-    InvalidIban(this IGuardClause, string? value)               → Error?
-    InvalidBic(this IGuardClause, string? value)                → Error?
-    InvalidPan(this IGuardClause, string? value)                → Error?
-    InvalidCurrencyCode(this IGuardClause, string? value)       → Error?
-    InvalidCountryCode(this IGuardClause, string? value)        → Error?
-    InvalidPhoneNumber(this IGuardClause, string? value)        → Error?
-    InvalidVatNumber(this IGuardClause, string? value)          → Error?
-    InvalidNationalId(this IGuardClause, string? value, string countryCode, INationalIdValidatorRegistry registry) → Error?
-    — the one guard requiring an explicit registry instance parameter, since national-ID validation is
-      registry-based rather than compile-time-generic like InvalidSmartEnum
-
-AddSharedKernelValidation()
-    → registers INationalIdValidatorRegistry as a singleton (pre-seeded default); exposes a chained
-      .AddNationalIdValidator<TValidator>() extension for a consuming service to register additional countries
+Value types (readonly record struct, all IValidatedValue<T> except NationalId; namespace SharedKernel.Validation):
+    Iban               Value, CountryCode, CheckDigits, Bban, ToPrintString(); Create(v, allowUnregisteredCountry)
+    Bic                Value, BankCode, CountryCode, LocationCode, BranchCode (null for 8 chars), IsHeadOffice
+    CardNumber         Value (full PAN), Network, Iin, Last4, Masked; ToString() = Masked; Create(v, requireKnownNetwork)
+    VatNumber          Value (prefix + number; CH = "CHE" + number), Prefix, Number, SupportedPrefixes;
+                       Create(string) needs the prefix; Create(CountryCode, number) accepts it without
+    NationalId         Country, Value, Masked; ToString() = Masked; Create(CountryCode, value, registry?) — no JSON converter
+    CountryCode        ISO 3166-1 alpha-2 + XK
+    CurrencyCode       active ISO 4217, identical to SharedKernel.Domain CurrencyCatalog (156 codes)
+    PhoneNumber        E.164 "+" + 7–15 digits, first not 0; spaces . - ( ) removed
+    Lei / AbaRoutingNumber / SepaCreditorId (CountryCode, BusinessCode, NationalIdentifier)
+IValidatedValue<TSelf> : IParsable<TSelf>, IEquatable<TSelf>
+    string Value; static abstract Result<TSelf> Create(string?)
+    — every type also has static IsValid(string?), Parse (throws FormatException with the message), TryParse
+ValidatedValueJsonConverter<T>  JSON string; invalid → JsonException with the message; attached via [JsonConverter]
+CardNetwork        Unknown, Visa, Mastercard, AmericanExpress, Discover, Jcb, UnionPay, DinersClub, Maestro, Mir, Troy
+INationalIdValidator            CountryCode Country; Result Validate(string number)  (number trimmed, separators removed)
+TurkishNationalIdValidator      TCKN
+NationalIdValidatorRegistry     (IEnumerable<INationalIdValidator>) — built-in TCKN first, later wins per country;
+                                Default, Countries, TryGetValidator(CountryCode, out validator)
+ValidationErrorCodes            nested per type; ONE code per distinct failure (see README table)
+ValidationMessages              one LocalizedMessage per code (+ Required = validation.required), English default text,
+                                named values; custom national ID validators reuse NationalIdInvalidFormat/InvalidCheckDigit
+ValidationLocalizationExtensions.AddValidationTranslations(this LocalizationCatalogBuilder)  — embedded Localization/tr.json
+ValidationServiceCollectionExtensions  AddSharedKernelValidation() (TryAdd registry from DI validators),
+                                       AddNationalIdValidator<T>() (TryAddEnumerable)
+SharedKernel.Guards.ValidationGuardExtensions
+    Guard.Against.Invalid<T>(value, [CallerArgumentExpression] paramName) → Error?   (blank → Core NullOrWhiteSpace)
+    Guard.Against.InvalidNationalId(value, CountryCode, registry?, paramName) → Error?
+Internal: Checksums (Mod97, Luhn, LuhnCheckDigit, ISO 7064 MOD 11,10, WeightedSum), IbanRegistry (generated from SWIFT
+    release 99, 89 countries, BBAN masks), IsoData, CardNetworkTable (longest prefix + allowed length), VatRules (32
+    prefixes, algorithms per python-stdnum), Text (Compact), ValueParsing.
 ```
 
-### `SharedKernel.Validation.FluentValidation` — public surface (P-444/WO-067, SHIPPED — ninth published package, depends on P-443)
+### `SharedKernel.Validation.FluentValidation` — public surface (P-444, redesigned by P-553)
 
 ```
-ValidationRuleBuilderExtensions  (static class — IRuleBuilder<T, string> extensions)
-    MustBeValidIban<T>(this IRuleBuilder<T, string>)             → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidBic<T>(this IRuleBuilder<T, string>)              → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidPan<T>(this IRuleBuilder<T, string>)              → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidCurrencyCode<T>(this IRuleBuilder<T, string>)     → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidCountryCode<T>(this IRuleBuilder<T, string>)      → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidPhoneNumber<T>(this IRuleBuilder<T, string>)      → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidVatNumber<T>(this IRuleBuilder<T, string>)        → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidNationalId<T>(this IRuleBuilder<T, string>, Func<T, string> countryCodeSelector, INationalIdValidatorRegistry registry) → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidLei<T>(this IRuleBuilder<T, string>)               → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidAbaRoutingNumber<T>(this IRuleBuilder<T, string>)  → IRuleBuilderOptionsConditions<T, string>
-    MustBeValidSepaCreditorIdentifier<T>(this IRuleBuilder<T, string>) → IRuleBuilderOptionsConditions<T, string>
-    — (P-525/WO-083, design-locked, implementation pending) the three Lei/AbaRoutingNumber/SepaCreditorIdentifier
-      rules follow this exact same Custom(...)-based pattern
-    — the FluentValidation 11.x return type is IRuleBuilderOptionsConditions<T,TProperty>, NOT
-      IRuleBuilder<T,string>/IRuleBuilderOptions<T,string> — confirmed via a real CS0266 compiler error; the
-      input parameter type is IRuleBuilder<T,string>, but its fluent-chaining return type differs
-    — every rule is built on FluentValidation's Custom(...) extension (never Must(predicate).WithErrorCode(...)),
-      so it can inspect WHICH ValidationErrorCodes constant the underlying static validator actually produced
-      and attach that exact code to the ValidationFailure — Must+WithErrorCode can only ever attach one fixed
-      code per rule, which silently breaks parity for any validator with more than one failure code
-      (IbanValidator.Validate alone can fail with InvalidFormat/InvalidCheckDigit/InvalidLength)
-    — uses ValidationContext<T>.PropertyPath, not the deprecated PropertyName (CS0618 in FluentValidation 11.x;
-      same value, no warning)
-    — a rule built on Custom(...) does not honor a chained .WithMessage(...)/.WithErrorCode(...) afterward —
-      the message/code always come from the underlying SharedKernel.Validation validator
-    — documented composition recipe with 05.Application.Behaviors' ValidationBehavior: an AbstractValidator<T>
-      calling .MustBeValidIban() inside a rule already wired into that pipeline behavior, no extra plumbing —
-      but ValidationBehavior itself (confirmed by reading its source) currently projects
-      Error.Validation(failure.PropertyName, failure.ErrorMessage): the FluentValidation PROPERTY NAME becomes
-      the downstream Error.Code, NOT failure.ErrorCode. A consumer wanting the finer-grained ValidationErrorCodes
-      constant on the outward Error reads failure.ErrorCode directly — that mapping is a consumer/future
-      ValidationBehavior decision, not something this package or ValidationBehavior does today
+ValidationRuleBuilderExtensions  (nullable-oblivious signatures, like FluentValidation's own; RS0041 suppressed)
+    MustBeValidIban(allowUnregisteredCountry = false), MustBeValidBic, MustBeValidCardNumber(requireKnownNetwork = false),
+    MustBeValidCountryCode, MustBeValidCurrencyCode, MustBeValidPhoneNumber, MustBeValidLei, MustBeValidAbaRoutingNumber,
+    MustBeValidSepaCreditorId, MustBeValidVatNumber(), MustBeValidVatNumber(Func<T, string> countrySelector),
+    MustBeValidNationalId(Func<T, string> countrySelector, NationalIdValidatorRegistry registry = null),
+    MustBeValid<T, TValue>() where TValue : struct, IValidatedValue<TValue>
+    → all IRuleBuilderOptionsConditions<T, string> (FluentValidation's Custom): only When/Unless follow
+    — null passes; country-dependent rules skip a missing/invalid country
+    — failure: ErrorCode = specific code, ErrorMessage = default text, AttemptedValue = null, CustomState = Error,
+      FormattedMessagePlaceholderValues = error.MessageArguments + PropertyName (display) + PropertyPath; never PropertyValue
 ```
 
 ### `SharedKernel.Cryptography.KeyVault.Azure` — public surface (P-545 redesign)
@@ -1077,17 +1015,14 @@ SharedKernel.Primitives addition (P-552): Error.MessageArguments — IReadOnlyDi
 - **Decompression must be bounded, and the bound must come from the bytes produced, not from the payload's claim about itself.** `MaxDecompressedSize` is enforced by counting output during the copy. A frame that overstates its length past the cap is rejected up front as an optimisation, but that check is never the only one: a forged frame understating its length must still be stopped, and a test pins exactly that.
 - **Output pre-allocation must never be sized from a payload's recorded length alone.** A 13-byte payload declaring 64 MiB would otherwise allocate 64 MiB before decompressing a byte — memory amplification with no data behind it. The sizing hint is capped independently of the limit.
 - No static mutable state anywhere in this domain.
-- **(P-443/WO-067, SHIPPED)** `SharedKernel.Validation` must never be folded into the Guard Clause System's own home (`SharedKernel.Core` since P-505/WO-082, formerly the standalone `SharedKernel.Guards` package) — the Guard surface's value is deliberate minimalism (a generic precondition/argument-guard surface with no topic-specific catalog); a whole country/format-algorithm catalog belongs in its own package. `Guard.Against.*` extension methods for format validators live in `SharedKernel.Validation` (extending `IGuardClause` from the referencing side, confirmed to work exactly as designed — a marker interface's extension methods can be authored from any referencing package with zero changes to the defining package), never inside `SharedKernel.Core`'s Guard surface itself.
-- **(P-443/WO-067, SHIPPED)** `Guard.Throw.*` parity is intentionally never added for format-validator guards — the `Guard.Throw` nested class (now living in `SharedKernel.Core`, under the unchanged `SharedKernel.Guards` namespace, since P-505/WO-082) is hand-enumerated and hardcoded inside that class; adding to it requires modifying `SharedKernel.Core` itself, out of `SharedKernel.Validation`'s reach and never requested by WO-067's acceptance criteria (functional `Against.*` path only).
-- **(P-443/WO-067, SHIPPED)** `ValidationErrorCodes` is a package-local nested-static-class string-constant catalog living entirely inside `SharedKernel.Validation` — it must never be added as a new nested category under `SharedKernel.Primitives.ErrorCodes`. `ErrorCodes`'s own documented rule ("consuming packages may add local constants without forking the SharedKernel") already covers this; a whole country-algorithm error-code catalog must never bloat the platform's most-depended-upon primitives package.
-- **(P-443/WO-067, SHIPPED)** `CardNetwork` is a plain `enum`, not a `SmartEnum<TEnum,TValue>` — BIN-range network detection carries no per-value behavior beyond the name, so the `SmartEnum` machinery would be pure ceremony here.
-- **(P-443/WO-067, SHIPPED)** `IbanValidator`'s per-country length table and every shipped test vector (IBAN, PAN, TCKN) were verified against real published sources (canonical ISO/SWIFT/Wikipedia IBAN examples, Stripe's published test-card catalogue, the published TCKN checksum formula) rather than hand-constructed — a future validator added to this package should hold itself to the same bar rather than inventing a "valid" example to satisfy its own implementation.
-- **(P-443/WO-067, SHIPPED)** `VatValidator` is a baseline format check only (2-letter prefix + 2-12 alphanumeric characters) — it performs no per-country checksum and must never be documented or extended to imply otherwise without a dedicated new phase.
-- **(P-521/WO-083, SHIPPED)** `IbanValidator`/`IsoCurrencyValidator`/`IsoCountryValidator` each expose a documented `RegistryAsOf` as-of/registry-version constant. `IbanValidator`'s `allowFallbackForUnknownCountry` parameter defaults to `false` (today's exact hard-reject behavior, unchanged) — the mod-97-only fallback for an unrecognized country prefix is opt-in only, never the default, and it never weakens checksum correctness, only country-specific length checking (the general ISO 13616 34-character bound and alphanumeric-BBAN shape are still enforced in fallback mode).
-- **(P-525/WO-083, design-locked, implementation pending)** `LeiValidator`/`AbaRoutingNumberValidator`/`SepaCreditorIdentifierValidator` must follow the exact dual-mode `IsValid`/`Validate` + `Guard.Against.*` shape every existing validator in this package uses, with new `ValidationErrorCodes` nested classes (never added to `SharedKernel.Primitives.ErrorCodes`) — and every test vector must be sourced from a real published reference, never hand-constructed, mirroring the rule directly above.
-- **(P-444/WO-067, SHIPPED)** Every `ValidationRuleBuilderExtensions.MustBeValid*()` rule must be built on FluentValidation's `Custom(...)` extension, never `Must(predicate).WithErrorCode(fixedCode)` — a rule-fixed error code cannot represent a validator whose `Validate` call can fail with more than one distinct `ValidationErrorCodes` constant (e.g. `IbanValidator`'s `InvalidFormat`/`InvalidCheckDigit`/`InvalidLength`). Any future rule added to this package must propagate `result.Error.Code`/`result.Error.Message` from the underlying `SharedKernel.Validation` call verbatim, never hardcode a single code.
-- **(P-444/WO-067, SHIPPED)** `IRuleBuilder<T,TProperty>.Custom(...)` returns `IRuleBuilderOptionsConditions<T,TProperty>` in FluentValidation 11.x, not `IRuleBuilderOptions<T,TProperty>` — a future rule-builder extension in this package (or any other FluentValidation adapter in this platform) must use the correct return type or the build fails with CS0266.
-- **(P-444/WO-067, SHIPPED)** `SharedKernel.Validation` itself must never gain a `FluentValidation` reference as a result of this package's existence — `SharedKernel.Validation.FluentValidation` is a one-way dependency onto it, never the reverse.
+- **(P-553)** Identifiers are value types, not validator functions. Every type is created only through `Create` (never throws for bad input), normalizes (trim, remove typed separators, upper-case), compares by the normalized `Value`, and implements `IParsable<T>` plus `ValidatedValueJsonConverter<T>`. Do not add public constructors or string conversions: an instance must always be valid.
+- **(P-553)** One error code per distinct failure, and one `ValidationMessages` definition per code. A new failure mode gets a new code and a new message, never a second message under an existing code, because translations are keyed by code. `EveryCode_HasExactlyOneMessage` and `EveryMessage_HasATurkishTranslation_WithTheSamePlaceholders` enforce it; add the Turkish line to `Localization/tr.json` in the same change.
+- **(P-553)** No message or message argument may contain the rejected value. Card and national ID numbers must never reach a response or a log. Two- and three-letter country and currency codes are the only values named, and only in their own messages. The FluentValidation rules never set `AttemptedValue` or `PropertyValue`.
+- **(P-553)** `CardNumber.ToString()` and `NationalId.ToString()` are masked (first 6 + last 4; last 4). Never make them return the full value; `Value` is the only accessor for the full number.
+- **(P-553)** Reference data is compiled in and changes only with a release: `IbanRegistry` is generated from the SWIFT registry (release 99, 89 countries, each BBAN format's segments add up to the length), `IsoData.Currencies` must stay identical to `SharedKernel.Domain`'s `CurrencyCatalog`, and `VatRules` follow python-stdnum's algorithms. Tests use independently published values (SWIFT example IBANs, stdnum's documented numbers, provider test cards) so they are not circular; keep it that way when adding a country.
+- **(P-553)** VAT numbers issued to individuals are format-only where the check digit depends on a birth date or a separate personal-number scheme (BG 10-digit, CZ 9/10-digit except the special 9-digit numbers starting 6, LV personal codes). Every business number is checked in full.
+- **(P-553)** The FluentValidation rules use `Custom` because FluentValidation 11 has one error code per `PropertyValidator` and each identifier fails with several codes. Null passes; `WithMessage`/`WithErrorCode`/`WithName`/`WithSeverity` are unavailable after these rules, by design. `SharedKernel.Validation` itself must never reference FluentValidation.
+- **(P-443)** `Guard.Throw.*` parity is never added for identifier guards; `Guard.Against.Invalid<T>` returns `Error?` like every Core guard, and a blank value returns Core's own `NullOrWhiteSpace` error.
 - **(P-474/WO-076, shipped)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` must never be read via reflection in production code — they are pure compile-time/documentation metadata whose sole sanctioned consumer is `00.Governance`'s analyzer (P-476) and human documentation. A reflection-based runtime read of either attribute anywhere in production code is exactly the pattern this domain already prohibits for logging (root `CLAUDE.md`'s "never a reflection-based property walk" rule) and would directly contradict the rule these attributes exist to support.
 - **(P-474/WO-076, shipped)** `PiiMasking.*` functions must be pure, allocation-minimal, deterministic, and null/empty-safe — never throw on null or empty input, never perform I/O, never carry hidden state. `Email`/`Phone`/`Pan` return `string.Empty` for null/whitespace input; `Suppress` alone returns its fixed sentinel for every input including null (see the public-surface block above for the exact masking rules chosen where the design left thresholds ambiguous).
 - **(P-474/WO-076, shipped)** `IDataSubjectRequestHandler` must ship with no default or reflection-based implementation — each consuming service implements it against its own data. `SharedKernel.DataPrivacy` must never grow a cross-service erasure orchestrator; that composition, if it ever exists, belongs to a future `19.Scheduling`/`17.Workflows` phase, not this package.
@@ -1198,12 +1133,10 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 var gzipForExternalConsumers = provider.GetRequiredKeyedService<IPayloadCompressor>(
     CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey);
 
-// Validation (P-443, shipped) — registers INationalIdValidatorRegistry pre-seeded with TckNationalIdValidator
-// ("TR"). Format validators themselves (IbanValidator, PanValidator, etc.) are static — no DI registration
-// needed. Registration order between the two calls never matters — the registry singleton's factory pulls
-// every DI-registered INationalIdValidator via sp.GetServices<INationalIdValidator>() when first constructed.
+// Validation (P-553) — only the national ID registry needs registering; the identifier types are values.
 services.AddSharedKernelValidation()
     .AddNationalIdValidator<MySecondCountryNationalIdValidator>();
+services.AddLocalizationCatalog(catalog => catalog.AddValidationTranslations()); // Turkish messages
 
 
 // DataPrivacy (P-474, shipped) — no DI extension: DataClassificationAttribute/SensitiveDataCategoryAttribute
@@ -1273,8 +1206,7 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - Guard tests must cover **both paths independently**: functional `Against.*` (assert returned `Error?`) and throw `Throw.*` (assert `DomainException` thrown on violation, no exception on pass).
 - Numeric and string-length guard tests must use `[Theory]` with `[InlineData]` for boundary conditions (exactly at limit, one below, one above).
 - Collection guard tests must verify single enumeration — use a counting stub/wrapper `IEnumerable<T>` that increments a counter on `GetEnumerator()` calls.
-- **(P-443/WO-067, SHIPPED)** `SharedKernel.Validation.Tests/` (129/129 passing) — every format validator's valid/invalid cases including boundary theories, verified against real published test vectors rather than invented ones (canonical ISO/SWIFT/Wikipedia IBAN examples across GB/DE/FR/CH/TR/NL — 5 distinct lengths; Stripe's published test PANs, independently re-verified against Luhn by hand, covering Visa/Mastercard/Amex/Discover network detection; ISO 4217/3166 known-good and unknown-code cases; E.164 valid/invalid; VAT baseline); `NationalIdValidatorRegistry` (`TckNationalIdValidator` resolves for `"TR"` with correct checksum pass/fail against a vector independently re-derived from the published TCKN formula; an unregistered country returns `false`, never throws; a consumer-registered second country resolves after `.AddNationalIdValidator<TValidator>()`, in either registration order); `Guard.Against.*` validation extensions (`null` on pass, matching `ValidationErrorCodes` constant on fail); DI registration sanity for `AddSharedKernelValidation()`; README-sample compile-verification tests (the exact code shown in `01.Core/README.md`'s and the package's own `README.md`'s usage sections). `SharedKernel.Consumer.Tests` gained 4 tests proving the packed NuGet package resolves through the real dependency graph (54/54 passing).
-- **(P-444/WO-067, SHIPPED)** `SharedKernel.Validation.FluentValidation.Tests/` (26/26 passing) — each `.MustBeValid*()` rule's valid/invalid path; explicit multi-code parity assertions for `MustBeValidIban` (format vs. length vs. check-digit each produce their own distinct `ValidationErrorCodes` constant, cross-checked against the standalone `IbanValidator.Validate` call); null-argument guards on `MustBeValidNationalId`; a locally-written harness reproducing `05.Application.Behaviors.Validation.ValidationBehavior`'s exact aggregation shape (read from its real source, not imported — `05.Application.Behaviors`/`16.Testing` stay out of this package's dependency graph) proving zero-extra-plumbing interop; README-sample compile-verification tests. `SharedKernel.Consumer.Tests` gained 2 tests proving the packed NuGet package resolves through the real dependency graph including the third-party `FluentValidation` package (56/56 passing, up from 54/54).
+- **(P-553)** `SharedKernel.Validation.Tests/` (278/278): 42 SWIFT-published IBANs plus one generated IBAN for each of the 89 registry countries (built from its BBAN mask with independently computed BigInteger check digits); every IBAN failure code; 49 python-stdnum-published VAT numbers and a wrong-check-digit variant for 34 of them; provider test cards for 16 networks and range/length detection; TCKN; every type's normalization, codes, `IParsable`, JSON round trip and rejection, guards, DI; reflection tests that every code has one message and every message a Turkish translation with the same placeholders; README samples, including a `[LoggerMessage]` rendering a masked card. `SharedKernel.Validation.FluentValidation.Tests/` (20/20): every rule, null passing, codes and placeholders, no attempted value, country-dependent rules, nested paths, README samples.
 - **(P-474/WO-076, shipped)** `SharedKernel.DataPrivacy.Tests/` (56/56 passing) — `PiiMasking.*` deterministic output for known inputs (email local-part masking incl. 1-char/empty/no-`@`/multi-`@` edge cases, phone digit-count-dependent reveal windows with separator preservation, PAN fixed-last-4 incl. 19-digit and sub-4-digit inputs, `Suppress`'s fixed sentinel), null/empty-input never throws; a compiled-assembly `System.Reflection.Metadata`/`PEReader` scan of the production DLL's `TypeReference` table proving no reflection-invocation type is referenced (not a source grep — see the public-surface block above), plus a companion test proving the attribute-exclusion branch is actually exercised; attribute-application mechanics for `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` (a test-only reflective read proving mechanics, never a production-code claim); confirmation `IDataSubjectRequestHandler` has no default implementation registered anywhere in this package. `SharedKernel.Consumer.Tests` gained 6 tests including a `.nuspec` dependency-count assertion proving zero third-party NuGet dependency (67/67 passing, up from 61/61).
 - **(P-552)** `SharedKernel.Localization.Tests/` (96/96 passing): `MessageTemplate` syntax, culture formatting and every parse error; `LocalizedMessage` definition validation (name mismatch, duplicates, format-versus-type), `ToError` arguments and every arity; builder and JSON (nesting, comments, duplicates within a file, empty values, bad culture file names, directories, embedded resources, later-source-wins, build snapshots); catalog culture fallback and concurrent reads; `.resx` adapter (not-found, blank and invalid values, culture swap restored on throw); `Localize` fallbacks (no translation, missing argument, `Error.None`); DI (eager build, second catalog throws); and `ReadmeSampleCompileTests` running the README samples. README recipe 1 (ASP.NET Core request localization) is verified in a scratch web app. `SharedKernel.Primitives.Tests` adds `ErrorMessageArgumentsTests` (empty by default including `Error.None`, copy on assignment, ordinal keys, excluded from equality, not serialized).
 - **(SK.01.LoggingRangesNewDomains, shipped)** `LoggingEventIdRangesTests` extended so the pairwise-uniqueness/multiple-of-1000/folder-number-to-value theory cases cover all 21 domain base constants (00 through 20), with a dedicated `PreExistingEighteenDomainConstants_AreByteForByteUnchanged` fact hardcoding all 18 prior expected values independently of the shared theory table — a transposition between two existing constants would still pass the pairwise-uniqueness/modulo checks alone (both remain unique multiples of 1000), so only this independent hardcoding catches it. 146/146 `SharedKernel.Primitives.Tests` passing.
@@ -1343,3 +1275,4 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - [2026-09-11] P-530 (user-directed pre-publish hardening of `SharedKernel.Configuration`, the next package after P-529 — chosen on measured grounds: 23 referencing projects, the most of any package depending on Primitives alone, and the gate for the whole `SharedKernel.Cryptography` sub-tree) — six defects, all found by execution or by the trim/AOT analyzers, none by reading. **The severe one:** `AddValidatedOptions<TOptions, TValidator>` registered via `TryAddSingleton<IValidateOptions<TOptions>, TValidator>()`, but `IValidateOptions<T>` is a multi-implementation COLLECTION service — the options pipeline runs every registered validator for a type, not the first — so the caller's validator was silently dropped whenever any other validator for that options type already existed, including the one this package's own sibling overload adds; measured, a cross-property rule never ran and configuration violating it started the host cleanly. That is precisely the regression class this domain's own `01.Core/README.md` already documents as named `TryAdd` exception #2, and `SharedKernel.Cryptography.KeyVault.Azure` hand-rolls `TryAddEnumerable` beside its own `AddValidatedOptions` call to route around it — the convention was recorded after P-518 hit it downstream, while the package that CAUSES it was never fixed, and the pre-existing `CalledTwice_RegistersValidatorOnlyOnce` test asserted the broken behaviour as the intended contract. Also fixed: two distinct validators for one options type lost the second (same cause); the package advertised `aot` in `PackageTags` and "AOT-clean" in its README while emitting 6× `IL2091` + 4× `IL2026` + 2× `IL3050` into every trimming consumer's build, because `OptionsBuilder<T>.Bind` carries `[RequiresUnreferencedCode]`+`[RequiresDynamicCode]` and BOTH overloads call it — so only *validation* was ever reflection-free, never *binding*, and a generic library wrapper structurally cannot fix that since the config-binding source generator intercepts `Bind` in the calling assembly; the DataAnnotations overload was not idempotent (4 duplicated failure messages for 2 broken properties on a second registration, because the BCL's `ValidateDataAnnotations()` uses a plain `AddSingleton`); the nuspec forced a DEAD `SharedKernel.Primitives` dependency on every consumer, with no `SharedKernel` type anywhere in the source; and no `.xml` shipped, the same per-project `GenerateDocumentationFile` cause as P-529. `01.Core/CLAUDE.md`'s own public-surface block additionally documented a `[ValidateOptions]` marker attribute that does not exist in this package or anywhere in the repo — corrected here. **Added** `ISectionBoundOptions` (`static abstract string SectionName`, zero reflection, resolved as a direct static call through the generic type parameter) plus two `IConfiguration` overloads reading it, making the platform's section-path convention compile-enforced for the first time — 33 options types across 12 domains already declare a `SectionName` constant and 28 call sites retype `GetSection(X.SectionName)`; named-options support on all four overloads; and a `validateDataAnnotations` flag composing DataAnnotations with a custom validator, which the `TryAddSingleton` defect had made impossible. **One design decision that went against the first instinct:** the obvious `TryAddEnumerable` fix for the idempotency defect would have introduced a new one — it de-duplicates on implementation type, every named instance shares `DataAnnotationValidateOptions<TOptions>`, and that validator is itself name-scoped and skips other names, so every named instance after the first would have been left entirely unvalidated; the fix is a per-name check over `ServiceDescriptor.ImplementationInstance`, possible only because the validator is registered as a pre-built immutable instance rather than through a factory. Verified: 41/41 package tests (was 10), every fix pinned by executed perturbation (2/2/2/3 failures across four independent reverts); 12 IL warnings → 0 under both analyzers; full solution 0 errors with no new warning at any of the 27 in-repo `AddValidatedOptions` call sites; 5,310 tests across 49 projects, 0 failures; packed nupkg ships its `.xml` (10 documented members) and declares zero `SharedKernel.*` dependencies — so the package is now publishable with nothing ahead of it in the publish workflow's dependency gate; every README sample compiled and executed. Only the publish itself (P-56) remains `○`
 - [2026-09-16] P-545 (user-directed pre-publish redesign of `SharedKernel.Cryptography`, `.Argon2`, `.KeyVault.Azure`) — split sync/async services and key providers (markers, capability gates and runtime `NotSupportedException` removed); algorithm-carrying `SigningKey`/`ISigningKeyProvider` with PS/RS/ES 256–512 replacing `RsaSignatureService`/`EcdsaSignatureService`/`IAsymmetricKeyProvider`; PHC hashes with composite `OneWayHasher`, pepper and rehash-on-verify migration (Argon2 becomes an `IOneWayHashAlgorithm`); versioned `EncryptedPayload`/`EnvelopePayload` codecs; `EnvelopeEncryptionService`, HKDF `SubkeyDerivation` and purpose-bound providers, rotation helpers; `FixedTimeComparison`; TOTP time-step replay, `TotpParameters`, `ITotpVerifier`, secret and recovery-code generators; shared bounded `SingleFlightCache` fixing unbounded growth and the abandoned-entry cancellation race; Azure provider rebuilt on secret versions (no overwrite race, no dependency on `CurrentKeyId`), master-key allow-list, rate-limited unknown ids, async remote signing with local verify; builder-based opt-in registration; test hooks removed; public API tracked in all three packages (coordinator)
 - [2026-09-18] P-552 — `SharedKernel.Localization` redesigned before its first publish. Typed message definitions (`LocalizedMessage.Define<T1…T4>` with explicit argument names validated against the text) build errors that carry their values on a new `Error.MessageArguments` (Primitives, additive, outside equality and JSON), so `14.Presentation` translates ProblemDetails `detail` with the values. Named placeholders with culture-aware formats (`MessageTemplate`, positional `{0}` rejected). Immutable `InMemoryLocalizationCatalog` built by `LocalizationCatalogBuilder` from code, JSON files, directories and embedded JSON, validated at registration. Fixed: blank `.resx` values reported as translations, the mutable catalog with `Seal()`, a second catalog registration silently ignored, `translated!` at every caller (`[NotNullWhen(true)]`), and a latent bug where a translation containing a placeholder was shown raw. Found while testing: `Error.None` would have had a null `MessageArguments` (static field order), fixed with a nested holder. Localization 96/96, Primitives 263/263, WebApi 203/203, Testing.SelfTests 1410/1410, ArchitectureTests 324/324.
+- [2026-09-18] P-553 — `SharedKernel.Validation` and `.FluentValidation` redesigned before first publish. Static validators replaced by value types (`Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`) with `IValidatedValue<T>`, `IParsable` and JSON. Coverage: full SWIFT IBAN registry with BBAN structure (89 countries, was 78 by length only), per-country VAT format and check digit for 32 prefixes including Türkiye's VKN (was one loose pattern), 10 card networks including Troy. Fixed: `XK` missing from countries, withdrawn `ANG`/`ZWL` accepted, ABA `000000000` accepted and prefix ranges unchecked, PAN format errors reported as Luhn failures, one code reused for several messages, `RegexOptions.Compiled` instead of generated code paths, mod-97 implemented three times, FluentValidation reporting null values. Every message is a `LocalizedMessage` with Turkish bundled; `05.Application`'s `ValidationBehavior` now keeps the real error code (with a new `errorCodes` ProblemDetails map, field-keyed `errors` preserved). Validation 278/278, FluentValidation 20/20.

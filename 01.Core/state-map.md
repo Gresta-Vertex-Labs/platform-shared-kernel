@@ -47,6 +47,7 @@
 | `SK.01.P298` | P-298 Feature Flag Variant / Experimentation Support | All tasks in Phase: P-298 are `●` | P-298 |
 | `SK.01.P551` | P-551 Compression Pre-First-Publish Pass | All tasks in Phase: P-551 are `●` | P-551 |
 | `SK.01.P552` | P-552 Localization Pre-First-Publish Pass | All tasks in Phase: P-552 are `●` | P-552 |
+| `SK.01.P553` | P-553 Validation + FluentValidation Pre-First-Publish Pass | All tasks in Phase: P-553 are `●` | P-553 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -132,8 +133,8 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.FeatureManagement` | Published | `●` | References Primitives; boolean + weighted-variant evaluation (`GetVariantAsync`/`FeatureVariant`/`FeatureVariantDefinition`, P-298/WO-049, shipped) |
 | `SharedKernel.Cryptography` | P-545 | `◐` | **P-545 (2026-09-16): pre-first-publish redesign**: split sync/async encryption services and key providers, algorithm-carrying signing keys, PHC hashing with pepper and migration, envelope encryption, HKDF, rotation helpers, fixed-time comparison, TOTP hardening, bounded single-flight cache, public API tracked. References `SharedKernel.Primitives` + `SharedKernel.Configuration`; zero third-party dependencies. Publish is P-57 (`○`) |
 | `SharedKernel.Compression` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1088` (2026-09-18, P-551).** **Implemented P-297/WO-049; reshaped by P-551 before its first publish. Never pushed to GitHub Packages — the earlier "Published" status on this row meant packed to the local `./nupkgs` folder, not on the feed.** P-551 fixed two severe defects, both reproduced by executing the code: a truncated payload decompressed to a valid prefix and reported `Result.Success` (measured 127,863 of 282,775 bytes at a 50% cut), and decompression was unbounded (102 bytes expanding to 64 MiB). Now a 13-byte frame records the algorithm and uncompressed length (`CompressionFraming.Framed` default, `Raw` for external interop), `MaxDecompressedSize` caps output at 64 MiB by default, every failure is `Error.Validation` rather than `Unexpected`, span/`IBufferWriter` overloads remove the ~2× allocation on the byte[] path, async members return `ValueTask`, `CompressionOptions` implements `ISectionBoundOptions`, and the two compressors forward to one internal codec instead of holding two copies of the same logic. Publish bar added: XML docs shipped, public API tracked (68 entries), `WarningsAsErrors` for CS1591/RS00xx. 156/156 `SharedKernel.Compression.Tests` passing; `SharedKernel.Messaging.MassTransit.Tests` 188/188 and governance 324/324 green against it; solution builds with 0 errors |
-| `SharedKernel.Validation` | Published | `●` | **New eighth package (P-443, WO-067), fully shipped.** References Primitives + Guards; zero third-party NuGet deps; `IbanValidator`/`BicValidator`/`PanValidator`+`CardNetwork`/`IsoCurrencyValidator`/`IsoCountryValidator`/`E164PhoneValidator`/`VatValidator` (dual-mode `IsValid`/`Validate`) + pluggable per-country `INationalIdValidatorRegistry` (`TckNationalIdValidator` default) + `GuardValidationExtensions`/`AddSharedKernelValidation` implemented; 129/129 `SharedKernel.Validation.Tests` passing; packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (54/54 `SharedKernel.Consumer.Tests`) |
-| `SharedKernel.Validation.FluentValidation` | Published | `●` | **New ninth package (P-444, WO-067), fully shipped.** References `SharedKernel.Validation` + `FluentValidation` (the one third-party dependency in this domain); `ValidationRuleBuilderExtensions` (`.MustBeValidIban()`/`.MustBeValidBic()`/`.MustBeValidPan()`/`.MustBeValidCurrencyCode()`/`.MustBeValidCountryCode()`/`.MustBeValidPhoneNumber()`/`.MustBeValidVatNumber()`/`.MustBeValidNationalId(...)`) built on FluentValidation's `Custom(...)` extension so `ValidationFailure.ErrorCode` always carries the exact `ValidationErrorCodes` constant the underlying validator produced; 26/26 `SharedKernel.Validation.FluentValidation.Tests` passing; packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (56/56 `SharedKernel.Consumer.Tests`) |
+| `SharedKernel.Validation` | Ready to publish | `●` | **Pre-first-publish pass complete (P-553); not yet on GitHub Packages.** Validated value types (`Iban` over the full SWIFT registry with BBAN structure, `Bic`, `CardNumber` with 10 networks and masked `ToString`, `VatNumber` for 32 prefixes incl. TR VKN, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`), one code and one `LocalizedMessage` per failure, Turkish bundled. First implemented P-443 (packed locally only). References Primitives, Core, Localization. 278/278 tests |
+| `SharedKernel.Validation.FluentValidation` | Ready to publish | `●` | **Pre-first-publish pass complete (P-553); not yet on GitHub Packages.** `MustBeValid*()` rules for every identifier plus `MustBeValid<T, TValue>()`; failures carry the specific code, values and field path, never the rejected value; null passes. First implemented P-444. 20/20 tests |
 | `SharedKernel.Cryptography.KeyVault.Azure` | P-545 | `◐` | **P-545 (2026-09-16): redesigned**: data keys as Key Vault secret versions (no overwrite race), master-key allow-list, rate-limited unknown ids, redacted probe, async remote signing with local verification, injected clients, split encryption/signing registration. Publish is P-57 (`○`) |
 | `SharedKernel.DataPrivacy` | Published | `●` | **New eleventh package (P-474, WO-076), fully shipped.** References Primitives only; zero third-party NuGet deps (confirmed via direct `.nuspec` inspection — `SharedKernel.Primitives` is the package's sole dependency); `DataClassificationAttribute`/`DataClassification`, `SensitiveDataCategoryAttribute`/`SensitiveDataCategory` (pure metadata, never reflected over in production), `PiiMasking` (`Email`/`Phone`/`Pan`/`Suppress`, deterministic, null-safe, never throws), `IDataSubjectRequestHandler`/`DataSubjectExportBundle`/`DataSubjectErasureReceipt` implemented; 56/56 `SharedKernel.DataPrivacy.Tests` passing (including a compiled-assembly metadata scan proving no reflection-invocation `System.Reflection.*` type is referenced by the production DLL); packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (67/67 `SharedKernel.Consumer.Tests`, up from 61/61) |
 | `SharedKernel.Localization` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1093` (2026-09-18, P-552), with SharedKernel.Primitives from `95aae0f`.** Typed message definitions (`LocalizedMessage.Define<T1…T4>`) whose errors carry `Error.MessageArguments`; named-placeholder `MessageTemplate`; immutable `InMemoryLocalizationCatalog` built and validated by `LocalizationCatalogBuilder` from code, JSON files, directories and embedded JSON; `.resx` adapter; `catalog.Localize(error, culture)`. First implemented P-482 (packed locally only). References Primitives + `Microsoft.Extensions.Localization.Abstractions`. 96/96 tests |
@@ -1792,6 +1793,106 @@ no documentation enforcement, no release notes. The docs were written in capital
   providers but never `SupportedUICultures`, and ASP.NET Core ignores any culture outside that list, so a service that
   relies on it alone stays in its default culture. The README's recipe 1 shows the fix: pass the catalog's `Cultures`.
 
+## Phase: P-553 — `SharedKernel.Validation` + `.FluentValidation` Pre-First-Publish Pass (BREAKING API; cross-domain error-code fix) <!-- phase-key: SK.01.P553 -->
+
+**Status:** `●` Complete — 10/10 tasks `●`; Validation 278/278, FluentValidation 20/20; not yet on GitHub Packages
+
+> The pre-first-publish audit of the two validation packages, following P-551 (Compression) and P-552 (Localization).
+> Both were implemented in P-443/P-444 and extended by P-521/P-525, and packed only to the local feed, so the API was
+> free to change.
+
+### What was found
+
+**Wrong or stale data.**
+- `XK` (Kosovo) was missing from the country list. The IBAN table accepted `XK`, but a Kosovo BIC or SEPA creditor ID
+  failed, so two validators disagreed.
+- The currency list still accepted `ANG` and `ZWL`, both withdrawn, and lacked their replacements `XCG` and `ZWG`, plus
+  `VED` and `SVC`. It now matches `SharedKernel.Domain`'s `CurrencyCatalog` exactly.
+- The IBAN table had 78 of the registry's 89 countries and checked length only.
+- VAT was one loose pattern for every country.
+
+**Real bugs.**
+- ABA accepted `000000000`, whose weighted sum is 0, and never checked the Federal Reserve prefix ranges.
+- A PAN with letters or the wrong length reported `failed_luhn_check`.
+- `UnknownNetwork` was declared but never returned.
+- The FluentValidation rules reported null values, so an optional field produced an error and a required one produced
+  two.
+
+**Design.**
+- One error code carried several different messages, for example `iban.invalid_format` for four situations, which
+  makes translation by code impossible.
+- Blank input reported format codes instead of `validation.required`.
+- The guards did not capture the parameter name, unlike every Core guard.
+- National ID validators returned only `bool`.
+- The registry was a `ConcurrentDictionary` behind an `internal Register`.
+- Regexes used `RegexOptions.Compiled`, which is interpreted under AOT.
+- Mod-97 was implemented three times.
+- There was no publish bar.
+
+**Across domains.** `05.Application`'s `ValidationBehavior` built each FluentValidation failure as
+`Error.Validation(failure.PropertyName, …)`, so the property name replaced the real code, and no validation error could be
+translated or branched on by code.
+
+### User decisions
+
+- **Value types for all identifiers,** over string validators only or value types for IBAN and card numbers only.
+- **Every message localized, with Turkish bundled** (English is the default text).
+- **All four coverage additions:**
+  - Türkiye: VKN, Troy, and the TR IBAN structure;
+  - the full IBAN registry with BBAN structure;
+  - per-country VAT for the EU, UK, CH, NO and TR;
+  - more card networks.
+- **Fix `05.Application` in this pass,** and **key validation responses by field with a parallel `errorCodes` map,**
+  over code-only keys.
+
+### Design
+
+- **Types.** `IValidatedValue<T>` (`Value`, `static Create(string?) → Result<T>`, `IParsable<T>`) is implemented by
+  `Iban`, `Bic`, `CardNumber`, `VatNumber`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber` and
+  `SepaCreditorId`. `NationalId` takes a country as well.
+- **JSON.** `ValidatedValueJsonConverter<T>` is attached to every type.
+- **Masking.** `CardNumber` and `NationalId` mask `ToString()`.
+- **Data sources:**
+  - `IbanRegistry` is generated from the SWIFT registry (release 99), with each BBAN mask verified to add up to its
+    length.
+  - `VatRules` covers 32 prefixes with the algorithms python-stdnum documents. Personal-number branches whose check
+    depends on a birth date are format-only.
+  - `CardNetworkTable` matches the longest prefix among ranges that allow the card's length.
+- **Messages.** `ValidationMessages` holds one `LocalizedMessage` per code. `Localization/tr.json` is embedded, and
+  `AddValidationTranslations()` adds it to a catalog.
+- **Guards.** `Guard.Against.Invalid<T>` and `InvalidNationalId`.
+- **FluentValidation.** Uses `Custom` (FluentValidation 11 has one error code per property validator), passes null, and
+  never sets `AttemptedValue` or `PropertyValue`. Its signatures are nullability-oblivious.
+- **Shared keys.** New in Primitives: `ErrorArgumentNames.PropertyPath`/`PropertyName`, the keys the field travels
+  under.
+
+### Tasks
+
+| ID | Task | Project | Status |
+|---|---|---|---|
+| D-553 | Analysis, reference-data sourcing (SWIFT registry wikitext, python-stdnum algorithms and test numbers, card range table), the four user decisions | SharedKernel.Validation | `●` |
+| C-553a | Internal data and algorithms: `Checksums`, `Text`, `IbanRegistry` (generated), `IsoData`, `CardNetworkTable`, `VatRules` | SharedKernel.Validation | `●` |
+| C-553b | Value types, `IValidatedValue<T>`, JSON converter, national ID contract/registry/TCKN, guards, DI | SharedKernel.Validation | `●` |
+| C-553c | `ValidationErrorCodes`, `ValidationMessages`, `Localization/tr.json`, `AddValidationTranslations()` | SharedKernel.Validation | `●` |
+| C-553d | FluentValidation rules rewritten; `ErrorArgumentNames` in Primitives | SharedKernel.Validation.FluentValidation, SharedKernel.Primitives | `●` |
+| C-553e | `05.Application` keeps the real error code and passes placeholders on; `14.Presentation` emits field-keyed `errors` plus `errorCodes`; `11.Communication.Rest` reads both back | 05, 14, 11 | `●` |
+| C-553f | Consumers: `16.Testing`'s `ValidationSampleGenerator` (structure-correct IBANs, check-digit-correct VAT for 7 countries, all 10 networks), `00.Governance` test reference, `SharedKernel.Consumer.Tests` | 16.Testing, 00.Governance, 01.Core | `●` |
+| T-553 | Validation 278, FluentValidation 20, generator self-tests 44; cross-domain suites (see Verification) | — | `●` |
+| P-553a | Publish bar on both packages: XML docs enforced, public API tracked (276 + 14 entries), plain-English descriptions, "First release." | both | `●` |
+| DO-553 | READMEs rewritten in the house format with compiled samples; `01.Core/CLAUDE.md`, `01.Core/README.md`, root brain and state map | — | `●` |
+
+### Found during verification
+
+- **Swiss VAT length.** The Swiss rule expected 13–14 characters after `CHE`; the real number is 12–13 (9 digits and a
+  3–4 letter suffix). python-stdnum's published example caught it.
+- **A bad test value.** One stdnum doc example, `GR023456783`, was the output of their `compact()` example, not a valid
+  number. It was replaced by their real example.
+- **FluentValidation signatures.** `IRuleBuilder<T, string>` with nullable annotations warned (CS8620) on `string?`
+  properties, and FluentValidation's own rules avoid that by being unannotated. The rule signatures are now
+  nullability-oblivious the same way.
+- **A stale test generator.** `16.Testing`'s generator produced random alphanumeric BBANs and VAT bodies, which the
+  stricter structure and check-digit rules now correctly reject. It now generates from each country's structure.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
@@ -1900,3 +2001,4 @@ no documentation enforcement, no release notes. The docs were written in capital
 - [2026-09-18] SK.01.P551 published — `SharedKernel.Compression` `1.0.0-alpha.0.1088` on GitHub Packages with Primitives and Configuration from `bbba779` (coordinator)
 - [2026-09-18] SK.01.P552 complete — `SharedKernel.Localization` pre-first-publish pass: typed `LocalizedMessage` definitions whose errors carry `Error.MessageArguments` (new, additive, in Primitives), named-placeholder templates with culture-aware formats, an immutable catalog built and validated from code, JSON files, directories and embedded JSON, a fixed `.resx` adapter (blank values no longer reported as found), and one-catalog-per-app registration. `14.Presentation` now translates ProblemDetails `detail` with the error's values. 96/96 tests (coordinator)
 - [2026-09-18] SK.01.P552 published — `SharedKernel.Localization` `1.0.0-alpha.0.1093` on GitHub Packages, with `SharedKernel.Primitives` (carrying `Error.MessageArguments`) republished from `95aae0f` (coordinator)
+- [2026-09-18] SK.01.P553 complete — `SharedKernel.Validation` and `.FluentValidation` pre-first-publish pass: value types replace the static validators; full SWIFT IBAN registry with BBAN structure, per-country VAT (EU27, XI, GB, CH, NO, TR VKN), 10 card networks incl. Troy; stale ISO data and the ABA all-zero bug fixed; one code and one translatable message per failure with Turkish bundled; `05.Application` now keeps the real error code and `14.Presentation` adds an `errorCodes` map beside the field-keyed `errors`. 278/278 + 15/15 (coordinator)

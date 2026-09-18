@@ -10,8 +10,8 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
 | `SharedKernel.Cryptography` | AES-256-GCM encryption, key rotation, envelope encryption, HKDF subkeys, RSA/ECDSA and HMAC signing, PHC password hashing, fixed-time comparison, secure random, HOTP/TOTP |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): framed Brotli default, gzip keyed alternate; truncation-detecting frame, raw mode for external interop, bounded decompression |
-| `SharedKernel.Validation` | Culture-independent IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT validators + pluggable national-ID registry |
-| `SharedKernel.Validation.FluentValidation` | `IRuleBuilder<T,string>` adapter over `SharedKernel.Validation` (a third-party dependency — `FluentValidation`) |
+| `SharedKernel.Validation` | Validated value types: `Iban` (full SWIFT registry), `Bic`, `CardNumber` (masked), `VatNumber` (EU, UK, CH, NO, TR), `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`; translatable errors, Turkish bundled |
+| `SharedKernel.Validation.FluentValidation` | `MustBeValid*()` FluentValidation rules for every `SharedKernel.Validation` type (a third-party dependency — `FluentValidation`) |
 | `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault encryption keys (data keys as secret versions, envelope provider, readiness probe) and signing keys (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Security.KeyVault.Secrets` + `Azure.Identity`) |
 | `SharedKernel.Cryptography.Argon2` | Argon2id one-way hash algorithm for `IOneWayHasher`, selected by configuration (a third-party dependency — `Konscious.Security.Cryptography.Argon2`) |
 | `SharedKernel.DataPrivacy` | `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` pure-metadata markers, `PiiMasking.*` deterministic masking helpers, `IDataSubjectRequestHandler` export/erasure contract |
@@ -45,7 +45,7 @@ single-winner service:**
 
 1. **`SharedKernel.Validation`'s `AddNationalIdValidator<TValidator>()`** registers
    `INationalIdValidator` via `TryAddEnumerable(ServiceDescriptor.Singleton<INationalIdValidator, TValidator>())`,
-   never a plain `TryAddSingleton`. `INationalIdValidatorRegistry` is built by iterating
+   never a plain `TryAddSingleton`. `NationalIdValidatorRegistry` is built by iterating
    *every* registered `INationalIdValidator` via `IServiceProvider.GetServices<INationalIdValidator>()`
    — a plain `TryAddSingleton` would collapse that to a single winner and silently drop every
    country validator registered after the first one ever registered. `TryAddEnumerable` still
@@ -1129,93 +1129,32 @@ gzip also inflates very small payloads noticeably — 1 byte becomes 21, against
 
 ---
 
-## SharedKernel.Validation — Culture-Independent Format Validators
+## SharedKernel.Validation — Validated Identifier Types
 
-`SharedKernel.Validation` provides culture-independent financial and identity format validators: IBAN (per-country length table + ISO 13616 mod-97 check digit), BIC/SWIFT, payment-card PAN (Luhn + card-network detection), ISO 4217 currency codes, ISO 3166-1 country codes, E.164 phone numbers, a baseline VAT/tax-identifier format check, and a pluggable per-country national-identity-number registry (`TckNationalIdValidator` — Turkey's TCKN — ships as the built-in default). Zero third-party NuGet dependencies. References `SharedKernel.Primitives` (for `Result`/`Error`) and `SharedKernel.Core` (extending `Guard.Against` with new members via extension methods — `SharedKernel.Core`'s Guard surface itself is never modified; re-pointed from the retired `SharedKernel.Guards` package by P-506/WO-082).
-
-Every validator is dual-mode: a standalone `IsValid`/`Validate` call, and a `Guard.Against.*` extension. Both paths share the same underlying algorithm and the same `ValidationErrorCodes` constants — a failure surfaces an identical code whichever path reached it.
-
-```csharp
-using SharedKernel.Guards; // Guard.Against entry point
-using SharedKernel.Validation.Validators;
-using SharedKernel.Validation.Guards; // brings the Guard.Against.Invalid* extensions into scope
-
-// Standalone Result call
-Result validationResult = IbanValidator.Validate(request.Iban);
-if (validationResult.IsFailure)
-{
-    return Result<Account>.Failure(validationResult.Error); // e.g. ValidationErrorCodes.Iban.InvalidCheckDigit
-}
-
-// Guard.Against.* extension — same validator, same error codes, chains with the rest of Guard.Against
-Error? error = Guard.Against.InvalidIban(request.Iban);
-if (error is not null)
-{
-    return Result<Account>.Failure(error);
-}
-```
-
-**`Guard.Throw.*` parity is intentionally out of scope for this package.** The `Guard.Throw` nested class (now living in `SharedKernel.Core`, under the unchanged `SharedKernel.Guards` namespace, since P-505/WO-082) is a hand-enumerated static class hardcoded inside that class — a package outside `SharedKernel.Core` cannot add a member to it without modifying `SharedKernel.Core` itself, which is out of `SharedKernel.Validation`'s jurisdiction. Only the functional `Guard.Against.*` path is provided here.
-
-### National ID registry
+`SharedKernel.Validation` turns financial and identity strings into value types that can only exist valid and
+normalized: `Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`,
+`AbaRoutingNumber` and `SepaCreditorId`. `Create` returns `Result<T>` and never throws for bad input; the types
+implement `IParsable<T>` (route binding) and carry a JSON converter.
 
 ```csharp
-// Register (Program.cs) — pre-seeded with TckNationalIdValidator ("TR")
-builder.Services.AddSharedKernelValidation()
-    .AddNationalIdValidator<MySecondCountryNationalIdValidator>();
-
-public sealed class KycService(INationalIdValidatorRegistry registry)
-{
-    public Error? ValidateNationalId(string idNumber, string countryCode) =>
-        Guard.Against.InvalidNationalId(idNumber, countryCode, registry);
-}
+Result<Iban> result = Iban.Create("de89 3704 0044 0532 0130 00");   // Value "DE89370400440532013000"
+Result<VatNumber> vkn = VatNumber.Create(CountryCode.Parse("TR", null), "4540536920");
+CardNumber card = CardNumber.Parse("4111 1111 1111 1111", null);      // card.ToString() == "411111******1111"
 ```
 
-`INationalIdValidatorRegistry.TryGetValidator` never throws for an unregistered country code — it returns `false`.
+The coverage comes from published sources. IBANs are checked against all 89 countries of the SWIFT registry, including
+each country's account-number structure. VAT numbers get the format and check digit of the 27 EU states, Northern
+Ireland, the UK, Switzerland, Norway and Türkiye's VKN. Card numbers are Luhn-checked, with detection of 10 networks
+including Troy. `CardNumber` and `NationalId` mask themselves in `ToString()`, and no error message repeats the rejected
+value.
 
-### `ValidationErrorCodes` is package-local
+Every failure has its own code in `ValidationErrorCodes` and a `LocalizedMessage` in `ValidationMessages`.
+`catalog.AddValidationTranslations()` adds Turkish, so the HTTP boundary translates every validation error.
+`SharedKernel.Validation.FluentValidation` adds `RuleFor(x => x.Iban).MustBeValidIban()` and the like; each failure
+carries the specific code, its values and the field path, never the rejected value.
 
-Format-validator error codes (`ValidationErrorCodes.Iban.*`, `.Pan.*`, `.NationalId.*`, etc.) live in a package-local static class inside `SharedKernel.Validation` itself — they are **never** added as a new nested category under `SharedKernel.Primitives.ErrorCodes`. `ErrorCodes`'s own documented rule already permits this ("consuming packages may add local constants without forking the SharedKernel"), and a whole country-algorithm error-code catalog does not belong bloating the platform's most-depended-upon primitives package.
-
-### A note on `VatValidator`
-
-`VatValidator` is a **baseline, non-exhaustive** cross-jurisdiction format check only — it confirms a value looks like a 2-letter country prefix followed by 2-12 alphanumeric characters, and performs **no** per-country checksum validation. VAT/tax-identifier formats vary enormously by country. A passing result is not proof of a real, registered VAT identifier.
-
----
-
-## SharedKernel.Validation.FluentValidation — FluentValidation Rule Adapter
-
-`SharedKernel.Validation.FluentValidation` is a thin `IRuleBuilder<T, string>` extension-method adapter over every `SharedKernel.Validation` static format validator: `.MustBeValidIban()`, `.MustBeValidBic()`, `.MustBeValidPan()`, `.MustBeValidCurrencyCode()`, `.MustBeValidCountryCode()`, `.MustBeValidPhoneNumber()`, `.MustBeValidVatNumber()`, and `.MustBeValidNationalId(countryCodeSelector, registry)`. It is a **separate package from `SharedKernel.Validation` on purpose** — a service that only wants the standalone `Result`/`Guard` surface (a Temporal activity, a lightweight worker with no MediatR pipeline) never pulls FluentValidation in transitively.
-
-Each rule delegates to the matching validator's `Validate(string?)` and, on failure, attaches a single `FluentValidation.Results.ValidationFailure` whose `ErrorCode` is the *exact* `ValidationErrorCodes` constant the validator produced — never a single rule-fixed code. This matters for validators like `IbanValidator`, which can fail with three distinct codes (`InvalidFormat` / `InvalidCheckDigit` / `InvalidLength`) depending on what is wrong with the value:
-
-```csharp
-using FluentValidation;
-using SharedKernel.Validation.FluentValidation;
-using SharedKernel.Validation.NationalId;
-
-public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaymentCommand>
-{
-    public CreatePaymentCommandValidator(INationalIdValidatorRegistry nationalIdRegistry)
-    {
-        RuleFor(x => x.Iban).MustBeValidIban();
-        RuleFor(x => x.Bic).MustBeValidBic();
-        RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
-        RuleFor(x => x.PayerNationalId)
-            .MustBeValidNationalId(x => x.PayerCountryCode, nationalIdRegistry);
-    }
-}
-```
-
-Because every rule is built on FluentValidation's `Custom(...)` extension (it needs to inspect *which* code the underlying validator returned, not just pass/fail), chaining `.WithMessage(...)` or `.WithErrorCode(...)` afterward has **no effect** — the message and error code always come from the `SharedKernel.Validation` validator. `.When(...)`/`.Unless(...)` and other rule-level conditions still work normally.
-
-### Composing with `05.Application.Behaviors`'s `ValidationBehavior`
-
-No extra plumbing is required: `ValidationBehavior<TRequest,TResponse>` already runs every registered `IValidator<TRequest>` and aggregates every `ValidationFailure` it finds, regardless of how each rule was built. A validator using `.MustBeValidIban()` inside an `AbstractValidator<TCommand>` that is already resolved by that pipeline behavior participates automatically.
-
-One nuance worth knowing: as of this writing, `ValidationBehavior` projects each failure via `Error.Validation(failure.PropertyName, failure.ErrorMessage)` — the FluentValidation **property name** becomes the downstream `Error.Code`, not `failure.ErrorCode`. The finer-grained `ValidationErrorCodes` constant this package attaches is still there on the raw `ValidationFailure.ErrorCode` — a consuming service (or a future `ValidationBehavior` revision) that wants it on the outward-facing `Error` instead of the property name reads `failure.ErrorCode` directly.
-
----
+See [`SharedKernel.Validation`'s README](SharedKernel.Validation/README.md) and
+[`SharedKernel.Validation.FluentValidation`'s README](SharedKernel.Validation.FluentValidation/README.md).
 
 ## SharedKernel.DataPrivacy — Classification Taxonomy, Masking, Data-Subject Requests
 
