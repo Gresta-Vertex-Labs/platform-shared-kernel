@@ -1,41 +1,33 @@
 using System.IO.Compression;
+using SharedKernel.Compression.Options;
 using Xunit;
 
 namespace SharedKernel.Compression.Tests;
 
 public sealed class BrotliPayloadCompressorTests : PayloadCompressorContractTests
 {
-    protected override IPayloadCompressor CreateCompressor(CompressionLevel level = CompressionLevel.Optimal) =>
-        new BrotliPayloadCompressor(OptionsFor(level));
+    protected override CompressionAlgorithm ExpectedAlgorithm => CompressionAlgorithm.Brotli;
 
-    protected override void CreateCompressorWithNullOptions() => _ = new BrotliPayloadCompressor(null!);
+    protected override IPayloadCompressor Create(
+        CompressionLevel level = CompressionLevel.Optimal,
+        CompressionFraming framing = CompressionFraming.Framed,
+        long maxDecompressedSize = CompressionOptions.DefaultMaxDecompressedSize) =>
+        new BrotliPayloadCompressor(OptionsFor(level, maxDecompressedSize), framing);
 
-    [Fact]
-    public void Compress_ThenDecompress_ByteArray_RoundTrips_ForEmptyPayload()
-    {
-        var compressor = new BrotliPayloadCompressor(OptionsFor(CompressionLevel.Optimal));
-
-        byte[] compressed = compressor.Compress([]);
-        var result = compressor.Decompress(compressed);
-
-        Assert.True(result.IsSuccess);
-        Assert.Empty(result.Value);
-    }
+    protected override void CreateWithNullOptions() => _ = new BrotliPayloadCompressor(null!);
 
     [Fact]
-    public void Decompress_ByteArray_PrefixTruncatedInput_NeverThrows()
+    public void RawOutput_IsReadableByBrotliStreamDirectly()
     {
-        // Unlike gzip, Brotli's BCL implementation has no fixed magic-number gate at the start of
-        // the stream, so a prefix-truncated input is not reliably rejected — it can legitimately
-        // decode to a Result.Success carrying partial/garbage output instead of a Result failure.
-        // See the remarks on PayloadCompressorContractTests.TruncatedHighEntropyPayload for the
-        // full, empirically-verified explanation. The one guarantee this package makes regardless
-        // is the one this test asserts: no exception ever propagates uncaught.
-        IPayloadCompressor compressor = CreateCompressor();
-        byte[] truncated = TruncatedHighEntropyPayload(compressor);
+        // The whole point of raw mode: the bytes are an ordinary Brotli stream, no platform header.
+        var original = SamplePayload();
+        var compressed = Create(framing: CompressionFraming.Raw).Compress(original);
 
-        Exception? exception = Record.Exception(() => compressor.Decompress(truncated));
+        using var input = new MemoryStream(compressed);
+        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        brotli.CopyTo(output);
 
-        Assert.Null(exception);
+        Assert.Equal(original, output.ToArray());
     }
 }

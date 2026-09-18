@@ -1,40 +1,45 @@
 using System.IO.Compression;
+using SharedKernel.Compression.Options;
 using Xunit;
 
 namespace SharedKernel.Compression.Tests;
 
 public sealed class GZipPayloadCompressorTests : PayloadCompressorContractTests
 {
-    protected override IPayloadCompressor CreateCompressor(CompressionLevel level = CompressionLevel.Optimal) =>
-        new GZipPayloadCompressor(OptionsFor(level));
+    protected override CompressionAlgorithm ExpectedAlgorithm => CompressionAlgorithm.GZip;
 
-    protected override void CreateCompressorWithNullOptions() => _ = new GZipPayloadCompressor(null!);
+    protected override IPayloadCompressor Create(
+        CompressionLevel level = CompressionLevel.Optimal,
+        CompressionFraming framing = CompressionFraming.Framed,
+        long maxDecompressedSize = CompressionOptions.DefaultMaxDecompressedSize) =>
+        new GZipPayloadCompressor(OptionsFor(level, maxDecompressedSize), framing);
+
+    protected override void CreateWithNullOptions() => _ = new GZipPayloadCompressor(null!);
 
     [Fact]
-    public void Compress_ThenDecompress_ByteArray_RoundTrips_ForEmptyPayload()
+    public void RawOutput_IsAnOrdinaryGZipStream()
     {
-        var compressor = new GZipPayloadCompressor(OptionsFor(CompressionLevel.Optimal));
+        // Raw mode exists so an external system can read the bytes with any standard gzip tool.
+        var original = SamplePayload();
+        var compressed = Create(framing: CompressionFraming.Raw).Compress(original);
 
-        byte[] compressed = compressor.Compress([]);
-        var result = compressor.Decompress(compressed);
+        Assert.Equal(0x1F, compressed[0]);
+        Assert.Equal(0x8B, compressed[1]);
 
-        Assert.True(result.IsSuccess);
-        Assert.Empty(result.Value);
+        using var input = new MemoryStream(compressed);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        gzip.CopyTo(output);
+
+        Assert.Equal(original, output.ToArray());
     }
 
     [Fact]
-    public void Decompress_ByteArray_PrefixTruncatedInput_ReturnsFailureResult()
+    public void FramedOutput_IsNotAGZipStream()
     {
-        // gzip's fixed 2-byte magic number at the start of every stream makes a prefix-truncated
-        // (leading bytes missing) input reliably detectable — see the remarks on
-        // PayloadCompressorContractTests.TruncatedHighEntropyPayload for why this is asserted
-        // per-format rather than as a shared contract test.
-        IPayloadCompressor compressor = CreateCompressor();
-        byte[] truncated = TruncatedHighEntropyPayload(compressor);
+        // The counterpart warning: framed output is not a .gz body, so it is no use for interop.
+        var compressed = Create().Compress(SamplePayload());
 
-        var result = compressor.Decompress(truncated);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(CompressionErrorCodes.DecompressionFailed, result.Error.Code);
+        Assert.NotEqual(0x1F, compressed[0]);
     }
 }
