@@ -24,16 +24,19 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// for the base shape (<c>Title</c>/<c>Detail</c>/<c>Status</c>/<c>Type</c>/
 /// <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> — all identical to what the
 /// single-<c>Error</c> path would already produce for <see cref="ValidationException"/>'s inherited <c>Error</c> property) and
-/// additionally populates <c>Extensions["errors"]</c> with every failing field's messages grouped
-/// by <see cref="SharedKernel.Primitives.Errors.Error.Code"/>, mirroring ASP.NET Core's own
-/// built-in <see cref="ValidationProblemDetails.Errors"/> shape so client tooling that already
-/// understands that convention (form-binding libraries, generated SDKs) works unmodified. Built via
-/// <see cref="LocalizedDetailResolver.BuildErrorsExtension"/> — the same helper
+/// additionally populates <c>Extensions["errors"]</c> with every failing field's messages and
+/// <c>Extensions["errorCodes"]</c> with the codes of the same errors, in the same order. Both are
+/// keyed by field path (each error's <see cref="SharedKernel.Primitives.Errors.ErrorArgumentNames.PropertyPath"/>
+/// argument), or by <see cref="SharedKernel.Primitives.Errors.Error.Code"/> for an error that names
+/// no field, so <c>errors</c> keeps ASP.NET Core's own built-in
+/// <see cref="ValidationProblemDetails.Errors"/> shape and client tooling that already understands
+/// that convention (form-binding libraries, generated SDKs) works unmodified. Built via
+/// <see cref="LocalizedDetailResolver.AddErrorsExtensions"/> — the same helper
 /// <see cref="ErrorProblemDetailsExtensions"/> uses for a <see cref="SharedKernel.Primitives.Errors.Error"/>
 /// whose own <see cref="SharedKernel.Primitives.Errors.Error.Details"/> is non-empty (P-544), so a
 /// <c>Result.Failure(Error.Validation(errors))</c> returned from the application layer and a thrown
-/// <see cref="ValidationException"/> carrying the same field errors produce byte-identical
-/// <c>Extensions["errors"]</c> shapes.
+/// <see cref="ValidationException"/> carrying the same field errors produce identical
+/// <c>errors</c> and <c>errorCodes</c> members.
 /// </para>
 /// <para>
 /// Each field's message is independently subject to the same optional localization step as
@@ -59,9 +62,10 @@ public static class ValidationProblemDetailsExtensions
     /// <returns>
     /// A <see cref="ProblemDetails"/> identical in shape to
     /// <see cref="ErrorProblemDetailsExtensions.ToProblemDetails(SharedKernel.Primitives.Errors.Error, HttpContext?)"/>
-    /// applied to <see cref="ValidationException"/>'s inherited <c>Error</c> property, plus <c>Extensions["errors"]</c> — a
-    /// <see cref="Dictionary{TKey, TValue}"/> of <see cref="SharedKernel.Primitives.Errors.Error.Code"/>
-    /// to the array of failing messages for that code. Pure mapping — no logging, no I/O.
+    /// applied to <see cref="ValidationException"/>'s inherited <c>Error</c> property, plus
+    /// <c>Extensions["errors"]</c> (field path, or code, to the failing messages) and
+    /// <c>Extensions["errorCodes"]</c> (the same keys to the codes of those errors, index by
+    /// index). Pure mapping — no logging, no I/O.
     /// </returns>
     public static ProblemDetails ToProblemDetails(this ValidationException exception, HttpContext? context = null)
     {
@@ -73,8 +77,8 @@ public static class ValidationProblemDetailsExtensions
         // field may translate while a sibling field falls back to its raw message in the same
         // response body; this is never an all-or-nothing decision. Delegates to the same helper
         // ErrorProblemDetailsExtensions uses for Error.Details, so both paths produce
-        // byte-identical "errors" shapes for the same input errors (P-544).
-        problemDetails.Extensions["errors"] = LocalizedDetailResolver.BuildErrorsExtension(exception.Errors, context);
+        // identical "errors" and "errorCodes" members for the same input errors (P-544).
+        LocalizedDetailResolver.AddErrorsExtensions(problemDetails, exception.Errors, context);
 
         return problemDetails;
     }

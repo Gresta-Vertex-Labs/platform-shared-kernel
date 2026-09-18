@@ -82,10 +82,14 @@ HTTP status maps back to an `ErrorType` (400 → Validation, 401 → Unauthorize
 `HttpStatusErrorTypeMap`, the reverse of `SharedKernel.Presentation.WebApi`'s
 `ErrorTypeStatusCodeMap.Resolve` — duplicated here rather than shared, since `11.Communication` may
 never reference `14.Presentation`. When the body carries the `errors` extension (a multi-field
-validation failure, grouped by code with each value an array of messages), every field is rebuilt as
-its own `Error` and returned as one aggregate via `Error.Validation(IReadOnlyList<Error>)` — the same
-shape `ValidationException`/`Error.Details` produce on the server, round-tripping without losing any
-field. A non-JSON body, an empty body, or a body with none of these recognizable members still yields
+validation failure: keyed by field path, or by code for an error that names no field, each value an
+array of messages), every entry is rebuilt as its own `Error` and returned as one aggregate via
+`Error.Validation(IReadOnlyList<Error>)` — the same shape `ValidationException`/`Error.Details`
+produce on the server, round-tripping without losing any field. The parallel `errorCodes` extension
+supplies each entry's real code, index by index; when it names a code different from the key, the key
+is kept as the field path in `MessageArguments[ErrorArgumentNames.PropertyPath]`. A body from an
+older server without `errorCodes` is read as before, each key taken as the code. A non-JSON body, an
+empty body, or a body with none of these recognizable members still yields
 an `Error.Unexpected` carrying the response status in its code/message (`"http.{status}"`) — never an
 unclassified, status-blind fallback. A 2xx response with an empty body, or one that deserializes to
 `null`, fails with the `http.empty-body` code.

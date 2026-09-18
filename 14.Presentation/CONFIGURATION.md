@@ -185,10 +185,29 @@ just the first.
 
 Not a DI extension — a pure static mapping method, consumed automatically by
 `SharedKernelExceptionHandler` once it and `AddProblemDetails()`/`AddExceptionHandler<...>()` are
-registered. No options. Groups `ValidationException.Errors` by `Error.Code` into
-`Extensions["errors"]` (`Dictionary<string, string[]>`) — every other field of the produced
-`ProblemDetails` (`Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`)
-resolves identically to the single-`Error` path applied to the exception's first error.
+registered. No options. Adds two members built from `ValidationException.Errors`, both
+`Dictionary<string, string[]>` with the same keys:
+
+- `Extensions["errors"]` — each key's messages, each localized independently (see below).
+- `Extensions["errorCodes"]` — the `Error.Code` of the same errors, in the same order, so
+  `errorCodes[key][i]` is the code of the error whose message is `errors[key][i]`.
+
+An error's key is its field path — the `ErrorArgumentNames.PropertyPath` entry in
+`Error.MessageArguments`, such as `Accounts[0].Iban`, which `05.Application`'s `ValidationBehavior`
+sets for every FluentValidation failure — when that is a non-empty string, and its `Error.Code`
+otherwise:
+
+```json
+{
+  "errors":     { "Iban": ["IBAN check digits are not correct."] },
+  "errorCodes": { "Iban": ["validation.iban.invalid_check_digits"] }
+}
+```
+
+Every other field of the produced `ProblemDetails`
+(`Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`) resolves
+identically to the single-`Error` path applied to the exception's first error. The same two members
+are produced by `Error.ToProblemDetails()` for an aggregate whose `Error.Details` is non-empty.
 
 ### `Error.ToProblemDetails()` optional localization (P-484/WO-078 — no DI extension method)
 

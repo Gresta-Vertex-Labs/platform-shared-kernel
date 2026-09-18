@@ -37,6 +37,38 @@ public sealed class ValidationBehaviorTests
         }
     }
 
+    private sealed record Account(string Iban);
+
+    private sealed record TransferRequest(IReadOnlyList<Account> Accounts) : IRequest<Result>;
+
+    private sealed class AccountValidator : AbstractValidator<Account>
+    {
+        public AccountValidator()
+        {
+            RuleFor(x => x.Iban)
+                .Must(_ => false)
+                .WithErrorCode("validation.iban.invalid_check_digits")
+                .WithName("IBAN")
+                .WithMessage("{PropertyName} check digits are not correct.");
+        }
+    }
+
+    private sealed class TransferValidator : AbstractValidator<TransferRequest>
+    {
+        public TransferValidator()
+        {
+            RuleForEach(x => x.Accounts).SetValidator(new AccountValidator());
+        }
+    }
+
+    private sealed class DefaultCodeValidator : AbstractValidator<TestRequest>
+    {
+        public DefaultCodeValidator()
+        {
+            RuleFor(x => x.Name).MaximumLength(2);
+        }
+    }
+
     private sealed record TestGenericRequest : IRequest<Result<Guid>>;
 
     private sealed class FailingGenericValidator : AbstractValidator<TestGenericRequest>
@@ -78,7 +110,7 @@ public sealed class ValidationBehaviorTests
         nextCalled.Should().BeFalse();
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Validation);
-        result.Error.Details.Should().ContainSingle(e => e.Code == "Name" && e.Message == "Name is required.");
+        result.Error.Details.Should().ContainSingle(e => e.Code == ErrorCodes.Validation.Failed && e.Message == "Name is required.");
     }
 
     [Fact]
@@ -95,7 +127,7 @@ public sealed class ValidationBehaviorTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Details.Should().HaveCount(2);
-        result.Error.Details.Select(e => e.Code).Should().BeEquivalentTo(["Name", "Age"]);
+        result.Error.Details.Select(e => e.MessageArguments[ErrorArgumentNames.PropertyPath]).Should().BeEquivalentTo(["Name", "Age"]);
     }
 
     [Fact]
@@ -112,6 +144,66 @@ public sealed class ValidationBehaviorTests
         await behavior.Handle(new TestRequest("x"), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
         order.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task Handle_FailureWithErrorCode_UsesErrorCodeAndRecordsFieldPath()
+    {
+        var behavior = new ValidationBehavior<TransferRequest, Result>([new TransferValidator()]);
+
+        var result = await behavior.Handle(
+            new TransferRequest([new Account("TR000000000000000000000000")]),
+            () => Task.FromResult(Result.Success()),
+            CancellationToken.None);
+
+        var error = result.Error.Details.Should().ContainSingle().Subject;
+        error.Code.Should().Be("validation.iban.invalid_check_digits");
+        error.Message.Should().Be("IBAN check digits are not correct.");
+        error.MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Accounts[0].Iban");
+        error.MessageArguments[ErrorArgumentNames.PropertyName].Should().Be("IBAN");
+    }
+
+    [Fact]
+    public async Task Handle_Failure_NeverCarriesTheAttemptedValue()
+    {
+        const string attempted = "TR000000000000000000000000";
+        var behavior = new ValidationBehavior<TransferRequest, Result>([new TransferValidator()]);
+
+        var result = await behavior.Handle(
+            new TransferRequest([new Account(attempted)]),
+            () => Task.FromResult(Result.Success()),
+            CancellationToken.None);
+
+        var error = result.Error.Details.Should().ContainSingle().Subject;
+        error.MessageArguments.Should().NotContainKey("PropertyValue");
+        error.MessageArguments.Values.Should().NotContain(attempted);
+    }
+
+    [Fact]
+    public async Task Handle_BuiltInValidatorWithoutCustomCode_UsesFluentValidationDefaultCodeAndPlaceholders()
+    {
+        var behavior = new ValidationBehavior<TestRequest, Result>([new DefaultCodeValidator()]);
+
+        var result = await behavior.Handle(new TestRequest("abcdef"), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        var error = result.Error.Details.Should().ContainSingle().Subject;
+        error.Code.Should().Be("MaximumLengthValidator");
+        error.MessageArguments.Should().ContainKey("MaxLength");
+        error.MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Name");
+        error.MessageArguments.Should().NotContainKey("PropertyValue");
+    }
+
+    [Fact]
+    public async Task Handle_HandBuiltFailureWithoutCode_FallsBackToGenericValidationCode()
+    {
+        var behavior = new ValidationBehavior<TestRequest, Result>([new FailingValidator("Name", "Name is required.")]);
+
+        var result = await behavior.Handle(new TestRequest(""), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        var error = result.Error.Details.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.Validation.Failed);
+        error.MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Name");
+        error.MessageArguments[ErrorArgumentNames.PropertyName].Should().Be("Name");
     }
 
     [Fact]

@@ -16,8 +16,12 @@ namespace SharedKernel.Communication.Rest.ProblemDetails;
 /// <c>"https://httpstatuses.io/404"</c>, not a machine code); <c>detail</c> carries <c>Error.Message</c>
 /// (localized or the throw-site message, never blank on a real response); the resolved HTTP status
 /// maps back to an <see cref="ErrorType"/> via <see cref="HttpStatusErrorTypeMap"/>; and, when the
-/// failure aggregates several field errors, the <c>errors</c> extension (grouped by code, each value
-/// an array of messages) is rebuilt into <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>.
+/// failure aggregates several field errors, the <c>errors</c> extension (keyed by field path, or by
+/// code for an error that names no field, each value an array of messages) is rebuilt into
+/// <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>. The parallel
+/// <c>errorCodes</c> extension, when present, supplies each child's real code index by index and
+/// the key is kept as its <see cref="ErrorArgumentNames.PropertyPath"/> argument; without it each
+/// key is taken as the code.
 /// </para>
 /// <para>Never throws.</para>
 /// </remarks>
@@ -124,11 +128,13 @@ internal static class ProblemDetailsDeserializer
         {
             var details = new List<Error>();
 
-            foreach (var (fieldCode, messages) in fieldErrors)
+            foreach (var (key, messages) in fieldErrors)
             {
-                foreach (var fieldMessage in messages)
+                var codes = dto.ErrorCodes?.GetValueOrDefault(key);
+
+                for (var i = 0; i < messages.Length; i++)
                 {
-                    details.Add(Error.Validation(fieldCode, fieldMessage));
+                    details.Add(ToDetail(key, messages[i], codes is not null && i < codes.Length ? codes[i] : null));
                 }
             }
 
@@ -151,6 +157,33 @@ internal static class ProblemDetailsDeserializer
             ErrorType.Conflict => Error.Conflict(code, message),
             ErrorType.BusinessRule => Error.BusinessRule(code, message),
             _ => Error.Unexpected(code, message),
+        };
+    }
+
+    /// <summary>
+    /// Rebuilds one child error of a field-error aggregate. <paramref name="key"/> is the
+    /// <c>errors</c> map key, which <c>14.Presentation</c> sets to the error's field path when it
+    /// has one and to its code otherwise; <paramref name="wireCode"/> is the matching entry of the
+    /// <c>errorCodes</c> map, absent from older servers.
+    /// </summary>
+    /// <remarks>
+    /// With a code from <c>errorCodes</c> that differs from the key, the key is a field path: the
+    /// error takes the real code and records the key under <see cref="ErrorArgumentNames.PropertyPath"/>.
+    /// Without one, the key is used as the code, as before <c>errorCodes</c> existed.
+    /// </remarks>
+    private static Error ToDetail(string key, string message, string? wireCode)
+    {
+        if (string.IsNullOrWhiteSpace(wireCode) || string.Equals(wireCode, key, StringComparison.Ordinal))
+        {
+            return Error.Validation(key, message);
+        }
+
+        return Error.Validation(wireCode, message) with
+        {
+            MessageArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [ErrorArgumentNames.PropertyPath] = key,
+            },
         };
     }
 

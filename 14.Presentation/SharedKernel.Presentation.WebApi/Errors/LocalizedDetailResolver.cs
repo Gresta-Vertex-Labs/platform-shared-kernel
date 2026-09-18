@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Localization;
 using SharedKernel.Primitives.Errors;
@@ -29,6 +30,10 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// </remarks>
 internal static class LocalizedDetailResolver
 {
+    private const string ErrorsExtensionName = "errors";
+
+    private const string ErrorCodesExtensionName = "errorCodes";
+
     /// <summary>
     /// Resolves the <c>Detail</c> string for <paramref name="error"/>: the catalog translation
     /// for <c>(error.Code, CultureInfo.CurrentUICulture)</c>, filled with
@@ -54,30 +59,58 @@ internal static class LocalizedDetailResolver
     }
 
     /// <summary>
-    /// Builds the <c>Extensions["errors"]</c> value shared by every multi-error
-    /// <c>ProblemDetails</c> path: <paramref name="errors"/> grouped by
-    /// <see cref="Error.Code"/> (<see cref="StringComparer.Ordinal"/>), each value an array of
-    /// per-error localized/fallback messages resolved via <see cref="ResolveDetail"/>.
+    /// Adds the per-error <c>errors</c> and <c>errorCodes</c> extension members shared by every
+    /// multi-error <c>ProblemDetails</c> path.
     /// </summary>
+    /// <param name="problemDetails">The response body to add the two members to.</param>
     /// <param name="errors">The child errors to group and resolve. Never mutated.</param>
     /// <param name="context">
     /// The current <see cref="HttpContext"/>, forwarded to <see cref="ResolveDetail"/> for every
     /// error. May be <see langword="null"/>.
     /// </param>
-    /// <returns>
-    /// A <see cref="Dictionary{TKey, TValue}"/> of <see cref="Error.Code"/> to the array of
-    /// resolved messages for that code. One error may translate while a sibling falls back to its
-    /// raw <see cref="Error.Message"/> in the same result — never an all-or-nothing decision. This
-    /// is the single implementation shared by <see cref="ErrorProblemDetailsExtensions"/> (for
-    /// <see cref="Error.Details"/>) and <see cref="ValidationProblemDetailsExtensions"/> (for
+    /// <remarks>
+    /// <para>
+    /// Both members are dictionaries with the same keys, grouped with
+    /// <see cref="StringComparer.Ordinal"/> in the order the keys first appear. An error's key is
+    /// its <see cref="ErrorArgumentNames.PropertyPath"/> argument (the field it refers to, such as
+    /// <c>Accounts[0].Iban</c>) when that is a non-empty string, and its <see cref="Error.Code"/>
+    /// otherwise, so a domain error that names no field is still reported under its code.
+    /// </para>
+    /// <para>
+    /// <c>errors</c> maps each key to the messages for that key, each resolved independently by
+    /// <see cref="ResolveDetail"/> from the error's own code and arguments, so one error may
+    /// translate while a sibling falls back to its raw <see cref="Error.Message"/>.
+    /// <c>errorCodes</c> maps each key to the <see cref="Error.Code"/> of the same errors, in the
+    /// same order: <c>errorCodes[key][i]</c> is the code of the error whose message is
+    /// <c>errors[key][i]</c>. Keying <c>errors</c> by field keeps the shape of ASP.NET Core's
+    /// <see cref="ValidationProblemDetails.Errors"/>, which form-binding libraries and generated
+    /// clients already read; <c>errorCodes</c> gives clients the stable codes to branch on.
+    /// </para>
+    /// <para>
+    /// This is the single implementation shared by <see cref="ErrorProblemDetailsExtensions"/>
+    /// (for <see cref="Error.Details"/>) and <see cref="ValidationProblemDetailsExtensions"/> (for
     /// <see cref="SharedKernel.Core.Exceptions.ValidationException.Errors"/>), so both paths
-    /// produce byte-identical shapes for the same input errors.
-    /// </returns>
-    public static Dictionary<string, string[]> BuildErrorsExtension(IReadOnlyList<Error> errors, HttpContext? context)
-        => errors
-            .GroupBy(error => error.Code, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(error => ResolveDetail(error, context)).ToArray(),
-                StringComparer.Ordinal);
+    /// produce identical members for the same input errors.
+    /// </para>
+    /// </remarks>
+    public static void AddErrorsExtensions(ProblemDetails problemDetails, IReadOnlyList<Error> errors, HttpContext? context)
+    {
+        var groups = errors.GroupBy(GroupingKey, StringComparer.Ordinal).ToArray();
+
+        problemDetails.Extensions[ErrorsExtensionName] = groups.ToDictionary(
+            group => group.Key,
+            group => group.Select(error => ResolveDetail(error, context)).ToArray(),
+            StringComparer.Ordinal);
+
+        problemDetails.Extensions[ErrorCodesExtensionName] = groups.ToDictionary(
+            group => group.Key,
+            group => group.Select(error => error.Code).ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static string GroupingKey(Error error)
+        => error.MessageArguments.TryGetValue(ErrorArgumentNames.PropertyPath, out var path)
+            && path is string { Length: > 0 } fieldPath
+                ? fieldPath
+                : error.Code;
 }

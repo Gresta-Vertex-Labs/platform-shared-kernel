@@ -252,4 +252,123 @@ public class LocalizedProblemDetailsTests
             CultureInfo.CurrentUICulture = originalCulture;
         }
     }
+
+    private static Error FieldError(string code, string message, string path, string displayName)
+        => Error.Validation(code, message) with
+        {
+            MessageArguments = new Dictionary<string, object?>
+            {
+                [ErrorArgumentNames.PropertyPath] = path,
+                [ErrorArgumentNames.PropertyName] = displayName,
+            },
+        };
+
+    [Fact]
+    public void ToProblemDetails_ErrorsWithPropertyPath_AreKeyedByField_WithCodesAlignedIndexByIndex()
+    {
+        var aggregateError = Error.Validation(
+        [
+            FieldError("validation.iban.invalid_check_digits", "IBAN check digits are not correct.", "Accounts[0].Iban", "IBAN"),
+            FieldError("validation.max_length", "IBAN must not exceed 34 characters.", "Accounts[0].Iban", "IBAN"),
+            FieldError("validation.required", "Name is required.", "Name", "Name"),
+        ]);
+
+        var problemDetails = aggregateError.ToProblemDetails();
+
+        var errors = (Dictionary<string, string[]>)problemDetails.Extensions["errors"]!;
+        var errorCodes = (Dictionary<string, string[]>)problemDetails.Extensions["errorCodes"]!;
+
+        errors.Keys.Should().Equal("Accounts[0].Iban", "Name");
+        errorCodes.Keys.Should().Equal(errors.Keys);
+        errors["Accounts[0].Iban"].Should().Equal("IBAN check digits are not correct.", "IBAN must not exceed 34 characters.");
+        errorCodes["Accounts[0].Iban"].Should().Equal("validation.iban.invalid_check_digits", "validation.max_length");
+        errors["Name"].Should().Equal("Name is required.");
+        errorCodes["Name"].Should().Equal("validation.required");
+    }
+
+    [Fact]
+    public void ToProblemDetails_ErrorsWithoutAUsablePropertyPath_AreKeyedByCode()
+    {
+        var emptyPath = Error.Validation("order.total_invalid", "Order total is invalid.") with
+        {
+            MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "" },
+        };
+        var nonStringPath = Error.Validation("order.lines_invalid", "Order lines are invalid.") with
+        {
+            MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = 42 },
+        };
+        var exception = new ValidationException(
+        [
+            Error.Validation("order.limit_exceeded", "Order exceeds the limit."),
+            emptyPath,
+            nonStringPath,
+        ]);
+
+        var problemDetails = exception.ToProblemDetails();
+
+        var errors = (Dictionary<string, string[]>)problemDetails.Extensions["errors"]!;
+        var errorCodes = (Dictionary<string, string[]>)problemDetails.Extensions["errorCodes"]!;
+
+        errors.Keys.Should().Equal("order.limit_exceeded", "order.total_invalid", "order.lines_invalid");
+        errorCodes["order.limit_exceeded"].Should().Equal("order.limit_exceeded");
+        errorCodes["order.total_invalid"].Should().Equal("order.total_invalid");
+        errorCodes["order.lines_invalid"].Should().Equal("order.lines_invalid");
+    }
+
+    [Fact]
+    public void ToProblemDetails_FieldKeyedErrors_AreTranslatedByTheirOwnCodeAndArguments()
+    {
+        var aggregateError = Error.Validation(
+        [
+            FieldError("validation.iban.invalid_check_digits", "IBAN check digits are not correct.", "Accounts[0].Iban", "IBAN"),
+            FieldError("validation.max_length", "IBAN must not exceed 34 characters.", "Accounts[0].Iban", "IBAN"),
+        ]);
+        var catalog = new LocalizationCatalogBuilder()
+            .Add("validation.iban.invalid_check_digits", new CultureInfo("tr"), "{PropertyName} kontrol basamakları hatalı.")
+            .Build();
+        var originalCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
+
+            var problemDetails = aggregateError.ToProblemDetails(BuildContext(catalog));
+
+            var errors = (Dictionary<string, string[]>)problemDetails.Extensions["errors"]!;
+            var errorCodes = (Dictionary<string, string[]>)problemDetails.Extensions["errorCodes"]!;
+
+            errors["Accounts[0].Iban"].Should().Equal(
+                "IBAN kontrol basamakları hatalı.",
+                "IBAN must not exceed 34 characters.");
+            errorCodes["Accounts[0].Iban"].Should().Equal("validation.iban.invalid_check_digits", "validation.max_length");
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void ToProblemDetails_ResultAndExceptionPaths_ProduceTheSameFieldKeyedMembers()
+    {
+        IReadOnlyList<Error> fieldErrors =
+        [
+            FieldError("validation.required", "Name is required.", "Name", "Name"),
+            Error.Validation("order.limit_exceeded", "Order exceeds the limit."),
+        ];
+
+        var fromResult = Error.Validation(fieldErrors).ToProblemDetails();
+        var fromException = new ValidationException(fieldErrors).ToProblemDetails();
+
+        fromException.Extensions["errors"].Should().BeEquivalentTo(fromResult.Extensions["errors"]);
+        fromException.Extensions["errorCodes"].Should().BeEquivalentTo(fromResult.Extensions["errorCodes"]);
+    }
+
+    [Fact]
+    public void ToProblemDetails_SingleErrorWithoutDetails_HasNoErrorCodesMember()
+    {
+        var problemDetails = Error.NotFound("order.not_found", "Order could not be found.").ToProblemDetails();
+
+        problemDetails.Extensions.Should().NotContainKey("errorCodes");
+    }
 }

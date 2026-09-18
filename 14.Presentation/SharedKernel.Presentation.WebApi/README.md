@@ -298,20 +298,31 @@ only `[RequireRole]`/`[RequirePermission]` never requires `IClock` to be registe
 
 A `ValidationException` (`01.Core`) carries *every* failing field's `Error`, not just one.
 `SharedKernelExceptionHandler` routes it through `ValidationProblemDetailsExtensions` instead of the
-single-`Error` path, grouping every failing field by `Error.Code` into `Extensions["errors"]` —
-mirroring ASP.NET Core's own built-in `ValidationProblemDetails.Errors` shape so client tooling that
-already understands that convention (form-binding libraries, generated SDKs) works unmodified. No
-extra wiring is needed — this happens automatically once `SharedKernelExceptionHandler` is
-registered.
+single-`Error` path, adding two members with the same keys:
+
+- `errors` — each key's messages, mirroring ASP.NET Core's own built-in
+  `ValidationProblemDetails.Errors` shape so client tooling that already understands that
+  convention (form-binding libraries, generated SDKs) works unmodified.
+- `errorCodes` — the `Error.Code` of the same errors, in the same order: `errorCodes[key][i]` is the
+  code of the error whose message is `errors[key][i]`. Branch on these, not on the messages, which
+  may be translated.
+
+An error's key is the field it refers to — the `ErrorArgumentNames.PropertyPath` entry in its
+`MessageArguments`, such as `Accounts[0].Iban` — when present, and its code otherwise.
+`05.Application`'s `ValidationBehavior` sets the field path on every FluentValidation failure, so a
+command validated there is reported by field. No extra wiring is needed — this happens
+automatically once `SharedKernelExceptionHandler` is registered.
 
 A request that throws:
 
 ```csharp
 throw new ValidationException(
 [
-    Error.Validation("Order.CustomerId", "CustomerId is required."),
-    Error.Validation("Order.Lines", "At least one order line is required."),
-    Error.Validation("Order.Lines", "Line quantity must be greater than zero."),
+    Error.Validation("validation.required", "CustomerId is required.")
+        with { MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "CustomerId" } },
+    Error.Validation("order.lines_required", "At least one order line is required."),
+    Error.Validation("validation.iban.invalid_check_digits", "IBAN check digits are not correct.")
+        with { MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "Accounts[0].Iban" } },
 ]);
 ```
 
@@ -320,31 +331,37 @@ produces a body naming all three failures, not just the first:
 ```json
 {
   "type": "https://httpstatuses.io/400",
-  "title": "Order.CustomerId",
+  "title": "validation.required",
   "status": 400,
   "detail": "CustomerId is required.",
-  "errorCode": "Order.CustomerId",
+  "errorCode": "validation.required",
   "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
   "errors": {
-    "Order.CustomerId": ["CustomerId is required."],
-    "Order.Lines": ["At least one order line is required.", "Line quantity must be greater than zero."]
+    "CustomerId": ["CustomerId is required."],
+    "order.lines_required": ["At least one order line is required."],
+    "Accounts[0].Iban": ["IBAN check digits are not correct."]
+  },
+  "errorCodes": {
+    "CustomerId": ["validation.required"],
+    "order.lines_required": ["order.lines_required"],
+    "Accounts[0].Iban": ["validation.iban.invalid_check_digits"]
   }
 }
 ```
 
 `Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]` are identical to
-what the single-`Error` path would already produce for the exception's first error — `errors` is
-purely additive. Every other `SharedKernelException` subtype (`NotFoundException`,
+what the single-`Error` path would already produce for the exception's first error — `errors` and
+`errorCodes` are purely additive. Every other `SharedKernelException` subtype (`NotFoundException`,
 `ConflictException`, etc.) continues through the unchanged single-`Error`
 `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path — this multi-error shape is specific to
 `ValidationException`, not a general precedent for other exception types.
 
-The same `errors` shape is also produced on the `Result<T>`→HTTP path with no exception involved:
-`ErrorProblemDetailsExtensions.ToProblemDetails(Error)` populates `Extensions["errors"]` whenever
-`Error.Details` (`01.Core`) is non-empty — the case for an `Error.Validation(IReadOnlyList<Error>)`
-aggregate returned as `Result.Failure(...)`. Both paths call the same internal
-`LocalizedDetailResolver.BuildErrorsExtension` helper, so `ResultHttpExtensions`/`ValidationProblemDetailsExtensions`
-produce byte-identical `errors` maps for the same underlying field errors.
+The same two members are also produced on the `Result<T>`→HTTP path with no exception involved:
+`ErrorProblemDetailsExtensions.ToProblemDetails(Error)` adds them whenever `Error.Details`
+(`01.Core`) is non-empty — the case for an `Error.Validation(IReadOnlyList<Error>)` aggregate
+returned as `Result.Failure(...)`, which is what `ValidationBehavior` returns. Both paths call the
+same internal `LocalizedDetailResolver.AddErrorsExtensions` helper, so they produce identical
+`errors` and `errorCodes` maps for the same underlying field errors.
 
 ---
 

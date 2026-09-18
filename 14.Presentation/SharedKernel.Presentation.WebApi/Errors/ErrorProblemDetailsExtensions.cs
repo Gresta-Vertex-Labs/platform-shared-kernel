@@ -34,10 +34,12 @@ public static class ErrorProblemDetailsExtensions
     /// status URI, and <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> populated.
     /// When <see cref="Error.Details"/> is non-empty (an aggregate built by
     /// <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>),
-    /// <c>Extensions["errors"]</c> is additionally populated via
-    /// <see cref="LocalizedDetailResolver.BuildErrorsExtension"/> — the same
-    /// grouped-by-code/independently-localized shape
-    /// <see cref="ValidationProblemDetailsExtensions"/> produces for a thrown
+    /// <c>Extensions["errors"]</c> and <c>Extensions["errorCodes"]</c> are additionally populated
+    /// via <see cref="LocalizedDetailResolver.AddErrorsExtensions"/>: both keyed by each child
+    /// error's field path (its <see cref="ErrorArgumentNames.PropertyPath"/> argument), or by its
+    /// code when it names no field, with <c>errors</c> holding the independently localized
+    /// messages and <c>errorCodes</c> the codes of the same errors in the same order. This is the
+    /// same shape <see cref="ValidationProblemDetailsExtensions"/> produces for a thrown
     /// <see cref="SharedKernel.Core.Exceptions.ValidationException"/>, since both call the one
     /// shared helper. Localization is optional and additive: a service that never registers a
     /// catalog produces byte-identical output to before P-484. Pure mapping — no logging, no I/O.
@@ -52,7 +54,7 @@ public static class ErrorProblemDetailsExtensions
 
         if (error.Details.Count > 0)
         {
-            problemDetails.Extensions["errors"] = LocalizedDetailResolver.BuildErrorsExtension(error.Details, context);
+            LocalizedDetailResolver.AddErrorsExtensions(problemDetails, error.Details, context);
         }
 
         return problemDetails;

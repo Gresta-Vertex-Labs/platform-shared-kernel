@@ -97,7 +97,7 @@ public class ValidationProblemDetailsExtensionsTests
         // Same field errors, two independent entry points: a thrown ValidationException (the
         // exception-boundary path) and Result.Failure(Error.Validation(errors)) (the in-process
         // Result path, 05.Application's ValidationBehavior). Both must route through
-        // LocalizedDetailResolver.BuildErrorsExtension, so Extensions["errors"] is identical
+        // LocalizedDetailResolver.AddErrorsExtensions, so Extensions["errors"] is identical
         // regardless of which path produced the ProblemDetails (P-544).
         Error[] fieldErrors =
         [

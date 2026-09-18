@@ -103,8 +103,8 @@ ErrorProblemDetailsExtensions  (static class)
           Extensions["errorCode"] = error.Code; Extensions["traceId"] = Activity.Current?.Id
           ?? context?.TraceIdentifier. Otherwise pure mapping — no logging, no I/O beyond the
           optional DI resolution. As of P-544 (shipped): when error.Details (01.Core.Error) is
-          non-empty — an Error.Validation(IReadOnlyList<Error>) aggregate — Extensions["errors"]
-          is additionally populated via the same internal LocalizedDetailResolver.BuildErrorsExtension
+          non-empty — an Error.Validation(IReadOnlyList<Error>) aggregate — Extensions["errors"]/["errorCodes"]
+          is additionally populated via the same internal LocalizedDetailResolver.AddErrorsExtensions
           helper ValidationProblemDetailsExtensions uses, so a Result.Failure(Error.Validation(errors))
           reaching the HTTP boundary through ResultHttpExtensions produces a byte-identical "errors"
           shape to a thrown ValidationException carrying the same field errors.
@@ -319,7 +319,8 @@ AddSharedKernelAuthorizationFilters(this IServiceCollection) → IServiceCollect
 ```text
 ValidationProblemDetailsExtensions  (static class)
     .ToProblemDetails(this ValidationException exception, HttpContext? context = null) → ProblemDetails
-    NOTE: Groups exception.Errors by Error.Code into Extensions["errors"] (Dictionary<string, string[]>),
+    NOTE: Groups exception.Errors by field path (MessageArguments[ErrorArgumentNames.PropertyPath], else
+          Error.Code) into Extensions["errors"] (messages) and Extensions["errorCodes"] (codes, index-aligned),
           mirroring ASP.NET Core's own built-in ValidationProblemDetails.Errors shape so client tooling
           that already understands that convention (form-binding libraries, generated SDKs) works
           unmodified. Status/Type/traceId resolve identically to the single-Error path (still
@@ -328,7 +329,7 @@ ValidationProblemDetailsExtensions  (static class)
           ErrorProblemDetailsExtensions.ToProblemDetails(Error) — every non-ValidationException error
           (NotFound/Conflict/Forbidden/Unauthorized/BusinessRule/Unexpected) continues to produce a
           byte-for-byte identical single-error body. As of P-544 (shipped), delegates the
-          grouping/localization to the same internal LocalizedDetailResolver.BuildErrorsExtension
+          grouping/localization to the same internal LocalizedDetailResolver.AddErrorsExtensions
           helper ErrorProblemDetailsExtensions now also calls for a non-exception Error.Details
           aggregate (see the Error → ProblemDetails mapping section above), so the exception path
           and the Result<T>→HTTP path produce byte-identical "errors" shapes for the same field errors.
@@ -1028,7 +1029,7 @@ Never references `04.Contracts` — protobuf-generated messages are this package
 - `ErrorTypeStatusCodeMap.Resolve` is the single source of truth for `ErrorType` → HTTP status mapping. Do not duplicate this switch anywhere else.
 - `SharedKernelExceptionHandler` must never leak exception messages or stack traces outside `IHostEnvironment.IsDevelopment()`.
 - `ProblemDetails.Extensions["traceId"]` must always be populated when `Activity.Current` is non-null — this is the platform's primary "give support this ID" field surfaced to API consumers.
-- **Multi-field validation errors (WO-062, P-402 — shipped):** `ValidationException` is the one case where a single `Error` is insufficient — `ValidationProblemDetailsExtensions.ToProblemDetails(ValidationException, ...)` must be used instead of the single-`Error` path, grouping every failing field's `Error` by `Code` into `Extensions["errors"]`. Every other `SharedKernelException` subtype continues through the single-`Error` `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path unchanged — this is a narrow, `ValidationException`-specific exception to the "one `Error`, one body" model, not a general precedent for other exception types to grow their own bespoke body shape.
+- **Multi-field validation errors (WO-062, P-402 — shipped):** `ValidationException` is the one case where a single `Error` is insufficient — `ValidationProblemDetailsExtensions.ToProblemDetails(ValidationException, ...)` must be used instead of the single-`Error` path, grouping every failing field's `Error` by field path (its `PropertyPath` argument, else its `Code`) into `Extensions["errors"]`, with the codes in the parallel `Extensions["errorCodes"]`. Every other `SharedKernelException` subtype continues through the single-`Error` `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path unchanged — this is a narrow, `ValidationException`-specific exception to the "one `Error`, one body" model, not a general precedent for other exception types to grow their own bespoke body shape.
 - **Localized `Detail` (WO-078, P-484 — shipped) never introduces a second `ProblemDetails`-construction path.** `Error.ToProblemDetails()`/`ValidationProblemDetailsExtensions` remain the sole entry points; localization only changes where `Detail`'s string value comes from (an optional `ILocalizationCatalog` lookup keyed by `error.Code`), never `Title`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`, and never the `ErrorType`→status mapping. `error.Message` remains the mandatory, never-blank fallback for an unregistered catalog or an untranslated code — an un-translated error must behave exactly as it does today. See the "Localized `ProblemDetails.Detail`" contract above.
 - **HTTP protocol-level outcomes that never originate as a domain `Error` (WO-062, P-407/P-408 — shipped) are never routed through `Error`/`ErrorType`.** A 412 Precondition Failed (`If-Match` mismatch) and a 429 Too Many Requests (rate-limit rejection) are both HTTP-boundary-native outcomes with no corresponding `Result<T>` failure ever produced deeper in the stack — unlike `NotFound`/`Conflict`/`Validation`/etc., which represent application/domain failure categories translated to HTTP as a deliberate mapping step. These two outcomes are built via a small shared internal RFC 9457 shaping helper (extracted from `ErrorProblemDetailsExtensions`'s existing `Type`-URI/`traceId` construction pattern) instead of growing the `ErrorType` enum for outcomes that were never an `Error` to begin with. Do not propose a new `ErrorType` member for a future HTTP-protocol-native outcome without first asking whether it is genuinely a domain/application failure category (belongs in `ErrorType`) or a pure HTTP-boundary concern (belongs in this shared shaping helper instead).
 

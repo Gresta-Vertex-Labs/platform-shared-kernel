@@ -133,7 +133,7 @@ public sealed class ProblemDetailsDeserializerTests
     [Fact]
     public async Task DeserializeAsync_WithErrorsExtension_RebuildsEveryFieldIntoDetails()
     {
-        // Arrange — mirrors LocalizedDetailResolver.BuildErrorsExtension's shape exactly: grouped by
+        // Arrange — the legacy shape, with no "errorCodes" member: each "errors" key is taken as the
         // code, each value an array of messages.
         var response = BuildProblemDetailsResponse(
             statusCode: HttpStatusCode.BadRequest,
@@ -163,6 +163,94 @@ public sealed class ProblemDetailsDeserializerTests
         error.Details.Should().ContainSingle(d => d.Code == "email.invalid_format" && d.Message == "Email is not a valid address.");
         error.Details.Should().ContainSingle(d => d.Code == "email.invalid_format" && d.Message == "Email exceeds the maximum length.");
         error.Details.Should().OnlyContain(d => d.Type == ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithFieldKeyedErrorsAndErrorCodes_RestoresRealCodesAndFieldPaths()
+    {
+        // Arrange — the current 14.Presentation shape: "errors" keyed by field path (or by code for
+        // an error that names no field) and "errorCodes" aligned with it index by index.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.BadRequest,
+            body: """
+                {
+                  "type": "https://httpstatuses.io/400",
+                  "title": "validation.failed",
+                  "errorCode": "validation.failed",
+                  "detail": "3 validation errors occurred.",
+                  "status": 400,
+                  "errors": {
+                    "Accounts[0].Iban": ["IBAN check digits are not correct.", "IBAN must not exceed 34 characters."],
+                    "order.limit_exceeded": ["Order exceeds the limit."]
+                  },
+                  "errorCodes": {
+                    "Accounts[0].Iban": ["validation.iban.invalid_check_digits", "validation.max_length"],
+                    "order.limit_exceeded": ["order.limit_exceeded"]
+                  }
+                }
+                """);
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Code.Should().Be(ErrorCodes.Validation.Failed);
+        error.Details.Should().HaveCount(3);
+
+        error.Details[0].Code.Should().Be("validation.iban.invalid_check_digits");
+        error.Details[0].Message.Should().Be("IBAN check digits are not correct.");
+        error.Details[0].MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Accounts[0].Iban");
+
+        error.Details[1].Code.Should().Be("validation.max_length");
+        error.Details[1].Message.Should().Be("IBAN must not exceed 34 characters.");
+        error.Details[1].MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Accounts[0].Iban");
+
+        // A code-keyed entry names no field, so it gets no field path.
+        error.Details[2].Code.Should().Be("order.limit_exceeded");
+        error.Details[2].MessageArguments.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_WithErrorCodesShorterThanMessages_FallsBackToTheKeyForUnmatchedMessages()
+    {
+        // Arrange — a malformed or partial "errorCodes" entry must never drop a message.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.BadRequest,
+            body: """
+                {
+                  "status": 400,
+                  "errors": { "Name": ["Name is required.", "Name is too long."], "Email": ["Email is invalid."] },
+                  "errorCodes": { "Name": ["validation.required"] }
+                }
+                """);
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Details.Select(d => d.Code).Should().Equal("validation.required", "Name", "Email");
+        error.Details[0].MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Name");
+        error.Details[1].MessageArguments.Should().BeEmpty();
+        error.Details[2].MessageArguments.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_PlainJsonContentType_AlsoReadsErrorCodes()
+    {
+        // Arrange — the reflection fallback path (not application/problem+json) binds the same members.
+        var content = new StringContent(
+            """{"status":400,"errors":{"Name":["Name is required."]},"errorCodes":{"Name":["validation.required"]}}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = content };
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        var detail = error.Details.Should().ContainSingle().Subject;
+        detail.Code.Should().Be("validation.required");
+        detail.MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Name");
     }
 
     [Fact]
