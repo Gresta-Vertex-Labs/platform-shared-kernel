@@ -385,9 +385,9 @@ services.AddDomainEventHandler<OrderPlacedDomainEvent, SendConfirmationHandler>(
 
 | Package | Latest version | Review |
 | --- | --- | --- |
-| Application | `1.0.0-alpha.0.973` | P-544: pre-publish redesign — `IQueryBase`, `IRequestContext`, fail-closed authorization, `Result`-only short-circuits |
-| Application.Behaviors | `1.0.0-alpha.0.973` | P-544, then a hardening pass: single-`Build()` guard, validated options, stateless idempotency reservations |
-| Application.Behaviors.Caching | *publish-ready, not yet on the feed* | P-556: key namespacing by query type and scope, fail-closed `CacheScope`, `CacheKeyRef` targets, uncancellable post-commit eviction, EventIds 5200-5299 |
+| Application | `1.0.0-alpha.0.1116` | P-544: pre-publish redesign — `IQueryBase`, `IRequestContext`, fail-closed authorization, `Result`-only short-circuits |
+| Application.Behaviors | `1.0.0-alpha.0.1116` | P-544, then a hardening pass: single-`Build()` guard, validated options, stateless idempotency reservations |
+| Application.Behaviors.Caching | `1.0.0-alpha.0.1116` | P-556: key namespacing by query type and scope, fail-closed `CacheScope`, `CacheKeyRef` targets, uncancellable post-commit eviction, EventIds 5200-5299 |
 
 Versions come from one repository-wide counter (MinVer), so a higher number always contains every earlier change.
 

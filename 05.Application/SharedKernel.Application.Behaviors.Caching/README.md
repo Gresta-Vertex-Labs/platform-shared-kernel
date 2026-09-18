@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 [![MediatR 12.4](https://img.shields.io/badge/MediatR-12.4-5c6bc0)](https://github.com/jbogard/MediatR)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Published: GitHub Packages](https://img.shields.io/badge/published-GitHub%20Packages-success)
 ![Scopes: fail closed](https://img.shields.io/badge/scopes-fail%20closed-success)
 ![Eviction: after commit](https://img.shields.io/badge/eviction-after%20commit-orange)
 
@@ -55,9 +56,6 @@ ApproveOrderCommand(42)   handler succeeds, transaction commits  -> entry evicte
 | Eviction that waits for the commit, and cannot be cancelled | Nothing evicts on a write that has not landed, and a client disconnect cannot leave the cache serving stale data |
 | `CacheKeyRef.For<TQuery>(key)` | Renaming a query is a compile error at the command, not a missed eviction found in production |
 | Hit and miss counters tagged by query type | You can answer "what is the hit ratio of `GetOrderQuery`", not just "of this key prefix" |
-
-> **Not published yet.** The package is finished, reviewed and tested; it ships with the next release of the
-> `05.Application` family.
 
 ## Contents
 
