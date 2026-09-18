@@ -25,8 +25,7 @@ using SharedKernel.Cryptography.Totp;
 using SharedKernel.DataPrivacy.Classification;
 using SharedKernel.DataPrivacy.DataSubjectRequests;
 using SharedKernel.DataPrivacy.Masking;
-using SharedKernel.FeatureManagement.Abstractions;
-using SharedKernel.FeatureManagement.Extensions;
+using SharedKernel.FeatureManagement;
 using SharedKernel.Guards;
 using SharedKernel.Localization;
 using SharedKernel.Primitives.Clocks;
@@ -35,6 +34,7 @@ using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Validation;
 using SharedKernel.Validation.FluentValidation;
+using OpenFeature;
 using Xunit;
 using FluentValidationLib = FluentValidation;
 
@@ -259,7 +259,7 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // SharedKernel.FeatureManagement — IFeatureManager
+    // SharedKernel.FeatureManagement — OpenFeature IFeatureClient + FeatureFlag<T>
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -277,8 +277,9 @@ public sealed class ConsumerDependencyGraphTests
 
         await host.StartAsync();
 
-        IFeatureManager fm = host.Services.GetRequiredService<IFeatureManager>();
-        bool enabled = await fm.IsEnabledAsync("BetaFeature", CancellationToken.None);
+        using IServiceScope scope = host.Services.CreateScope();
+        IFeatureClient flags = scope.ServiceProvider.GetRequiredService<IFeatureClient>();
+        bool enabled = await flags.IsEnabledAsync(FeatureFlag.Boolean("BetaFeature"), CancellationToken.None);
 
         Assert.True(enabled);
 
@@ -300,8 +301,9 @@ public sealed class ConsumerDependencyGraphTests
 
         await host.StartAsync();
 
-        IFeatureManager fm = host.Services.GetRequiredService<IFeatureManager>();
-        bool enabled = await fm.IsEnabledAsync("BetaFeature", CancellationToken.None);
+        using IServiceScope scope = host.Services.CreateScope();
+        IFeatureClient flags = scope.ServiceProvider.GetRequiredService<IFeatureClient>();
+        bool enabled = await flags.IsEnabledAsync(FeatureFlag.Boolean("BetaFeature"), CancellationToken.None);
 
         Assert.False(enabled);
 

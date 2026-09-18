@@ -127,11 +127,8 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <!--
-      FeatureManagement fake (S-38, P-300/WO-049): FakeFeatureManager (FeatureManagement/). The
-      reference itself resolves to real, compiled types today, but FakeFeatureManager cannot be
-      written against it until IFeatureManager.GetVariantAsync/GetVariantAsync&lt;TContext&gt; ship
-      (01.Core's own SK.01.P298) — a missing interface member blocks the whole type, not merely a
-      call site.
+      FeatureManagement fake (FeatureManagement/): FakeFeatureClient, an in-memory OpenFeature
+      IFeatureClient that serves the typed FeatureFlag&lt;T&gt; values a test sets (rewritten for P-555).
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj" />
     <!--
