@@ -31,8 +31,9 @@ internal static class LocalizedDetailResolver
 {
     /// <summary>
     /// Resolves the <c>Detail</c> string for <paramref name="error"/>: the catalog translation
-    /// for <c>(error.Code, CultureInfo.CurrentUICulture)</c> when a registered
-    /// <see cref="ILocalizationCatalog"/> has one, otherwise <see cref="Error.Message"/> verbatim.
+    /// for <c>(error.Code, CultureInfo.CurrentUICulture)</c>, filled with
+    /// <see cref="Error.MessageArguments"/>, when a registered <see cref="ILocalizationCatalog"/>
+    /// has a usable one; otherwise <see cref="Error.Message"/> verbatim.
     /// </summary>
     /// <param name="error">The error whose <see cref="Error.Code"/>/<see cref="Error.Message"/> to resolve.</param>
     /// <param name="context">
@@ -49,12 +50,7 @@ internal static class LocalizedDetailResolver
     {
         var catalog = context?.RequestServices?.GetService<ILocalizationCatalog>();
 
-        if (catalog is not null && catalog.TryGetString(error.Code, CultureInfo.CurrentUICulture, out var translated))
-        {
-            return translated!;
-        }
-
-        return error.Message;
+        return catalog is null ? error.Message : catalog.Localize(error, CultureInfo.CurrentUICulture);
     }
 
     /// <summary>

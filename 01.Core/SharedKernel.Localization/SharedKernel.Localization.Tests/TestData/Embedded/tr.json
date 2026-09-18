@@ -1,0 +1,4 @@
+{
+  // Embedded resource used by AddEmbeddedJson tests.
+  "greeting": "Merhaba {name}.",
+}

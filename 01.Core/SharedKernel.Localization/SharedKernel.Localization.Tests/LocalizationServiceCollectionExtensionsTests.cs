@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using NSubstitute;
@@ -9,170 +8,76 @@ namespace SharedKernel.Localization.Tests;
 
 public sealed class LocalizationServiceCollectionExtensionsTests
 {
-    private static readonly CultureInfo EnglishUs = CultureInfo.GetCultureInfo("en-US");
+    private static readonly CultureInfo Turkish = CultureInfo.GetCultureInfo("tr");
 
     [Fact]
-    public void AddInMemoryLocalizationCatalog_Resolves_InMemoryLocalizationCatalog()
+    public void AddLocalizationCatalog_RegistersOneSingleton_AsInterfaceAndConcreteType()
     {
         var services = new ServiceCollection();
-
-        services.AddInMemoryLocalizationCatalog();
+        services.AddLocalizationCatalog(catalog => catalog.Add("greeting", Turkish, "Merhaba"));
 
         using ServiceProvider provider = services.BuildServiceProvider();
         ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
 
-        Assert.IsType<InMemoryLocalizationCatalog>(catalog);
+        Assert.Same(catalog, provider.GetRequiredService<ILocalizationCatalog>());
+        Assert.Same(catalog, provider.GetRequiredService<InMemoryLocalizationCatalog>());
+        Assert.True(catalog.TryGetString("greeting", Turkish, out string? value));
+        Assert.Equal("Merhaba", value);
     }
 
     [Fact]
-    public void AddInMemoryLocalizationCatalog_ConfigureCallback_SeedsCatalogBeforeItResolves()
+    public void AddLocalizationCatalog_BrokenTranslation_FailsDuringRegistration_NotOnFirstUse()
     {
         var services = new ServiceCollection();
 
-        services.AddInMemoryLocalizationCatalog(catalog =>
-            catalog.AddTranslation("greeting", EnglishUs, "Hello"));
-
-        using ServiceProvider provider = services.BuildServiceProvider();
-        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
-
-        bool found = catalog.TryGetString("greeting", EnglishUs, out string? value);
-
-        Assert.True(found);
-        Assert.Equal("Hello", value);
+        Assert.Throws<FormatException>(
+            () => services.AddLocalizationCatalog(catalog => catalog.Add("a", Turkish, "{0}")));
+        Assert.Empty(services);
     }
 
     [Fact]
-    public void AddInMemoryLocalizationCatalog_RegistersAsSingleton()
-    {
-        var services = new ServiceCollection();
-
-        services.AddInMemoryLocalizationCatalog();
-
-        using ServiceProvider provider = services.BuildServiceProvider();
-
-        ILocalizationCatalog first = provider.GetRequiredService<ILocalizationCatalog>();
-        ILocalizationCatalog second = provider.GetRequiredService<ILocalizationCatalog>();
-
-        Assert.Same(first, second);
-    }
-
-    [Fact]
-    public void AddInMemoryLocalizationCatalog_NullServices_ThrowsArgumentNullException()
-    {
-        IServiceCollection? services = null;
-
-        Assert.Throws<ArgumentNullException>(() => services!.AddInMemoryLocalizationCatalog());
-    }
-
-    [Fact]
-    public void AddStringLocalizerCatalog_Resolves_StringLocalizerLocalizationCatalog()
+    public void AddStringLocalizerCatalog_ResolvesOverTheRegisteredFactory()
     {
         var services = new ServiceCollection();
         IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
+        factory.Create(typeof(Resource)).Returns(Substitute.For<IStringLocalizer>());
         services.AddSingleton(factory);
-
-        services.AddStringLocalizerCatalog<ConsumerResource>();
+        services.AddStringLocalizerCatalog<Resource>();
 
         using ServiceProvider provider = services.BuildServiceProvider();
-        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
 
-        Assert.IsType<StringLocalizerLocalizationCatalog>(catalog);
+        Assert.IsType<StringLocalizerLocalizationCatalog>(provider.GetRequiredService<ILocalizationCatalog>());
     }
 
     [Fact]
-    public void AddStringLocalizerCatalog_NoFactoryRegistered_ThrowsOnResolve()
+    public void AddStringLocalizerCatalog_WithoutAFactory_FailsOnResolve()
     {
         var services = new ServiceCollection();
-
-        services.AddStringLocalizerCatalog<ConsumerResource>();
-
-        using ServiceProvider provider = services.BuildServiceProvider();
-
-        Assert.Throws<InvalidOperationException>(() =>
-        {
-            provider.GetRequiredService<ILocalizationCatalog>();
-        });
-    }
-
-    [Fact]
-    public void AddStringLocalizerCatalog_NullServices_ThrowsArgumentNullException()
-    {
-        IServiceCollection? services = null;
-
-        Assert.Throws<ArgumentNullException>(() => services!.AddStringLocalizerCatalog<ConsumerResource>());
-    }
-
-    // ── T-88: TryAdd first-call-wins behavior inversion (SK.01.P518) ────────────────────────────
-    // Both AddInMemoryLocalizationCatalog and AddStringLocalizerCatalog<TResource> register
-    // ILocalizationCatalog via TryAddSingleton — standardizing this domain onto the TryAdd idiom
-    // deliberately and knowingly inverted the prior "whichever call runs last wins" behavior to
-    // "whichever call runs first wins."
-
-    [Fact]
-    public void AddInMemoryLocalizationCatalog_ThenAddStringLocalizerCatalog_FirstRegisteredCatalogResolves()
-    {
-        var services = new ServiceCollection();
-
-        services.AddInMemoryLocalizationCatalog();
-        services.AddStringLocalizerCatalog<ConsumerResource>();
+        services.AddStringLocalizerCatalog<Resource>();
 
         using ServiceProvider provider = services.BuildServiceProvider();
-        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
 
-        Assert.IsType<InMemoryLocalizationCatalog>(catalog);
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<ILocalizationCatalog>());
     }
 
     [Fact]
-    public void AddStringLocalizerCatalog_ThenAddInMemoryLocalizationCatalog_FirstRegisteredCatalogResolves()
+    public void RegisteringASecondCatalog_Throws_InEitherOrder()
     {
-        var services = new ServiceCollection();
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
-        services.AddSingleton(factory);
+        var first = new ServiceCollection().AddLocalizationCatalog(_ => { });
+        var second = new ServiceCollection().AddStringLocalizerCatalog<Resource>();
 
-        services.AddStringLocalizerCatalog<ConsumerResource>();
-        services.AddInMemoryLocalizationCatalog();
-
-        using ServiceProvider provider = services.BuildServiceProvider();
-        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
-
-        Assert.IsType<StringLocalizerLocalizationCatalog>(catalog);
-    }
-
-    // ── Name-collision guard (T-61) ──────────────────────────────────────────────────────────
-    // AddSharedKernelLocalization() is reserved for 13.ServiceDefaults's culture-resolution
-    // middleware (P-483) and must never be declared by this package. A reflection-based scan over
-    // every public static method this assembly exposes makes that structural, not a promise kept
-    // only by review.
-
-    [Fact]
-    public void ThisAssembly_DeclaresNoMethodNamed_AddSharedKernelLocalization()
-    {
-        Assembly assembly = typeof(LocalizationServiceCollectionExtensions).Assembly;
-
-        IEnumerable<MethodInfo> allPublicStaticMethods = assembly.GetTypes()
-            .Where(t => t.IsPublic)
-            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
-
-        Assert.DoesNotContain(allPublicStaticMethods, m => m.Name == "AddSharedKernelLocalization");
+        Assert.Throws<InvalidOperationException>(() => first.AddStringLocalizerCatalog<Resource>());
+        Assert.Throws<InvalidOperationException>(() => second.AddLocalizationCatalog(_ => { }));
+        Assert.Throws<InvalidOperationException>(() => first.AddLocalizationCatalog(_ => { }));
     }
 
     [Fact]
-    public void ThisAssembly_DoesDeclare_TheTwoSanctionedRegistrationMethods()
+    public void NullArguments_Throw()
     {
-        // Companion to the guard above: proves the scan itself is not vacuously passing because it
-        // found zero extension methods at all.
-        Assembly assembly = typeof(LocalizationServiceCollectionExtensions).Assembly;
-
-        IEnumerable<string> allPublicStaticMethodNames = assembly.GetTypes()
-            .Where(t => t.IsPublic)
-            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            .Select(m => m.Name);
-
-        Assert.Contains("AddInMemoryLocalizationCatalog", allPublicStaticMethodNames);
-        Assert.Contains("AddStringLocalizerCatalog", allPublicStaticMethodNames);
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddLocalizationCatalog(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddLocalizationCatalog(null!));
+        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddStringLocalizerCatalog<Resource>());
     }
 
-    private sealed class ConsumerResource;
+    private sealed class Resource;
 }

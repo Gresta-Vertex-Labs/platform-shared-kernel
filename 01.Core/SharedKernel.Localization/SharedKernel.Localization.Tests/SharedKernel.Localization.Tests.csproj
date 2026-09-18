@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -14,9 +14,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <!-- README-sample compile verification only (composition-root AddLocalization() sample) — the
-         shipped SharedKernel.Localization package itself references only .Abstractions. -->
+    <!-- The .resx composition sample needs the real ResourceManager-based factory; the package itself references only .Abstractions. -->
     <PackageReference Include="Microsoft.Extensions.Localization" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- WithCulture="false": the file names are culture names, which must not turn them into satellite resources. -->
+    <EmbeddedResource Include="TestData\Embedded\*.json" WithCulture="false" />
   </ItemGroup>
 </Project>

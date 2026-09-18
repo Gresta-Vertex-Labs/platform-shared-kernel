@@ -47,7 +47,7 @@ public class LocalizedProblemDetailsTests
     public void ToProblemDetails_CatalogRegisteredButNoTranslation_FallsBackToErrorMessage()
     {
         var error = Error.NotFound("order.not_found", "Order could not be found.");
-        var catalog = new InMemoryLocalizationCatalog();
+        var catalog = new LocalizationCatalogBuilder().Build();
         var context = BuildContext(catalog);
 
         var problemDetails = error.ToProblemDetails(context);
@@ -64,9 +64,10 @@ public class LocalizedProblemDetailsTests
 
         try
         {
-            var catalog = new InMemoryLocalizationCatalog()
-                .AddTranslation(error.Code, new CultureInfo("tr-TR"), "Sipariş bulunamadı.")
-                .AddTranslation(error.Code, new CultureInfo("de-DE"), "Bestellung nicht gefunden.");
+            var catalog = new LocalizationCatalogBuilder()
+                .Add(error.Code, new CultureInfo("tr-TR"), "Sipariş bulunamadı.")
+                .Add(error.Code, new CultureInfo("de-DE"), "Bestellung nicht gefunden.")
+                .Build();
             var context = BuildContext(catalog);
 
             CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
@@ -89,8 +90,9 @@ public class LocalizedProblemDetailsTests
     public void ToProblemDetails_Localization_NeverChangesTitleStatusTypeOrExtensions()
     {
         var error = Error.Forbidden("order.forbidden", "Not permitted.");
-        var catalog = new InMemoryLocalizationCatalog()
-            .AddTranslation(error.Code, CultureInfo.InvariantCulture, "Translated.");
+        var catalog = new LocalizationCatalogBuilder()
+            .Add(error.Code, CultureInfo.InvariantCulture, "Translated.")
+            .Build();
         var context = BuildContext(catalog);
 
         var localized = error.ToProblemDetails(context);
@@ -113,8 +115,9 @@ public class LocalizedProblemDetailsTests
         try
         {
             CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
-            var catalog = new InMemoryLocalizationCatalog()
-                .AddTranslation(translatedError.Code, new CultureInfo("tr-TR"), "Alan zorunludur.");
+            var catalog = new LocalizationCatalogBuilder()
+                .Add(translatedError.Code, new CultureInfo("tr-TR"), "Alan zorunludur.")
+                .Build();
             var context = BuildContext(catalog);
 
             var problemDetails = exception.ToProblemDetails(context);
@@ -159,8 +162,9 @@ public class LocalizedProblemDetailsTests
         try
         {
             CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
-            var catalog = new InMemoryLocalizationCatalog()
-                .AddTranslation(translatedError.Code, new CultureInfo("tr-TR"), "Alan zorunludur.");
+            var catalog = new LocalizationCatalogBuilder()
+                .Add(translatedError.Code, new CultureInfo("tr-TR"), "Alan zorunludur.")
+                .Build();
             var context = BuildContext(catalog);
 
             var problemDetails = aggregateError.ToProblemDetails(context);
@@ -169,6 +173,79 @@ public class LocalizedProblemDetailsTests
 
             errors[translatedError.Code].Should().ContainSingle().Which.Should().Be("Alan zorunludur.");
             errors[untranslatedError.Code].Should().ContainSingle().Which.Should().Be(untranslatedError.Message);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalCulture;
+        }
+    }
+    private static readonly LocalizedMessage<int, decimal> OrderOverLimit = LocalizedMessage.Define<int, decimal>(
+        "order.over_limit", "Order {orderNumber} exceeds the limit by {amount:N2}.", "orderNumber", "amount");
+
+    private static readonly LocalizedMessage<string> FieldRequired = LocalizedMessage.Define<string>(
+        "field.required", "{field} is required.", "field");
+
+    [Fact]
+    public void ToProblemDetails_TranslationWithPlaceholders_IsFilledFromMessageArguments_InTheCallersCulture()
+    {
+        var error = OrderOverLimit.ToError(ErrorType.BusinessRule, 1234, 1500.5m);
+        var catalog = new LocalizationCatalogBuilder()
+            .Add(error.Code, new CultureInfo("tr"), "{orderNumber} numaralı sipariş limiti {amount:N2} aşıyor.")
+            .Build();
+        var context = BuildContext(catalog);
+        var originalCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
+            var turkish = error.ToProblemDetails(context);
+
+            CultureInfo.CurrentUICulture = new CultureInfo("fr-FR");
+            var untranslated = error.ToProblemDetails(context);
+
+            turkish.Detail.Should().Be("1234 numaralı sipariş limiti 1.500,50 aşıyor.");
+            untranslated.Detail.Should().Be("Order 1234 exceeds the limit by 1,500.50.");
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void ToProblemDetails_TranslationNeedsAValueTheErrorDoesNotCarry_FallsBackToMessage_NeverShowsRawPlaceholder()
+    {
+        var error = Error.NotFound("order.not_found", "Order could not be found.");
+        var catalog = new LocalizationCatalogBuilder()
+            .Add(error.Code, CultureInfo.InvariantCulture, "Order {orderNumber} could not be found.")
+            .Build();
+
+        var problemDetails = error.ToProblemDetails(BuildContext(catalog));
+
+        problemDetails.Detail.Should().Be(error.Message);
+    }
+
+    [Fact]
+    public void ToProblemDetails_AggregateValidationError_FillsEachDetailWithItsOwnArguments()
+    {
+        var aggregateError = Error.Validation(
+        [
+            FieldRequired.ToError(ErrorType.Validation, "Name"),
+            FieldRequired.ToError(ErrorType.Validation, "Email"),
+        ]);
+        var catalog = new LocalizationCatalogBuilder()
+            .Add(FieldRequired.Code, new CultureInfo("tr"), "{field} alanı zorunludur.")
+            .Build();
+        var originalCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("tr-TR");
+
+            var problemDetails = aggregateError.ToProblemDetails(BuildContext(catalog));
+
+            var errors = (Dictionary<string, string[]>)problemDetails.Extensions["errors"]!;
+            errors[FieldRequired.Code].Should().Equal("Name alanı zorunludur.", "Email alanı zorunludur.");
         }
         finally
         {

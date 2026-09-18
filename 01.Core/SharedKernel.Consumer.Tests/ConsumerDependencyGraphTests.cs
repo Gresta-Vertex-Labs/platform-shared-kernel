@@ -1224,8 +1224,9 @@ public sealed class ConsumerDependencyGraphTests
     [Fact]
     public void Localization_InMemoryLocalizationCatalog_RegisteredTranslation_ResolvedFromPackage()
     {
-        ILocalizationCatalog catalog = new InMemoryLocalizationCatalog()
-            .AddTranslation("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation.");
+        ILocalizationCatalog catalog = new LocalizationCatalogBuilder()
+            .Add("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation.")
+            .Build();
 
         bool found = catalog.TryGetString("consumer.code", CultureInfo.GetCultureInfo("en-US"), out string? value);
 
@@ -1236,7 +1237,7 @@ public sealed class ConsumerDependencyGraphTests
     [Fact]
     public void Localization_InMemoryLocalizationCatalog_UnregisteredCode_NeverThrows_ResolvedFromPackage()
     {
-        var catalog = new InMemoryLocalizationCatalog();
+        var catalog = new LocalizationCatalogBuilder().Build();
 
         bool found = catalog.TryGetString("nothing.registered", CultureInfo.GetCultureInfo("en-US"), out string? value);
 
@@ -1259,12 +1260,12 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
-    public void Localization_ServiceCollectionExtensions_AddInMemoryLocalizationCatalog_ResolvedFromPackage()
+    public void Localization_ServiceCollectionExtensions_AddLocalizationCatalog_ResolvedFromPackage()
     {
         var services = new ServiceCollection();
 
-        services.AddInMemoryLocalizationCatalog(catalog =>
-            catalog.AddTranslation("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation."));
+        services.AddLocalizationCatalog(catalog =>
+            catalog.Add("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation."));
 
         using ServiceProvider provider = services.BuildServiceProvider();
         ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();

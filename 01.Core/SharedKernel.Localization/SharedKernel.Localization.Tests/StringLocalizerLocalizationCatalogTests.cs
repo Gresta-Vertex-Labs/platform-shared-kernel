@@ -7,149 +7,96 @@ namespace SharedKernel.Localization.Tests;
 
 public sealed class StringLocalizerLocalizationCatalogTests
 {
-    private static readonly CultureInfo EnglishUs = CultureInfo.GetCultureInfo("en-US");
     private static readonly CultureInfo Turkish = CultureInfo.GetCultureInfo("tr");
 
-    [Fact]
-    public void TryGetString_KeyFound_ReturnsTrueAndTranslatedValue()
+    private static StringLocalizerLocalizationCatalog CatalogReturning(string key, string value, bool notFound)
     {
         IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
-        localizer["greeting"].Returns(new LocalizedString("greeting", "Merhaba", resourceNotFound: false));
+        localizer[key].Returns(new LocalizedString(key, value, resourceNotFound: notFound));
 
         IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(localizer);
+        factory.Create(typeof(Resource)).Returns(localizer);
 
-        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
-
-        bool found = catalog.TryGetString("greeting", EnglishUs, out string? value);
-
-        Assert.True(found);
-        Assert.Equal("Merhaba", value);
+        return new StringLocalizerLocalizationCatalog(factory, typeof(Resource));
     }
 
     [Fact]
-    public void TryGetString_ResourceNotFound_ReturnsFalseAndNull_DespiteLocalizedStringCarryingTheRawKeyAsValue()
+    public void TryGetTemplate_Found_ReturnsParsedTemplate()
     {
-        // IStringLocalizer's real behavior when a key is missing: LocalizedString.Value falls back
-        // to the key itself, with ResourceNotFound = true. Forwarding .Value blindly here would
-        // return the raw error code ("missing.key") as if it were a translation — the exact
-        // inversion of the platform's "never blank" fallback contract that this type's own XML
-        // docs call out. This test proves TryGetString checks ResourceNotFound, not just Value.
-        IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
-        localizer["missing.key"].Returns(new LocalizedString("missing.key", "missing.key", resourceNotFound: true));
+        StringLocalizerLocalizationCatalog catalog = CatalogReturning("order.not_found", "{orderId} bulunamadı.", notFound: false);
 
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(localizer);
-
-        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
-
-        bool found = catalog.TryGetString("missing.key", EnglishUs, out string? value);
-
-        Assert.False(found);
-        Assert.Null(value);
+        Assert.True(catalog.TryGetTemplate("order.not_found", Turkish, out MessageTemplate? template));
+        Assert.Equal(["orderId"], template.PlaceholderNames);
     }
 
     [Fact]
-    public void TryGetString_SetsAmbientCurrentUICultureForDurationOfCall_ThenRestoresIt()
+    public void TryGetTemplate_ResourceNotFound_ReturnsFalse_DoesNotEchoTheKey()
     {
-        CultureInfo original = CultureInfo.CurrentUICulture;
-        CultureInfo? observedDuringCall = null;
+        // A missing key comes back with the key itself as the value.
+        StringLocalizerLocalizationCatalog catalog = CatalogReturning("missing.key", "missing.key", notFound: true);
 
-        try
-        {
-            IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
-            localizer[Arg.Any<string>()].Returns(callInfo =>
-            {
-                observedDuringCall = CultureInfo.CurrentUICulture;
-                return new LocalizedString((string)callInfo[0], "value", resourceNotFound: false);
-            });
-
-            IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-            factory.Create(typeof(ConsumerResource)).Returns(localizer);
-
-            var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
-
-            catalog.TryGetString("greeting", Turkish, out _);
-
-            Assert.Equal(Turkish, observedDuringCall);
-            Assert.Equal(original, CultureInfo.CurrentUICulture);
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = original;
-        }
-    }
-
-    [Fact]
-    public void TryGetString_RestoresAmbientCulture_EvenWhenLocalizerThrows()
-    {
-        CultureInfo original = CultureInfo.CurrentUICulture;
-
-        try
-        {
-            IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
-            localizer[Arg.Any<string>()].Returns(_ => throw new InvalidOperationException("boom"));
-
-            IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-            factory.Create(typeof(ConsumerResource)).Returns(localizer);
-
-            var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
-
-            Assert.Throws<InvalidOperationException>(() => catalog.TryGetString("greeting", Turkish, out _));
-            Assert.Equal(original, CultureInfo.CurrentUICulture);
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = original;
-        }
-    }
-
-    [Fact]
-    public void Constructor_NullFactory_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => new StringLocalizerLocalizationCatalog(null!, typeof(ConsumerResource)));
-    }
-
-    [Fact]
-    public void Constructor_NullResourceType_ThrowsArgumentNullException()
-    {
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-
-        Assert.Throws<ArgumentNullException>(() => new StringLocalizerLocalizationCatalog(factory, null!));
-    }
-
-    [Fact]
-    public void TryGetString_NullCode_ThrowsArgumentNullException()
-    {
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
-        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
-
-        Assert.Throws<ArgumentNullException>(() => catalog.TryGetString(null!, EnglishUs, out _));
+        Assert.False(catalog.TryGetTemplate("missing.key", Turkish, out MessageTemplate? template));
+        Assert.Null(template);
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void TryGetString_EmptyOrWhitespaceCode_ThrowsArgumentException(string code)
+    [InlineData("Broken {0} template")]
+    public void TryGetTemplate_BlankOrInvalidValue_CountsAsMissing(string value)
     {
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
-        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
+        StringLocalizerLocalizationCatalog catalog = CatalogReturning("code", value, notFound: false);
 
-        Assert.Throws<ArgumentException>(() => catalog.TryGetString(code, EnglishUs, out _));
+        Assert.False(catalog.TryGetTemplate("code", Turkish, out _));
     }
 
     [Fact]
-    public void TryGetString_NullCulture_ThrowsArgumentNullException()
+    public void TryGetTemplate_LooksUpInTheRequestedCulture_AndRestoresTheAmbientOne()
     {
-        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
-        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
-        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerResource));
+        CultureInfo original = CultureInfo.CurrentUICulture;
+        CultureInfo? observed = null;
 
-        Assert.Throws<ArgumentNullException>(() => catalog.TryGetString("code", null!, out _));
+        IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
+        localizer[Arg.Any<string>()].Returns(call =>
+        {
+            observed = CultureInfo.CurrentUICulture;
+            return new LocalizedString((string)call[0], "value", resourceNotFound: false);
+        });
+        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
+        factory.Create(typeof(Resource)).Returns(localizer);
+
+        new StringLocalizerLocalizationCatalog(factory, typeof(Resource)).TryGetTemplate("code", Turkish, out _);
+
+        Assert.Equal(Turkish, observed);
+        Assert.Equal(original, CultureInfo.CurrentUICulture);
     }
 
-    /// <summary>A stand-in resource-owning marker type — mirrors a real service's own resource class.</summary>
-    private sealed class ConsumerResource;
+    [Fact]
+    public void TryGetTemplate_LocalizerThrows_StillRestoresTheAmbientCulture()
+    {
+        CultureInfo original = CultureInfo.CurrentUICulture;
+        IStringLocalizer localizer = Substitute.For<IStringLocalizer>();
+        localizer[Arg.Any<string>()].Returns(_ => throw new InvalidOperationException("boom"));
+        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
+        factory.Create(typeof(Resource)).Returns(localizer);
+        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(Resource));
+
+        Assert.Throws<InvalidOperationException>(() => catalog.TryGetTemplate("code", Turkish, out _));
+        Assert.Equal(original, CultureInfo.CurrentUICulture);
+    }
+
+    [Fact]
+    public void Constructor_And_TryGetTemplate_RejectInvalidArguments()
+    {
+        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
+        factory.Create(typeof(Resource)).Returns(Substitute.For<IStringLocalizer>());
+        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(Resource));
+
+        Assert.Throws<ArgumentNullException>(() => new StringLocalizerLocalizationCatalog(null!, typeof(Resource)));
+        Assert.Throws<ArgumentNullException>(() => new StringLocalizerLocalizationCatalog(factory, null!));
+        Assert.ThrowsAny<ArgumentException>(() => catalog.TryGetTemplate(" ", Turkish, out _));
+        Assert.Throws<ArgumentNullException>(() => catalog.TryGetTemplate("code", null!, out _));
+    }
+
+    private sealed class Resource;
 }

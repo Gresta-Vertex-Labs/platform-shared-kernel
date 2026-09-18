@@ -16,8 +16,9 @@ public sealed class CultureScopeLocalizationCatalogInteropTests
     [Fact]
     public void TryGetString_TranslationRegisteredForScopedCulture_ReturnsTranslation()
     {
-        var catalog = new InMemoryLocalizationCatalog()
-            .AddTranslation("customer.not_found", CultureInfo.GetCultureInfo("tr-TR"), "Müşteri bulunamadı.");
+        var catalog = new LocalizationCatalogBuilder()
+            .Add("customer.not_found", CultureInfo.GetCultureInfo("tr-TR"), "Müşteri bulunamadı.")
+            .Build();
 
         using (new CultureScope("tr-TR"))
         {
@@ -29,9 +30,9 @@ public sealed class CultureScopeLocalizationCatalogInteropTests
     }
 
     [Fact]
-    public void TryGetString_NoTranslationRegistered_FallsBackToFalse_CallerAppliesOriginalMessage()
+    public void TryGetString_NoTranslationRegistered_ReturnsFalse_CallerAppliesOriginalMessage()
     {
-        var catalog = new InMemoryLocalizationCatalog();
+        var catalog = new LocalizationCatalogBuilder().Build();
 
         using (new CultureScope("tr-TR"))
         {
@@ -48,8 +49,9 @@ public sealed class CultureScopeLocalizationCatalogInteropTests
     [Fact]
     public void TryGetString_MoreSpecificCultureFallsBackToParent_WithinScopedCulture()
     {
-        var catalog = new InMemoryLocalizationCatalog()
-            .AddTranslation("order.invalid", CultureInfo.InvariantCulture, "Invalid order.");
+        var catalog = new LocalizationCatalogBuilder()
+            .Add("order.invalid", CultureInfo.InvariantCulture, "Invalid order.")
+            .Build();
 
         using (new CultureScope("tr-TR"))
         {
@@ -64,8 +66,9 @@ public sealed class CultureScopeLocalizationCatalogInteropTests
     public void CultureScope_Restores_AfterCatalogComposition()
     {
         var original = CultureInfo.CurrentUICulture;
-        var catalog = new InMemoryLocalizationCatalog()
-            .AddTranslation("x", CultureInfo.GetCultureInfo("de-DE"), "y");
+        var catalog = new LocalizationCatalogBuilder()
+            .Add("x", CultureInfo.GetCultureInfo("de-DE"), "y")
+            .Build();
 
         using (new CultureScope("de-DE"))
         {

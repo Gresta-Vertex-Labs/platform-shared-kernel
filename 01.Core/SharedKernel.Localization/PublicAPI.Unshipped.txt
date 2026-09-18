@@ -1,0 +1,69 @@
+#nullable enable
+override SharedKernel.Localization.LocalizedMessage.ToString() -> string!
+override SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>.ToString() -> string!
+override SharedKernel.Localization.LocalizedMessage<T1, T2, T3>.ToString() -> string!
+override SharedKernel.Localization.LocalizedMessage<T1, T2>.ToString() -> string!
+override SharedKernel.Localization.LocalizedMessage<T1>.ToString() -> string!
+override SharedKernel.Localization.MessageTemplate.ToString() -> string!
+SharedKernel.Localization.ILocalizationCatalog
+SharedKernel.Localization.ILocalizationCatalog.TryGetTemplate(string! code, System.Globalization.CultureInfo! culture, out SharedKernel.Localization.MessageTemplate? template) -> bool
+SharedKernel.Localization.InMemoryLocalizationCatalog
+SharedKernel.Localization.InMemoryLocalizationCatalog.Count.get -> int
+SharedKernel.Localization.InMemoryLocalizationCatalog.Cultures.get -> System.Collections.Generic.IReadOnlyList<System.Globalization.CultureInfo!>!
+SharedKernel.Localization.InMemoryLocalizationCatalog.TryGetTemplate(string! code, System.Globalization.CultureInfo! culture, out SharedKernel.Localization.MessageTemplate? template) -> bool
+SharedKernel.Localization.LocalizationCatalogBuilder
+SharedKernel.Localization.LocalizationCatalogBuilder.Add(string! code, System.Globalization.CultureInfo! culture, string! template) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.AddEmbeddedJson(System.Reflection.Assembly! assembly, string! resourcePrefix) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.AddJson(System.IO.Stream! utf8Json, System.Globalization.CultureInfo! culture) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.AddJsonDirectory(string! directory) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.AddJsonFile(string! path) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.AddJsonFile(string! path, System.Globalization.CultureInfo! culture) -> SharedKernel.Localization.LocalizationCatalogBuilder!
+SharedKernel.Localization.LocalizationCatalogBuilder.Build() -> SharedKernel.Localization.InMemoryLocalizationCatalog!
+SharedKernel.Localization.LocalizationCatalogBuilder.LocalizationCatalogBuilder() -> void
+SharedKernel.Localization.LocalizationCatalogExtensions
+SharedKernel.Localization.LocalizationServiceCollectionExtensions
+SharedKernel.Localization.LocalizedMessage
+SharedKernel.Localization.LocalizedMessage.Code.get -> string!
+SharedKernel.Localization.LocalizedMessage.DefaultTemplate.get -> SharedKernel.Localization.MessageTemplate!
+SharedKernel.Localization.LocalizedMessage.Format(SharedKernel.Localization.ILocalizationCatalog? catalog, System.Globalization.CultureInfo! culture) -> string!
+SharedKernel.Localization.LocalizedMessage.ToError(SharedKernel.Primitives.Errors.ErrorType type) -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>.Code.get -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>.DefaultTemplate.get -> SharedKernel.Localization.MessageTemplate!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>.Format(SharedKernel.Localization.ILocalizationCatalog? catalog, System.Globalization.CultureInfo! culture, T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>.ToError(SharedKernel.Primitives.Errors.ErrorType type, T1 arg1, T2 arg2, T3 arg3, T4 arg4) -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3>
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3>.Code.get -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3>.DefaultTemplate.get -> SharedKernel.Localization.MessageTemplate!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3>.Format(SharedKernel.Localization.ILocalizationCatalog? catalog, System.Globalization.CultureInfo! culture, T1 arg1, T2 arg2, T3 arg3) -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2, T3>.ToError(SharedKernel.Primitives.Errors.ErrorType type, T1 arg1, T2 arg2, T3 arg3) -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Localization.LocalizedMessage<T1, T2>
+SharedKernel.Localization.LocalizedMessage<T1, T2>.Code.get -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2>.DefaultTemplate.get -> SharedKernel.Localization.MessageTemplate!
+SharedKernel.Localization.LocalizedMessage<T1, T2>.Format(SharedKernel.Localization.ILocalizationCatalog? catalog, System.Globalization.CultureInfo! culture, T1 arg1, T2 arg2) -> string!
+SharedKernel.Localization.LocalizedMessage<T1, T2>.ToError(SharedKernel.Primitives.Errors.ErrorType type, T1 arg1, T2 arg2) -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Localization.LocalizedMessage<T1>
+SharedKernel.Localization.LocalizedMessage<T1>.Code.get -> string!
+SharedKernel.Localization.LocalizedMessage<T1>.DefaultTemplate.get -> SharedKernel.Localization.MessageTemplate!
+SharedKernel.Localization.LocalizedMessage<T1>.Format(SharedKernel.Localization.ILocalizationCatalog? catalog, System.Globalization.CultureInfo! culture, T1 arg1) -> string!
+SharedKernel.Localization.LocalizedMessage<T1>.ToError(SharedKernel.Primitives.Errors.ErrorType type, T1 arg1) -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Localization.MessageTemplate
+SharedKernel.Localization.MessageTemplate.Format(System.Globalization.CultureInfo! culture, System.Collections.Generic.IReadOnlyDictionary<string!, object?>! arguments) -> string!
+SharedKernel.Localization.MessageTemplate.PlaceholderNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Localization.MessageTemplate.Text.get -> string!
+SharedKernel.Localization.MessageTemplate.TryFormat(System.Globalization.CultureInfo! culture, System.Collections.Generic.IReadOnlyDictionary<string!, object?>! arguments, out string? message) -> bool
+SharedKernel.Localization.StringLocalizerLocalizationCatalog
+SharedKernel.Localization.StringLocalizerLocalizationCatalog.StringLocalizerLocalizationCatalog(Microsoft.Extensions.Localization.IStringLocalizerFactory! factory, System.Type! resourceType) -> void
+SharedKernel.Localization.StringLocalizerLocalizationCatalog.TryGetTemplate(string! code, System.Globalization.CultureInfo! culture, out SharedKernel.Localization.MessageTemplate? template) -> bool
+static SharedKernel.Localization.LocalizationCatalogExtensions.Localize(this SharedKernel.Localization.ILocalizationCatalog! catalog, SharedKernel.Primitives.Errors.Error! error, System.Globalization.CultureInfo! culture) -> string!
+static SharedKernel.Localization.LocalizationCatalogExtensions.TryFormat(this SharedKernel.Localization.ILocalizationCatalog! catalog, string! code, System.Globalization.CultureInfo! culture, System.Collections.Generic.IReadOnlyDictionary<string!, object?>! arguments, out string? message) -> bool
+static SharedKernel.Localization.LocalizationCatalogExtensions.TryGetString(this SharedKernel.Localization.ILocalizationCatalog! catalog, string! code, System.Globalization.CultureInfo! culture, out string? message) -> bool
+static SharedKernel.Localization.LocalizationServiceCollectionExtensions.AddLocalizationCatalog(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Localization.LocalizationCatalogBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Localization.LocalizationServiceCollectionExtensions.AddStringLocalizerCatalog<TResource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Localization.LocalizedMessage.Define(string! code, string! defaultText) -> SharedKernel.Localization.LocalizedMessage!
+static SharedKernel.Localization.LocalizedMessage.Define<T1, T2, T3, T4>(string! code, string! defaultTemplate, string! argument1, string! argument2, string! argument3, string! argument4) -> SharedKernel.Localization.LocalizedMessage<T1, T2, T3, T4>!
+static SharedKernel.Localization.LocalizedMessage.Define<T1, T2, T3>(string! code, string! defaultTemplate, string! argument1, string! argument2, string! argument3) -> SharedKernel.Localization.LocalizedMessage<T1, T2, T3>!
+static SharedKernel.Localization.LocalizedMessage.Define<T1, T2>(string! code, string! defaultTemplate, string! argument1, string! argument2) -> SharedKernel.Localization.LocalizedMessage<T1, T2>!
+static SharedKernel.Localization.LocalizedMessage.Define<T1>(string! code, string! defaultTemplate, string! argument1) -> SharedKernel.Localization.LocalizedMessage<T1>!
+static SharedKernel.Localization.MessageTemplate.Parse(string! text) -> SharedKernel.Localization.MessageTemplate!
+static SharedKernel.Localization.MessageTemplate.TryParse(string? text, out SharedKernel.Localization.MessageTemplate? template) -> bool
