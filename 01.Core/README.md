@@ -7,7 +7,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, `SmartEnum`, `ValidationResult` |
 | `SharedKernel.Core` | Railway extensions for `Result`/`Result<T>` (sync, `Task`, `ValueTask`), `ResultTry`, `ResultCombine`, base exceptions, BCL helpers, and the two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
-| `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
+| `SharedKernel.FeatureManagement` | Feature flags on OpenFeature's `IFeatureClient`, backed by `Microsoft.FeatureManagement`: typed `FeatureFlag<T>` constants, the caller's user and tenant applied to every evaluation, one answer per request, startup validation, never-throwing evaluation and privacy-safe OpenTelemetry events (third-party dependencies — `OpenFeature`, `OpenFeature.Hosting`) |
 | `SharedKernel.Cryptography` | AES-256-GCM encryption, key rotation, envelope encryption, HKDF subkeys, RSA/ECDSA and HMAC signing, PHC password hashing, fixed-time comparison, secure random, HOTP/TOTP |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): framed Brotli default, gzip keyed alternate; truncation-detecting frame, raw mode for external interop, bounded decompression |
 | `SharedKernel.Validation` | Validated value types: `Iban` (full SWIFT registry), `Bic`, `CardNumber` (masked), `VatNumber` (EU, UK, CH, NO, TR), `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`; translatable errors, Turkish bundled |
@@ -693,178 +693,35 @@ declares `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`; this package is n
 
 ---
 
-## SharedKernel.FeatureManagement
+## SharedKernel.FeatureManagement — Feature Flags on OpenFeature
 
-### IFeatureManager — Feature Flags
-
-`IFeatureManager` is the only permitted feature-flag interface in consuming services. Never inject `Microsoft.FeatureManagement.IFeatureManager` directly — doing so couples callers to the implementation package and prevents swapping providers.
-
-#### Registration
+`SharedKernel.FeatureManagement` puts feature flags on OpenFeature, the CNCF standard API, with
+`Microsoft.FeatureManagement` reading them from configuration or Azure App Configuration. Services inject OpenFeature's
+`IFeatureClient` (scoped) and evaluate typed `FeatureFlag<T>` constants instead of string keys:
 
 ```csharp
-// Program.cs
-builder.Services.AddSharedKernelFeatureManagement(builder.Configuration);
+public static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
+public static readonly FeatureFlag<string> CheckoutTheme = FeatureFlag.String("CheckoutTheme", defaultValue: "classic");
+
+builder.Services.AddScoped<IFeatureTargetingContextAccessor, UserFeatureTargeting>();   // the caller: user, tenant, groups
+builder.Services.AddSharedKernelFeatureManagement(builder.Configuration, flags => flags
+    .ValidateOnStart(NewCheckout, CheckoutTheme));                                       // fail startup on a typo
+
+if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }
+string theme = await flags.GetValueAsync(CheckoutTheme, ct);
 ```
 
-Feature flags are read from the `FeatureManagement` configuration section by convention:
+The caller's user, tenant and groups reach every evaluation through `IFeatureTargetingContextAccessor`, so
+`Microsoft.Targeting` rollouts and variant allocation work without passing context; the tenant is also a group, so
+tenants can be targeted by name. Each flag is evaluated once per scope (one request, message or job run), so a
+configuration reload cannot switch it halfway through. Evaluation never throws: a missing flag, a variant that does not
+fit the flag's type, or a failing filter returns the declared default with the reason in `GetDetailsAsync`. Flags with
+telemetry enabled add the OpenTelemetry `feature_flag.evaluation` event to the current activity, never the user id;
+`Microsoft.FeatureManagement`'s own event, which records it, is suppressed. `FakeFeatureClient` in `SharedKernel.Testing`
+sets flag values for unit tests, and `00.Governance`'s SK0002 flags direct use of Microsoft's evaluator interfaces or
+OpenFeature's global `Api.Instance`.
 
-```json
-{
-  "FeatureManagement": {
-    "NewCheckoutFlow": true,
-    "BetaDashboard": false
-  }
-}
-```
-
-#### Basic Usage
-
-```csharp
-public sealed class CheckoutService(IFeatureManager features)
-{
-    public async Task<CheckoutResult> CheckoutAsync(Cart cart, CancellationToken ct)
-    {
-        if (await features.IsEnabledAsync("NewCheckoutFlow", ct))
-            return await NewCheckoutAsync(cart, ct);
-
-        return await LegacyCheckoutAsync(cart, ct);
-    }
-}
-```
-
-#### Context-Aware Evaluation
-
-The generic overload passes a context to context-aware filters (tenant targeting, user-based rollouts, etc.):
-
-```csharp
-public sealed class DashboardService(IFeatureManager features)
-{
-    public async Task<DashboardView> GetDashboardAsync(UserContext user, CancellationToken ct)
-    {
-        if (await features.IsEnabledAsync("BetaDashboard", user, ct))
-            return await GetBetaDashboardAsync(user, ct);
-
-        return await GetStandardDashboardAsync(user, ct);
-    }
-}
-```
-
-#### Define Feature Names as Constants
-
-```csharp
-public static class Features
-{
-    public const string NewCheckoutFlow = "NewCheckoutFlow";
-    public const string BetaDashboard   = "BetaDashboard";
-}
-
-// Usage — no magic strings
-if (await features.IsEnabledAsync(Features.NewCheckoutFlow, ct)) { ... }
-```
-
-#### Testing with IFeatureManager
-
-```csharp
-var features = Substitute.For<IFeatureManager>();
-features.IsEnabledAsync(Features.NewCheckoutFlow, Arg.Any<CancellationToken>())
-        .Returns(ValueTask.FromResult(true));
-
-var service = new CheckoutService(features);
-```
-
-### Feature Variants — Gradual Rollout
-
-Added in P-298/WO-049. `GetVariantAsync`/`GetVariantAsync<TContext>` bridge `Microsoft.FeatureManagement`'s variant/allocation support — weighted, named variants of a feature, not just on/off — the same way `IsEnabledAsync` bridges plain boolean evaluation. Both members return a neutral `FeatureVariant` (`.Name`, `.Configuration`); no `Microsoft.FeatureManagement` type ever appears on `IFeatureManager`'s surface. This is purely additive — the boolean `IsEnabledAsync` members above are completely unaffected.
-
-#### Configuration — the Microsoft Feature Management schema
-
-Plain boolean flags stay in the `FeatureManagement` section shown above. Weighted variants require `Microsoft.FeatureManagement`'s own [Microsoft Feature Management schema](https://github.com/microsoft/FeatureManagement/blob/main/Schema/FeatureManagement.v2.0.0.schema.json) — a `feature_management:feature_flags` array, distinct from and *in addition to* the `FeatureManagement` dictionary. Both schemas coexist in the same configuration and are resolved by the same `AddSharedKernelFeatureManagement(configuration)` call — no extra registration is needed, provided `configuration` is the application's **root** configuration (never a value already scoped to `configuration.GetSection("FeatureManagement")`; a pre-scoped section makes the `feature_management:feature_flags` schema unreachable, since it lives under an entirely different, unscoped root key):
-
-```json
-{
-  "FeatureManagement": {
-    "NewCheckoutFlow": true
-  },
-  "feature_management": {
-    "feature_flags": [
-      {
-        "id": "PricingExperiment",
-        "enabled": true,
-        "variants": [
-          { "name": "ControlGroup", "configuration_value": "control-config" },
-          { "name": "DiscountedPrice", "configuration_value": "discounted-config" }
-        ],
-        "allocation": {
-          "default_when_enabled": "ControlGroup",
-          "percentile": [ { "variant": "DiscountedPrice", "from": 0, "to": 25 } ]
-        }
-      }
-    ]
-  }
-}
-```
-
-The example above assigns roughly 25% of evaluated tenants to `DiscountedPrice` and the rest to `ControlGroup` — a classic percentage-based gradual rollout / A-B experiment.
-
-#### Percentage-Based Enablement Across Tenants
-
-```csharp
-public sealed class PricingService(IFeatureManager features)
-{
-    public async Task<decimal> GetPriceAsync(string tenantId, decimal basePrice, CancellationToken ct)
-    {
-        // The context (here, a stable tenant id) determines which percentile bucket the caller
-        // falls into. Repeated calls with the same tenantId always resolve to the same variant.
-        var variant = await features.GetVariantAsync("PricingExperiment", tenantId, ct);
-
-        return variant.Name switch
-        {
-            "DiscountedPrice" => basePrice * 0.9m,
-            _ => basePrice, // "ControlGroup", or FeatureVariant.Unassigned if unconfigured — same price
-        };
-    }
-}
-```
-
-`GetVariantAsync`'s no-context overload evaluates only the feature's `default_when_enabled`/`default_when_disabled` allocation (no percentile/user/group targeting is possible without a context):
-
-```csharp
-var variant = await features.GetVariantAsync("PricingExperiment", ct);
-```
-
-#### Deterministic Fallback — Never Throws
-
-An unconfigured feature, an unknown feature name, or a context that resolves to no allocation branch never throws — `GetVariantAsync` returns the documented sentinel `FeatureVariant.Unassigned` (`Name == "Unassigned"`, `Configuration == null`) instead:
-
-```csharp
-var variant = await features.GetVariantAsync("SomeFeatureThatDoesNotExist", ct);
-// variant == FeatureVariant.Unassigned — safe to branch on, never an exception
-```
-
-#### Declaring Variants — FeatureVariantDefinition
-
-`FeatureVariantDefinition` is the variant-allocation sibling of `FeatureDefinition` — a typed, discoverable declaration of a feature's variants and their relative weights. Like `FeatureDefinition`, it documents intent; it does not itself drive evaluation (the configured allocation in `appsettings.json`/App Configuration remains authoritative):
-
-```csharp
-public static class PricingExperimentVariants
-{
-    public static readonly FeatureVariantDefinition ControlGroup = new("ControlGroup", Weight: 75);
-    public static readonly FeatureVariantDefinition DiscountedPrice = new("DiscountedPrice", Weight: 25, Configuration: "10-percent-off");
-}
-```
-
-#### Context Determinism for Non-String Contexts
-
-`GetVariantAsync<TContext>`'s targeting identity is derived from `context?.ToString()`. A `string` context (a tenant id, a user id) is the most direct and predictable choice. A custom `TContext` works too, provided its `ToString()` override returns the stable identity you want to target on — without an override, every instance of that type collapses to the same targeting bucket (still deterministic, just not usefully distributed):
-
-```csharp
-public sealed record TenantContext(string TenantId)
-{
-    public override string ToString() => TenantId; // required for meaningful per-tenant distribution
-}
-```
-
-> **Caveat (non-blocking, flagged per this domain's AOT posture):** `Microsoft.FeatureManagement` 4.5.0 does not ship a full AOT-trimming manifest for *any* of its API surface (see the `SharedKernel.FeatureManagement.csproj` comment) — the variant/allocation API (`IVariantFeatureManager`) inherits this same pre-existing status, not a worse one. No new AOT gap was introduced by this phase; verify on each `Microsoft.FeatureManagement` upgrade as already documented for the boolean path.
+See [`SharedKernel.FeatureManagement`'s README](SharedKernel.FeatureManagement/README.md).
 
 ---
 
@@ -1239,7 +1096,7 @@ SharedKernel.Primitives              (no dependencies)
        |       |
        |       +──► SharedKernel.Compression   (IPayloadCompressor: Brotli default, GZip keyed alternate)
        |
-       +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
+       +──► SharedKernel.FeatureManagement  (FeatureFlag<T> + OpenFeature IFeatureClient over Microsoft.FeatureManagement; also pulls in the third-party OpenFeature + OpenFeature.Hosting packages)
        |
        +──► SharedKernel.DataPrivacy  (PrivacyTaxonomy + attributes, log redaction, PiiMasking, IDataSubjectRequestHandler; also pulls in the first-party Microsoft.Extensions.Compliance.Abstractions package)
        |

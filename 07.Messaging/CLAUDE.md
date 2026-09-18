@@ -1523,16 +1523,17 @@ services
 services
     .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
     .UseRabbitMq("rabbitmq://localhost")
-    .WithHeaderPropagator<FeatureFlagHeaderPropagator>() // scoped; reads IFeatureManager, e.g.
+    .WithHeaderPropagator<FeatureFlagHeaderPropagator>() // scoped; forwards a flag variant this request evaluated
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
 
-// FeatureFlagHeaderPropagator example (in the consuming service — not in SharedKernel)
-public sealed class FeatureFlagHeaderPropagator : IMessageHeaderPropagator
+// FeatureFlagHeaderPropagator example (in the consuming service — not in SharedKernel). Propagate is synchronous,
+// so it forwards a variant the request already evaluated through OpenFeature's IFeatureClient (P-555), held by a
+// scoped service of the consuming service's own.
+public sealed class FeatureFlagHeaderPropagator(CheckoutExperiment experiment) : IMessageHeaderPropagator
 {
-    public FeatureFlagHeaderPropagator(IFeatureManager featureManager) { ... }
     public void Propagate(PublishContext context)
-        => context.WithHeader("x-sk-feature-set", _featureManager.CurrentSetName);
+        => context.WithHeader("x-sk-checkout-variant", experiment.Variant);
 }
 
 // Built-in ambient correlation + tenant-context propagation (P-345/WO-054) — the platform-provided

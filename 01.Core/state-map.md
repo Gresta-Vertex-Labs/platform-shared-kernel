@@ -49,6 +49,7 @@
 | `SK.01.P552` | P-552 Localization Pre-First-Publish Pass | All tasks in Phase: P-552 are `●` | P-552 |
 | `SK.01.P553` | P-553 Validation + FluentValidation Pre-First-Publish Pass | All tasks in Phase: P-553 are `●` | P-553 |
 | `SK.01.P554` | P-554 DataPrivacy Pre-First-Publish Pass | All tasks in Phase: P-554 are `●` | P-554 |
+| `SK.01.P555` | P-555 FeatureManagement Pre-First-Publish Pass | All tasks in Phase: P-555 are `●` | P-555 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -131,7 +132,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Primitives` | Published | `●` | Carries one first-party NuGet dependency (`Microsoft.Extensions.DependencyInjection.Abstractions`, solely for the optional `ClockExtensions.AddClock()` convenience extension — never "zero dependencies," corrected P-517/WO-083); `IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>` reflection-free application seams (P-230, P-236, shipped); `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys` propagation constants (P-259/P-294, shipped); `IIdGenerator`/`UuidV7IdGenerator` (P-293, shipped); `SystemClock` `TimeProvider`-backed rewrite (P-295, shipped); `LoggingEventIdRanges` spanning 00–20 (shipped); `ErrorType.Forbidden`/`Error.Forbidden` (P-384/WO-059, shipped); `ErrorCodes.Unexpected.Default` (P-292, shipped) |
 | `SharedKernel.Core` | Published | `●` | References Primitives only; zero third-party NuGet deps (nuspec-verified). **P-538 pre-publish hardening:** async railway rewritten as real state machines (faulted/cancelled sources no longer wrapped in `AggregateException`), full railway on `Result`/`Result<T>` with `Task`/`ValueTask` sources, `ResultTry` void + `CancellationToken` overloads, `ForbiddenException` + `error.ToException()`, guards in the single `SharedKernel.Guards` namespace with `[CallerArgumentExpression]`, never-throwing functional guards, `INumber<T>` numeric guards and `LessThan`/`GreaterThan`/`InvalidEnumValue`/`NotUtc`; BCL duplicates deleted; public API tracked by `PublicApiAnalyzers`; XML docs shipped. Published to GitHub Packages as `1.0.0-alpha.0.903` (P-60), with Primitives `.903` |
 | `SharedKernel.Configuration` | P-539 | `●` | **P-539 (2026-09-14): brought to the P-538 first-publish bar — opt-in `OptionsStrictness` (`RequireSection`, `RejectUnknownKeys`), `SectionName` registration guard, PublicApiAnalyzers, full exception contract, README rewrite; 78 tests.** **Zero `SharedKernel.*` dependencies as of P-530/C-134** — the `SharedKernel.Primitives` reference was dead (no `SharedKernel` type appeared anywhere in the source) and is removed, so this package is publishable with nothing ahead of it in the dependency gate. Four `AddValidatedOptions` overloads: explicit `IConfigurationSection` or a section path declared by the options type itself via the new `ISectionBoundOptions` (`static abstract string SectionName`), each with Data Annotations, a caller-supplied `IValidateOptions<T>`, or both, and each supporting named options instances; all `.ValidateOnStart()`-backed. Validators register via `TryAddEnumerable`, never `TryAddSingleton` (P-530/C-128 — the old `TryAddSingleton` silently dropped them). Deliberately NOT trim- or AOT-clean: configuration binding is reflective, so every overload declares `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` rather than suppressing the warnings, and `aot` was dropped from `PackageTags`. GitHub Packages publish is P-56 (`○`) |
-| `SharedKernel.FeatureManagement` | Published | `●` | References Primitives; boolean + weighted-variant evaluation (`GetVariantAsync`/`FeatureVariant`/`FeatureVariantDefinition`, P-298/WO-049, shipped) |
+| `SharedKernel.FeatureManagement` | Ready to publish | `●` | **Pre-first-publish pass complete (P-555); not yet on GitHub Packages.** Feature flags on OpenFeature's `IFeatureClient` over `Microsoft.FeatureManagement` 4.7: typed `FeatureFlag<T>`, ambient user/tenant targeting through `IFeatureTargetingContextAccessor`, one answer per scope, never-throwing evaluation, `ValidateOnStart`, OpenTelemetry evaluation events without user ids. References Primitives, OpenFeature, OpenFeature.Hosting. 82/82 |
 | `SharedKernel.Cryptography` | P-545 | `◐` | **P-545 (2026-09-16): pre-first-publish redesign**: split sync/async encryption services and key providers, algorithm-carrying signing keys, PHC hashing with pepper and migration, envelope encryption, HKDF, rotation helpers, fixed-time comparison, TOTP hardening, bounded single-flight cache, public API tracked. References `SharedKernel.Primitives` + `SharedKernel.Configuration`; zero third-party dependencies. Publish is P-57 (`○`) |
 | `SharedKernel.Compression` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1088` (2026-09-18, P-551).** **Implemented P-297/WO-049; reshaped by P-551 before its first publish. Never pushed to GitHub Packages — the earlier "Published" status on this row meant packed to the local `./nupkgs` folder, not on the feed.** P-551 fixed two severe defects, both reproduced by executing the code: a truncated payload decompressed to a valid prefix and reported `Result.Success` (measured 127,863 of 282,775 bytes at a 50% cut), and decompression was unbounded (102 bytes expanding to 64 MiB). Now a 13-byte frame records the algorithm and uncompressed length (`CompressionFraming.Framed` default, `Raw` for external interop), `MaxDecompressedSize` caps output at 64 MiB by default, every failure is `Error.Validation` rather than `Unexpected`, span/`IBufferWriter` overloads remove the ~2× allocation on the byte[] path, async members return `ValueTask`, `CompressionOptions` implements `ISectionBoundOptions`, and the two compressors forward to one internal codec instead of holding two copies of the same logic. Publish bar added: XML docs shipped, public API tracked (68 entries), `WarningsAsErrors` for CS1591/RS00xx. 156/156 `SharedKernel.Compression.Tests` passing; `SharedKernel.Messaging.MassTransit.Tests` 188/188 and governance 324/324 green against it; solution builds with 0 errors |
 | `SharedKernel.Validation` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1100` (2026-09-18, P-553), with Primitives, Core and Localization from `4254af5`.** Validated value types (`Iban` over the full SWIFT registry with BBAN structure, `Bic`, `CardNumber` with 10 networks and masked `ToString`, `VatNumber` for 32 prefixes incl. TR VKN, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`), one code and one `LocalizedMessage` per failure, Turkish bundled. First implemented P-443 (packed locally only). References Primitives, Core, Localization. 278/278 tests |
@@ -1980,6 +1981,89 @@ count and no way to record data kept for a legal reason. The export was an `IRea
 - **Method-group use.** An optional `revealDomain` parameter stopped `PiiMasking.Email` converting to
   `Func<string?, string>`, which `16.Testing`'s assertions rely on; it became two overloads.
 
+## Phase: P-555 — `SharedKernel.FeatureManagement` Pre-First-Publish Pass (BREAKING API; OpenFeature) <!-- phase-key: SK.01.P555 -->
+
+**Status:** `●` Complete — 10/10 tasks `●`; FeatureManagement 82/82, Analyzers 345/345, Testing.SelfTests 1417/1417, ArchitectureTests 324/324, full solution builds with 0 errors; not yet on GitHub Packages
+
+> The pre-first-publish audit of `SharedKernel.FeatureManagement`, the last unpublished `01.Core` package, following
+> P-551 to P-554. It had only been packed to the local feed, so the API was free to change.
+
+### What was found
+
+**Targeting never worked.** `IsEnabledAsync<TContext>(feature, context)` passed the context to
+`Microsoft.FeatureManagement` as an arbitrary `TContext`. The `Microsoft.Targeting` filter only reads an
+`ITargetingContext` or an ambient accessor, and the package registered neither, so user, group and percentage targeting
+always evaluated to off, with only a log warning. `GetVariantAsync(feature, context)` targeted `context.ToString()`
+instead, so the two calls could disagree about the same caller.
+
+**Other defects.**
+- The cancellation token was discarded on purpose (a leftover "change nothing" rule from P-298).
+- A variant configured as a JSON object came back as `null`.
+- An exception in a filter or the configuration reached the caller.
+
+**Dead and unsafe API.** `FeatureDefinition` and `FeatureVariantDefinition` were public types nothing read. Flag keys
+were raw strings at every call site. `SharedKernel.Primitives` was referenced but unused. SK0002 missed
+`IVariantFeatureManager`, the interface the adapter itself used.
+
+**Publish bar.** No XML docs enforced, no tracked API, a 30-line README; `Microsoft.FeatureManagement` pinned at 4.5.0.
+
+### User decisions
+
+- **Adopt OpenFeature** (the CNCF standard) as the API, over redesigning or minimally fixing `IFeatureManager`.
+- **Ambient targeting with explicit override:** a per-service accessor for the caller, overridable per call.
+- **All four additions:** typed flags with startup validation, structured variant configuration, per-request
+  consistency, and evaluation telemetry.
+- **Scope:** the package, the `16.Testing` fake and SK0002; endpoint and MediatR feature gates stay follow-ups for
+  `14.Presentation` and `05.Application`.
+
+### Design
+
+- **API.** Services inject OpenFeature's `IFeatureClient` (scoped). Flags are `FeatureFlag<T>` constants from
+  `FeatureFlag.Boolean/String/Integer/Double/Object<T>`; `Object<T>` reads the variant through a source-generated
+  `JsonTypeInfo<T>`, converting each configuration string to the type of the property it fills.
+  `FeatureClientExtensions` adds `IsEnabledAsync`, `GetValueAsync` and `GetDetailsAsync`.
+- **Provider.** The internal `MicrosoftFeatureManagementProvider` passes an explicit `ITargetingContext` (the targeting
+  key as the user; `groups` plus the tenant id as groups) to both the on/off and the variant evaluation, and reports
+  reasons: `DISABLED`, `STATIC`, `SPLIT`, `TARGETING_MATCH`, `DEFAULT`. A missing flag is `FlagNotFound`, an unreadable
+  variant `TypeMismatch`/`ParseError`, anything else `General`, logged at EventId 1301.
+- **Targeting.** `IFeatureTargetingContextAccessor` (any lifetime) is read once per scope through OpenFeature.Hosting's
+  `AddContext`; the default reads the tenant from `WellKnownBaggageKeys.TenantId` baggage. `FeatureTargetingContext`
+  uses the user id as targeting key, or the tenant id when there is no user (`ForTenant`).
+- **Consistency.** A scoped `ScopedFeatureClient` reuses each successful result for the scope, capped by
+  `ScopeResultLifetime` (one minute); failures and calls with their own `FlagEvaluationOptions` are never reused.
+- **Validation.** `ValidateOnStart(flags)` adds a hosted service that fails startup with a
+  `FeatureFlagValidationException` listing every missing flag and every variant that does not fit its flag's type.
+- **Telemetry.** A hook emits OpenFeature's `TraceEnricherHook` event (`feature_flag.evaluation`) for flags with
+  `telemetry.enabled` (`FeatureTelemetryMode.ConfiguredFlags`), all flags, or none.
+- **Dependencies.** `OpenFeature` and `OpenFeature.Hosting` 2.14.1, `Microsoft.FeatureManagement` 4.7.0 (from 4.5.0),
+  `SharedKernel.Primitives` (EventId range and baggage key). Test-only: `Microsoft.Extensions.Configuration.Json`.
+
+### Tasks
+
+| ID | Task | Project | Status |
+|---|---|---|---|
+| D-555 | Analysis, OpenFeature and Microsoft API probes, the four user decisions | SharedKernel.FeatureManagement | `●` |
+| C-555a | `FeatureFlag<T>`, `FeatureClientExtensions`, typed object conversion; old types removed | SharedKernel.FeatureManagement | `●` |
+| C-555b | OpenFeature provider over `Microsoft.FeatureManagement` with explicit targeting and reasons | SharedKernel.FeatureManagement | `●` |
+| C-555c | Accessor and `FeatureTargetingContext`; per-scope client; telemetry hook; startup validation; registration | SharedKernel.FeatureManagement | `●` |
+| C-555d | Telemetry hidden from `Microsoft.FeatureManagement`'s evaluator (`EvaluationFeatureDefinitionProvider`) | SharedKernel.FeatureManagement | `●` |
+| C-555e | Consumers: SK0002 retargeted (`00.Governance`); `FakeFeatureClient` + `AddFakeFeatureFlags` (`16.Testing`); `SharedKernel.Consumer.Tests`; architecture-test anchor type | 00.Governance, 16.Testing, 01.Core | `●` |
+| T-555 | FeatureManagement 82 (real JSON configuration, host and pipeline; every README sample); SK0002 tests; 16.Testing fake self-tests 9 | — | `●` |
+| P-555a | Publish bar: XML docs enforced, public API tracked (60 entries), plain-English description, "First release." | SharedKernel.FeatureManagement | `●` |
+| DO-555 | README rewritten in the house format; `01.Core/CLAUDE.md`, `01.Core/README.md`, `16.Testing/CLAUDE.md`, `07.Messaging/CLAUDE.md` example, root brain and state map | — | `●` |
+| DO-555b | Governance docs for SK0002 (`00.Governance/CLAUDE.md`, READMEs) | 00.Governance | `●` |
+
+### Found during verification
+
+- **`Microsoft.FeatureManagement` puts the user id in traces.** For a flag with telemetry enabled it adds its own
+  `FeatureFlag` activity event carrying `TargetingId`. A telemetry test caught it. The evaluator now reads definitions
+  with telemetry off, while the provider still reads the configured telemetry for the OpenTelemetry event, which has no
+  targeting key. A test fails if a future `FeatureDefinition` gains a property that copy would drop.
+- **`Api.Instance` is empty.** OpenFeature.Hosting registers an isolated `Api`; the global instance reports the
+  "No-op Provider" and returns every default. SK0002 now flags it.
+- **Startup initializes the provider.** OpenFeature.Hosting sets the provider in `IHostedLifecycleService.StartingAsync`;
+  outside a host, evaluations return `ProviderNotReady` until `EnsureInitializedAsync()`. Documented and tested.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
@@ -2092,3 +2176,4 @@ count and no way to record data kept for a legal reason. The export was an `IRea
 - [2026-09-18] SK.01.P553 published — `SharedKernel.Validation` and `.FluentValidation` `1.0.0-alpha.0.1100` on GitHub Packages, with `SharedKernel.Primitives`, `SharedKernel.Core` and `SharedKernel.Localization` republished from `4254af5` (coordinator)
 - [2026-09-18] SK.01.P554 complete — `SharedKernel.DataPrivacy` pre-first-publish pass: Microsoft compliance model with a 23-kind GDPR/KVKK taxonomy and log redactors, extended masking aligned with Validation, HMAC pseudonymizer, idempotent data-subject requests with retention receipts; SK0035 retargeted. 108/108 (coordinator)
 - [2026-09-18] SK.01.P554 published — `SharedKernel.DataPrivacy` `1.0.0-alpha.0.1106` on GitHub Packages, with `SharedKernel.Primitives` republished from `09143b6` (coordinator)
+- [2026-09-18] SK.01.P555 complete — `SharedKernel.FeatureManagement` pre-first-publish pass: OpenFeature `IFeatureClient` with typed `FeatureFlag<T>`, explicit targeting (fixing targeting that never reached `Microsoft.Targeting`), ambient accessor, per-scope consistency, startup validation, telemetry without user ids (Microsoft's own event suppressed); SK0002 retargeted, `FakeFeatureClient`. 82/82 (coordinator)
