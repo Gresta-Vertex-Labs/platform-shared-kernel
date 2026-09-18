@@ -25,7 +25,7 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Validation` *(P-443; redesigned before first publish, P-553)* | Validated value types: `Iban` (89 SWIFT registry countries with BBAN structure), `Bic`, `CardNumber` (Luhn, 10 networks incl. Troy, masked `ToString`), `VatNumber` (EU27, XI, GB, CH, NO, TR VKN — format and check digit), `NationalId` (per-country registry, TCKN built in, masked), `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`; `IValidatedValue<T>` (`Create` → `Result<T>`, `IParsable`, JSON converter); one error code per failure with a `LocalizedMessage` each, Turkish bundled; `Guard.Against.Invalid<T>` | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Localization` |
 | `SharedKernel.Validation.FluentValidation` *(P-444; redesigned by P-553)* | `MustBeValid*()` rules for every identifier type plus `MustBeValid<T, TValue>()`; each failure carries the specific code, the error's values and the field path as placeholders, and never the rejected value; null passes | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
 | `SharedKernel.Cryptography.KeyVault.Azure` *(P-545 pre-publish redesign)* | Azure Key Vault encryption keys (data keys as secret versions, master-key wrap, envelope provider, readiness probe) and signing keys (remote async sign, local verify). Public API tracked. | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Security.KeyVault.Secrets`, `Azure.Identity` |
-| `SharedKernel.DataPrivacy` *(shipped, P-474/WO-076)* | `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` pure helpers, `IDataSubjectRequestHandler` | `SharedKernel.Primitives` |
+| `SharedKernel.DataPrivacy` *(P-474; redesigned before first publish, P-554)* | `PrivacyTaxonomy` (23 `DataClassification`s on Microsoft's compliance model, incl. every GDPR/KVKK special category) with one `…DataAttribute` each; `SetPrivacyRedactors()` for .NET log redaction; `PiiMasking` (email, phone, card, IBAN, national ID, name, IP, `Partial`, `Suppress`); `Pseudonymizer` (HMAC-SHA256 tokens); `IDataSubjectRequestHandler` with `DataSubjectRequest` ids, JSON exports and retention receipts. Public API tracked. | `SharedKernel.Primitives`, `Microsoft.Extensions.Compliance.Abstractions` |
 | `SharedKernel.Localization` *(P-482; redesigned before first publish, P-552)* | `LocalizedMessage.Define<T1…T4>` typed message definitions whose `ToError` carries named arguments on `Error.MessageArguments`; `MessageTemplate` named placeholders with culture-aware formats; immutable `InMemoryLocalizationCatalog` built and validated by `LocalizationCatalogBuilder` from code, JSON files, directories or embedded JSON; `StringLocalizerLocalizationCatalog` over `.resx`; `catalog.Localize(error, culture)` falling back to `Error.Message` | `SharedKernel.Primitives`, `Microsoft.Extensions.Localization.Abstractions` (NuGet) |
 | `SharedKernel.Cryptography.Argon2` *(P-545 pre-publish redesign)* | Argon2id `IOneWayHashAlgorithm` (standard PHC strings, verification cost ceilings), selected by `OneWayHashing:Algorithm`. Public API tracked. | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Konscious.Security.Cryptography.Argon2` |
 
@@ -812,68 +812,45 @@ Argon2idOneWayHashAlgorithm : IOneWayHashAlgorithm   $argon2id$v=19$m=..,t=..,p=
 Selected by OneWayHashing:Algorithm = "argon2id"; PBKDF2 hashes keep verifying and report SuccessRehashNeeded.
 ```
 
-### `SharedKernel.DataPrivacy` — public surface (P-474/WO-076, SHIPPED — eleventh published package)
+### `SharedKernel.DataPrivacy` — public surface (P-474, redesigned before first publish by P-554)
 
 ```
-DataClassification  (enum)
-    Public | Internal | Confidential | Restricted
+PrivacyTaxonomy  (static)   TaxonomyName = "SharedKernel.Privacy"
+    23 DataClassification properties: PersonName EmailAddress PhoneNumber PostalAddress DateOfBirth NationalId
+      OnlineIdentifier IpAddress Location BankAccount PaymentCard Financial Credential | special categories:
+      Health Genetic Biometric EthnicOrigin PoliticalOpinion Belief Membership SexLife CriminalRecord Appearance
+    SpecialCategories → DataClassificationSet   All → IReadOnlyList<DataClassification>   IsSpecialCategory(c) → bool
+{Xxx}DataAttribute  (23 sealed : Microsoft DataClassificationAttribute; Property | Field | Parameter | ReturnValue)
+    read by the Microsoft.Extensions.Telemetry logging source generator at compile time; never reflected over
 
-DataClassificationAttribute  (sealed class : Attribute, [AttributeUsage(Property | Field)])
-    .Classification                                             → DataClassification
-    — pure metadata; NEVER read via reflection in production code — sole sanctioned consumer is
-      00.Governance's compile-time analyzer (P-476) and human documentation
+PiiMasking  (static; null-safe, never throws, "" for blank input except Suppress; letters/digits masked, separators kept)
+    Email(v) / Email(v, revealDomain)   j***@example.com / j***@***.com   first char + fixed "***"
+    Phone(v)          last 4 digits (2 when 2–3, none below)
+    CardNumber(v)     first 6 + last 4 digits; < 12 digits → all masked      == Validation.CardNumber.ToString()
+    Iban(v)           first 2 + last 4 letters/digits; < 10 → all masked
+    NationalId(v)     last 4 letters/digits; ≤ 4 → all masked                 == Validation.NationalId.ToString()
+    PersonName(v)     initial of each word + "***"
+    IpAddress(v)      IPv4 /24, IPv6 /48; not an IP → RedactedSentinel
+    Partial(v, keepStart, keepEnd)   negative → 0; window covering all → all masked
+    Suppress(v)       RedactedSentinel "[REDACTED]" always
+Pseudonymizer(ReadOnlySpan<byte> key ≥ 32)   Pseudonymize(string?|ReadOnlySpan<char>) → 22-char base64url(HMAC-SHA256[..16])
 
-SensitiveDataCategory  (enum)
-    Pii | PaymentCard | Credential | Health
+Redaction:  MaskingRedactor (abstract, protected Mask) → Email/PhoneNumber/CardNumber/BankAccount/NationalId/PersonName/IpAddressRedactor
+            SuppressingRedactor, PseudonymizingRedactor(Pseudonymizer)
+    IRedactionBuilder.SetPrivacyRedactors()                  masked kinds as above; everything else incl. OnlineIdentifier → [REDACTED]
+    IRedactionBuilder.SetPrivacyRedactors(Pseudonymizer)     same, OnlineIdentifier → token
+    Host must use EnableRedaction(o => o.ApplyDiscriminator = false); the default appends ":Name" before redacting
+    (never leaks, but garbles masks — tested).
 
-SensitiveDataCategoryAttribute  (sealed class : Attribute, [AttributeUsage(Property | Field)])
-    .Category                                                   → SensitiveDataCategory
-    — same "metadata only, never reflected over in production" constraint as DataClassificationAttribute
-
-PiiMasking  (static class — pure, allocation-minimal, deterministic, null/empty-safe functions; zero reflection)
-    Email(string? email)                                        → string   (e.g. "j.doe@example.com" → "j***@example.com")
-    Phone(string? phoneNumber)                                  → string   (keeps last 2–4 digits)
-    Pan(string? cardNumber)                                     → string   (keeps last 4 digits only)
-    Suppress(string? value)                                     → string   (fixed sentinel regardless of input — for fields with no safe partial reveal)
-    — SHIPPED (P-474): the design left several exact thresholds/edge cases unspecified; every one was
-      resolved deliberately during implementation and is now the binding contract (see each method's own
-      XML docs for the full statement, and 01.Core/README.md for worked examples):
-        * Email: null/empty/whitespace → "" ; local part >1 char → firstChar + fixed "***" (never
-          proportional to real length); local part 0-1 char → "***" only (a 1-char local part would be
-          fully disclosed by "firstChar+mask" otherwise); no "@" anywhere → the whole value is masked by
-          the same local-part rule, no "@domain" suffix; 2+ "@" characters split on the LAST one (the
-          most domain-like trailing segment)
-        * Phone: only Unicode digit characters count/are masked — every non-digit separator (+, space,
-          -, (, )) is preserved verbatim in its original position; reveal window is total-digit-count-
-          dependent (>=4 digits -> last 4; 2-3 digits -> last 2; <2 digits -> none), resolving D-59's
-          "2-4" range explicitly rather than leaving it ambiguous
-        * Pan: fixed "last 4" always — deliberately NOT narrowed for a sub-4-digit input the way Phone
-          is, since the design specified Pan's rule as a fixed count, not a range; digit counting/
-          separator handling otherwise mirrors Phone
-        * Suppress: returns the same fixed RedactedSentinel ("[REDACTED]") for every input, including null
-      T-58's "no reflection anywhere in the package" claim is verified by a compiled-assembly
-      System.Reflection.Metadata/PEReader scan of the production DLL's TypeReference table (not a source
-      grep) — flags any non-attribute System.Reflection.* type reference, explicitly excluding attribute-
-      suffixed names since the SDK's own auto-generated AssemblyCompanyAttribute/AssemblyMetadataAttribute
-      (driven by this repo's centralized NuGet packaging metadata) would otherwise false-positive on every
-      SharedKernel package. This pattern (real PE-metadata inspection over a source grep) is reusable for
-      any future "no reflection in this package" claim elsewhere in 01.Core
-
-IDataSubjectRequestHandler  (no default/reflection-based implementation ships — consuming service implements
-    against its own data)
-    ExportDataAsync(string subjectId, CancellationToken ct = default)      → Task<Result<DataSubjectExportBundle>>
-    RequestErasureAsync(string subjectId, CancellationToken ct = default)  → Task<Result<DataSubjectErasureReceipt>>
-    — cross-service erasure orchestration is explicitly out of scope for this package
-
-DataSubjectExportBundle  (sealed record)
-    .SubjectId                                                  → string
-    .ExportedAtUtc                                              → DateTimeOffset
-    .Data                                                       → IReadOnlyDictionary<string, object?>
-
-DataSubjectErasureReceipt  (sealed record)
-    .SubjectId                                                  → string
-    .ErasedAtUtc                                                → DateTimeOffset
-    .RecordsAffected                                            → int
+DataSubjectRequest(requestId, subjectId, requestedAt, tenantId?)   throws on blank ids
+IDataSubjectRequestHandler
+    ExportAsync(DataSubjectRequest, ct) → Task<Result<DataSubjectExport>>
+    EraseAsync(DataSubjectRequest, ct)  → Task<Result<DataSubjectErasureReceipt>>
+DataSubjectExport(Request, Source, ExportedAt, IReadOnlyList<DataSubjectRecord>)   .WriteTo(Utf8JsonWriter)
+DataSubjectRecord(Category, JsonElement Data) { Purpose }   .Create<T>(category, value, JsonTypeInfo<T>)
+DataSubjectErasureReceipt(Request, Source, CompletedAt, ErasedRecords, AnonymizedRecords, IReadOnlyList<RetainedData>) .IsComplete
+RetainedData(Category, LegalBasis, RetainUntil?)
+DataPrivacyErrorCodes   RequestIdConflict (Conflict), TemporarilyUnavailable (Unexpected)
 ```
 
 ### `SharedKernel.Localization` — public surface (P-482, redesigned before first publish by P-552)
@@ -1023,9 +1000,10 @@ SharedKernel.Primitives addition (P-552): Error.MessageArguments — IReadOnlyDi
 - **(P-553)** VAT numbers issued to individuals are format-only where the check digit depends on a birth date or a separate personal-number scheme (BG 10-digit, CZ 9/10-digit except the special 9-digit numbers starting 6, LV personal codes). Every business number is checked in full.
 - **(P-553)** The FluentValidation rules use `Custom` because FluentValidation 11 has one error code per `PropertyValidator` and each identifier fails with several codes. Null passes; `WithMessage`/`WithErrorCode`/`WithName`/`WithSeverity` are unavailable after these rules, by design. `SharedKernel.Validation` itself must never reference FluentValidation.
 - **(P-443)** `Guard.Throw.*` parity is never added for identifier guards; `Guard.Against.Invalid<T>` returns `Error?` like every Core guard, and a blank value returns Core's own `NullOrWhiteSpace` error.
-- **(P-474/WO-076, shipped)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` must never be read via reflection in production code — they are pure compile-time/documentation metadata whose sole sanctioned consumer is `00.Governance`'s analyzer (P-476) and human documentation. A reflection-based runtime read of either attribute anywhere in production code is exactly the pattern this domain already prohibits for logging (root `CLAUDE.md`'s "never a reflection-based property walk" rule) and would directly contradict the rule these attributes exist to support.
-- **(P-474/WO-076, shipped)** `PiiMasking.*` functions must be pure, allocation-minimal, deterministic, and null/empty-safe — never throw on null or empty input, never perform I/O, never carry hidden state. `Email`/`Phone`/`Pan` return `string.Empty` for null/whitespace input; `Suppress` alone returns its fixed sentinel for every input including null (see the public-surface block above for the exact masking rules chosen where the design left thresholds ambiguous).
-- **(P-474/WO-076, shipped)** `IDataSubjectRequestHandler` must ship with no default or reflection-based implementation — each consuming service implements it against its own data. `SharedKernel.DataPrivacy` must never grow a cross-service erasure orchestrator; that composition, if it ever exists, belongs to a future `19.Scheduling`/`17.Workflows` phase, not this package.
+- **(P-554)** Classification is Microsoft's compliance model (`Microsoft.Extensions.Compliance.Abstractions`), never a bespoke attribute: the logging source generator reads it at compile time, so no production code in this package or elsewhere reads a classification attribute reflectively. New kinds are new `DataClassification` values with their own attribute, never an enum member. A classification's `TaxonomyName`/`Value` pair is a wire-level contract (redaction configuration refers to it) and is never renamed.
+- **(P-554)** `PiiMasking` is pure, null-safe and never throws. A masking rule may only ever change to reveal less. A value too short for a safe partial reveal is masked in full. `CardNumber` and `NationalId` must stay identical to `SharedKernel.Validation`'s `CardNumber`/`NationalId` `ToString()`; a test compares them. Digits and letters are matched with the Unicode predicates (`char.IsDigit`/`IsLetterOrDigit`), so non-ASCII digits are masked too.
+- **(P-554)** `SetPrivacyRedactors` erases every special category and every kind without a masking rule; it never sets the builder's fallback redactor, which stays the host's choice. `OnlineIdentifier` is tokenized only when the caller supplies a `Pseudonymizer`; there is no default key.
+- **(P-554)** `IDataSubjectRequestHandler` ships with no implementation and no orchestrator. Its contract: an unknown subject is success with nothing in it; a repeated `RequestId` returns the first outcome; data kept for a legal reason is `Retained`, not a failure.
 - **(P-552)** Every translation API — `Localize`, `TryFormat`, `TryGetString`, `TryGetTemplate`, `LocalizedMessage.Format` — returns the translation or the original text, never a blank and never an unfilled `{placeholder}`, and never throws for a missing or broken translation. A translation that uses a placeholder the error has no value for counts as missing. `MessageTemplate.Format` (the throwing variant) must never be called on an error path; use `TryFormat`.
 - **(P-552)** `Error.MessageArguments` holds placeholder values for translation only. It must stay out of `Equals`/`GetHashCode` and out of JSON (`[JsonIgnore]`), and must stay empty for every `SharedKernel.Primitives` factory; only `LocalizedMessage.ToError` fills it. It is not the metadata bag the root state-map declined — never widen it to carry anything but message values.
 - **(P-552)** `LocalizedMessage.Define` takes argument names explicitly and must keep validating them against the default text's placeholders (exact set, no duplicates) and each format against its argument type when the definition is created. Never derive names from placeholder order: rewording the text would silently swap two values of the same type.
@@ -1139,10 +1117,9 @@ services.AddSharedKernelValidation()
 services.AddLocalizationCatalog(catalog => catalog.AddValidationTranslations()); // Turkish messages
 
 
-// DataPrivacy (P-474, shipped) — no DI extension: DataClassificationAttribute/SensitiveDataCategoryAttribute
-// are pure metadata (applied directly on types), and PiiMasking is a static class. IDataSubjectRequestHandler
-// is registered by the consuming service against its own implementation, like any other application-owned
-// contract — this package ships no default/reflection-based implementation of its own.
+// DataPrivacy (P-554) — no IServiceCollection extension; redaction plugs into Microsoft's builder in the host.
+services.AddRedaction(redaction => redaction.SetPrivacyRedactors());          // or SetPrivacyRedactors(pseudonymizer)
+builder.Logging.EnableRedaction(options => options.ApplyDiscriminator = false);
 services.AddSingleton<IDataSubjectRequestHandler, MyServiceDataSubjectRequestHandler>();
 
 // Localization (P-552) — exactly one catalog per application; a second registration throws.
@@ -1185,7 +1162,7 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - **(P-443/WO-067, SHIPPED)** All `SharedKernel.Validation` static validators, `NationalIdValidatorRegistry` (`ConcurrentDictionary`-backed, no reflection), and `GuardValidationExtensions` are AOT-safe by construction — no reflection anywhere; the pluggable-registry lookup is a plain dictionary keyed by a `string` country code, not a type-based/reflective lookup.
 - **(P-444/WO-067, SHIPPED)** `ValidationRuleBuilderExtensions` itself is AOT-safe by construction — no reflection, static generic methods only. `FluentValidation` 11.x's own AOT status is not independently verified by this package (third-party dependency, same pragmatic stance as `Microsoft.FeatureManagement`) — flag (do not block on) any AOT gap found there; it does not affect any other `01.Core` package since this is the domain's only consumer.
 - **(P-444/WO-067, design-locked, implementation pending)** `ValidationRuleBuilderExtensions` are ordinary `IRuleBuilder<T,string>` extension methods — AOT-safety here is bounded by `FluentValidation`'s own AOT status, which must be verified on each version upgrade (mirrors the existing `Microsoft.FeatureManagement` verify-on-upgrade posture).
-- **(P-474/WO-076, design-locked, implementation pending)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` are plain `Attribute` subclasses — attribute *application* is always AOT-safe; the hard constraint (Implementation Rules) is that this domain never reads them back via reflection at runtime, which would be the actual AOT/trimming hazard. `PiiMasking.*` are pure static string functions — AOT-safe by default.
+- **(P-554)** `SharedKernel.DataPrivacy` uses no reflection (a PE-metadata scan of the compiled assembly proves it). Classification attributes are read by the logging source generator at compile time. `DataSubjectRecord.Create` takes a `JsonTypeInfo<T>`, so exports serialize without reflection; `WriteTo` writes with `Utf8JsonWriter`.
 - **(P-552)** `SharedKernel.Localization` uses no reflection: `InMemoryLocalizationCatalog` is a `FrozenDictionary` lookup with a `CultureInfo.Parent` walk, JSON is read with `JsonDocument`, and templates are parsed by hand. `AddEmbeddedJson` reads manifest resources by name, which is trim-safe. `StringLocalizerLocalizationCatalog` is bounded by `Microsoft.Extensions.Localization`'s own AOT status; its culture swap is a plain property set and restore.
 - **(P-530, shipped, user-directed — the one package in this domain that is deliberately NOT AOT-clean)** `SharedKernel.Configuration`'s `AddValidatedOptions` overloads are **not** trim- or AOT-safe, and now say so in the type system rather than in prose: each carries `[RequiresUnreferencedCode]` + `[RequiresDynamicCode]`, mirroring the BCL's own annotations on `OptionsBuilder<TOptions>.Bind`. This is not a gap to be closed later — a generic library wrapper structurally cannot get generated binding, because .NET's configuration-binding source generator intercepts `Bind` calls in the **calling** assembly and so can never specialize a `Bind<TOptions>` that lives inside a library and is generic over an options type it has not seen. Each `TOptions` additionally carries `[DynamicallyAccessedMembers(PublicProperties | NonPublicProperties | PublicParameterlessConstructor)]` and each `TValidator` `[DynamicallyAccessedMembers(PublicConstructors)]`, which is what a trimmer needs to keep a **flat** options class working; the residual, genuinely-unfixable risk is an options class whose own properties are complex types, whose nested members the trimmer cannot see. Measured: 12 IL warnings (6× `IL2091`, 4× `IL2026`, 2× `IL3050`) before this phase, **0 after** — not because anything was suppressed, but because the requirement is now declared and propagates to the caller. Before P-530 this package advertised `aot` in `PackageTags` and "AOT-clean" in its README while emitting all twelve into every trimming consumer's build; `aot` must not reappear in its tags. A consuming service that genuinely needs a trimmed or native-AOT publish should keep such options flat, or bind them by hand at its own composition root where the source generator can see the concrete type. Note the split worth keeping straight: an `[OptionsValidator]`-generated `TValidator` really does make **validation** reflection-free — it is **binding** that never was.
 
@@ -1207,7 +1184,7 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - Numeric and string-length guard tests must use `[Theory]` with `[InlineData]` for boundary conditions (exactly at limit, one below, one above).
 - Collection guard tests must verify single enumeration — use a counting stub/wrapper `IEnumerable<T>` that increments a counter on `GetEnumerator()` calls.
 - **(P-553)** `SharedKernel.Validation.Tests/` (278/278): 42 SWIFT-published IBANs plus one generated IBAN for each of the 89 registry countries (built from its BBAN mask with independently computed BigInteger check digits); every IBAN failure code; 49 python-stdnum-published VAT numbers and a wrong-check-digit variant for 34 of them; provider test cards for 16 networks and range/length detection; TCKN; every type's normalization, codes, `IParsable`, JSON round trip and rejection, guards, DI; reflection tests that every code has one message and every message a Turkish translation with the same placeholders; README samples, including a `[LoggerMessage]` rendering a masked card. `SharedKernel.Validation.FluentValidation.Tests/` (20/20): every rule, null passing, codes and placeholders, no attempted value, country-dependent rules, nested paths, README samples.
-- **(P-474/WO-076, shipped)** `SharedKernel.DataPrivacy.Tests/` (56/56 passing) — `PiiMasking.*` deterministic output for known inputs (email local-part masking incl. 1-char/empty/no-`@`/multi-`@` edge cases, phone digit-count-dependent reveal windows with separator preservation, PAN fixed-last-4 incl. 19-digit and sub-4-digit inputs, `Suppress`'s fixed sentinel), null/empty-input never throws; a compiled-assembly `System.Reflection.Metadata`/`PEReader` scan of the production DLL's `TypeReference` table proving no reflection-invocation type is referenced (not a source grep — see the public-surface block above), plus a companion test proving the attribute-exclusion branch is actually exercised; attribute-application mechanics for `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` (a test-only reflective read proving mechanics, never a production-code claim); confirmation `IDataSubjectRequestHandler` has no default implementation registered anywhere in this package. `SharedKernel.Consumer.Tests` gained 6 tests including a `.nuspec` dependency-count assertion proving zero third-party NuGet dependency (67/67 passing, up from 61/61).
+- **(P-554)** `SharedKernel.DataPrivacy.Tests/` (108/108): taxonomy completeness, one attribute per classification with the right targets, special categories; every masking rule incl. non-ASCII digits, surrogate pairs, IPv4-mapped and scoped IPv6, short input; `CardNumber`/`NationalId` equal to `SharedKernel.Validation`'s masks; pseudonymizer determinism, key copy, long input and the HMAC it must equal; every classification through `SetPrivacyRedactors` with and without a pseudonymizer, overriding one classification; end to end through `AddRedaction` + `EnableRedaction` with `[LoggerMessage]` parameters and `[LogProperties]` members, and a no-leak test with the default discriminator; data-subject request validation, JSON export, receipts; README samples; the no-reflection PE scan.
 - **(P-552)** `SharedKernel.Localization.Tests/` (96/96 passing): `MessageTemplate` syntax, culture formatting and every parse error; `LocalizedMessage` definition validation (name mismatch, duplicates, format-versus-type), `ToError` arguments and every arity; builder and JSON (nesting, comments, duplicates within a file, empty values, bad culture file names, directories, embedded resources, later-source-wins, build snapshots); catalog culture fallback and concurrent reads; `.resx` adapter (not-found, blank and invalid values, culture swap restored on throw); `Localize` fallbacks (no translation, missing argument, `Error.None`); DI (eager build, second catalog throws); and `ReadmeSampleCompileTests` running the README samples. README recipe 1 (ASP.NET Core request localization) is verified in a scratch web app. `SharedKernel.Primitives.Tests` adds `ErrorMessageArgumentsTests` (empty by default including `Error.None`, copy on assignment, ordinal keys, excluded from equality, not serialized).
 - **(SK.01.LoggingRangesNewDomains, shipped)** `LoggingEventIdRangesTests` extended so the pairwise-uniqueness/multiple-of-1000/folder-number-to-value theory cases cover all 21 domain base constants (00 through 20), with a dedicated `PreExistingEighteenDomainConstants_AreByteForByteUnchanged` fact hardcoding all 18 prior expected values independently of the shared theory table — a transposition between two existing constants would still pass the pairwise-uniqueness/modulo checks alone (both remain unique multiples of 1000), so only this independent hardcoding catches it. 146/146 `SharedKernel.Primitives.Tests` passing.
 
@@ -1276,3 +1253,4 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - [2026-09-16] P-545 (user-directed pre-publish redesign of `SharedKernel.Cryptography`, `.Argon2`, `.KeyVault.Azure`) — split sync/async services and key providers (markers, capability gates and runtime `NotSupportedException` removed); algorithm-carrying `SigningKey`/`ISigningKeyProvider` with PS/RS/ES 256–512 replacing `RsaSignatureService`/`EcdsaSignatureService`/`IAsymmetricKeyProvider`; PHC hashes with composite `OneWayHasher`, pepper and rehash-on-verify migration (Argon2 becomes an `IOneWayHashAlgorithm`); versioned `EncryptedPayload`/`EnvelopePayload` codecs; `EnvelopeEncryptionService`, HKDF `SubkeyDerivation` and purpose-bound providers, rotation helpers; `FixedTimeComparison`; TOTP time-step replay, `TotpParameters`, `ITotpVerifier`, secret and recovery-code generators; shared bounded `SingleFlightCache` fixing unbounded growth and the abandoned-entry cancellation race; Azure provider rebuilt on secret versions (no overwrite race, no dependency on `CurrentKeyId`), master-key allow-list, rate-limited unknown ids, async remote signing with local verify; builder-based opt-in registration; test hooks removed; public API tracked in all three packages (coordinator)
 - [2026-09-18] P-552 — `SharedKernel.Localization` redesigned before its first publish. Typed message definitions (`LocalizedMessage.Define<T1…T4>` with explicit argument names validated against the text) build errors that carry their values on a new `Error.MessageArguments` (Primitives, additive, outside equality and JSON), so `14.Presentation` translates ProblemDetails `detail` with the values. Named placeholders with culture-aware formats (`MessageTemplate`, positional `{0}` rejected). Immutable `InMemoryLocalizationCatalog` built by `LocalizationCatalogBuilder` from code, JSON files, directories and embedded JSON, validated at registration. Fixed: blank `.resx` values reported as translations, the mutable catalog with `Seal()`, a second catalog registration silently ignored, `translated!` at every caller (`[NotNullWhen(true)]`), and a latent bug where a translation containing a placeholder was shown raw. Found while testing: `Error.None` would have had a null `MessageArguments` (static field order), fixed with a nested holder. Localization 96/96, Primitives 263/263, WebApi 203/203, Testing.SelfTests 1410/1410, ArchitectureTests 324/324.
 - [2026-09-18] P-553 — `SharedKernel.Validation` and `.FluentValidation` redesigned before first publish. Static validators replaced by value types (`Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`) with `IValidatedValue<T>`, `IParsable` and JSON. Coverage: full SWIFT IBAN registry with BBAN structure (89 countries, was 78 by length only), per-country VAT format and check digit for 32 prefixes including Türkiye's VKN (was one loose pattern), 10 card networks including Troy. Fixed: `XK` missing from countries, withdrawn `ANG`/`ZWL` accepted, ABA `000000000` accepted and prefix ranges unchecked, PAN format errors reported as Luhn failures, one code reused for several messages, `RegexOptions.Compiled` instead of generated code paths, mod-97 implemented three times, FluentValidation reporting null values. Every message is a `LocalizedMessage` with Turkish bundled; `05.Application`'s `ValidationBehavior` now keeps the real error code (with a new `errorCodes` ProblemDetails map, field-keyed `errors` preserved). Validation 278/278, FluentValidation 20/20.
+- [2026-09-18] P-554 — `SharedKernel.DataPrivacy` redesigned before first publish. Classification moved onto Microsoft's compliance model: `PrivacyTaxonomy` with 23 kinds of personal data including every GDPR/KVKK special category, one attribute each, usable on `[LoggerMessage]` parameters; `SetPrivacyRedactors()` plugs matching redactors into .NET log redaction. `PiiMasking` extended (IBAN, national ID, name, IP, `Partial`, private email domains) and aligned with Validation's card mask (`Pan` → `CardNumber`, first 6 + last 4); new `Pseudonymizer`. `IDataSubjectRequestHandler` now takes a `DataSubjectRequest` with an idempotent request id, returns JSON exports and receipts that record retained data and its legal basis. `00.Governance`'s SK0035 retargeted to the new attributes. 108/108.

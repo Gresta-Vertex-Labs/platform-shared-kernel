@@ -48,6 +48,7 @@
 | `SK.01.P551` | P-551 Compression Pre-First-Publish Pass | All tasks in Phase: P-551 are `●` | P-551 |
 | `SK.01.P552` | P-552 Localization Pre-First-Publish Pass | All tasks in Phase: P-552 are `●` | P-552 |
 | `SK.01.P553` | P-553 Validation + FluentValidation Pre-First-Publish Pass | All tasks in Phase: P-553 are `●` | P-553 |
+| `SK.01.P554` | P-554 DataPrivacy Pre-First-Publish Pass | All tasks in Phase: P-554 are `●` | P-554 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -136,7 +137,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Validation` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1100` (2026-09-18, P-553), with Primitives, Core and Localization from `4254af5`.** Validated value types (`Iban` over the full SWIFT registry with BBAN structure, `Bic`, `CardNumber` with 10 networks and masked `ToString`, `VatNumber` for 32 prefixes incl. TR VKN, `NationalId`, `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`), one code and one `LocalizedMessage` per failure, Turkish bundled. First implemented P-443 (packed locally only). References Primitives, Core, Localization. 278/278 tests |
 | `SharedKernel.Validation.FluentValidation` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1100` (2026-09-18, P-553).** `MustBeValid*()` rules for every identifier plus `MustBeValid<T, TValue>()`; failures carry the specific code, values and field path, never the rejected value; null passes. First implemented P-444. 20/20 tests |
 | `SharedKernel.Cryptography.KeyVault.Azure` | P-545 | `◐` | **P-545 (2026-09-16): redesigned**: data keys as Key Vault secret versions (no overwrite race), master-key allow-list, rate-limited unknown ids, redacted probe, async remote signing with local verification, injected clients, split encryption/signing registration. Publish is P-57 (`○`) |
-| `SharedKernel.DataPrivacy` | Published | `●` | **New eleventh package (P-474, WO-076), fully shipped.** References Primitives only; zero third-party NuGet deps (confirmed via direct `.nuspec` inspection — `SharedKernel.Primitives` is the package's sole dependency); `DataClassificationAttribute`/`DataClassification`, `SensitiveDataCategoryAttribute`/`SensitiveDataCategory` (pure metadata, never reflected over in production), `PiiMasking` (`Email`/`Phone`/`Pan`/`Suppress`, deterministic, null-safe, never throws), `IDataSubjectRequestHandler`/`DataSubjectExportBundle`/`DataSubjectErasureReceipt` implemented; 56/56 `SharedKernel.DataPrivacy.Tests` passing (including a compiled-assembly metadata scan proving no reflection-invocation `System.Reflection.*` type is referenced by the production DLL); packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (67/67 `SharedKernel.Consumer.Tests`, up from 61/61) |
+| `SharedKernel.DataPrivacy` | Ready to publish | `●` | **Pre-first-publish pass complete (P-554); not yet on GitHub Packages.** Built on Microsoft's compliance model: `PrivacyTaxonomy` (23 kinds incl. every GDPR/KVKK special category) with one attribute each, `SetPrivacyRedactors()` for .NET log redaction, `PiiMasking` (card mask equal to Validation's), `Pseudonymizer`, and an idempotent `IDataSubjectRequestHandler` contract with retention receipts. First implemented P-474 (packed locally only). References Primitives and `Microsoft.Extensions.Compliance.Abstractions`. 108/108 tests |
 | `SharedKernel.Localization` | Published | `●` | **Published to GitHub Packages as `1.0.0-alpha.0.1093` (2026-09-18, P-552), with SharedKernel.Primitives from `95aae0f`.** Typed message definitions (`LocalizedMessage.Define<T1…T4>`) whose errors carry `Error.MessageArguments`; named-placeholder `MessageTemplate`; immutable `InMemoryLocalizationCatalog` built and validated by `LocalizationCatalogBuilder` from code, JSON files, directories and embedded JSON; `.resx` adapter; `catalog.Localize(error, culture)`. First implemented P-482 (packed locally only). References Primitives + `Microsoft.Extensions.Localization.Abstractions`. 96/96 tests |
 | `SharedKernel.Cryptography.Argon2` | P-545 | `◐` | **P-545 (2026-09-16): redesigned** as an `IOneWayHashAlgorithm` selected by configuration, with verification cost ceilings. Publish is P-57 (`○`) |
 
@@ -1893,6 +1894,92 @@ translated or branched on by code.
 - **A stale test generator.** `16.Testing`'s generator produced random alphanumeric BBANs and VAT bodies, which the
   stricter structure and check-digit rules now correctly reject. It now generates from each country's structure.
 
+## Phase: P-554 — `SharedKernel.DataPrivacy` Pre-First-Publish Pass (BREAKING API; Microsoft compliance model) <!-- phase-key: SK.01.P554 -->
+
+**Status:** `●` Complete — 9/9 tasks `●`; DataPrivacy 108/108, Analyzers 337/337, Testing.SelfTests 1422/1422, ArchitectureTests 324/324; not yet on GitHub Packages
+
+> The pre-first-publish audit of `SharedKernel.DataPrivacy`, following P-551, P-552 and P-553. The package was
+> implemented in P-474 and packed only to the local feed, so the API was free to change.
+
+### What was found
+
+**Classification did nothing at runtime.** `[DataClassification]` and `[SensitiveDataCategory]` were read by nothing
+except SK0035, which warned but masked nothing. .NET already ships the mechanism the package was missing:
+`Microsoft.Extensions.Compliance` classifications, which the logging source generator reads at compile time and redacts
+through `EnableRedaction()`. The attributes also could not mark a `[LoggerMessage]` parameter.
+
+**Taxonomy.** Four closed categories (`Pii`, `PaymentCard`, `Credential`, `Health`) and four tiers. None of the other GDPR
+Article 9/10 or KVKK Article 6 special categories existed, nor contact, identifier, financial or location data, and a
+service could not add its own.
+
+**Masking.**
+- `Pan` kept the last 4 digits while `Validation.CardNumber` shows the first 6 and last 4, so one card had two masks.
+- `Pan` returned every digit of a 1–3 digit input.
+- `Email` always kept the domain, which identifies a person with a personal domain.
+- There was nothing for IBAN, national ID, name, IP address or pseudonymization.
+
+**Data-subject requests.** The calls took only a `subjectId`: no request id for a safe retry, no tenant. The receipt had one
+count and no way to record data kept for a legal reason. The export was an `IReadOnlyDictionary<string, object?>`.
+
+**Publish bar.** No XML docs, no tracked API, no release notes; the description claimed "AOT-compatible" unverified.
+
+### User decisions
+
+- **Adopt Microsoft's compliance model,** over fixing the bespoke attributes or keeping them.
+- **The full GDPR/KVKK category set,** with services able to add their own.
+- **Unify and extend masking:** card mask equal to Validation's, new maskers, private email domains, pseudonymization.
+- **Redesign the data-subject request contract,** keeping the orchestrator out of scope.
+
+### Design
+
+- **Taxonomy.** `PrivacyTaxonomy` (taxonomy `SharedKernel.Privacy`) has 23 `DataClassification`s, 10 of them special
+  categories, with `SpecialCategories`, `All` and `IsSpecialCategory`. Each has a sealed `…DataAttribute` deriving from
+  Microsoft's `DataClassificationAttribute`, valid on properties, fields, parameters and return values.
+- **Redaction.** `SetPrivacyRedactors()` on Microsoft's `IRedactionBuilder`:
+  - masked: person name, email, phone, national ID, IP address, bank account, payment card, through the
+    `MaskingRedactor` subclasses;
+  - everything else, including every special category, becomes `[REDACTED]` (`SuppressingRedactor`);
+  - `OnlineIdentifier` is tokenized by `PseudonymizingRedactor` only when a `Pseudonymizer` is passed.
+- **Masking.** `PiiMasking` has `Email` (optionally hiding the domain), `Phone`, `CardNumber` (first 6 and last 4),
+  `Iban`, `NationalId`, `PersonName`, `IpAddress`, `Partial` and `Suppress`. Short input is masked in full, and digits
+  are matched with Unicode predicates.
+- **Pseudonymization.** `Pseudonymizer` needs a key of at least 32 bytes and returns 22-character base64url tokens (the
+  first 128 bits of HMAC-SHA256).
+- **Data-subject requests.**
+  - `DataSubjectRequest` carries `RequestId`, `SubjectId`, `RequestedAt` and `TenantId`.
+  - `ExportAsync` returns `DataSubjectExport`: records as `JsonElement` with a category and purpose, written as one
+    JSON document by `WriteTo`.
+  - `EraseAsync` returns `DataSubjectErasureReceipt`: erased and anonymized counts, `RetainedData` with a legal basis
+    and an until-date, and `IsComplete`.
+  - `DataPrivacyErrorCodes` has `RequestIdConflict` and `TemporarilyUnavailable`.
+- **Dependencies.** `SharedKernel.Primitives` and `Microsoft.Extensions.Compliance.Abstractions` 10.7.0, the version
+  `Microsoft.Extensions.Http.Resilience` already brings in.
+
+### Tasks
+
+| ID | Task | Project | Status |
+|---|---|---|---|
+| D-554 | Analysis, Microsoft compliance model evaluation, the four user decisions | SharedKernel.DataPrivacy | `●` |
+| C-554a | `PrivacyTaxonomy` and 23 attributes; old attributes and enums removed | SharedKernel.DataPrivacy | `●` |
+| C-554b | `PiiMasking` rewritten and extended; `Pseudonymizer` | SharedKernel.DataPrivacy | `●` |
+| C-554c | Redactors and `SetPrivacyRedactors` | SharedKernel.DataPrivacy | `●` |
+| C-554d | Data-subject request contract redesigned | SharedKernel.DataPrivacy | `●` |
+| C-554e | Consumers: SK0035 retargeted to Microsoft's attribute base (`00.Governance`); `RecordingDataSubjectRequestHandler` and `PiiMaskingAssertions` (`16.Testing`); `SharedKernel.Consumer.Tests` | 00.Governance, 16.Testing, 01.Core | `●` |
+| T-554 | DataPrivacy 108 (incl. end-to-end `[LoggerMessage]`/`[LogProperties]` redaction and README samples); SK0035 12; 16.Testing DataPrivacy self-tests 16 | — | `●` |
+| P-554a | Publish bar: XML docs enforced, public API tracked (216 entries), plain-English description, "First release." | SharedKernel.DataPrivacy | `●` |
+| DO-554 | README rewritten in the house format; `01.Core/CLAUDE.md`, `01.Core/README.md`, root brain and state map | — | `●` |
+
+### Found during verification
+
+- **The redaction discriminator.** `EnableRedaction()` appends `:FieldName` to each value before redacting it
+  (`LoggerRedactionOptions.ApplyDiscriminator`, on by default), which suits hash redactors but garbles masks: an IBAN keeps
+  the last four characters of the field name. Hosts set `ApplyDiscriminator = false`. A test proves nothing leaks when
+  they forget.
+- **Non-ASCII digits.** A first draft matched digits with `char.IsAsciiDigit`, which would have left Arabic-Indic digits
+  visible. Masking now uses the Unicode predicates, and a test covers it.
+- **Method-group use.** An optional `revealDomain` parameter stopped `PiiMasking.Email` converting to
+  `Func<string?, string>`, which `16.Testing`'s assertions rely on; it became two overloads.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
@@ -2003,3 +2090,4 @@ translated or branched on by code.
 - [2026-09-18] SK.01.P552 published — `SharedKernel.Localization` `1.0.0-alpha.0.1093` on GitHub Packages, with `SharedKernel.Primitives` (carrying `Error.MessageArguments`) republished from `95aae0f` (coordinator)
 - [2026-09-18] SK.01.P553 complete — `SharedKernel.Validation` and `.FluentValidation` pre-first-publish pass: value types replace the static validators; full SWIFT IBAN registry with BBAN structure, per-country VAT (EU27, XI, GB, CH, NO, TR VKN), 10 card networks incl. Troy; stale ISO data and the ABA all-zero bug fixed; one code and one translatable message per failure with Turkish bundled; `05.Application` now keeps the real error code and `14.Presentation` adds an `errorCodes` map beside the field-keyed `errors`. 278/278 + 15/15 (coordinator)
 - [2026-09-18] SK.01.P553 published — `SharedKernel.Validation` and `.FluentValidation` `1.0.0-alpha.0.1100` on GitHub Packages, with `SharedKernel.Primitives`, `SharedKernel.Core` and `SharedKernel.Localization` republished from `4254af5` (coordinator)
+- [2026-09-18] SK.01.P554 complete — `SharedKernel.DataPrivacy` pre-first-publish pass: Microsoft compliance model with a 23-kind GDPR/KVKK taxonomy and log redactors, extended masking aligned with Validation, HMAC pseudonymizer, idempotent data-subject requests with retention receipts; SK0035 retargeted. 108/108 (coordinator)

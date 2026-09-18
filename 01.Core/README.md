@@ -14,7 +14,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.Validation.FluentValidation` | `MustBeValid*()` FluentValidation rules for every `SharedKernel.Validation` type (a third-party dependency — `FluentValidation`) |
 | `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault encryption keys (data keys as secret versions, envelope provider, readiness probe) and signing keys (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Security.KeyVault.Secrets` + `Azure.Identity`) |
 | `SharedKernel.Cryptography.Argon2` | Argon2id one-way hash algorithm for `IOneWayHasher`, selected by configuration (a third-party dependency — `Konscious.Security.Cryptography.Argon2`) |
-| `SharedKernel.DataPrivacy` | `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` pure-metadata markers, `PiiMasking.*` deterministic masking helpers, `IDataSubjectRequestHandler` export/erasure contract |
+| `SharedKernel.DataPrivacy` | 23 kinds of personal data (incl. GDPR/KVKK special categories) as attributes on Microsoft's compliance model, log redaction through `SetPrivacyRedactors()`, `PiiMasking`, `Pseudonymizer`, and the `IDataSubjectRequestHandler` export/erasure contract |
 | `SharedKernel.Localization` | Typed message definitions (`LocalizedMessage.Define<T1…T4>`) whose errors carry their arguments, named-placeholder templates formatted per culture, and an immutable catalog loaded from JSON or `.resx` and validated at startup (a first-party dependency — `Microsoft.Extensions.Localization.Abstractions`) |
 
 All packages target `net10.0`. Options binding is reflective, so `SharedKernel.Configuration` and the registration methods that bind options are not trim- or AOT-safe.
@@ -1156,95 +1156,34 @@ carries the specific code, its values and the field path, never the rejected val
 See [`SharedKernel.Validation`'s README](SharedKernel.Validation/README.md) and
 [`SharedKernel.Validation.FluentValidation`'s README](SharedKernel.Validation.FluentValidation/README.md).
 
-## SharedKernel.DataPrivacy — Classification Taxonomy, Masking, Data-Subject Requests
+## SharedKernel.DataPrivacy — Classification, Log Redaction, Data-Subject Requests
 
-`SharedKernel.DataPrivacy` ships three independent, composable pieces: a pure-metadata classification taxonomy, deterministic PII masking helpers, and the `IDataSubjectRequestHandler` GDPR/KVKK export/erasure contract. It depends on `SharedKernel.Primitives` only (for `Result<T>`/`Error` on the request-handler contract) — the same single-package, zero-third-party-dependency reasoning as `SharedKernel.Cryptography`/`.Compression`.
-
-### Classification attributes — metadata only, never reflected over at runtime
-
-```csharp
-using SharedKernel.DataPrivacy.Classification;
-
-public sealed class CustomerProfile
-{
-    [DataClassification(DataClassification.Public)]
-    public string DisplayName { get; init; } = string.Empty;
-
-    [DataClassification(DataClassification.Restricted)]
-    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
-    public string NationalId { get; init; } = string.Empty;
-}
-```
-
-`DataClassificationAttribute`/`SensitiveDataCategoryAttribute` are **never read via reflection in production code** — their sole sanctioned consumers are a compile-time `00.Governance` analyzer and human documentation/code review. This is a hard design constraint, not a style preference: the platform already bans reflection-based property walks for structured logging, and a classification mechanism that itself needed runtime reflection to be useful would contradict the rule it exists to support. Usable on any type in any layer, including `03.Domain`/`04.Contracts`.
-
-### PiiMasking — deterministic masking helpers
+`SharedKernel.DataPrivacy` names 23 kinds of personal data, including every GDPR and KVKK special category, as
+`DataClassification`s on .NET's compliance model (`Microsoft.Extensions.Compliance`). Each has an attribute, so marking
+a property or a `[LoggerMessage]` parameter is enough for the logging pipeline to mask it:
 
 ```csharp
-using SharedKernel.DataPrivacy.Masking;
+public sealed record Customer([property: EmailAddressData] string Email, [property: HealthData] string? Allergies);
 
-PiiMasking.Email("j.doe@example.com");   // "j***@example.com"
-PiiMasking.Phone("+1 (555) 123-4567");   // "+* (***) ***-4567" — separators preserved, only digits masked
-PiiMasking.Pan("4111-1111-1111-1111");   // "****-****-****-1111" — always exactly the last 4 digits
-PiiMasking.Suppress("12345678901");      // "[REDACTED]" — the fixed sentinel, regardless of input
+[LoggerMessage(EventId = 5101, Level = LogLevel.Information, Message = "Customer {Email} signed up.")]
+public static partial void SignedUp(ILogger logger, [EmailAddressData] string email);   // "Customer j***@example.com signed up."
+
+builder.Services.AddRedaction(redaction => redaction.SetPrivacyRedactors());
+builder.Logging.EnableRedaction(options => options.ApplyDiscriminator = false);
 ```
 
-Every member is null/empty-safe and never throws — `null`/`""`/whitespace-only input returns `string.Empty` for `Email`/`Phone`/`Pan`, while `Suppress` returns its fixed sentinel for every input, including `null`. No member uses reflection.
+Identifiers that can be partly shown are masked (email, phone, card as `411111******1111`, IBAN, national ID, name,
+IP address); everything else, including every special category, is logged as `[REDACTED]`. `PiiMasking` exposes the
+same rules for audit records and support screens, and `Pseudonymizer` turns an identifier into a stable HMAC-SHA256
+token so log lines about one user stay correlatable. `00.Governance`'s SK0035 flags a marked member passed to an
+unmarked log parameter, the one path redaction cannot see.
 
-### IDataSubjectRequestHandler — implemented by each service against its own data
+`IDataSubjectRequestHandler` is what each service implements to export or erase a person's data. It takes a
+`DataSubjectRequest` whose `RequestId` makes retries safe, returns an export of JSON records, and returns an erasure
+receipt that lists data kept for a legal reason (`RetainedData`: category, legal basis, until when). An unknown subject
+is a success with nothing in it, so an orchestrator can send every request to every service.
 
-```csharp
-using SharedKernel.DataPrivacy.DataSubjectRequests;
-using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Results;
-
-public sealed class CustomerDataSubjectRequestHandler(ICustomerRepository customers, IClock clock)
-    : IDataSubjectRequestHandler
-{
-    public async Task<Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default)
-    {
-        Customer? customer = await customers.FindByIdAsync(subjectId, ct);
-        if (customer is null)
-        {
-            return Error.NotFound("customer.not_found", $"No customer found for subject '{subjectId}'.");
-        }
-
-        var data = new Dictionary<string, object?>
-        {
-            ["email"] = customer.Email,
-            ["displayName"] = customer.DisplayName,
-        };
-
-        return new DataSubjectExportBundle(subjectId, clock.UtcNow, data);
-    }
-
-    public async Task<Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default)
-    {
-        int affected = await customers.AnonymizeBySubjectIdAsync(subjectId, ct);
-        return new DataSubjectErasureReceipt(subjectId, clock.UtcNow, affected);
-    }
-}
-```
-
-This package ships no default implementation — there is no honest generic way to export or erase "everything about a subject" without knowing what a given service actually stores — and **no cross-service erasure orchestrator**. Coordinating a single data-subject request across every service that might hold data about that subject is explicitly out of scope; it is a plausible future composition (a `19.Scheduling` job or a `17.Workflows` durable workflow) built on top of this contract once real per-service handlers exist.
-
-### Composing with `06.Persistence`'s audit trail
-
-`06.Persistence`'s append-only audit trail (`IAuditTrailWriter`, P-456/WO-071) persists opaque, caller-serialized before/after snapshots with no knowledge of which fields are sensitive. Mask a classified field with `PiiMasking.*` before handing it to that writer:
-
-```csharp
-var auditSnapshot = new
-{
-    Email = PiiMasking.Email(customer.Email),
-    CardNumber = PiiMasking.Pan(customer.CardNumber),
-};
-
-await auditTrailWriter.WriteAsync(entry with { After = auditSnapshot }, ct);
-```
-
-This is documentation guidance only — neither package takes a dependency on the other.
-
-See [`SharedKernel.DataPrivacy`'s own README](SharedKernel.DataPrivacy/README.md) for the full usage guide.
+See [`SharedKernel.DataPrivacy`'s README](SharedKernel.DataPrivacy/README.md).
 
 ---
 
@@ -1302,9 +1241,9 @@ SharedKernel.Primitives              (no dependencies)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
        |
-       +──► SharedKernel.DataPrivacy  (DataClassification/SensitiveDataCategory attributes, PiiMasking, IDataSubjectRequestHandler)
+       +──► SharedKernel.DataPrivacy  (PrivacyTaxonomy + attributes, log redaction, PiiMasking, IDataSubjectRequestHandler; also pulls in the first-party Microsoft.Extensions.Compliance.Abstractions package)
        |
        +──► SharedKernel.Localization  (LocalizedMessage, ILocalizationCatalog, JSON catalogs; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
 ```
 
-All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.
+All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected. `SharedKernel.DataPrivacy` likewise depends on the first-party `Microsoft.Extensions.Compliance.Abstractions` package (P-554), because .NET's logging source generator and redaction pipeline only understand classifications of that type.
