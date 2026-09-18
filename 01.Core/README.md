@@ -9,7 +9,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
 | `SharedKernel.Cryptography` | AES-256-GCM encryption, key rotation, envelope encryption, HKDF subkeys, RSA/ECDSA and HMAC signing, PHC password hashing, fixed-time comparison, secure random, HOTP/TOTP |
-| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate |
+| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): framed Brotli default, gzip keyed alternate; truncation-detecting frame, raw mode for external interop, bounded decompression |
 | `SharedKernel.Validation` | Culture-independent IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT validators + pluggable national-ID registry |
 | `SharedKernel.Validation.FluentValidation` | `IRuleBuilder<T,string>` adapter over `SharedKernel.Validation` (a third-party dependency — `FluentValidation`) |
 | `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault encryption keys (data keys as secret versions, envelope provider, readiness probe) and signing keys (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Security.KeyVault.Secrets` + `Azure.Identity`) |
@@ -1010,39 +1010,56 @@ services.AddSharedKernelCryptography(configuration)   // key-free: IOneWayHasher
 builder.Services.AddSharedKernelCompression(builder.Configuration);
 ```
 
-Optional configuration (`SharedKernel:Compression` section, defaults to `CompressionLevel.Optimal`):
+Configuration (`SharedKernel:Compression`, bound from the section `CompressionOptions` declares through `ISectionBoundOptions`, so no call site names the path):
 
 ```json
 {
   "SharedKernel": {
     "Compression": {
-      "Level": "Optimal"
+      "Level": "Optimal",
+      "MaxDecompressedSize": 67108864
     }
   }
 }
 ```
 
-`AddSharedKernelCompression` registers `BrotliPayloadCompressor` as both the unkeyed `IPayloadCompressor` default and the `"Brotli"`-keyed singleton, and `GZipPayloadCompressor` only as the `"GZip"`-keyed singleton (mirroring `EcdsaSignatureService`'s keyed-only registration in `SharedKernel.Cryptography` — there is no unkeyed GZip registration).
+Both values are validated at startup — an undefined `Level` or a non-positive `MaxDecompressedSize` throws from `IHost.StartAsync()`.
 
-### Brotli (default) — byte[] and stream usage
+`AddSharedKernelCompression` registers five `TryAdd` singletons:
+
+| Key | Algorithm | Framing | Use for |
+|---|---|---|---|
+| *(unkeyed)* | Brotli | Framed | Anything this platform writes and reads back |
+| `"Brotli"` | Brotli | Framed | The same, addressable by name |
+| `"GZip"` | gzip | Framed | gzip inside this platform |
+| `"Brotli.Raw"` | Brotli | Raw | External interop |
+| `"GZip.Raw"` | gzip | Raw | External interop — an ordinary `.gz` body |
+
+Brotli is the unkeyed default because it compresses this platform's payloads better: measured on 283 KB of JSON, 15.6 KB with Brotli against 35.0 KB with gzip. gzip is never the unkeyed default, mirroring `EcdsaSignatureService`'s keyed-only registration in `SharedKernel.Cryptography`.
+
+### Brotli (default) — byte[], span and stream usage
 
 ```csharp
 public sealed class QueuePublishExample(IPayloadCompressor compressor)
 {
     // byte[] overload — small in-memory payloads.
-    public byte[] PrepareForQueue(byte[] jsonPayload) =>
-        compressor.Compress(jsonPayload); // Brotli — best ratio for JSON/text-shaped payloads
+    public byte[] PrepareForQueue(byte[] jsonPayload) => compressor.Compress(jsonPayload);
 
-    public Result<byte[]> RestoreFromQueue(byte[] received) =>
-        compressor.Decompress(received); // Result<byte[]> — never throws on corrupt/truncated input
+    public Result<byte[]> RestoreFromQueue(byte[] received) => compressor.Decompress(received);
 
     // Stream overload — large payloads, never materializes the full content in memory.
-    public async Task CompressUploadAsync(Stream sourceFile, Stream destination, CancellationToken ct) =>
+    public async ValueTask CompressUploadAsync(Stream sourceFile, Stream destination, CancellationToken ct) =>
         await compressor.CompressAsync(sourceFile, destination, ct);
+
+    // Allocation-sensitive path — no intermediate buffer and no result array.
+    public void PrepareInto(ReadOnlySpan<byte> payload, IBufferWriter<byte> destination) =>
+        compressor.Compress(payload, destination);
 }
 ```
 
-Handling corrupt/truncated input via the railway pattern:
+`Compress(byte[])` grows an internal buffer and then copies out of it, costing roughly twice the payload; prefer the span and `IBufferWriter<byte>` overloads in a hot loop.
+
+Handling a failed payload via the railway pattern:
 
 ```csharp
 Result<byte[]> decompressed = compressor.Decompress(received);
@@ -1051,30 +1068,66 @@ decompressed.Match(
     onSuccess: bytes => ProcessPayload(bytes),
     onFailure: error => logger.LogWarning(
         "Decompression failed: {Code} — {Message}", error.Code, error.Message));
-// error.Code == CompressionErrorCodes.DecompressionFailed
 ```
 
-### GZip — explicit keyed resolution
+Every failure is an `ErrorType.Validation` error, because the fault is in the supplied payload rather than in the service — it maps to HTTP 400 at the boundary, never a 500. The codes in `CompressionErrorCodes` are `DecompressionFailed`, `TruncatedPayload`, `PayloadTooLarge`, `MalformedPayload` and `AlgorithmMismatch`.
 
-Use `GZipPayloadCompressor` only when interoperating with a system that specifically requires the gzip format. It is never the unkeyed default — resolve it explicitly by key:
+### Truncation detection, and why a payload carries a frame
+
+**Neither `BrotliStream` nor `GZipStream` detects a truncated payload.** Both treat the end of the input as the end of the data, so a payload cut short in transit or in storage decompresses *without error* into a valid prefix of the original — and nothing downstream can tell it from complete data. Measured on a 283 KB payload, before this package framed its output:
+
+| Compressed bytes kept | Result | Data returned |
+|---|---|---|
+| 25% | `Success` | 63,898 bytes — a valid prefix |
+| 50% | `Success` | 127,863 bytes — a valid prefix |
+| 99% | `Success` | 278,932 of 282,775 bytes |
+
+A framed payload therefore carries a 13-byte header — magic marker, format version, algorithm, uncompressed length — and decompression verifies the length it produced against the recorded one, failing with `CompressionErrorCodes.TruncatedPayload`. The frame also records **which algorithm wrote the payload**, so gzip bytes handed to the Brotli compressor fail with `AlgorithmMismatch` rather than possibly decoding to garbage (Brotli has no magic number of its own). Reading a raw payload with a framed compressor fails with `MalformedPayload`.
+
+The frame is **not** a checksum and not authentication: it detects truncation and a wrong-codec read, not deliberate tampering by someone who can rewrite the header. Where a payload must be tamper-evident, encrypt it after compressing — AES-GCM's authentication tag then covers the compressed bytes.
+
+Two limits worth knowing:
+
+- **Raw mode cannot detect truncation**, by definition — nothing in a bare Brotli or gzip stream records the original length. That is the cost of interop, and it is why `Framed` is the default. Raw gzip also decodes a second gzip payload joined onto the first (gzip allows concatenated members, so `cat a.gz b.gz` is a valid file); a framed payload rejects the same thing because its output no longer matches the recorded length. Any other bytes after a complete payload are ignored in every mode.
+- **`Compress(Stream, Stream)` needs the length before it writes the header.** It takes it from the input stream when that is seekable, otherwise patches it in afterwards when the *output* is seekable. When neither is — a network stream straight to a network stream — the payload records no length and reading it back cannot detect truncation. `MemoryStream` and `FileStream` are both seekable, so this affects only genuinely streamed pipelines.
+
+### Untrusted input and decompression bombs
+
+Decompression is bounded by `MaxDecompressedSize` (default 64 MiB) and returns `CompressionErrorCodes.PayloadTooLarge` rather than allocating past it. This is a denial-of-service control, not a tuning knob: **102 bytes of Brotli expand to 64 MiB of zeroes**, and crafted input goes orders of magnitude further. The limit is enforced from the bytes actually produced, never from the frame's recorded length, so a payload that understates its own size is still stopped. On a `Stream` destination, up to the limit plus one copy buffer may already have been written when the failure is reported — discard the destination's contents unless the result is successful.
+
+Compression has no equivalent bound, because it is CPU-bound work on data you supply. Do not compress an unbounded caller-supplied payload on a request path without limiting its size first.
+
+### gzip — explicit keyed resolution
+
+Use gzip only when interoperating with a system that specifically requires that format, and resolve the **raw** key when you do: framed output carries the 13-byte platform header, so it is not a `.gz` body any standard tool can open, which defeats the only reason to choose gzip here.
 
 ```csharp
 public sealed class LegacyInteropExample(
-    [FromKeyedServices(CompressionServiceCollectionExtensions.GZipPayloadCompressorKey)]
+    [FromKeyedServices(CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey)]
         IPayloadCompressor gzipCompressor)
 {
     public byte[] CompressForLegacySystem(byte[] payload) => gzipCompressor.Compress(payload);
 }
 
 // Resolving explicitly from IServiceProvider:
-IPayloadCompressor brotli = provider.GetRequiredService<IPayloadCompressor>(); // unkeyed default = Brotli
-IPayloadCompressor gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
-    CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
+IPayloadCompressor brotli = provider.GetRequiredService<IPayloadCompressor>(); // framed Brotli
+IPayloadCompressor gzipForExternal = provider.GetRequiredKeyedService<IPayloadCompressor>(
+    CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey);
 ```
 
-### A note on truncation detection
+gzip also inflates very small payloads noticeably — 1 byte becomes 21, against Brotli's 5.
 
-`Decompress` never lets an unhandled exception escape — bit-level corruption and unrecognized/garbage input are always caught and mapped to a failed `Result`/`Result<byte[]>` for both algorithms. However, a compressed stream that is missing only its *trailing* bytes (a genuinely truncated upload or transfer that stopped early) is not always detected as an error by the underlying BCL implementations: neither `BrotliStream` nor `GZipStream` validates that the full originally-compressed length was reproduced, and `GZipStream` additionally does not validate its own trailing CRC32/ISIZE footer on read. `BrotliStream` in particular has no fixed magic-number header the way gzip does, so it can decode a truncated stream's remaining bytes without raising any error at all. This is a genuine, confirmed platform (BCL) characteristic, not a defect in this package. Services that must guarantee detection of a truncated transfer end-to-end should pair compression with a separate integrity check — e.g., `SharedKernel.Cryptography`'s `IContentHasher` over the original payload, or a known expected length — rather than relying solely on the compression format's own error signaling.
+### Compression level
+
+`Level` applies to both algorithms. **`SmallestSize` is far more expensive on Brotli than the name suggests**, because it selects Brotli quality 11. Measured on 8 MiB of repetitive data:
+
+| Level | Output | Time |
+|---|---|---|
+| `Fastest` | 3,757 bytes | 2 ms |
+| `Optimal` | 1,061 bytes | 10 ms |
+| `SmallestSize` | 1,047 bytes | 225 ms |
+
+22× the cost of `Optimal` for 1.3% less output. Do not set it on a request-path payload without measuring your own data.
 
 ---
 

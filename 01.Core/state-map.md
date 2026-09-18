@@ -45,6 +45,7 @@
 | `SK.01.P296` | P-296 Non-Secret Content Hashing (IContentHasher) | All tasks in Phase: P-296 are `●` | P-296 |
 | `SK.01.P297` | P-297 New SharedKernel.Compression Package | All tasks in Phase: P-297 are `●` | P-297 |
 | `SK.01.P298` | P-298 Feature Flag Variant / Experimentation Support | All tasks in Phase: P-298 are `●` | P-298 |
+| `SK.01.P551` | P-551 Compression Pre-First-Publish Pass | All tasks in Phase: P-551 are `●` | P-551 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -129,7 +130,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Configuration` | P-539 | `●` | **P-539 (2026-09-14): brought to the P-538 first-publish bar — opt-in `OptionsStrictness` (`RequireSection`, `RejectUnknownKeys`), `SectionName` registration guard, PublicApiAnalyzers, full exception contract, README rewrite; 78 tests.** **Zero `SharedKernel.*` dependencies as of P-530/C-134** — the `SharedKernel.Primitives` reference was dead (no `SharedKernel` type appeared anywhere in the source) and is removed, so this package is publishable with nothing ahead of it in the dependency gate. Four `AddValidatedOptions` overloads: explicit `IConfigurationSection` or a section path declared by the options type itself via the new `ISectionBoundOptions` (`static abstract string SectionName`), each with Data Annotations, a caller-supplied `IValidateOptions<T>`, or both, and each supporting named options instances; all `.ValidateOnStart()`-backed. Validators register via `TryAddEnumerable`, never `TryAddSingleton` (P-530/C-128 — the old `TryAddSingleton` silently dropped them). Deliberately NOT trim- or AOT-clean: configuration binding is reflective, so every overload declares `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` rather than suppressing the warnings, and `aot` was dropped from `PackageTags`. GitHub Packages publish is P-56 (`○`) |
 | `SharedKernel.FeatureManagement` | Published | `●` | References Primitives; boolean + weighted-variant evaluation (`GetVariantAsync`/`FeatureVariant`/`FeatureVariantDefinition`, P-298/WO-049, shipped) |
 | `SharedKernel.Cryptography` | P-545 | `◐` | **P-545 (2026-09-16): pre-first-publish redesign**: split sync/async encryption services and key providers, algorithm-carrying signing keys, PHC hashing with pepper and migration, envelope encryption, HKDF, rotation helpers, fixed-time comparison, TOTP hardening, bounded single-flight cache, public API tracked. References `SharedKernel.Primitives` + `SharedKernel.Configuration`; zero third-party dependencies. Publish is P-57 (`○`) |
-| `SharedKernel.Compression` | Published | `●` | **New seventh package (P-297, WO-049), fully shipped.** References Primitives + Configuration; zero third-party NuGet deps; `IPayloadCompressor`/`BrotliPayloadCompressor`/`GZipPayloadCompressor`/`CompressionOptions`/`AddSharedKernelCompression` implemented; 46/46 `SharedKernel.Compression.Tests` passing; packed to `./nupkgs` at `1.0.0`; consumer dependency-graph verified (46/46 `SharedKernel.Consumer.Tests`) |
+| `SharedKernel.Compression` | P-551 | `●` | **Implemented P-297/WO-049; reshaped by P-551 before its first publish. Never pushed to GitHub Packages — the earlier "Published" status on this row meant packed to the local `./nupkgs` folder, not on the feed.** P-551 fixed two severe defects, both reproduced by executing the code: a truncated payload decompressed to a valid prefix and reported `Result.Success` (measured 127,863 of 282,775 bytes at a 50% cut), and decompression was unbounded (102 bytes expanding to 64 MiB). Now a 13-byte frame records the algorithm and uncompressed length (`CompressionFraming.Framed` default, `Raw` for external interop), `MaxDecompressedSize` caps output at 64 MiB by default, every failure is `Error.Validation` rather than `Unexpected`, span/`IBufferWriter` overloads remove the ~2× allocation on the byte[] path, async members return `ValueTask`, `CompressionOptions` implements `ISectionBoundOptions`, and the two compressors forward to one internal codec instead of holding two copies of the same logic. Publish bar added: XML docs shipped, public API tracked (68 entries), `WarningsAsErrors` for CS1591/RS00xx. 156/156 `SharedKernel.Compression.Tests` passing; `SharedKernel.Messaging.MassTransit.Tests` 188/188 and governance 324/324 green against it; solution builds with 0 errors |
 | `SharedKernel.Validation` | Published | `●` | **New eighth package (P-443, WO-067), fully shipped.** References Primitives + Guards; zero third-party NuGet deps; `IbanValidator`/`BicValidator`/`PanValidator`+`CardNetwork`/`IsoCurrencyValidator`/`IsoCountryValidator`/`E164PhoneValidator`/`VatValidator` (dual-mode `IsValid`/`Validate`) + pluggable per-country `INationalIdValidatorRegistry` (`TckNationalIdValidator` default) + `GuardValidationExtensions`/`AddSharedKernelValidation` implemented; 129/129 `SharedKernel.Validation.Tests` passing; packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (54/54 `SharedKernel.Consumer.Tests`) |
 | `SharedKernel.Validation.FluentValidation` | Published | `●` | **New ninth package (P-444, WO-067), fully shipped.** References `SharedKernel.Validation` + `FluentValidation` (the one third-party dependency in this domain); `ValidationRuleBuilderExtensions` (`.MustBeValidIban()`/`.MustBeValidBic()`/`.MustBeValidPan()`/`.MustBeValidCurrencyCode()`/`.MustBeValidCountryCode()`/`.MustBeValidPhoneNumber()`/`.MustBeValidVatNumber()`/`.MustBeValidNationalId(...)`) built on FluentValidation's `Custom(...)` extension so `ValidationFailure.ErrorCode` always carries the exact `ValidationErrorCodes` constant the underlying validator produced; 26/26 `SharedKernel.Validation.FluentValidation.Tests` passing; packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (56/56 `SharedKernel.Consumer.Tests`) |
 | `SharedKernel.Cryptography.KeyVault.Azure` | P-545 | `◐` | **P-545 (2026-09-16): redesigned**: data keys as Key Vault secret versions (no overwrite race), master-key allow-list, rate-limited unknown ids, redacted probe, async remote signing with local verification, injected clients, split encryption/signing registration. Publish is P-57 (`○`) |
@@ -1569,6 +1570,147 @@ Format when active:
 
 ---
 
+
+## Phase: P-551 — `SharedKernel.Compression` Pre-First-Publish Pass (BREAKING API + WIRE FORMAT) <!-- phase-key: SK.01.P551 -->
+
+**Status:** `●` Complete — 10/10 tasks `●`; 156/156 tests; not yet published
+
+> A gold-standard audit of `SharedKernel.Compression` before its first publish, following the same
+> shape as P-529 (Primitives), P-538 (Core), P-539 (Configuration), P-545 (Cryptography) and the
+> `02.Caching` passes. The package had been implemented in P-297/WO-049 and packed locally only —
+> never pushed to a feed — so every behaviour change here was free. Under MinVer lockstep each would
+> otherwise have become a MAJOR bump across every package in the repo.
+
+### What was found
+
+Two severe defects, both reproduced by executing the code rather than reading it.
+
+**F1 — a truncated payload decompressed as `Result.Success`, carrying a valid prefix.** Both
+`BrotliStream` and `GZipStream` treat the end of the input as the end of the data, so a payload cut
+short in transit or in storage decompressed without error. Measured on a 283 KB JSON payload, both
+algorithms: 25% of the compressed bytes yielded 63,898 bytes, 50% yielded 127,863, 75% yielded
+210,748, 99% yielded 278,932 of 282,775 — every one a *valid prefix* of the original, so nothing
+downstream could distinguish it from complete data. The stream overload did the same, writing partial
+bytes into the caller's output stream and returning success. Empty input likewise returned success
+with zero bytes.
+
+This was a documented guarantee the package did not keep: `IPayloadCompressor`'s XML docs promised a
+failed result "if `compressed` is corrupt or truncated," while the test suite's own comments declared
+truncation detection "a genuine, confirmed platform characteristic — not a defect in this package"
+and deliberately did not assert it. The package's documentation and its tests disagreed with each
+other, and the documentation was the half consumers read.
+
+Blast radius at the time: `SharedKernel.Messaging.MassTransit`'s `WithPayloadTransform` decompresses
+inbound message bodies through this package. That path is masked when encryption is also enabled,
+because AES-GCM's tag check fails first — but `EnableCompression` is independently settable, and a
+blob or webhook payload has no AEAD in front of it.
+
+**F2 — no bound on decompression output.** `Decompress(byte[])` grew an unbounded `MemoryStream` and
+the stream overload wrote unbounded bytes into the caller's stream. Measured: 102 compressed bytes
+expanded to 64 MiB in 162 ms, a 658:1 ratio from trivially-constructed input; crafted input goes
+orders of magnitude further. The same defect class `14.Presentation` fixed at the HTTP boundary in
+P-411, unmitigated here, on a path that in messaging handles inbound data.
+
+Smaller findings: no record of which algorithm produced a stored payload; one shared `Level` for both
+algorithms where `SmallestSize` costs 22× `Optimal` on Brotli for 1.3% less output, undocumented; the
+byte[] path allocating roughly twice the payload with no span or `IBufferWriter` overload; `Task`
+rather than `ValueTask`; cancellation mid-stream leaving partial bytes in the caller's stream,
+undocumented; `CompressionOptions` still using a `const string SectionName` rather than the
+`ISectionBoundOptions` contract P-530 introduced; a duplicated DI test file; and no publish bar at all
+— no XML documentation shipped, no public API tracked.
+
+Two things the audit expected to find and did not, both verified rather than assumed: cross-algorithm
+decompression already failed correctly in both directions (Brotli is headerless, so it was the
+plausible candidate for decoding gzip bytes into garbage — it does not), and single-bit corruption was
+already caught by both formats.
+
+### Rulings taken (user-directed)
+
+1. **Truncation: a framed format with a raw interop mode**, over a caller-supplied expected length or
+   documenting the limitation. Chosen knowing framed output is no longer a plain `.gz` body.
+2. **Size cap: on by default, configurable** (64 MiB), over an opt-in knob or an added ratio check.
+3. **Additions: span/`IBufferWriter` overloads and `ValueTask`.** A minimum-size threshold and
+   per-algorithm compression levels were offered and declined.
+
+### What was built
+
+`CompressionFraming` (`Framed` default / `Raw`) and `CompressionAlgorithm` (`Brotli` = 1, `GZip` = 2).
+A framed payload carries a 13-byte header — `"SKC"` magic, format version, algorithm, uncompressed
+length as little-endian `Int64` — and decompression verifies the produced length against it.
+
+**A length trailer was evaluated and is impossible, measured:** both decompressors buffer ahead and
+consume bytes past the end of their own data — 8 of 8 trailer bytes swallowed, on seekable and
+non-seekable inputs alike — so anything written after the compressed bytes is unrecoverable. The
+length therefore goes in a header, which forces the one remaining hole: `Compress(Stream, Stream)`
+needs the length *before* writing. It takes it from a seekable input, else patches it afterwards into
+a seekable output, else records `UnknownLength` and truncation stays undetectable for that payload.
+`MemoryStream` and `FileStream` are both seekable, so only genuinely streamed network-to-network
+pipelines are affected. That hole has its own test pinning it, rather than being left implicit.
+
+`MaxDecompressedSize` (default 64 MiB, `[Range(1, long.MaxValue)]`) is enforced from the bytes
+actually produced, so a forged frame understating its own length is still stopped; a frame
+overstating it past the cap is rejected up front as an optimisation only. Output pre-allocation is
+capped independently of the limit, so a 13-byte payload claiming 64 MiB cannot make the reader
+allocate 64 MiB before decompressing a byte.
+
+Every decompression failure became `Error.Validation` (was `Unexpected`), so bad input maps to HTTP
+400 instead of being reported as a server fault. Five error codes: `decompression_failed`,
+`truncated_payload`, `payload_too_large`, `malformed_payload`, `algorithm_mismatch`.
+
+Both compressors now forward to one internal `CompressionCodec`; they previously held two copies of
+the same logic and had needed the same fix twice. `AddSharedKernelCompression` registers five
+`TryAdd` singletons — framed Brotli unkeyed, plus `"Brotli"`, `"GZip"`, `"Brotli.Raw"`, `"GZip.Raw"`.
+
+**Wire-format consequence for the one consumer:** `SharedKernel.Messaging.MassTransit`'s payload
+transform resolves the unkeyed compressor, which now writes framed payloads. A message compressed by
+the old build and read by the new one fails with `malformed_payload`. Neither package is published, so
+no deployed consumer exists — but a rolling deploy across this change would not be safe, and the
+README says so.
+
+### Tasks
+
+| ID | Task | Project | Status |
+|---|---|---|---|
+| D-551a | Design the frame layout and prove a trailer impossible against the real BCL (over-read measured at 8 of 8 bytes for both algorithms, seekable and non-seekable) | SharedKernel.Compression | `●` |
+| C-551a | `CompressionFraming`, `CompressionAlgorithm`, `CompressionFrame` (read/write/patch), `BufferWriterStream`, `CompressionCodec`, `CodecSettingsFactory` | SharedKernel.Compression | `●` |
+| C-551b | Reshape `IPayloadCompressor`: `Algorithm`/`Framing`, span and `IBufferWriter` overloads, `ValueTask` async members, documented failure shape | SharedKernel.Compression | `●` |
+| C-551c | `MaxDecompressedSize` enforced from produced bytes; capped pre-allocation; five `Error.Validation` codes | SharedKernel.Compression | `●` |
+| C-551d | `CompressionOptions` implements `ISectionBoundOptions`; both properties validated at startup; five `TryAdd` registrations including the two raw keys | SharedKernel.Compression | `●` |
+| T-551 | 156 tests: framing-aware shared contract base, truncation at four cut points per algorithm, bomb cap with exact-limit and one-over boundaries plus a forged understating frame, frame/algorithm mismatch and unknown version, stream length-recording paths including the documented hole, DI for all five keys; duplicate DI test file removed | SharedKernel.Compression.Tests | `●` |
+| P-551a | Publish bar: `GenerateDocumentationFile`, `WarningsAsErrors` for CS1591/RS0016/RS0017/RS0024/RS0025, `PublicApiAnalyzers` + tracked API (68 entries, nullability-annotated) | SharedKernel.Compression | `●` |
+| DO-551 | README rewritten around framing, the size cap, the measured numbers and the interop trade-off; `01.Core/CLAUDE.md` public surface, implementation rules, test rules and DI example updated — including reversing the pre-P-551 rule that told the suite not to assert truncation | SharedKernel.Compression | `●` |
+| V-551 | Verification: solution builds 0 errors; 156/156 own tests, `SharedKernel.Messaging.MassTransit.Tests` 188/188, `SharedKernel.ArchitectureTests.Tests` 324/324 | — | `●` |
+| F-551 | Finalisation round (see below): no-copy `byte[]` decompress path, overflow-safe buffer sizing, direction-aware length-mismatch message, appended-data behaviour measured and pinned (including raw gzip decoding a concatenated member), no-async-in-memory-overloads decision documented on the interface, NuGet description rewritten in plain English with `PackageReleaseNotes`, README rewritten in the house package format with every code snippet compiled and run | SharedKernel.Compression | `●` |
+
+### Finalisation round
+
+A second pass closed what the first left open. None of it changes the public API.
+
+- **The `byte[]` decompress path no longer copies its input.** It forwarded to the span overload, which copies the
+  compressed bytes into a pooled array because no `Stream` can wrap a span. The array overload now reads the caller's
+  array in place, skipping the frame by offset. The span overload keeps the copy; a test asserts all three
+  decompress paths reach the same verdict on a truncated payload.
+- **Buffer sizing cannot overflow.** The output size hint multiplied an `int` compressed length by four, which
+  overflows past about 512 MiB. All sizing arithmetic is now `long`.
+- **Appended data was measured and pinned, and the measurement changed the test.** The first version of the test
+  asserted "either the payload decodes exactly or it fails" — a test that cannot fail. Measuring all four modes showed
+  that bytes after a complete payload are ignored in every mode, *except* that raw gzip decodes a whole second gzip
+  payload appended to it: 23,889 bytes in, 47,778 out. That is correct gzip behaviour — RFC 1952 makes `cat a.gz b.gz`
+  a valid file and `GZipStream` decodes every member — and the frame already guards it: against a framed payload the
+  extra member changes the output length and decompression fails. Each case now has an exact test.
+- **The length-mismatch message says which way it went.** It read "so it is incomplete" even for the appended-member
+  case, where the payload decoded to *more* than recorded. The code stays `compression.truncated_payload`, the name
+  that fits the common cause, and its documentation covers both directions.
+- **No asynchronous overloads for in-memory payloads, as a documented decision rather than an omission.** The user had
+  selected them; they were not added because compressing data already in memory is pure CPU work that the .NET
+  streams do inline even through their async methods, so the overload would return a completed task while implying
+  the work was offloaded. The reasoning is on `IPayloadCompressor`'s remarks and in the README's design decisions.
+- **NuGet-facing text rewritten for a reader who does not know the platform.** The package description now says what
+  the package does in plain English without internal type names, `PackageReleaseNotes` reads "First release." to match
+  the other first-release packages, and the README follows the house format (badges, *You get / So that*, install,
+  recipes, error-code and exception tables, pitfalls, design decisions, an AI quick reference, guarantees) with
+  absolute links so it renders on nuget.org. Every README snippet was compiled and run before publishing.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
@@ -1672,3 +1814,5 @@ Format when active:
 - [2026-09-15] `SharedKernel.Primitives` republished to GitHub Packages as `1.0.0-alpha.0.935` from `9f3ee5f` so `SharedKernel.Contracts` `.935` resolves its dependency (coordinator)
 - [2026-09-16] SK.01.P545 opened, 4/9 `●` (user-directed pre-publish redesign of the three cryptography packages; defects, removals and rulings recorded in the phase block; library code, READMEs and brain done; tests, consumer migration, verification and publish in progress) (coordinator)
 - [2026-09-16] SK.01.P545 8/9 `●` — T-101, C-151, DO-62, V-05 closed: full solution build 0 errors; `Platform.SharedKernel.Unit.slnf` 62 projects / 6,426 tests green plus Argon2 98, SelfTests 1,333, Consumer.Tests 81; three packages packed and nuspecs inspected (README, XML docs, symbols, MIT, dependencies Primitives + Configuration only). P-57 publish pending. Stale `04.Contracts/consumer-verify` entry removed from the unit filter (coordinator)
+- [2026-09-18] SK.01.P551 complete — `SharedKernel.Compression` pre-first-publish pass: framed payload format (13-byte header: magic, version, algorithm, uncompressed length) so a truncated payload fails instead of returning a valid prefix as `Result.Success` (measured 127,863 of 282,775 bytes at a 50% cut, both algorithms), `MaxDecompressedSize` capping decompression at 64 MiB by default (102 bytes previously expanded to 64 MiB unbounded), `Raw` framing retained for external gzip/Brotli interop, every failure now `Error.Validation`, span/`IBufferWriter` overloads, `ValueTask` async members, `ISectionBoundOptions`, one shared internal codec instead of two copies of the logic, publish bar added (XML docs, 68 tracked public API entries, `WarningsAsErrors`). 147/147 own tests; Messaging.MassTransit 188/188 and governance 324/324 green; solution 0 errors. Not yet published (coordinator)
+- [2026-09-18] SK.01.P551 finalisation round (F-551): `Decompress(byte[])` reads the caller's array in place instead of copying it; buffer sizing made overflow-safe; appended data measured in all four modes and pinned exactly — ignored everywhere except raw gzip, which decodes a concatenated member (23,889 -> 47,778 bytes), a case the frame's length check rejects; length-mismatch message now states direction; no-async-in-memory-overloads documented as a decision on the interface; NuGet description and `PackageReleaseNotes` rewritten; package README rewritten in the house format with every snippet compiled and run. 156/156 tests, public API unchanged (coordinator)

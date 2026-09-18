@@ -21,7 +21,7 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Configuration` | Options-pattern validation: four `AddValidatedOptions` overloads (explicit section or `ISectionBoundOptions`-declared path; DataAnnotations, a caller-supplied `IValidateOptions<T>`, or both; named instances), all `.ValidateOnStart()`-backed | — (none; the `SharedKernel.Primitives` reference was dead and was removed, P-530/C-134) |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
 | `SharedKernel.Cryptography` *(P-545 pre-publish redesign)* | AES-256-GCM encryption (async and synchronous services over async/sync key providers), rotation helpers, envelope encryption, HKDF subkeys, algorithm-carrying RSA/ECDSA signing, HMAC-SHA256, PHC one-way hashing (PBKDF2, pepper, rehash-on-verify), SHA-256 content hashing, fixed-time comparison, secure random, RFC 4226/6238 HOTP/TOTP with time-step replay protection and recovery codes. Public API tracked. | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
-| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, gzip keyed alternate; framed payloads carry the algorithm and uncompressed length so truncation fails instead of silently returning a partial result, with a raw mode for external interop; decompression bounded by `MaxDecompressedSize` against bombs (P-551) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Validation` *(shipped, P-443/WO-067)* | Culture-independent format validators: IBAN, BIC, PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164, VAT baseline, pluggable per-country `INationalIdValidator` registry (TCKN default); dual-mode standalone `Result`/bool + `Guard.Against.*` extensions | `SharedKernel.Primitives`, `SharedKernel.Core` (re-pointed from the retired `SharedKernel.Guards`, P-506/WO-082) |
 | `SharedKernel.Validation.FluentValidation` *(shipped, P-444/WO-067)* | `IRuleBuilder<T,string>` rule adapter for every `SharedKernel.Validation` validator — the domain's only package with a third-party NuGet dependency | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
 | `SharedKernel.Cryptography.KeyVault.Azure` *(P-545 pre-publish redesign)* | Azure Key Vault encryption keys (data keys as secret versions, master-key wrap, envelope provider, readiness probe) and signing keys (remote async sign, local verify). Public API tracked. | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Security.KeyVault.Secrets`, `Azure.Identity` |
@@ -43,7 +43,7 @@ All twelve packages listed above are published — thirteen minus `SharedKernel.
 | Options validation | `Microsoft.Extensions.Options.DataAnnotations` (default path); additive source-generator path *(P-519/WO-083, shipped)* via the in-box `[OptionsValidator]` generator, zero reflection at validation time |
 | Feature flags | `Microsoft.FeatureManagement` (abstracted behind `IFeatureManager`) |
 | Cryptographic primitives | Pure BCL `System.Security.Cryptography` only — `AesGcm`, `HKDF`, `Rfc2898DeriveBytes` (PBKDF2), `RSA`, `ECDsa`, `HMACSHA1/256/512`, `SHA256/384/512`, `RandomNumberGenerator`, `CryptographicOperations`. Zero third-party NuGet dependencies. |
-| Payload compression | Pure BCL `System.IO.Compression` only — `BrotliStream` (default), `GZipStream` (keyed alternate). Zero third-party NuGet dependencies. |
+| Payload compression | Pure BCL `System.IO.Compression` only — `BrotliStream` (default), `GZipStream` (keyed alternate). Zero third-party NuGet dependencies. A 13-byte platform frame wraps the algorithm bytes by default (P-551), because neither BCL stream detects truncation on its own. |
 | Identifier generation | Pure BCL — `Guid.CreateVersion7()` (RFC 9562 UUID v7). Zero third-party NuGet dependencies. |
 | Time abstraction | Pure BCL — `System.TimeProvider` (shipped since .NET 8) backs `SystemClock` internally; `IClock` remains the only source of time exposed to domain/application code. |
 | Format validation *(P-443, shipped)* | Pure C# 13 — no NuGet dependencies; IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT checks are hand-rolled, not delegated to a third-party validation library |
@@ -616,59 +616,116 @@ SharedKernel.Cryptography
 Internal: `Internal/SingleFlightCache.cs` (bounded, TTL, cancellation-isolated, abandoned-entry safe) is compiled into this
 package and linked as source into `SharedKernel.Cryptography.KeyVault.Azure`.
 
-### `SharedKernel.Compression` — public surface (P-297/WO-049)
+### `SharedKernel.Compression` — public surface (P-297/WO-049; reshaped P-551 before first publish)
 
 ```
 IPayloadCompressor
-    Compress(byte[] data)                                       → byte[]
-    Compress(Stream input, Stream output)                       → void                    (writes compressed bytes of input to output; both streams caller-owned)
-    CompressAsync(Stream input, Stream output, CancellationToken ct = default) → Task
-    Decompress(byte[] compressed)                                → Result<byte[]>          (Error.Unexpected on corrupt/truncated input — never throws InvalidDataException OR InvalidOperationException directly, see remarks)
-    Decompress(Stream input, Stream output)                      → Result                  (non-generic — the decompressed payload already landed in the caller's output stream, no typed value to carry)
-    DecompressAsync(Stream input, Stream output, CancellationToken ct = default) → Task<Result>
+    Algorithm                                                    → CompressionAlgorithm    (Brotli | GZip — also recorded in a framed payload's header)
+    Framing                                                      → CompressionFraming      (Framed | Raw — whether truncation is detectable)
+    Compress(byte[] data)                                        → byte[]                  (ArgumentNullException on null)
+    Compress(ReadOnlySpan<byte> data)                            → byte[]                  (a null array widens to an empty span, so it CANNOT reject null — documented asymmetry)
+    Compress(ReadOnlySpan<byte> data, IBufferWriter<byte> output) → void                   (the allocation-free path; byte[] Compress costs ~2x the payload)
+    Compress(Stream input, Stream output)                        → void                    (both streams caller-owned, neither disposed; reads from the current position)
+    CompressAsync(Stream input, Stream output, CancellationToken ct = default) → ValueTask
+    Decompress(byte[] compressed)                                → Result<byte[]>
+    Decompress(ReadOnlySpan<byte> compressed)                    → Result<byte[]>
+    Decompress(ReadOnlySpan<byte> compressed, IBufferWriter<byte> output) → Result
+    Decompress(Stream input, Stream output)                      → Result                  (non-generic — the payload already landed in the caller's output stream)
+    DecompressAsync(Stream input, Stream output, CancellationToken ct = default) → ValueTask<Result>
     — generic, cross-cutting compress/decompress of an arbitrary byte payload or stream — the direct sibling
       of ISymmetricEncryptionService's "general-purpose encrypt/decrypt of arbitrary payloads" role: same
       shape, same zero-dependency BCL-only constraint, orthogonal concern
     — compression and encryption are frequently combined; the correct order is always compress-THEN-encrypt,
       never the reverse — compressing already-encrypted/high-entropy ciphertext wastes CPU for no size
-      benefit, since ciphertext has no redundancy left to compress. This package never compresses a payload
-      that has already passed through ISymmetricEncryptionService.Encrypt
+      benefit, since ciphertext has no redundancy left to compress
+    — EVERY decompression failure is Error.Validation (P-551), never Error.Unexpected: the fault is in the
+      supplied payload, so it maps to HTTP 400 rather than reporting bad input as a server fault
     — CORRECTED post-implementation (P-297/WO-049): the design originally assumed both algorithms surface
       corrupt input as InvalidDataException only (mirroring GZipStream). Empirically verified against the
       shipped BCL: GZipStream does throw InvalidDataException, but BrotliStream's decoder throws
       InvalidOperationException ("Decoder ran into invalid data") for corrupt Brotli input instead. Both
-      BrotliPayloadCompressor and GZipPayloadCompressor catch `InvalidDataException or InvalidOperationException`
-      in every Decompress overload — never InvalidDataException alone
-    — ALSO DISCOVERED empirically (P-297/WO-049): neither BrotliStream nor GZipStream reliably detects a
-      compressed stream missing only its *trailing* bytes (genuine truncated-transfer scenario) as an error —
-      GZipStream does not validate its own trailing CRC32/ISIZE footer on read, and BrotliStream has no fixed
-      magic-number header the way gzip does, so it can decode a truncated stream's remaining bytes without
-      raising anything at all. Prefix-truncation (missing the leading bytes) IS reliably caught for gzip via
-      its magic number, but still not for Brotli. Only genuine bit-level corruption and unrecognized/garbage
-      input are reliably detected for both algorithms — this is a confirmed BCL characteristic, not a defect
-      in this package. Services requiring guaranteed end-to-end truncation detection must pair compression
-      with a separate integrity check (e.g. IContentHasher or a known expected length), never rely on the
-      compression format's own error signaling alone
+      compressors catch `InvalidDataException or InvalidOperationException` in every Decompress overload
+
+CompressionFraming  (enum: Framed = 0 default, Raw = 1)
+    — THE FIX for P-551's severest finding. Both BrotliStream and GZipStream treat end-of-input as
+      end-of-data, so before framing a truncated payload decompressed WITHOUT ERROR into a valid prefix of
+      the original and reported Result.Success — measured on a 283 KB payload: 25% of the compressed bytes
+      returned 63,898 bytes, 50% returned 127,863, 99% returned 278,932 of 282,775, every one a valid prefix
+      indistinguishable downstream from complete data. Framed prepends a 13-byte header ("SKC" magic, format
+      version, algorithm, uncompressed length as little-endian Int64) and verifies the produced length on
+      read, so truncation now fails with compression.truncated_payload
+    — the frame is NOT a checksum and NOT authentication: it detects truncation and a wrong-codec read, not
+      tampering by someone who can rewrite the header. Tamper-evidence comes from encrypting after
+      compressing, where AES-GCM's tag covers the compressed bytes
+    — Raw emits bare Brotli/gzip bytes for external interop and CANNOT detect truncation, by definition:
+      nothing in either format records the original length. The size cap still applies
+    — THE ONE HOLE, documented not hidden: Compress(Stream, Stream) needs the length before writing the
+      header. It takes it from a seekable input, else patches it afterwards into a seekable output, else
+      records UnknownLength (-1) and truncation is undetectable for that payload. MemoryStream/FileStream are
+      both seekable, so only genuinely streamed network-to-network pipelines hit this
+    — a length TRAILER was evaluated and is IMPOSSIBLE, measured: both decompressors buffer ahead and consume
+      bytes past the end of their own data (8 of 8 trailer bytes swallowed, on seekable and non-seekable
+      inputs alike), so anything written after the compressed bytes is unrecoverable
+    — APPENDED DATA, measured in all four modes: bytes after a complete payload are ignored and the payload
+      decodes exactly — EXCEPT raw gzip, which decodes a whole second gzip payload appended to it (23,889 bytes
+      in, 47,778 out). That is correct gzip: RFC 1952 makes concatenated members one valid file and GZipStream
+      decodes every member. Framed payloads are guarded: the extra output no longer matches the recorded length,
+      so the read fails with truncated_payload, whose message states the direction ("cut short" vs "data was
+      appended"). Each case has an exact test; do not replace them with an either/or assertion that cannot fail
+    — NO async overloads for byte[]/span, deliberately: compressing data already in memory is pure CPU work,
+      the BCL streams do it inline even through their async methods, so such an overload would return a
+      completed task while implying the work was offloaded. The async members take streams, where I/O is real.
+      Recorded on IPayloadCompressor's remarks; do not add them without a genuine offload design
+    — Decompress(byte[]) reads the caller's array IN PLACE (MemoryStream over the array at the frame offset);
+      only the span overloads copy the compressed bytes into a pooled array, because no Stream wraps a span.
+      Keep the byte[] overload on its own path — it is the common call
+
+CompressionAlgorithm  (enum: Brotli = 1, GZip = 2)
+    — the numeric values are part of the framed payload format and are therefore PERMANENT; never renumber a
+      member, a new algorithm takes the next unused value
 
 BrotliPayloadCompressor  (sealed class, implements IPayloadCompressor)
+    ctor(IOptions<CompressionOptions>, CompressionFraming framing = Framed)
     — backed by System.IO.Compression.BrotliStream; the default, best-ratio choice for the JSON/text-shaped
-      payloads this platform mostly moves; registered as both the unkeyed default AND the "Brotli"-keyed
-      singleton
+      payloads this platform mostly moves (measured: 283 KB of JSON → 15.6 KB Brotli vs 35.0 KB gzip);
+      registered as the unkeyed default plus the "Brotli" and "Brotli.Raw" keyed singletons
 
 GZipPayloadCompressor  (sealed class, implements IPayloadCompressor)
-    — backed by System.IO.Compression.GZipStream; a keyed alternate for interop with systems that
-      specifically require gzip; registered only as the "GZip"-keyed singleton (mirrors EcdsaSignatureService's
-      keyed-only registration in SharedKernel.Cryptography — no unkeyed registration)
+    ctor(IOptions<CompressionOptions>, CompressionFraming framing = Framed)
+    — backed by System.IO.Compression.GZipStream; the keyed alternate for interop with systems that
+      specifically require gzip; registered as the "GZip" and "GZip.Raw" keyed singletons only, never
+      unkeyed (mirrors EcdsaSignatureService's keyed-only registration in SharedKernel.Cryptography)
+    — for external interop use "GZip.Raw": framed output carries the 13-byte platform header, so it is NOT a
+      .gz body any standard tool can open, which defeats the only reason to pick gzip here. gzip also
+      inflates very small payloads noticeably — 1 byte becomes 21
 
-CompressionOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
-    .Level                                                       → System.IO.Compression.CompressionLevel  (default: CompressionLevel.Optimal)
+CompressionOptions  (implements ISectionBoundOptions — SectionName is a static property, so no call site names the path)
+    .SectionName                                                 → "SharedKernel:Compression"  (static)
+    .Level                                                       → System.IO.Compression.CompressionLevel  (default: Optimal)
+    .MaxDecompressedSize                                         → long  (default: DefaultMaxDecompressedSize = 64 MiB)
+    — MaxDecompressedSize is a DENIAL-OF-SERVICE control, not a tuning knob: measured, 102 bytes of Brotli
+      expand to 64 MiB of zeroes (658:1 from trivial input, crafted input goes orders of magnitude further),
+      and before P-551 decompression grew an unbounded buffer. Enforced from the bytes actually produced
+      while decompressing, never from the frame's recorded length, so a payload understating its own size is
+      still stopped; a frame OVERstating it past the cap is rejected up front without doing the work
+    — both properties are validated at startup ([EnumDataType] on Level, [Range(1, long.MaxValue)] on
+      MaxDecompressedSize) via AddValidatedOptions + ValidateOnStart
+    — Level: SmallestSize selects Brotli quality 11 and is far costlier than the name suggests — measured on
+      8 MiB of repetitive data: Fastest 2 ms, Optimal 10 ms, SmallestSize 225 ms, for 1.3% less output. The
+      level applies to BOTH algorithms, so raising it for gzip interop also raises Brotli's cost
+
+CompressionErrorCodes  (all Error.Validation)
+    .DecompressionFailed  = "compression.decompression_failed"   (corrupt, or produced by a different algorithm)
+    .TruncatedPayload     = "compression.truncated_payload"      (framed only — decompressed length != recorded length)
+    .PayloadTooLarge      = "compression.payload_too_large"      (would exceed MaxDecompressedSize)
+    .MalformedPayload     = "compression.malformed_payload"      (not a frame, or an unknown frame version)
+    .AlgorithmMismatch    = "compression.algorithm_mismatch"     (frame records a different algorithm than the reader)
 
 AddSharedKernelCompression(IConfiguration configuration)
-    → registers CompressionOptions (validated, ValidateOnStart); registers BrotliPayloadCompressor as both
-      the unkeyed IPayloadCompressor default and the CompressionServiceCollectionExtensions.BrotliPayloadCompressorKey
-      ("Brotli") keyed singleton; registers GZipPayloadCompressor as the GZipPayloadCompressorKey ("GZip")
-      keyed singleton only. Resolve GZip explicitly via
-      provider.GetRequiredKeyedService<IPayloadCompressor>(GZipPayloadCompressorKey).
+    → registers CompressionOptions (validated, ValidateOnStart, section read from the type) and five
+      TryAdd singletons: framed Brotli unkeyed, plus keys BrotliPayloadCompressorKey ("Brotli"),
+      GZipPayloadCompressorKey ("GZip"), RawBrotliPayloadCompressorKey ("Brotli.Raw") and
+      RawGZipPayloadCompressorKey ("GZip.Raw"). A consumer registration made BEFORE this call wins.
 ```
 
 ### `SharedKernel.Validation` — public surface (P-443/WO-067, SHIPPED — eighth published package)
@@ -1004,6 +1061,10 @@ LocalizationServiceCollectionExtensions
 - Neither `BrotliPayloadCompressor` nor `GZipPayloadCompressor` can be relied upon to detect a compressed stream that is missing only its *trailing* bytes (suffix truncation) as a decompression failure — this is a confirmed BCL characteristic (`GZipStream` does not validate its trailing CRC32/ISIZE footer on read; `BrotliStream` has no fixed magic-number header to validate at all), not a defect to fix in this package. Do not write a test or a caller expectation assuming suffix-truncated input always surfaces as a `Result` failure for either algorithm — prefix truncation (missing header bytes) is reliably caught for gzip only. A service needing guaranteed truncation detection must pair compression with a separate integrity check (`IContentHasher` or a known expected length).
 - Compression must always happen **before** encryption when both are applied to the same payload, never the reverse — compressing already-encrypted/high-entropy ciphertext wastes CPU for no size benefit. This ordering rule must be stated in `IPayloadCompressor`'s XML docs, not just this brain.
 - `SharedKernel.Compression` ships no `.Abstractions`/`.{Provider}` sibling-package split — a single package with a keyed-DI algorithm choice (`BrotliPayloadCompressor` unkeyed default + "Brotli"/"GZip"-keyed singletons), mirroring `SharedKernel.Cryptography`'s `IAsymmetricSignatureService` RSA/ECDSA keyed-singleton precedent rather than sibling `.Brotli`/`.GZip` packages — the algorithm set is small, closed, and purely-BCL, exactly the condition under which that precedent applies.
+- **A compressed payload written by this package is framed by default, and the frame's byte layout is a wire format (P-551).** The `CompressionAlgorithm` values and the 13-byte header layout appear in payloads already written to queues, blobs and caches, so they are permanent: never renumber an enum member, never reorder or resize a header field. A format change takes the next frame version number, and the reader must keep understanding every version it ever wrote. An unknown version fails with `compression.malformed_payload` rather than being misread under today's rules.
+- **Neither compressor may share one copy of the logic by inheritance.** Both public types are `sealed` and forward to the internal `CompressionCodec`, because the two originally held two copies of the same code and therefore needed the same fix twice. A public abstract base is not an option — a public class cannot derive from an internal one — so the shared logic stays internal and the public types stay thin forwarders whose behaviour cannot diverge.
+- **Decompression must be bounded, and the bound must come from the bytes produced, not from the payload's claim about itself.** `MaxDecompressedSize` is enforced by counting output during the copy. A frame that overstates its length past the cap is rejected up front as an optimisation, but that check is never the only one: a forged frame understating its length must still be stopped, and a test pins exactly that.
+- **Output pre-allocation must never be sized from a payload's recorded length alone.** A 13-byte payload declaring 64 MiB would otherwise allocate 64 MiB before decompressing a byte — memory amplification with no data behind it. The sizing hint is capped independently of the limit.
 - No static mutable state anywhere in this domain.
 - **(P-443/WO-067, SHIPPED)** `SharedKernel.Validation` must never be folded into the Guard Clause System's own home (`SharedKernel.Core` since P-505/WO-082, formerly the standalone `SharedKernel.Guards` package) — the Guard surface's value is deliberate minimalism (a generic precondition/argument-guard surface with no topic-specific catalog); a whole country/format-algorithm catalog belongs in its own package. `Guard.Against.*` extension methods for format validators live in `SharedKernel.Validation` (extending `IGuardClause` from the referencing side, confirmed to work exactly as designed — a marker interface's extension methods can be authored from any referencing package with zero changes to the defining package), never inside `SharedKernel.Core`'s Guard surface itself.
 - **(P-443/WO-067, SHIPPED)** `Guard.Throw.*` parity is intentionally never added for format-validator guards — the `Guard.Throw` nested class (now living in `SharedKernel.Core`, under the unchanged `SharedKernel.Guards` namespace, since P-505/WO-082) is hand-enumerated and hardcoded inside that class; adding to it requires modifying `SharedKernel.Core` itself, out of `SharedKernel.Validation`'s reach and never requested by WO-067's acceptance criteria (functional `Against.*` path only).
@@ -1114,11 +1175,14 @@ services.AddSharedKernelCryptography(configuration)
 services.AddSingleton<IEncryptionKeyProvider>(sp =>
     new CachedEncryptionKeyProvider(new MyKmsKeyProvider(), TimeProvider.System, TimeSpan.FromMinutes(5)));
 
-// Compression (P-297) — registers BrotliPayloadCompressor as both the unkeyed IPayloadCompressor default
-// and the "Brotli"-keyed singleton, plus GZipPayloadCompressor as the "GZip"-keyed singleton only.
+// Compression (P-297, reshaped P-551) — five TryAdd singletons: framed Brotli unkeyed, plus the keys
+// "Brotli", "GZip", "Brotli.Raw" and "GZip.Raw". Framed is the default and the one to use for anything
+// this platform writes and reads back; raw is for interop with a system outside this platform only.
 services.AddSharedKernelCompression(configuration);
 var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
     CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
+var gzipForExternalConsumers = provider.GetRequiredKeyedService<IPayloadCompressor>(
+    CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey);
 
 // Validation (P-443, shipped) — registers INationalIdValidatorRegistry pre-seeded with TckNationalIdValidator
 // ("TR"). Format validators themselves (IbanValidator, PanValidator, etc.) are static — no DI registration
@@ -1186,7 +1250,7 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
 - `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant, `GetVariantAsync` deterministic variant assignment given a fixed context/seed, predictable fallback for an unconfigured feature (`FeatureVariant.Unassigned`), a regression check that the existing boolean `IsEnabledAsync` surface is unchanged, and a reflection-based test asserting `IFeatureManager`'s public surface never exposes a `Microsoft.FeatureManagement` type
 - **(P-545)** `SharedKernel.Cryptography.Tests/` covers the redesigned surface: RFC 4226/6238/4231/4648 vectors, AES-GCM tamper/AAD/key-size/unknown-key paths with error types, sync↔async payload interop, rotation helpers, envelope header authentication, HKDF determinism and length-prefix separation, every signature algorithm with algorithm binding and malformed signatures, PHC parsing strictness, PBKDF2 verification ceilings, pepper and algorithm migration, options validation, `CachedEncryptionKeyProvider` single flight, bounded growth, cancellation isolation and abandoned-entry recovery, TOTP replay monotonicity under concurrency, and container validation of the key-free registration. `.Argon2.Tests/` covers PHC output, verification bounds and migration through `OneWayHasher`. `.KeyVault.Azure.Tests/` uses Azure SDK client subclasses and model factories (no network) for rotation races, rate-limited unknown ids, master-key allow-listing, single flight, probe redaction and local signature verification.
-- `SharedKernel.Compression.Tests/` — roundtrip for both `BrotliPayloadCompressor` and `GZipPayloadCompressor` (byte[] and stream overloads, sync and async); bit-level corruption and unrecognized/garbage input must surface as a `Result`/`Result<byte[]>` failure and never an unhandled exception for both algorithms — this is reliably true and must be asserted as a shared contract test; truncation detection is **not** reliably true for both algorithms (see Implementation Rules) and must be asserted per-algorithm instead — gzip: prefix-truncation surfaces as failure via its magic number; Brotli: assert only that no exception propagates, never that `IsFailure` is `true`; streaming vs. in-memory overloads produce equivalent decompressed output; DI registration sanity for `AddSharedKernelCompression` (unkeyed Brotli default + both keyed singletons resolve, invalid `CompressionOptions.Level` throws at `IHost.StartAsync()`)
+- `SharedKernel.Compression.Tests/` — 156 tests. Roundtrip for both algorithms across every overload (byte[], span, `IBufferWriter`, stream, sync and async) and **both framing modes**, driven from the shared `PayloadCompressorContractTests` base; bit-level corruption and garbage input surface as a failure, never an unhandled exception, for both algorithms; every decompression failure asserts `ErrorType.Validation`. **Truncation detection is now a shared contract test, asserted for both algorithms at 25/50/75/99% cut points (`TruncationDetectionTests`) — this directly reverses the pre-P-551 rule recorded here, which told this suite NOT to assert it.** That older rule was correct about the BCL and wrong about the conclusion: it is true that neither `BrotliStream` nor `GZipStream` detects truncation, and the suite's own comments documented that as "a genuine platform characteristic, not a defect in this package" — but `IPayloadCompressor`'s XML docs simultaneously promised a failed result on truncated input, so the package shipped a documented guarantee its own tests had been told to stop checking. The framed format (P-551) makes the guarantee real, so the test asserts it. Raw mode's inability to detect truncation is pinned by its own explicit test rather than left implicit, so the documented cost of interop cannot regress silently. Also covered: the decompression-bomb cap including exact-limit and one-byte-over boundaries and a hand-forged frame that understates its own length (`DecompressionLimitTests`); frame/algorithm mismatch, unknown frame version and raw-vs-framed cross reads (`FrameCompatibilityTests`); where the frame's length comes from on the stream path, including non-seekable input patched via a seekable output and the documented both-non-seekable hole (`StreamFramingTests`); DI registration sanity for all five keys, `TryAdd` idempotency, consumer-wins, and startup rejection of an undefined `Level` or a non-positive `MaxDecompressedSize`
 - Railway-extension chains must be covered: map → bind → match over both success and failure paths.
 - `SmartEnum` must cover: FromValue hit, FromValue miss (throws), TryFromValue, List completeness.
 - Validated options test must assert that a misconfigured `TOptions` throws at `IHost.StartAsync()`.
