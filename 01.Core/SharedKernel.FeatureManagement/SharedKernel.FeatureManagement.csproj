@@ -1,21 +1,32 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Microsoft.FeatureManagement 4.x does not yet ship a full AOT-trimming manifest.
-         The IFeatureManager wrapper isolates consuming services from this concern —
-         if AOT becomes required, only the adapter needs replacement. -->
     <!-- NuGet packaging metadata -->
-    <Description>Feature flag abstraction for the SharedKernel: IFeatureManager interface and Microsoft.FeatureManagement adapter. Consuming services depend only on the abstraction — swap the adapter if a fully AOT-safe implementation becomes available. Depends on SharedKernel.Primitives.</Description>
-    <PackageTags>shared-kernel;feature-flags;feature-management;abstraction;dependency-injection</PackageTags>
+    <Description>Feature flags on the OpenFeature standard, backed by Microsoft.FeatureManagement. Services inject OpenFeature's IFeatureClient and evaluate typed FeatureFlag&lt;T&gt; constants (boolean, string, number or a JSON object read through a source-generated JsonTypeInfo). The caller's user, tenant and groups are applied automatically through IFeatureTargetingContextAccessor, so percentage rollouts and user, group or tenant targeting work without passing context on every call. Each flag is evaluated once per request scope, so it cannot change halfway through a request. Evaluation never throws: an unknown flag or a failure returns the caller's default with the reason. Declared flags and every variant are checked at startup, and flags with telemetry enabled emit the OpenTelemetry feature_flag.evaluation event.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;feature-flags;feature-management;openfeature;feature-toggles;a-b-testing;progressive-delivery;targeting;opentelemetry</PackageTags>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Overloads with optional parameters (GetValueAsync, GetDetailsAsync, IsEnabledAsync) are intentional. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Version 4.5.0 — latest stable as of 2026-05-14.
-         AOT status: NOT fully AOT-safe (uses reflection-based filter activation).
-         The IFeatureManager abstraction isolates downstream from this — swap the
-         adapter if a fully AOT-safe implementation becomes available. -->
+    <PackageReference Include="OpenFeature" />
+    <PackageReference Include="OpenFeature.Hosting" />
     <PackageReference Include="Microsoft.FeatureManagement" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

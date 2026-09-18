@@ -1,0 +1,60 @@
+#nullable enable
+const SharedKernel.FeatureManagement.FeatureContextKeys.Groups = "groups" -> string!
+const SharedKernel.FeatureManagement.FeatureContextKeys.TenantId = "tenantId" -> string!
+override SharedKernel.FeatureManagement.FeatureFlag.ToString() -> string!
+SharedKernel.FeatureManagement.FeatureClientExtensions
+SharedKernel.FeatureManagement.FeatureContextKeys
+SharedKernel.FeatureManagement.FeatureFlag
+SharedKernel.FeatureManagement.FeatureFlag.Description.get -> string?
+SharedKernel.FeatureManagement.FeatureFlag.Key.get -> string!
+SharedKernel.FeatureManagement.FeatureFlag.Kind.get -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlag<T>
+SharedKernel.FeatureManagement.FeatureFlag<T>.DefaultValue.get -> T
+SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagKind.Boolean = 0 -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagKind.Double = 3 -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagKind.Integer = 2 -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagKind.Object = 4 -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagKind.String = 1 -> SharedKernel.FeatureManagement.FeatureFlagKind
+SharedKernel.FeatureManagement.FeatureFlagOptions
+SharedKernel.FeatureManagement.FeatureFlagOptions.AddFeatureFilter<TFilter>() -> SharedKernel.FeatureManagement.FeatureFlagOptions!
+SharedKernel.FeatureManagement.FeatureFlagOptions.ConfigureOpenFeature(System.Action<OpenFeature.Hosting.OpenFeatureBuilder!>! configure) -> SharedKernel.FeatureManagement.FeatureFlagOptions!
+SharedKernel.FeatureManagement.FeatureFlagOptions.EvaluateOncePerScope.get -> bool
+SharedKernel.FeatureManagement.FeatureFlagOptions.EvaluateOncePerScope.set -> void
+SharedKernel.FeatureManagement.FeatureFlagOptions.FeatureFlagOptions() -> void
+SharedKernel.FeatureManagement.FeatureFlagOptions.FlagsToValidate.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.FeatureManagement.FeatureFlag!>!
+SharedKernel.FeatureManagement.FeatureFlagOptions.ScopeResultLifetime.get -> System.TimeSpan
+SharedKernel.FeatureManagement.FeatureFlagOptions.ScopeResultLifetime.set -> void
+SharedKernel.FeatureManagement.FeatureFlagOptions.Telemetry.get -> SharedKernel.FeatureManagement.FeatureTelemetryMode
+SharedKernel.FeatureManagement.FeatureFlagOptions.Telemetry.set -> void
+SharedKernel.FeatureManagement.FeatureFlagOptions.ValidateOnStart(params SharedKernel.FeatureManagement.FeatureFlag![]! flags) -> SharedKernel.FeatureManagement.FeatureFlagOptions!
+SharedKernel.FeatureManagement.FeatureFlagValidationException
+SharedKernel.FeatureManagement.FeatureFlagValidationException.Failures.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.FeatureManagement.FeatureFlagValidationException.FeatureFlagValidationException(System.Collections.Generic.IReadOnlyList<string!>! failures) -> void
+SharedKernel.FeatureManagement.FeatureManagementServiceCollectionExtensions
+SharedKernel.FeatureManagement.FeatureTargetingContext
+SharedKernel.FeatureManagement.FeatureTargetingContext.FeatureTargetingContext(string? userId, string? tenantId = null, System.Collections.Generic.IEnumerable<string!>? groups = null) -> void
+SharedKernel.FeatureManagement.FeatureTargetingContext.Groups.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.FeatureManagement.FeatureTargetingContext.TargetingKey.get -> string?
+SharedKernel.FeatureManagement.FeatureTargetingContext.TenantId.get -> string?
+SharedKernel.FeatureManagement.FeatureTargetingContext.ToEvaluationContext() -> OpenFeature.Model.EvaluationContext!
+SharedKernel.FeatureManagement.FeatureTargetingContext.UserId.get -> string?
+SharedKernel.FeatureManagement.FeatureTelemetryMode
+SharedKernel.FeatureManagement.FeatureTelemetryMode.AllFlags = 1 -> SharedKernel.FeatureManagement.FeatureTelemetryMode
+SharedKernel.FeatureManagement.FeatureTelemetryMode.ConfiguredFlags = 0 -> SharedKernel.FeatureManagement.FeatureTelemetryMode
+SharedKernel.FeatureManagement.FeatureTelemetryMode.Off = 2 -> SharedKernel.FeatureManagement.FeatureTelemetryMode
+SharedKernel.FeatureManagement.IFeatureTargetingContextAccessor
+SharedKernel.FeatureManagement.IFeatureTargetingContextAccessor.GetTargetingContext() -> SharedKernel.FeatureManagement.FeatureTargetingContext?
+static SharedKernel.FeatureManagement.FeatureClientExtensions.GetDetailsAsync<T>(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<T>! flag, OpenFeature.Model.EvaluationContext? context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<OpenFeature.Model.FlagEvaluationDetails<T>!>!
+static SharedKernel.FeatureManagement.FeatureClientExtensions.GetDetailsAsync<T>(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<T>! flag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<OpenFeature.Model.FlagEvaluationDetails<T>!>!
+static SharedKernel.FeatureManagement.FeatureClientExtensions.GetValueAsync<T>(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<T>! flag, OpenFeature.Model.EvaluationContext? context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T>!
+static SharedKernel.FeatureManagement.FeatureClientExtensions.GetValueAsync<T>(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<T>! flag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T>!
+static SharedKernel.FeatureManagement.FeatureClientExtensions.IsEnabledAsync(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<bool>! flag, OpenFeature.Model.EvaluationContext? context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+static SharedKernel.FeatureManagement.FeatureClientExtensions.IsEnabledAsync(this OpenFeature.IFeatureClient! client, SharedKernel.FeatureManagement.FeatureFlag<bool>! flag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+static SharedKernel.FeatureManagement.FeatureFlag.Boolean(string! key, bool defaultValue = false, string? description = null) -> SharedKernel.FeatureManagement.FeatureFlag<bool>!
+static SharedKernel.FeatureManagement.FeatureFlag.Double(string! key, double defaultValue, string? description = null) -> SharedKernel.FeatureManagement.FeatureFlag<double>!
+static SharedKernel.FeatureManagement.FeatureFlag.Integer(string! key, int defaultValue, string? description = null) -> SharedKernel.FeatureManagement.FeatureFlag<int>!
+static SharedKernel.FeatureManagement.FeatureFlag.Object<T>(string! key, T defaultValue, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, string? description = null) -> SharedKernel.FeatureManagement.FeatureFlag<T>!
+static SharedKernel.FeatureManagement.FeatureFlag.String(string! key, string! defaultValue, string? description = null) -> SharedKernel.FeatureManagement.FeatureFlag<string!>!
+static SharedKernel.FeatureManagement.FeatureManagementServiceCollectionExtensions.AddSharedKernelFeatureManagement(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.FeatureManagement.FeatureFlagOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.FeatureManagement.FeatureTargetingContext.ForTenant(string! tenantId) -> SharedKernel.FeatureManagement.FeatureTargetingContext!
