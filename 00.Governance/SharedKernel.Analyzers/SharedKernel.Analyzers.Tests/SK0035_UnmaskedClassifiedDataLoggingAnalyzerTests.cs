@@ -14,47 +14,15 @@ namespace SharedKernel.Analyzers.Tests;
 
 /// <summary>Tests for SK0035 <see cref="UnmaskedClassifiedDataLoggingAnalyzer"/>.</summary>
 /// <remarks>
-/// T-351: Fire path — a <c>[DataClassification(Restricted)]</c>-classified property passed
-/// directly as a message-template argument.
-/// T-352: Fire path — a <c>[SensitiveDataCategory]</c>-classified field passed directly.
-/// T-353: Pass path — the same classified property passed through a fixture-local
-/// <c>PiiMasking.Email(...)</c>-shaped call first.
-/// T-354: Pass path — an unclassified property passed directly.
-/// T-355: Real-assembly verification — re-points the fully-qualified-metadata-name resolution at
-/// the ACTUAL compiled <c>SharedKernel.DataPrivacy</c> package (a test-only <c>ProjectReference</c>,
-/// <c>PrivateAssets="all"</c>) and proves the fire path against a real
-/// <c>[DataClassification(DataClassification.Restricted)]</c>-classified property. This phase's own
-/// Cross-Domain Dependencies entry (`state-map.md`, <c>SK.00.DataPrivacyLoggingGuard</c>) recorded
-/// this as "01.Core P-474 not yet implemented" at authoring time (2026-08-26) — re-verified directly
-/// against the real repository at implementation time (this domain's now well-established
-/// discipline) and found ALREADY SHIPPED, so T-355 proceeds now rather than deferring. The
-/// real-assembly re-verification also caught a genuine design/reality drift: the phase spec assumed
-/// flat `SharedKernel.DataPrivacy.DataClassificationAttribute`/`.PiiMasking` names, but the real
-/// package nests them one level deeper (`SharedKernel.DataPrivacy.Classification.*` /
-/// `SharedKernel.DataPrivacy.Masking.PiiMasking`) — the analyzer's metadata-name constants and this
-/// file's own contrived-fixture <see cref="Stubs"/> were both corrected to match.
-/// <para>
-/// Every fixture declares its OWN fixture-local <c>SharedKernel.DataPrivacy</c>/
-/// <c>Microsoft.Extensions.Logging</c> namespace stand-ins inside the same test compilation — no
-/// <c>ProjectReference</c> to either real package is required, per this rule's fully-qualified
-/// metadata-name resolution technique (mirrors WO-040/P-248's SK0017–SK0019 precedent, and SK0030's/
-/// SK0032's in-compilation stand-in technique).
-/// </para>
+/// Fixtures declare stand-ins for the Microsoft compliance/logging types and the
+/// <c>SharedKernel.DataPrivacy</c> masking types under their real fully-qualified names, so no
+/// package reference is needed (the analyzer resolves everything by metadata name). One test,
+/// <see cref="RealAssembly_ClassifiedProperty_ReportsDiagnostic"/>, runs against the compiled
+/// <c>SharedKernel.DataPrivacy</c> assembly to lock the metadata names to the real types (P-554).
 /// </remarks>
 public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
 {
-    /// <summary>
-    /// Fixture-local stand-ins for <c>Microsoft.Extensions.Logging.LoggerMessageAttribute</c>/
-    /// <c>ILogger</c>/<c>LogLevel</c> and the real, shipped <c>SharedKernel.DataPrivacy</c>
-    /// package's <c>Classification.DataClassificationAttribute</c>/<c>Classification.DataClassification</c>/
-    /// <c>Classification.SensitiveDataCategoryAttribute</c>/<c>Masking.PiiMasking</c> — declared
-    /// under the SAME namespaces and type names the analyzer's fully-qualified-metadata-name
-    /// resolution looks for (confirmed against `01.Core/SharedKernel.DataPrivacy`'s real source,
-    /// which nests these types one level deeper than this rule's own phase spec assumed — see
-    /// T-355), so no <c>ProjectReference</c> to either real assembly is required for these
-    /// contrived-fixture tests.
-    /// </summary>
-    private const string Stubs = """
+    private const string LoggingStubs = """
 
         namespace Microsoft.Extensions.Logging
         {
@@ -81,33 +49,34 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
 
                 public string Message { get; set; } = string.Empty;
             }
+
+            [System.AttributeUsage(System.AttributeTargets.Parameter)]
+            public sealed class LogPropertiesAttribute : System.Attribute
+            {
+            }
+        }
+
+        """;
+
+    private const string ComplianceStubs = """
+
+        namespace Microsoft.Extensions.Compliance.Classification
+        {
+            public abstract class DataClassificationAttribute : System.Attribute
+            {
+            }
+
+            public sealed class NoDataClassificationAttribute : DataClassificationAttribute
+            {
+            }
         }
 
         namespace SharedKernel.DataPrivacy.Classification
         {
-            public enum DataClassification
+            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Field | System.AttributeTargets.Parameter)]
+            public sealed class EmailAddressDataAttribute
+                : Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute
             {
-                Public,
-                Internal,
-                Confidential,
-                Restricted,
-            }
-
-            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Field)]
-            public sealed class DataClassificationAttribute : System.Attribute
-            {
-                public DataClassificationAttribute(DataClassification classification) =>
-                    Classification = classification;
-
-                public DataClassification Classification { get; }
-            }
-
-            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Field)]
-            public sealed class SensitiveDataCategoryAttribute : System.Attribute
-            {
-                public SensitiveDataCategoryAttribute(string category) => Category = category;
-
-                public string Category { get; }
             }
         }
 
@@ -117,78 +86,52 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
             {
                 public static string Email(string value) => "***@***";
 
-                public static string Phone(string value) => "***";
-
-                public static string Pan(string value) => "****";
-
                 public static string Suppress(string value) => "[redacted]";
+            }
+
+            public sealed class Pseudonymizer
+            {
+                public string Pseudonymize(string value) => "token";
             }
         }
 
         """;
 
-    // ---------------------------------------------------------------------------
-    // T-351 — Fire path: DataClassification(Restricted)-classified property, direct pass-through
-    // ---------------------------------------------------------------------------
+    private const string Stubs = LoggingStubs + ComplianceStubs;
 
-    [Fact]
-    public async Task FirePath_RestrictedClassifiedProperty_ReportsDiagnostic()
-    {
-        var test = CreateTest(
-            """
-            using Microsoft.Extensions.Logging;
+    private const string CustomerType = """
+
+        namespace Fixture
+        {
+            using Microsoft.Extensions.Compliance.Classification;
             using SharedKernel.DataPrivacy.Classification;
 
-            namespace Fixture
+            public class Customer
             {
-                public class Customer
-                {
-                    [DataClassification(DataClassification.Restricted)]
-                    public string Ssn { get; set; } = string.Empty;
-                }
+                [EmailAddressData]
+                public string Email { get; set; } = string.Empty;
 
-                public static class Log
-                {
-                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "SSN {Ssn}")]
-                    public static void CustomerSsn(this ILogger logger, string ssn) { }
-                }
+                [NoDataClassification]
+                public string Plan { get; set; } = string.Empty;
 
-                public class CustomerService
-                {
-                    public void Handle(ILogger logger, Customer customer)
-                    {
-                        Log.CustomerSsn(logger, {|SK0035:customer.Ssn|});
-                    }
-                }
+                public string UserId { get; set; } = string.Empty;
             }
-            """
-        );
-        await test.RunAsync();
-    }
+        }
 
-    // ---------------------------------------------------------------------------
-    // T-352 — Fire path: SensitiveDataCategory-classified field, direct pass-through
-    // ---------------------------------------------------------------------------
+        """;
 
     [Fact]
-    public async Task FirePath_SensitiveDataCategoryField_ReportsDiagnostic()
+    public async Task DirectClassifiedMember_ToUnclassifiedParameter_ReportsDiagnostic()
     {
         var test = CreateTest(
             """
             using Microsoft.Extensions.Logging;
-            using SharedKernel.DataPrivacy.Classification;
 
             namespace Fixture
             {
-                public class Customer
-                {
-                    [SensitiveDataCategory("Pii")]
-                    public string EmailAddress = string.Empty;
-                }
-
                 public static class Log
                 {
-                    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Email {Email}")]
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
                     public static void CustomerEmail(this ILogger logger, string email) { }
                 }
 
@@ -196,7 +139,41 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
                 {
                     public void Handle(ILogger logger, Customer customer)
                     {
-                        Log.CustomerEmail(logger, {|SK0035:customer.EmailAddress|});
+                        Log.CustomerEmail(logger, {|#0:customer.Email|});
+                    }
+                }
+            }
+            """
+        );
+        test.ExpectedDiagnostics.Add(
+            new DiagnosticResult(UnmaskedClassifiedDataLoggingAnalyzer.Rule)
+                .WithLocation(0)
+                .WithArguments("Customer.Email", "[EmailAddressData]", "email")
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task DirectClassifiedMember_ToClassifiedParameter_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Logging;
+            using SharedKernel.DataPrivacy.Classification;
+
+            namespace Fixture
+            {
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void CustomerEmail(this ILogger logger, [EmailAddressData] string email) { }
+                }
+
+                public class CustomerService
+                {
+                    public void Handle(ILogger logger, Customer customer)
+                    {
+                        Log.CustomerEmail(logger, customer.Email);
                     }
                 }
             }
@@ -205,38 +182,150 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
         await test.RunAsync();
     }
 
-    // ---------------------------------------------------------------------------
-    // T-353 — Pass path: classified property routed through PiiMasking.* first
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public async Task PassPath_MaskedClassifiedProperty_NoDiagnostic()
+    public async Task DirectClassifiedMember_ToLogPropertiesParameter_ReportsDiagnostic()
     {
         var test = CreateTest(
             """
             using Microsoft.Extensions.Logging;
-            using SharedKernel.DataPrivacy.Classification;
+
+            namespace Fixture
+            {
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void CustomerEmail(this ILogger logger, [LogProperties] string email) { }
+                }
+
+                public class CustomerService
+                {
+                    public void Handle(ILogger logger, Customer customer)
+                    {
+                        Log.CustomerEmail(logger, {|SK0035:customer.Email|});
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task ObjectWithClassifiedMember_ToUnclassifiedParameter_ReportsDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Logging;
+
+            namespace Fixture
+            {
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Customer {Customer}")]
+                    public static void CustomerSeen(this ILogger logger, Customer customer) { }
+                }
+
+                public class CustomerService
+                {
+                    public void Handle(ILogger logger, Customer customer)
+                    {
+                        Log.CustomerSeen(logger, {|SK0035:customer|});
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task ObjectWithClassifiedMember_ToLogPropertiesParameter_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Logging;
+
+            namespace Fixture
+            {
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Customer seen")]
+                    public static void CustomerSeen(this ILogger logger, [LogProperties] Customer customer) { }
+                }
+
+                public class CustomerService
+                {
+                    public void Handle(ILogger logger, Customer customer)
+                    {
+                        Log.CustomerSeen(logger, customer);
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task NoDataClassificationMember_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Compliance.Classification;
+            using Microsoft.Extensions.Logging;
+
+            namespace Fixture
+            {
+                public class Subscription
+                {
+                    [NoDataClassification]
+                    public string Plan { get; set; } = string.Empty;
+                }
+
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Plan {Plan}")]
+                    public static void PlanChosen(this ILogger logger, string plan) { }
+
+                    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "Subscription {Subscription}")]
+                    public static void SubscriptionSeen(this ILogger logger, Subscription subscription) { }
+                }
+
+                public class SubscriptionService
+                {
+                    public void Handle(ILogger logger, Customer customer, Subscription subscription)
+                    {
+                        Log.PlanChosen(logger, customer.Plan);
+                        Log.SubscriptionSeen(logger, subscription);
+                    }
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task PiiMaskingWrappedMember_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Logging;
             using SharedKernel.DataPrivacy.Masking;
 
             namespace Fixture
             {
-                public class Customer
-                {
-                    [DataClassification(DataClassification.Restricted)]
-                    public string Ssn { get; set; } = string.Empty;
-                }
-
                 public static class Log
                 {
-                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "SSN {Ssn}")]
-                    public static void CustomerSsn(this ILogger logger, string ssn) { }
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void CustomerEmail(this ILogger logger, string email) { }
                 }
 
                 public class CustomerService
                 {
                     public void Handle(ILogger logger, Customer customer)
                     {
-                        Log.CustomerSsn(logger, PiiMasking.Suppress(customer.Ssn));
+                        Log.CustomerEmail(logger, PiiMasking.Email(customer.Email));
                     }
                 }
             }
@@ -245,35 +334,28 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
         await test.RunAsync();
     }
 
-    // ---------------------------------------------------------------------------
-    // T-354 — Pass path: unclassified property passed directly
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public async Task PassPath_UnclassifiedProperty_NoDiagnostic()
+    public async Task PseudonymizedMember_NoDiagnostic()
     {
         var test = CreateTest(
             """
             using Microsoft.Extensions.Logging;
+            using SharedKernel.DataPrivacy.Masking;
 
             namespace Fixture
             {
-                public class Customer
-                {
-                    public string DisplayName { get; set; } = string.Empty;
-                }
-
                 public static class Log
                 {
-                    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Name {Name}")]
-                    public static void CustomerName(this ILogger logger, string name) { }
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void CustomerEmail(this ILogger logger, string email) { }
                 }
 
                 public class CustomerService
                 {
-                    public void Handle(ILogger logger, Customer customer)
+                    public void Handle(ILogger logger, Customer customer, Pseudonymizer pseudonymizer)
                     {
-                        Log.CustomerName(logger, customer.DisplayName);
+                        Log.CustomerEmail(logger, pseudonymizer.Pseudonymize(customer.Email));
+                        Log.CustomerEmail(logger, pseudonymizer.Pseudonymize(customer.UserId));
                     }
                 }
             }
@@ -282,32 +364,86 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
         await test.RunAsync();
     }
 
-    // ---------------------------------------------------------------------------
-    // Additional pass path — whole-object destructuring is masked-aware too (classified member
-    // absent from the destructured argument's static type keeps this a pass path).
-    // ---------------------------------------------------------------------------
+    [Fact]
+    public async Task IndirectlyDerivedClassificationAttribute_ReportsDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Microsoft.Extensions.Compliance.Classification;
+            using Microsoft.Extensions.Logging;
+
+            namespace Fixture
+            {
+                public abstract class HealthClassificationAttribute : DataClassificationAttribute
+                {
+                }
+
+                [System.AttributeUsage(System.AttributeTargets.Property)]
+                public sealed class DiagnosisDataAttribute : HealthClassificationAttribute
+                {
+                }
+
+                public class Patient
+                {
+                    [DiagnosisData]
+                    public string Diagnosis { get; set; } = string.Empty;
+                }
+
+                public static class Log
+                {
+                    [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Diagnosis {Diagnosis}")]
+                    public static void Diagnosed(this ILogger logger, string diagnosis) { }
+                }
+
+                public class PatientService
+                {
+                    public void Handle(ILogger logger, Patient patient)
+                    {
+                        Log.Diagnosed(logger, {|#0:patient.Diagnosis|});
+                    }
+                }
+            }
+            """
+        );
+        test.ExpectedDiagnostics.Add(
+            new DiagnosticResult(UnmaskedClassifiedDataLoggingAnalyzer.Rule)
+                .WithLocation(0)
+                .WithArguments("Patient.Diagnosis", "[DiagnosisData]", "diagnosis")
+        );
+        await test.RunAsync();
+    }
 
     [Fact]
-    public async Task PassPath_NonClassifiedLogLevelAndPlainStringArguments_NoDiagnostic()
+    public async Task ExceptionAndLogLevelParameters_AreIgnored()
     {
         var test = CreateTest(
             """
             using System;
+            using Microsoft.Extensions.Compliance.Classification;
             using Microsoft.Extensions.Logging;
 
             namespace Fixture
             {
+                public sealed class CustomerException : Exception
+                {
+                    [NoDataClassification]
+                    public string Code { get; set; } = string.Empty;
+
+                    [SharedKernel.DataPrivacy.Classification.EmailAddressData]
+                    public string Email { get; set; } = string.Empty;
+                }
+
                 public static class Log
                 {
-                    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Failed {Reason}")]
-                    public static void OperationFailed(this ILogger logger, Exception exception, string reason) { }
+                    [LoggerMessage(EventId = 6, Message = "Failed {Reason}")]
+                    public static void OperationFailed(this ILogger logger, LogLevel level, CustomerException exception, string reason) { }
                 }
 
                 public class OperationRunner
                 {
-                    public void Handle(ILogger logger, Exception exception)
+                    public void Handle(ILogger logger, CustomerException exception)
                     {
-                        Log.OperationFailed(logger, exception, "timeout");
+                        Log.OperationFailed(logger, LogLevel.Error, exception, "timeout");
                     }
                 }
             }
@@ -316,169 +452,136 @@ public class SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests
         await test.RunAsync();
     }
 
-    // ---------------------------------------------------------------------------
-    // T-355 — Real-assembly re-verification against the compiled SharedKernel.DataPrivacy package
-    // ---------------------------------------------------------------------------
+    [Fact]
+    public async Task CompilationWithoutComplianceBaseType_NoDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<UnmaskedClassifiedDataLoggingAnalyzer, DefaultVerifier>
+        {
+            TestCode = """
+                using Microsoft.Extensions.Logging;
+
+                namespace Fixture
+                {
+                    [System.AttributeUsage(System.AttributeTargets.Property)]
+                    public sealed class DataClassificationAttribute : System.Attribute
+                    {
+                    }
+
+                    public class Customer
+                    {
+                        [DataClassification]
+                        public string Email { get; set; } = string.Empty;
+                    }
+
+                    public static class Log
+                    {
+                        [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                        public static void CustomerEmail(this ILogger logger, string email) { }
+                    }
+
+                    public class CustomerService
+                    {
+                        public void Handle(ILogger logger, Customer customer)
+                        {
+                            Log.CustomerEmail(logger, customer.Email);
+                        }
+                    }
+                }
+                """ + LoggingStubs,
+        };
+        await test.RunAsync();
+    }
 
     /// <summary>
-    /// T-355 (GATING, per this phase's own spec): re-points the analyzer's fully-qualified-
-    /// metadata-name resolution at the REAL, compiled <c>SharedKernel.DataPrivacy</c> assembly (via
-    /// this test project's test-only <c>ProjectReference</c>) instead of the fixture-local
-    /// <see cref="Stubs"/>, and proves the fire path still holds against the genuine
-    /// <c>DataClassificationAttribute</c>/<c>DataClassification</c> types. The
-    /// <c>Microsoft.Extensions.Logging</c> stand-in from <see cref="Stubs"/> is still used — this
-    /// test isolates the ONE thing that changed (the real vs. fixture-local
-    /// <c>SharedKernel.DataPrivacy</c> assembly), not a wholesale rewrite.
+    /// Runs the analyzer against the compiled <c>SharedKernel.DataPrivacy</c> assembly (and the real
+    /// <c>Microsoft.Extensions.Compliance.Abstractions</c> it builds on), so the metadata names the
+    /// analyzer resolves cannot drift from the shipped types.
     /// </summary>
     /// <remarks>
-    /// Deliberately built via a raw <see cref="CSharpCompilation"/> +
-    /// <see cref="Compilation.WithAnalyzers(ImmutableArray{DiagnosticAnalyzer})"/> rather than
-    /// <see cref="CSharpAnalyzerTest{TAnalyzer, TVerifier}"/>: this testing package version's
-    /// <see cref="ReferenceAssemblies"/> presets are all netstandard/older-.NET vintage (its
-    /// default resolves <c>System.Runtime, Version=4.2.2.0</c>) and cannot supply a net10.0-exact
-    /// reference set the way SK0034's <c>RealSourceAudit_...</c> test already proved this
-    /// alternative technique can — the REAL <c>SharedKernel.DataPrivacy.dll</c> is net10.0-only (no
-    /// netstandard2.0 asset exists to fall back to, unlike SK0033's AutoMapper workaround) and
-    /// requires <c>System.Runtime, Version=10.0.0.0</c> exactly. Building the reference list from
-    /// this TEST HOST'S OWN trusted-platform-assemblies list guarantees an exact version match,
-    /// since the test host itself runs on net10.0.
+    /// Built on a raw <see cref="CSharpCompilation"/> because the testing package's
+    /// <see cref="ReferenceAssemblies"/> presets cannot supply net10.0 references; the host's own
+    /// trusted-platform-assemblies list gives an exact match.
     /// </remarks>
     [Fact]
-    public async Task RealAssembly_RestrictedClassifiedProperty_ReportsDiagnostic()
+    public async Task RealAssembly_ClassifiedProperty_ReportsDiagnostic()
     {
         const string source = """
-            using Microsoft.Extensions.Logging;
             using SharedKernel.DataPrivacy.Classification;
+            using SharedKernel.DataPrivacy.Masking;
+            using Microsoft.Extensions.Logging;
 
             namespace Fixture
             {
                 public class Customer
                 {
-                    [DataClassification(DataClassification.Restricted)]
-                    public string Ssn { get; set; } = string.Empty;
+                    [EmailAddressData]
+                    public string Email { get; set; } = string.Empty;
                 }
 
                 public static class Log
                 {
-                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "SSN {Ssn}")]
-                    public static void CustomerSsn(this ILogger logger, string ssn) { }
+                    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void CustomerEmail(this ILogger logger, string email) { }
+
+                    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Email {Email}")]
+                    public static void RedactedEmail(this ILogger logger, [EmailAddressData] string email) { }
                 }
 
                 public class CustomerService
                 {
                     public void Handle(ILogger logger, Customer customer)
                     {
-                        Log.CustomerSsn(logger, customer.Ssn);
+                        Log.CustomerEmail(logger, customer.Email);
+                        Log.CustomerEmail(logger, PiiMasking.Email(customer.Email));
+                        Log.RedactedEmail(logger, customer.Email);
                     }
                 }
             }
-
-            namespace Microsoft.Extensions.Logging
-            {
-                public enum LogLevel
-                {
-                    Trace,
-                    Debug,
-                    Information,
-                    Warning,
-                    Error,
-                    Critical,
-                }
-
-                public interface ILogger
-                {
-                }
-
-                [System.AttributeUsage(System.AttributeTargets.Method)]
-                public sealed class LoggerMessageAttribute : System.Attribute
-                {
-                    public int EventId { get; set; }
-
-                    public LogLevel Level { get; set; }
-
-                    public string Message { get; set; } = string.Empty;
-                }
-            }
-            """;
-
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+            """ + LoggingStubs;
 
         var compilation = CSharpCompilation.Create(
             assemblyName: "SK0035.RealAssemblyVerification",
-            syntaxTrees: [syntaxTree],
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
             references: ResolveRuntimeAndDataPrivacyReferences(),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
 
-        // Sanity: the fixture must genuinely COMPILE against the real assembly (proves the
-        // reference set is sufficient and the real DataClassificationAttribute/DataClassification/
-        // ILogger-extension-method shape matches what this fixture assumes) before trusting the
-        // analyzer's own diagnostics below.
         var compileErrors = compilation
             .GetDiagnostics()
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToList();
         Assert.Empty(compileErrors);
 
-        var analyzer = new UnmaskedClassifiedDataLoggingAnalyzer();
         var compilationWithAnalyzers = compilation.WithAnalyzers(
-            ImmutableArray.Create<DiagnosticAnalyzer>(analyzer)
+            ImmutableArray.Create<DiagnosticAnalyzer>(new UnmaskedClassifiedDataLoggingAnalyzer())
         );
 
-        var allDiagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
-        var sk0035Diagnostics = allDiagnostics
+        var diagnostics = (await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync())
             .Where(d => d.Id == UnmaskedClassifiedDataLoggingAnalyzer.Rule.Id)
             .ToList();
 
-        Assert.Single(sk0035Diagnostics);
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Contains("[EmailAddressData]", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Builds a reference list from this TEST HOST PROCESS's own trusted-platform-assemblies list
-    /// (every BCL/shared-framework assembly the host already trusts, guaranteed net10.0-exact since
-    /// the host itself runs on net10.0) plus the REAL, compiled
-    /// <c>SharedKernel.DataPrivacy.dll</c>/<c>SharedKernel.Primitives.dll</c> (resolved via this
-    /// test project's own test-only <c>ProjectReference</c>, see
-    /// <c>SharedKernel.Analyzers.Tests.csproj</c>).
-    /// </summary>
     private static ImmutableArray<MetadataReference> ResolveRuntimeAndDataPrivacyReferences()
     {
-        var trustedPlatformAssemblies = (
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-        )?.Split(Path.PathSeparator);
-
-        var builder = ImmutableArray.CreateBuilder<MetadataReference>();
-
-        if (trustedPlatformAssemblies is not null)
-        {
-            foreach (var path in trustedPlatformAssemblies)
-            {
-                if (File.Exists(path))
-                {
-                    builder.Add(MetadataReference.CreateFromFile(path));
-                }
-            }
-        }
-
-        builder.Add(
-            MetadataReference.CreateFromFile(
-                typeof(SharedKernel.DataPrivacy.Classification.DataClassificationAttribute).Assembly.Location
+        var paths = (((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))?.Split(Path.PathSeparator) ?? [])
+            .Append(typeof(SharedKernel.DataPrivacy.Classification.EmailAddressDataAttribute).Assembly.Location)
+            .Append(
+                typeof(Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute).Assembly.Location
             )
-        );
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        return builder.ToImmutable();
+        return [.. paths.Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))];
     }
 
-    // ---------------------------------------------------------------------------
-    // Test construction helper
-    // ---------------------------------------------------------------------------
-
     /// <summary>
-    /// Builds a <see cref="CSharpAnalyzerTest{TAnalyzer, TVerifier}"/> for
-    /// <see cref="UnmaskedClassifiedDataLoggingAnalyzer"/> with <see cref="Stubs"/> appended to
-    /// <paramref name="fixtureCode"/>.
+    /// Builds a test for <paramref name="fixtureCode"/> with the shared <c>Customer</c> type and all
+    /// stubs appended.
     /// </summary>
     private static CSharpAnalyzerTest<UnmaskedClassifiedDataLoggingAnalyzer, DefaultVerifier> CreateTest(
         string fixtureCode
-    ) => new() { TestCode = fixtureCode + Stubs };
+    ) => new() { TestCode = fixtureCode + "\n" + CustomerType + Stubs };
 }

@@ -1386,59 +1386,47 @@ SK0034  AmountCurrencyPairCoupling
 SK0035  UnmaskedClassifiedDataAtLoggingCallSite
     Category  : Security
     Severity  : Warning
-    Trigger   : Semantic-model analyzer. For an InvocationExpressionSyntax whose resolved method
-                symbol carries `Microsoft.Extensions.Logging.LoggerMessageAttribute` (i.e., a call
-                to a `[LoggerMessage]`-declared partial logging method — the platform's sole
-                sanctioned logging authoring shape per SK0020/SK0021), inspect each non-special
-                argument (excluding the `this ILogger`/`LogLevel`/`Exception` parameters): if the
-                argument expression resolves (via SemanticModel.GetSymbolInfo) to a property or
-                field symbol carrying `SharedKernel.DataPrivacy.Classification.DataClassificationAttribute`
-                with Classification == Restricted, OR
-                `SharedKernel.DataPrivacy.Classification.SensitiveDataCategoryAttribute`
-                (any category) — resolved by fully-qualified metadata name, not by a compiled
-                ProjectReference (see Note) — AND the argument expression is not itself an
-                InvocationExpressionSyntax whose resolved method's ContainingType is exactly
-                `SharedKernel.DataPrivacy.Masking.PiiMasking`, report the diagnostic naming the
-                offending member and parameter. The same check additionally covers the whole-object
-                `{@ParamName}` destructuring shape: an argument whose STATIC TYPE itself declares
-                any member carrying either attribute, passed directly with no masking call.
-    Fix       : Route the classified value through the matching
-                `SharedKernel.DataPrivacy.Masking.PiiMasking.*` helper (`.Email`/`.Phone`/`.Pan`/
-                `.Suppress`) before passing it as a `[LoggerMessage]` argument.
+    Trigger   : Semantic-model analyzer over calls to a `[LoggerMessage]`-attributed method
+                (`Microsoft.Extensions.Logging.LoggerMessageAttribute`). A member is CLASSIFIED when
+                it carries an attribute that is, or derives at any depth from,
+                `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute` —
+                except `NoDataClassificationAttribute` and its derivatives ("not personal data").
+                For each argument, skipping `LogLevel`/`Exception`(-derived) parameters and any
+                parameter that is itself classified (the logging generator redacts it under
+                `EnableRedaction()`), report when: (1) the argument is a direct reference to a
+                classified property/field; or (2) the argument's STATIC TYPE declares a classified
+                property/field and the parameter is not `[LogProperties]`
+                (`Microsoft.Extensions.Logging.LogPropertiesAttribute`, which makes the generator
+                honor member classifications). `[LogProperties]` does not make shape (1) safe.
+                Exempt: an argument that is a direct call to a
+                `SharedKernel.DataPrivacy.Masking.PiiMasking` method or any
+                `SharedKernel.DataPrivacy.Masking.Pseudonymizer` method. Message names the member,
+                the attribute (e.g. `[EmailAddressData]`) and the parameter.
+    Fix       : Mark the `[LoggerMessage]` parameter with the same classification attribute so
+                log redaction masks it (or `[LogProperties]` for a whole object), or mask the
+                value with `SharedKernel.DataPrivacy.PiiMasking.*` first.
     Suppress  : Per-call-site via #pragma warning disable SK0035; a legitimate case exists only
-                when the value is already irreversibly transformed/hashed before the call in a
-                way this analyzer cannot see through (e.g. a caller-supplied one-way hash) —
-                document the rationale inline if ever suppressed.
-    Note      : Introduced WO-076 P-476. The analyzer resolves
-                `DataClassificationAttribute`/`SensitiveDataCategoryAttribute`/`PiiMasking` by
-                fully-qualified metadata name (`Compilation.GetTypeByMetadataName(...)`), the same
-                technique WO-040/P-248's marker-interface rules established, so Design/Core/
-                contrived-fixture Tests use a fixture-local `SharedKernel.DataPrivacy` namespace
-                declared inside the test compilation — no ProjectReference needed for those.
-                REAL-ASSEMBLY VERIFICATION IS IMPLEMENTED (not merely designed/unblocked): at
-                implementation time `01.Core`'s `SharedKernel.DataPrivacy` (P-474) was found
-                already shipped past Design into Core, contrary to this phase's own authoring-time
-                "not yet implemented" framing — a real-assembly fire-path test
-                (`SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests.RealAssembly_RestrictedClassifiedProperty_ReportsDiagnostic`,
-                T-355) passes against the actual compiled `SharedKernel.DataPrivacy.dll`, referenced
-                via a test-only `ProjectReference` (`PrivateAssets="all"`) in
-                `SharedKernel.Analyzers.Tests.csproj`. That verification ALSO caught a genuine
-                design/reality drift: the real package nests these types one namespace level
-                deeper than this rule's own design assumed —
-                `SharedKernel.DataPrivacy.Classification.DataClassificationAttribute`/
-                `.DataClassification`/`.SensitiveDataCategoryAttribute` and
-                `SharedKernel.DataPrivacy.Masking.PiiMasking` — corrected here and in the
-                analyzer's metadata-name constants before shipping. Composes with, but is
-                structurally distinct from, SK0022 (magic strings) and SK0020/SK0021 (logging
-                authoring shape) — this rule inspects the DATA flowing into an already-correctly-
-                shaped `[LoggerMessage]` call, not the call's own shape or its string-literal
-                arguments.
-    Limitation: Only a DIRECT member reference or a direct `PiiMasking.*` wrapper call is
-                recognized — an intermediate local variable (`var x = entity.Ssn; logger.LogX(x);`)
-                or a helper method that internally reads a classified member and returns it
-                unmasked is not traced across that boundary. This is a documented, intentional
-                scope limit, mirroring this file's established "pattern/presence check, not full
-                data-flow analysis" convention (SK0028, HealthCheckTagIntegrityRules).
+                when the value is already irreversibly transformed before the call in a way this
+                analyzer cannot see through — document the rationale inline if ever suppressed.
+    Note      : Introduced WO-076 P-476; retargeted P-554 when `01.Core`'s
+                `SharedKernel.DataPrivacy` moved to Microsoft's compliance model (the former
+                `DataClassificationAttribute(Restricted)`/`SensitiveDataCategoryAttribute` and
+                `PiiMasking.Pan` no longer exist). Every type is resolved by fully-qualified
+                metadata name (`Compilation.GetTypeByMetadataName(...)`), so contrived-fixture
+                tests declare stand-ins inside the test compilation; a compilation without the
+                compliance base type gets no diagnostics. Real-assembly verification
+                (`SK0035_UnmaskedClassifiedDataLoggingAnalyzerTests.RealAssembly_ClassifiedProperty_ReportsDiagnostic`)
+                runs against the compiled `SharedKernel.DataPrivacy.dll` and
+                `Microsoft.Extensions.Compliance.Abstractions.dll` via the test-only
+                `ProjectReference` (`PrivateAssets="all"`) in `SharedKernel.Analyzers.Tests.csproj`.
+                Structurally distinct from SK0022 (magic strings) and SK0020/SK0021 (logging
+                authoring shape) — this rule inspects the DATA flowing into a `[LoggerMessage]` call.
+    Limitation: Pattern check, not data-flow analysis. Only a DIRECT member reference or a direct
+                masking/pseudonymizing call is recognized — an intermediate local
+                (`var x = entity.Email; logger.LogX(x);`) or a helper method that returns a
+                classified member unmasked is not traced (mirrors SK0028,
+                HealthCheckTagIntegrityRules). Classified members inherited from a base type of
+                the argument's type are not inspected.
 
 SK0036  RawRpcExceptionConstruction
     Category  : Usage
@@ -5479,7 +5467,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 
 - SK0033 `ReflectionBasedObjectMapperUsageAnalyzer` (WO-079 P-486) is a REDIRECT, not a straight accept, of the proposal that prompted it — `arch-lead` declined to ship a `SharedKernel.Mapping` package (wrapping Mapperly, a compile-time source generator, behind a kernel-owned runtime interface would defeat the entire reason to choose it over AutoMapper) and instead asked this domain to mechanize only the platform-wide prohibition half of the decision. It resolves all three trigger shapes by `ContainingAssembly.Name == "AutoMapper"` exact match (SK0025's technique), never a syntax-only simple-name check, because "Profile" is common enough elsewhere in this codebase (and in consuming services) to make a bare BaseList name match unsafe. Mapster is explicitly NOT enforced — its runtime and source-generated adapter call syntax is indistinguishable, and this domain's established convention is to narrow scope rather than ship a rule with an uncontrolled false-positive rate (see the SK0033 diagnostic entry's own Limitation). No new `SharedKernel.Mapping`/`.Mapper` package exists anywhere in this repo as a result of this phase, per its own acceptance criteria. Ungated — needs no compiled reference to any not-yet-shipped SharedKernel package, only a test-only `PackageReference` to the real `AutoMapper`(`15.1.1`, patched past the disclosed GHSA-rvv3-g6hj-g44x DoS advisory)/`Riok.Mapperly`(`3.6.0`) NuGet packages for fixture compilation — all five tests run against the real compiled packages (see the net10.0-real-assembly-reference Implementation Rules entry above for the technique this required).
 - SK0034 `AmountCurrencyPairAdvisoryAnalyzer` (WO-066 P-442) introduces this registry's first ADVISORY category — a rule with NO escalation path to Error, ever, by design, distinct from SK0006/SK0007's "Warning pending future escalation to Error" shape. This is a deliberate judgment call, not a mechanical default: the phase input itself framed the rule as inherently heuristic and asked for it to ship advisory-only, and this domain's own review found the detection technique (a closed suffix-list co-occurrence check on ONE type's direct members) narrow enough to be worth shipping rather than declining outright — unlike the four capabilities `arch-lead` itself already declined earlier this session on non-mechanical-detectability grounds. The suffix list (`Amount`/`Price`/`Total`/`Balance` for the decimal side, `Currency`/`CurrencyCode` for the string side) is syntax-only (`PredefinedTypeSyntax` match) — no SemanticModel needed, since `decimal`/`string` are BCL keyword types resolvable from syntax alone. Implementation empirically validated the false-positive rate (T-350) via a raw `CSharpCompilation`+`WithAnalyzers` scan of every `.cs` file in this repository's numbered domains (excluding test/sample/generated paths) — ZERO diagnostics, no genuine false positive, so the suffix list ships UNNARROWED exactly as specified; see the SK0034 diagnostic entry's own Limitation for the full result and the re-run instruction. Depends on `03.Domain` P-439 (`Money`) only for the REMEDIATION MESSAGE to name a real, shipped type — the detection logic itself references no compiled `SharedKernel.Domain` type and ran against this repo's sources (predating `Money`'s own shape check) without needing it.
-- SK0035 `UnmaskedClassifiedDataLoggingAnalyzer` (WO-076 P-476) is deliberately the ONE piece of `01.Core`'s new `SharedKernel.DataPrivacy` story this domain mechanically enforces — the rest (classification taxonomy, masking-helper correctness, data-subject-request handling) stays a documented convention, per this domain's now-established "decline unenforceable rules rather than ship weak ones" precedent (mirrors the four capabilities `arch-lead` declined this session for the identical reason). It resolves `DataClassificationAttribute`/`SensitiveDataCategoryAttribute`/`PiiMasking` by FULLY-QUALIFIED METADATA NAME (`Compilation.GetTypeByMetadataName("SharedKernel.DataPrivacy.Classification.DataClassificationAttribute")`, etc. — corrected at implementation time, see the SK0035 diagnostic entry's own Note for the namespace-nesting drift this caught) rather than a compiled `ProjectReference` — the same technique WO-040/P-248's marker-interface rules (SK0017–SK0019) established specifically so a fixture-local namespace declaration inside the test compilation satisfies Design/Core/contrived-fixture Tests with zero dependency on the real `SharedKernel.DataPrivacy` package. **STALE-DEPENDENCY CORRECTION confirmed:** `01.Core`'s P-474 was found already shipped past Design into Core at implementation time, contrary to this phase's own authoring-time framing — the real-assembly re-verification test (T-355) was therefore implemented directly, not deferred; see the diagnostic entry's Note for the technique this required (a raw `CSharpCompilation`+`WithAnalyzers` run, not `CSharpAnalyzerTest`, per the net10.0-real-assembly-reference Implementation Rules entry above). Composes with, but must never be described as duplicating, SK0022 (unrelated call-site family — HTTP headers/Activity baggage/IConfiguration/ClaimsPrincipal, never LoggerMessage arguments) and SK0020/SK0021 (which police the LOGGING CALL'S OWN SHAPE, never the data flowing into an already-correctly-shaped call — SK0035 is the first rule in this registry to inspect argument PROVENANCE at a logging call site rather than the call site's syntax alone).
+- SK0035 `UnmaskedClassifiedDataLoggingAnalyzer` (WO-076 P-476, retargeted P-554) is deliberately the ONE piece of `01.Core`'s `SharedKernel.DataPrivacy` story this domain mechanically enforces — the rest (taxonomy, masking-helper correctness, data-subject-request handling) stays a documented convention, per this domain's "decline unenforceable rules rather than ship weak ones" precedent. Since P-554 it follows Microsoft's compliance model: "classified" means an attribute deriving (at any depth) from `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`, never `NoDataClassificationAttribute`; a classified `[LoggerMessage]` parameter (and, for whole objects, a `[LogProperties]` parameter) is safe because log redaction masks it. Every type is resolved by FULLY-QUALIFIED METADATA NAME rather than a compiled `ProjectReference`, the technique WO-040/P-248's marker-interface rules (SK0017–SK0019) established, so contrived-fixture tests declare stand-ins inside the test compilation; one real-assembly test (a raw `CSharpCompilation`+`WithAnalyzers` run, per the net10.0-real-assembly-reference Implementation Rules entry above) locks the names to the compiled `SharedKernel.DataPrivacy`/`Microsoft.Extensions.Compliance.Abstractions` types. Composes with, but must never be described as duplicating, SK0022 (HTTP headers/Activity baggage/IConfiguration/ClaimsPrincipal, never LoggerMessage arguments) and SK0020/SK0021 (the LOGGING CALL'S OWN SHAPE) — SK0035 inspects argument PROVENANCE at a logging call site.
 - SK0036 `RawRpcExceptionConstructionAnalyzer` (WO-074 P-469) is UNGATED despite the root state-map's own "Depends on: P-468" framing — re-verified directly against `14.Presentation/state-map.md` per this domain's now nine-times-repeated "confirm, never assume a stated dependency actually blocks this phase's own work" discipline (`SK.00.SenderConstrainedCredentialGuard` through `SK.00.CacheEncryptionAndRedisValidationLock`): the analyzer resolves `Grpc.Core.RpcException`/`Grpc.Core.Status` by exact semantic-model type match, needing only the standalone `Grpc.Core.Api` NuGet package (already independently available, containing solely these two types, not the full `Grpc.AspNetCore` server hosting stack `SharedKernel.Presentation.Grpc` itself will pin) as a test-only `PackageReference` — no compiled reference to `SharedKernel.Presentation.Grpc` is needed for the analyzer, its exemption-namespace check (a plain string-prefix match), or any of its contrived fire/pass-path fixture tests. Unlike SK0013's precedent (where "HttpClient" was judged sufficiently unique as a bare simple name), this rule uses full semantic-model type resolution from the start — "Status" is exactly the kind of dangerously generic simple name SK0026's "Kernel" lesson warned against defaulting to syntax-only for. No Cross-Domain Dependencies entry is added for this phase — there is genuinely nothing pending it.
 
 ---
@@ -5644,3 +5632,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-15] SK0037 `ValueObjectMissingEnsureValid` added to the Diagnostic Rule Registry, which previously jumped from SK0036 to SK0038 (coordinator)
 - [2026-09-15] SK0040 `PipelineMarkerResponseShapeMismatchAnalyzer` added — pre-publish companion to `05.Application`'s P-544 redesign. Reads `FailureResponse.cs` and every behavior calling it before writing the rule: only `AuthorizationBehavior`/`IAuthorizeRequest` and `IdempotencyBehavior`/`IIdempotentRequest` genuinely construct a failed response through `FailureResponse.Create<TResponse>()`, which requires a `Result`/closed `Result<T>` response or throws `InvalidOperationException` at runtime. `AuditingBehavior`/`IAuditableRequest<TResponse>` and `LoggingBehavior`/`ILoggableRequest<TResponse>` were BOTH found, by reading their source, to never call it — both only forward the response `next()` already produced and classify it through `ResponseOutcome.TryGetError`, which degrades gracefully for a non-`Result` response — so neither is checked by this rule, and this applies to `IAuditableRequest` too even though the phase input's own marker list did not flag it for verification the way it flagged `ILoggableRequest`; independent verification found the identical exemption applies to both. `ValidationBehavior` also calls `FailureResponse.Create` but has no marker interface gating its scope (`TRequest : IRequest<TResponse>` unconditionally), so it is structurally out of reach for a type-declaration rule of this shape and not part of the trigger. Interface-closure resolution reuses `MarkerInterfaceHelpers.HasInterface` (WO-040/P-248's technique) for the two markers, plus new local logic resolving `MediatR.IRequest<TResponse>`'s closed type argument and checking it against `SharedKernel.Primitives.Results.Result`/`Result<T>` by exact namespace. An open type parameter or unresolved/error response type is never flagged (cannot determine the eventual closed shape); a closed `Result<T>` whose own type argument is still open still passes (only the outer shape is checked). Abstract types exempted, matching SK0009/SK0017/SK0018. No `SharedKernel.ArchitectureTests` counterpart — pure Roslyn analyzer, mirrors SK0017–SK0019's/SK0030's "no architecture-test counterpart by design" note. `SharedKernel.Analyzers.Tests`: 329/329 pass (10 new SK0040 tests: 3 fire-path including a both-markers-at-once case, 7 pass-path covering `Result`/closed `Result<T>` responses, no-`IRequest<>`, the `IAuditableRequest`/`ILoggableRequest` exclusions, and both open-generic shapes). `SharedKernel.ArchitectureTests.Tests` build currently fails — confirmed unrelated to this change: `05.Application.Behaviors`/`SharedKernel.Application`'s own `PublicApi.Analyzers` gate (RS0016) is failing on `IIdempotentRequest.Fingerprint`/`AnonymousRequestContext`/`SystemRequestContext`, all mid-edit by a concurrent `05.Application` session per this task's own stated constraint — not something `00.Governance` may fix, and this rule has no dependency on any of those in-flight members. Phase `SK.00.PipelineMarkerResponseShapeGuard` added — 13 tasks: D-84, C-146, T-379–T-388, DO-56. Root Backlog ID: P-544 (governance-phase-implementer)
 - [2026-09-16] P-546 security redesign: security rule docs now use the `SharedKernel.Security.Abstractions` namespace for `IUserContext`/`ITenantProvider` (the `.Abstractions.Abstractions` namespace is gone) and a `string? SubjectId` example; `NoSingletonRegistrationOfSecurityContextTypes` documents the non-generic `AnonymousUserContext.Instance` placeholder from `06.Persistence` as deliberately unflagged, with real-assembly tests locating Oidc through `OidcServiceCollectionExtensions` (`AddOidcAuthentication` uses `TryAddScoped`); `SecureDefaultsAssertion` T-309 now expects `MtlsAuthenticationOptions.RevocationMode` default `Online` (was `Offline`); T-310 now asserts the configured `JwtBearerOptions.TokenValidationParameters.ValidAlgorithms` excludes `none`/`HS*` and that configuring a forbidden algorithm fails startup validation, because `SecurityOptions` is removed and the Oidc algorithm collections default to empty (configuration binding appends); historical notes naming `ApiKeyUserContext`, `DpopProofValidator.ProofHeaderName` and the old T-310 test name annotated rather than rewritten (coordinator)
+- [2026-09-18] P-554: SK0035 retargeted to Microsoft's compliance model after `SharedKernel.DataPrivacy`'s redesign — classified = any `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`-derived attribute except `NoDataClassificationAttribute`; a classified parameter (and `[LogProperties]` for whole objects) is safe; `Pseudonymizer` calls exempt alongside `PiiMasking`; Restricted-tier/`SensitiveDataCategory` checks removed; message now names the attribute and suggests classifying the parameter (agent)

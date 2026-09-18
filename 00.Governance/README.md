@@ -236,7 +236,7 @@ How every production log statement is written.
 | [SK0032](#sk0032-corswildcardoriginwithcredentials) | CORS credentials allowed with a wildcard origin | Name the allowed origins |
 | [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
 | [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
-| [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Mask it with the matching `PiiMasking` helper |
+| [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Classify the logging parameter, or mask it with `PiiMasking` |
 | [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ToGrpcResult()` |
 
 #### Persistence
@@ -2275,29 +2275,29 @@ public sealed record PaymentDto
 
 **Category:** Security · **Default severity:** Warning
 
-Mask classified data with a `PiiMasking` helper before passing it to a `[LoggerMessage]` method.
+Classified data must reach a `[LoggerMessage]` method through a parameter that log redaction masks, or be masked with `PiiMasking` first.
 
 #### Why it matters
 
 Logs are copied to aggregators, retained for months, and read by many more people than the production database. An email address, card number, or national ID written to a log is a data-protection incident that is hard to clean up.
 
-Types in `SharedKernel.DataPrivacy` mark sensitive members with `[DataClassification]` and `[SensitiveDataCategory]`. This rule checks that a marked value reaching a source-generated logging method goes through `PiiMasking.Email`, `.Phone`, `.Pan`, or `.Suppress` first.
+`SharedKernel.DataPrivacy` classifies personal data with Microsoft's compliance model: attributes such as `[EmailAddressData]`, `[PaymentCardData]` or `[HealthData]`, all deriving from `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`. With `EnableRedaction()`, the logging source generator redacts a parameter that carries one of these attributes, and honors member classifications on a parameter marked `[LogProperties]`. A classified value passed to any other parameter is written in clear text. This rule catches that.
 
 #### What it flags
 
-The rule only runs in a project where `Microsoft.Extensions.Logging.LoggerMessageAttribute` and at least one of the classification attributes resolve. It inspects every call to a method carrying `[LoggerMessage]`, and each argument, which is flagged when either:
+The rule only runs in a project where `Microsoft.Extensions.Logging.LoggerMessageAttribute` and `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute` both resolve. A member is classified when it carries an attribute that is, or derives at any depth from, `DataClassificationAttribute`, except `[NoDataClassification]` (and types derived from it). For each argument of a call to a `[LoggerMessage]` method, the rule reports when either:
 
-- **Direct member:** the argument is a property or field that carries `[DataClassification(DataClassification.Restricted)]` or `[SensitiveDataCategory(...)]` with any category.
-- **Whole object:** the argument's static type declares a property or field carrying one of those attributes, for example passing an entire `Customer` instance.
+- **Direct member:** the argument is a classified property or field and the receiving parameter carries no classification attribute. `[LogProperties]` on the parameter does not help here.
+- **Whole object:** the argument's static type declares a classified property or field, and the receiving parameter is neither classified nor `[LogProperties]`. The object would be logged with `ToString()`, bypassing redaction.
 
 The diagnostic is reported on the argument.
 
 #### What it does not flag
 
-- An argument that is a direct call to any `SharedKernel.DataPrivacy.Masking.PiiMasking` method.
-- Members classified `Public`, `Internal`, or `Confidential`. Only `Restricted` triggers the rule for `[DataClassification]`.
+- An argument that is a direct call to a `SharedKernel.DataPrivacy.Masking.PiiMasking` method or to any `SharedKernel.DataPrivacy.Masking.Pseudonymizer` method.
+- Members marked `[NoDataClassification]`.
 - Parameters typed `LogLevel` or `Exception` (including derived exception types).
-- A classified value copied into a local variable first, or returned from a helper method. Values are not traced through locals or calls. A local whose type declares a classified member is still caught by the whole-object check.
+- A classified value copied into a local variable first, or returned from a helper method. Values are not traced through locals or calls; this is a pattern check, not data-flow analysis. A local whose type declares a classified member is still caught by the whole-object check.
 - Classified members inherited from a base type of the argument's type.
 - Calls through `ILogger.LogInformation` and similar methods (see SK0020 for that rule).
 - Generated code.
@@ -2308,7 +2308,7 @@ The diagnostic is reported on the argument.
 // Flagged: SK0035
 public sealed class Customer
 {
-    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
+    [EmailAddressData]
     public string Email { get; init; } = string.Empty;
 }
 
@@ -2322,16 +2322,18 @@ logger.WelcomeEmailSent(customer.Email);
 ```
 
 ```csharp
-// Compliant
-using SharedKernel.DataPrivacy.Masking;
+// Compliant: the parameter is classified, so log redaction masks it
+[LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Welcome email sent to {Email}")]
+public static partial void WelcomeEmailSent(this ILogger logger, [EmailAddressData] string email);
 
+// Compliant: masked before the call
 logger.WelcomeEmailSent(PiiMasking.Email(customer.Email));
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0035: 'Customer.Email' carries SensitiveDataCategory and is passed directly to [LoggerMessage]-attributed parameter 'email'. Route it through the matching SharedKernel.DataPrivacy.PiiMasking.* helper (.Email/.Phone/.Pan/.Suppress) before passing it as a logging argument.
+warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [LoggerMessage] parameter 'email', which is not classified. Mark the parameter with the same classification attribute so log redaction masks it, or mask it with SharedKernel.DataPrivacy.PiiMasking first.
 ```
 
 ---
