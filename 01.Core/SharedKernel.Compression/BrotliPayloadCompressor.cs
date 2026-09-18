@@ -1,44 +1,65 @@
-using System.IO.Compression;
+using System.Buffers;
 using Microsoft.Extensions.Options;
+using SharedKernel.Compression.Internal;
 using SharedKernel.Compression.Options;
-using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Compression;
 
 /// <summary>
-/// Compresses and decompresses byte payloads using Brotli (<see cref="BrotliStream"/>) — the
-/// default, best-ratio choice for the JSON/text-shaped payloads this platform mostly moves.
+/// Compresses and decompresses payloads using Brotli (<see cref="System.IO.Compression.BrotliStream"/>)
+/// — the default, best-ratio choice for the JSON/text-shaped payloads this platform mostly moves.
 /// </summary>
 /// <remarks>
 /// Registered by <see cref="Extensions.CompressionServiceCollectionExtensions.AddSharedKernelCompression"/>
-/// as both the unkeyed <see cref="IPayloadCompressor"/> default and the "Brotli"-keyed singleton.
-/// Stateless and thread-safe.
+/// as the unkeyed <see cref="IPayloadCompressor"/> default and under two keys, framed and raw.
+/// Stateless and thread-safe. All behaviour is documented on <see cref="IPayloadCompressor"/>.
 /// </remarks>
 public sealed class BrotliPayloadCompressor : IPayloadCompressor
 {
-    private readonly CompressionLevel _level;
+    private readonly CodecSettings _settings;
 
     /// <summary>Creates a new <see cref="BrotliPayloadCompressor"/>.</summary>
-    /// <param name="options">Supplies the <see cref="CompressionOptions.Level"/> to compress with.</param>
-    public BrotliPayloadCompressor(IOptions<CompressionOptions> options)
+    /// <param name="options">
+    /// Supplies <see cref="CompressionOptions.Level"/> and
+    /// <see cref="CompressionOptions.MaxDecompressedSize"/>.
+    /// </param>
+    /// <param name="framing">
+    /// Whether to wrap output in the platform's frame. Defaults to
+    /// <see cref="CompressionFraming.Framed"/>, which is what makes a truncated payload detectable;
+    /// pass <see cref="CompressionFraming.Raw"/> only for interop with a system outside this platform.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="framing"/> is not a defined value.</exception>
+    public BrotliPayloadCompressor(
+        IOptions<CompressionOptions> options,
+        CompressionFraming framing = CompressionFraming.Framed)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _level = options.Value.Level;
+        _settings = CodecSettingsFactory.Create(CompressionAlgorithm.Brotli, framing, options.Value);
     }
+
+    /// <inheritdoc />
+    public CompressionAlgorithm Algorithm => _settings.Algorithm;
+
+    /// <inheritdoc />
+    public CompressionFraming Framing => _settings.Framing;
 
     /// <inheritdoc />
     public byte[] Compress(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
+        return CompressionCodec.Compress(_settings, data);
+    }
 
-        using var output = new MemoryStream();
-        using (var brotli = new BrotliStream(output, _level, leaveOpen: true))
-        {
-            brotli.Write(data, 0, data.Length);
-        }
+    /// <inheritdoc />
+    public byte[] Compress(ReadOnlySpan<byte> data) => CompressionCodec.Compress(_settings, data);
 
-        return output.ToArray();
+    /// <inheritdoc />
+    public void Compress(ReadOnlySpan<byte> data, IBufferWriter<byte> output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        CompressionCodec.Compress(_settings, data, output);
     }
 
     /// <inheritdoc />
@@ -46,41 +67,32 @@ public sealed class BrotliPayloadCompressor : IPayloadCompressor
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
-
-        using var brotli = new BrotliStream(output, _level, leaveOpen: true);
-        input.CopyTo(brotli);
+        CompressionCodec.Compress(_settings, input, output);
     }
 
     /// <inheritdoc />
-    public async Task CompressAsync(Stream input, Stream output, CancellationToken cancellationToken = default)
+    public ValueTask CompressAsync(Stream input, Stream output, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
-
-        var brotli = new BrotliStream(output, _level, leaveOpen: true);
-        await using (brotli.ConfigureAwait(false))
-        {
-            await input.CopyToAsync(brotli, cancellationToken).ConfigureAwait(false);
-        }
+        return CompressionCodec.CompressAsync(_settings, input, output, cancellationToken);
     }
 
     /// <inheritdoc />
     public Result<byte[]> Decompress(byte[] compressed)
     {
         ArgumentNullException.ThrowIfNull(compressed);
+        return CompressionCodec.Decompress(_settings, compressed);
+    }
 
-        try
-        {
-            using var input = new MemoryStream(compressed);
-            using var brotli = new BrotliStream(input, CompressionMode.Decompress, leaveOpen: true);
-            using var output = new MemoryStream();
-            brotli.CopyTo(output);
-            return output.ToArray();
-        }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
-        {
-            return DecompressionFailedError();
-        }
+    /// <inheritdoc />
+    public Result<byte[]> Decompress(ReadOnlySpan<byte> compressed) => CompressionCodec.Decompress(_settings, compressed);
+
+    /// <inheritdoc />
+    public Result Decompress(ReadOnlySpan<byte> compressed, IBufferWriter<byte> output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        return CompressionCodec.Decompress(_settings, compressed, output);
     }
 
     /// <inheritdoc />
@@ -88,43 +100,14 @@ public sealed class BrotliPayloadCompressor : IPayloadCompressor
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
-
-        try
-        {
-            using var brotli = new BrotliStream(input, CompressionMode.Decompress, leaveOpen: true);
-            brotli.CopyTo(output);
-            return Result.Success();
-        }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
-        {
-            return DecompressionFailedError();
-        }
+        return CompressionCodec.Decompress(_settings, input, output);
     }
 
     /// <inheritdoc />
-    public async Task<Result> DecompressAsync(Stream input, Stream output, CancellationToken cancellationToken = default)
+    public ValueTask<Result> DecompressAsync(Stream input, Stream output, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
-
-        try
-        {
-            var brotli = new BrotliStream(input, CompressionMode.Decompress, leaveOpen: true);
-            await using (brotli.ConfigureAwait(false))
-            {
-                await brotli.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            }
-
-            return Result.Success();
-        }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
-        {
-            return DecompressionFailedError();
-        }
+        return CompressionCodec.DecompressAsync(_settings, input, output, cancellationToken);
     }
-
-    private static Error DecompressionFailedError() =>
-        Error.Unexpected(
-            CompressionErrorCodes.DecompressionFailed,
-            "Decompression failed: the compressed payload is corrupt or truncated.");
 }

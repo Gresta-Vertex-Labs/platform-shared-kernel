@@ -1,0 +1,68 @@
+#nullable enable
+const SharedKernel.Compression.CompressionErrorCodes.AlgorithmMismatch = "compression.algorithm_mismatch" -> string!
+const SharedKernel.Compression.CompressionErrorCodes.DecompressionFailed = "compression.decompression_failed" -> string!
+const SharedKernel.Compression.CompressionErrorCodes.MalformedPayload = "compression.malformed_payload" -> string!
+const SharedKernel.Compression.CompressionErrorCodes.PayloadTooLarge = "compression.payload_too_large" -> string!
+const SharedKernel.Compression.CompressionErrorCodes.TruncatedPayload = "compression.truncated_payload" -> string!
+const SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions.BrotliPayloadCompressorKey = "Brotli" -> string!
+const SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions.GZipPayloadCompressorKey = "GZip" -> string!
+const SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions.RawBrotliPayloadCompressorKey = "Brotli.Raw" -> string!
+const SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey = "GZip.Raw" -> string!
+const SharedKernel.Compression.Options.CompressionOptions.DefaultMaxDecompressedSize = 67108864 -> long
+SharedKernel.Compression.BrotliPayloadCompressor
+SharedKernel.Compression.BrotliPayloadCompressor.Algorithm.get -> SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.BrotliPayloadCompressor.BrotliPayloadCompressor(Microsoft.Extensions.Options.IOptions<SharedKernel.Compression.Options.CompressionOptions!>! options, SharedKernel.Compression.CompressionFraming framing = SharedKernel.Compression.CompressionFraming.Framed) -> void
+SharedKernel.Compression.BrotliPayloadCompressor.Compress(byte[]! data) -> byte[]!
+SharedKernel.Compression.BrotliPayloadCompressor.Compress(System.IO.Stream! input, System.IO.Stream! output) -> void
+SharedKernel.Compression.BrotliPayloadCompressor.Compress(System.ReadOnlySpan<byte> data) -> byte[]!
+SharedKernel.Compression.BrotliPayloadCompressor.Compress(System.ReadOnlySpan<byte> data, System.Buffers.IBufferWriter<byte>! output) -> void
+SharedKernel.Compression.BrotliPayloadCompressor.CompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Compression.BrotliPayloadCompressor.Decompress(byte[]! compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.BrotliPayloadCompressor.Decompress(System.IO.Stream! input, System.IO.Stream! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.BrotliPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.BrotliPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed, System.Buffers.IBufferWriter<byte>! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.BrotliPayloadCompressor.DecompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result>
+SharedKernel.Compression.BrotliPayloadCompressor.Framing.get -> SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.CompressionAlgorithm.Brotli = 1 -> SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.CompressionAlgorithm.GZip = 2 -> SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.CompressionErrorCodes
+SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.CompressionFraming.Framed = 0 -> SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.CompressionFraming.Raw = 1 -> SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions
+SharedKernel.Compression.GZipPayloadCompressor
+SharedKernel.Compression.GZipPayloadCompressor.Algorithm.get -> SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.GZipPayloadCompressor.Compress(byte[]! data) -> byte[]!
+SharedKernel.Compression.GZipPayloadCompressor.Compress(System.IO.Stream! input, System.IO.Stream! output) -> void
+SharedKernel.Compression.GZipPayloadCompressor.Compress(System.ReadOnlySpan<byte> data) -> byte[]!
+SharedKernel.Compression.GZipPayloadCompressor.Compress(System.ReadOnlySpan<byte> data, System.Buffers.IBufferWriter<byte>! output) -> void
+SharedKernel.Compression.GZipPayloadCompressor.CompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Compression.GZipPayloadCompressor.Decompress(byte[]! compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.GZipPayloadCompressor.Decompress(System.IO.Stream! input, System.IO.Stream! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.GZipPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.GZipPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed, System.Buffers.IBufferWriter<byte>! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.GZipPayloadCompressor.DecompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result>
+SharedKernel.Compression.GZipPayloadCompressor.Framing.get -> SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.GZipPayloadCompressor.GZipPayloadCompressor(Microsoft.Extensions.Options.IOptions<SharedKernel.Compression.Options.CompressionOptions!>! options, SharedKernel.Compression.CompressionFraming framing = SharedKernel.Compression.CompressionFraming.Framed) -> void
+SharedKernel.Compression.IPayloadCompressor
+SharedKernel.Compression.IPayloadCompressor.Algorithm.get -> SharedKernel.Compression.CompressionAlgorithm
+SharedKernel.Compression.IPayloadCompressor.Compress(byte[]! data) -> byte[]!
+SharedKernel.Compression.IPayloadCompressor.Compress(System.IO.Stream! input, System.IO.Stream! output) -> void
+SharedKernel.Compression.IPayloadCompressor.Compress(System.ReadOnlySpan<byte> data) -> byte[]!
+SharedKernel.Compression.IPayloadCompressor.Compress(System.ReadOnlySpan<byte> data, System.Buffers.IBufferWriter<byte>! output) -> void
+SharedKernel.Compression.IPayloadCompressor.CompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Compression.IPayloadCompressor.Decompress(byte[]! compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.IPayloadCompressor.Decompress(System.IO.Stream! input, System.IO.Stream! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.IPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Compression.IPayloadCompressor.Decompress(System.ReadOnlySpan<byte> compressed, System.Buffers.IBufferWriter<byte>! output) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Compression.IPayloadCompressor.DecompressAsync(System.IO.Stream! input, System.IO.Stream! output, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result>
+SharedKernel.Compression.IPayloadCompressor.Framing.get -> SharedKernel.Compression.CompressionFraming
+SharedKernel.Compression.Options.CompressionOptions
+SharedKernel.Compression.Options.CompressionOptions.CompressionOptions() -> void
+SharedKernel.Compression.Options.CompressionOptions.Level.get -> System.IO.Compression.CompressionLevel
+SharedKernel.Compression.Options.CompressionOptions.Level.set -> void
+SharedKernel.Compression.Options.CompressionOptions.MaxDecompressedSize.get -> long
+SharedKernel.Compression.Options.CompressionOptions.MaxDecompressedSize.set -> void
+static SharedKernel.Compression.Extensions.CompressionServiceCollectionExtensions.AddSharedKernelCompression(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Compression.Options.CompressionOptions.SectionName.get -> string!

@@ -1,11 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Dependency-free generic payload compression for the SharedKernel: IPayloadCompressor over System.IO.Compression (BrotliStream default, GZipStream keyed alternate). Decompress returns Result&lt;byte[]&gt;/Result rather than throwing on corrupt/truncated input, mirroring ISymmetricEncryptionService.Decrypt's failure shape. Pure BCL System.IO.Compression only — zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Configuration. Always compress-then-encrypt, never the reverse.</Description>
-    <PackageTags>shared-kernel;compression;brotli;gzip;aot</PackageTags>
+    <Description>Brotli and gzip compression for byte arrays, spans and streams, behind one IPayloadCompressor interface. A cut-short payload fails to decompress instead of silently returning part of the data, decompression stops at a configurable size limit so a small malicious payload cannot exhaust memory, and a corrupt payload returns a failed Result rather than throwing. A raw mode produces plain Brotli or gzip bytes for systems outside the platform. No third-party dependencies.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;compression;brotli;gzip;decompression-bomb;result</PackageTags>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Shared optional parameters are intentional on this surface (framing, cancellation token). -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>
