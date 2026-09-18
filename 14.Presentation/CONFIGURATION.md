@@ -197,12 +197,13 @@ consuming service registers `SharedKernel.Localization`'s `ILocalizationCatalog`
 `AddSharedKernelXxx()` call to make. `ErrorProblemDetailsExtensions.ToProblemDetails(this Error,
 HttpContext? context = null)` resolves `ILocalizationCatalog` via `context?.RequestServices
 .GetService<ILocalizationCatalog>()` (never `GetRequiredService`) and, when a translation exists
-for `(error.Code, CultureInfo.CurrentUICulture)`, uses it as `Detail` instead of `Error.Message`.
+for `(error.Code, CultureInfo.CurrentUICulture)`, fills it with `Error.MessageArguments` and uses it as `Detail` instead of `Error.Message`, through `catalog.Localize(error, CultureInfo.CurrentUICulture)`. Errors built from a `LocalizedMessage` definition (`OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId)`) carry those arguments; see `SharedKernel.Localization`'s README.
 
 ```csharp
 // A service that wants localized ProblemDetails.Detail values registers a catalog — nothing else:
-builder.Services.AddSingleton<ILocalizationCatalog>(new InMemoryLocalizationCatalog()
-    .AddTranslation("order.not_found", new CultureInfo("tr-TR"), "Sipariş bulunamadı."));
+builder.Services.AddLocalizationCatalog(catalog =>
+    catalog.AddJsonDirectory(Path.Combine(AppContext.BaseDirectory, "Localization")));
+// Localization/tr.json: { "order.not_found": "{orderId} numaralı sipariş bulunamadı." }
 
 // A service that never registers ILocalizationCatalog sees byte-identical output to before P-484.
 ```
@@ -211,7 +212,8 @@ builder.Services.AddSingleton<ILocalizationCatalog>(new InMemoryLocalizationCata
 | --- | --- |
 | No `ILocalizationCatalog` registered | `Error.Message` (unchanged pre-P-484 behavior) |
 | Catalog registered, no entry for `(error.Code, CurrentUICulture)` | `Error.Message` (fallback — never blank) |
-| Catalog registered, entry found | The translated string |
+| Catalog registered, entry found, but it uses a placeholder the error has no value for | `Error.Message` (never a raw `{placeholder}`) |
+| Catalog registered, entry found | The translation, with its placeholders filled from `Error.MessageArguments` in `CurrentUICulture` |
 
 `CultureInfo.CurrentUICulture` is read as an ambient value only — this package never resolves or
 sets culture itself; that is `13.ServiceDefaults`'s `AddSharedKernelLocalization()` middleware's

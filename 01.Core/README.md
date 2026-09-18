@@ -15,7 +15,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault encryption keys (data keys as secret versions, envelope provider, readiness probe) and signing keys (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Security.KeyVault.Secrets` + `Azure.Identity`) |
 | `SharedKernel.Cryptography.Argon2` | Argon2id one-way hash algorithm for `IOneWayHasher`, selected by configuration (a third-party dependency — `Konscious.Security.Cryptography.Argon2`) |
 | `SharedKernel.DataPrivacy` | `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` pure-metadata markers, `PiiMasking.*` deterministic masking helpers, `IDataSubjectRequestHandler` export/erasure contract |
-| `SharedKernel.Localization` | `ILocalizationCatalog`, keyed on the same `code` string every `Error` factory requires (a first-party dependency — `Microsoft.Extensions.Localization.Abstractions`) |
+| `SharedKernel.Localization` | Typed message definitions (`LocalizedMessage.Define<T1…T4>`) whose errors carry their arguments, named-placeholder templates formatted per culture, and an immutable catalog loaded from JSON or `.resx` and validated at startup (a first-party dependency — `Microsoft.Extensions.Localization.Abstractions`) |
 
 All packages target `net10.0`. Options binding is reflective, so `SharedKernel.Configuration` and the registration methods that bind options are not trim- or AOT-safe.
 
@@ -79,14 +79,12 @@ single-winner service:**
    drop-in for `TryAddSingleton` when the service is keyed on something finer than its
    implementation type.**
 
-**One documented, intentional behavior inversion — not a regression, an accepted side effect of
-domain-wide standardization:** `SharedKernel.Localization`'s `AddInMemoryLocalizationCatalog()` and
-`AddStringLocalizerCatalog<TResource>()` are mutually exclusive — both register the single-winner
-`ILocalizationCatalog` via `TryAddSingleton`. Before this standardization, calling both on the same
-`IServiceCollection` left whichever call ran *last* as the resolved implementation (plain
-`AddSingleton`'s natural "last wins" behavior). Now it is whichever call runs *first* — the
-standard `TryAdd` idiom. Call exactly one of the two per service, in whichever order you want to
-win.
+**One deliberate exception to "a second call is harmless":** `SharedKernel.Localization`'s
+`AddLocalizationCatalog(...)` and `AddStringLocalizerCatalog<TResource>()` throw
+`InvalidOperationException` when an `ILocalizationCatalog` is already registered, and only then call
+`TryAddSingleton`. A silently ignored second catalog would mean its translations never appear, so
+the conflict is reported instead. Combine several translation sources in one
+`LocalizationCatalogBuilder`.
 
 If you are adding a new `01.Core` DI extension method: default to `TryAddSingleton`/
 `TryAddKeyedSingleton`. Reach for `TryAddEnumerable` only when the service type is genuinely meant
@@ -1311,59 +1309,33 @@ See [`SharedKernel.DataPrivacy`'s own README](SharedKernel.DataPrivacy/README.md
 
 ---
 
-## SharedKernel.Localization — Culture-Keyed Message Catalog
+## SharedKernel.Localization — Translated Messages With Typed Arguments
 
-`SharedKernel.Localization` ships `ILocalizationCatalog`, keyed on the same `code` string every `Error` factory in `SharedKernel.Primitives` already requires. It depends on `SharedKernel.Primitives` and the first-party `Microsoft.Extensions.Localization.Abstractions` NuGet package only — never a bespoke `.resx` pipeline.
-
-### The fallback contract
-
-**AN UNTRANSLATED ERROR MESSAGE FALLS BACK TO THE ORIGINAL THROW-SITE STRING, IT IS NEVER BLANK.** `ILocalizationCatalog.TryGetString` only ever returns `false`/`null` for an unregistered or untranslated `(code, culture)` pair — never throws for that outcome, never returns an empty string. Applying the throw-site-message fallback when a lookup misses is entirely the caller's responsibility — in practice `14.Presentation`'s `Error.ToProblemDetails()` (P-484, out of this package's jurisdiction). `01.Core.Primitives.Error` itself is completely unchanged by this package's existence — no new property, no breaking change to the platform's single most-depended-upon type.
+`SharedKernel.Localization` translates error messages and other user-facing text. Each message is defined once with a
+stable code, a default text with named placeholders, and typed arguments, so the compiler checks every call site:
 
 ```csharp
-using SharedKernel.Localization;
-using System.Globalization;
+public static readonly LocalizedMessage<Guid> OrderNotFound = LocalizedMessage.Define<Guid>(
+    "order.not_found", "Order {orderId} was not found.", "orderId");
 
-ILocalizationCatalog catalog = new InMemoryLocalizationCatalog()
-    .AddTranslation("user.not_found", CultureInfo.GetCultureInfo("tr"), "Kullanıcı bulunamadı.");
-
-string throwSiteMessage = "User not found.";
-string resolvedMessage = catalog.TryGetString("user.not_found", CultureInfo.GetCultureInfo("tr-TR"), out string? translated)
-    ? translated!
-    : throwSiteMessage; // never blank — this is the fallback 14.Presentation applies
+return OrderNotFound.ToError(ErrorType.NotFound, orderId);
 ```
 
-### InMemoryLocalizationCatalog — dictionary-backed default, with parent-culture fallback
+The error's `Message` is the default text filled in (`"Order 3f2a… was not found."`), and `Error.MessageArguments`
+carries `orderId`. `SharedKernel.Presentation.WebApi` looks the code up in the registered `ILocalizationCatalog` and
+fills the translation with the same values, so a Turkish caller gets `"3f2a… numaralı sipariş bulunamadı."` in the
+ProblemDetails `detail`.
 
-`InMemoryLocalizationCatalog` is keyed by `(code, CultureInfo.Name)`, seeded via a chained `AddTranslation(...)` builder. A lookup for a specific culture (e.g. `tr-TR`) that has no exact entry falls back through each parent culture (`tr`) and finally `CultureInfo.InvariantCulture`, mirroring standard `ResourceManager`/`IStringLocalizer` resource-fallback behavior — the single most likely real-world case a bare `(code, CultureInfo.Name)` key alone leaves unspecified. Seed a translation under `CultureInfo.InvariantCulture` for a universal default reached by every culture with no more specific entry of its own. Code lookup is case-sensitive (ordinal), consistent with how `Error.Code` is compared everywhere else on the platform.
+Translations come from JSON files, one per culture (`tr.json`, `de-DE.json`), embedded JSON resources, code, or
+`.resx` files. `AddLocalizationCatalog(catalog => catalog.AddJsonDirectory(path))` builds an immutable catalog during
+registration and validates every file and template, so a broken translation fails startup. Placeholders are named
+(`{orderId}`, `{total:N2}`) and formatted with the caller's culture; positional `{0}` is rejected. Lookups fall back
+`tr-TR` → `tr` → invariant, and anything missing or unfillable falls back to the original message, never a blank or a
+raw `{placeholder}`. One catalog per application: a second registration throws.
 
-```csharp
-var catalog = new InMemoryLocalizationCatalog()
-    .AddTranslation("generic.error", CultureInfo.InvariantCulture, "Something went wrong.")
-    .AddTranslation("generic.error", CultureInfo.GetCultureInfo("tr"), "Bir şeyler yanlış gitti.");
-
-catalog.TryGetString("generic.error", CultureInfo.GetCultureInfo("tr-TR"), out string? v1); // "Bir şeyler yanlış gitti." — tr, not invariant
-catalog.TryGetString("generic.error", CultureInfo.GetCultureInfo("fr-FR"), out string? v2); // "Something went wrong." — falls to invariant
-```
-
-### StringLocalizerLocalizationCatalog — composing with `.resx` tooling
-
-Wraps a caller-supplied `IStringLocalizerFactory` so a service with full `.resx` tooling composes behind the same seam. It never blindly forwards `LocalizedString.Value` — a missing resource key returns a `LocalizedString` whose `Value` falls back to the key itself with `ResourceNotFound = true`; `TryGetString` checks `ResourceNotFound` first and returns `false`/`null` whenever it is `true`, rather than surfacing the raw error code as if it were a translation.
-
-```csharp
-using Microsoft.Extensions.Localization;
-using SharedKernel.Localization;
-
-public sealed class ErrorMessages; // marker type — matches ErrorMessages.resx / ErrorMessages.tr.resx
-
-services.AddLocalization(options => options.ResourcesPath = "Resources");
-services.AddStringLocalizerCatalog<ErrorMessages>();
-```
-
-### Naming — deliberately not `AddSharedKernelLocalization`
-
-Registration is `AddInMemoryLocalizationCatalog(...)` / `AddStringLocalizerCatalog<TResource>()` — never `AddSharedKernelLocalization()`, which name is reserved for `13.ServiceDefaults`'s culture-*resolution* middleware entry point (P-483, out of this package's jurisdiction): resolving which culture a request is in, not looking up a translated message for an already-known `(code, culture)` pair.
-
-See [`SharedKernel.Localization`'s own README](SharedKernel.Localization/README.md) for the full usage guide.
+Configure ASP.NET Core's request localization with the catalog's `Cultures` as supported UI cultures, or requests
+stay in the default culture. See [`SharedKernel.Localization`'s README](SharedKernel.Localization/README.md) for the
+full guide.
 
 ---
 
@@ -1393,7 +1365,7 @@ SharedKernel.Primitives              (no dependencies)
        |
        +──► SharedKernel.DataPrivacy  (DataClassification/SensitiveDataCategory attributes, PiiMasking, IDataSubjectRequestHandler)
        |
-       +──► SharedKernel.Localization  (ILocalizationCatalog; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
+       +──► SharedKernel.Localization  (LocalizedMessage, ILocalizationCatalog, JSON catalogs; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
 ```
 
 All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.

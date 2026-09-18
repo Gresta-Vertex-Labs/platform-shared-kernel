@@ -46,6 +46,7 @@
 | `SK.01.P297` | P-297 New SharedKernel.Compression Package | All tasks in Phase: P-297 are `●` | P-297 |
 | `SK.01.P298` | P-298 Feature Flag Variant / Experimentation Support | All tasks in Phase: P-298 are `●` | P-298 |
 | `SK.01.P551` | P-551 Compression Pre-First-Publish Pass | All tasks in Phase: P-551 are `●` | P-551 |
+| `SK.01.P552` | P-552 Localization Pre-First-Publish Pass | All tasks in Phase: P-552 are `●` | P-552 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -135,7 +136,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Validation.FluentValidation` | Published | `●` | **New ninth package (P-444, WO-067), fully shipped.** References `SharedKernel.Validation` + `FluentValidation` (the one third-party dependency in this domain); `ValidationRuleBuilderExtensions` (`.MustBeValidIban()`/`.MustBeValidBic()`/`.MustBeValidPan()`/`.MustBeValidCurrencyCode()`/`.MustBeValidCountryCode()`/`.MustBeValidPhoneNumber()`/`.MustBeValidVatNumber()`/`.MustBeValidNationalId(...)`) built on FluentValidation's `Custom(...)` extension so `ValidationFailure.ErrorCode` always carries the exact `ValidationErrorCodes` constant the underlying validator produced; 26/26 `SharedKernel.Validation.FluentValidation.Tests` passing; packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (56/56 `SharedKernel.Consumer.Tests`) |
 | `SharedKernel.Cryptography.KeyVault.Azure` | P-545 | `◐` | **P-545 (2026-09-16): redesigned**: data keys as Key Vault secret versions (no overwrite race), master-key allow-list, rate-limited unknown ids, redacted probe, async remote signing with local verification, injected clients, split encryption/signing registration. Publish is P-57 (`○`) |
 | `SharedKernel.DataPrivacy` | Published | `●` | **New eleventh package (P-474, WO-076), fully shipped.** References Primitives only; zero third-party NuGet deps (confirmed via direct `.nuspec` inspection — `SharedKernel.Primitives` is the package's sole dependency); `DataClassificationAttribute`/`DataClassification`, `SensitiveDataCategoryAttribute`/`SensitiveDataCategory` (pure metadata, never reflected over in production), `PiiMasking` (`Email`/`Phone`/`Pan`/`Suppress`, deterministic, null-safe, never throws), `IDataSubjectRequestHandler`/`DataSubjectExportBundle`/`DataSubjectErasureReceipt` implemented; 56/56 `SharedKernel.DataPrivacy.Tests` passing (including a compiled-assembly metadata scan proving no reflection-invocation `System.Reflection.*` type is referenced by the production DLL); packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (67/67 `SharedKernel.Consumer.Tests`, up from 61/61) |
-| `SharedKernel.Localization` | Published | `●` | **New twelfth package (P-482, WO-078), fully shipped.** References Primitives + `Microsoft.Extensions.Localization.Abstractions` (the domain's third third-party/first-party NuGet dependency exception); `ILocalizationCatalog`/`InMemoryLocalizationCatalog` (parent-culture-chain fallback down to `CultureInfo.InvariantCulture` — a deliberate design decision beyond D-61/D-62's bare `(code, CultureInfo.Name)` key)/`StringLocalizerLocalizationCatalog` (guards against blindly forwarding `LocalizedString.Value` on `ResourceNotFound`)/`LocalizationServiceCollectionExtensions` implemented; 43/43 `SharedKernel.Localization.Tests` passing (including README-sample compile verification); packed to `./nupkgs` at `1.0.0-alpha.0.794`; consumer dependency-graph verified (72/72 `SharedKernel.Consumer.Tests`, up from 67/67), including a direct `.nuspec` inspection proving exactly two dependencies (`SharedKernel.Primitives` + `Microsoft.Extensions.Localization.Abstractions`) |
+| `SharedKernel.Localization` | Ready to publish | `●` | **Pre-first-publish pass complete (P-552); not yet on GitHub Packages.** Typed message definitions (`LocalizedMessage.Define<T1…T4>`) whose errors carry `Error.MessageArguments`; named-placeholder `MessageTemplate`; immutable `InMemoryLocalizationCatalog` built and validated by `LocalizationCatalogBuilder` from code, JSON files, directories and embedded JSON; `.resx` adapter; `catalog.Localize(error, culture)`. First implemented P-482 (packed locally only). References Primitives + `Microsoft.Extensions.Localization.Abstractions`. 96/96 tests |
 | `SharedKernel.Cryptography.Argon2` | P-545 | `◐` | **P-545 (2026-09-16): redesigned** as an `IOneWayHashAlgorithm` selected by configuration, with verification cost ceilings. Publish is P-57 (`○`) |
 
 ---
@@ -1711,6 +1712,86 @@ A second pass closed what the first left open. None of it changes the public API
   recipes, error-code and exception tables, pitfalls, design decisions, an AI quick reference, guarantees) with
   absolute links so it renders on nuget.org. Every README snippet was compiled and run before publishing.
 
+## Phase: P-552 — `SharedKernel.Localization` Pre-First-Publish Pass (BREAKING API; additive Primitives change) <!-- phase-key: SK.01.P552 -->
+
+**Status:** `●` Complete — 9/9 tasks `●`; Localization 96/96 tests; not yet on GitHub Packages
+
+> The pre-first-publish audit of `SharedKernel.Localization`, following P-551 (Compression). The package had been
+> implemented in P-482 and patched by P-516/P-518, and packed only to the local feed, so its API was still free to
+> change. The user's brief: it looked too simple, with no type-safe parameter replacement.
+
+### What was found
+
+**F1 — a translation could not carry values, and one with a placeholder was shown raw.** `Error` carried only code,
+message and type, so the HTTP boundary could look up `order.not_found` but had nothing to fill `{orderId}` with.
+Registering `"Sipariş {0} bulunamadı"` produced a ProblemDetails `detail` of exactly that text, braces included.
+Validation messages could never name their field.
+
+**F2 — the `.resx` adapter reported a blank translation as found.** It checked `ResourceNotFound` but not the value, so
+an empty resource entry returned `true` with `""`, breaking the package's own never-blank promise.
+
+**F3 — hygiene.** The in-memory catalog was mutable until `Seal()` was called, a patch (P-516) over a design that
+should have been immutable. The `out string?` result had no `[NotNullWhen(true)]`, so every caller wrote `translated!`.
+Registering a second catalog was silently ignored (P-518's first-wins `TryAdd`), so its translations never appeared.
+The package referenced `SharedKernel.Primitives` without using it. There was no publish bar: no public-API tracking,
+no documentation enforcement, no release notes. The docs were written in capitals and task numbers.
+
+### User decisions
+
+- **Parameters: typed definitions plus arguments on `Error`**, over untyped named arguments, formatting at the call
+  site, or no parameters.
+- **No plural rules** for now; the template syntax leaves room for ICU-style plurals later.
+- **Load translations from JSON files.** Layered catalogs, built-in platform translations and a startup coverage
+  check were not selected. Layering is partly covered anyway, because later sources override earlier ones in one
+  builder.
+
+### Design
+
+- `LocalizedMessage.Define<T1…T4>(code, defaultTemplate, argumentNames…)` — explicit argument names, validated against
+  the default text's placeholders (exact set) and each format against its argument type (by formatting `default(T)`)
+  when the static field initializes. `ToError(type, args…)` fills `Message` with the invariant culture and stores the
+  values in `Error.MessageArguments`; `Format(catalog, culture, args…)` returns the translation or the default text.
+- `Error.MessageArguments` (Primitives, additive): an init-only, copied, ordinal-keyed dictionary, `[JsonIgnore]` and
+  excluded from equality and the hash code. `Message` already holds the values, so crossing a process loses nothing
+  but re-translation. This is not the metadata bag the root state-map declined: it holds message values only and
+  answers neither objection (equality, serialization).
+- `MessageTemplate`: named placeholders with .NET formats, `{{`/`}}` escapes, positional `{0}` rejected;
+  `TryFormat` never throws, for the error path.
+- `ILocalizationCatalog.TryGetTemplate` replaces `TryGetString`, returning a parsed template;
+  `catalog.Localize(error, culture)` does the lookup, filling and fallback in one place, and `14.Presentation`'s
+  `LocalizedDetailResolver` now calls it.
+- `LocalizationCatalogBuilder` (code, JSON stream/file/directory, embedded JSON) builds an immutable
+  `InMemoryLocalizationCatalog` over a `FrozenDictionary`; `AddLocalizationCatalog` builds during registration, so a
+  bad file fails startup. Both registration methods throw when a catalog exists.
+
+### Tasks
+
+| ID | Task | Project | Status |
+|---|---|---|---|
+| D-552 | Analysis and the three user decisions above | SharedKernel.Localization | `●` |
+| C-552a | `Error.MessageArguments` in Primitives, with docs, README and release note | SharedKernel.Primitives | `●` |
+| C-552b | `MessageTemplate`, `LocalizedMessage` (0–4 arguments) over an internal `MessageDefinition`, `LocalizationCatalogExtensions` | SharedKernel.Localization | `●` |
+| C-552c | Immutable `InMemoryLocalizationCatalog`, `LocalizationCatalogBuilder` with JSON reading (`JsonTranslationReader`), reworked `.resx` adapter and registrations | SharedKernel.Localization | `●` |
+| C-552d | `14.Presentation`'s `LocalizedDetailResolver` uses `Localize`; `16.Testing` interop tests moved to the builder | SharedKernel.Presentation.WebApi, SharedKernel.Testing | `●` |
+| T-552 | Localization 96 tests (template syntax and culture formatting, definition validation, JSON and embedded loading, fallback, DI, README samples); Primitives `ErrorMessageArgumentsTests`; three WebApi tests for filled, unfillable and per-field translations | — | `●` |
+| P-552a | Publish bar: `GenerateDocumentationFile`, `WarningsAsErrors` CS1591/RS0016/RS0017/RS0024/RS0025, `PublicApiAnalyzers` with 68 tracked entries, plain-English `<Description>`, "First release." notes | SharedKernel.Localization | `●` |
+| DO-552 | README rewritten in the house format (every sample compiled and run; recipe 1 verified in a scratch ASP.NET Core app); `01.Core/CLAUDE.md` surface, rules, DI, AOT and test notes; `01.Core/README.md` section; root brain and state map | — | `●` |
+| V-552 | Solution builds with 0 errors; Localization 96/96, Primitives 263/263, WebApi 203/203, Testing.SelfTests 1410/1410, ArchitectureTests 324/324 | — | `●` |
+
+### Found during verification
+
+- **`Error.None` would have had a `null` `MessageArguments`.** Static fields initialize in declaration order, and
+  `None` is declared first, so it was constructed while the empty-dictionary field was still `null`. The first test
+  of the new property caught it. The empty instance now lives in a nested holder class.
+- **The domain's TryAdd rule** (`CoreArchitectureRules.DiExtensionsUseTryAddRegistrationConvention`) failed on the
+  first draft's plain `AddSingleton`. The registrations keep the explicit "already registered" check and then use
+  `TryAddSingleton`.
+- **The README's first `.csproj` snippet broke Web SDK projects.** `Content Include` for `*.json` duplicates the Web
+  SDK's default content item. The scratch app showed the Web SDK already copies the files; the README now says so.
+- **Follow-up for `13.ServiceDefaults` (not changed here):** `AddSharedKernelLocalization()` configures culture
+  providers but never `SupportedUICultures`, and ASP.NET Core ignores any culture outside that list, so a service that
+  relies on it alone stays in its default culture. The README's recipe 1 shows the fix: pass the catalog's `Cultures`.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
@@ -1817,3 +1898,4 @@ A second pass closed what the first left open. None of it changes the public API
 - [2026-09-18] SK.01.P551 complete — `SharedKernel.Compression` pre-first-publish pass: framed payload format (13-byte header: magic, version, algorithm, uncompressed length) so a truncated payload fails instead of returning a valid prefix as `Result.Success` (measured 127,863 of 282,775 bytes at a 50% cut, both algorithms), `MaxDecompressedSize` capping decompression at 64 MiB by default (102 bytes previously expanded to 64 MiB unbounded), `Raw` framing retained for external gzip/Brotli interop, every failure now `Error.Validation`, span/`IBufferWriter` overloads, `ValueTask` async members, `ISectionBoundOptions`, one shared internal codec instead of two copies of the logic, publish bar added (XML docs, 68 tracked public API entries, `WarningsAsErrors`). 147/147 own tests; Messaging.MassTransit 188/188 and governance 324/324 green; solution 0 errors. Not yet published (coordinator)
 - [2026-09-18] SK.01.P551 finalisation round (F-551): `Decompress(byte[])` reads the caller's array in place instead of copying it; buffer sizing made overflow-safe; appended data measured in all four modes and pinned exactly — ignored everywhere except raw gzip, which decodes a concatenated member (23,889 -> 47,778 bytes), a case the frame's length check rejects; length-mismatch message now states direction; no-async-in-memory-overloads documented as a decision on the interface; NuGet description and `PackageReleaseNotes` rewritten; package README rewritten in the house format with every snippet compiled and run. 156/156 tests, public API unchanged (coordinator)
 - [2026-09-18] SK.01.P551 published — `SharedKernel.Compression` `1.0.0-alpha.0.1088` on GitHub Packages with Primitives and Configuration from `bbba779` (coordinator)
+- [2026-09-18] SK.01.P552 complete — `SharedKernel.Localization` pre-first-publish pass: typed `LocalizedMessage` definitions whose errors carry `Error.MessageArguments` (new, additive, in Primitives), named-placeholder templates with culture-aware formats, an immutable catalog built and validated from code, JSON files, directories and embedded JSON, a fixed `.resx` adapter (blank values no longer reported as found), and one-catalog-per-app registration. `14.Presentation` now translates ProblemDetails `detail` with the error's values. 96/96 tests (coordinator)
