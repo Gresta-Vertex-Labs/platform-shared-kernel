@@ -1,6 +1,5 @@
 using SharedKernel.Testing.Validation;
-using SharedKernel.Validation.NationalId;
-using SharedKernel.Validation.Validators;
+using SharedKernel.Validation;
 
 namespace SharedKernel.Testing.SelfTests.Validation;
 
@@ -22,14 +21,14 @@ public sealed class ValidationSampleGeneratorTests
     [InlineData("NL")]
     [InlineData("TR")]
     public void ValidIban_PassesRealIbanValidator(string countryCode) =>
-        Assert.True(IbanValidator.IsValid(ValidationSampleGenerator.ValidIban(countryCode)));
+        Assert.True(Iban.IsValid(ValidationSampleGenerator.ValidIban(countryCode)));
 
     [Theory]
     [InlineData("DE")]
     [InlineData("GB")]
     [InlineData("TR")]
     public void InvalidIban_FailsRealIbanValidator(string countryCode) =>
-        Assert.False(IbanValidator.IsValid(ValidationSampleGenerator.InvalidIban(countryCode)));
+        Assert.False(Iban.IsValid(ValidationSampleGenerator.InvalidIban(countryCode)));
 
     [Fact]
     public void ValidIban_UnsupportedCountry_Throws() =>
@@ -37,72 +36,86 @@ public sealed class ValidationSampleGeneratorTests
 
     [Fact]
     public void ValidBic_PassesRealBicValidator() =>
-        Assert.True(BicValidator.IsValid(ValidationSampleGenerator.ValidBic()));
+        Assert.True(Bic.IsValid(ValidationSampleGenerator.ValidBic()));
 
     [Fact]
     public void InvalidBic_FailsRealBicValidator() =>
-        Assert.False(BicValidator.IsValid(ValidationSampleGenerator.InvalidBic()));
+        Assert.False(Bic.IsValid(ValidationSampleGenerator.InvalidBic()));
 
     [Theory]
     [InlineData(CardNetwork.Visa)]
     [InlineData(CardNetwork.Mastercard)]
-    [InlineData(CardNetwork.Amex)]
+    [InlineData(CardNetwork.AmericanExpress)]
     [InlineData(CardNetwork.Discover)]
+    [InlineData(CardNetwork.Jcb)]
+    [InlineData(CardNetwork.UnionPay)]
+    [InlineData(CardNetwork.DinersClub)]
+    [InlineData(CardNetwork.Maestro)]
+    [InlineData(CardNetwork.Mir)]
+    [InlineData(CardNetwork.Troy)]
     public void ValidPan_PassesRealPanValidator_AndDetectsExpectedNetwork(CardNetwork network)
     {
         var pan = ValidationSampleGenerator.ValidPan(network);
 
-        Assert.True(PanValidator.IsValid(pan));
-        Assert.Equal(network, PanValidator.DetectNetwork(pan));
+        Assert.True(CardNumber.IsValid(pan));
+        Assert.Equal(network, CardNumber.Parse(pan, null).Network);
     }
 
     [Theory]
     [InlineData(CardNetwork.Visa)]
     [InlineData(CardNetwork.Mastercard)]
-    [InlineData(CardNetwork.Amex)]
+    [InlineData(CardNetwork.AmericanExpress)]
     [InlineData(CardNetwork.Discover)]
     public void InvalidPan_FailsRealPanValidator(CardNetwork network) =>
-        Assert.False(PanValidator.IsValid(ValidationSampleGenerator.InvalidPan(network)));
+        Assert.False(CardNumber.IsValid(ValidationSampleGenerator.InvalidPan(network)));
 
     [Fact]
     public void ValidCurrencyCode_PassesRealIsoCurrencyValidator() =>
-        Assert.True(IsoCurrencyValidator.IsValid(ValidationSampleGenerator.ValidCurrencyCode()));
+        Assert.True(CurrencyCode.IsValid(ValidationSampleGenerator.ValidCurrencyCode()));
 
     [Fact]
     public void InvalidCurrencyCode_FailsRealIsoCurrencyValidator() =>
-        Assert.False(IsoCurrencyValidator.IsValid(ValidationSampleGenerator.InvalidCurrencyCode()));
+        Assert.False(CurrencyCode.IsValid(ValidationSampleGenerator.InvalidCurrencyCode()));
 
     [Fact]
     public void ValidCountryCode_PassesRealIsoCountryValidator() =>
-        Assert.True(IsoCountryValidator.IsValid(ValidationSampleGenerator.ValidCountryCode()));
+        Assert.True(CountryCode.IsValid(ValidationSampleGenerator.ValidCountryCode()));
 
     [Fact]
     public void InvalidCountryCode_FailsRealIsoCountryValidator() =>
-        Assert.False(IsoCountryValidator.IsValid(ValidationSampleGenerator.InvalidCountryCode()));
+        Assert.False(CountryCode.IsValid(ValidationSampleGenerator.InvalidCountryCode()));
 
     [Fact]
     public void ValidE164Phone_PassesRealE164PhoneValidator() =>
-        Assert.True(E164PhoneValidator.IsValid(ValidationSampleGenerator.ValidE164Phone()));
+        Assert.True(PhoneNumber.IsValid(ValidationSampleGenerator.ValidE164Phone()));
 
     [Fact]
     public void InvalidE164Phone_FailsRealE164PhoneValidator() =>
-        Assert.False(E164PhoneValidator.IsValid(ValidationSampleGenerator.InvalidE164Phone()));
+        Assert.False(PhoneNumber.IsValid(ValidationSampleGenerator.InvalidE164Phone()));
+
+    [Theory]
+    [InlineData("DE")]
+    [InlineData("TR")]
+    [InlineData("PL")]
+    [InlineData("DK")]
+    [InlineData("FI")]
+    [InlineData("PT")]
+    [InlineData("EE")]
+    public void ValidVat_PassesTheCountryCheckDigit_InvalidVatFailsOnlyIt(string countryCode)
+    {
+        Assert.True(VatNumber.IsValid(ValidationSampleGenerator.ValidVat(countryCode)));
+        Assert.Equal(
+            ValidationErrorCodes.VatNumber.InvalidCheckDigit,
+            VatNumber.Create(ValidationSampleGenerator.InvalidVat(countryCode)).Error.Code);
+    }
 
     [Fact]
-    public void ValidVat_PassesRealVatValidator() =>
-        Assert.True(VatValidator.IsValid(ValidationSampleGenerator.ValidVat()));
+    public void ValidNationalId_PassesTheTurkishNationalIdCheck() =>
+        Assert.True(NationalId.Create(CountryCode.Parse("TR", null), ValidationSampleGenerator.ValidNationalId()).IsSuccess);
 
     [Fact]
-    public void InvalidVat_FailsRealVatValidator() =>
-        Assert.False(VatValidator.IsValid(ValidationSampleGenerator.InvalidVat()));
-
-    [Fact]
-    public void ValidNationalId_PassesRealTckNationalIdValidator() =>
-        Assert.True(new TckNationalIdValidator().IsValid(ValidationSampleGenerator.ValidNationalId()));
-
-    [Fact]
-    public void InvalidNationalId_FailsRealTckNationalIdValidator() =>
-        Assert.False(new TckNationalIdValidator().IsValid(ValidationSampleGenerator.InvalidNationalId()));
+    public void InvalidNationalId_FailsTheTurkishNationalIdCheck() =>
+        Assert.False(NationalId.Create(CountryCode.Parse("TR", null), ValidationSampleGenerator.InvalidNationalId()).IsSuccess);
 
     [Fact]
     public void ValidNationalId_UnsupportedCountry_Throws() =>
@@ -117,6 +130,6 @@ public sealed class ValidationSampleGeneratorTests
         // internal Faker instance is a `static readonly` field shared across all calls in this
         // process, so consecutive calls intentionally advance the sequence).
         var first = ValidationSampleGenerator.ValidIban("DE");
-        Assert.True(IbanValidator.IsValid(first));
+        Assert.True(Iban.IsValid(first));
     }
 }

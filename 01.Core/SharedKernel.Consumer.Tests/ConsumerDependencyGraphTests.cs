@@ -33,12 +33,8 @@ using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Validation.Errors;
-using SharedKernel.Validation.Extensions;
+using SharedKernel.Validation;
 using SharedKernel.Validation.FluentValidation;
-using SharedKernel.Validation.Guards;
-using SharedKernel.Validation.NationalId;
-using SharedKernel.Validation.Validators;
 using Xunit;
 using FluentValidationLib = FluentValidation;
 
@@ -800,26 +796,26 @@ public sealed class ConsumerDependencyGraphTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validation_IbanValidator_KnownGoodIban_ResolvedFromPackage()
+    public void Validation_Iban_KnownGoodIban_ResolvedFromPackage()
     {
-        Assert.True(IbanValidator.IsValid("DE89370400440532013000"));
+        Assert.True(Iban.IsValid("DE89370400440532013000"));
 
-        var result = IbanValidator.Validate("not-an-iban");
+        var result = Iban.Create("not-an-iban");
         Assert.True(result.IsFailure);
         Assert.Equal(ValidationErrorCodes.Iban.InvalidFormat, result.Error.Code);
     }
 
     [Fact]
-    public void Validation_PanValidator_LuhnAndNetworkDetection_ResolvedFromPackage()
+    public void Validation_CardNumber_LuhnAndNetworkDetection_ResolvedFromPackage()
     {
-        Assert.True(PanValidator.IsValid("4242424242424242"));
-        Assert.Equal(CardNetwork.Visa, PanValidator.DetectNetwork("4242424242424242"));
+        Assert.True(CardNumber.IsValid("4242424242424242"));
+        Assert.Equal(CardNetwork.Visa, CardNumber.Parse("4242424242424242", null).Network);
     }
 
     [Fact]
     public void Validation_GuardAgainst_InvalidIban_ResolvedFromPackage()
     {
-        Error? error = Guard.Against.InvalidIban("not-an-iban");
+        Error? error = Guard.Against.Invalid<Iban>("not-an-iban");
 
         Assert.NotNull(error);
         Assert.Equal(ValidationErrorCodes.Iban.InvalidFormat, error!.Code);
@@ -836,12 +832,12 @@ public sealed class ConsumerDependencyGraphTests
 
         await host.StartAsync();
 
-        INationalIdValidatorRegistry registry = host.Services.GetRequiredService<INationalIdValidatorRegistry>();
+        NationalIdValidatorRegistry registry = host.Services.GetRequiredService<NationalIdValidatorRegistry>();
 
-        Assert.True(registry.TryGetValidator("TR", out INationalIdValidator? trValidator));
-        Assert.IsType<TckNationalIdValidator>(trValidator);
+        Assert.True(registry.TryGetValidator(CountryCode.Parse("TR", null), out INationalIdValidator? trValidator));
+        Assert.IsType<TurkishNationalIdValidator>(trValidator);
 
-        Assert.True(registry.TryGetValidator("US", out INationalIdValidator? usValidator));
+        Assert.True(registry.TryGetValidator(CountryCode.Parse("US", null), out INationalIdValidator? usValidator));
         Assert.IsType<ConsumerUsNationalIdValidator>(usValidator);
 
         await host.StopAsync();
@@ -880,7 +876,7 @@ public sealed class ConsumerDependencyGraphTests
 
         // Cross-package parity: the packaged adapter surfaces the identical code the packaged
         // standalone SharedKernel.Validation validator produces for the same input.
-        Result standalone = IbanValidator.Validate("not-an-iban");
+        var standalone = Iban.Create("not-an-iban");
         Assert.Equal(standalone.Error.Code, failure.ErrorCode);
     }
 
@@ -1396,9 +1392,10 @@ internal sealed class ConsumerPaymentValidator : FluentValidationLib.AbstractVal
 /// </summary>
 internal sealed class ConsumerUsNationalIdValidator : INationalIdValidator
 {
-    public string CountryCode => "US";
+    public CountryCode Country => CountryCode.Parse("US", null);
 
-    public bool IsValid(string idNumber) => idNumber.Length == 9;
+    public Result Validate(string number) =>
+        number.Length == 9 ? Result.Success() : ValidationMessages.NationalIdInvalidFormat.ToError(ErrorType.Validation, "US");
 }
 
 // ──────────────────────────────────────────────────────────────────────────

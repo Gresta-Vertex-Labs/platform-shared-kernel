@@ -1,10 +1,10 @@
 using Bogus;
-using SharedKernel.Validation.Validators;
+using SharedKernel.Validation;
 
 namespace SharedKernel.Testing.Validation;
 
 /// <summary>
-/// Checksum-correct valid/invalid sample-value generators for every validator shipped in
+/// Checksum-correct valid/invalid sample values for the identifier types in
 /// <c>SharedKernel.Validation</c>.
 /// </summary>
 /// <remarks>
@@ -27,19 +27,21 @@ public static class ValidationSampleGenerator
 {
     private static readonly Faker Faker = new() { Random = new Randomizer(8675309) };
 
-    // Per-country total IBAN length, mirroring SharedKernel.Validation.Validators.IbanValidator's
-    // own published SWIFT/ISO 13616 registry table for the subset of countries this generator
-    // supports. This is public structural (length) data, not the checksum under test.
-    private static readonly IReadOnlyDictionary<string, int> IbanLengthsByCountry = new Dictionary<string, int>(StringComparer.Ordinal)
+    // The national account number (BBAN) structure of each supported country, from the SWIFT IBAN
+    // registry: n = digit, a = upper-case letter, c = letter or digit. Public structural data, not
+    // the checksum under test.
+    private static readonly IReadOnlyDictionary<string, string> IbanBbanFormats = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["DE"] = 22,
-        ["GB"] = 22,
-        ["FR"] = 27,
-        ["ES"] = 24,
-        ["IT"] = 27,
-        ["NL"] = 18,
-        ["TR"] = 26,
+        ["DE"] = "18n",
+        ["GB"] = "4a,14n",
+        ["FR"] = "10n,11c,2n",
+        ["ES"] = "20n",
+        ["IT"] = "1a,10n,12c",
+        ["NL"] = "4a,10n",
+        ["TR"] = "5n,1n,16c",
     };
+
+    private const string Letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     private const string IbanAlphanumeric = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string Digits = "0123456789";
@@ -54,13 +56,15 @@ public static class ValidationSampleGenerator
     /// <exception cref="ArgumentException"><paramref name="countryCode"/> is not supported.</exception>
     public static string ValidIban(string countryCode = "DE")
     {
-        if (!IbanLengthsByCountry.TryGetValue(countryCode, out var totalLength))
+        if (!IbanBbanFormats.TryGetValue(countryCode, out var format))
         {
             throw new ArgumentException($"Unsupported IBAN country code '{countryCode}'.", nameof(countryCode));
         }
 
-        var bbanLength = totalLength - 4;
-        var bban = Faker.Random.String2(bbanLength, IbanAlphanumeric);
+        var bban = string.Concat(format.Split(',').Select(segment =>
+            Faker.Random.String2(
+                int.Parse(segment[..^1], System.Globalization.CultureInfo.InvariantCulture),
+                segment[^1] switch { 'n' => Digits, 'a' => Letters, _ => IbanAlphanumeric })));
         var checkDigits = ComputeIbanCheckDigits(countryCode, bban);
         return $"{countryCode}{checkDigits}{bban}";
     }
@@ -134,8 +138,14 @@ public static class ValidationSampleGenerator
         {
             CardNetwork.Visa => ("4", 16),
             CardNetwork.Mastercard => ("55", 16),
-            CardNetwork.Amex => ("34", 15),
+            CardNetwork.AmericanExpress => ("34", 15),
             CardNetwork.Discover => ("6011", 16),
+            CardNetwork.Jcb => ("3528", 16),
+            CardNetwork.UnionPay => ("62", 16),
+            CardNetwork.DinersClub => ("36", 14),
+            CardNetwork.Maestro => ("6759", 16),
+            CardNetwork.Mir => ("2200", 16),
+            CardNetwork.Troy => ("9792", 16),
             _ => ("4", 16),
         };
 
@@ -212,21 +222,56 @@ public static class ValidationSampleGenerator
     /// </summary>
     public static string InvalidE164Phone() => "+0" + Faker.Random.String2(9, Digits);
 
-    // ── VAT/tax identifier (baseline format only, no checksum) ──────────────
+    // ── VAT / tax number (country format + check digit) ──────────────────────
 
-    /// <summary>Generates a value matching the baseline VAT/tax-identifier format for <paramref name="countryCode"/>.</summary>
-    public static string ValidVat(string countryCode = "DE") =>
-        countryCode.ToUpperInvariant() + Faker.Random.String2(9, IbanAlphanumeric);
+    // Digit-only VAT formats whose check digit is the last digit: the prefix and the total digits.
+    private static readonly IReadOnlyDictionary<string, int> VatDigitCounts = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+        ["DE"] = 9,
+        ["TR"] = 10,
+        ["PL"] = 10,
+        ["DK"] = 8,
+        ["FI"] = 8,
+        ["PT"] = 9,
+        ["EE"] = 9,
+    };
+
+    /// <summary>Generates a VAT number with a correct check digit for <paramref name="countryCode"/>, prefix included.</summary>
+    /// <param name="countryCode">
+    /// The VAT prefix. Supported: <c>DE</c>, <c>TR</c> (VKN), <c>PL</c>, <c>DK</c>, <c>FI</c>, <c>PT</c>, <c>EE</c>.
+    /// </param>
+    /// <exception cref="ArgumentException"><paramref name="countryCode"/> is not supported.</exception>
+    public static string ValidVat(string countryCode = "DE")
+    {
+        string prefix = countryCode.ToUpperInvariant();
+        if (!VatDigitCounts.TryGetValue(prefix, out var digits))
+        {
+            throw new ArgumentException($"Unsupported VAT country code '{countryCode}'.", nameof(countryCode));
+        }
+
+        // Draw a body (first digit non-zero, as several countries require) and take the check
+        // digit the real validator accepts; some bodies have none, so draw again.
+        while (true)
+        {
+            string body = Faker.Random.Int(1, 9).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + Faker.Random.String2(digits - 2, Digits);
+            for (var check = 0; check <= 9; check++)
+            {
+                string candidate = prefix + body + check;
+                if (VatNumber.IsValid(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+    }
 
     /// <summary>
-    /// Generates a VAT-shaped value that fails the baseline format — the required 2-letter
-    /// country prefix is deliberately broken (a digit in place of the second letter).
+    /// Generates a VAT number with the right format but a wrong check digit: <see cref="ValidVat"/>
+    /// with its last digit changed.
     /// </summary>
-    public static string InvalidVat()
-    {
-        var body = Faker.Random.String2(9, IbanAlphanumeric);
-        return "D3" + body;
-    }
+    /// <param name="countryCode">The VAT prefix; see <see cref="ValidVat"/>.</param>
+    public static string InvalidVat(string countryCode = "DE") => MutateLastAlphanumericCharacter(ValidVat(countryCode));
 
     // ── National ID (TCKN — Turkey, the platform's built-in default) ────────
 

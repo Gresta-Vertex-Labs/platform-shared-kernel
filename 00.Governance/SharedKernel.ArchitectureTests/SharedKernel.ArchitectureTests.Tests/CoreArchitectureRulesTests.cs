@@ -281,7 +281,7 @@ public class CoreArchitectureRulesTests
             typeof(SharedKernel.Cryptography.KeyVault.Azure.AzureKeyVaultCryptographyBuilderExtensions).Assembly,
             typeof(SharedKernel.FeatureManagement.Extensions.FeatureManagementExtensions).Assembly,
             typeof(SharedKernel.Localization.LocalizationServiceCollectionExtensions).Assembly,
-            typeof(SharedKernel.Validation.Extensions.ValidationServiceCollectionExtensions).Assembly,
+            typeof(SharedKernel.Validation.ValidationServiceCollectionExtensions).Assembly,
         };
 
         var result = CoreArchitectureRules
