@@ -13,6 +13,8 @@
     <Description>Foundational primitives for the SharedKernel: Result&lt;T&gt;, Error, ErrorCodes, IClock, SmartEnum, ValidationResult, IIdGenerator, and the WellKnownHeaders/BaggageKeys/TagKeys propagation registries. Carries one first-party Microsoft.Extensions dependency (Microsoft.Extensions.DependencyInjection.Abstractions), used solely by the optional ClockExtensions.AddClock() DI convenience extension. Trim- and AOT-clean: compiles with zero IL2026/IL3050/IL2059 under EnableTrimAnalyzer and EnableAotAnalyzer.</Description>
     <PackageReleaseNotes>This package ships as part of the platform's single, repo-wide MinVer-derived version (see root CLAUDE.md's "Package Versioning" section) — the notes below describe what changed and why, not a package-specific version number.
 
+ADDITION (P-552): Error.MessageArguments, the values for the named placeholders of a translated message. SharedKernel.Localization fills it when an error is built from a LocalizedMessage definition, and the HTTP boundary uses it to translate the message with the same values. It is empty for every factory in this package, not part of equality or the hash code, and not serialized (Message already holds the values in the default text), so existing errors, comparisons and JSON payloads are unchanged.
+
 PRE-FIRST-PUBLISH HARDENING PASS. Six defects were found by executing the compiled assembly rather than reading it, and fixed while this package was still unpublished and therefore still free to change. Four of them contradicted the affected type's own XML documentation, which has been corrected in each case.
 
 BEHAVIOUR CHANGES (all of them turn a silent wrong answer into a loud one; none affects a correctly-written call site):

@@ -61,6 +61,14 @@ namespace SharedKernel.Primitives.Errors;
 /// response-shaped extras.
 /// </para>
 /// <para>
+/// <b><see cref="MessageArguments"/> is not a metadata bag either.</b> It holds only the values
+/// for the placeholders in a translated message (<c>"Order {orderId} was not found."</c>), so the
+/// HTTP boundary can show the message in the caller's language with the same values. It is left
+/// out of equality and out of JSON: <see cref="Message"/> already contains the values, formatted
+/// into the default text, so an error that crosses a process boundary loses only the ability to
+/// be translated again, never its meaning.
+/// </para>
+/// <para>
 /// <b><see cref="Details"/> is not a metadata bag.</b> It is a typed list of child errors, filled
 /// only by <see cref="Validation(IReadOnlyList{Error})"/>, so a single failed <c>Result</c> can
 /// report every invalid field at once. It takes part in equality element by element.
@@ -150,7 +158,45 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     private readonly IReadOnlyList<Error> _details = [];
 
     /// <summary>
+    /// Gets the values for the named placeholders in this error's message, keyed by placeholder
+    /// name. Empty unless the error was created from a message definition that takes arguments.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Filled by <c>SharedKernel.Localization</c>'s <c>LocalizedMessage</c> definitions, which
+    /// also format the same values into <see cref="Message"/> using the invariant culture. The
+    /// HTTP boundary uses them to fill the placeholders of a translation, for example
+    /// <c>{orderId}</c> in <c>"{orderId} numaralı sipariş bulunamadı."</c>.
+    /// </para>
+    /// <para>
+    /// Not part of equality or the hash code, and not serialized: the values are ordinary .NET
+    /// objects that do not survive JSON with their types intact. The dictionary is copied on
+    /// assignment, so the error stays immutable, and keys are compared ordinally. Assigning
+    /// <see langword="null"/> gives an empty dictionary.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, object?> MessageArguments
+    {
+        get => _messageArguments;
+        init => _messageArguments = value is null || value.Count == 0
+            ? NoMessageArguments.Instance
+            : new Dictionary<string, object?>(value, StringComparer.Ordinal).AsReadOnly();
+    }
+
+    private readonly IReadOnlyDictionary<string, object?> _messageArguments = NoMessageArguments.Instance;
+
+    // A nested holder, not a static field on Error: static fields initialize in declaration order,
+    // and None (declared first) is constructed before any later field exists, so it would read null.
+    private static class NoMessageArguments
+    {
+        internal static readonly IReadOnlyDictionary<string, object?> Instance =
+            new Dictionary<string, object?>(StringComparer.Ordinal).AsReadOnly();
+    }
+
+    /// <summary>
     /// Compares code, message, type, and <see cref="Details"/> element by element.
+    /// <see cref="MessageArguments"/> is not compared.
     /// </summary>
     /// <param name="other">The error to compare with.</param>
     /// <returns><see langword="true"/> when both errors have equal values.</returns>

@@ -141,6 +141,13 @@ return Result<OrderDraft>.Failure(Error.Validation(validation.Errors));
 list crosses a process boundary intact: `14.Presentation` maps it to the ProblemDetails `errors` map, and
 `11.Communication.Rest` rebuilds it on the calling side.
 
+**`MessageArguments` holds the values for a translated message.** An error built from a
+`SharedKernel.Localization` definition (`OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId)`) carries
+`{ "orderId": … }` here, and `14.Presentation` fills a translation such as `"{orderId} numaralı sipariş bulunamadı."`
+with it. It is empty for every factory in this package, is not part of equality, and is not serialized:
+`Message` already contains the values in the default text, so an error that crosses a process boundary keeps its
+meaning and only loses the ability to be translated again.
+
 ### The three result interfaces
 
 These exist so a MediatR pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**
@@ -298,7 +305,7 @@ Each of these was found by executing the assembly, and each is pinned by a test.
 - **Railway combinators** (`Map`, `Bind`, `Ensure`, `Tap`, `TapError`, `Match`, `GetValueOrThrow`) for both `Result<T>` and `Result`, with `Task` and `ValueTask` overloads → `SharedKernel.Core`, alongside `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
 - **Guard clauses** (`Guard.Against.*`, `Guard.Throw.*`, `Guard.Collect`) → `SharedKernel.Core`, in the `SharedKernel.Guards` namespace.
 - **Exceptions** (`DomainException`, `ValidationException`, `NotFoundException`, `ConflictException`, `UnauthorizedException`, `ForbiddenException`) and `error.ToException()`, which picks the one matching an `ErrorType` → `SharedKernel.Core`. Primitives deliberately contains no exception types: it models failures as values.
-- **A metadata bag on `Error`** — evaluated and declined. It breaks the type's value-equality contract and raises AOT and cross-process-serialization questions. Both motivating needs (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead.
+- **A metadata bag on `Error`** — evaluated and declined. It breaks the type's value-equality contract and raises AOT and cross-process-serialization questions. Both motivating needs (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead. `MessageArguments` is not such a bag: it holds only placeholder values for translation, stays out of equality and JSON, and so answers neither objection.
 - **A DI extension for `IIdGenerator`** — one implementation, one line to register.
 - **A local-time member on `IClock`** — presentation concern.
 
