@@ -92,7 +92,7 @@ Format when blocked:
 | 02 | [Caching](02.Caching/state-map.md) | Published | `●` | Phase 45 (WO-065, P-436, RedisTransportHardening) complete — the last `02.Caching` phase key, closing WO-065 end to end. `AddRedisConnection` (`SharedKernel.Caching.Redis.Core`) now registers `RedisConnectionOptions` via `AddOptions<T>().Configure(...).ValidateDataAnnotations().ValidateOnStart()`, genuinely fail-fast at host startup instead of decorative; `RedisConnectionOptions` gained `Ssl`/`ClientCertificates`/`CertificateValidation`, composed into `ConfigurationOptions.SslClientAuthenticationOptions` (the real StackExchange.Redis 2.13.1 TLS surface — the legacy `CertificateSelection`/`CertificateValidation` properties named in the original plan do not exist in this pinned version, corrected during implementation); a one-time `Warning` (`LoggingEventIdRanges.Caching + 102`) fires from the `IConnectionMultiplexer` singleton factory for a non-loopback endpoint configured without TLS, never a thrown exception. All defaults reproduce pre-Phase-45 plaintext behavior exactly — zero production call-site changes required in `.Redis`/`.DistributedLocking`/`.HashStore`/`.PubSub`. New `RedisConnectionValidationTests.cs`/`RedisTlsConfigurationTests.cs` (23 tests); full regression 55/55 `SharedKernel.Caching.Redis.Core.Tests`. `02.Caching/CLAUDE.md` updated. **Every phase key in `02.Caching/state-map.md` is now `●` — the domain is fully complete.** | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published (WO-066/P-439, P-12) closed — `dotnet test` (Release): 423/423 green. `dotnet pack` succeeded with no `<Version>`/`<PackageVersion>`/`<PackageReleaseNotes>` element added, per the post-2026-08-25 MinVer versioning switch. Extracted `.nuspec`: dependencies are exactly `SharedKernel.Core` + `SharedKernel.Guards` + `SharedKernel.Primitives` — zero external NuGet, zero new project references. Reflection against the built assembly confirmed `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` are all publicly exported; the cross-currency-arithmetic and allocation minor-unit-conservation regression checks are both present and passing. All 6 phases of 03.Domain (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-066's `03.Domain` work closed end to end. `samples/OrderApi/Domain/Money.cs`'s evaluation-for-replacement remains flagged as outside this domain's jurisdiction, for `arch-lead`/root routing. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | P-543 complete: published as `1.0.0-alpha.0.935` from `9f3ee5f`; CloudEvents `EventEnvelope<TEvent>` over `IIntegrationEvent` with a required `[IntegrationEvent]` name and version; `Envelope`, `ResultEnvelopeExtensions`, the serializer context and the `03.Domain` reference removed; `long` totals; `PageRequest`, `CursorPageRequest` and `PageCursor` added; public API tracked; 105 tests; the earlier `ContractsPurityRules` real-assembly gap is fixed. `ConsumerVerify` 5/5 against the feed. | — |
-| 05 | [Application](05.Application/state-map.md) | Pre-publish | `◐` | P-544 in progress: `SharedKernel.Application` and `.Behaviors` redesigned before first publish (fixed pipeline with `PipelineStage` extensibility, `IRequestContext`, fail-closed authorization, validation as `Error.Validation(errors)`, success-only commit, nested-command guard with `ICommandScope` post-commit callbacks, `IRequestIdempotencyStore` with fingerprint and reservation token); fire-and-forget, resilience, streaming behaviors, parallel domain events and dual approval removed; caching behaviors split into `.Behaviors.Caching`. Solution builds with 0 errors; affected suites green. | Publish Primitives, Core, Domain, Application, Behaviors, Analyzers and ArchitectureTests; `.Behaviors.Caching` waits for the 02.Caching pass (L2 cannot deserialize `Result<T>`). |
+| 05 | [Application](05.Application/state-map.md) | Pre-publish | `◐` | P-544 in progress: `SharedKernel.Application` and `.Behaviors` redesigned before first publish (fixed pipeline with `PipelineStage` extensibility, `IRequestContext`, fail-closed authorization, validation as `Error.Validation(errors)`, success-only commit, nested-command guard with `ICommandScope` post-commit callbacks, `IRequestIdempotencyStore` with fingerprint and reservation token); fire-and-forget, resilience, streaming behaviors, parallel domain events and dual approval removed; caching behaviors split into `.Behaviors.Caching`. Solution builds with 0 errors; affected suites green. | P-556 complete 2026-09-18 — `.Behaviors.Caching` had its own pre-publish pass (key namespacing by query type and scope, fail-closed `CacheScope`, `CacheKeyRef` invalidation targets, uncancellable post-commit eviction, EventIds 5200-5299). The 02.Caching blocker is gone: P-549 closed the `Result<T>` L2 gap and P-547/548/550 published the provider packages. All three `05.Application` packages are now publish-ready; only the feed push remains. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | **`SK.06.Tests` now closed 138/138** — `16.Testing`'s P-450 shipped, clearing the blocker; re-verified in the REAL `SharedKernel.Persistence.EfCore.Tests` project (not a standalone harness): 0 warnings/0 errors build, 415/415 tests green, `dotnet pack` clean. T-125/T-128 were already correctly covered; T-126/T-127 had genuine test-quality gaps (a loose `Throw<Exception>()` assertion where the task requires the concrete `CryptographicException`; zero coverage of `NullEncryptionKeyProvider`'s async contract) — both fixed this session. **All six `06.Persistence` phase keys (Design/Scaffold/Core/Tests/Docs/Published) are now `●`** — this domain's entire tracked scope is complete end to end. Root Phase Backlog P-448, P-440, P-456, P-457 all closed this session (each independently re-verified against its own acceptance criteria, not closed by association). | Nothing further is queued for `06.Persistence`. |
 | 07 | [Messaging](07.Messaging/state-map.md) | PackagingRecipes | `●` | **SK.07.PackagingRecipes complete (8/8, P-349, WO-054)** — the final WO-054 phase, zero production-code behavior change. Found the phase's own premise stale in two ways during implementation: neither package's `README.md` actually existed on disk (only an empty domain-root file did — both were authored from scratch), and the tenant-context recipe's "from-scratch `TenantHeaderPropagator`" example to replace had already been replaced when `SK.07.AmbientPropagation` (P-345) shipped. `<PackageReadmeFile>`/`<None Include>` wired into both `.csproj` files; a complete `RedisIdempotencyStore : IIdempotencyStore` recipe (`IDistributedCache`-backed, `IdempotencyOptions.ExpiryWindow`-driven) added to both the new `Abstractions/README.md` and `CLAUDE.md`'s DI Registration section; the ambient-correlation/tenant-context recipe added to the new `MassTransit/README.md`. `dotnet pack` for both packages confirmed zero `NU5039`/`NU5128` warnings and `README.md` embedded in each `.nupkg`. 54/54 + 177/177 (excl. Integration) tests re-confirmed green, zero regressions. **All 99/99 WO-054 tasks across all 10 `07.Messaging` phases (P-340–P-349) are now complete — this domain's entire WO-054 scope is done.** | Nothing further is queued for `07.Messaging`. `13.ServiceDefaults`'s own WO-054/P-351 work (consuming `IMessageBusProbe`, already unblocked since P-347 shipped) remains that domain's own open item. |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
@@ -3200,10 +3200,113 @@ package itself. `16.Testing`'s `FakeFeatureManager` became `FakeFeatureClient`. 
 4.7.0 and `OpenFeature`/`OpenFeature.Hosting` 2.14.1 join `Directory.Packages.props`. No published package is affected:
 FeatureManagement was never published.
 
+### P-556 — Application: `SharedKernel.Application.Behaviors.Caching` Pre-First-Publish Pass (BREAKING API)
+
+**Status:** `✓` Shipped — Behaviors.Caching 51/51, Behaviors 70/70, Application 50/50, Analyzers 353/353,
+ArchitectureTests 324/324, Caching.FusionCache 270/270, Testing.SelfTests 1394/1417 (the 23 failures are
+Testcontainers fixtures needing a Docker daemon), full solution 0 errors, `dotnet pack` clean with the README
+embedded. Not yet published.
+
+**Work Order:** — (user-directed pre-publish pass, recorded here so the P-ID cannot be reallocated)
+
+**Domains:** `05.Application` (the package, plus an additive `ApplicationBehaviorsBuilder.Services`);
+`00.Governance` (SK0041, the P-489 ordering-lock test); `02.Caching` (a corrected contract doc); `16.Testing`
+(the shared cache fake).
+
+#### What is needed
+
+The last unpublished `05.Application` package, and the only phase key still `○` in that domain. P-544 deferred
+it until `02.Caching`'s own passes landed; P-549 closed the `Result<T>` L2-serializer gap it was waiting on. It
+had never had a pre-publish pass of its own.
+
+#### Why this is needed
+
+A review found, and verified by running the code where noted:
+
+- **Keys were caller-supplied strings passed verbatim to `ICacheService`.** Nothing namespaced them, so two
+  query types choosing the same `CacheKey` shared an entry. Entries hold the bare `TValue` as JSON with no type
+  discriminator, so the collision does not throw: `System.Text.Json` deserializes one query's payload into the
+  other's type on a best-effort basis and returns a partially-populated object. `ICacheKeyProvider`, which
+  exists to prevent exactly this, was never used.
+- **Tenant scoping degraded silently.** A request whose tenant did not resolve fell back to the un-prefixed
+  key, so every such request, across every tenant, shared one entry. That was the documented behaviour, not a
+  defect in the implementation of it.
+- **There was no user scoping and no guard against needing it.** A query whose result varies by caller served
+  one user's data to another; the release notes said "it is not user scoping" and stopped there.
+- **`CacheScope.Key` built keys with the tenant *tag* builder**, `CacheKeyFormat.BuildTenantTag`, so keys and
+  tags shared a format and a key's shape changed with ambient tenant state.
+- **Post-commit eviction ran on the request's cancellation token.** A client disconnecting after the commit
+  cancelled every `RemoveAsync`, leaving the cache serving a superseded value for the entry's whole lifetime
+  and surfacing only as a generic "callback threw" at EventId 5110.
+- **One failing eviction abandoned the rest.** The loop had no per-key isolation, so key 1 throwing meant keys
+  2..N and every tag were never evicted.
+- **The package emitted nothing.** No `[LoggerMessage]`, no `Meter`, no `Activity` tag. The cache layer's own
+  instruments are keyed by key prefix, so "what is the hit ratio for `GetOrderQuery`" — the one question this
+  package exists to make answerable — could not be answered.
+- **The failure path depended on a contract the abstraction documented backwards.** `CachedQueryValue` carries
+  a failed `Result` out of the cache factory in a local captured by the factory closure, which is only correct
+  if a skipped factory value is *not* handed to concurrent waiters. `CacheFactoryContext`'s XML doc stated the
+  opposite: that the factory value always reaches every concurrent caller. Measured against a real FusionCache:
+  on the success path the factory runs **once** and the waiter is served the stored value; on the skip path it
+  runs **twice** and each caller gets its own failure. The code was right and the written contract was wrong —
+  but nothing pinned it, and `16.Testing`'s `FakeCacheService` ran the factory on every concurrent miss, so
+  neither path was distinguishable in any test anywhere on the platform.
+
+#### What changed
+
+- **`CacheScope` (`Tenant` = 0, `User`, `Global`)**, declared per query and per invalidating command. Keys are
+  built through `ITenantCacheKeyProvider` as `{service}:[@{tenant}:]{QueryType}:{CacheKey}[:u:{userId}]`. A
+  scope whose identity is absent **fails closed**: the cache is skipped, the handler runs, a Warning is logged.
+  `Tenant` is the zero value, so `default(CacheScope)` and both interface defaults land on the safe option.
+- **`IInvalidatesCache.CacheKeysToInvalidate` is now `IReadOnlyCollection<CacheKeyRef>`**, built with
+  `CacheKeyRef.For<TQuery>(key)`. A command cannot name a whole key any more, because keys are namespaced by
+  query type — so it names the query, and a renamed query becomes a compile error at the command rather than a
+  silently-missed eviction.
+- **`ICacheableQuery.RefreshCache`** (ignore the entry, run the handler, overwrite; a failed refresh leaves the
+  existing entry alone, so a transient fault does not become a miss storm) and
+  **`ICacheableQuery<TValue>.ShouldCache(TValue)`** (decline to cache a particular value, leaving any existing
+  entry untouched).
+- **Eviction runs with `CancellationToken.None`** and isolates each key and tag under its own try/catch, logged
+  at Error.
+- **Telemetry:** EventIds 5200-5299 reserved as this package's sub-block; two counters plus two `Activity` tags
+  recorded per query/command type under the **existing** `"SharedKernel.Application"` meter, so
+  `13.ServiceDefaults`' `WithApplicationTelemetry()` exports them with no change to that package. No tenant id,
+  user id, cache key or cached value is ever a log or metric parameter.
+- **Both behaviors became `internal`**, matching every behavior in `.Behaviors`; the package's contract is now
+  the marker interfaces, `CacheScope`, `CacheKeyRef` and `AddCachingBehaviors()`. The test project reaches them
+  through `InternalsVisibleTo`, the repo's dominant convention (43 projects).
+- **`ApplicationBehaviorsBuilder.Services`** added (additive, in `.Behaviors`) so an extension package
+  registering a behavior can also register that behavior's own dependencies — this package is the first to need
+  it, for its metrics singleton.
+- **`AddCachingBehaviors()` now also requires `ITenantCacheKeyProvider`**, named by the same `Build()` guard.
+
+#### Consequences in other domains
+
+- **`00.Governance`:** new **SK0041** (`DuplicateCacheableQueryName`) — two cacheable queries sharing a simple
+  type name collapse their key namespaces; release-tracking entry, README section and 8 tests added. The P-489
+  cache-ordering lock test was migrated to `CacheKeyRef` and a registered key provider; unchanged in intent.
+- **`02.Caching`:** `CacheFactoryContext`'s XML doc corrected to state the real skip semantics, and to record
+  that an `ICacheService` implementation must never hand a skipped value to a waiting caller.
+- **`16.Testing`:** `FakeCacheService` given a per-key gate with a post-gate re-check, so it reproduces the real
+  stampede semantics. This affects every consumer's tests, not only this package's.
+
+#### Rejected during the pass
+
+Extending **SK0040** to `IInvalidatesCache` was considered and declined. SK0040 exists for markers that
+short-circuit through `FailureResponse.Create<TResponse>`; `IInvalidatesCache` never calls it, and a non-`Result`
+command that returns without throwing genuinely has succeeded, so "invalidate on return" is correct for it.
+
+#### Known, unrelated, not fixed
+
+`SharedKernel.ServiceDefaults.Configuration.KeyVault.Tests` and `.Cryptography.KeyVault.Tests` fail with MSB3030
+(`obj\Debug\net10.0\*.Tests.dll` not produced). Reproduced on a clean `obj`, in a domain this pass never
+touched, with no reference to any package it changed. Pre-existing; needs its own phase.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} ({domain(s) affected}) — {trigger}`.
 
+- [2026-09-18] P-556 shipped — `SharedKernel.Application.Behaviors.Caching` pre-first-publish pass: per-query-type and per-scope key namespacing through `ICacheKeyProvider`, fail-closed `CacheScope` (Tenant/User/Global), `CacheKeyRef.For<TQuery>` invalidation targets, `RefreshCache`/`ShouldCache`, uncancellable and per-key-isolated post-commit eviction, EventIds 5200-5299 with hit/miss counters and Activity tags, both behaviors made internal; new SK0041, corrected `CacheFactoryContext` contract doc, stampede-faithful `16.Testing` cache fake; not yet published (05.Application, 00.Governance, 02.Caching, 16.Testing) — user-directed
 - [2026-05-14] Root state-map template created — `/sync-brain`
 - [2026-05-14] P-001, P-002 written for WO-001 — 01.Core SharedKernel.Primitives and SharedKernel.Core design — arch-lead
 - [2026-05-14] 01.Core → Design (◐) — Define Result/Error/ValidationResult/IClock/SmartEnum and railway extensions (state-map-phase)

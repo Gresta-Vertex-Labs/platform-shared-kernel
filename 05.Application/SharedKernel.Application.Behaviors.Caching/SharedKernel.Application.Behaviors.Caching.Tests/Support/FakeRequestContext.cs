@@ -2,11 +2,11 @@ using SharedKernel.Application.Context;
 
 namespace SharedKernel.Application.Behaviors.Caching.Tests.Support;
 
-/// <summary>A minimal <see cref="IRequestContext"/> double exposing only <see cref="TenantId"/>.</summary>
-internal sealed class FakeRequestContext(Guid? tenantId) : IRequestContext
+/// <summary>A minimal <see cref="IRequestContext"/> double exposing tenant and user identity.</summary>
+internal sealed class FakeRequestContext(Guid? tenantId = null, string? userId = "user-1") : IRequestContext
 {
-    public bool IsAuthenticated => true;
-    public string? UserId => "user-1";
+    public bool IsAuthenticated => userId is not null;
+    public string? UserId => userId;
     public Guid? TenantId => tenantId;
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)

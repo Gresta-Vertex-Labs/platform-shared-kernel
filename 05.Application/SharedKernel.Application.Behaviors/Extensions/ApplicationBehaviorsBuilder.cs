@@ -62,6 +62,19 @@ public sealed class ApplicationBehaviorsBuilder
     }
 
     /// <summary>
+    /// Gets the underlying <see cref="IServiceCollection"/>, so an extension package registering a
+    /// behavior through <see cref="AddBehavior"/> can also register that behavior's own dependencies.
+    /// </summary>
+    /// <remarks>
+    /// The built-in behaviors register their dependencies from inside <see cref="Build"/> because
+    /// they live in this assembly. A behavior in another package -- <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// is the first -- has no other way to register the metrics or options type it needs. Registering
+    /// the behavior itself still goes through <see cref="AddBehavior"/>, so it lands in its canonical
+    /// stage rather than wherever the call happened to be made.
+    /// </remarks>
+    public IServiceCollection Services => _services;
+
+    /// <summary>
     /// Opts in to the zero-prerequisite onboarding preset: <c>TracingBehavior</c>,
     /// <c>LoggingBehavior</c>, <c>MetricsBehavior</c>, and <c>ValidationBehavior</c>.
     /// </summary>

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Behaviors.Caching.Tests.Support;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Primitives.Errors;
@@ -14,8 +15,8 @@ using ZiggyCreatures.Caching.Fusion;
 namespace SharedKernel.Application.Behaviors.Caching.Tests.Caching;
 
 /// <summary>
-/// Runs <see cref="CachingBehavior{TRequest,TResponse}"/> against two FusionCache instances sharing one
-/// distributed cache, so a hit on the second instance has been serialized and read back.
+/// Runs the caching behaviour against two FusionCache instances sharing one distributed cache, so a
+/// hit on the second instance has been serialized and read back.
 /// </summary>
 public sealed class CachingBehaviorDistributedCacheTests
 {
@@ -24,7 +25,14 @@ public sealed class CachingBehaviorDistributedCacheTests
     private sealed record WidgetQuery(string Id) : ICacheableQuery<WidgetDto>
     {
         public CachePolicy CachePolicy => CachePolicy.Default;
-        public string CacheKey => $"widget:{Id}";
+        public string CacheKey => Id;
+        public CacheScope Scope => CacheScope.Global;
+    }
+
+    private sealed record TenantWidgetQuery(string Id) : ICacheableQuery<WidgetDto>
+    {
+        public CachePolicy CachePolicy => CachePolicy.Default;
+        public string CacheKey => Id;
     }
 
     [Fact]
@@ -76,11 +84,56 @@ public sealed class CachingBehaviorDistributedCacheTests
         recovered.Value.Id.Should().Be("2");
     }
 
+    [Fact]
+    public async Task Handle_TenantScoped_SurvivesSerializationAndStaysPerTenant()
+    {
+        var distributed = NewDistributedCache();
+        await using var writer = BuildProvider(distributed);
+        await using var reader = BuildProvider(distributed);
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var widget = new WidgetDto("3", 7, ["blue"]);
+
+        await TenantBehavior(writer, tenantA).Handle(
+            new TenantWidgetQuery("3"), () => Task.FromResult(Result<WidgetDto>.Success(widget)), CancellationToken.None);
+
+        var sameTenant = await TenantBehavior(reader, tenantA).Handle(
+            new TenantWidgetQuery("3"),
+            () => throw new InvalidOperationException("The handler must not run on a distributed cache hit."),
+            CancellationToken.None);
+
+        var otherTenantRan = false;
+        var otherTenant = await TenantBehavior(reader, tenantB).Handle(
+            new TenantWidgetQuery("3"),
+            () =>
+            {
+                otherTenantRan = true;
+                return Task.FromResult(Result<WidgetDto>.Success(new WidgetDto("3", 0, [])));
+            },
+            CancellationToken.None);
+
+        sameTenant.Value.Should().BeEquivalentTo(widget);
+        otherTenantRan.Should().BeTrue("a tenant must not read another tenant's entry out of the shared distributed cache");
+        otherTenant.Value.Count.Should().Be(0);
+    }
+
     private static MemoryDistributedCache NewDistributedCache() =>
         new(Options.Create(new MemoryDistributedCacheOptions()));
 
     private static CachingBehavior<WidgetQuery, Result<WidgetDto>> Behavior(IServiceProvider provider) =>
-        new(provider.GetRequiredService<ICacheService>());
+        new(
+            provider.GetRequiredService<ICacheService>(),
+            provider.GetRequiredService<ITenantCacheKeyProvider>(),
+            TestPipeline.Metrics(),
+            NullLogger<CachingBehavior<WidgetQuery, Result<WidgetDto>>>.Instance);
+
+    private static CachingBehavior<TenantWidgetQuery, Result<WidgetDto>> TenantBehavior(IServiceProvider provider, Guid tenantId) =>
+        new(
+            provider.GetRequiredService<ICacheService>(),
+            provider.GetRequiredService<ITenantCacheKeyProvider>(),
+            TestPipeline.Metrics(),
+            NullLogger<CachingBehavior<TenantWidgetQuery, Result<WidgetDto>>>.Instance,
+            new FakeRequestContext(tenantId));
 
     private static ServiceProvider BuildProvider(IDistributedCache distributed)
     {

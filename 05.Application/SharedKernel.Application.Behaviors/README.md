@@ -97,7 +97,7 @@ Five stages, always in this order, regardless of the order you called the `Add�
 | 3 | Observability | `MetricsBehavior` | every request | `AddMetricsBehavior()` |
 | 4 | Authorization | `AuthorizationBehavior` | requests implementing `IAuthorizeRequest` | `AddAuthorizationBehavior()` |
 | 5 | Validation | `ValidationBehavior` | every request with a registered validator | `AddValidationBehavior()` |
-| 6 | Query | *(yours, or `CachingBehavior`)* | queries | `AddBehavior(…, PipelineStage.Query)` |
+| 6 | Query | *(yours, or the caching package's)* | queries | `AddBehavior(…, PipelineStage.Query)` |
 | 7 | Command | command scope | commands | automatic when any command behavior is on |
 | 8 | Command | `IdempotencyBehavior` | commands implementing `IIdempotentRequest` | `AddIdempotencyBehavior()` |
 | 9 | Command | `TransactionBehavior` | commands | `AddTransactionBehavior()` |

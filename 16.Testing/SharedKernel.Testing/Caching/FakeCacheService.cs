@@ -15,13 +15,24 @@ namespace SharedKernel.Testing.Caching;
 /// </para>
 /// <para>
 /// What is faithful: a hit versus a miss (including a cached <see langword="null"/>), tags and
-/// tag removal, and the factory's <see cref="CacheFactoryContext.SkipCaching"/> decision. Unlike
-/// the real cache, concurrent misses for one key may each run the factory.
+/// tag removal, the factory's <see cref="CacheFactoryContext.SkipCaching"/> decision, and stampede
+/// protection.
+/// </para>
+/// <para>
+/// Stampede protection is reproduced rather than approximated, because the difference is observable
+/// and consumers depend on it: concurrent misses for one key serialise on a per-key gate, and each
+/// waiter re-checks the entry after acquiring it. A waiter is therefore served the stored value when
+/// the first factory run wrote one, and runs the factory itself when that run called
+/// <see cref="CacheFactoryContext.SkipCaching"/> and stored nothing -- the same split the real cache
+/// produces, and the one <c>SharedKernel.Application.Behaviors.Caching</c> relies on to carry a
+/// failed result out of its factory. A fake that ran the factory on every concurrent miss makes both
+/// paths look identical and cannot fail on a regression in either.
 /// </para>
 /// </remarks>
 public sealed class FakeCacheService : ICacheService
 {
     private readonly ConcurrentDictionary<string, Entry> _store = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _factoryGates = new(StringComparer.Ordinal);
 
     /// <summary>Gets the number of entries currently held.</summary>
     public int Count => _store.Count;
@@ -80,14 +91,28 @@ public sealed class FakeCacheService : ICacheService
         if (Lookup<T>(key).TryGetValue(out var cached))
             return cached;
 
-        Interlocked.Increment(ref _factoryInvocationCount);
-        var context = new CacheFactoryContext(key, policy);
-        var value = await factory(context, ct).ConfigureAwait(false);
+        var gate = _factoryGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // The re-check after the gate is what makes a concurrent caller a hit when the first
+            // factory run stored a value, and a second factory run when it skipped caching.
+            if (Lookup<T>(key).TryGetValue(out var afterGate))
+                return afterGate;
 
-        if (!context.IsCachingSkipped)
-            _store[key] = new Entry(value, policy.Tags);
+            Interlocked.Increment(ref _factoryInvocationCount);
+            var context = new CacheFactoryContext(key, policy);
+            var value = await factory(context, ct).ConfigureAwait(false);
 
-        return value;
+            if (!context.IsCachingSkipped)
+                _store[key] = new Entry(value, policy.Tags);
+
+            return value;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <inheritdoc />

@@ -123,3 +123,4 @@ static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.ope
 static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.operator ==(SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult left, SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult right) -> bool
 ~override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.Equals(object obj) -> bool
 ~override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.ToString() -> string
+SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

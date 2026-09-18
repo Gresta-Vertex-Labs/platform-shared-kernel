@@ -6,8 +6,18 @@ namespace SharedKernel.Caching.Abstractions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The value the factory returns is always handed to the caller and to every concurrent caller
-/// waiting on the same key. The context only controls what is written to the cache.
+/// The value the factory returns is handed to the caller. It also reaches every concurrent caller
+/// waiting on the same key -- but only when it was written: a factory that calls
+/// <see cref="SkipCaching"/> stores nothing, so a waiting caller finds no entry and runs the
+/// factory itself.
+/// </para>
+/// <para>
+/// That distinction is load-bearing, not incidental. <c>SharedKernel.Application.Behaviors.Caching</c>
+/// carries a failed <c>Result</c> out of its factory in a local captured by the factory closure,
+/// which is only correct because a skipped value is not broadcast to waiters; were it broadcast,
+/// every waiting caller would come out holding a default value with no failure recorded in its own
+/// closure. An <see cref="ICacheService"/> implementation must therefore never hand a skipped value
+/// to a waiting caller.
 /// </para>
 /// <para>
 /// Typical use: a factory that returns a failed <c>Result</c> calls <see cref="SkipCaching"/> so

@@ -9,6 +9,7 @@ SK0037 | Design | Warning | ValueObjectMissingEnsureValid
 SK0038 | Design | Warning | IntegrationEventMissingAttribute
 SK0039 | Design | Warning | InvalidIntegrationEventAttribute
 SK0040 | Design | Warning | PipelineMarkerResponseShapeMismatch
+SK0041 | Design | Warning | DuplicateCacheableQueryName
 
 ### Removed Rules
 

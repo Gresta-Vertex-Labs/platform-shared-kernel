@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Behaviors.Caching;
 using SharedKernel.Application.Behaviors.Caching.Tests.Support;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
@@ -10,28 +11,56 @@ namespace SharedKernel.Application.Behaviors.Caching.Tests.CacheInvalidation;
 
 public sealed class CacheInvalidationBehaviorTests
 {
+    private sealed record WidgetQuery : ICacheableQuery<string>
+    {
+        public CachePolicy CachePolicy => CachePolicy.Default.WithTags("widgets");
+        public string CacheKey => "1";
+    }
+
+    private sealed record GlobalWidgetQuery : ICacheableQuery<string>
+    {
+        public CachePolicy CachePolicy => CachePolicy.Default.WithTags("widgets");
+        public string CacheKey => "1";
+        public CacheScope Scope => CacheScope.Global;
+    }
+
     private sealed record TestCommand : ICommand, IInvalidatesCache
     {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => ["widget:1"];
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<WidgetQuery>("1")];
         public IReadOnlyCollection<string> CacheTagsToInvalidate => ["widgets"];
+    }
+
+    private sealed record GlobalCommand : ICommand, IInvalidatesCache
+    {
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GlobalWidgetQuery>("1")];
+        public IReadOnlyCollection<string> CacheTagsToInvalidate => ["widgets"];
+        public CacheScope Scope => CacheScope.Global;
     }
 
     private sealed record KeyOnlyCommand : ICommand, IInvalidatesCache
     {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => ["widget:1"];
-        public IReadOnlyCollection<string> CacheTagsToInvalidate => [];
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<WidgetQuery>("1")];
     }
 
     private sealed record TagOnlyCommand : ICommand, IInvalidatesCache
     {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => [];
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [];
         public IReadOnlyCollection<string> CacheTagsToInvalidate => ["widgets"];
     }
 
-    private sealed record WidgetQuery : ICacheableQuery<string>
+    private sealed record MultiKeyCommand : ICommand, IInvalidatesCache
     {
-        public CachePolicy CachePolicy => CachePolicy.Default.WithTags("widgets");
-        public string CacheKey => "widget:1";
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate =>
+        [
+            CacheKeyRef.For<WidgetQuery>("1"),
+            CacheKeyRef.For<WidgetQuery>("2"),
+            CacheKeyRef.For<WidgetQuery>("3"),
+        ];
+    }
+
+    private sealed record DefaultRefCommand : ICommand, IInvalidatesCache
+    {
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [default];
     }
 
     [Fact]
@@ -39,7 +68,7 @@ public sealed class CacheInvalidationBehaviorTests
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope);
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(Guid.NewGuid()));
 
         var result = await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
@@ -54,13 +83,14 @@ public sealed class CacheInvalidationBehaviorTests
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope);
+        var tenant = Guid.NewGuid();
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(tenant));
         await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
         await scope.RunCallbacksAsync();
 
-        cache.RemoveCalls.Should().Equal("widget:1");
-        cache.RemoveByTagCalls.Should().Equal("widgets");
+        cache.RemoveCalls.Should().Equal(TestKeys.Tenant(tenant, nameof(WidgetQuery), "1"));
+        cache.RemoveByTagCalls.Should().Equal(TestKeys.TenantTag(tenant, "widgets"));
     }
 
     [Fact]
@@ -70,7 +100,7 @@ public sealed class CacheInvalidationBehaviorTests
         var scope = new FakeCommandScope();
         var tenant = Guid.NewGuid();
         await CacheWidgetAsync(cache, tenant, "cached");
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope, new FakeRequestContext(tenant));
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(tenant));
 
         await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Failure(Error.BusinessRule("rule", "denied"))), CancellationToken.None);
         await scope.RunCallbacksAsync();
@@ -86,7 +116,7 @@ public sealed class CacheInvalidationBehaviorTests
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope);
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(Guid.NewGuid()));
 
         var act = async () => await behavior.Handle(new TestCommand(), () => throw new InvalidOperationException("boom"), CancellationToken.None);
 
@@ -95,28 +125,13 @@ public sealed class CacheInvalidationBehaviorTests
     }
 
     [Fact]
-    public async Task Handle_TenantScoped_EvictsTenantScopedKeysAndTags()
-    {
-        var cache = new FakeCacheService();
-        var scope = new FakeCommandScope();
-        var tenant = Guid.NewGuid();
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope, new FakeRequestContext(tenant));
-
-        await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
-        await scope.RunCallbacksAsync();
-
-        cache.RemoveCalls.Should().Equal(CacheKeyFormat.BuildTenantTag(tenant.ToString("D"), "widget:1"));
-        cache.RemoveByTagCalls.Should().Equal(CacheKeyFormat.BuildTenantTag(tenant.ToString("D"), "widgets"));
-    }
-
-    [Fact]
-    public async Task KeyInvalidation_RemovesTheEntryCachingBehaviorWrote_OnlyAfterCommit()
+    public async Task KeyInvalidation_RemovesTheEntryTheCachingBehaviorWrote_OnlyAfterCommit()
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
         var tenant = Guid.NewGuid();
         await CacheWidgetAsync(cache, tenant, "stale");
-        var behavior = new CacheInvalidationBehavior<KeyOnlyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
+        var behavior = TestPipeline.Invalidation<KeyOnlyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
 
         await behavior.Handle(new KeyOnlyCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
         (await ReadWidgetAsync(cache, tenant)).Should().Be("stale", "nothing is evicted until the command scope completes");
@@ -127,13 +142,13 @@ public sealed class CacheInvalidationBehaviorTests
     }
 
     [Fact]
-    public async Task TagInvalidation_RemovesTheEntryCachingBehaviorWrote()
+    public async Task TagInvalidation_RemovesTheEntryTheCachingBehaviorWrote()
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
         var tenant = Guid.NewGuid();
         await CacheWidgetAsync(cache, tenant, "stale");
-        var behavior = new CacheInvalidationBehavior<TagOnlyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
+        var behavior = TestPipeline.Invalidation<TagOnlyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
 
         await behavior.Handle(new TagOnlyCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
         await scope.RunCallbacksAsync();
@@ -142,21 +157,24 @@ public sealed class CacheInvalidationBehaviorTests
     }
 
     [Fact]
-    public async Task Invalidation_WithoutTenant_RemovesTheGlobalEntryCachingBehaviorWrote()
+    public async Task GlobalScopedInvalidation_RemovesTheGlobalEntryTheCachingBehaviorWrote()
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
-        await CacheWidgetAsync(cache, tenant: null, "stale");
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope);
+        var caching = TestPipeline.Caching<GlobalWidgetQuery, Result<string>>(cache);
+        await caching.Handle(new GlobalWidgetQuery(), () => Task.FromResult(Result<string>.Success("stale")), CancellationToken.None);
 
-        await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
+        var behavior = TestPipeline.Invalidation<GlobalCommand, Result>(cache, scope);
+        await behavior.Handle(new GlobalCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
         await scope.RunCallbacksAsync();
 
-        (await ReadWidgetAsync(cache, tenant: null)).Should().Be("fresh");
+        var reread = await caching.Handle(
+            new GlobalWidgetQuery(), () => Task.FromResult(Result<string>.Success("fresh")), CancellationToken.None);
+        reread.Value.Should().Be("fresh");
     }
 
     [Fact]
-    public async Task Invalidation_ForOneTenant_LeavesOtherTenantsEntry()
+    public async Task Invalidation_ForOneTenant_LeavesAnotherTenantsEntry()
     {
         var cache = new FakeCacheService();
         var scope = new FakeCommandScope();
@@ -164,7 +182,7 @@ public sealed class CacheInvalidationBehaviorTests
         var tenantB = Guid.NewGuid();
         await CacheWidgetAsync(cache, tenantA, "a-stale");
         await CacheWidgetAsync(cache, tenantB, "b-cached");
-        var behavior = new CacheInvalidationBehavior<TestCommand, Result>(cache, scope, new FakeRequestContext(tenantA));
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(tenantA));
 
         await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
         await scope.RunCallbacksAsync();
@@ -173,16 +191,106 @@ public sealed class CacheInvalidationBehaviorTests
         (await ReadWidgetAsync(cache, tenantB)).Should().Be("b-cached");
     }
 
-    private static async Task CacheWidgetAsync(FakeCacheService cache, Guid? tenant, string value)
+    [Fact]
+    public async Task OnCompletedCallback_IsNotCancellableByTheRequestToken()
     {
-        var caching = new CachingBehavior<WidgetQuery, Result<string>>(cache, new FakeRequestContext(tenant));
+        // The write has already committed by the time the callback runs, so honouring a cancelled
+        // request token would abandon the eviction and leave the cache serving a superseded value.
+        var cache = new FakeCacheService();
+        var scope = new FakeCommandScope();
+        var tenant = Guid.NewGuid();
+        await CacheWidgetAsync(cache, tenant, "stale");
+        var behavior = TestPipeline.Invalidation<KeyOnlyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
+
+        await behavior.Handle(new KeyOnlyCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        await scope.RunCallbacksAsync(cancelled.Token);
+
+        cache.RemoveCalls.Should().Equal(TestKeys.Tenant(tenant, nameof(WidgetQuery), "1"));
+        (await ReadWidgetAsync(cache, tenant)).Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task OnCompletedCallback_OneFailingEviction_DoesNotAbandonTheRest()
+    {
+        var cache = new FakeCacheService();
+        var scope = new FakeCommandScope();
+        var tenant = Guid.NewGuid();
+        var failing = TestKeys.Tenant(tenant, nameof(WidgetQuery), "2");
+        cache.FailEvictionsFor(failing);
+        var behavior = TestPipeline.Invalidation<MultiKeyCommand, Result>(cache, scope, new FakeRequestContext(tenant));
+
+        await behavior.Handle(new MultiKeyCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
+        await scope.RunCallbacksAsync();
+
+        cache.RemoveCalls.Should().Equal(
+            TestKeys.Tenant(tenant, nameof(WidgetQuery), "1"),
+            failing,
+            TestKeys.Tenant(tenant, nameof(WidgetQuery), "3"));
+    }
+
+    [Fact]
+    public async Task Handle_TenantScopeWithNoResolvedTenant_EvictsNothing()
+    {
+        var cache = new FakeCacheService();
+        var scope = new FakeCommandScope();
+        var behavior = TestPipeline.Invalidation<TestCommand, Result>(cache, scope, new FakeRequestContext(tenantId: null));
+
+        await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
+        await scope.RunCallbacksAsync();
+
+        scope.Callbacks.Should().BeEmpty("with no scoped target there is nothing to defer");
+        cache.RemoveCalls.Should().BeEmpty();
+        cache.RemoveByTagCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Handle_DefaultCacheKeyRef_ThrowsBeforeTheHandlerRuns()
+    {
+        var cache = new FakeCacheService();
+        var scope = new FakeCommandScope();
+        var behavior = TestPipeline.Invalidation<DefaultRefCommand, Result>(cache, scope, new FakeRequestContext(Guid.NewGuid()));
+        var handlerRan = false;
+
+        var act = async () => await behavior.Handle(new DefaultRefCommand(), () =>
+        {
+            handlerRan = true;
+            return Task.FromResult(Result.Success());
+        }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*CacheKeyRef.For*");
+        handlerRan.Should().BeFalse("an invalid target must fail the command, not the post-commit callback");
+    }
+
+    [Fact]
+    public void CacheKeyRef_For_RejectsAnEmptyKey()
+    {
+        var act = () => CacheKeyRef.For<WidgetQuery>("  ");
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void CacheKeyRef_For_CapturesTheQueryType()
+    {
+        var reference = CacheKeyRef.For<WidgetQuery>("1");
+
+        reference.QueryType.Should().Be<WidgetQuery>();
+        reference.Key.Should().Be("1");
+    }
+
+    private static async Task CacheWidgetAsync(FakeCacheService cache, Guid tenant, string value)
+    {
+        var caching = TestPipeline.Caching<WidgetQuery, Result<string>>(cache, new FakeRequestContext(tenant));
         await caching.Handle(new WidgetQuery(), () => Task.FromResult(Result<string>.Success(value)), CancellationToken.None);
     }
 
-    // Reads through CachingBehavior; a miss runs the handler, which answers "fresh".
-    private static async Task<string> ReadWidgetAsync(FakeCacheService cache, Guid? tenant)
+    // Reads through the caching behaviour; a miss runs the handler, which answers "fresh".
+    private static async Task<string> ReadWidgetAsync(FakeCacheService cache, Guid tenant)
     {
-        var caching = new CachingBehavior<WidgetQuery, Result<string>>(cache, new FakeRequestContext(tenant));
+        var caching = TestPipeline.Caching<WidgetQuery, Result<string>>(cache, new FakeRequestContext(tenant));
         var result = await caching.Handle(new WidgetQuery(), () => Task.FromResult(Result<string>.Success("fresh")), CancellationToken.None);
         return result.Value;
     }

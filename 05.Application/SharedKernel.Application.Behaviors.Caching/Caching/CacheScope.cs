@@ -1,37 +1,45 @@
-using SharedKernel.Caching.Abstractions;
-
 namespace SharedKernel.Application.Behaviors.Caching;
 
 /// <summary>
-/// The tenant scoping shared by <see cref="CachingBehavior{TRequest,TResponse}"/> and
-/// <c>CacheInvalidationBehavior</c>, so a key or tag written by one is exactly what the other removes.
+/// The identity a cache entry is partitioned by, declared per query and per invalidating command.
 /// </summary>
-internal static class CacheScope
+/// <remarks>
+/// <para>
+/// <see cref="Tenant"/> is deliberately the zero value, so <c>default(CacheScope)</c> and the
+/// interface defaults on <see cref="ICacheableQuery"/>/<c>IInvalidatesCache</c> all land on the
+/// fail-closed option. A scope whose identity is absent at request time — <see cref="Tenant"/> with
+/// no resolved tenant, <see cref="User"/> with no authenticated user — never silently degrades to a
+/// wider scope: the entry is not read and not written, the handler runs, and the behavior logs it.
+/// Widening is always an explicit declaration of <see cref="Global"/>, never an accident of a failed
+/// resolution.
+/// </para>
+/// <para>
+/// Scope is part of the key, so a query and the command that invalidates it must declare the same
+/// scope or the eviction targets a key the query never wrote.
+/// </para>
+/// </remarks>
+public enum CacheScope
 {
-    // A tenant-scoped key uses the tenant tag format, @{tenant}:{key}, with both parts escaped.
-    internal static string Key(Guid? tenantId, string key)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+    /// <summary>
+    /// One entry per tenant. The key carries the tenant in <see cref="SharedKernel.Caching.Abstractions.CacheKeyFormat"/>'s
+    /// tenant form, so a query can neither read nor invalidate another tenant's entry, and
+    /// <c>ITenantCacheService.RemoveTenantAsync</c> removes the tenant's query results with the rest
+    /// of its entries. The default, and the safe choice for anything a multi-tenant service caches.
+    /// </summary>
+    Tenant = 0,
 
-        if (tenantId is { } tenant)
-            return CacheKeyFormat.BuildTenantTag(tenant.ToString("D"), key);
+    /// <summary>
+    /// One entry per caller. Use it when the value depends on who is asking — anything filtered by
+    /// the caller's permissions, ownership, or preferences. The tenant is included as well when one
+    /// is resolved. A cached value that varies by caller under <see cref="Tenant"/> scope serves one
+    /// user's data to another; that is what this value exists to prevent.
+    /// </summary>
+    User = 1,
 
-        if (key[0] == CacheKeyFormat.TenantMarker)
-        {
-            throw new ArgumentException(
-                $"Cache key '{key}' starts with '{CacheKeyFormat.TenantMarker}', which is reserved for tenant-scoped keys.",
-                nameof(key));
-        }
-
-        return key;
-    }
-
-    internal static string Tag(Guid? tenantId, string tag) =>
-        tenantId is { } tenant ? CacheKeyFormat.BuildTenantTag(tenant.ToString("D"), tag) : tag;
-
-    internal static CachePolicy Policy(Guid? tenantId, CachePolicy policy)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-        return tenantId is { } tenant ? policy.ForTenant(tenant.ToString("D")) : policy;
-    }
+    /// <summary>
+    /// One entry for the whole service. Use it only for genuinely tenant-independent and
+    /// caller-independent data — reference tables, ISO code lists, published rate cards. An explicit
+    /// declaration that no caller identity affects the value.
+    /// </summary>
+    Global = 2,
 }

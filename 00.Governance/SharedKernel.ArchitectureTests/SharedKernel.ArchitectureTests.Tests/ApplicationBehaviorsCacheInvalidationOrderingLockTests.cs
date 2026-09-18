@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Behaviors.Caching;
 using SharedKernel.Application.Behaviors.Caching.Extensions;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Transaction;
@@ -70,16 +71,30 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// </remarks>
 public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
 {
+    /// <summary>
+    /// The query whose entries the locked commands invalidate. Exists because a command names the
+    /// query that owns the entry rather than a raw key string: entries are namespaced per query
+    /// type, so there is no whole-key form for a command to repeat.
+    /// </summary>
+    private sealed record LockedQuery : ICacheableQuery<string>
+    {
+        public CachePolicy CachePolicy => CachePolicy.Default;
+        public string CacheKey => "governance-lock-key";
+        public CacheScope Scope => CacheScope.Global;
+    }
+
     private sealed record InvalidatingCommand : ICommand, IInvalidatesCache
     {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => ["governance-lock-key"];
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<LockedQuery>("governance-lock-key")];
         public IReadOnlyCollection<string> CacheTagsToInvalidate => ["governance-lock-tag"];
+        public CacheScope Scope => CacheScope.Global;
     }
 
     private sealed record AuditedInvalidatingCommand : ICommand, IInvalidatesCache, IAuditableRequest<Result>
     {
-        public IReadOnlyCollection<string> CacheKeysToInvalidate => ["governance-lock-key-2"];
+        public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<LockedQuery>("governance-lock-key-2")];
         public IReadOnlyCollection<string> CacheTagsToInvalidate => ["governance-lock-tag-2"];
+        public CacheScope Scope => CacheScope.Global;
         public string Action => "governance-lock.action";
         public string ResourceType => "GovernanceLockResource";
         public string ResourceId => "governance-lock-resource-1";
@@ -187,6 +202,20 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
     }
 
     /// <summary>
+    /// The key provider the caching behaviors require, producing the real
+    /// <see cref="CacheKeyFormat"/> shape under a fixed service name. The spy above only observes
+    /// the eviction calls; it never builds keys.
+    /// </summary>
+    private sealed class LockKeyProvider : ITenantCacheKeyProvider
+    {
+        public string BuildKey(string entity, string id, params string[] segments)
+            => CacheKeyFormat.BuildKey("governance-lock", entity, id, segments);
+
+        public string BuildTenantKey(string tenantId, string entity, string id, params string[] segments)
+            => CacheKeyFormat.BuildTenantKey("governance-lock", tenantId, entity, id, segments);
+    }
+
+    /// <summary>
     /// The default, documented registration path: only CacheInvalidation and Transaction opted in.
     /// Against the REAL, shipped <c>SharedKernel.Application.Behaviors.dll</c>, eviction must
     /// observably follow the commit.
@@ -198,6 +227,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ICacheService>(spy);
+        services.AddSingleton<ITenantCacheKeyProvider>(new LockKeyProvider());
         services.AddSingleton<IUnitOfWork>(spy);
         services.AddSingleton<InvalidatingCommandHandler>();
         services.AddSingleton<IRequestHandler<InvalidatingCommand, Result>>(
@@ -241,6 +271,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ICacheService>(spy);
+        services.AddSingleton<ITenantCacheKeyProvider>(new LockKeyProvider());
         services.AddSingleton<IUnitOfWork>(spy);
         services.AddSingleton<IAuditTrailWriter>(spy);
         services.AddSingleton<AuditedInvalidatingCommandHandler>();

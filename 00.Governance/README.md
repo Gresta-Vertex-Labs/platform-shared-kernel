@@ -209,6 +209,7 @@ The MediatR pipeline and outbound HTTP.
 | [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
 | [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
 | [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [SK0041](#sk0041-duplicatecacheablequeryname) | Two cacheable queries sharing a simple type name | Rename one -- cache entries are namespaced by that name |
 
 #### Logging
 
@@ -1382,6 +1383,70 @@ public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IReq
 
 ```text
 warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its MediatR response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
+```
+
+---
+
+<a id="sk0041-duplicatecacheablequeryname"></a>
+### SK0041 — DuplicateCacheableQueryName
+
+**Category:** Design · **Default severity:** Warning
+
+Two types implementing `ICacheableQuery<TValue>` must not share a simple type name within one compilation.
+
+#### Why it matters
+
+The caching behavior namespaces every entry by the query's simple type name: the key is `{service}:{QueryType}:{CacheKey}`. That namespace is what stops two unrelated queries that happen to pick the same `CacheKey` from reading each other's entries. Two query types with the same simple name in different namespaces collapse back into one namespace and reintroduce the collision it exists to prevent.
+
+The collision is silent. An entry holds the bare `TValue` as JSON, with no type discriminator, so the second query deserializes the first query's payload into its own type on a best-effort basis — unmatched members stay at their defaults and nothing throws. The failure surfaces as a partially-populated object far from its cause, which is why this is a compile-time rule rather than a documentation note.
+
+The simple name is used rather than the full name deliberately: the entity segment appears in every key, and a namespace-qualified name makes keys unreadable in a cache browser. The platform takes the shorter key and pays for it with this rule.
+
+#### What it flags
+
+- Two or more non-abstract classes, records, or structs in one compilation that implement `ICacheableQuery<TValue>` (directly or transitively) and share both a simple type name and an arity.
+- Reported on every colliding declaration, naming the others.
+
+#### What it does not flag
+
+- A namesake that is not a cacheable query — it never writes an entry.
+- The same name at a different arity (`LookupQuery` and `LookupQuery<T>`), which produce different runtime entity names.
+- Several partial declarations of one type, which are one query.
+- Abstract types, matching the exemption SK0009/SK0017/SK0018/SK0040 already apply.
+- Queries in separately-compiled services. Only types compiled together are compared, and `ICacheKeyProvider` already prefixes every key with the owning service name.
+
+#### Example
+
+```csharp
+using SharedKernel.Application.Behaviors.Caching;
+
+namespace Orders;
+
+// Flagged: SK0041 — shares a cache namespace with Billing.GetSummaryQuery
+public sealed record GetSummaryQuery(Guid Id) : ICacheableQuery<OrderSummary>
+{
+    public CachePolicy CachePolicy => CachePolicy.Default;
+    public string CacheKey => Id.ToString();
+}
+```
+
+```csharp
+using SharedKernel.Application.Behaviors.Caching;
+
+namespace Orders;
+
+// Compliant — a name of its own, so a namespace of its own
+public sealed record GetOrderSummaryQuery(Guid Id) : ICacheableQuery<OrderSummary>
+{
+    public CachePolicy CachePolicy => CachePolicy.Default;
+    public string CacheKey => Id.ToString();
+}
+```
+
+#### Diagnostic
+
+```text
+warning SK0041: 'Orders.GetSummaryQuery' shares its simple type name with Billing.GetSummaryQuery, and both implement ICacheableQuery<TValue>. Cache entries are namespaced by the query's simple type name, so these queries share one namespace: if they ever produce the same CacheKey, one is served the other's cached value, deserialized into the wrong type without an error. Rename one of them.
 ```
 
 ---

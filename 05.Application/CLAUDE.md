@@ -171,9 +171,45 @@ No other reflection appears in either package. `ApplicationBehaviorsBuilder.AddB
 
 | Namespace | Types |
 | --- | --- |
-| `Caching` | `ICacheableQuery<TValue>` (`CacheKey`, `CachePolicy`; also an `IQuery<TValue>`); `CachingBehavior<,>`, which caches the `TValue` of a successful `Result<TValue>` |
-| `CacheInvalidation` | `IInvalidatesCache` (`CacheKeysToInvalidate`, `CacheTagsToInvalidate` defaulting to empty); `CacheInvalidationBehavior<,>` |
+| `Caching` | `ICacheableQuery<TValue>` (`CacheKey`, `CachePolicy`, `Scope`, `RefreshCache`, `ShouldCache`; also an `IQuery<TValue>`); `CacheScope` (`Tenant` = 0, `User`, `Global`); internal `CachingBehavior<,>`, which caches the `TValue` of a successful `Result<TValue>` |
+| `CacheInvalidation` | `IInvalidatesCache` (`CacheKeysToInvalidate` as `CacheKeyRef`, `CacheTagsToInvalidate` defaulting to empty, `Scope`); `CacheKeyRef.For<TQuery>(key)`; internal `CacheInvalidationBehavior<,>` |
 | `Extensions` | `CachingBehaviorsExtensions.AddCachingBehaviors(ApplicationBehaviorsBuilder)` |
+| `Shared` (internal) | `CachingBehaviorsLoggingEventIds` (5200-5299), `CachingBehaviorsMetrics` |
+
+**Both behavior types are internal**, matching every behavior in `.Behaviors`. The package's contract is the
+marker interfaces, `CacheScope`, `CacheKeyRef` and `AddCachingBehaviors()`; the behaviors are registered by
+that extension and resolved by MediatR, never constructed by a consumer. The test project reaches them through
+`InternalsVisibleTo`, the repo's dominant convention (43 projects).
+
+### Keys are namespaced by query type and scope
+
+The key is built through the registered `ITenantCacheKeyProvider`, never string interpolation:
+
+```text
+Global   {service}:{QueryType}:{CacheKey}
+Tenant   {service}:@{tenant}:{QueryType}:{CacheKey}
+User     {service}:@{tenant}:{QueryType}:{CacheKey}:u:{userId}
+```
+
+`ICacheableQuery.CacheKey` is therefore the query's identity **within its own namespace**, not a whole key.
+The `{QueryType}` segment exists because an entry holds the bare `TValue` as JSON with no type discriminator:
+without it, two queries choosing the same `CacheKey` share an entry and `System.Text.Json` deserializes one
+payload into the other's type on a best-effort basis, with no error. `00.Governance`'s SK0041 reports the one
+way that namespace can still collapse — two cacheable queries sharing a simple type name.
+
+Because the key carries the query type, a command cannot name a whole key. `IInvalidatesCache` names the
+owning query instead, through `CacheKeyRef.For<TQuery>(key)`, so a renamed query is a compile error at the
+command rather than a silently-missed eviction.
+
+### Scopes fail closed
+
+`CacheScope.Tenant` is the zero value, so `default(CacheScope)` and both interface defaults land on the
+fail-closed option. A `Tenant` query with no resolved tenant, or a `User` query with no authenticated caller,
+skips the cache entirely, runs the handler and logs at Warning — it never falls back to a wider key. A
+fallback would let every request whose tenant resolution failed share one entry, across tenants. Widening is
+always an explicit `CacheScope.Global`.
+
+A command's `Scope` must match the queries it invalidates, or it evicts a key those queries never wrote.
 
 ---
 
@@ -342,6 +378,18 @@ alone: its internal member is inaccessible outside the assembly.
 The handler still runs inside the context overload of `ICacheService.GetOrSetAsync<TValue>`. A failed `Result` is
 captured in the factory, skipped with `CacheFactoryContext.SkipCaching()` and returned by that call only; a query
 waiting on the same key finds nothing cached and runs the handler itself.
+
+**That last sentence is a load-bearing contract, not a description.** The failure travels out of the factory in
+a local captured by the factory closure, which is only correct because a skipped value is not handed to
+concurrent waiters — were it broadcast, every waiter would come out holding a default value with no failure in
+its own closure, and the behavior would return `Result.Success(default)` where a failure was correct.
+`CacheFactoryContext`'s own documentation used to state the opposite (that the factory value always reaches
+every concurrent caller); it was measured against a real FusionCache, corrected in
+`02.Caching.Abstractions`, and is now pinned by `CachingBehaviorConcurrencyTests` against a real cache — one
+test asserting the factory runs **once** on the success path, another asserting it runs **twice** on the skip
+path and each caller gets its own failure. `SharedKernel.Testing`'s `FakeCacheService` was given the same
+per-key gate and post-gate re-check for the same reason: the fake previously ran the factory on every
+concurrent miss, which makes both paths look identical and cannot fail on a regression in either.
 
 Why: `Result`/`Result<T>` have private constructors and `Value`/`Error` properties that throw in the opposite
 state, so reflection-based `System.Text.Json` cannot even **write** a cached `Result<T>` — verified, the

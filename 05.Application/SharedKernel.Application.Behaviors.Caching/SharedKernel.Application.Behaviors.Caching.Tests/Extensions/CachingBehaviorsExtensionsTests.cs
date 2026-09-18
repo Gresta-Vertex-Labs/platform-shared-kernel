@@ -16,6 +16,7 @@ public sealed class CachingBehaviorsExtensionsTests
     {
         public CachePolicy CachePolicy => CachePolicy.Default;
         public string CacheKey => "key";
+        public CacheScope Scope => CacheScope.Global;
     }
 
     private sealed class TestQueryHandler : IQueryHandler<TestQuery, string>
@@ -36,11 +37,44 @@ public sealed class CachingBehaviorsExtensionsTests
     }
 
     [Fact]
-    public async Task Build_WithICacheServiceRegistered_ResolvesAndCachesThroughRealDispatch()
+    public void Build_WithoutITenantCacheKeyProviderRegistered_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheService>(new FakeCacheService());
+        var builder = services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors();
+
+        var act = () => builder.Build();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ITenantCacheKeyProvider*");
+    }
+
+    [Fact]
+    public void AddCachingBehaviors_RegistersTheMetricsDependencyItsBehaviorsResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ICacheService>(new FakeCacheService());
+        services.AddSingleton<ITenantCacheKeyProvider>(new FakeCacheKeyProvider());
+
+        services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().Build();
+
+        using var provider = services.BuildServiceProvider();
+
+        // The enumerable form is the one MediatR resolves, and it skips open generics whose
+        // constraints the request type does not satisfy -- so a query yields the caching behavior
+        // and never the command-side invalidation behavior.
+        var behaviors = provider.GetServices<IPipelineBehavior<TestQuery, Result<string>>>().ToList();
+
+        behaviors.Should().ContainSingle("every dependency the registered behavior declares must be resolvable")
+            .Which.Should().BeOfType<CachingBehavior<TestQuery, Result<string>>>();
+    }
+
+    [Fact]
+    public async Task Build_WithDependenciesRegistered_ResolvesAndCachesThroughRealDispatch()
     {
         var cache = new FakeCacheService();
         var services = new ServiceCollection();
         services.AddSingleton<ICacheService>(cache);
+        services.AddSingleton<ITenantCacheKeyProvider>(new FakeCacheKeyProvider());
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<CachingBehaviorsExtensionsTests>());
 
         services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().Build();
@@ -54,5 +88,6 @@ public sealed class CachingBehaviorsExtensionsTests
         first.Value.Should().Be("value");
         second.Value.Should().Be("value");
         cache.SetCalls.Should().ContainSingle("the second dispatch must be served from cache, never re-invoking the handler");
+        cache.Keys.Should().Equal(TestKeys.Global(nameof(TestQuery), "key"));
     }
 }
