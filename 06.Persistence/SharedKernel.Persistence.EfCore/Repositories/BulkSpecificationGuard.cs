@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
+using SharedKernel.Persistence.EfCore.Extensibility;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -80,10 +82,28 @@ internal static class BulkSpecificationGuard
     /// since <see cref="IBulkMutationRepository{TAggregate,TId}.ExecuteDeleteAsync"/> always issues a
     /// hard physical <c>DELETE</c> with no soft-delete translation.
     /// </para>
+    /// <para>
+    /// <strong>Encrypted columns:</strong> a property the model annotates with
+    /// <see cref="PersistenceModelAnnotationNames.Encrypt"/> can never be targeted either, regardless
+    /// of <typeparamref name="T"/>'s implemented interfaces — <c>ExecuteUpdateAsync</c> issues a raw
+    /// server-side <c>UPDATE</c> that never passes through the encryption save-changes interceptor, so
+    /// a caller-supplied value would be written as PLAINTEXT into a column every other write path, and
+    /// every compliance artefact, treats as encrypted (and would leave any blind-index shadow column
+    /// stale, silently breaking future equality lookups on the row). The annotation is read directly
+    /// off <paramref name="entityType"/> — a bare, cross-package string constant this package already
+    /// shares with the opt-in encryption package for exactly this kind of check (see
+    /// <see cref="PersistenceModelAnnotationNames"/>'s own remarks) — never a project reference to that
+    /// package, which this one must not take.
+    /// </para>
     /// </remarks>
     /// <typeparam name="T">The aggregate type.</typeparam>
     /// <param name="setPropertyCalls">The caller-supplied setters delegate.</param>
-    public static void ValidateSetters<T>(Action<UpdateSettersBuilder<T>> setPropertyCalls)
+    /// <param name="entityType">
+    /// <typeparamref name="T"/>'s entity type in the executing <c>DbContext</c>'s model, used only to
+    /// check each targeted property for the encryption annotation. <see langword="null"/> skips that
+    /// one check (every other protected-column check above is interface-based and needs no model).
+    /// </param>
+    public static void ValidateSetters<T>(Action<UpdateSettersBuilder<T>> setPropertyCalls, IEntityType? entityType = null)
     {
         var targeted = UpdateSettersInspector.ExtractPropertyNames(setPropertyCalls);
 
@@ -100,7 +120,8 @@ internal static class BulkSpecificationGuard
                     "A bulk mutation setter must target a property directly (x => x.Property). The " +
                     "supplied selector could not be resolved to a property name - shapes such as " +
                     "EF.Property<T>(x, \"Name\") are rejected here because they can name a protected " +
-                    "column (TenantId, RowVersion, CreatedBy/CreatedOn) without this guard seeing it.");
+                    "column (TenantId, RowVersion, CreatedBy/CreatedOn, an encrypted column) without " +
+                    "this guard seeing it.");
             }
 
             if (typeof(IHasTenant).IsAssignableFrom(typeof(T))
@@ -124,6 +145,14 @@ internal static class BulkSpecificationGuard
             {
                 throw new UnsupportedSpecificationException(
                     $"'{propertyName}' cannot be set via a bulk mutation — creation provenance is immutable.");
+            }
+
+            if (entityType?.FindProperty(propertyName)?.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null)
+            {
+                throw new UnsupportedSpecificationException(
+                    $"'{propertyName}' cannot be set via a bulk mutation — it is an encrypted column. " +
+                    "A bulk statement writes the supplied value directly, bypassing the encryption " +
+                    "save-changes interceptor entirely, which would store it as plaintext.");
             }
         }
     }

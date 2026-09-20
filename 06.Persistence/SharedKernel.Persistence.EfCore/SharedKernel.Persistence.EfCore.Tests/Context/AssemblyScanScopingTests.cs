@@ -64,6 +64,61 @@ public sealed class ScopeGadgetDbContext(DbContextOptions<ScopeGadgetDbContext> 
     public DbSet<ScopeGadget> Gadgets => Set<ScopeGadget>();
 }
 
+// ---------------------------------------------------------------------------
+// Navigation-only child: reachable ONLY through ScopeParent.Children, no DbSet<T> of its own — the
+// exact shape the scoped scan's original DbSet-only ExposedEntityTypes silently dropped a dedicated
+// IEntityTypeConfiguration<T> for.
+// ---------------------------------------------------------------------------
+
+public sealed class ScopeNavigationChild
+{
+    public Guid Id { get; set; }
+    public Guid ScopeParentWithChildId { get; set; }
+    public string Detail { get; set; } = string.Empty;
+}
+
+public sealed class ScopeParentWithChild
+{
+    public Guid Id { get; set; }
+    public List<ScopeNavigationChild> Children { get; } = [];
+}
+
+public sealed class ScopeParentWithChildConfig : IEntityTypeConfiguration<ScopeParentWithChild>
+{
+    public void Configure(EntityTypeBuilder<ScopeParentWithChild> builder)
+    {
+        builder.ToTable("scope_parent_with_child");
+        builder.HasKey(x => x.Id);
+        builder.HasMany(x => x.Children).WithOne().HasForeignKey(c => c.ScopeParentWithChildId);
+    }
+}
+
+/// <summary>
+/// The dedicated configuration for the navigation-only child — must be applied even though
+/// <see cref="ScopeParentDbContext"/> exposes no <c>DbSet&lt;ScopeNavigationChild&gt;</c>.
+/// </summary>
+public sealed class ScopeNavigationChildConfig : IEntityTypeConfiguration<ScopeNavigationChild>
+{
+    public void Configure(EntityTypeBuilder<ScopeNavigationChild> builder)
+    {
+        builder.ToTable("scope_navigation_child");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Detail).HasMaxLength(789).IsRequired();
+    }
+}
+
+/// <summary>
+/// Exposes only <see cref="ScopeParentWithChild"/> via <c>DbSet&lt;T&gt;</c> — no override of
+/// <c>OnModelCreating</c> at all, and deliberately no <c>AdditionalConfiguredEntityTypes</c> override
+/// either, so <see cref="ScopeNavigationChild"/>'s configuration can ONLY be reached through the base
+/// scoped scan's navigation-discovery fallback, never a manual opt-in.
+/// </summary>
+public sealed class ScopeParentDbContext(DbContextOptions<ScopeParentDbContext> options, PersistenceContextDependencies dependencies)
+    : SharedKernelDbContext(options, dependencies)
+{
+    public DbSet<ScopeParentWithChild> Parents => Set<ScopeParentWithChild>();
+}
+
 public sealed class AssemblyScanScopingTests
 {
     private static PersistenceContextDependencies BuildDependencies()
@@ -126,5 +181,42 @@ public sealed class AssemblyScanScopingTests
         var labelProperty = ctx.Model.FindEntityType(typeof(ScopeGadget))!.FindProperty(nameof(ScopeGadget.Label))!;
 
         labelProperty.GetMaxLength().Should().Be(456);
+    }
+
+    [Fact]
+    public void ParentContext_Model_IncludesTheNavigationOnlyChild_WithNoDbSetOrManualOptIn()
+    {
+        var dependencies = BuildDependencies();
+        using var ctx = new ScopeParentDbContext(BuildOptions<ScopeParentDbContext>(), dependencies);
+
+        var entityClrTypes = ctx.Model.GetEntityTypes().Select(e => e.ClrType).ToList();
+
+        entityClrTypes.Should().Contain(typeof(ScopeParentWithChild));
+        entityClrTypes.Should().Contain(
+            typeof(ScopeNavigationChild),
+            "a child reachable only through a navigation must still be part of the model — EF Core's " +
+                "own navigation discovery reaches it independently of this context's DbSet<T> properties");
+    }
+
+    [Fact]
+    public void ParentContext_StillAppliesTheNavigationOnlyChildsOwnConfiguration()
+    {
+        // The actual regression this suite closes: before the fix, ScopeNavigationChild WAS present in
+        // the model (EF's own navigation discovery always added it) but its DEDICATED configuration —
+        // column name, max length, and (in the real encryption scenario) a .Encrypt(...) annotation —
+        // was silently never applied, because the scoped predicate rejected ScopeNavigationChildConfig
+        // for not being a DbSet<T> on this context.
+        var dependencies = BuildDependencies();
+        using var ctx = new ScopeParentDbContext(BuildOptions<ScopeParentDbContext>(), dependencies);
+
+        var childEntityType = ctx.Model.FindEntityType(typeof(ScopeNavigationChild));
+        childEntityType.Should().NotBeNull();
+
+        childEntityType!.GetTableName().Should().Be("scope_navigation_child");
+        var detailProperty = childEntityType.FindProperty(nameof(ScopeNavigationChild.Detail));
+        detailProperty.Should().NotBeNull();
+        detailProperty!.GetMaxLength().Should().Be(
+            789, "ScopeNavigationChildConfig must actually run, not merely leave the child present " +
+                "in the model with EF's bare conventional defaults");
     }
 }

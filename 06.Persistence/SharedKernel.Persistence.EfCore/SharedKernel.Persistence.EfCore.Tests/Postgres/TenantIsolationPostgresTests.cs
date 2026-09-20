@@ -373,6 +373,88 @@ public sealed class TenantIsolationPostgresTests
     }
 
     [Fact]
+    public async Task CrossTenantUpdate_Detached_AttackerTenantClaimedWithVictimPrimaryKey_Rejected()
+    {
+        // The INVERTED shape the sibling CrossTenantUpdate_Detached_Rejected test above does NOT
+        // cover: that test's stub claims the VICTIM's tenant id, which TenantWriteGuardInterceptor's
+        // in-memory check catches trivially. Here the stub claims the ATTACKER's OWN, legitimate
+        // current tenant (tenantA) — passing that same in-memory check — but carries a row that
+        // actually belongs to tenantB. Only the TenantId concurrency token (enforced at the real
+        // Postgres UPDATE statement's WHERE clause) can catch this.
+        //
+        // PgOrderAggregate is TenantedFullAuditableAggregateRoot, so it ALSO implements
+        // IHasConcurrency (a real xmin-backed RowVersion) — ConcurrencyInterceptor.TryTranslate checks
+        // IHasConcurrency before IHasTenant, and a DbUpdateConcurrencyException from Postgres carries
+        // no way to tell which of the WHERE clause's columns (TenantId, RowVersion, or both — the
+        // stub's default RowVersion never matches the real row's xmin either) caused the zero-row
+        // match, so this shape is reported as ConflictException here, not ForbiddenException. Both are
+        // a REJECTED write — the security guarantee under test is that the victim's row survives
+        // untouched, proven below regardless of which typed exception surfaces. The SQLite suite
+        // (TenantWriteGuardInterceptorTests, using a plain TenantedTestAggregate with NO RowVersion)
+        // proves ForbiddenException specifically for a tenanted aggregate that carries no concurrency
+        // token of its own — the concurrency-token mechanism itself is provider-neutral, so that
+        // coverage is not Postgres-specific.
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        await using var setup = CreateContext(tenantA);
+        await setup.Database.EnsureCreatedAsync();
+
+        var victimId = PgOrderId.New();
+        await using (var ctxB = CreateContext(tenantB))
+        {
+            ctxB.Orders.Add(new PgOrderAggregate(victimId, tenantB, "Victim", $"inverted-update-{Guid.NewGuid():N}", "St", "City", new SharedKernel.Primitives.Clocks.SystemClock()));
+            await ctxB.SaveChangesAsync();
+        }
+
+        await using var ctxA = CreateContext(tenantA);
+        var stub = new PgOrderAggregate(victimId, tenantA, "HackedFromTenantA", $"attacker-{Guid.NewGuid():N}", "St", "City", new SharedKernel.Primitives.Clocks.SystemClock());
+        ctxA.Orders.Update(stub);
+
+        var act = () => ctxA.SaveChangesAsync();
+        await act.Should().ThrowAsync<ConflictException>(
+            "a detached stub claiming the attacker's own tenant id but the victim's primary key must " +
+                "still be rejected, not silently rewrite the victim's row");
+
+        await using var verifyB = CreateContext(tenantB);
+        var stillThere = await verifyB.Orders.FirstAsync(o => o.Id == victimId);
+        stillThere.Name.Should().Be("Victim", "the victim's row must be completely untouched");
+    }
+
+    [Fact]
+    public async Task CrossTenantDelete_AttackerTenantClaimedWithVictimPrimaryKey_Rejected()
+    {
+        // Same inverted shape as above, for the delete path (Attach()+Remove()) — see the sibling
+        // update test's remarks for why PgOrderAggregate's own RowVersion means this surfaces as
+        // ConflictException here, never ForbiddenException.
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        await using var setup = CreateContext(tenantA);
+        await setup.Database.EnsureCreatedAsync();
+
+        var victimId = PgOrderId.New();
+        await using (var ctxB = CreateContext(tenantB))
+        {
+            ctxB.Orders.Add(new PgOrderAggregate(victimId, tenantB, "Victim", $"inverted-delete-{Guid.NewGuid():N}", "St", "City", new SharedKernel.Primitives.Clocks.SystemClock()));
+            await ctxB.SaveChangesAsync();
+        }
+
+        await using var ctxA = CreateContext(tenantA);
+        var stub = new PgOrderAggregate(victimId, tenantA, "Stub", $"attacker-del-{Guid.NewGuid():N}", "St", "City", new SharedKernel.Primitives.Clocks.SystemClock());
+        ctxA.Orders.Attach(stub);
+        ctxA.Orders.Remove(stub);
+
+        var act = () => ctxA.SaveChangesAsync();
+        await act.Should().ThrowAsync<ConflictException>(
+            "a detached delete claiming the attacker's own tenant id but the victim's primary key " +
+                "must still be rejected");
+
+        await using var verifyB = CreateContext(tenantB);
+        (await verifyB.Orders.CountAsync(o => o.Id == victimId)).Should().Be(1, "the victim's row must survive");
+    }
+
+    [Fact]
     public async Task CrossTenantScopeBypass_WorksAndIsExplicit()
     {
         var tenantA = Guid.NewGuid();

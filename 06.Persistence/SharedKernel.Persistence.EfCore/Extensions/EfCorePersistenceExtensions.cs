@@ -530,6 +530,31 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 "satisfies this guard, since the database then enforces isolation on every statement.");
         }
 
+        // A retrying execution strategy and an explicitly begun transaction are mutually exclusive in
+        // EF Core: EfTransactionalUnitOfWork.BeginTransactionAsync throws when one is configured,
+        // because the strategy cannot replay work that has already been committed inside a caller-owned
+        // transaction. That rule predates this builder, but '.WithApplicationTransactionBehavior()' in
+        // 13.ServiceDefaults.Persistence now routes every audited command through BeginTransactionAsync,
+        // so the combination below would throw on EVERY such command at runtime, in production, rather
+        // than once at startup. Fail here instead, while the composition root is still on screen.
+        // This can only see '.WithTransientFaultRetry()' — it has no visibility into retry enabled
+        // directly on the configureDb delegate (e.g. the PostgreSQL package's
+        // UsePostgreSQL(..., maxRetryCount:...)), since this package never references that provider.
+        // PersistenceContextWiringValidator{TContext} is the safety net for that case: it reads the
+        // SAME live execution-strategy signal EfTransactionalUnitOfWork itself checks, at host
+        // startup, regardless of which call enabled retry.
+        if (_transientFaultRetryOptions is not null && _transactionalUnitOfWorkEnabled)
+        {
+            throw new InvalidOperationException(
+                $"'{typeof(TContext).Name}' combines '.WithTransientFaultRetry()' with " +
+                "'.WithTransactionalUnitOfWork()', which EF Core does not allow: a retrying execution " +
+                "strategy cannot replay work spanning a transaction the caller began itself, so every " +
+                "'ITransactionalUnitOfWork.BeginTransactionAsync' call would throw at runtime — " +
+                "including every audited command once '.WithApplicationTransactionBehavior()' is wired. " +
+                "Drop '.WithTransientFaultRetry()', or drop '.WithTransactionalUnitOfWork()' and use " +
+                "'ITransactionalUnitOfWork.ExecuteInTransactionAsync', which is retry-safe by design.");
+        }
+
         // The former "'.WithDbContextPooling()' cannot be combined with
         // '.WithMultiTenancy()'" guard is GONE — replaced with a real fix. TenantedDbContext's
         // constructor no longer takes ICurrentTenantContext at all (see its own class remarks); tenant
@@ -864,9 +889,16 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // what it catches. A registration with no opt-in capability has nothing to verify, and adding
         // a hosted service for it would break this domain's "a plain EF Core registration schedules
         // no startup work" rule, which MigrationAndSeedHostedServiceTests asserts directly.
+        // transactionalUnitOfWorkEnabled is included as its own trigger (not folded under the
+        // interceptor/extension checks above) because it guards a DIFFERENT hazard on the same
+        // validator: a retrying execution strategy enabled directly via the configureDb delegate
+        // (e.g. UsePostgreSQL(..., maxRetryCount:...)) rather than via '.WithTransientFaultRetry()' —
+        // see the validator's own remarks for why the eager Build()-time check below cannot see that.
         var multiTenancyEnabled = _multiTenancyEnabled;
+        var transactionalUnitOfWorkEnabled = _transactionalUnitOfWorkEnabled;
         var hasCapabilitiesToVerify =
             multiTenancyEnabled
+            || transactionalUnitOfWorkEnabled
             || _additionalInterceptorTypes.Count > 0
             || _services.Any(sd =>
                 sd.ServiceType == typeof(IPersistenceOptionsExtension)
@@ -878,7 +910,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddHostedService<PersistenceContextWiringValidator<TContext>>(sp =>
                 new PersistenceContextWiringValidator<TContext>(
                     sp.GetRequiredService<IServiceScopeFactory>(),
-                    multiTenancyEnabled));
+                    multiTenancyEnabled,
+                    transactionalUnitOfWorkEnabled));
         }
 
         return _services;

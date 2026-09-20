@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -25,6 +26,15 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// annotation. This is the only coupling between this core package and any opt-in encryption-like capability
 /// package: a shared string constant, never a shared type or assembly reference.
 /// </para>
+/// <para>
+/// <strong>Complex-type properties are checked too.</strong> EF Core 10 complex-type (value-object) properties are
+/// not included in <see cref="IConventionEntityType.GetProperties"/> — they live in their own
+/// <see cref="IConventionComplexType"/>, reached only through <see cref="IConventionEntityType.GetComplexProperties"/>.
+/// A model whose encrypted properties are declared exclusively inside a complex type would otherwise pass this
+/// guard silently — the exact fail-open gap this convention exists to close, just one level deeper. The traversal
+/// here mirrors <c>EncryptionModelConvention.ProcessModelFinalizing</c>'s own two-loop shape (in
+/// <c>SharedKernel.Persistence.EfCore.Encryption</c>) exactly, so neither can miss a shape the other one checks.
+/// </para>
 /// </remarks>
 public sealed class EncryptAnnotationRegisteredGuardConvention : IModelFinalizingConvention
 {
@@ -36,18 +46,27 @@ public sealed class EncryptAnnotationRegisteredGuardConvention : IModelFinalizin
         foreach (var entityType in modelBuilder.Metadata.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
+                EnsureConsumed(entityType, property, propertyPath: property.Name);
+
+            foreach (var complexProperty in entityType.GetComplexProperties())
             {
-                if (property.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null
-                    && property.FindAnnotation(PersistenceModelAnnotationNames.EncryptApplied) is null)
-                {
-                    throw new InvalidOperationException(
-                        $"'{entityType.ShortName()}.{property.Name}' is annotated with '.Encrypt(...)' but field-level " +
-                        "encryption was never wired in. Call 'EfCorePersistenceBuilder<TContext>.WithEncryption()' " +
-                        "(from the SharedKernel.Persistence.EfCore.Encryption package) in this context's builder " +
-                        "chain, or remove the '.Encrypt(...)' call. Refusing to start with an encrypted property " +
-                        "whose encryption pipeline is not actually wired, which would otherwise persist plaintext.");
-                }
+                foreach (var property in complexProperty.ComplexType.GetProperties())
+                    EnsureConsumed(entityType, property, propertyPath: $"{complexProperty.Name}.{property.Name}");
             }
+        }
+    }
+
+    private static void EnsureConsumed(IConventionEntityType entityType, IConventionProperty property, string propertyPath)
+    {
+        if (property.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null
+            && property.FindAnnotation(PersistenceModelAnnotationNames.EncryptApplied) is null)
+        {
+            throw new InvalidOperationException(
+                $"'{entityType.ShortName()}.{propertyPath}' is annotated with '.Encrypt(...)' but field-level " +
+                "encryption was never wired in. Call 'EfCorePersistenceBuilder<TContext>.WithEncryption()' " +
+                "(from the SharedKernel.Persistence.EfCore.Encryption package) in this context's builder " +
+                "chain, or remove the '.Encrypt(...)' call. Refusing to start with an encrypted property " +
+                "whose encryption pipeline is not actually wired, which would otherwise persist plaintext.");
         }
     }
 }

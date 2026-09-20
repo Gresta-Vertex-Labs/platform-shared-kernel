@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
@@ -172,21 +171,29 @@ public abstract class SharedKernelDbContext : DbContext
     /// <para>
     /// <strong>Scoped assembly scan:</strong> <c>ApplyConfigurationsFromAssembly</c> is called
     /// with a predicate that only lets a discovered <c>IEntityTypeConfiguration&lt;T&gt;</c> through
-    /// when <c>T</c> is a type this context exposes — either via one of its own public
-    /// <c>DbSet&lt;T&gt;</c> properties, or via <see cref="AdditionalConfiguredEntityTypes"/>. When two
-    /// or more <c>SharedKernelDbContext</c> subclasses live in the SAME assembly (a multi-context
-    /// service), a configuration for an entity type only the OTHER context exposes is never applied to
-    /// this one — closing the bleed the unscoped scan used to allow (every configuration in the
-    /// assembly reaching every context, silently inert only because EF Core ignores a configuration for
-    /// an entity type never reachable from the model, not because nothing happened). A candidate type
-    /// that does not implement <c>IEntityTypeConfiguration&lt;T&gt;</c> at all (an unrelated type the
-    /// scan also visits) is let through unfiltered — <c>ApplyConfigurationsFromAssembly</c> already
-    /// ignores it internally, so the predicate has nothing meaningful to decide for it.
+    /// when <c>T</c> is a type this context actually reaches — either one of its own public
+    /// <c>DbSet&lt;T&gt;</c> properties, a type EF Core's own navigation-discovery has ALREADY added to
+    /// the model by the time this method runs (a child entity type reachable only through a navigation
+    /// from a <c>DbSet&lt;T&gt;</c> root — <c>DbSet&lt;T&gt;</c> auto-discovery and the convention
+    /// pipeline that follows a root type's own navigations both run before <c>OnModelCreating</c>'s
+    /// body starts, so <c>modelBuilder.Model.GetEntityTypes()</c> already lists such a child here), or
+    /// <see cref="AdditionalConfiguredEntityTypes"/> (a true manual escape hatch — a type reachable
+    /// neither way, e.g. one this context configures via an explicit <c>ComplexProperty</c>/<c>OwnsOne</c>
+    /// call inside <c>OnModelCreating</c> itself, after this predicate has already run). When two or
+    /// more <c>SharedKernelDbContext</c> subclasses live in the SAME assembly (a multi-context service),
+    /// a configuration for an entity type only the OTHER context reaches is never applied to this one —
+    /// preserving the bleed fix the scoped scan exists for, while no longer dropping a navigation-only
+    /// child's own configuration (including a <c>.Encrypt(...)</c> annotation — silently losing that one
+    /// is a silent-plaintext hazard, not merely a missing column length). A candidate type that does not
+    /// implement <c>IEntityTypeConfiguration&lt;T&gt;</c> at all (an unrelated type the scan also
+    /// visits) is let through unfiltered — <c>ApplyConfigurationsFromAssembly</c> already ignores it
+    /// internally, so the predicate has nothing meaningful to decide for it.
     /// </para>
     /// </remarks>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly, IsConfigurationEntityTypeExposed);
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            GetType().Assembly, candidateType => IsConfigurationEntityTypeExposed(candidateType, modelBuilder));
 
         // Opt-in capabilities (e.g. the audit trail) apply extra configurations that live
         // in THEIR OWN assembly, not the downstream concrete context's — the assembly scan above
@@ -199,22 +206,26 @@ public abstract class SharedKernelDbContext : DbContext
 
     /// <summary>
     /// Entity types this context configures beyond what its own public <c>DbSet&lt;T&gt;</c>
-    /// properties already expose — e.g. a child entity type reachable only through a navigation, with
-    /// its own dedicated <c>IEntityTypeConfiguration&lt;T&gt;</c> but no <c>DbSet&lt;T&gt;</c> of its
-    /// own on this context. Empty by default.
+    /// properties, and EF Core's own navigation discovery from them, already expose — a TRUE manual
+    /// escape hatch for a type reachable neither way (e.g. one this context itself only reaches via an
+    /// explicit <c>ComplexProperty</c>/<c>OwnsOne</c> call made later, inside <c>OnModelCreating</c>).
+    /// Empty by default.
     /// </summary>
     /// <remarks>
     /// The explicit opt-in half of <see cref="OnModelCreating"/>'s scoped assembly scan — a
-    /// context that needs a configuration applied for a non-DbSet entity type overrides this property
-    /// instead of losing the scan's scoping altogether.
+    /// context that needs a configuration applied for a type neither a <c>DbSet&lt;T&gt;</c> nor a
+    /// navigation from one already reaches overrides this property instead of losing the scan's scoping
+    /// altogether. Most navigation-reachable child entity types need NO entry here at all — see
+    /// <see cref="OnModelCreating"/>'s own remarks for why.
     /// </remarks>
     protected virtual IEnumerable<Type> AdditionalConfiguredEntityTypes => [];
 
     // Predicate for ApplyConfigurationsFromAssembly: true for any candidate type that either
     // does not implement IEntityTypeConfiguration<T> at all (EF Core ignores it either way — nothing
     // for this predicate to meaningfully decide) or does, and T is exposed by this context's own
-    // DbSet<T> properties or AdditionalConfiguredEntityTypes.
-    private bool IsConfigurationEntityTypeExposed(Type candidateType)
+    // DbSet<T> properties, a type EF Core's navigation discovery already reached from one of them, or
+    // AdditionalConfiguredEntityTypes.
+    private bool IsConfigurationEntityTypeExposed(Type candidateType, ModelBuilder modelBuilder)
     {
         var configuredEntityType = candidateType
             .GetInterfaces()
@@ -225,18 +236,22 @@ public abstract class SharedKernelDbContext : DbContext
         if (configuredEntityType is null)
             return true;
 
-        return ExposedEntityTypes.Contains(configuredEntityType);
+        return ExposedEntityTypes(modelBuilder).Contains(configuredEntityType);
     }
 
     private HashSet<Type>? _exposedEntityTypesCache;
 
-    private HashSet<Type> ExposedEntityTypes =>
-        _exposedEntityTypesCache ??= GetType()
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
-                    .Select(p => p.PropertyType.GetGenericArguments()[0])
-                        .Concat(AdditionalConfiguredEntityTypes)
-                            .ToHashSet();
+    // Reads the model's ALREADY-DISCOVERED entity types directly — EF Core's own authoritative
+    // navigation-discovery convention, not a hand-rolled reflection walk over CLR properties that would
+    // have to independently reinvent which navigations EF Core itself would traverse (collections vs.
+    // references, owned vs. regular, ignored properties, and so on). Cached per context INSTANCE, never
+    // per TYPE: unlike the DbSet-only set this replaced, "what the model currently contains" can only
+    // be read once conventions have actually run for this specific ModelBuilder.
+    private HashSet<Type> ExposedEntityTypes(ModelBuilder modelBuilder) =>
+        _exposedEntityTypesCache ??= modelBuilder.Model.GetEntityTypes()
+            .Select(e => e.ClrType)
+                .Concat(AdditionalConfiguredEntityTypes)
+                    .ToHashSet();
 
     /// <inheritdoc />
     /// <remarks>

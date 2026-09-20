@@ -253,7 +253,7 @@ public abstract class EfRepository<TAggregate, TId>
         CancellationToken cancellationToken = default)
     {
         BulkSpecificationGuard.Validate(spec);
-        BulkSpecificationGuard.ValidateSetters(setPropertyCalls);
+        BulkSpecificationGuard.ValidateSetters(setPropertyCalls, DbContext.Model.FindEntityType(typeof(TAggregate)));
         var query = BuildBulkQuery(spec);
         return await query.ExecuteUpdateAsync(setPropertyCalls, cancellationToken);
     }

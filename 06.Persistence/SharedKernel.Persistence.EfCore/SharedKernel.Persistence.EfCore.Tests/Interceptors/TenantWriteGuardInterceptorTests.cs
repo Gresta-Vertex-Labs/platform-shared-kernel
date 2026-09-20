@@ -113,6 +113,76 @@ public sealed class TenantWriteGuardInterceptorTests
     }
 
     [Fact]
+    public async Task SaveChanges_DetachedUpdate_AttackerTenantClaimedWithVictimPrimaryKey_Rejected()
+    {
+        // The INVERTED attack shape: the detached stub claims the ATTACKER's OWN, legitimate current
+        // tenant id — passing TenantWriteGuardInterceptor's in-memory "claimed tenant == current
+        // tenant" check trivially — but carries a VICTIM row's primary key. The interceptor alone
+        // cannot see which tenant the TARGETED ROW actually belongs to; only marking TenantId a
+        // concurrency token (TenantedDbContext.ApplyTenantConcurrencyToken) makes the physical UPDATE
+        // statement's WHERE clause fail to match the victim's row, surfacing as a translated
+        // ForbiddenException instead of silently rewriting it.
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var attackerTenant = Guid.NewGuid();
+        var victimTenant = Guid.NewGuid();
+
+        using var ctxVictim = CreateContext(connection, victimTenant, out _);
+        await ctxVictim.Database.EnsureCreatedAsync();
+
+        var victim = new TenantedTestAggregate(TenantedTestId.New(), "VictimRow", victimTenant, new SystemClock());
+        ctxVictim.TenantedAggregates.Add(victim);
+        await ctxVictim.SaveChangesAsync();
+
+        using var ctxAttacker = CreateContext(connection, attackerTenant, out _);
+        var stub = new TenantedTestAggregate(victim.Id, "HackedFromAttackerTenant", attackerTenant, new SystemClock());
+        ctxAttacker.TenantedAggregates.Update(stub);
+
+        var act = () => ctxAttacker.SaveChangesAsync();
+        await act.Should().ThrowAsync<ForbiddenException>(
+            "a detached stub carrying the attacker's own tenant id but the victim's primary key must " +
+                "still be rejected — the in-memory guard check alone cannot see this shape");
+
+        using var ctxVerify = CreateContext(connection, victimTenant, out _);
+        var stillThere = await ctxVerify.TenantedAggregates.FirstAsync(e => e.Id == victim.Id);
+        stillThere.Name.Should().Be("VictimRow", "the victim's row must be completely untouched");
+    }
+
+    [Fact]
+    public async Task SaveChanges_DetachedDelete_AttackerTenantClaimedWithVictimPrimaryKey_Rejected()
+    {
+        // Same inverted shape as the update test above, but via Attach()+Remove() — the delete path
+        // EfRepository.DeleteAsync uses for a detached aggregate.
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var attackerTenant = Guid.NewGuid();
+        var victimTenant = Guid.NewGuid();
+
+        using var ctxVictim = CreateContext(connection, victimTenant, out _);
+        await ctxVictim.Database.EnsureCreatedAsync();
+
+        var victim = new TenantedTestAggregate(TenantedTestId.New(), "VictimRow", victimTenant, new SystemClock());
+        ctxVictim.TenantedAggregates.Add(victim);
+        await ctxVictim.SaveChangesAsync();
+
+        using var ctxAttacker = CreateContext(connection, attackerTenant, out _);
+        var stub = new TenantedTestAggregate(victim.Id, "Stub", attackerTenant, new SystemClock());
+        ctxAttacker.TenantedAggregates.Attach(stub);
+        ctxAttacker.TenantedAggregates.Remove(stub);
+
+        var act = () => ctxAttacker.SaveChangesAsync();
+        await act.Should().ThrowAsync<ForbiddenException>(
+            "a detached delete carrying the attacker's own tenant id but the victim's primary key " +
+                "must still be rejected");
+
+        using var ctxVerify = CreateContext(connection, victimTenant, out _);
+        var stillCount = await ctxVerify.TenantedAggregates.CountAsync(e => e.Id == victim.Id);
+        stillCount.Should().Be(1, "the victim's row must survive the rejected delete attempt");
+    }
+
+    [Fact]
     public async Task SaveChanges_CrossTenantScopeActive_SkipsEveryCheck()
     {
         using var connection = new SqliteConnection("DataSource=:memory:");

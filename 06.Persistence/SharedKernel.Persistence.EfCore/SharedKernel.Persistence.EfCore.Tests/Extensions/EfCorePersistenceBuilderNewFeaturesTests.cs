@@ -6,7 +6,6 @@ using NSubstitute;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
