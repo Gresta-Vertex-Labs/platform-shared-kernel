@@ -22,7 +22,7 @@ internal sealed class DapperDatabaseReadinessHealthCheck(IDbConnectionFactory co
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var readiness = await connectionFactory.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
+        var readiness = await connectionFactory.CheckReadinessAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var data = new Dictionary<string, object>
         {

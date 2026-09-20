@@ -25,7 +25,7 @@ internal sealed class DatabaseReadinessHealthCheck<TContext>(TContext dbContext)
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var readiness = await dbContext.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
+        var readiness = await dbContext.CheckReadinessAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var data = new Dictionary<string, object>
         {
