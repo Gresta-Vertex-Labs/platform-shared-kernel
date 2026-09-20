@@ -21,6 +21,17 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// auto-committing per statement (ordinary ADO.NET/Dapper behaviour for an un-transacted command).
 /// </para>
 /// <para>
+/// <strong>No tenant protection of any kind — deliberately, not by oversight.</strong> This class
+/// binds nothing to the database session and applies no tenant check of its own: it is the write-side
+/// counterpart of <see cref="DapperReadService"/> (also unprotected), for a query/command against a
+/// table that is either genuinely single-tenant or already enforced entirely at the database level
+/// (e.g. row-level security with no defense-in-depth needed above it). A write against a
+/// tenant-scoped table belongs on <see cref="TenantSafeDapperCommandService"/> instead, which fails
+/// closed with no tenant resolved and no active <c>ICrossTenantScope</c>, exactly like its read
+/// counterpart <see cref="TenantSafeDapperReadService"/>. Choosing this class for a tenant-scoped
+/// table is a real gap — always prefer <see cref="TenantSafeDapperCommandService"/> there.
+/// </para>
+/// <para>
 /// <strong>Hard violation:</strong> String interpolation in SQL is forbidden — parameterized
 /// commands only. Enforced by <c>00.Governance</c>'s SK0042 analyzer.
 /// </para>
