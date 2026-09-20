@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Persistence;
@@ -12,48 +15,63 @@ namespace SharedKernel.Testing.Persistence;
 /// <para>
 /// <b>NOT</b> <see cref="SharedKernel.Testing.Application.FakeAuditTrailWriter"/> — same class name,
 /// different namespace; this type fakes the RICH <c>06.Persistence.Abstractions</c> contract (actor/
-/// tenant/timestamp/hash-chain all resolved internally), never <c>05.Application.Behaviors</c>'s
+/// tenant/sequence/timestamp/hash-chain all resolved internally), never <c>05.Application.Behaviors</c>'s
 /// deliberately smaller local seam. See <c>Application/FakeAuditTrailWriter</c> for that fake.
 /// </para>
 /// <para>
 /// <b>Structural immutability:</b> this type — and <see cref="IAuditTrailWriter"/> itself — exposes
-/// no member anywhere that updates or deletes an existing <see cref="AuditRecord"/>. There is nothing
-/// to "reject" at a call site because no such call site exists; every accessor returning recorded
-/// records (<see cref="Records"/>, and <see cref="FakeAuditQueryService"/>'s query members) returns a
-/// defensive snapshot copy, so mutating a returned collection can never corrupt the backing store
-/// either. <see cref="Seed"/> is the one test-setup escape hatch, deliberately shaped as an
-/// additive/replace-the-whole-store operation (mirroring <c>Persistence/FakeRepository{TAggregate,TId}.Seed</c>'s
-/// precedent) — never a per-record update — used only to construct a deliberately-broken hash chain
-/// for <see cref="FakeAuditQueryService.VerifyChainIntegrityAsync"/> tests.
+/// no member anywhere that updates or deletes an existing <see cref="AuditRecord"/>. Every accessor
+/// returning recorded records (<see cref="Records"/>, and <see cref="FakeAuditQueryService"/>'s query
+/// members) returns a defensive snapshot copy. <see cref="Seed"/> is the one test-setup escape hatch,
+/// deliberately shaped as an additive/replace-the-whole-store operation — never a per-record update —
+/// used only to construct a deliberately-broken hash chain for
+/// <see cref="FakeAuditQueryService.VerifyFullChainAsync"/> tests.
 /// </para>
 /// <para>
 /// Computes a deterministic, NON-cryptographic hash chain (<see cref="System.HashCode"/>-derived hex
-/// string) scoped per <c>(TenantId, ResourceType)</c> partition, matching the real implementation's
-/// partition scoping — sufficient to prove <c>VerifyChainIntegrityAsync</c>'s tamper-detection
-/// contract in tests, but explicitly NOT real SHA-256. This fake takes NO dependency on
-/// <c>Cryptography/FakeContentHasher</c> — even though the latter ships exactly the algorithm this
-/// type could otherwise reuse — honoring this domain's sibling-capability-folder isolation rule.
+/// string) scoped per <c>(TenantId, ResourceType)</c> chain, matching the real implementation's chain
+/// scoping and <see cref="AuditRecord.Sequence"/> semantics — sufficient to prove
+/// <see cref="FakeAuditQueryService.VerifyFullChainAsync"/>'s tamper-detection contract in tests, but
+/// explicitly NOT real HMAC-SHA256. This fake takes NO dependency on
+/// <c>Cryptography/FakeContentHasher</c> — even though the latter ships exactly an algorithm this type
+/// could otherwise reuse — honoring this domain's sibling-capability-folder isolation rule.
+/// </para>
+/// <para>
+/// <b>Idempotency-key retry-safety:</b> like the real <c>EfAuditTrailWriter</c>, calling
+/// <see cref="RecordAsync"/> twice with the same <see cref="AuditEntry.IdempotencyKey"/> for the same
+/// chain returns the FIRST recorded record both times, never appending a duplicate.
 /// </para>
 /// </remarks>
 public sealed class FakeAuditTrailWriter : IAuditTrailWriter
 {
     private readonly Lock _gate = new();
     private readonly List<AuditRecord> _records = [];
-    private readonly Dictionary<(Guid TenantId, string ResourceType), string> _lastHashByPartition = [];
-    private readonly IAuditActorContext _actorContext;
+    private readonly Dictionary<string, (long Sequence, string Hash)> _headByChain = [];
+    private readonly ICurrentActorContext _actorContext;
+    private readonly ICurrentTenantContext _tenantContext;
     private readonly IClock _clock;
 
     /// <summary>Initialises a new <see cref="FakeAuditTrailWriter"/>.</summary>
     /// <param name="actorContext">
-    /// Resolves the current actor/tenant identity. Defaults to a fresh <see cref="FakeAuditActorContext"/>
+    /// Resolves the current actor identity. Defaults to a fresh <see cref="FakeAuditActorContext"/>
     /// for zero-config convenience when omitted.
+    /// </param>
+    /// <param name="tenantContext">
+    /// Resolves the current tenant identity. Defaults to the SAME fresh
+    /// <see cref="FakeAuditActorContext"/> instance <paramref name="actorContext"/> defaults to when
+    /// both are omitted, so a zero-config writer still gets matching actor/tenant identity.
     /// </param>
     /// <param name="clock">
     /// Resolves <see cref="AuditRecord.OccurredOn"/>. Defaults to a fresh <see cref="FakeClock"/> when omitted.
     /// </param>
-    public FakeAuditTrailWriter(IAuditActorContext? actorContext = null, IClock? clock = null)
+    public FakeAuditTrailWriter(
+        ICurrentActorContext? actorContext = null,
+        ICurrentTenantContext? tenantContext = null,
+        IClock? clock = null)
     {
-        _actorContext = actorContext ?? new FakeAuditActorContext();
+        var fallback = new FakeAuditActorContext();
+        _actorContext = actorContext ?? fallback;
+        _tenantContext = tenantContext ?? fallback;
         _clock = clock ?? new FakeClock();
     }
 
@@ -88,30 +106,53 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
 
         lock (_gate)
         {
-            var partitionKey = (_actorContext.TenantId, entry.ResourceType);
-            _lastHashByPartition.TryGetValue(partitionKey, out var previousHash);
+            var tenantId = _tenantContext.TenantId;
+            var chainKey = BuildChainKey(tenantId, entry.ResourceType);
+
+            if (entry.IdempotencyKey is { } idempotencyKey)
+            {
+                var existing = _records.FirstOrDefault(r =>
+                    BuildChainKey(r.TenantId, r.ResourceType) == chainKey && r.IdempotencyKey == idempotencyKey);
+                if (existing is not null)
+                    return Task.FromResult(existing);
+            }
+
+            _headByChain.TryGetValue(chainKey, out var head);
+            var sequence = head.Sequence + 1;
 
             var record = new AuditRecord
             {
                 Id = Guid.CreateVersion7(),
-                TenantId = _actorContext.TenantId,
+                TenantId = tenantId,
                 ActorId = _actorContext.ActorId,
+                ActorKind = _actorContext.ActorKind,
                 Action = entry.Action,
                 ResourceType = entry.ResourceType,
                 ResourceId = entry.ResourceId,
+                Sequence = sequence,
                 OccurredOn = _clock.UtcNow,
                 BeforeSnapshot = entry.BeforeSnapshot,
                 AfterSnapshot = entry.AfterSnapshot,
-                CorrelationId = entry.CorrelationId,
+                CorrelationId = Activity.Current?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId),
                 ApprovalId = entry.ApprovalId,
+                Outcome = entry.Outcome,
+                ErrorCode = entry.ErrorCode,
+                ClientId = entry.ClientId,
+                SessionId = entry.SessionId,
+                ImpersonatorId = entry.ImpersonatorId,
+                SourceService = entry.SourceService,
+                IdempotencyKey = entry.IdempotencyKey,
+                HashAlgorithm = "FAKE-NONCRYPTOGRAPHIC",
+                SchemaVersion = 1,
+                KeyId = "fake",
                 RecordHash = string.Empty,
-                PreviousRecordHash = previousHash,
+                PreviousRecordHash = sequence == 1 ? null : head.Hash,
             };
 
             record = record with { RecordHash = ComputeHash(record) };
 
             _records.Add(record);
-            _lastHashByPartition[partitionKey] = record.RecordHash;
+            _headByChain[chainKey] = (sequence, record.RecordHash);
 
             return Task.FromResult(record);
         }
@@ -119,10 +160,11 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
 
     /// <summary>
     /// Bulk-replaces the backing store with <paramref name="records"/> verbatim — including a
-    /// deliberately-inconsistent <see cref="AuditRecord.RecordHash"/>/<see cref="AuditRecord.PreviousRecordHash"/>
-    /// chain, if the caller constructs one. Test SETUP only, never code under test — the one way to
-    /// exercise <see cref="FakeAuditQueryService.VerifyChainIntegrityAsync"/>'s tamper-detection path
-    /// without a public update member on this type (there is none — see the class remarks).
+    /// deliberately-inconsistent <see cref="AuditRecord.RecordHash"/>/<see cref="AuditRecord.PreviousRecordHash"/>/
+    /// <see cref="AuditRecord.Sequence"/> chain, if the caller constructs one. Test SETUP only, never
+    /// code under test — the one way to exercise
+    /// <see cref="FakeAuditQueryService.VerifyFullChainAsync"/>'s tamper-detection path without a
+    /// public update member on this type (there is none — see the class remarks).
     /// </summary>
     /// <param name="records">The records to seed, replacing the current backing store entirely.</param>
     public void Seed(IEnumerable<AuditRecord> records)
@@ -132,12 +174,14 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
         lock (_gate)
         {
             _records.Clear();
-            _lastHashByPartition.Clear();
+            _headByChain.Clear();
             _records.AddRange(records);
 
             foreach (var record in _records)
             {
-                _lastHashByPartition[(record.TenantId, record.ResourceType)] = record.RecordHash;
+                var chainKey = BuildChainKey(record.TenantId, record.ResourceType);
+                if (!_headByChain.TryGetValue(chainKey, out var head) || record.Sequence > head.Sequence)
+                    _headByChain[chainKey] = (record.Sequence, record.RecordHash);
             }
         }
     }
@@ -148,38 +192,50 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
         lock (_gate)
         {
             _records.Clear();
-            _lastHashByPartition.Clear();
+            _headByChain.Clear();
         }
     }
+
+    /// <summary>Builds the internal, non-nullable chain key a <c>(TenantId, ResourceType)</c> pair maps to — mirrors <c>AuditChainKeyFormat</c>'s production shape.</summary>
+    internal static string BuildChainKey(Guid? tenantId, string resourceType) =>
+        $"{(tenantId is { } id ? id.ToString("D") : "system")}|{resourceType}";
 
     /// <summary>
     /// Computes the deterministic, non-cryptographic digest used both to stamp a newly-written
     /// record's <see cref="AuditRecord.RecordHash"/> and to re-verify an existing record's integrity
-    /// in <see cref="FakeAuditQueryService.VerifyChainIntegrityAsync"/> — the SAME function drives
-    /// both directions, so a tampered field is always detected by re-running it.
+    /// in <see cref="FakeAuditQueryService.VerifyFullChainAsync"/> — the SAME function drives both
+    /// directions, so a tampered field is always detected by re-running it.
     /// </summary>
     /// <remarks>
     /// Public (not <see langword="internal"/>) specifically so a test can construct a
     /// self-consistent-but-wrongly-linked FORGED record via <see cref="Seed"/> — one whose
     /// <see cref="AuditRecord.RecordHash"/> correctly matches its own fields (including a
     /// deliberately wrong <see cref="AuditRecord.PreviousRecordHash"/>) — proving
-    /// <see cref="FakeAuditQueryService.VerifyChainIntegrityAsync"/> catches a broken CHAIN LINK,
-    /// not merely a corrupted field, a materially different attack shape a real hash chain must
-    /// also guard against.
+    /// <see cref="FakeAuditQueryService.VerifyFullChainAsync"/> catches a broken CHAIN LINK, not merely
+    /// a corrupted field.
     /// </remarks>
     public static string ComputeHash(AuditRecord record)
     {
         var hash = new HashCode();
         hash.Add(record.TenantId);
         hash.Add(record.ActorId);
+        hash.Add(record.ActorKind);
         hash.Add(record.Action);
         hash.Add(record.ResourceType);
         hash.Add(record.ResourceId);
+        hash.Add(record.Sequence);
         hash.Add(record.OccurredOn);
         hash.Add(record.BeforeSnapshot);
         hash.Add(record.AfterSnapshot);
         hash.Add(record.CorrelationId);
         hash.Add(record.ApprovalId);
+        hash.Add(record.Outcome);
+        hash.Add(record.ErrorCode);
+        hash.Add(record.ClientId);
+        hash.Add(record.SessionId);
+        hash.Add(record.ImpersonatorId);
+        hash.Add(record.SourceService);
+        hash.Add(record.IdempotencyKey);
         hash.Add(record.PreviousRecordHash);
 
         return hash.ToHashCode().ToString("x8");

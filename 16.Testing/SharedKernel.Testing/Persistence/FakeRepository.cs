@@ -253,11 +253,13 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     /// if set on <paramref name="spec"/> — no special-casing, mirroring
     /// <c>ISpecificationEvaluator&lt;T&gt;.GetQuery</c>'s own method-agnostic real behavior.
     /// </remarks>
-    public Task<int> CountAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
+    public Task<long> CountAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(ApplySpecification(spec).Count());
+        // P-557/W2: a count is always the count of every matching row, ignoring Skip/Take — use the
+        // un-paged pipeline (ApplyFilterOrderDistinct), not ApplySpecification.
+        return Task.FromResult(ApplyFilterOrderDistinct(spec).LongCount());
     }
 
     /// <inheritdoc />
@@ -434,7 +436,7 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     /// platform — <see cref="Guid"/>/<see cref="int"/>/<see cref="long"/>/<see cref="string"/>).
     /// </para>
     /// </remarks>
-    public Task<KeysetPage<TAggregate, TKey>> ListKeysetAsync<TKey>(
+    public Task<CursorPagedList<TAggregate>> ListKeysetAsync<TKey>(
         KeysetSpecification<TAggregate, TKey> spec,
         CancellationToken ct = default)
         where TKey : struct, IComparable<TKey>
@@ -442,6 +444,35 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         ArgumentNullException.ThrowIfNull(spec);
         ct.ThrowIfCancellationRequested();
 
+        var page = ComputeKeysetPage(spec);
+        return Task.FromResult(CursorPagedList<TAggregate>.FromLookahead(
+            page, spec.Take!.Value, last => BuildCursor(spec, last)));
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Same seek pipeline as <see cref="ListKeysetAsync{TKey}"/>, with the projection applied last.</remarks>
+    public Task<CursorPagedList<TResult>> ListKeysetProjectedAsync<TKey, TResult>(
+        KeysetSpecification<TAggregate, TKey> spec,
+        System.Linq.Expressions.Expression<Func<TAggregate, TResult>> selector,
+        CancellationToken ct = default)
+        where TKey : struct, IComparable<TKey>
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(selector);
+        ct.ThrowIfCancellationRequested();
+
+        var page = ComputeKeysetPage(spec);
+        var cursorPage = CursorPagedList<TAggregate>.FromLookahead(
+            page, spec.Take!.Value, last => BuildCursor(spec, last));
+
+        var compiledSelector = selector.Compile();
+        return Task.FromResult(cursorPage.Map(compiledSelector));
+    }
+
+    // Shared seek-pagination lookahead fetch (Take + 1 rows) for ListKeysetAsync/ListKeysetProjectedAsync.
+    private List<TAggregate> ComputeKeysetPage<TKey>(KeysetSpecification<TAggregate, TKey> spec)
+        where TKey : struct, IComparable<TKey>
+    {
         var sorted = ApplyFilterOrderDistinct(spec).ToList();
 
         var keySelector = (spec.OrderBy ?? spec.OrderByDescending)!.Compile();
@@ -469,22 +500,19 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         }
 
         var take = spec.Take!.Value;
-        var page = afterCursor.Take(take + 1).ToList();
+        return afterCursor.Take(take + 1).ToList();
+    }
 
-        var hasMore = page.Count > take;
-        if (hasMore)
-            page.RemoveAt(page.Count - 1);
+    private static string BuildCursor<TKey>(KeysetSpecification<TAggregate, TKey> spec, TAggregate last)
+        where TKey : struct, IComparable<TKey>
+    {
+        var keySelector = (spec.OrderBy ?? spec.OrderByDescending)!.Compile();
+        var idSelector = spec.ThenBys[0].KeySelector.Compile();
 
-        TKey? nextAfterKey = null;
-        object? nextAfterId = null;
-        if (hasMore && page.Count > 0)
-        {
-            var lastItem = page[^1];
-            nextAfterKey = (TKey)keySelector(lastItem);
-            nextAfterId = idSelector(lastItem);
-        }
+        var key = (TKey)keySelector(last);
+        var id = idSelector(last);
 
-        return Task.FromResult(new KeysetPage<TAggregate, TKey>(page, nextAfterKey, nextAfterId, hasMore));
+        return PageCursor.Encode(key, id);
     }
 
     // ----- Test-setup / introspection -----

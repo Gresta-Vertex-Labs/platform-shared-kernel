@@ -1,10 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Persistence.EfCore.Options;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Persistence;
@@ -15,9 +12,12 @@ namespace SharedKernel.Testing.Persistence;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Wires a fixed authenticated <see cref="IUserContext"/> (subject <c>00000000-0000-0000-0000-000000000001</c>, name <c>"test-user"</c>) so
-/// <c>AuditInterceptor</c> resolves without a real HTTP context, and a deterministic
-/// <see cref="FakeClock"/> (fixed snapshot, never real time) for stable interceptor timestamps.
+/// P-557/W2: wires a fixed <see cref="ICurrentActorContext"/> (<c>Persistence/FakeAuditActorContext</c>,
+/// actor id <c>"test-user"</c>) so <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c> resolve without
+/// a real security bridge, and a deterministic <see cref="FakeClock"/> (fixed snapshot, never real
+/// time) for stable interceptor timestamps. This class no longer references
+/// <c>SharedKernel.Security.Abstractions</c> at all — the platform interceptors were retargeted onto
+/// the local <see cref="ICurrentActorContext"/> seam in <c>06.Persistence</c>.
 /// </para>
 /// <para>Enables <see cref="DbContextOptionsBuilder.EnableSensitiveDataLogging"/> for readable test diagnostics.</para>
 /// </remarks>
@@ -30,9 +30,10 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
     protected TestSharedKernelDbContext(DbContextOptions options)
         : base(
             options,
-            new AuditInterceptor(TestUser, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
-            new SoftDeleteInterceptor(TestUser, new FakeClock(), Options.Create(new PersistenceServiceOptions())),
-            new ConcurrencyInterceptor())
+            new PersistenceContextDependencies(
+                new AuditInterceptor(TestActor, new FakeClock()),
+                new SoftDeleteInterceptor(TestActor, new FakeClock()),
+                new ConcurrencyInterceptor()))
     {
         // EF Core's internal per-context service provider does not expose the constructor-supplied
         // DbContextOptions as a resolvable service for standalone (non-DI-hosted) contexts, so
@@ -69,6 +70,6 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
     /// </summary>
     public Task EnsureCreatedAsync() => Database.EnsureCreatedAsync();
 
-    // The fixed caller the audit interceptors record: subject "00000000-0000-0000-0000-000000000001".
-    private static readonly UserContext TestUser = new(IdentityKind.User, "00000000-0000-0000-0000-000000000001") { Name = "test-user" };
+    // The fixed actor the audit interceptors record.
+    private static readonly ICurrentActorContext TestActor = new FakeAuditActorContext("test-user");
 }

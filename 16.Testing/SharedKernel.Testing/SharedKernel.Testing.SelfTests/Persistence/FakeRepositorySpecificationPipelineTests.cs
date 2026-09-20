@@ -134,7 +134,7 @@ public sealed class FakeRepositorySpecificationPipelineTests
     }
 
     [Fact]
-    public async Task CountAsync_WithSkipTakeSetOnSpec_AppliesThemToo_NoSpecialCasing()
+    public async Task CountAsync_WithSkipTakeSetOnSpec_IgnoresThem_CountsAllMatchingRows()
     {
         var orders = Enumerable.Range(0, 5).Select(i => NewOrder($"C{i}", i)).ToArray();
         var repo = new FakeRepository<TestSoftDeletableOrder, Guid>(o => o.Id, orders);
@@ -142,10 +142,11 @@ public sealed class FakeRepositorySpecificationPipelineTests
 
         var count = await repo.CountAsync(spec);
 
-        // Proves D-168's "no special-casing" claim explicitly: CountAsync counts the PAGED window
-        // (2), not the full unfiltered set (5), because it reuses the exact same ApplySpecification
-        // pipeline (Skip/Take included) that ListAsync uses — never ApplyFilterOrderDistinct alone.
-        Assert.Equal(2, count);
+        // P-557/W2: CountAsync now always counts every matching row, ignoring Skip/Take (a count
+        // bounded by a page size is never the correct "total" for a paginated caller) — it uses the
+        // un-paged ApplyFilterOrderDistinct pipeline, not ApplySpecification. All 5 orders match the
+        // spec's criteria; the paging window is irrelevant to CountAsync.
+        Assert.Equal(5, count);
     }
 
     [Fact]

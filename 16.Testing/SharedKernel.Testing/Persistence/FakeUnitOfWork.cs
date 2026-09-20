@@ -1,3 +1,4 @@
+using System.Data;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 
 namespace SharedKernel.Testing.Persistence;
@@ -59,6 +60,16 @@ public sealed class FakeUnitOfWork : ITransactionalUnitOfWork
     /// <inheritdoc />
     /// <remarks>Returns a freshly-constructed <see cref="FakePersistenceTransaction"/> on every call.</remarks>
     public Task<IPersistenceTransaction> BeginTransactionAsync(CancellationToken ct = default)
+        => BeginTransactionAsync(isolationLevel: null, ct);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Ignores <paramref name="isolationLevel"/> — this fake never issues real SQL. Returns a
+    /// freshly-constructed <see cref="FakePersistenceTransaction"/> on every call.
+    /// </remarks>
+    public Task<IPersistenceTransaction> BeginTransactionAsync(
+        IsolationLevel? isolationLevel,
+        CancellationToken ct = default)
     {
         Interlocked.Increment(ref _transactionCount);
         return Task.FromResult<IPersistenceTransaction>(new FakePersistenceTransaction());
@@ -79,9 +90,33 @@ public sealed class FakeUnitOfWork : ITransactionalUnitOfWork
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Ignores <paramref name="isolationLevel"/> and <paramref name="verifySucceeded"/> — this fake
+    /// never retries, so exhaustion (the only time <paramref name="verifySucceeded"/> would run) can
+    /// never happen. Same no-retry contract as the simple overload.
+    /// </remarks>
+    public Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        IsolationLevel? isolationLevel,
+        Func<CancellationToken, Task<bool>>? verifySucceeded,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        return operation(ct);
+    }
+
+    /// <inheritdoc />
     /// <remarks>Same no-retry contract as the non-generic overload — see its remarks.</remarks>
     public Task<TResult> ExecuteInTransactionAsync<TResult>(
         Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken ct = default)
+        => ExecuteInTransactionAsync(operation, isolationLevel: null, ct);
+
+    /// <inheritdoc />
+    /// <remarks>Ignores <paramref name="isolationLevel"/> — this fake never issues real SQL.</remarks>
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        IsolationLevel? isolationLevel,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(operation);

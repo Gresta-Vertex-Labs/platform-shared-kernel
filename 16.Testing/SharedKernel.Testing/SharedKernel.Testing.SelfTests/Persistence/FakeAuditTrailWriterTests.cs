@@ -1,4 +1,5 @@
 using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 
@@ -11,7 +12,12 @@ namespace SharedKernel.Testing.SelfTests.Persistence;
 /// </summary>
 public sealed class FakeAuditTrailWriterTests
 {
-    private static AuditEntry CreateEntry(string action = "OrderApproved", string resourceType = "Order", string resourceId = "order-1") =>
+    private static AuditEntry CreateEntry(
+        string action = "OrderApproved",
+        string resourceType = "Order",
+        string resourceId = "order-1",
+        string? idempotencyKey = null,
+        AuditOutcome outcome = AuditOutcome.Succeeded) =>
         new()
         {
             Action = action,
@@ -19,20 +25,36 @@ public sealed class FakeAuditTrailWriterTests
             ResourceId = resourceId,
             BeforeSnapshot = "before",
             AfterSnapshot = "after",
-            CorrelationId = "correlation-1",
             ApprovalId = "approval-1",
+            Outcome = outcome,
+            IdempotencyKey = idempotencyKey,
         };
 
     [Fact]
     public async Task RecordAsync_ResolvesActorAndTenantFromActorContext()
     {
         var actorContext = new FakeAuditActorContext("actor-1", Guid.NewGuid());
-        var writer = new FakeAuditTrailWriter(actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
 
         var record = await writer.RecordAsync(CreateEntry());
 
         Assert.Equal("actor-1", record.ActorId);
+        Assert.Equal(ActorKind.User, record.ActorKind);
         Assert.Equal(actorContext.TenantId, record.TenantId);
+    }
+
+    [Fact]
+    public async Task RecordAsync_NoTenantResolved_RecordsNullTenant()
+    {
+        // FakeAuditActorContext's constructor `tenantId: null` means "use the default", per its own
+        // documented convention — TenantId must be set to null via the property SETTER, after
+        // construction, to simulate "no tenant resolved".
+        var actorContext = new FakeAuditActorContext { TenantId = null };
+        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+
+        var record = await writer.RecordAsync(CreateEntry());
+
+        Assert.Null(record.TenantId);
     }
 
     [Fact]
@@ -59,18 +81,19 @@ public sealed class FakeAuditTrailWriterTests
     }
 
     [Fact]
-    public async Task RecordAsync_FirstRecordInPartition_HasNullPreviousHash()
+    public async Task RecordAsync_FirstRecordInChain_HasNullPreviousHash_AndSequenceOne()
     {
         var writer = new FakeAuditTrailWriter();
 
         var record = await writer.RecordAsync(CreateEntry());
 
         Assert.Null(record.PreviousRecordHash);
+        Assert.Equal(1, record.Sequence);
         Assert.False(string.IsNullOrWhiteSpace(record.RecordHash));
     }
 
     [Fact]
-    public async Task RecordAsync_SecondRecordInSamePartition_ChainsToFirst()
+    public async Task RecordAsync_SecondRecordInSameChain_ChainsToFirst_SequenceIncrements()
     {
         var actorContext = new FakeAuditActorContext();
         var writer = new FakeAuditTrailWriter(actorContext);
@@ -79,6 +102,7 @@ public sealed class FakeAuditTrailWriterTests
         var second = await writer.RecordAsync(CreateEntry(resourceId: "order-2"));
 
         Assert.Equal(first.RecordHash, second.PreviousRecordHash);
+        Assert.Equal(2, second.Sequence);
     }
 
     [Fact]
@@ -90,6 +114,7 @@ public sealed class FakeAuditTrailWriterTests
         var invoiceRecord = await writer.RecordAsync(CreateEntry(resourceType: "Invoice"));
 
         Assert.Null(invoiceRecord.PreviousRecordHash);
+        Assert.Equal(1, invoiceRecord.Sequence);
     }
 
     [Fact]
@@ -103,9 +128,44 @@ public sealed class FakeAuditTrailWriterTests
         await writerA.RecordAsync(CreateEntry());
         var recordB = await writerB.RecordAsync(CreateEntry());
 
-        // Independent writer instances never share a partition, but even against a shared backing
-        // store the (TenantId, ResourceType) partition key means tenant B's chain starts fresh.
+        // Independent writer instances never share a chain, but even against a shared backing
+        // store the (TenantId, ResourceType) chain key means tenant B's chain starts fresh.
         Assert.Null(recordB.PreviousRecordHash);
+    }
+
+    [Fact]
+    public async Task RecordAsync_SameIdempotencyKeyTwice_ReturnsSameRecord_NeverAppendsDuplicate()
+    {
+        var writer = new FakeAuditTrailWriter();
+
+        var first = await writer.RecordAsync(CreateEntry(idempotencyKey: "idem-1"));
+        var second = await writer.RecordAsync(CreateEntry(idempotencyKey: "idem-1"));
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Single(writer.Records);
+    }
+
+    [Fact]
+    public async Task RecordAsync_DifferentIdempotencyKeys_BothAppend()
+    {
+        var writer = new FakeAuditTrailWriter();
+
+        await writer.RecordAsync(CreateEntry(idempotencyKey: "idem-1"));
+        await writer.RecordAsync(CreateEntry(idempotencyKey: "idem-2"));
+
+        Assert.Equal(2, writer.Records.Count);
+    }
+
+    [Fact]
+    public async Task RecordAsync_FailedOutcome_RecordsErrorCode()
+    {
+        var writer = new FakeAuditTrailWriter();
+
+        var entry = CreateEntry(outcome: AuditOutcome.Failed) with { ErrorCode = "order.rejected" };
+        var record = await writer.RecordAsync(entry);
+
+        Assert.Equal(AuditOutcome.Failed, record.Outcome);
+        Assert.Equal("order.rejected", record.ErrorCode);
     }
 
     [Fact]
@@ -137,8 +197,8 @@ public sealed class FakeAuditTrailWriterTests
     [Fact]
     public void IAuditTrailWriter_HasNoUpdateOrDeleteMember()
     {
-        // Structural proof, mirroring D-221's own phrasing: the interface exposes exactly one
-        // member, RecordAsync — there is no update/delete method to guard against calling.
+        // Structural proof: the interface exposes exactly one member, RecordAsync — there is no
+        // update/delete method to guard against calling.
         var members = typeof(IAuditTrailWriter).GetMethods();
 
         Assert.Single(members);
@@ -156,10 +216,16 @@ public sealed class FakeAuditTrailWriterTests
             Id = Guid.NewGuid(),
             TenantId = Guid.NewGuid(),
             ActorId = "seeded-actor",
+            ActorKind = ActorKind.System,
             Action = "Seeded",
             ResourceType = "Seed",
             ResourceId = "seed-1",
+            Sequence = 1,
             OccurredOn = DateTimeOffset.UtcNow,
+            Outcome = AuditOutcome.Succeeded,
+            HashAlgorithm = "FAKE-NONCRYPTOGRAPHIC",
+            SchemaVersion = 1,
+            KeyId = "fake",
             RecordHash = "deadbeef",
         };
         writer.Seed([seeded]);

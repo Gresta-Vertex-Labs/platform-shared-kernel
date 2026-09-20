@@ -1,4 +1,4 @@
-using System.Data;
+using System.Data.Common;
 using NSubstitute;
 using SharedKernel.Testing.Persistence;
 
@@ -9,7 +9,7 @@ public sealed class FakeDbConnectionFactoryTests
     [Fact]
     public async Task CreateConnectionAsync_ReturnsExactConnection_ProducedBySuppliedDelegate()
     {
-        var connection = Substitute.For<IDbConnection>();
+        var connection = Substitute.For<DbConnection>();
         var factory = new FakeDbConnectionFactory(() => connection);
 
         var result = await factory.CreateConnectionAsync();
@@ -24,7 +24,7 @@ public sealed class FakeDbConnectionFactoryTests
         var factory = new FakeDbConnectionFactory(() =>
         {
             callCount++;
-            return Substitute.For<IDbConnection>();
+            return Substitute.For<DbConnection>();
         });
 
         var first = await factory.CreateConnectionAsync();
@@ -41,7 +41,7 @@ public sealed class FakeDbConnectionFactoryTests
     [Fact]
     public void CreateConnectionAsync_ReturnsAlreadyCompletedTask()
     {
-        var factory = new FakeDbConnectionFactory(() => Substitute.For<IDbConnection>());
+        var factory = new FakeDbConnectionFactory(() => Substitute.For<DbConnection>());
 
         var task = factory.CreateConnectionAsync();
 
@@ -57,7 +57,7 @@ public sealed class FakeDbConnectionFactoryTests
     [Fact]
     public async Task CreateConnectionAsync_AlreadyCancelledToken_ThrowsSynchronously()
     {
-        var factory = new FakeDbConnectionFactory(() => Substitute.For<IDbConnection>());
+        var factory = new FakeDbConnectionFactory(() => Substitute.For<DbConnection>());
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
