@@ -1,0 +1,91 @@
+#nullable enable
+SharedKernel.Persistence.EfCore.Encryption.BlindIndex.EncryptedPropertyQueryExtensions
+SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService
+SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService.Compute(string! purpose, string! normalizedValue, System.Guid? tenantId) -> string!
+SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter
+SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor
+SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.EncryptedColumnEqualityGuardInterceptor() -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.EncryptionInterceptor(SharedKernel.Cryptography.Symmetric.ISynchronousSymmetricEncryptionService! encryptionService, SharedKernel.Cryptography.Symmetric.ISynchronousEncryptionKeyProvider! keyProvider, SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService! blindIndexService, Microsoft.Extensions.Options.IOptions<SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions!>! options) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.InitializedInstance(Microsoft.EntityFrameworkCore.Diagnostics.MaterializationInterceptionData materializationData, object! entity) -> object!
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SaveChangesFailed(Microsoft.EntityFrameworkCore.Diagnostics.DbContextErrorEventData! eventData) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SaveChangesFailedAsync(Microsoft.EntityFrameworkCore.Diagnostics.DbContextErrorEventData! eventData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SavedChanges(Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesCompletedEventData! eventData, int result) -> int
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SavedChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesCompletedEventData! eventData, int result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<int>
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SavingChanges(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result) -> Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor.SavingChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>>
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptorOptionsContributor
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptorOptionsContributor.Apply(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptorOptionsContributor.EncryptionInterceptorOptionsContributor(SharedKernel.Persistence.EfCore.Encryption.EncryptionInterceptor! encryptionInterceptor, SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor! equalityGuardInterceptor) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException
+SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.EncryptionKeyNotFoundException(string! version) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.Version.get -> string!
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConvention
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConvention.EncryptionModelConvention() -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConvention.ProcessModelFinalizing(Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder! modelBuilder, Microsoft.EntityFrameworkCore.Metadata.Conventions.IConventionContext<Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder!>! context) -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConventionFactory
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConventionFactory.CreateConvention(Microsoft.EntityFrameworkCore.DbContext! context, Microsoft.EntityFrameworkCore.DbContextOptions! options) -> Microsoft.EntityFrameworkCore.Metadata.Conventions.IConvention!
+SharedKernel.Persistence.EfCore.Encryption.EncryptionModelConventionFactory.EncryptionModelConventionFactory() -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.AllowUnencryptedValues.get -> bool
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.AllowUnencryptedValues.set -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.EncryptionOptions() -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.KeyRingRefreshInterval.get -> System.TimeSpan
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.KeyRingRefreshInterval.set -> void
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.KeyRingRetiredKeyIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.KeyRingRetiredKeyIds.set -> void
+SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions
+SharedKernel.Persistence.EfCore.Encryption.KeyRing.EncryptionKeyRingCache
+SharedKernel.Persistence.EfCore.Encryption.KeyRing.EncryptionKeyRingCache.EncryptionKeyRingCache(SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! inner, System.Collections.Generic.IReadOnlyList<string!>! retiredKeyIds) -> void
+SharedKernel.Persistence.EfCore.Encryption.KeyRing.EncryptionKeyRingCache.GetCurrentKey() -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Persistence.EfCore.Encryption.KeyRing.EncryptionKeyRingCache.GetKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey?
+SharedKernel.Persistence.EfCore.Encryption.KeyRing.EncryptionKeyRingCache.RefreshAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.<Clone>$() -> SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport!
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.CheckpointToken.get -> string?
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.CheckpointToken.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Completed.get -> bool
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Completed.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Deconstruct(out long RowsProcessed, out long RowsRotated, out long RowsFailed, out bool Completed, out string? CheckpointToken, out System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.EncryptionRotationReport(long RowsProcessed, long RowsRotated, long RowsFailed, bool Completed, string? CheckpointToken, System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Equals(SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? other) -> bool
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsFailed.get -> long
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsFailed.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsProcessed.get -> long
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsProcessed.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRemainingByKeyId.get -> System.Collections.Generic.IReadOnlyDictionary<string!, long>!
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRemainingByKeyId.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRotated.get -> long
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRotated.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>.EncryptionRotationService(Microsoft.EntityFrameworkCore.IDbContextFactory<TContext!>! contextFactory, SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService! encryptionService, SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! keyProvider, SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService! blindIndexService, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext!>!>! logger) -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>.RotateAsync(string! expectedCurrentKeyId, string? checkpointToken = null, int batchSize = 500, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport!>!
+SharedKernel.Persistence.EfCore.Encryption.Rotation.IEncryptionRotationJob
+SharedKernel.Persistence.EfCore.Encryption.Rotation.IEncryptionRotationJob.RotateAsync(string! expectedCurrentKeyId, string? checkpointToken = null, int batchSize = 500, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport!>!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.DecryptFailuresTotal = "persistence.encryption.decrypt_failures" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.EncryptFailuresTotal = "persistence.encryption.encrypt_failures" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Name = "SharedKernel.Persistence.EfCore.Encryption" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RotationRowsFailedTotal = "persistence.encryption.rotation_rows_failed" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RotationRowsRotatedTotal = "persistence.encryption.rotation_rows_rotated" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.DisableTagText = "SharedKernel:Persistence:Encryption:AllowEncryptedColumnEquality" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.MaxPurposeLength = 200 -> int
+override SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.ReaderExecuting(System.Data.Common.DbCommand! command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader!> result) -> Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader!>
+override SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.ReaderExecutingAsync(System.Data.Common.DbCommand! command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader!> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader!>>
+override SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Equals(object? obj) -> bool
+override SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.GetHashCode() -> int
+override SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.ToString() -> string!
+static SharedKernel.Persistence.EfCore.Encryption.BlindIndex.EncryptedPropertyQueryExtensions.WhereBlindIndexEquals<T>(this System.Linq.IQueryable<T!>! query, SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService! blindIndexService, System.Linq.Expressions.Expression<System.Func<T!, string!>!>! property, string! purpose, string! value, System.Func<string!, string!>? normalize = null, System.Guid? tenantId = null) -> System.Linq.IQueryable<T!>!
+static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordDecryptFailure(string! reason) -> void
+static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordEncryptFailure(string! reason) -> void
+static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordRotationRowsFailed(string! sourceKeyId, long count) -> void
+static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordRotationRowsRotated(string! targetKeyId, long count) -> void
+static SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.SectionName.get -> string!
+static SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions.WithEncryption<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions!>? configure = null) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+static SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions.WithEncryption<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder, System.Action<SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions!>? configure = null) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.Encrypt<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>! builder, string! purpose, bool perTenantKey = false) -> Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>!
+static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.Encrypt<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>! builder, string! purpose, bool perTenantKey = false) -> Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>!
+static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>! builder, System.Func<string!, string!>? normalize = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>!
+static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>! builder, System.Func<string!, string!>? normalize = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>!
+static SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.operator !=(SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? left, SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? right) -> bool
+static SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.operator ==(SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? left, SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? right) -> bool
