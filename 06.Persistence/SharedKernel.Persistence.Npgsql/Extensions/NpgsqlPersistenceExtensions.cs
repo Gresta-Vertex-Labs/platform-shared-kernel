@@ -87,7 +87,10 @@ public static class NpgsqlPersistenceExtensions
         RegisterDefaultDataSource(services, configureDataSource, periodicPasswordProvider);
 
         services.AddSingleton<IMigrationLock, NpgsqlAdvisoryMigrationLock>();
-        services.AddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
+        services.AddSingleton<ITenantSessionBinder>(sp =>
+            new NpgsqlTenantSessionBinder(
+                sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
+                    .Get(Microsoft.Extensions.Options.Options.DefaultName).CrossTenantEscapeToken));
         services.AddSingleton<IAdvisoryTransactionLock, NpgsqlAdvisoryTransactionLock>();
 
         return services;

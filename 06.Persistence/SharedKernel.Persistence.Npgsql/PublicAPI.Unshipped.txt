@@ -5,13 +5,13 @@ SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.NpgsqlConnec
 SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder
 SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindConnectionAsync(System.Data.Common.DbConnection! connection, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.NpgsqlTenantSessionBinder() -> void
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.NpgsqlTenantSessionBinder(string? crossTenantEscapeToken = null) -> void
 SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.ResetConnectionAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock
 SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.AcquireAsync(string! lockKey, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
 SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.NpgsqlAdvisoryMigrationLock(Npgsql.NpgsqlDataSource! dataSource, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock!>? logger = null) -> void
 SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.NpgsqlAdvisoryTransactionLock() -> void
 SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions
@@ -27,6 +27,8 @@ SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInse
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.get -> string!
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.CrossTenantEscapeToken.get -> string?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.CrossTenantEscapeToken.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.get -> int?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.LockTimeoutMilliseconds.get -> int?

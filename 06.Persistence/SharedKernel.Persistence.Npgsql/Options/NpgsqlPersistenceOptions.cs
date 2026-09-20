@@ -86,4 +86,34 @@ public sealed class NpgsqlPersistenceOptions : ISectionBoundOptions
     /// </summary>
     [Range(1, int.MaxValue)]
     public int? IdleInTransactionSessionTimeoutMilliseconds { get; set; }
+
+    /// <summary>
+    /// The value <c>NpgsqlTenantSessionBinder</c> writes to the <c>app.cross_tenant</c> session
+    /// setting for an active <see cref="Abstractions.Context.ICrossTenantScope"/>, and the value a
+    /// matching row-level security policy's escape clause must compare against — see
+    /// <c>RowLevelSecurityMigrationBuilderExtensions.EnableTenantRowLevelSecurity</c>'s
+    /// <c>crossTenantEscapeToken</c> parameter.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Defaults to the literal <c>"on"</c> when left unset</strong> — the ORIGINAL, guessable
+    /// value, kept only so an existing deployment's migration and running configuration stay in sync
+    /// without this property being set at all. <c>"on"</c> gives NO protection against an attacker who
+    /// can execute arbitrary SQL as the application's own database role: <c>SELECT
+    /// set_config('app.cross_tenant', 'on', false)</c> is an ordinary, unprivileged statement that role
+    /// can always run, disabling row-level security on every protected table platform-wide with no
+    /// need to go through <see cref="Abstractions.Context.ICrossTenantScope"/> at all.
+    /// </para>
+    /// <para>
+    /// Setting this to a long (32+ character), cryptographically random, per-deployment secret —
+    /// provisioned the same way a database credential or an encryption key is, never checked into
+    /// source control — closes that gap: an attacker with only SQL execution rights, and no access to
+    /// this configuration value, cannot guess it. The SAME value must be passed to
+    /// <c>EnableTenantRowLevelSecurity</c> when authoring the migration that creates the policy —
+    /// the two are compared against each other, and a mismatch fails closed exactly like a wrong
+    /// value would (the escape clause simply never matches).
+    /// </para>
+    /// </remarks>
+    [MinLength(32)]
+    public string? CrossTenantEscapeToken { get; set; }
 }

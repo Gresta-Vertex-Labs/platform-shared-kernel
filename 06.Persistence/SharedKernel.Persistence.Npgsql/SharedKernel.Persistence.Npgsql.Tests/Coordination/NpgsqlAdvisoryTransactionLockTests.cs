@@ -136,6 +136,78 @@ public sealed class NpgsqlAdvisoryTransactionLockTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AcquireAsync_ZeroTimeout_ThrowsArgumentOutOfRangeException()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var advisoryLock = new NpgsqlAdvisoryTransactionLock();
+
+        var act = async () => await advisoryLock.AcquireAsync(connection, transaction, "xact-lock-zero-timeout", TimeSpan.Zero);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>(
+            "PostgreSQL's lock_timeout=0 means 'wait forever', the opposite of a bounded wait");
+    }
+
+    [Fact]
+    public async Task AcquireAsync_NegativeTimeout_ThrowsArgumentOutOfRangeException()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var advisoryLock = new NpgsqlAdvisoryTransactionLock();
+
+        var act = async () =>
+            await advisoryLock.AcquireAsync(connection, transaction, "xact-lock-negative-timeout", TimeSpan.FromSeconds(-1));
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task AcquireAsync_WithTimeout_LockImmediatelyAvailable_StillSucceeds()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var advisoryLock = new NpgsqlAdvisoryTransactionLock();
+
+        var act = async () =>
+            await advisoryLock.AcquireAsync(connection, transaction, "xact-lock-timeout-uncontended", TimeSpan.FromSeconds(5));
+
+        await act.Should().NotThrowAsync("a timeout must never interfere with an uncontended acquisition");
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
+    public async Task AcquireAsync_SecondTransactionSameKey_WithTimeout_ThrowsTimeoutException_WithoutWaitingForFirstToCommit()
+    {
+        // The exact self-deadlock shape a timeout-less caller has no structural defence against: the
+        // FIRST holder never commits during this test (simulating a transaction idle-in-transaction,
+        // awaiting application code) — PostgreSQL's own deadlock detector never fires for this shape,
+        // because the first connection is not itself blocked on anything. Only the SECOND acquirer's
+        // own timeout bounds the wait.
+        const string lockKey = "xact-lock-timeout-contention";
+        var advisoryLock = new NpgsqlAdvisoryTransactionLock();
+
+        await using var connectionA = await _dataSource!.OpenConnectionAsync();
+        await using var transactionA = await connectionA.BeginTransactionAsync();
+        await advisoryLock.AcquireAsync(connectionA, transactionA, lockKey);
+
+        await using var connectionB = await _dataSource!.OpenConnectionAsync();
+        await using var transactionB = await connectionB.BeginTransactionAsync();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var act = async () => await advisoryLock.AcquireAsync(connectionB, transactionB, lockKey, TimeSpan.FromMilliseconds(500));
+
+        (await act.Should().ThrowAsync<TimeoutException>())
+            .Which.InnerException.Should().BeOfType<PostgresException>();
+        stopwatch.Elapsed.Should().BeLessThan(
+            TimeSpan.FromSeconds(10), "the timeout must actually bound the wait, not merely be accepted and ignored");
+
+        // The first holder's transaction was never touched by the second's failed attempt — it can
+        // still commit normally afterward.
+        await transactionA.CommitAsync();
+        await transactionB.RollbackAsync();
+    }
+
+    [Fact]
     public async Task AcquireAsync_ThirdTransaction_AcquiresImmediately_AfterEarlierHolderCommits()
     {
         const string lockKey = "xact-lock-sequential-reuse";

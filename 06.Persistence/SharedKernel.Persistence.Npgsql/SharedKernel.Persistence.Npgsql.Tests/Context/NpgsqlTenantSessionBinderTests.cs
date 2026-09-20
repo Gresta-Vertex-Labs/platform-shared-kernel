@@ -132,6 +132,52 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task BindAsync_CrossTenantActive_WithCustomEscapeToken_WritesThatTokenNotTheLiteralOn()
+    {
+        // Hardening proof: when a per-deployment secret is configured, the binder writes THAT value,
+        // never the guessable default "on" — an attacker limited to executing arbitrary SQL as the
+        // application's own role has no way to learn this value from the client library alone.
+        var binder = new NpgsqlTenantSessionBinder(crossTenantEscapeToken: "a-long-unguessable-per-deployment-secret");
+
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: true);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT current_setting('app.cross_tenant', true)";
+        var value = (string?)await command.ExecuteScalarAsync();
+
+        value.Should().Be("a-long-unguessable-per-deployment-secret");
+        value.Should().NotBe("on");
+
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
+    public async Task BindAsync_CrossTenantActive_NoTokenConfigured_FallsBackToTheLegacyOnLiteral()
+    {
+        // Backward-compatible default: a deployment that has not opted into the hardened token keeps
+        // working exactly as before.
+        var binder = new NpgsqlTenantSessionBinder();
+
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: true);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT current_setting('app.cross_tenant', true)";
+        var value = (string?)await command.ExecuteScalarAsync();
+
+        value.Should().Be("on");
+
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
     public async Task BindConnectionAsync_SetsTheSessionSetting_ReadableOutsideAnyTransaction()
     {
         var binder = new NpgsqlTenantSessionBinder();

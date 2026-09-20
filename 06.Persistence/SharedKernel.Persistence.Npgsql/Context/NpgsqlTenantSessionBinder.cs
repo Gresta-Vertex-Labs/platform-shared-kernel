@@ -27,13 +27,32 @@ namespace SharedKernel.Persistence.Npgsql.Context;
 /// <c>SharedKernel.Persistence.PostgreSQL</c>'s RLS migration helper. Binding the session settings
 /// with no matching policy enforces nothing.
 /// </para>
+/// <para>
+/// <strong>Cross-tenant escape token:</strong> the value written for an active
+/// <see cref="ICrossTenantScope"/> is <paramref name="crossTenantEscapeToken"/> — see
+/// <c>NpgsqlPersistenceOptions.CrossTenantEscapeToken</c>'s own remarks for why the literal
+/// <c>"on"</c> default it falls back to is guessable, and how to harden it.
+/// </para>
 /// </remarks>
 public sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
 {
     private const string TenantSettingName = "app.tenant_id";
     private const string CrossTenantSettingName = "app.cross_tenant";
-    private const string CrossTenantOn = "on";
+    private const string DefaultCrossTenantOn = "on";
     private const string CrossTenantOff = "off";
+
+    private readonly string _crossTenantOn;
+
+    /// <summary>Initialises a new <see cref="NpgsqlTenantSessionBinder"/>.</summary>
+    /// <param name="crossTenantEscapeToken">
+    /// The value to write for an active <see cref="ICrossTenantScope"/>, and that a matching
+    /// row-level security policy's escape clause must compare against. Defaults to the literal
+    /// <c>"on"</c> when omitted — see <c>NpgsqlPersistenceOptions.CrossTenantEscapeToken</c>'s remarks.
+    /// </param>
+    public NpgsqlTenantSessionBinder(string? crossTenantEscapeToken = null)
+    {
+        _crossTenantOn = string.IsNullOrEmpty(crossTenantEscapeToken) ? DefaultCrossTenantOn : crossTenantEscapeToken;
+    }
 
     /// <inheritdoc />
     public async Task BindAsync(
@@ -50,7 +69,7 @@ public sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
             connection, transaction, TenantSettingName, tenantId?.ToString() ?? string.Empty,
             isLocal: true, cancellationToken);
         await SetConfigAsync(
-            connection, transaction, CrossTenantSettingName, crossTenantActive ? CrossTenantOn : CrossTenantOff,
+            connection, transaction, CrossTenantSettingName, crossTenantActive ? _crossTenantOn : CrossTenantOff,
             isLocal: true, cancellationToken);
     }
 
@@ -67,7 +86,7 @@ public sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
             connection, transaction: null, TenantSettingName, tenantId?.ToString() ?? string.Empty,
             isLocal: false, cancellationToken);
         await SetConfigAsync(
-            connection, transaction: null, CrossTenantSettingName, crossTenantActive ? CrossTenantOn : CrossTenantOff,
+            connection, transaction: null, CrossTenantSettingName, crossTenantActive ? _crossTenantOn : CrossTenantOff,
             isLocal: false, cancellationToken);
     }
 
