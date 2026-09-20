@@ -220,3 +220,59 @@ relying on the conclusion to design a test.
   `InterceptionResult<T>` — caused two real RS0016 round-trips in this session). Always let a real
   `dotnet build` of the SPECIFIC project be the source of truth for the exact required text, never trust
   a hand-typed line to be right on the first try.
+
+## Follow-up item after first handback: startup guard for retry-vs-transactional-UoW (received, resolved, second handback)
+- Coordinator can and does send a further small item immediately after a `SubagentHandback` fires,
+  in the same turn's tool-result batch — explicitly offering "say so and I'll take this one myself" as
+  an out. Read the item fully before deciding: if it's small, clearly inside your ownership, and you
+  still have full context loaded, finishing it yourself is usually cheaper than a hand-off round trip.
+- **Pattern worth reusing: when a `Build()`-time eager check cannot see far enough (crosses a package
+  boundary this package must not reference), add a SECOND check to the existing conditionally-registered
+  `IHostedService` startup validator instead of inventing a new hosted service or trying to probe a
+  throwaway `ServiceProvider`/`DbContextOptions` inside `Build()` itself.** Concretely:
+  `EfCorePersistenceExtensions.Build()` already had an eager check —
+  `if (_transientFaultRetryOptions is not null && _transactionalUnitOfWorkEnabled) throw ...` — but
+  `_transientFaultRetryOptions` is set ONLY by `.WithTransientFaultRetry()` (a pure discoverability
+  flag, decoupled BY DESIGN from whether `UsePostgreSQL(..., maxRetryCount)` was actually called inside
+  the `configureDb` delegate — `TransientFaultRetryOptions`'s own doc says so explicitly). So a consumer
+  enabling Npgsql-native retry directly, without ever calling `.WithTransientFaultRetry()`, slipped past
+  that check. Rather than trying to probe `configureDb`'s effect on execution-strategy state inside
+  `Build()` (would need a throwaway root `ServiceProvider`, risking eager construction of whatever
+  singletons the CONSUMER already registered before calling `.Build()` — a real, if narrow, side-effect
+  risk), the fix extends `Diagnostics/PersistenceContextWiringValidator<TContext>` (already an
+  `IHostedService`, already conditionally registered by `Build()`, already constructs one real
+  `TContext` via `IDbContextFactory<TContext>` inside a proper DI scope to verify interceptor
+  attachment) with one more check reading `context.Database.CreateExecutionStrategy().RetriesOnFailure`
+  — the EXACT SAME live, provider-neutral signal `EfTransactionalUnitOfWork.BeginTransactionAsync`
+  itself already checks at runtime, so there is no duplicated/driftable logic and no need to reference
+  Npgsql to detect its retry configuration. Constructing a `DbContext` to read its execution strategy
+  needs no database connection (confirmed by this same validator's pre-existing doc comment for its
+  original check) — this is a real, general pattern for this domain: EF Core's
+  `DatabaseFacade.CreateExecutionStrategy()`/`IExecutionStrategy.RetriesOnFailure` is provider-neutral
+  even though ENABLING a retrying strategy (`EnableRetryOnFailure`) is provider-specific, so READING
+  live execution-strategy state is always a legal, `06.Persistence.EfCore`-safe way to detect retry
+  configuration this package could never see through its own `configureDb` delegate.
+- `Build()`'s `hasCapabilitiesToVerify` gate (deciding whether the wiring-validator hosted service is
+  registered at all) must independently include EVERY capability the validator checks — it did not
+  include `_transactionalUnitOfWorkEnabled` before this fix, so a bare `.WithTransactionalUnitOfWork()`
+  call with no other opt-in capability skipped registering the validator entirely, a second instance of
+  the same underlying gap. When adding a new check to this validator, always check whether its OWN
+  enabling flag also needs adding to that gate expression, not just to the validator's own logic.
+- Testing a "retrying execution strategy" scenario needs NO Postgres/Npgsql at all:
+  `.ReplaceService<IExecutionStrategyFactory, TImplementation>()` is a provider-neutral EF Core API
+  (works identically on SQLite), and this codebase already has a ready-made fixture,
+  `AlwaysRetryStrategyFactory`/`AlwaysRetryStrategy` (`SharedKernel.Persistence.EfCore.Tests.Diagnostics`
+  namespace, defined for `PersistenceRetryDiagnosticListenerTests`, `internal` but reachable from any
+  test in the same assembly via `using SharedKernel.Persistence.EfCore.Tests.Diagnostics;` — see
+  `RetryExhaustionLoggingTests.cs` for the established reuse pattern). If the test only needs
+  `RetriesOnFailure == true` as a property read (no actual retry LOOP needs to execute — i.e. no
+  `FaultInjectingInterceptor` / no real `SaveChangesAsync` against a failing operation), it does NOT
+  need to join the shared `"RetryDiagnostics"` xUnit collection those fault-injecting tests use to avoid
+  cross-contaminating `PersistenceRetryDiagnosticListener`'s process-wide observation — that serialization
+  requirement only applies when genuine retry attempts actually run.
+- FluentAssertions gotcha (re-confirmed, cost one build round-trip): `act.Should().ThrowAsync<T>()
+  .WithMessage(...)` returns `Task<ExceptionAssertions<T>>`, NOT `ExceptionAssertions<T>` — `.Which`
+  must be accessed AFTER awaiting the whole chain (`(await act.Should().ThrowAsync<T>()
+  .WithMessage(...)).Which...`), unlike the synchronous `.Throw<T>()` form used elsewhere in the same
+  file, where `.WithMessage(...).Which...` chains directly with no `await` in between. Easy to typo by
+  copy-pasting the sync pattern into an async test.
