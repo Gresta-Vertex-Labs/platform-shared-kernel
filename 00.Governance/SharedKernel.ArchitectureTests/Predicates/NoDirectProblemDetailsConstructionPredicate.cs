@@ -36,8 +36,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// .<see cref="MemberReference.FullName"/> exactly matches
 /// <c>"Microsoft.AspNetCore.Mvc.ProblemDetails"</c> or
 /// <c>"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"</c>. Reuses the established
-/// Mono.Cecil <c>Newobj</c>-walk pattern from
-/// <see cref="NoDirectEncryptedValueConverterInstantiationPredicate"/>.
+/// Mono.Cecil <c>Newobj</c>-walk pattern also used by
+/// <see cref="NoAesCipherInDomainOrApplicationPredicate"/>.
 /// </para>
 /// <para>
 /// <strong>Offending pattern:</strong>

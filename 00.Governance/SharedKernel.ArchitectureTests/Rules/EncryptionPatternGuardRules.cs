@@ -5,8 +5,8 @@ using SharedKernel.ArchitectureTests.Predicates;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Pre-built NetArchTest predicates (SK0301–SK0304) that close the four most likely misuse
-/// patterns of the AES-256-GCM field-level encryption subsystem.
+/// Pre-built NetArchTest predicates (SK0301–SK0303) that close the most likely misuse patterns of
+/// the AES-256-GCM field-level encryption subsystem.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <see cref="Helpers.ArchitectureRuleBase.AssertRule"/> to throw on violation.
 /// </para>
 /// <para>
-/// The four rules form an interlocking guard ring:
+/// The three rules form an interlocking guard ring:
 /// <list type="bullet">
 ///   <item><description>
 ///     SK0301 (<see cref="NoCryptoCipherInDomainOrApplication"/>) — cipher usage in domain or
@@ -33,15 +33,27 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     <c>IEncryptionRotationJob</c> injection must be restricted to hosted services, Hangfire
 ///     jobs, Temporal activities, and management controllers.
 ///   </description></item>
-///   <item><description>
-///     SK0304 (<see cref="NoDirectEncryptedValueConverterInstantiation"/>) — direct
-///     <c>new EncryptedValueConverter&lt;T&gt;()</c> in EF Core configuration classes bypasses
-///     the convention auto-wire, causing double-encryption or inconsistent key handling.
-///   </description></item>
 /// </list>
 /// </para>
 /// <para>
-/// The 03xx SK ID block is dedicated to the encryption subsystem.
+/// <strong>Retired: SK0304 (<c>NoDirectEncryptedValueConverterInstantiation</c>).</strong> It
+/// guarded against <c>new EncryptedValueConverter&lt;T&gt;()</c> being called directly inside an
+/// <c>IEntityTypeConfiguration&lt;T&gt;</c> instead of going through <c>EncryptionModelConvention</c>'s
+/// auto-wire. The field-level encryption redesign removed <c>EncryptedValueConverter</c> and every
+/// <c>ValueConverter</c>-based encryption path entirely — encryption is now applied exclusively via
+/// the <c>.Encrypt()</c> model annotation, read by <c>EncryptionModelConvention</c> and enforced by
+/// <c>EncryptionInterceptor</c> (<c>SharedKernel.Persistence.EfCore.Encryption</c>). There is no
+/// longer a named converter type for a caller to instantiate by hand, so the rule could never fire
+/// again; it was removed rather than retargeted. The two hazards it stood alongside remain fully
+/// covered: raw cipher usage by <see cref="NoCryptoCipherInDomainOrApplication"/> and
+/// <c>CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography</c>, and a missing/inconsistent
+/// <c>.Encrypt(...)</c> wire-up by the model-build-time
+/// <c>EncryptAnnotationRegisteredGuardConvention</c> (which fails loudly if an <c>.Encrypt(...)</c>
+/// annotation is present but encryption was never registered — a check only possible once DI/model
+/// state is known, which an assembly-metadata architecture test cannot see).
+/// </para>
+/// <para>
+/// The 03xx SK ID block is dedicated to the encryption subsystem; <c>SK0304</c> is not reused.
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
 /// production dependency.
 /// </para>
@@ -188,54 +200,4 @@ public static class EncryptionPatternGuardRules
             .Should()
             .MeetCustomRule(new NoEncryptionRotationJobInjectionPredicate());
     }
-
-    /// <summary>
-    /// Returns a <see cref="ConditionList"/> asserting that no <c>IEntityTypeConfiguration&lt;T&gt;</c>
-    /// implementor in the supplied assembly directly instantiates <c>EncryptedValueConverter&lt;T&gt;</c>
-    /// via a <c>newobj</c> IL instruction.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The rule is scoped exclusively to <c>IEntityTypeConfiguration&lt;T&gt;</c> implementors.
-    /// General application code that is not an EF Core configuration class is not subject to
-    /// this rule.
-    /// </para>
-    /// <para>
-    /// <c>EncryptionModelConvention</c> (registered via
-    /// <c>EfCorePersistenceBuilder.WithEncryption()</c>) is unconditionally exempt — it is the
-    /// sole legitimate instantiation site and must never be flagged.
-    /// </para>
-    /// <para>
-    /// Direct instantiation bypasses the convention, causing either duplicate converter
-    /// registration (double-encryption of stored data) or inconsistent key-version handling
-    /// across the model.
-    /// </para>
-    /// <para>
-    /// <strong>Offending pattern:</strong>
-    /// <code>
-    /// builder.Property(x =&gt; x.Ssn)
-    ///     .HasConversion(new EncryptedValueConverter&lt;string&gt;(options));
-    /// </code>
-    /// </para>
-    /// <para>
-    /// <strong>Compliant pattern:</strong>
-    /// <code>builder.Property(x =&gt; x.Ssn).Encrypt();</code>
-    /// </para>
-    /// </remarks>
-    /// <param name="assembly">
-    /// The assembly to evaluate — typically the persistence assembly containing EF Core
-    /// configuration classes. Supply via <c>typeof(SomeEntityTypeConfiguration).Assembly</c>.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ConditionList"/> asserting no <c>IEntityTypeConfiguration&lt;T&gt;</c>
-    /// implementor (other than <c>EncryptionModelConvention</c>) directly instantiates
-    /// <c>EncryptedValueConverter&lt;T&gt;</c>.
-    /// </returns>
-    public static ConditionList NoDirectEncryptedValueConverterInstantiation(Assembly assembly) =>
-        Types
-            .InAssembly(assembly)
-            .That()
-            .HaveNameStartingWith(string.Empty)
-            .Should()
-            .MeetCustomRule(new NoDirectEncryptedValueConverterInstantiationPredicate());
 }

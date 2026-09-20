@@ -246,9 +246,9 @@ Multi-tenant EF Core safety, and SQL-injection prevention in the Dapper read/com
 
 | Rule | Flags | Do this instead |
 |---|---|---|
+| [SK0042](#sk0042-nonconstantdappersqlargument) | A non-constant `sql` argument on a Dapper query/command method | Fixed SQL text, values through parameters |
 | [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that drops the global tenant filter | Call `base.OnModelCreating` or `ApplyTenantFilters` |
 | [SK0202](#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` outside the permitted scope | Keep it inside the persistence layer or a `TenantedRepository` |
-| [SK0042](#sk0042-nonconstantdappersqlargument) | A non-constant `sql` argument on a Dapper query/command method | Fixed SQL text, values through parameters |
 
 #### Messaging
 
@@ -261,7 +261,7 @@ MassTransit registration correctness.
 | [SK0705](#sk0705-faultconsumerdirectregistration) | A fault consumer registered directly in DI | `AddFaultConsumer<TMessage, TConsumer>()` |
 | [SK0708](#sk0708-batchconsumerregisteredviaaddconsumer) | A batch consumer registered with `AddConsumer<T>()` | `AddBatchConsumer<T>()` |
 
-**About the gaps in the numbering.** `SK0012`, `SK0301`–`SK0304`, `SK0701`–`SK0702` and `SK0706`–`SK0707` exist, but as [architecture tests](#architecture-tests) rather than analyzers: they need to see a whole assembly, not a single line, so they run from your test suite instead of the compiler.
+**About the gaps in the numbering.** `SK0012`, `SK0301`–`SK0303`, `SK0701`–`SK0702` and `SK0706`–`SK0707` exist, but as [architecture tests](#architecture-tests) rather than analyzers: they need to see a whole assembly, not a single line, so they run from your test suite instead of the compiler.
 
 ---
 

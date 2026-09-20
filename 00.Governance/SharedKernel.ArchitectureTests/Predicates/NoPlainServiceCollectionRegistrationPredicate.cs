@@ -12,8 +12,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// something already registered this service type" verbs that <c>01.Core</c>'s own DI extension
 /// methods standardized away from, in favor of
 /// <c>Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions</c>'s
-/// <c>TryAddSingleton</c>/<c>TryAddScoped</c>/<c>TryAddTransient</c>/<c>TryAddEnumerable</c>
-///.
+/// <c>TryAddSingleton</c>/<c>TryAddScoped</c>/<c>TryAddTransient</c>/<c>TryAddEnumerable</c>.
 /// </summary>
 /// <remarks>
 /// <para>

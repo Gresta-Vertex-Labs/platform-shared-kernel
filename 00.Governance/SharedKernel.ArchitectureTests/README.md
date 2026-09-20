@@ -295,7 +295,6 @@ siblings never see each other.
 | `CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography` | No raw `Aes`/`AesGcm` outside the owning package |
 | `EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication` | No cipher primitive in domain or application code |
 | `EncryptionPatternGuardRules.NoEncryptionAttributeOnDomainEntities` | Encryption is configured in mapping, never on a domain entity |
-| `EncryptionPatternGuardRules.NoDirectEncryptedValueConverterInstantiation` | The value converter is applied by convention, not by hand |
 | `EncryptionPatternGuardRules.NoEncryptionRotationJobInjectionInDomainOrApplication` | Key rotation is not a domain concern |
 
 ### Host composition and health checks

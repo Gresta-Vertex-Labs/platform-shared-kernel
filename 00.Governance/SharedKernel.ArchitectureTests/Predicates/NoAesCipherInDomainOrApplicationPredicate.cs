@@ -14,8 +14,10 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.EncryptionPatternGuardRules"/> to enforce that cipher usage in
 /// <c>03.Domain</c> or <c>05.Application</c> assemblies is prohibited. All field-level
-/// encryption must route through the persistence-layer <c>EncryptedValueConverter&lt;T&gt;</c>
-/// wired via <c>PropertyBuilder&lt;T&gt;.Encrypt()</c> in <c>IEntityTypeConfiguration&lt;T&gt;</c>.
+/// encryption must route through <c>PropertyBuilder&lt;T&gt;.Encrypt()</c> in
+/// <c>IEntityTypeConfiguration&lt;T&gt;</c> — read by <c>EncryptionModelConvention</c> and enforced
+/// by <c>EncryptionInterceptor</c> (<c>SharedKernel.Persistence.EfCore.Encryption</c>); there is no
+/// <c>ValueConverter</c> in that path at all.
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first guard):</strong> Types whose

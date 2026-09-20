@@ -143,8 +143,8 @@ public static class CryptoIsolationRules
     /// <para>
     /// <strong>Exemption:</strong> Types whose namespace starts with
     /// <c>"SharedKernel.Cryptography"</c> pass unconditionally — the sole legitimate platform
-    /// caller of BCL cipher and RNG types. Everything else delegates: a persistence-layer
-    /// <c>EncryptedValueConverter</c>, for instance, goes through
+    /// caller of BCL cipher and RNG types. Everything else delegates: the persistence layer's
+    /// field-level column encryption (<c>EncryptionInterceptor</c>), for instance, goes through
     /// <c>SharedKernel.Cryptography.ISymmetricEncryptionService</c> / <c>AesGcmEncryptionService</c>
     /// rather than constructing <c>AesGcm</c> itself. No <c>SharedKernel.Security.*</c>
     /// exemption is carried forward: <c>12.Security.Oidc</c>'s JWT signing path must consume

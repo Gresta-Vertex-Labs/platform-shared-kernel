@@ -198,7 +198,7 @@ MassTransit registration correctness.
 | [`SK0705`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0705-faultconsumerdirectregistration) | `IFaultConsumer<TMessage>` registered directly | `MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()` |
 | [`SK0708`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0708-batchconsumerregisteredviaaddconsumer) | A batch consumer registered via `AddConsumer<T>()` | `MessagingBusBuilder.AddBatchConsumer<...>()` |
 
-Numbering gaps — `SK0012`, `SK0301`–`SK0304`, `SK0701`–`SK0702`, `SK0706`–`SK0707` — are architecture
+Numbering gaps — `SK0012`, `SK0301`–`SK0303`, `SK0701`–`SK0702`, `SK0706`–`SK0707` — are architecture
 rules enforced by `SharedKernel.ArchitectureTests` from a test project rather than by the compiler. They
 are not part of this package.
 
