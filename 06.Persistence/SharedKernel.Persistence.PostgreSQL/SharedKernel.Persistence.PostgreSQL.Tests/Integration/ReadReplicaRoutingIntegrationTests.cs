@@ -15,7 +15,6 @@ using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 using Testcontainers.PostgreSql;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;

@@ -47,9 +47,12 @@ public static class EfCorePersistenceBuilderRowLevelSecurityExtensions
     /// row-level security alone surfaces the same rejection as a raw provider exception.
     /// </para>
     /// <para>
-    /// Pairs with <see cref="RowLevelSecurityConnectionInterceptor"/> (see its own remarks for the
-    /// connection-scoped bind/reset design) and requires the RLS migration helper to actually have been
-    /// applied to each protected table — this method only wires the application-side half.
+    /// Pairs with <see cref="RowLevelSecurityConnectionInterceptor"/> (connection-scoped bind/reset)
+    /// and <see cref="RowLevelSecurityCommandInterceptor"/> (per-command re-bind inside an explicit
+    /// transaction — see its own remarks for why the connection-scoped bind alone is not exact once a
+    /// connection lease spans more than one statement) and requires the RLS migration helper to
+    /// actually have been applied to each protected table — this method only wires the
+    /// application-side half.
     /// </para>
     /// </remarks>
     public static EfCorePersistenceBuilder<TContext> WithRowLevelSecurity<TContext>(
@@ -59,6 +62,7 @@ public static class EfCorePersistenceBuilderRowLevelSecurityExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.TryAddSingleton<RowLevelSecurityConnectionInterceptor>();
+        builder.Services.TryAddSingleton<RowLevelSecurityCommandInterceptor>();
         builder.Services.AddSingleton<IPersistenceOptionsExtension, RowLevelSecurityOptionsContributor>();
 
         builder.AddBuildAction(() =>

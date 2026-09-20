@@ -32,9 +32,20 @@ public static class AuditImmutabilityMigrationBuilderExtensions
     /// <returns>The same <paramref name="migrationBuilder"/> for fluent chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="table"/>/<paramref name="schema"/> is not a simple identifier.</exception>
     /// <remarks>
+    /// <para>
+    /// Every trigger is created, then immediately switched to <c>ENABLE ALWAYS</c> — PostgreSQL's
+    /// default trigger firing mode (<c>ENABLE ORIGIN</c>, what a plain <c>CREATE TRIGGER</c> leaves in
+    /// place) does NOT fire while the session's <c>session_replication_role</c> is <c>replica</c>. Any
+    /// session — including the application's own connection pool, which needs no special privilege to
+    /// set it — can run <c>SET session_replication_role = 'replica'</c> and then freely
+    /// <c>UPDATE</c>/<c>DELETE</c>/<c>TRUNCATE</c> the table, defeating an <c>ENABLE ORIGIN</c> trigger
+    /// completely and silently. <c>ENABLE ALWAYS</c> fires in every replication role, closing that gap.
+    /// </para>
+    /// <para>
     /// A superuser or the table owner can still <c>ALTER TABLE... DISABLE TRIGGER</c> — pair this
     /// with a database-role <c>REVOKE</c> restricting who may run DDL against this table in
     /// production, which is outside what a migration-authoring helper can enforce.
+    /// </para>
     /// </remarks>
     public static MigrationBuilder CreateImmutabilityTrigger(
         this MigrationBuilder migrationBuilder,
@@ -45,6 +56,9 @@ public static class AuditImmutabilityMigrationBuilderExtensions
 
         var qualifiedTable = PostgresIdentifier.QualifyTable(schema, table);
         var functionName = PostgresIdentifier.QualifyTable(schema, $"{table}_reject_mutation");
+        var updateTriggerName = PostgresIdentifier.Quote($"{table}_reject_update");
+        var deleteTriggerName = PostgresIdentifier.Quote($"{table}_reject_delete");
+        var truncateTriggerName = PostgresIdentifier.Quote($"{table}_reject_truncate");
 
         migrationBuilder.Sql($"""
             CREATE OR REPLACE FUNCTION {functionName}()
@@ -56,22 +70,28 @@ public static class AuditImmutabilityMigrationBuilderExtensions
             """);
 
         migrationBuilder.Sql($"""
-            CREATE TRIGGER {PostgresIdentifier.Quote($"{table}_reject_update")}
+            CREATE TRIGGER {updateTriggerName}
             BEFORE UPDATE ON {qualifiedTable}
             FOR EACH ROW EXECUTE FUNCTION {functionName}();
             """);
 
         migrationBuilder.Sql($"""
-            CREATE TRIGGER {PostgresIdentifier.Quote($"{table}_reject_delete")}
+            CREATE TRIGGER {deleteTriggerName}
             BEFORE DELETE ON {qualifiedTable}
             FOR EACH ROW EXECUTE FUNCTION {functionName}();
             """);
 
         migrationBuilder.Sql($"""
-            CREATE TRIGGER {PostgresIdentifier.Quote($"{table}_reject_truncate")}
+            CREATE TRIGGER {truncateTriggerName}
             BEFORE TRUNCATE ON {qualifiedTable}
             FOR EACH STATEMENT EXECUTE FUNCTION {functionName}();
             """);
+
+        // ENABLE ALWAYS — see the remarks above for why ENABLE ORIGIN (the CREATE TRIGGER default)
+        // is not sufficient: any session may set session_replication_role = 'replica' and bypass it.
+        migrationBuilder.Sql($"ALTER TABLE {qualifiedTable} ENABLE ALWAYS TRIGGER {updateTriggerName};");
+        migrationBuilder.Sql($"ALTER TABLE {qualifiedTable} ENABLE ALWAYS TRIGGER {deleteTriggerName};");
+        migrationBuilder.Sql($"ALTER TABLE {qualifiedTable} ENABLE ALWAYS TRIGGER {truncateTriggerName};");
 
         return migrationBuilder;
     }

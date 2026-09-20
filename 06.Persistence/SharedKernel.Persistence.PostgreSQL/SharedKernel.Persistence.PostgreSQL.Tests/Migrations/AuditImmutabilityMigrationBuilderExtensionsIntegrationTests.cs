@@ -106,6 +106,71 @@ public sealed class AuditImmutabilityMigrationBuilderExtensionsIntegrationTests 
     }
 
     [Fact]
+    public async Task Update_WithSessionReplicationRoleSetToReplica_IsStillRejected()
+    {
+        // The whole point of ENABLE ALWAYS: a plain CREATE TRIGGER defaults to ENABLE ORIGIN, which
+        // does NOT fire while session_replication_role is 'replica' — a setting any session can flip
+        // with no special privilege, since it only affects the CURRENT session. Before the fix, this
+        // exact sequence silently bypassed every one of the three triggers above.
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+
+        await using (var setRole = connection.CreateCommand())
+        {
+            setRole.CommandText = "SET session_replication_role = 'replica'";
+            await setRole.ExecuteNonQueryAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE immutable_audit_row SET payload = 'tampered-via-replica-role' WHERE id = 1";
+
+        var act = async () => await command.ExecuteNonQueryAsync();
+
+        (await act.Should().ThrowAsync<PostgresException>(
+            "ENABLE ALWAYS must make the trigger fire in every replication role, not only 'origin'"))
+                .Which.MessageText.Should().Contain("append-only");
+    }
+
+    [Fact]
+    public async Task Delete_WithSessionReplicationRoleSetToReplica_IsStillRejected()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+
+        await using (var setRole = connection.CreateCommand())
+        {
+            setRole.CommandText = "SET session_replication_role = 'replica'";
+            await setRole.ExecuteNonQueryAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM immutable_audit_row WHERE id = 1";
+
+        var act = async () => await command.ExecuteNonQueryAsync();
+
+        await act.Should().ThrowAsync<PostgresException>(
+            "ENABLE ALWAYS must make the trigger fire in every replication role, not only 'origin'");
+    }
+
+    [Fact]
+    public async Task Truncate_WithSessionReplicationRoleSetToReplica_IsStillRejected()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+
+        await using (var setRole = connection.CreateCommand())
+        {
+            setRole.CommandText = "SET session_replication_role = 'replica'";
+            await setRole.ExecuteNonQueryAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "TRUNCATE TABLE immutable_audit_row";
+
+        var act = async () => await command.ExecuteNonQueryAsync();
+
+        await act.Should().ThrowAsync<PostgresException>(
+            "ENABLE ALWAYS must make the trigger fire in every replication role, not only 'origin'");
+    }
+
+    [Fact]
     public async Task DropImmutabilityTrigger_RemovesTheProtection()
     {
         await using var connection = await _dataSource!.OpenConnectionAsync();

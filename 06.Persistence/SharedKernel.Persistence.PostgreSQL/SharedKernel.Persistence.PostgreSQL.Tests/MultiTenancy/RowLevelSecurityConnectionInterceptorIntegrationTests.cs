@@ -311,6 +311,106 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
         rowsOutside.Should().OnlyContain(r => r.TenantId == TenantA);
     }
 
+    // ---------------------------------------------------------------------------
+    // RowLevelSecurityCommandInterceptor: the connection-scoped bind alone is not exact once a
+    // connection's lease spans more than one statement under an explicit transaction — these three
+    // tests prove the per-command re-bind closes that gap. The FIRST of the three below is the
+    // scenario the regression comment on EfRead_AfterCrossTenantScopeDisposed_ReturnsToNormalTenantIsolation
+    // notes as untested: that test only passes because EF closes and reopens the connection between
+    // two untransacted queries, never proving the scope transition WITHIN one still-open connection.
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task EfRead_CrossTenantScopeEnteredAfterTheTransactionAlreadyOpened_StillSeesEveryTenantsRows()
+    {
+        // The connection opens (and RowLevelSecurityConnectionInterceptor's ConnectionOpened binds)
+        // BEFORE the scope is entered — without a per-command re-bind, the escape clause bound at
+        // connection-open time would never move, and this read would silently return zero/tenant-only
+        // rows instead of every tenant's rows.
+        await SeedOrdersAsync((TenantA, "A-1"), (TenantA, "A-2"), (TenantB, "B-1"));
+
+        var (provider, tenantContext, crossTenantScope) = BuildReaderProvider(withMultiTenancy: true);
+        await using var _1 = provider;
+        tenantContext.TenantId = null;
+
+        using var scope = provider.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
+
+        await using var transaction = await ctx.Database.BeginTransactionAsync();
+
+        using (crossTenantScope.Enter())
+        {
+            var rows = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
+
+            rows.Should().HaveCount(
+                3, "the scope was entered AFTER the connection/transaction already opened — the " +
+                    "per-command re-bind, not the one-time connection-open bind, is what must catch this");
+        }
+
+        await transaction.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task EfRead_CrossTenantScopeExitedWhileTheTransactionIsStillOpen_NextReadOnTheSameTransactionIsIsolatedAgain()
+    {
+        await SeedOrdersAsync((TenantA, "A-1"), (TenantA, "A-2"), (TenantB, "B-1"));
+
+        var (provider, tenantContext, crossTenantScope) = BuildReaderProvider(withMultiTenancy: true);
+        await using var _1 = provider;
+        tenantContext.TenantId = TenantA;
+
+        using var scope = provider.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
+
+        await using var transaction = await ctx.Database.BeginTransactionAsync();
+
+        using (crossTenantScope.Enter())
+        {
+            var rowsInsideScope = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
+            rowsInsideScope.Should().HaveCount(3);
+        }
+
+        // Scope handle disposed, but the TRANSACTION — and therefore the connection — never closed.
+        // A stale, still-bound escape clause from earlier in this same transaction would leak into
+        // this second read if only the connection-open bind existed.
+        var rowsAfterScopeExit = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
+
+        rowsAfterScopeExit.Should().HaveCount(2);
+        rowsAfterScopeExit.Should().OnlyContain(r => r.TenantId == TenantA);
+
+        await transaction.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task EfWrite_CrossTenantScopeExitedWhileTheTransactionIsStillOpen_SubsequentCrossTenantInsertIsRejectedAgain()
+    {
+        // Write-side counterpart: an INSERT that would have been permitted while the scope was active
+        // must be rejected again once the scope exits, even though the ambient transaction (and its
+        // connection) never closed in between.
+        var (provider, tenantContext, crossTenantScope) = BuildReaderProvider(withMultiTenancy: false);
+        await using var _1 = provider;
+        tenantContext.TenantId = TenantA;
+
+        using var scope = provider.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
+
+        await using var transaction = await ctx.Database.BeginTransactionAsync();
+
+        using (crossTenantScope.Enter())
+        {
+            ctx.Orders.Add(new RlsOrder { Id = Guid.NewGuid(), TenantId = TenantB, Description = "permitted-inside-scope" });
+            await ctx.SaveChangesAsync();
+        }
+
+        ctx.Orders.Add(new RlsOrder { Id = Guid.NewGuid(), TenantId = TenantB, Description = "rejected-after-scope-exit" });
+        var act = async () => await ctx.SaveChangesAsync();
+
+        await act.Should().ThrowAsync<DbUpdateException>(
+            "the escape clause must not still be bound on this transaction after the scope handle was disposed");
+
+        await transaction.RollbackAsync();
+    }
+
     [Fact]
     public async Task AsSuperuser_WithNoTenantBound_SeesEveryRow_ConfirmingRlsAloneScopesTheReaderRole()
     {

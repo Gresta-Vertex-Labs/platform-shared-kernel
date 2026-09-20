@@ -18,7 +18,6 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;
 
