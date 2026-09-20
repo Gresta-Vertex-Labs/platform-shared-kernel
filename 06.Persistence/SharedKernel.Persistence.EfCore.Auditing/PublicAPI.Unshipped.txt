@@ -1,0 +1,83 @@
+#nullable enable
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordEntityConfiguration
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordEntityConfiguration.AuditRecordEntityConfiguration() -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordEntityConfiguration.Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>! builder) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutabilityInterceptor
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutabilityInterceptor.AuditRecordImmutabilityInterceptor() -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutableException
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutableException.AuditRecordImmutableException(System.Guid recordId) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutableException.AuditRecordImmutableException(string! message) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutableException.RecordId.get -> System.Guid?
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordModelConfigurator
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordModelConfigurator.AuditRecordModelConfigurator() -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordModelConfigurator.Configure(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardInterceptor
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardInterceptor.AuditRecordMutationGuardInterceptor() -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardOptionsContributor
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardOptionsContributor.Apply(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardOptionsContributor.AuditRecordMutationGuardOptionsContributor() -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.AuditChainKey() -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.AuditChainKey(string! Id, byte[]! Material) -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Deconstruct(out string! Id, out byte[]! Material) -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Equals(SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey other) -> bool
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Id.get -> string!
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Id.init -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Material.get -> byte[]!
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Material.init -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.AuditChainOptions() -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.CheckpointSigningKeyId.get -> string?
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.CheckpointSigningKeyId.set -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.HmacKeyBase64.get -> string?
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.HmacKeyBase64.set -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.KeyId.get -> string!
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.KeyId.set -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptionsValidator
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptionsValidator.AuditChainOptionsValidator() -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptionsValidator.Validate(string? name, SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+SharedKernel.Persistence.EfCore.Auditing.Chain.ConfiguredAuditChainKeyProvider
+SharedKernel.Persistence.EfCore.Auditing.Chain.ConfiguredAuditChainKeyProvider.ConfiguredAuditChainKeyProvider(Microsoft.Extensions.Options.IOptions<SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions!>! options) -> void
+SharedKernel.Persistence.EfCore.Auditing.Chain.ConfiguredAuditChainKeyProvider.GetCurrentKey() -> SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey
+SharedKernel.Persistence.EfCore.Auditing.Chain.ConfiguredAuditChainKeyProvider.TryGetKey(string! keyId, out SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey key) -> bool
+SharedKernel.Persistence.EfCore.Auditing.Chain.IAuditChainKeyProvider
+SharedKernel.Persistence.EfCore.Auditing.Chain.IAuditChainKeyProvider.GetCurrentKey() -> SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey
+SharedKernel.Persistence.EfCore.Auditing.Chain.IAuditChainKeyProvider.TryGetKey(string! keyId, out SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey key) -> bool
+SharedKernel.Persistence.EfCore.Auditing.Checkpoints.EfAuditCheckpointService
+SharedKernel.Persistence.EfCore.Auditing.Checkpoints.EfAuditCheckpointService.CreateCheckpointAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint!>!
+SharedKernel.Persistence.EfCore.Auditing.Checkpoints.EfAuditCheckpointService.EfAuditCheckpointService(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Cryptography.Signing.IAsymmetricSignatureService! signatureService, SharedKernel.Primitives.Clocks.IClock! clock, Microsoft.Extensions.Options.IOptions<SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions!>! options) -> void
+SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.EfAuditQueryService(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>! evaluator, SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext! tenantContext, SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope, SharedKernel.Persistence.EfCore.Auditing.Chain.IAuditChainKeyProvider! keyProvider, SharedKernel.Cryptography.Signing.IHmacSigner! hmacSigner, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService!>! logger, SharedKernel.Cryptography.Signing.IAsymmetricSignatureService? signatureService = null) -> void
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.ExportRangeAsync(System.Guid? tenantId, string! resourceType, System.DateTimeOffset from, System.DateTimeOffset to, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.GetActorActionsAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.GetResourceHistoryAcrossTenantsAsync(string! resourceType, string! resourceId, System.Guid? afterId, bool descending, int take, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.GetResourceHistoryAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.VerifyChainFromCheckpointAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint! checkpoint, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? expectedHead, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditQueryService.VerifyFullChainAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
+SharedKernel.Persistence.EfCore.Auditing.EfAuditTrailWriter
+SharedKernel.Persistence.EfCore.Auditing.EfAuditTrailWriter.EfAuditTrailWriter(SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! connectionFactory, SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction! ambientTransaction, SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext! actorContext, SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext! tenantContext, SharedKernel.Primitives.Clocks.IClock! clock, SharedKernel.Cryptography.Signing.IHmacSigner! hmacSigner, SharedKernel.Persistence.EfCore.Auditing.Chain.IAuditChainKeyProvider! keyProvider, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.Auditing.EfAuditTrailWriter!>! logger, SharedKernel.Persistence.Abstractions.Coordination.IAdvisoryTransactionLock? advisoryLock = null) -> void
+SharedKernel.Persistence.EfCore.Auditing.EfAuditTrailWriter.RecordAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!
+SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions
+const SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptionsValidator.MinimumKeyLengthBytes = 32 -> int
+const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.AppendDurationInstrument = "audit.append.duration" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.ChainVerificationFailureInstrument = "audit.chain.verification_failures" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.IdempotentDuplicateInstrument = "audit.append.idempotent_duplicates" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.MeterName = "SharedKernel.Persistence.EfCore.Auditing" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.SequenceConflictRetryInstrument = "audit.append.sequence_conflicts" -> string!
+override SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutabilityInterceptor.SavingChanges(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result) -> Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>
+override SharedKernel.Persistence.EfCore.Auditing.AuditRecordImmutabilityInterceptor.SavingChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>>
+override SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardInterceptor.NonQueryExecuting(System.Data.Common.DbCommand! command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result) -> Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>
+override SharedKernel.Persistence.EfCore.Auditing.AuditRecordMutationGuardInterceptor.NonQueryExecutingAsync(System.Data.Common.DbCommand! command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>>
+override SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.GetHashCode() -> int
+static SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.operator !=(SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey left, SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey right) -> bool
+static SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.operator ==(SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey left, SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey right) -> bool
+static SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainOptions.SectionName.get -> string!
+static SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.RecordAppendDuration(double milliseconds) -> void
+static SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.RecordChainVerificationFailure() -> void
+static SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.RecordIdempotentDuplicate() -> void
+static SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.RecordSequenceConflictRetry() -> void
+static SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions.WithAuditChainCheckpoints<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder, string! signingKeyId) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+static SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions.WithAuditTrail<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+~override SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.Equals(object obj) -> bool
+~override SharedKernel.Persistence.EfCore.Auditing.Chain.AuditChainKey.ToString() -> string
