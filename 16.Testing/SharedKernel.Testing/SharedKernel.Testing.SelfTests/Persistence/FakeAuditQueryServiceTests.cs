@@ -184,7 +184,7 @@ public sealed class FakeAuditQueryServiceTests
 
         var exported = new List<AuditRecord>();
         await foreach (var record in query.ExportRangeAsync(
-            actorContext.TenantId, "Order", DateTimeOffset.MinValue, DateTimeOffset.MaxValue))
+            "Order", DateTimeOffset.MinValue, DateTimeOffset.MaxValue))
         {
             exported.Add(record);
         }
@@ -204,7 +204,7 @@ public sealed class FakeAuditQueryServiceTests
         await writer.RecordAsync(Entry("Order", "order-1"));
         await writer.RecordAsync(Entry("Order", "order-2"));
 
-        var result = await query.VerifyFullChainAsync(actorContext.TenantId, "Order");
+        var result = await query.VerifyFullChainAsync("Order");
 
         Assert.True(result.IsIntact);
         Assert.Equal(2, result.RecordsChecked);
@@ -222,7 +222,7 @@ public sealed class FakeAuditQueryServiceTests
         var tampered = record with { ActorId = "someone-else" }; // RecordHash no longer matches recomputation
         writer.Seed([tampered]);
 
-        var result = await query.VerifyFullChainAsync(actorContext.TenantId, "Order");
+        var result = await query.VerifyFullChainAsync("Order");
 
         Assert.False(result.IsIntact);
         Assert.Equal(tampered.Id, result.BrokenAtRecordId);
@@ -249,7 +249,7 @@ public sealed class FakeAuditQueryServiceTests
         brokenSecond = brokenSecond with { RecordHash = FakeAuditTrailWriter.ComputeHash(brokenSecond) };
         writer.Seed([first, brokenSecond]);
 
-        var result = await query.VerifyFullChainAsync(actorContext.TenantId, "Order");
+        var result = await query.VerifyFullChainAsync("Order");
 
         Assert.False(result.IsIntact);
         Assert.Equal(brokenSecond.Id, result.BrokenAtRecordId);
@@ -272,7 +272,7 @@ public sealed class FakeAuditQueryServiceTests
         var thirdLookingLikeSecond = second with { Sequence = 3 };
         writer.Seed([first, thirdLookingLikeSecond with { RecordHash = FakeAuditTrailWriter.ComputeHash(thirdLookingLikeSecond) }]);
 
-        var result = await query.VerifyFullChainAsync(actorContext.TenantId, "Order");
+        var result = await query.VerifyFullChainAsync("Order");
 
         Assert.False(result.IsIntact);
         Assert.Equal(2, result.BrokenAtSequence);
@@ -284,7 +284,7 @@ public sealed class FakeAuditQueryServiceTests
         var writer = new FakeAuditTrailWriter();
         var query = new FakeAuditQueryService(writer);
 
-        var result = await query.VerifyFullChainAsync(Guid.NewGuid(), "Order");
+        var result = await query.VerifyFullChainAsync("Order");
 
         Assert.True(result.IsIntact);
         Assert.Equal(0, result.RecordsChecked);

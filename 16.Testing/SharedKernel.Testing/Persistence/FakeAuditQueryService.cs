@@ -45,8 +45,9 @@ public sealed class FakeAuditQueryService : IAuditQueryService
     /// <summary>Initialises a new <see cref="FakeAuditQueryService"/> reading from <paramref name="writer"/>.</summary>
     /// <param name="writer">The writer whose recorded audit trail this query service reads.</param>
     /// <param name="tenantContext">
-    /// Resolves the current tenant for <see cref="GetResourceHistoryAsync"/>/<see cref="GetActorActionsAsync"/>.
-    /// Defaults to a fresh <see cref="FakeAuditActorContext"/> when omitted.
+    /// Resolves the current tenant for <see cref="GetResourceHistoryAsync"/>/<see cref="GetActorActionsAsync"/>/
+    /// <see cref="ExportRangeAsync"/>/<see cref="VerifyFullChainAsync"/>. Defaults to a fresh
+    /// <see cref="FakeAuditActorContext"/> when omitted.
     /// </param>
     /// <param name="crossTenantScope">
     /// Gates <see cref="GetResourceHistoryAcrossTenantsAsync"/>. Defaults to a fresh
@@ -117,12 +118,12 @@ public sealed class FakeAuditQueryService : IAuditQueryService
 
     /// <inheritdoc />
     public async IAsyncEnumerable<AuditRecord> ExportRangeAsync(
-        Guid? tenantId,
         string resourceType,
         DateTimeOffset from,
         DateTimeOffset to,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var tenantId = _tenantContext.TenantId;
         var rows = _writer.Records
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType && r.OccurredOn >= from && r.OccurredOn <= to)
             .OrderBy(r => r.Sequence);
@@ -137,12 +138,12 @@ public sealed class FakeAuditQueryService : IAuditQueryService
 
     /// <inheritdoc />
     public Task<AuditChainVerificationResult> VerifyFullChainAsync(
-        Guid? tenantId,
         string resourceType,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resourceType);
 
+        var tenantId = _tenantContext.TenantId;
         var chain = _writer.Records
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType)
             .OrderBy(r => r.Sequence)
