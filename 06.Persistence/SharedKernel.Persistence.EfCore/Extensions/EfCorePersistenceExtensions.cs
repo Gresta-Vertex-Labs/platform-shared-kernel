@@ -2,33 +2,25 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Cryptography.Hashing;
-using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.Abstractions.Auditing;
-using SharedKernel.Persistence.Abstractions.Specifications;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
-using SharedKernel.Persistence.EfCore.Auditing;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Encryption;
-using SharedKernel.Persistence.EfCore.Encryption.Rotation;
+using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.ReadReplica;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
+using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
+using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
-using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 
 namespace SharedKernel.Persistence.EfCore.Extensions;
@@ -57,6 +49,38 @@ public static class EfCorePersistenceExtensions
         Action<DbContextOptionsBuilder> configureDb)
         where TContext : SharedKernelDbContext
     {
+        ArgumentNullException.ThrowIfNull(configureDb);
+        return new EfCorePersistenceBuilder<TContext>(services, (_, options) => configureDb(options));
+    }
+
+    /// <summary>
+    /// Registers the SharedKernel EF Core persistence services and returns a
+    /// <see cref="EfCorePersistenceBuilder{TContext}"/> for fluent configuration, with the DI
+    /// <see cref="IServiceProvider"/> available inside <paramref name="configureDb"/>.
+    /// </summary>
+    /// <typeparam name="TContext">
+    /// The concrete <see cref="SharedKernelDbContext"/> subclass for this service.
+    /// </typeparam>
+    /// <param name="services">The service collection to register services into.</param>
+    /// <param name="configureDb">
+    /// Action that configures the <see cref="DbContextOptionsBuilder"/>, with access to the resolving
+    /// <see cref="IServiceProvider"/>. This is the overload
+    /// <c>SharedKernel.Persistence.PostgreSQL</c>'s data-source-resolving <c>UsePostgreSQL(DbContextOptionsBuilder,
+    /// IServiceProvider,...)</c> overload is designed to be called from, so EF Core and Dapper share
+    /// exactly one <c>NpgsqlDataSource</c> connection pool per database:
+    /// <code>
+    /// services.AddSharedKernelNpgsql(configuration);
+    /// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;((sp, options) =&gt;
+    /// options.UsePostgreSQL(sp))
+    ///     .Build();
+    /// </code>
+    /// </param>
+    /// <returns>A fluent builder for optional multi-tenancy configuration.</returns>
+    public static EfCorePersistenceBuilder<TContext> AddSharedKernelEfCore<TContext>(
+        this IServiceCollection services,
+        Action<IServiceProvider, DbContextOptionsBuilder> configureDb)
+        where TContext : SharedKernelDbContext
+    {
         return new EfCorePersistenceBuilder<TContext>(services, configureDb);
     }
 }
@@ -72,7 +96,7 @@ public static class EfCorePersistenceExtensions
 /// Typical single-tenant usage:
 /// <code>
 /// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
-///     options.UseNpgsql(connectionString))
+/// options.UseNpgsql(connectionString))
 ///     .Build();
 /// </code>
 /// </para>
@@ -80,68 +104,132 @@ public static class EfCorePersistenceExtensions
 /// Multi-tenant usage:
 /// <code>
 /// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
-///     options.UseNpgsql(connectionString))
+/// options.UseNpgsql(connectionString))
 ///     .WithMultiTenancy()
 ///     .Build();
 /// </code>
 /// </para>
 /// <para>
-/// With field-level encryption:
-/// <code>
-/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
-///     options.UseNpgsql(connectionString))
-///     .WithEncryption(enc => { enc.Enabled = true; enc.CurrentVersion = "v1"; enc.Keys["v1"] = "..."; })
-///     .WithServiceName("order-service")
-///     .Build();
-/// </code>
+/// <strong>Extensibility:</strong> field-level encryption (<c>SharedKernel.Persistence.EfCore.Encryption</c>)
+/// and the audit trail (<c>SharedKernel.Persistence.EfCore.Auditing</c>) are no longer part of this
+/// package — their <c>.WithEncryption()</c>/<c>.WithAuditTrail()</c> methods are extension methods on this builder shipped by those sibling
+/// packages. They reach into this builder through <see cref="Services"/>, <see cref="AddInterceptor{TInterceptor}"/>,
+/// <see cref="IsDbContextPoolingEnabled"/>, <see cref="RequireDbContextFactory"/>, and
+/// <see cref="AddBuildAction"/> — the same public surface any future opt-in capability package uses.
 /// </para>
 /// </remarks>
 public sealed class EfCorePersistenceBuilder<TContext>
     where TContext : SharedKernelDbContext
 {
     private readonly IServiceCollection _services;
-    private readonly Action<DbContextOptionsBuilder> _configureDb;
+    private readonly Action<IServiceProvider, DbContextOptionsBuilder> _configureDb;
+    private static readonly object InnerFactoryKey = new();
+
     private bool _multiTenancyEnabled;
     private bool _transactionalUnitOfWorkEnabled;
-    private bool _applicationTransactionBehaviorEnabled;
-    private bool _registerFactory;
-    private bool _registerEncryption;
-    private Type? _externalEncryptionKeyProviderType;
-    private bool _externalEncryptionKeyProviderCalledBeforeEncryption;
-    private bool _auditTrailEnabled;
-    private bool _serviceNameValidationRegistered;
     private bool _migrationsOnStartup;
     private bool _dbContextPoolingEnabled;
     private int _poolSize = 1024;
-    private static readonly TimeSpan DefaultExternalKeyRefreshInterval = TimeSpan.FromMinutes(5);
     private IModel? _compiledModel;
     private TransientFaultRetryOptions? _transientFaultRetryOptions;
     private int? _commandTimeoutSeconds;
     private Action<DbContextOptionsBuilder>? _readReplicaConfigureDb;
+    private bool _serviceNameValidationRegistered;
     private readonly List<Type> _additionalInterceptorTypes = [];
+    private readonly List<Action> _buildActions = [];
     private readonly List<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps = [];
 
     internal EfCorePersistenceBuilder(
         IServiceCollection services,
-        Action<DbContextOptionsBuilder> configureDb)
+        Action<IServiceProvider, DbContextOptionsBuilder> configureDb)
     {
         _services = services;
         _configureDb = configureDb;
     }
 
     /// <summary>
-    /// Opts in to multi-tenancy support.
-    /// Registers <see cref="UserContextTenantProvider"/> as the <see cref="ITenantProvider"/> when none is
-    /// registered, which returns <see cref="Guid.Empty"/> until an authentication package supplies a tenant.
-    /// At <see cref="Build"/> time, asserts that <typeparamref name="TContext"/> extends
-    /// <see cref="TenantedDbContext"/>; throws <see cref="InvalidOperationException"/> with an
-    /// actionable message if the assertion fails.
+    /// Gets the underlying <see cref="IServiceCollection"/> this builder registers into.
+    /// </summary>
+    /// <remarks>
+    /// The extensibility seam a sibling capability package's own <c>.WithX()</c> extension
+    /// method uses to register its own services against this builder's DI container. Never mutate a
+    /// service already registered by this builder's own methods — add to or replace via the normal
+    /// <see cref="IServiceCollection"/> APIs (<c>TryAdd</c>, keyed registrations, etc.).
+    /// </remarks>
+    public IServiceCollection Services => _services;
+
+    /// <summary>
+    /// Gets whether <see cref="WithDbContextPooling"/> has been called on this builder.
+    /// </summary>
+    /// <remarks>
+    /// Lets a capability extension whose own feature is unsafe to combine with pooling
+    /// (today: field-level encryption's rotation-scoped key-version override) enforce that guard
+    /// itself via <see cref="AddBuildAction"/>, without this core builder needing to know the
+    /// capability exists.
+    /// </remarks>
+    public bool IsDbContextPoolingEnabled => _dbContextPoolingEnabled;
+
+    /// <summary>
+    /// No-op — kept for source compatibility. <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/>
+    /// is now unconditionally registered by <see cref="Build"/> (<c>TContext</c> direct injection
+    /// itself rides on it, via <c>TenantAwareDbContextFactory{TContext}</c>), so no capability needs
+    /// to request it separately any more.
+    /// </summary>
+    /// <remarks>
+    /// Sibling capability packages (migrations/seeding, the encryption
+    /// package's key-rotation registry) still call this to declare their dependency on
+    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/> existing — harmless to
+    /// keep calling, and documents intent, even though it no longer changes registration behavior.
+    /// </remarks>
+    public void RequireDbContextFactory()
+    {
+        // Intentionally empty — see summary above.
+    }
+
+    /// <summary>
+    /// Registers an action to run once, near the end of <see cref="Build"/>, after this builder's own
+    /// core registrations (DbContext, unit of work, specification evaluator) are complete.
+    /// </summary>
+    /// <param name="action">
+    /// The action to run. Typically a capability extension's own opt-in-flag validation guard (e.g.
+    /// "this capability cannot combine with DbContext pooling") or a piece of registration that must
+    /// see this builder's final, fully-configured state.
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// Actions run in registration order. A guard that must throw reflects the state of
+    /// <em>every</em> builder method call made before <see cref="Build"/> executes, regardless of the
+    /// order those calls were made in relative to the method that registered the guard.
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> AddBuildAction(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        _buildActions.Add(action);
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to multi-tenancy support. At <see cref="Build"/> time, asserts that
+    /// <typeparamref name="TContext"/> extends <see cref="TenantedDbContext"/>; throws
+    /// <see cref="InvalidOperationException"/> with an actionable message if the assertion fails.
     /// </summary>
     /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Registers the default <see cref="ICurrentTenantContext"/>
+    /// (<see cref="MultiTenancy.NullCurrentTenantContext"/>, fail-closed — see its remarks) when
+    /// nothing else has already registered one, and always registers
+    /// <see cref="Interceptors.TenantWriteGuardInterceptor"/> as an additional interceptor (H-A1) — the
+    /// write-side half of tenant isolation, the tenant global query filter being the read-side half.
+    /// A consuming service bridges <see cref="ICurrentTenantContext"/> to its real tenant source at
+    /// its own composition root — <c>13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence</c>
+    /// ships that bridge for services already using <c>12.Security</c>.
+    /// </para>
+    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithMultiTenancy()
     {
         _multiTenancyEnabled = true;
-        _services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
+        AddInterceptor<TenantWriteGuardInterceptor>();
         return this;
     }
 
@@ -152,7 +240,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <returns>The same builder for further chaining.</returns>
     public EfCorePersistenceBuilder<TContext> WithDbContextFactory()
     {
-        _registerFactory = true;
+        RequireDbContextFactory();
         return this;
     }
 
@@ -167,7 +255,12 @@ public sealed class EfCorePersistenceBuilder<TContext>
     public EfCorePersistenceBuilder<TContext> AddInterceptor<TInterceptor>()
         where TInterceptor : class, ISaveChangesInterceptor
     {
-        _additionalInterceptorTypes.Add(typeof(TInterceptor));
+        // Idempotent — calling this twice for the same TInterceptor (directly, or
+        // indirectly via WithMultiTenancy()'s own TenantWriteGuardInterceptor registration) must not
+        // register it twice, which would run it twice per SaveChanges.
+        if (!_additionalInterceptorTypes.Contains(typeof(TInterceptor)))
+            _additionalInterceptorTypes.Add(typeof(TInterceptor));
+
         return this;
     }
 
@@ -190,31 +283,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </summary>
     /// <param name="commandTimeoutSeconds">The command timeout, in seconds.</param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-053/P-337 — wraps the caller-supplied <c>configureDb</c> action, the same wrapping
-    /// pattern <see cref="WithCompiledModel"/> already uses for <c>.UseModel(compiledModel)</c>.
-    /// <strong>CORRECTED against the originally-planned design</strong>: plain
-    /// <see cref="DbContextOptionsBuilder"/> has no provider-neutral <c>CommandTimeout(...)</c>
-    /// method of its own — confirmed by direct compilation against the real EF Core 10.0.5
-    /// package; that member exists only as an instance method on the provider-specific
-    /// <c>RelationalDbContextOptionsBuilder&lt;TBuilder,TExtension&gt;</c> returned from
-    /// <c>UseNpgsql(...)</c>'s own configuration callback, unreachable here without an Npgsql
-    /// reference. The genuinely provider-neutral mechanism — verified end-to-end against a real
-    /// constructed <see cref="DbContext"/>, confirming <c>Database.GetCommandTimeout()</c> reflects
-    /// it — locates the already-registered
-    /// <see cref="Microsoft.EntityFrameworkCore.Infrastructure.RelationalOptionsExtension"/> (the
-    /// base type every provider's own options extension derives from) via a covariant
-    /// <c>.OfType&lt;T&gt;()</c> scan of <c>Options.Extensions</c> (unlike
-    /// <c>DbContextOptions.FindExtension&lt;T&gt;()</c>, which requires an exact type match and
-    /// returns <see langword="null"/> for a base type), calls its immutable-with
-    /// <c>WithCommandTimeout(...)</c>, and re-registers the updated extension via
-    /// <c>AddOrUpdateExtension</c>. Never references any Npgsql type by name — deliberately NOT
-    /// placed on <c>UsePostgreSQL(...)</c> (<c>SharedKernel.Persistence.PostgreSQL</c>), unlike the
-    /// genuinely Npgsql-only <c>EnableRetryOnFailure</c> (P-320).
-    /// </para>
-    /// <para>Optional. Omitting this call preserves today's provider-default command timeout exactly.</para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithCommandTimeout(int commandTimeoutSeconds)
     {
         _commandTimeoutSeconds = commandTimeoutSeconds;
@@ -233,23 +301,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <c>configureDb</c> parameter shape — this builder itself never references Npgsql.
     /// </param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-053/P-338 — see the "Read-Replica Routing" section of <c>06.Persistence/CLAUDE.md</c> for
-    /// the full design. Registers a keyed singleton <c>DbContextOptions&lt;TContext&gt;</c> for the
-    /// replica plus a scoped <see cref="ReadReplica.IReadReplicaContextAccessor{TContext}"/> that
-    /// lazily constructs the replica <typeparamref name="TContext"/> instance (once per DI scope,
-    /// cached thereafter) via <c>ActivatorUtilities.CreateInstance&lt;TContext&gt;</c>, reusing the
-    /// same scope-ambient, DI-resolved interceptor instances the primary context already resolved.
-    /// </para>
-    /// <para>
-    /// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE ENABLED — a handler
-    /// that writes then immediately reads via <c>IReadRepository</c> in the same logical operation
-    /// MAY OBSERVE STALE DATA under replication lag. A read issued inside an active transaction is
-    /// NEVER routed to the replica, even when this is configured.
-    /// </para>
-    /// <para>Optional. Omitting this call leaves every read/write on the single primary connection.</para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithReadReplica(Action<DbContextOptionsBuilder> configureReplicaDb)
     {
         ArgumentNullException.ThrowIfNull(configureReplicaDb);
@@ -266,234 +317,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     {
         _transactionalUnitOfWorkEnabled = true;
         return this;
-    }
-
-    /// <summary>
-    /// Opts in to bridging the 05.Application.Behaviors <c>TransactionBehavior</c> to this
-    /// <c>EfUnitOfWork</c> by registering the same scoped instance against
-    /// <see cref="AppBehaviorsIUnitOfWork"/>.
-    /// </summary>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// After calling this method, both <c>SharedKernel.Persistence.Abstractions.IUnitOfWork</c>
-    /// and <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> resolve the SAME
-    /// scoped <see cref="EfUnitOfWork"/> instance per DI scope — not two independent instances.
-    /// </para>
-    /// <para>
-    /// This is opt-in. Omitting this call leaves <c>Build()</c> behavior completely unchanged —
-    /// <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> remains unregistered.
-    /// Services that do not use <c>TransactionBehavior</c>, or that bridge via a hand-written
-    /// composition-root adapter, are unaffected.
-    /// </para>
-    /// <para>
-    /// Call this builder's <c>Build()</c> before
-    /// <c>AddSharedKernelApplicationBehaviors().AddTransactionBehavior().Build()</c>: the application
-    /// builder checks that the seam is registered and throws when it is not.
-    /// </para>
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithApplicationTransactionBehavior()
-    {
-        _applicationTransactionBehaviorEnabled = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Opts in to field-level AES-256-GCM transparent encryption.
-    /// </summary>
-    /// <param name="configure">
-    /// Optional action to configure <see cref="EncryptionOptions"/> (keys, current version, enabled flag).
-    /// Pass <see langword="null"/> to use defaults (disabled).
-    /// </param>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Registers <see cref="EncryptionOptions"/> via the Options system and registers eager startup
-    /// validation. When <see cref="Build"/> is called, also registers
-    /// <see cref="IEncryptionRotationJob"/> → <see cref="EncryptionRotationService{TContext}"/> (scoped).
-    /// </para>
-    /// <para>
-    /// Omitting this call leaves all existing behavior unchanged — encryption is disabled by default.
-    /// </para>
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithEncryption(Action<EncryptionOptions>? configure = null)
-    {
-        EnsureEncryptionInfrastructureRegistered();
-
-        if (configure is not null)
-        {
-            _services.AddOptions<EncryptionOptions>().Configure(configure);
-        }
-
-        return this;
-    }
-
-    /// <summary>
-    /// Opts in to field-level AES-256-GCM transparent encryption, binding
-    /// <see cref="EncryptionOptions"/> from <paramref name="configuration"/>'s
-    /// <see cref="EncryptionOptions.SectionName"/> section.
-    /// </summary>
-    /// <param name="configuration">The application's <see cref="IConfiguration"/>.</param>
-    /// <param name="configure">
-    /// Optional additional code-based configuration, layered on top of the bound values under
-    /// normal <c>IOptions&lt;T&gt;</c> later-registration-wins semantics.
-    /// </param>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-053/P-334 — binds via <c>configuration.GetSection(EncryptionOptions.SectionName)</c>,
-    /// never a bare <c>"SharedKernel:Encryption"</c> literal. Composes with the pre-existing
-    /// <see cref="WithEncryption(Action{EncryptionOptions}?)"/> overload — both may be chained; the
-    /// eager startup validation registered by <see cref="EnsureEncryptionInfrastructureRegistered"/>
-    /// is idempotent across repeated <c>.WithEncryption(...)</c> calls in the same builder chain.
-    /// </para>
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithEncryption(
-        IConfiguration configuration,
-        Action<EncryptionOptions>? configure = null)
-    {
-        ArgumentNullException.ThrowIfNull(configuration);
-
-        EnsureEncryptionInfrastructureRegistered();
-
-        _services.AddOptions<EncryptionOptions>()
-            .Bind(configuration.GetSection(EncryptionOptions.SectionName));
-
-        if (configure is not null)
-        {
-            _services.AddOptions<EncryptionOptions>().Configure(configure);
-        }
-
-        return this;
-    }
-
-    /// <summary>
-    /// Opts field-level encryption into a KMS/HSM-backed <see cref="IEncryptionKeyProvider"/> —
-    /// e.g. <c>SharedKernel.Cryptography.KeyVault.Azure</c>'s <c>AzureKeyVaultEncryptionKeyProvider</c>
-    /// — instead of the config-backed default.
-    /// </summary>
-    /// <typeparam name="TProvider">
-    /// The concrete <see cref="IEncryptionKeyProvider"/> implementation. Resolved, as <typeparamref name="TProvider"/>
-    /// itself, from the registration the consuming service already made for it — this package never registers
-    /// <typeparamref name="TProvider"/>. It must be resolvable from the root provider (singleton or transient). Only
-    /// its asynchronous members are ever called, from <see cref="PreWarmedEncryptionKeyProvider"/>'s warm calls, so
-    /// it does not need to implement <see cref="ISynchronousEncryptionKeyProvider"/>.
-    /// </typeparam>
-    /// <param name="refreshInterval">
-    /// How often the current key is re-read from <typeparamref name="TProvider"/>, so a key rotated at the key service
-    /// (for example <c>AzureKeyVaultEncryptionKeyProvider.RotateDataKeyAsync</c>) becomes current without a restart.
-    /// Also how long a key id the key service reported as unknown is not looked up again. Defaults to
-    /// 5 minutes; must be between 1 second and 1 day.
-    /// </param>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="refreshInterval"/> is outside 1 second to 1 day.</exception>
-    /// <remarks>
-    /// <para>
-    /// MUST be called AFTER <see cref="WithEncryption(Action{EncryptionOptions}?)"/> (or its
-    /// <see cref="IConfiguration"/> overload) — calling it first throws an actionable
-    /// <see cref="InvalidOperationException"/> at <see cref="Build"/> time, mirroring the existing
-    /// pooling+encryption/pooling+factory ordering guards.
-    /// </para>
-    /// <para>
-    /// Wraps <typeparamref name="TProvider"/> in <see cref="PreWarmedEncryptionKeyProvider"/> (a
-    /// singleton — the warm cache is process-lifetime state), which implements the synchronous
-    /// <see cref="ISynchronousEncryptionKeyProvider"/> contract the EF Core value converter needs from keys loaded
-    /// ahead of time, and re-registers this package's internal keyed key-provider slot to resolve through it
-    /// (superseding the config-backed default — the DI container resolves the LAST registration for a given keyed
-    /// slot). Also registers <see cref="EncryptionKeyPreWarmingInterceptor"/> (warms before every write AND every
-    /// read that could reach an encrypted property — see its own remarks for why both hooks are required) and
-    /// <see cref="EncryptionKeyPreWarmingHostedService"/> (blocks host readiness until the current key is warmed at
-    /// boot, then refreshes it every <paramref name="refreshInterval"/>; a failed refresh is logged and the last
-    /// warmed keys stay in use).
-    /// </para>
-    /// <para>
-    /// A payload encrypted under a key id that is not warmed (an older key, or one rotated in by another replica)
-    /// fails with <see cref="EncryptionKeyNotFoundException"/> and schedules a bounded background warm of that id, so
-    /// a later read succeeds. See <see cref="PreWarmedEncryptionKeyProvider"/> for the bounds that stop forged key
-    /// ids in stored data from flooding the key service. Uses the registered <see cref="TimeProvider"/>, or
-    /// <see cref="TimeProvider.System"/>.
-    /// </para>
-    /// <para>
-    /// Never registers <typeparamref name="TProvider"/> itself, and never reads or writes the ambient
-    /// <see cref="IEncryptionKeyProvider"/>/<see cref="ISynchronousSymmetricEncryptionService"/> slots — this
-    /// package's own encryption pipeline stays isolated from whatever the consumer registered there for unrelated
-    /// general-purpose crypto.
-    /// </para>
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithExternalEncryptionKeyProvider<TProvider>(TimeSpan? refreshInterval = null)
-        where TProvider : class, IEncryptionKeyProvider
-    {
-        var interval = refreshInterval ?? DefaultExternalKeyRefreshInterval;
-        ArgumentOutOfRangeException.ThrowIfLessThan(interval, TimeSpan.FromSeconds(1), nameof(refreshInterval));
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(interval, TimeSpan.FromDays(1), nameof(refreshInterval));
-
-        _externalEncryptionKeyProviderCalledBeforeEncryption = !_registerEncryption;
-        _externalEncryptionKeyProviderType = typeof(TProvider);
-
-        _services.AddSingleton(sp =>
-            new PreWarmedEncryptionKeyProvider(
-                sp.GetRequiredService<TProvider>(),
-                sp.GetRequiredService<IEncryptionVersionOverride>(),
-                sp.GetService<TimeProvider>(),
-                sp.GetService<ILogger<PreWarmedEncryptionKeyProvider>>(),
-                interval));
-
-        _services.AddKeyedSingleton<ISynchronousEncryptionKeyProvider>(
-            PersistenceEncryptionKeys.EncryptionKeyProviderKey,
-            (sp, _) => sp.GetRequiredService<PreWarmedEncryptionKeyProvider>());
-
-        _services.AddHostedService(sp =>
-            new EncryptionKeyPreWarmingHostedService(
-                sp.GetRequiredService<PreWarmedEncryptionKeyProvider>(),
-                interval,
-                sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                sp.GetService<ILogger<EncryptionKeyPreWarmingHostedService>>()));
-
-        AddInterceptor<EncryptionKeyPreWarmingInterceptor>();
-
-        return this;
-    }
-
-    // Registers the encryption infrastructure exactly once regardless of how many .WithEncryption(...)
-    // overloads are chained — idempotent-validation-registration guard (WO-053/P-334).
-    private void EnsureEncryptionInfrastructureRegistered()
-    {
-        if (_registerEncryption)
-            return;
-
-        _registerEncryption = true;
-
-        _services.AddOptions<EncryptionOptions>();
-        _services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
-        _services.AddOptions<EncryptionOptions>().ValidateOnStart();
-
-        // Singleton, AsyncLocal-backed rotation-target-version accessor — resolved once by
-        // EncryptionModelConvention during model finalization (EF Core caches the compiled model,
-        // including converters, across DbContext instances of the same context type, so a scoped
-        // registration would only be observed by the very first context's converters). Mutated by
-        // EncryptionRotationService<TContext> for the duration of each batch's SaveChangesAsync.
-        _services.AddSingleton<IEncryptionVersionOverride, EncryptionVersionOverride>();
-
-        // EncryptionOptionsKeyProvider is registered as ITSELF, never as an ambient unkeyed key provider.
-        // This package builds its OWN SynchronousAesGcmEncryptionService over whatever its internal keyed
-        // key-provider slot resolves to — the config-backed default registered here, or the
-        // PreWarmedEncryptionKeyProvider that .WithExternalEncryptionKeyProvider<TProvider>() registers
-        // under the same key (last registration wins). This structurally prevents an unrelated ambient
-        // key provider or encryption service registration elsewhere in the same container (e.g. a
-        // general-purpose AddSharedKernelCryptography() call, or 13.ServiceDefaults' Key Vault key
-        // provider) from silently winning or losing this package's field-level-encryption wiring by
-        // registration order. All three are singletons: they depend only on singletons, and the
-        // converters that capture the service live in EF Core's process-wide model cache anyway.
-        _services.AddSingleton<EncryptionOptionsKeyProvider>();
-
-        _services.AddKeyedSingleton<ISynchronousEncryptionKeyProvider>(
-            PersistenceEncryptionKeys.EncryptionKeyProviderKey,
-            (sp, _) => sp.GetRequiredService<EncryptionOptionsKeyProvider>());
-
-        _services.AddKeyedSingleton<ISynchronousSymmetricEncryptionService>(
-            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey,
-            (sp, _) => new SynchronousAesGcmEncryptionService(
-                sp.GetRequiredKeyedService<ISynchronousEncryptionKeyProvider>(PersistenceEncryptionKeys.EncryptionKeyProviderKey)));
     }
 
     /// <summary>
@@ -522,15 +345,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <see cref="PersistenceServiceOptions"/> from <paramref name="configuration"/>'s
     /// <see cref="PersistenceServiceOptions.SectionName"/> section.
     /// </summary>
-    /// <param name="configuration">The application's <see cref="IConfiguration"/>.</param>
+    /// <param name="configuration">The application's <see cref="Microsoft.Extensions.Configuration.IConfiguration"/>.</param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// WO-053/P-334 — binds via <c>configuration.GetSection(PersistenceServiceOptions.SectionName)</c>,
-    /// never a bare <c>"SharedKernel:Persistence"</c> literal. Composes with the pre-existing
-    /// <see cref="WithServiceName(string)"/> overload under normal <c>IOptions&lt;T&gt;</c>
-    /// later-registration-wins semantics.
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithServiceName(IConfiguration configuration)
+    public EfCorePersistenceBuilder<TContext> WithServiceName(Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
@@ -542,8 +359,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
         return this;
     }
 
-    // Idempotent-validation-registration guard mirroring EnsureEncryptionInfrastructureRegistered
-    // (WO-053/P-334).
+    // Idempotent-validation-registration guard.
     private void EnsureServiceNameInfrastructureRegistered()
     {
         if (_serviceNameValidationRegistered)
@@ -556,62 +372,10 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
-    /// Opts in to the append-only, hash-chained audit-trail capability
-    /// (<see cref="IAuditTrailWriter"/>/<see cref="IAuditQueryService"/>).
-    /// </summary>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-071/P-457/D-125. Registers:
-    /// <list type="bullet">
-    ///   <item><description><see cref="AuditTrailFeatureMarker"/> (singleton) — see its own remarks for why this is required for <typeparamref name="TContext"/> to pick up <see cref="AuditRecordEntityConfiguration"/>.</description></item>
-    ///   <item><description><see cref="AuditRecordImmutabilityInterceptor"/>, via the same <see cref="AddInterceptor{TInterceptor}"/> pipeline any consumer-supplied interceptor uses.</description></item>
-    ///   <item><description><see cref="IAuditTrailWriter"/> → <see cref="EfAuditTrailWriter"/> (scoped).</description></item>
-    ///   <item><description><see cref="IAuditQueryService"/> → <see cref="EfAuditQueryService"/> (scoped).</description></item>
-    ///   <item><description>A DEFAULT <see cref="IAuditActorContext"/> → <see cref="EfCoreAuditActorContext"/>, registered at <see cref="Build"/> time ONLY when the consumer has not already registered their own — mirroring the existing no-op <c>IUserContext</c>/<c>ITenantProvider</c> placeholder pattern.</description></item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// <strong>REQUIRES two things the consumer must supply themselves:</strong> (1) the downstream
-    /// <typeparamref name="TContext"/>'s own constructor must declare an
-    /// <see cref="AuditTrailFeatureMarker"/><c>?</c> parameter and forward it to <c>base(...)</c> —
-    /// see <see cref="AuditTrailFeatureMarker"/>'s remarks for why a DI-resolved marker type is used instead of a
-    /// raw <see langword="bool"/>; (2) <c>AddSharedKernelCryptography()</c>
-    /// (<c>01.Core/SharedKernel.Cryptography</c>) must have been called so
-    /// <see cref="SharedKernel.Cryptography.Hashing.IContentHasher"/> resolves. (<see cref="WithEncryption(Action{EncryptionOptions}?)"/>
-    /// has no such requirement — it builds its own encryption service.)
-    /// </para>
-    /// <para>Optional. Omitting this call leaves all existing behavior unchanged — no <c>AuditRecord</c> table, no audit services registered.</para>
-    /// </remarks>
-    public EfCorePersistenceBuilder<TContext> WithAuditTrail()
-    {
-        if (_auditTrailEnabled)
-            return this;
-
-        _auditTrailEnabled = true;
-
-        _services.AddSingleton<AuditTrailFeatureMarker>();
-
-        AddInterceptor<AuditRecordImmutabilityInterceptor>();
-
-        _services.AddScoped<IAuditTrailWriter, EfAuditTrailWriter>();
-        _services.AddScoped<IAuditQueryService, EfAuditQueryService>();
-
-        return this;
-    }
-
-    /// <summary>
     /// Opts in to applying pending EF Core migrations during host startup via
     /// <c>Database.MigrateAsync</c>.
     /// </summary>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// Does not by itself register a hosted service — <see cref="Build"/> registers
-    /// <c>MigrationAndSeedHostedService&lt;TContext&gt;</c> only when this method was called, or at
-    /// least one seeder was registered via <see cref="AddSeeder{TSeeder}"/>. Compatible with
-    /// <see cref="WithCompiledModel"/>: <c>MigrateAsync</c> still applies pending SQL migrations
-    /// independently of the runtime model.
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithMigrationsOnStartup()
     {
         _migrationsOnStartup = true;
@@ -627,22 +391,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// typically 30 seconds).
     /// </param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-051/P-320 — CANNOT itself configure Npgsql (this package never references Npgsql). This is
-    /// a documented, REQUIRED two-call opt-in PAIR with
-    /// <c>UsePostgreSQL(connectionString, maxRetryCount, maxRetryDelay)</c> (the PostgreSQL package):
-    /// calling only this method without also passing matching values to <c>UsePostgreSQL(...)</c>
-    /// registers the options singleton but enables NO actual retry behavior.
-    /// </para>
-    /// <para>
-    /// The retry-SAFETY correction for explicit transactions
-    /// (<c>EfTransactionalUnitOfWork.BeginTransactionAsync</c>'s guard +
-    /// <c>ExecuteInTransactionAsync</c>) is UNCONDITIONAL and does NOT depend on this method having
-    /// been called — it queries live EF Core execution-strategy state, so it correctly protects a
-    /// consumer who enabled retry solely via <c>UsePostgreSQL(...)</c>.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithTransientFaultRetry(
         int maxRetryCount = 6,
         TimeSpan? maxRetryDelay = null)
@@ -659,27 +407,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </summary>
     /// <param name="poolSize">The maximum number of pooled context instances. Defaults to 1024.</param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// WO-051/P-322 — see the "DbContext Pooling" section of <c>06.Persistence/CLAUDE.md</c> for the
-    /// full pooling-safety story. In short: <see cref="SharedKernelDbContext"/>/
-    /// <see cref="TenantedDbContext"/> now expose <c>RefreshUserContext</c>/<c>RefreshRequestContext</c>
-    /// specifically so this method can layer a scoped factory delegate over
-    /// <c>IDbContextFactory&lt;TContext&gt;.CreateDbContext()</c> that refreshes the leased instance's
-    /// user/tenant context to the CURRENT scope's real values on every resolution — regardless of
-    /// what (possibly stale, possibly meaningless) values were baked in whenever that pooled slot's
-    /// constructor last ran. Existing consumer code that injects <typeparamref name="TContext"/>
-    /// directly is completely unaffected — pooling and the per-lease refresh are transparent.
-    /// </para>
-    /// <para>
-    /// Cannot be combined with <see cref="WithDbContextFactory"/> (both would register a conflicting
-    /// <c>IDbContextFactory&lt;TContext&gt;</c>) or with <see cref="WithEncryption(Action{EncryptionOptions}?)"/> (its
-    /// <c>IEncryptionVersionOverride</c> rotation-scoped seam has the identical constructor-capture
-    /// staleness hazard this method's redesign fixes for user/tenant context, and has not yet been
-    /// proven safe under pooling) — both combinations throw an actionable
-    /// <see cref="InvalidOperationException"/> at <see cref="Build"/> time.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithDbContextPooling(int poolSize = 1024)
     {
         _dbContextPoolingEnabled = true;
@@ -695,13 +422,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <typeparamref name="TContext"/> as this builder.
     /// </typeparam>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <typeparamref name="TSeeder"/> is registered as scoped. Multiple calls accumulate into an
-    /// ordered list, executed in call order during startup, each in its own DI scope with its own
-    /// <typeparamref name="TContext"/> instance resolved via
-    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/>. Seeders are
-    /// idempotent by contract — see <see cref="IDataSeeder{TContext}"/>.
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> AddSeeder<TSeeder>()
         where TSeeder : class, IDataSeeder<TContext>
     {
@@ -718,10 +438,60 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <returns>The <see cref="IServiceCollection"/> for further chaining.</returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown at startup when <see cref="WithMultiTenancy"/> was called but
-    /// <typeparamref name="TContext"/> does not extend <see cref="TenantedDbContext"/>.
+    /// <typeparamref name="TContext"/> does not extend <see cref="TenantedDbContext"/>; when
+    /// <typeparamref name="TContext"/> extends <see cref="TenantedDbContext"/> but
+    /// <see cref="WithMultiTenancy"/> was never called; when this method has already been called for
+    /// <typeparamref name="TContext"/> on this <see cref="IServiceCollection"/>; when a prior,
+    /// different <c>TContext</c>'s <see cref="Build"/> call already registered the unkeyed
+    /// <see cref="Context.SharedKernelDbContext"/>/<see cref="IUnitOfWork"/> services this call would
+    /// silently overwrite; or when any action registered via <see cref="AddBuildAction"/> throws its
+    /// own guard.
     /// </exception>
     public IServiceCollection Build()
     {
+        // Idempotency guard: a second 'Build()' call for the SAME TContext — whether it is a second
+        // call on this exact builder instance, or a second, independently-constructed builder for the
+        // same TContext sharing this IServiceCollection — leaves a stale keyed registration behind
+        // that 'RekeyLastRegistrationAsInner' below would re-key a SECOND time. Re-keying the
+        // ALREADY-WRAPPING 'TenantAwareDbContextFactory<TContext>' registration the first call
+        // produced turns it into a factory that resolves itself, recursing until
+        // StackOverflowException. 'InnerFactoryKey' is a 'static readonly' field on the CLOSED generic
+        // 'EfCorePersistenceBuilder<TContext>' type, so it is genuinely shared across every builder
+        // instance for the same 'TContext' — checking for an existing keyed registration under it
+        // catches both shapes of repeat call, not just the same-instance one.
+        if (_services.Any(sd => sd.ServiceType == typeof(Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>) && Equals(sd.ServiceKey, InnerFactoryKey)))
+        {
+            throw new InvalidOperationException(
+                $"'.Build()' was already called for '{typeof(TContext).Name}' on this " +
+                $"'IServiceCollection' — either directly (a second '.Build()' call on the same " +
+                $"builder) or via a second, independently-constructed " +
+                $"'AddSharedKernelEfCore<{typeof(TContext).Name}>(...)' builder. Calling '.Build()' " +
+                $"more than once for the same context type corrupts DI resolution: the second call " +
+                "re-registers the underlying DbContext factory as its own wrapper, which recurses into " +
+                "a StackOverflowException the first time it is resolved. Remove the duplicate call.");
+        }
+
+        // Multi-context guard: EfUnitOfWork resolves the unkeyed SharedKernelDbContext/IUnitOfWork
+        // services, so two DIFFERENT TContext types sharing this IServiceCollection cannot both
+        // register them — the second '.Build()' call would silently win the unkeyed slot, so
+        // EfUnitOfWork would bind to whichever context registered last regardless of which
+        // repository/context a given consumer actually intended to commit through.
+        if (_services.Any(sd => sd.ServiceType == typeof(SharedKernelDbContext) && sd.ServiceKey is null))
+        {
+            throw new InvalidOperationException(
+                $"'.Build()' for '{typeof(TContext).Name}' would re-register the unkeyed " +
+                "'SharedKernelDbContext'/'IUnitOfWork' services that a PRIOR " +
+                "'AddSharedKernelEfCore<TOther>(...).Build()' call for a DIFFERENT context type " +
+                "already registered on this 'IServiceCollection'. Two DbContext types sharing one " +
+                "'IServiceCollection' cannot share the same unkeyed 'IUnitOfWork'/'SharedKernelDbContext' " +
+                "resolution — the most recently registered context would silently win for every " +
+                "consumer, including ones that intended to commit through the other context. Host each " +
+                "context's persistence stack in its own DI scope/module, or inject each context's own " +
+                $"'{typeof(TContext).Name}'/'IRepository<,>' directly instead of the shared " +
+                "'IUnitOfWork'/'SharedKernelDbContext' seam wherever more than one context type is " +
+                "registered in this service collection.");
+        }
+
         if (_multiTenancyEnabled && !typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext)))
         {
             throw new InvalidOperationException(
@@ -731,43 +501,61 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 $"or remove the '.WithMultiTenancy()' call from the DI registration.");
         }
 
-        // WO-051/P-322: .WithDbContextPooling() guards — both combinations are unsupported today.
-        if (_dbContextPoolingEnabled && _registerFactory)
+        // Symmetric guard (H4): a context that extends TenantedDbContext but never opted into
+        // '.WithMultiTenancy()' still gets the tenant global query filter (installed unconditionally by
+        // TenantedDbContext.OnModelCreating), but NOT TenantWriteGuardInterceptor — the write-side half
+        // of tenant isolation. Silently running with reads filtered and writes unguarded is exactly the
+        // "no error, reads still filtered" shape this whole guard family exists to rule out.
+        // The one legitimate exception: a registration that binds tenant identity into the database
+        // SESSION (an ITenantSessionBinder, which '.WithRowLevelSecurity()' requires) has the database
+        // itself rejecting out-of-tenant writes, on every statement, including the raw SQL and bulk
+        // paths no SaveChanges interceptor ever observes. That is strictly stronger than the app-level
+        // write guard, so demanding '.WithMultiTenancy()' on top of it would reject the safest
+        // configuration this domain offers.
+        var databaseEnforcesTenantIsolation = _services.Any(sd =>
+            sd.ServiceType == typeof(ITenantSessionBinder));
+
+        if (!_multiTenancyEnabled
+            && !databaseEnforcesTenantIsolation
+            && typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext)))
         {
             throw new InvalidOperationException(
-                "'.WithDbContextPooling()' cannot be combined with '.WithDbContextFactory()' — both " +
-                "would register a conflicting IDbContextFactory<TContext> (pooled vs. non-pooled). " +
-                "Remove one of the two calls.");
+                $"'{typeof(TContext).FullName}' extends '{typeof(TenantedDbContext).FullName}' but " +
+                "'.WithMultiTenancy()' was never called. A TenantedDbContext without it gets the " +
+                "read-side tenant query filter but NOT TenantWriteGuardInterceptor, the write-side " +
+                "half of tenant isolation — silently unprotected writes, with no error anywhere. Call " +
+                $"'.WithMultiTenancy()' on this builder, or change '{typeof(TContext).Name}' to extend " +
+                "'SharedKernelDbContext' directly if it genuinely does not need tenant isolation. " +
+                "Registering an 'ITenantSessionBinder' (as '.WithRowLevelSecurity()' does) also " +
+                "satisfies this guard, since the database then enforces isolation on every statement.");
         }
 
-        if (_dbContextPoolingEnabled && _registerEncryption)
-        {
-            throw new InvalidOperationException(
-                "'.WithDbContextPooling()' cannot be combined with '.WithEncryption()' — " +
-                "IEncryptionVersionOverride's rotation-scoped seam has the identical constructor-" +
-                "capture staleness hazard this method's redesign fixes for user/tenant context, and " +
-                "has not yet been proven safe under pooling. Remove one of the two calls.");
-        }
+        // The former "'.WithDbContextPooling()' cannot be combined with
+        // '.WithMultiTenancy()'" guard is GONE — replaced with a real fix. TenantedDbContext's
+        // constructor no longer takes ICurrentTenantContext at all (see its own class remarks); tenant
+        // identity is attached per lease by TenantAwareDbContextFactory<TContext>, exactly mirroring
+        // how ICurrentActorContext is already attached per lease today. TenantWriteGuardInterceptor
+        // likewise no longer captures ICurrentTenantContext in its constructor — it reads it LIVE off
+        // the executing context instance, so it is pooling-safe as a SINGLETON like the platform
+        // three. The former "'.WithDbContextPooling()' cannot be combined with
+        // '.WithDbContextFactory()'" guard is ALSO gone: IDbContextFactory<TContext> is now always
+        // registered (see the unified factory registration in this method), so there is no longer a
+        // second, conflicting registration for WithDbContextFactory()/RequireDbContextFactory() to
+        // trigger.
 
-        // .WithExternalEncryptionKeyProvider<TProvider>() must be called AFTER
-        // .WithEncryption(...) — it points this package's internal synchronous key-provider slot
-        // at a pre-warmed KMS-backed IEncryptionKeyProvider instead of the
-        // config-backed default that .WithEncryption(...) alone wires.
-        if (_externalEncryptionKeyProviderType is not null && _externalEncryptionKeyProviderCalledBeforeEncryption)
-        {
-            throw new InvalidOperationException(
-                "'.WithExternalEncryptionKeyProvider<TProvider>()' must be called AFTER " +
-                "'.WithEncryption(...)' in the builder chain. Call '.WithEncryption(...)' first " +
-                "(it registers the encryption options/validation infrastructure this method builds " +
-                "on), then '.WithExternalEncryptionKeyProvider<TProvider>()'.");
-        }
+        // Capability-specific guards (e.g. encryption's pooling incompatibility, or its
+        // WithExternalEncryptionKeyProvider-before-WithEncryption ordering requirement) run here, via
+        // whatever that capability's own.WithX() extension method registered through AddBuildAction —
+        // this core builder no longer knows those capabilities exist.
+        foreach (var action in _buildActions)
+            action();
 
-        // WO-051/P-320: register the discoverability singleton when WithTransientFaultRetry() was called.
+        // Register the discoverability singleton when WithTransientFaultRetry() was called.
         if (_transientFaultRetryOptions is not null)
         {
             _services.AddSingleton(_transientFaultRetryOptions);
 
-            // WO-053/P-333: the retry-attempt diagnostic listener subscribes to EF Core's own
+            // The retry-attempt diagnostic listener subscribes to EF Core's own
             // provider-neutral CoreEventId.ExecutionStrategyRetrying diagnostic event. Registered
             // as a hosted service so its DiagnosticListener.AllListeners subscription is active for
             // the app's lifetime — never registered when WithTransientFaultRetry() was not called.
@@ -775,54 +563,114 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
 
         // Register PersistenceServiceOptions default if not already configured by WithServiceName().
-        // This ensures AuditInterceptor and SoftDeleteInterceptor can always resolve it.
+        // This ensures the default IAuditActorContext (AnonymousActorContext) can always resolve it.
         if (!_services.Any(sd => sd.ServiceType == typeof(IOptions<PersistenceServiceOptions>))
             && !_services.Any(sd => sd.ServiceType == typeof(IConfigureOptions<PersistenceServiceOptions>)))
         {
             _services.AddOptions<PersistenceServiceOptions>();
         }
 
-        // Register interceptors as scoped so they receive per-request IUserContext / IClock.
-        _services.AddScoped<AuditInterceptor>();
-        _services.AddScoped<SoftDeleteInterceptor>();
-        _services.AddScoped<ConcurrencyInterceptor>();
-
-        // Register any additional consumer-supplied interceptors as scoped.
-        foreach (var interceptorType in _additionalInterceptorTypes)
+        if (_dbContextPoolingEnabled)
         {
-            _services.AddScoped(interceptorType);
-            _services.AddScoped(typeof(ISaveChangesInterceptor), sp =>
-                sp.GetRequiredService(interceptorType) as ISaveChangesInterceptor
-                    ?? throw new InvalidOperationException(
-                        $"Type '{interceptorType.Name}' does not implement ISaveChangesInterceptor."));
+            // SINGLETON, with a DI-free seed ICurrentActorContext — never resolves
+            // ICurrentActorContext from DI at all, so EF's pool-level activator never has anything
+            // unsafe to resolve for these three. AuditInterceptor/SoftDeleteInterceptor already read
+            // actor identity LIVE off the executing SharedKernelDbContext.CurrentActor (never their
+            // own constructor-captured field) for their real per-save logic — this
+            // constructor-captured seed is truly a throwaway value, immediately superseded by
+            // RefreshActor on every lease.
+            _services.AddSingleton(sp => new AuditInterceptor(new PooledSeedActorContext(), sp.GetRequiredService<IClock>()));
+            _services.AddSingleton(sp => new SoftDeleteInterceptor(new PooledSeedActorContext(), sp.GetRequiredService<IClock>()));
+            _services.AddSingleton<ConcurrencyInterceptor>();
+
+            if (_multiTenancyEnabled)
+            {
+                // TenantWriteGuardInterceptor no longer captures
+                // ICurrentTenantContext in its own constructor (it reads tenant identity LIVE off the
+                // executing context instance — see its own class remarks) and its only remaining
+                // dependency, ICrossTenantScope, is AsyncLocal-backed and singleton-registered — safe
+                // to resolve from the pool-level activator. It is the one AddInterceptor<T>()
+                // registration allowed to combine with pooling; any other is rejected below. Also
+                // mapped to ISaveChangesInterceptor (same singleton instance) so
+                // PersistenceContextDependencies' sp.GetServices<ISaveChangesInterceptor>() resolution
+                // below picks it up identically to how the non-pooled branch's own loop already does.
+                _services.AddSingleton<TenantWriteGuardInterceptor>();
+                _services.AddSingleton<ISaveChangesInterceptor>(sp => sp.GetRequiredService<TenantWriteGuardInterceptor>());
+            }
+
+            if (_additionalInterceptorTypes.Any(t => t != typeof(TenantWriteGuardInterceptor)))
+            {
+                throw new InvalidOperationException(
+                    "'.WithDbContextPooling()' cannot be combined with a consumer-supplied " +
+                    "AddInterceptor<T>() registration other than the platform's own " +
+                    "TenantWriteGuardInterceptor (added automatically by WithMultiTenancy()) — EF " +
+                    "Core's pooled-context activator cannot safely resolve an arbitrary interceptor's " +
+                    "own scoped dependencies. Remove '.WithDbContextPooling()', or remove the " +
+                    "AddInterceptor<T>() call.");
+            }
+
+            // SINGLETON — every dependency PersistenceContextDependencies.ApplyTo needs
+            // (the three platform interceptors above, TenantWriteGuardInterceptor when multi-tenant,
+            // and every registered IPersistenceOptionsExtension) is itself Singleton under pooling, so
+            // building this bundle once and sharing the same instance across every pooled slot is
+            // safe — see the pooled AddPooledDbContextFactory callback below, which resolves this SAME
+            // registration both to construct TContext and to apply its options.
+            _services.AddSingleton(sp => new Context.PersistenceContextDependencies(
+                sp.GetRequiredService<AuditInterceptor>(),
+                sp.GetRequiredService<SoftDeleteInterceptor>(),
+                sp.GetRequiredService<ConcurrencyInterceptor>(),
+                sp.GetServices<ISaveChangesInterceptor>(),
+                sp.GetServices<IPersistenceModelConventionFactory>(),
+                sp.GetServices<IPersistenceModelConfigurator>(),
+                sp.GetServices<IPersistenceOptionsExtension>(),
+                sp.GetServices<IDbUpdateExceptionClassifier>()));
+        }
+        else
+        {
+            // Register interceptors as scoped so they receive per-request ICurrentActorContext / IClock.
+            _services.AddScoped<AuditInterceptor>();
+            _services.AddScoped<SoftDeleteInterceptor>();
+            _services.AddScoped<ConcurrencyInterceptor>();
+
+            // Register any additional consumer-supplied interceptors as scoped (including
+            // TenantWriteGuardInterceptor, when WithMultiTenancy() added it — its own dependencies
+            // are pooling-safe now, but that only matters under WithDbContextPooling(); the scoped
+            // registration here is correct and unchanged for the non-pooled path).
+            foreach (var interceptorType in _additionalInterceptorTypes)
+            {
+                _services.AddScoped(interceptorType);
+                _services.AddScoped(typeof(ISaveChangesInterceptor), sp =>
+                    sp.GetRequiredService(interceptorType) as ISaveChangesInterceptor
+                        ?? throw new InvalidOperationException(
+                            $"Type '{interceptorType.Name}' does not implement ISaveChangesInterceptor."));
+            }
+
+            // SCOPED — resolved once per DI scope, from that scope's own AuditInterceptor/
+            // SoftDeleteInterceptor/ConcurrencyInterceptor/additional-interceptor registrations above.
+            _services.AddScoped(sp => new Context.PersistenceContextDependencies(
+                sp.GetRequiredService<AuditInterceptor>(),
+                sp.GetRequiredService<SoftDeleteInterceptor>(),
+                sp.GetRequiredService<ConcurrencyInterceptor>(),
+                sp.GetServices<ISaveChangesInterceptor>(),
+                sp.GetServices<IPersistenceModelConventionFactory>(),
+                sp.GetServices<IPersistenceModelConfigurator>(),
+                sp.GetServices<IPersistenceOptionsExtension>(),
+                sp.GetServices<IDbUpdateExceptionClassifier>()));
         }
 
         // Build effective configureDb action — wrap with compiled model and/or command timeout if supplied.
-        Action<DbContextOptionsBuilder> effectiveConfigureDb = options =>
+        Action<IServiceProvider, DbContextOptionsBuilder> effectiveConfigureDb = (sp, options) =>
         {
-            _configureDb(options);
+            _configureDb(sp, options);
 
             if (_compiledModel is not null)
                 options.UseModel(_compiledModel);
 
             if (_commandTimeoutSeconds is not null)
             {
-                // WO-053/P-337: DbContextOptionsBuilder has no provider-neutral CommandTimeout(...)
-                // method of its own — CONFIRMED via direct compilation against the real EF Core 10.0.5
-                // package (that method exists only as an INSTANCE member on the provider-specific
-                // RelationalDbContextOptionsBuilder<TBuilder,TExtension> returned from
-                // UseNpgsql(...)'s own configuration callback, unreachable here without an Npgsql
-                // reference). The genuinely provider-neutral mechanism — verified end-to-end against a
-                // real constructed DbContext, confirming Database.GetCommandTimeout() reflects it — is
-                // to locate the already-registered RelationalOptionsExtension (the base type every
-                // provider's own options extension derives from) via a covariant .OfType<T>() scan of
-                // Options.Extensions (DbContextOptions.FindExtension<T>() requires an EXACT type match
-                // and returns null for a base type), call its immutable-with WithCommandTimeout(...),
-                // and re-register the updated extension via AddOrUpdateExtension. Never references any
-                // Npgsql type by name.
                 var relationalExtension = options.Options.Extensions
                     .OfType<RelationalOptionsExtension>()
-                    .FirstOrDefault();
+                        .FirstOrDefault();
 
                 if (relationalExtension is not null)
                 {
@@ -832,92 +680,93 @@ public sealed class EfCorePersistenceBuilder<TContext>
             }
         };
 
-        // Register DbContext using the caller-supplied options action.
-        // Interceptors are wired via SharedKernelDbContext.OnConfiguring for the non-pooled path.
+        // Register the REAL (pooled or
+        // non-pooled) low-level factory under a private key, then wrap it with
+        // TenantAwareDbContextFactory<TContext> — the PUBLIC, scoped IDbContextFactory<TContext> that
+        // attaches the calling scope's actor/tenant identity to every context it hands out, whether
+        // freshly constructed or reused from a pool. EVERY way of obtaining a TContext instance
+        // (direct injection below, or explicit IDbContextFactory<TContext> injection — the shape a
+        // background worker/hosted service's own DI scope uses) funnels through this one decorator,
+        // so neither TenantedDbContext's constructor nor TenantWriteGuardInterceptor's constructor
+        // ever needs to resolve a genuinely Scoped service from EF's pool-level activator.
         if (_dbContextPoolingEnabled)
         {
-            // WO-051/P-322: AddPooledDbContextFactory<TContext> registers IDbContextFactory<TContext>
-            // as a singleton backed by an ObjectPool<TContext>. EF Core FREEZES the DbContextOptions
-            // built here BEFORE any TContext instance is ever constructed from the pool — confirmed
-            // empirically that SharedKernelDbContext.OnConfiguring's own interceptor-wiring attempt
-            // throws "'OnConfiguring' cannot be used to modify DbContextOptions when DbContext
-            // pooling is enabled" the moment the context's internal services are first built (e.g.
-            // on EnsureCreatedAsync/SaveChangesAsync), because SharedKernelDbContext.OnConfiguring
-            // guards its own mutation on `!optionsBuilder.Options.IsFrozen` (see that method's own
-            // remarks) and therefore correctly does nothing further here. The platform three
-            // interceptors (plus any additional consumer-supplied ones) MUST therefore be added here
-            // instead, via the (IServiceProvider, DbContextOptionsBuilder) overload, BEFORE freezing.
-            // Their own constructor-injected IUserContext is a throwaway AnonymousUserContext — harmless,
-            // because AuditInterceptor/SoftDeleteInterceptor read
-            // ((SharedKernelDbContext)eventData.Context).CurrentUserContext LIVE at save time (see
-            // those interceptors' own WO-051/P-322 remarks), never their own captured field, so one
-            // shared interceptor instance safely serves the ENTIRE pool for its lifetime. IClock and
-            // PersistenceServiceOptions ARE resolved for real from sp (the root provider — both are
-            // effectively singleton-shared already under this domain's own conventions), so custom
-            // registrations of either are honored.
+            // A pooled DbContext's OPTIONS (including its interceptor list) AND ITS
+            // OWN OTHER CONSTRUCTOR PARAMETERS are resolved by EF Core's pooled-context activator,
+            // which is bound to the service provider as it existed when the pooled FACTORY ITSELF was
+            // constructed (a singleton-level provider) — never the real per-request scope, no matter
+            // which scope CreateDbContext() is later called from (confirmed empirically: this is not
+            // merely "the options callback runs early", the SAME resolution context is used for every
+            // OTHER constructor parameter of TContext). Resolving a genuinely Scoped service anywhere
+            // in that path is a captive-dependency violation that throws under
+            // ServiceProviderOptions.ValidateScopes = true and, when ValidateScopes is off, silently
+            // misattributes identity forever for that pool slot. IClock is the one genuinely shared,
+            // cross-request value baked into a pooled interceptor at slot-construction time; it is
+            // resolved here (safe only because it is registered Singleton — enforced by this guard).
+            if (_services.Any(sd => sd.ServiceType == typeof(IClock) && sd.Lifetime != ServiceLifetime.Singleton))
+            {
+                throw new InvalidOperationException(
+                    "'.WithDbContextPooling()' requires 'IClock' to be registered as a Singleton. A " +
+                    "pooled DbContext's interceptors are constructed once per pool slot, sharing one " +
+                    "IClock instance across every request that leases that slot — a Scoped or " +
+                    "Transient IClock would either be a captive dependency or silently stop updating.");
+            }
+
             _services.AddPooledDbContextFactory<TContext>((sp, options) =>
             {
-                effectiveConfigureDb(options);
+                effectiveConfigureDb(sp, options);
 
-                var clock = sp.GetRequiredService<IClock>();
-                var serviceOptions = sp.GetRequiredService<IOptions<PersistenceServiceOptions>>();
-                IUserContext placeholderUserContext = AnonymousUserContext.Instance;
-
-                var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
-                {
-                    new AuditInterceptor(placeholderUserContext, clock, serviceOptions),
-                    new SoftDeleteInterceptor(placeholderUserContext, clock, serviceOptions),
-                    new ConcurrencyInterceptor(sp.GetService<ILogger<ConcurrencyInterceptor>>()),
-                    DomainClockMaterializationInterceptor.FromContext,
-                };
-                foreach (var interceptorType in _additionalInterceptorTypes)
-                {
-                    interceptors.Add((Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor)ActivatorUtilities
-                        .CreateInstance(sp, interceptorType));
-                }
-
-                options.AddInterceptors(interceptors);
+                // SharedKernelDbContext.OnConfiguring — where PersistenceContextDependencies.ApplyTo
+                // normally runs — never runs for a pooled context (Options.IsFrozen is true from the
+                // very first construction, per that method's own remarks), so this callback calls the
+                // EXACT SAME method here, against the SAME pool-bound provider TContext's own
+                // constructor is resolved from (the singleton PersistenceContextDependencies
+                // registration above). Calling the identical method from both the pooled and
+                // non-pooled paths — rather than maintaining two independent copies of the same
+                // interceptor/options-extension wiring — is what makes it structurally impossible for
+                // the two paths to silently drift apart the way they previously could (a consumer
+                // whose context declared a shorter constructor lost every capability threaded through
+                // the collections this method applies, with no error anywhere).
+                sp.GetRequiredService<PersistenceContextDependencies>().ApplyTo(options);
             }, _poolSize);
-
-            // The scoped TContext factory delegate below is what existing consumer code injecting
-            // TContext directly transparently rides on — it leases a (possibly reused, possibly
-            // freshly-constructed) pooled instance, then refreshes its user/tenant context to THIS
-            // scope's real values before returning it, so a reused pooled instance never
-            // misattributes audit/tenant data to a prior, unrelated request.
-            _services.AddScoped<TContext>(sp =>
-            {
-                var factory = sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>();
-                var context = factory.CreateDbContext();
-                var userContext = sp.GetRequiredService<IUserContext>();
-
-                if (context is TenantedDbContext tenantedContext)
-                {
-                    var tenantProvider = sp.GetRequiredService<ITenantProvider>();
-                    tenantedContext.RefreshRequestContext(userContext, tenantProvider);
-                }
-                else
-                {
-                    context.RefreshUserContext(userContext);
-                }
-
-                return context;
-            });
         }
         else
         {
-            _services.AddDbContext<TContext>(effectiveConfigureDb);
+            // Registered SCOPED — not the AddDbContextFactory default of Singleton. Each DI
+            // scope gets its OWN DbContextFactory<TContext> instance, constructed against THAT
+            // scope's provider, so TContext's other constructor parameters (AuditInterceptor/
+            // SoftDeleteInterceptor/ConcurrencyInterceptor, all registered scoped above) resolve
+            // correctly per scope — exactly what the former AddDbContext<TContext>(...) registration
+            // did, just reached through IDbContextFactory<TContext> instead of DI constructing
+            // TContext directly. Never Singleton here — that would reintroduce the exact
+            // captive-dependency hazard pooling has, for zero pooling benefit.
+            _services.AddDbContextFactory<TContext>(
+                (sp, options) => effectiveConfigureDb(sp, options),
+                ServiceLifetime.Scoped);
         }
+
+        RekeyLastRegistrationAsInner(_services, typeof(Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>), InnerFactoryKey);
+
+        // The PUBLIC IDbContextFactory<TContext> — scoped, attaches THIS scope's actor/tenant
+        // identity to every context it hands out. A background worker/hosted service that wants a
+        // specific identity creates its own scope, arranges for that scope's ICurrentActorContext/
+        // ICurrentTenantContext to report it, then resolves IDbContextFactory<TContext> from that
+        // scope — see TenantAwareDbContextFactory<TContext>'s own remarks.
+        _services.AddScoped<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>(sp =>
+            new TenantAwareDbContextFactory<TContext>(
+                sp.GetRequiredKeyedService<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>(InnerFactoryKey),
+                sp.GetRequiredService<ICurrentActorContext>(),
+                sp.GetRequiredService<ICurrentTenantContext>()));
+
+        // TContext direct injection always rides on the same public, tenant/actor-attaching factory —
+        // pooled or not, multi-tenant or not.
+        _services.AddScoped<TContext>(sp =>
+            sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>().CreateDbContext());
 
         // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
         _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
 
-        // WO-053/P-338: read-replica routing — opt-in via .WithReadReplica(...). Registers the
-        // replica's DbContextOptions<TContext> as a keyed singleton, then a scoped
-        // IReadReplicaContextAccessor<SharedKernelDbContext> that lazily constructs the replica
-        // TContext instance (once per DI scope) via ActivatorUtilities.CreateInstance<TContext>,
-        // reusing the current scope's own DI-resolved interceptor instances. Omitted entirely when
-        // .WithReadReplica(...) was never called — every EfReadRepository read then targets the
-        // single primary connection, provably unchanged.
+        // Read-replica routing — opt-in via.WithReadReplica(...).
         if (_readReplicaConfigureDb is not null)
         {
             var replicaOptionsBuilder = new DbContextOptionsBuilder<TContext>();
@@ -938,6 +787,12 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddScoped<EfTransactionalUnitOfWork>();
             _services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
             _services.AddScoped<ITransactionalUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
+
+            // The ambient (connection, transaction) publication seam a Dapper command
+            // service resolves (IAmbientDbTransaction) to enlist in this same explicit transaction.
+            _services.AddScoped<AmbientDbTransactionAccessor>();
+            _services.AddScoped<SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction>(
+                sp => sp.GetRequiredService<AmbientDbTransactionAccessor>());
         }
         else
         {
@@ -945,31 +800,32 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         }
 
-        // P-228: Opt-in registration of the same scoped EfUnitOfWork against
-        // SharedKernel.Application.Behaviors.Transaction.IUnitOfWork.
-        // Both registrations resolve the SAME scoped EfUnitOfWork instance per DI scope — NOT two
-        // independent instances. The cast is safe because EfUnitOfWork implements both interfaces.
-        if (_applicationTransactionBehaviorEnabled)
-        {
-            _services.AddScoped<AppBehaviorsIUnitOfWork>(sp =>
-                (AppBehaviorsIUnitOfWork)sp.GetRequiredService<IUnitOfWork>());
-        }
-
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
-        // Placeholder IUserContext when none is present. The authentication packages replace an
-        // AnonymousUserContext instance registration, so registration order does not matter.
-        if (!_services.Any(sd => sd.ServiceType == typeof(IUserContext)))
+        // Default ICurrentActorContext when none is present. A consuming service's real bridge (e.g.
+        // 13.ServiceDefaults.Persistence's SecurityCurrentActorContext) replaces this — the platform's
+        // usual "TryAdd wins only if nothing else registered first" placeholder pattern, extended to
+        // registration order not mattering because callers use Add, not TryAdd, on their real bridge.
+        if (!_services.Any(sd => sd.ServiceType == typeof(ICurrentActorContext)))
         {
-            _services.Add(ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance));
+            _services.Add(ServiceDescriptor.Scoped<ICurrentActorContext, AnonymousActorContext>());
         }
 
-        // WO-071/P-457: default IAuditActorContext — registered only when .WithAuditTrail() was
-        // called AND the consumer has not already registered their own IAuditActorContext.
-        if (_auditTrailEnabled && !_services.Any(sd => sd.ServiceType == typeof(IAuditActorContext)))
+        // Default ICurrentTenantContext when none is present. Registered unconditionally (not only
+        // for multi-tenant services) because opt-in sibling capabilities that are NOT
+        // tenancy-specific — e.g. SharedKernel.Persistence.EfCore.Auditing's EfAuditTrailWriter — also
+        // resolve this seam, and a single-tenant service enabling one of them must not be forced to
+        // also call .WithMultiTenancy() just to satisfy that dependency.
+        if (!_services.Any(sd => sd.ServiceType == typeof(ICurrentTenantContext)))
         {
-            _services.AddScoped<IAuditActorContext, EfCoreAuditActorContext>();
+            _services.Add(ServiceDescriptor.Scoped<ICurrentTenantContext, NullCurrentTenantContext>());
+        }
+
+        // Default ICrossTenantScope when none is present.
+        if (!_services.Any(sd => sd.ServiceType == typeof(ICrossTenantScope)))
+        {
+            _services.AddSingleton<ICrossTenantScope, CrossTenantScope>();
         }
 
         // IDomainEventDispatcher is optional — consuming services opt in by registering it.
@@ -981,54 +837,17 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddSingleton<IClock, SystemClock>();
         }
 
-        // Register IDbContextFactory<TContext> when WithDbContextFactory() was called.
-        if (_registerFactory)
-        {
-            _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
-        }
-
-        // When .WithEncryption() was called, register the IOptionsMonitor<EncryptionOptions> so
-        // SharedKernelDbContext can resolve it for EncryptionModelConvention.
-        // IEncryptionRotationJob registration is the consumer's responsibility — they must provide
-        // a concrete EncryptionRotationService<TContext> subclass via services.AddScoped<IEncryptionRotationJob, MyRotationService>().
-        // We intentionally do not register the abstract base class here.
-        if (_registerEncryption)
-        {
-            // Ensure IOptionsMonitor<EncryptionOptions> is available in the DI container.
-            // AddOptions() is idempotent and does not duplicate registrations.
-            _services.AddOptions<EncryptionOptions>();
-
-            // EncryptedEntityBatchProcessorRegistry<TContext> and EncryptionRotationService<TContext>
-            // both require IDbContextFactory<TContext> — register it if WithDbContextFactory() was
-            // not already called.
-            if (!_registerFactory)
-            {
-                _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
-                _registerFactory = true;
-            }
-
-            // Singleton registry of batch processors, one per encrypted entity type, populated
-            // lazily on first use from the model. WO-051/P-324: reworded from "reflection-free" —
-            // EncryptedEntityBatchProcessorRegistry<TContext>'s own XML doc is the accurate framing:
-            // this is a documented, justified, model-build-time-only exception to the SK0xxx
-            // MakeGenericMethod/Invoke reflection-elimination rule (population uses
-            // Activator.CreateInstance/MakeGenericType ONCE per entity type at startup), not a
-            // claim that zero reflection ever occurs.
-            _services.AddSingleton<EncryptedEntityBatchProcessorRegistry<TContext>>();
-        }
+        // IDbContextFactory<TContext> is now ALWAYS registered above (TContext direct
+        // injection itself rides on it), so WithDbContextFactory()/RequireDbContextFactory() no
+        // longer trigger a separate registration — they are kept as a no-op public API for source
+        // compatibility with sibling capability packages (e.g. the encryption package's rotation
+        // registry) that call RequireDbContextFactory() to declare the dependency they need.
 
         // MigrationAndSeedHostedService<TContext> is registered only when migrations-on-startup
         // was requested, or at least one seeder was registered — fully opt-in, zero overhead
-        // otherwise. Both paths require IDbContextFactory<TContext>; register it here if not
-        // already registered by .WithDbContextFactory() or .WithEncryption().
+        // otherwise.
         if (_migrationsOnStartup || _seedSteps.Count > 0)
         {
-            if (!_registerFactory)
-            {
-                _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
-                _registerFactory = true;
-            }
-
             var migrationsOnStartup = _migrationsOnStartup;
             var seedSteps = _seedSteps.ToArray();
 
@@ -1040,6 +859,92 @@ public sealed class EfCorePersistenceBuilder<TContext>
                     sp.GetService<ILogger<MigrationAndSeedHostedService<TContext>>>()));
         }
 
+        // Zero-configuration startup check, registered ONLY when an opt-in capability exists that
+        // could be silently lost — see PersistenceContextWiringValidator{TContext}'s own remarks for
+        // what it catches. A registration with no opt-in capability has nothing to verify, and adding
+        // a hosted service for it would break this domain's "a plain EF Core registration schedules
+        // no startup work" rule, which MigrationAndSeedHostedServiceTests asserts directly.
+        var multiTenancyEnabled = _multiTenancyEnabled;
+        var hasCapabilitiesToVerify =
+            multiTenancyEnabled
+            || _additionalInterceptorTypes.Count > 0
+            || _services.Any(sd =>
+                sd.ServiceType == typeof(IPersistenceOptionsExtension)
+                || sd.ServiceType == typeof(ISaveChangesInterceptor)
+                || sd.ServiceType == typeof(IDbUpdateExceptionClassifier));
+
+        if (hasCapabilitiesToVerify)
+        {
+            _services.AddHostedService<PersistenceContextWiringValidator<TContext>>(sp =>
+                new PersistenceContextWiringValidator<TContext>(
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    multiTenancyEnabled));
+        }
+
         return _services;
+    }
+
+    // Moves the LAST registration matching serviceType from its normal,
+    // unkeyed slot to a keyed slot under key, using only the public ServiceDescriptor surface
+    // (ImplementationType/ImplementationFactory/ImplementationInstance) — never any EF Core-internal
+    // type. This lets TenantAwareDbContextFactory<TContext> be registered as the PUBLIC, unkeyed
+    // IDbContextFactory<TContext> while still reaching the REAL (pooled or non-pooled) factory EF
+    // Core's own AddPooledDbContextFactory/AddDbContextFactory extension methods just registered —
+    // neither of which offers a keyed overload. Generic on purpose: works identically regardless of
+    // which of the three ServiceDescriptor shapes the wrapped registration happens to use.
+    private static void RekeyLastRegistrationAsInner(IServiceCollection services, Type serviceType, object key)
+    {
+        var index = -1;
+        for (var i = services.Count - 1; i >= 0; i--)
+        {
+            if (services[i].ServiceType == serviceType)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"No registration for '{serviceType}' was found to re-key — this is an internal " +
+                $"EfCorePersistenceBuilder invariant violation, not a consumer misconfiguration.");
+        }
+
+        var original = services[index];
+        services.RemoveAt(index);
+
+        ServiceDescriptor keyed;
+        if (original.ImplementationType is not null)
+        {
+            keyed = ServiceDescriptor.DescribeKeyed(serviceType, key, original.ImplementationType, original.Lifetime);
+        }
+        else if (original.ImplementationFactory is not null)
+        {
+            var factory = original.ImplementationFactory;
+            keyed = ServiceDescriptor.DescribeKeyed(serviceType, key, (sp, _) => factory(sp), original.Lifetime);
+        }
+        else if (original.ImplementationInstance is not null)
+        {
+            var instance = original.ImplementationInstance;
+            keyed = ServiceDescriptor.DescribeKeyed(serviceType, key, (_, _) => instance, ServiceLifetime.Singleton);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Unsupported ServiceDescriptor shape for '{serviceType}' — neither ImplementationType, " +
+                $"ImplementationFactory, nor ImplementationInstance is set.");
+        }
+
+        services.Add(keyed);
+    }
+
+    // A DI-free seed ICurrentActorContext used ONLY to construct pooled
+    // interceptors at pool-slot-construction time — never observed by a real request. See the
+    // WithDbContextPooling() branch of Build() for the full rationale.
+    private sealed class PooledSeedActorContext : ICurrentActorContext
+    {
+        public string ActorId => string.Empty;
+        public ActorKind ActorKind => ActorKind.System;
     }
 }

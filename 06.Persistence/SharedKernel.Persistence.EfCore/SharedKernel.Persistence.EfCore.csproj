@@ -1,34 +1,26 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>EF Core 10 implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, field-level encryption, DbContext pooling, and EfCorePersistenceBuilder.</Description>
+    <Description>EF Core 10 implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, DbContext pooling, and EfCorePersistenceBuilder. Field-level encryption and the audit trail now ship as separate sibling packages (SharedKernel.Persistence.EfCore.Encryption / .Auditing).</Description>
     <PackageTags>persistence;efcore;entity-framework;repository;unit-of-work;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <!--
+      P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions,
+      SharedKernel.Application.Behaviors, or SharedKernel.Cryptography — see
+      SharedKernel.Persistence.Abstractions.Context (IAuditActorContext/ICrossTenantScope) for the
+      local seams that replace the former direct Security.Abstractions dependency; see
+      13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence for the Application.Behaviors
+      bridge and the real IUserContext/ITenantProvider bridge; see
+      SharedKernel.Persistence.EfCore.Encryption for the former Cryptography-dependent surface.
+      06 must now reference only 01–05, and in practice only 01.Core (Domain/Core) + Abstractions.
+    -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
-    <!--
-      Deliberate layering exception (P-078): SharedKernel.Security.Abstractions is a
-      zero-dependency interface library (no ORM, no infrastructure). The reference is
-      required for IUserContext (AuditInterceptor, SoftDeleteInterceptor) and
-      ITenantProvider (TenantedDbContext). Maintaining local interface copies would
-      create divergence risk. All other 12.Security.* packages are forbidden here.
-    -->
-    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
-    <!--
-      P-227: EncryptedValueConverter delegates all AES-256-GCM cryptographic operations to
-      ISymmetricEncryptionService from 01.Core/SharedKernel.Cryptography. Legal under existing
-      layering rules (06.Persistence may reference 01-05). No layering exception needed.
-      BCL-only, zero transitive NuGet dependencies introduced.
-    -->
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
-    <!--
-      P-228: EfUnitOfWork implements SharedKernel.Application.Behaviors.IUnitOfWork in addition
-      to SharedKernel.Persistence.Abstractions.IUnitOfWork, enabling TransactionBehavior to
-      resolve a working unit-of-work without a hand-written composition-root adapter.
-      Legal under existing layering rules (06.Persistence may reference 01-05).
-    -->
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <!-- P-557/W2: PersistenceServiceOptions implements ISectionBoundOptions. -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
@@ -43,24 +35,34 @@
     -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!--
-      P-334: provides OptionsBuilder<TOptions>.Bind(IConfiguration), the fluent extension the
-      .WithEncryption(IConfiguration,...)/.WithServiceName(IConfiguration) overloads depend on.
-      Microsoft.Extensions.Options itself is already available transitively (via the existing
-      IOptionsMonitor<EncryptionOptions> usage) — .ConfigurationExtensions is a separate package.
+      P-557/W1: needed for WithServiceName(IConfiguration) — the sole remaining IConfiguration
+      overload in this package now that WithEncryption(IConfiguration,...) moved to the Encryption
+      sibling package.
     -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <!--
       P-338: the CONCRETE Microsoft.Extensions.DependencyInjection package (not merely
       .Abstractions) — provides ActivatorUtilities.CreateInstance<T>, used to construct the
       read-replica TContext instance while reusing scope-ambient DI-resolved interceptor
-      instances (EfCorePersistenceBuilder.WithReadReplica / IReadReplicaContextAccessor<TContext>).
+      instances (EfCorePersistenceBuilder.WithReadReplica / IReadReplicaContextAccessor<TContext>),
+      and (P-557/W1) ActivatorUtilities.CreateInstance for pooled additional interceptors.
     -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Allows the nested test project to access internal members (e.g.,
-         SharedKernelDbContext.CurrentEncryptionVersionOverride) for diagnostics
-         and white-box testing without expanding the public API surface. -->
+    <!-- Allows the nested test project to access internal members for diagnostics and white-box
+         testing without expanding the public API surface. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
+    <!--
+      P-557/W1: the sibling Encryption/Auditing packages contribute to this context purely through
+      the public IPersistenceModelConventionFactory/IPersistenceModelConfigurator/
+      IPersistenceOptionsExtension extensibility interfaces and the builder's public surface — no
+      InternalsVisibleTo grant is needed for either sibling.
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

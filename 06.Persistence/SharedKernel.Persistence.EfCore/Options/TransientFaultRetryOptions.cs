@@ -8,7 +8,7 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// <param name="MaxRetryDelay">The maximum delay between retry attempts, or <see langword="null"/> to use the provider default.</param>
 /// <remarks>
 /// <para>
-/// WO-051/P-320 — carries no behavior of its own. Registering this record does NOT itself enable
+/// Carries no behavior of its own. Registering this record does NOT itself enable
 /// Npgsql retry — <c>SharedKernel.Persistence.EfCore</c> never references Npgsql, so it cannot call
 /// <c>EnableRetryOnFailure</c> directly. This is a documented, required two-call PAIR with
 /// <c>UsePostgreSQL(..., maxRetryCount, maxRetryDelay)</c> (the PostgreSQL package) — the only legal

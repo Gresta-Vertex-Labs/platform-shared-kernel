@@ -25,7 +25,7 @@ namespace SharedKernel.Persistence.EfCore.Configurations;
 /// <c>ModelConfigurationBuilder</c> to register the converter globally instead.
 /// </para>
 /// <para>
-/// <strong>Concurrency token (CORRECTED, WO-051/P-315):</strong> <c>.IsConcurrencyToken()</c> is
+/// <strong>Concurrency token:</strong> <c>.IsConcurrencyToken()</c> is
 /// applied for <see cref="IHasConcurrency"/> entities — a provider-neutral EF Core concept (the
 /// property is included in the UPDATE <c>WHERE</c> clause) with zero assumption about server-side
 /// auto-generation. The previously-documented <c>.IsRowVersion()</c> call (and the never-built
@@ -41,21 +41,25 @@ namespace SharedKernel.Persistence.EfCore.Configurations;
 /// <c>XminConcurrencyTokenConvention</c>, which reconfigures the property this method marks.
 /// </para>
 /// <para>
-/// <strong>Soft-delete filter:</strong> <c>e =&gt; !e.IsDeleted</c> is applied as a global
-/// query filter for <see cref="ISoftDeletable"/> entities. Use <c>.IgnoreQueryFilters()</c>
-/// to bypass for admin or audit queries.
+/// <strong>Soft-delete filter:</strong> installed separately, context-wide, by
+/// <c>Conventions.SoftDeleteQueryFilterConvention</c> under the named key
+/// <c>Diagnostics.PersistenceFilterNames.SoftDelete</c> — no longer this class's concern, so it
+/// applies even to an <see cref="ISoftDeletable"/> entity type with no
+/// <see cref="EntityTypeConfigurationBase{TEntity, TId}"/> configuration at all. Use
+/// <c>spec.IncludeDeleted = true</c> on a specification to bypass it; never call
+/// <c>.IgnoreQueryFilters()</c> directly, which would also drop the tenant filter.
 /// </para>
 /// <para>
 /// <strong>Audit columns:</strong>
 /// <list type="bullet">
-///   <item><description>
-///     <c>CreatedBy</c> (max-length 256, required) and <c>CreatedOn</c> (DateTimeOffset, required)
-///     for <see cref="IHasCreatedAudit"/> entities.
-///   </description></item>
-///   <item><description>
-///     Additionally <c>ModifiedBy</c> (nullable string) and <c>ModifiedOn</c> (nullable DateTimeOffset)
-///     for <see cref="IHasAudit"/> entities.
-///   </description></item>
+/// <item><description>
+/// <c>CreatedBy</c> (max-length 256, required) and <c>CreatedOn</c> (DateTimeOffset, required)
+/// for <see cref="IHasCreatedAudit"/> entities.
+/// </description></item>
+/// <item><description>
+/// Additionally <c>ModifiedBy</c> (nullable string) and <c>ModifiedOn</c> (nullable DateTimeOffset)
+/// for <see cref="IHasAudit"/> entities.
+/// </description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -76,7 +80,6 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
     {
         ConfigurePrimaryKey(builder);
         ConfigureConcurrencyToken(builder);
-        ConfigureSoftDelete(builder);
         ConfigureAuditColumns(builder);
         ConfigureTenantColumn(builder);
         ConfigureEventSequence(builder);
@@ -90,7 +93,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         if (typeof(IHasVersion).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasVersion.Version))
-                   .IsRequired();
+                .IsRequired();
         }
     }
 
@@ -103,7 +106,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
     }
 
     // Marks RowVersion as a provider-neutral concurrency token for IHasConcurrency entities
-    // (WO-051/P-315 — see the ConfigureConcurrencyToken remarks above for why .IsRowVersion()
+    // (see the ConfigureConcurrencyToken remarks above for why .IsRowVersion()
     // was retired). SharedKernel.Persistence.PostgreSQL's XminConcurrencyTokenConvention
     // reconfigures this property to bind to the real xmin system column when UsePostgreSQL()
     // is in effect.
@@ -112,20 +115,8 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         if (typeof(IHasConcurrency).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasConcurrency.RowVersion))
-                   .IsConcurrencyToken();
+                .IsConcurrencyToken();
         }
-    }
-
-    // Installs the global query filter e => !e.IsDeleted for ISoftDeletable entities.
-    private static void ConfigureSoftDelete(EntityTypeBuilder<TEntity> builder)
-    {
-        if (!typeof(ISoftDeletable).IsAssignableFrom(typeof(TEntity)))
-            return;
-
-        // EF.Property<bool> accesses the mapped column by name, which is AOT-safe
-        // (shadow property access — not CLR reflection on the entity type).
-        builder.HasQueryFilter(e =>
-            !EF.Property<bool>(e, nameof(ISoftDeletable.IsDeleted)));
     }
 
     // Configures audit columns for IHasCreatedAudit and IHasAudit entities.
@@ -134,21 +125,21 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         if (typeof(IHasCreatedAudit).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasCreatedAudit.CreatedBy))
-                   .HasMaxLength(256)
-                   .IsRequired();
+                .HasMaxLength(256)
+                    .IsRequired();
 
             builder.Property(nameof(IHasCreatedAudit.CreatedOn))
-                   .IsRequired();
+                .IsRequired();
         }
 
         if (typeof(IHasAudit).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasAudit.ModifiedBy))
-                   .HasMaxLength(256)
-                   .IsRequired(false);
+                .HasMaxLength(256)
+                    .IsRequired(false);
 
             builder.Property(nameof(IHasAudit.ModifiedOn))
-                   .IsRequired(false);
+                .IsRequired(false);
         }
     }
 
@@ -158,15 +149,13 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
     /// <param name="builder">The entity type builder for <typeparamref name="TEntity"/>.</param>
     /// <remarks>
     /// <para>
-    /// <strong>Production constraint:</strong> <c>TenantId == Guid.Empty</c> is <em>forbidden</em>
-    /// in production rows. <see cref="Guid.Empty"/> is reserved as the no-tenant sentinel used by
-    /// the default <c>UserContextTenantProvider</c> for a caller without a tenant. When no tenant is resolved, the global
-    /// tenant query filter evaluates as <c>e.TenantId == Guid.Empty</c>, which returns
-    /// <strong>zero rows</strong> — no production entity should ever carry <c>TenantId == Guid.Empty</c>.
-    /// </para>
-    /// <para>
-    /// This design is intentional and safe: teams that forget to register a real provider see an
-    /// empty result set immediately rather than a cross-tenant data leak.
+    /// <strong>Fail-closed by construction:</strong> the tenant global query filter
+    /// (<c>MultiTenancy.TenantedDbContext</c>) reads <c>ICurrentTenantContext.TenantId</c>
+    /// (<see cref="Nullable{T}"/>). When no tenant is resolved, that value is <see langword="null"/>
+    /// and the filter returns <strong>zero rows</strong> — teams that forget to register a real
+    /// tenant bridge see an empty result set immediately rather than a cross-tenant data leak. There
+    /// is no longer a <see cref="Guid.Empty"/> sentinel to remember: a genuine, deliberately-assigned
+    /// all-zero <see cref="Guid"/> tenant id is indistinguishable from any other tenant id.
     /// </para>
     /// </remarks>
     private static void ConfigureTenantColumn(EntityTypeBuilder<TEntity> builder)
@@ -174,7 +163,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         if (typeof(IHasTenant).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasTenant.TenantId))
-                   .IsRequired();
+                .IsRequired();
 
             builder.HasIndex(nameof(IHasTenant.TenantId));
         }

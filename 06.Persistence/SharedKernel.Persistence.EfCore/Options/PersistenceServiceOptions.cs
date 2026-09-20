@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using SharedKernel.Configuration;
 
 namespace SharedKernel.Persistence.EfCore.Options;
 
@@ -15,16 +16,23 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// Register via <c>EfCorePersistenceBuilder.WithServiceName(string)</c>.
 /// The default value <c>"system"</c> is used when <c>WithServiceName</c> is not called.
 /// </para>
+/// <para>
+/// Implements <see cref="ISectionBoundOptions"/> (<c>01.Core/SharedKernel.Configuration</c>)
+/// so <c>AddValidatedOptions&lt;PersistenceServiceOptions&gt;(configuration)</c> can read the section
+/// path from the type itself. <see cref="SectionName"/> remains a compatible <c>static</c> property
+/// (rather than the former <c>const</c> field) — every existing
+/// <c>configuration.GetSection(PersistenceServiceOptions.SectionName)</c> call site keeps compiling.
+/// </para>
 /// </remarks>
-public sealed class PersistenceServiceOptions
+public sealed class PersistenceServiceOptions : ISectionBoundOptions
 {
     /// <summary>
     /// The configuration section path this type binds from —
     /// <c>"SharedKernel:Persistence"</c>. Used by
-    /// <c>EfCorePersistenceBuilder.WithServiceName(IConfiguration)</c> (WO-053/P-334) instead of a
+    /// <c>EfCorePersistenceBuilder.WithServiceName(IConfiguration)</c> instead of a
     /// bare <c>GetSection("SharedKernel:Persistence")</c> literal at each call site.
     /// </summary>
-    public const string SectionName = "SharedKernel:Persistence";
+    public static string SectionName => "SharedKernel:Persistence";
 
     /// <summary>
     /// The service identity string written to audit columns (<c>CreatedBy</c>, <c>ModifiedBy</c>,

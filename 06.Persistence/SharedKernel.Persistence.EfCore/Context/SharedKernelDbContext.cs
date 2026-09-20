@@ -1,13 +1,9 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Persistence.EfCore.Auditing;
-using SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Conventions;
+using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Persistence.EfCore.Options;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Context;
 
@@ -16,18 +12,34 @@ namespace SharedKernel.Persistence.EfCore.Context;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Interceptor registration:</strong> The constructor registers exactly three
-/// <c>ISaveChangesInterceptor</c> instances — <see cref="AuditInterceptor"/>,
-/// <see cref="SoftDeleteInterceptor"/>, and <see cref="ConcurrencyInterceptor"/> — via
-/// <c>DbContextOptionsBuilder.AddInterceptors</c>. No <c>OutboxInterceptor</c> is registered
-/// here; the outbox infrastructure is MassTransit's concern at the <c>07.Messaging</c> layer.
+/// <strong>Interceptor registration:</strong> the constructor registers exactly four
+/// always-on <c>ISaveChangesInterceptor</c> instances — <see cref="AuditInterceptor"/>,
+/// <see cref="SoftDeleteInterceptor"/>, <see cref="ConcurrencyInterceptor"/>, and
+/// <see cref="AggregateRootTouchInterceptor"/> — via <c>DbContextOptionsBuilder.AddInterceptors</c>.
+/// No <c>OutboxInterceptor</c> is registered here; the outbox infrastructure is MassTransit's
+/// concern at the <c>07.Messaging</c> layer. <see cref="Interceptors.TenantWriteGuardInterceptor"/> is
+/// NOT unconditional — it is registered as an additional interceptor only for multi-tenant services,
+/// by <c>EfCorePersistenceBuilder.WithMultiTenancy()</c>. All of this wiring is reached through the
+/// single required <see cref="PersistenceContextDependencies"/> constructor parameter — see that
+/// type's own remarks for why it replaced nine individually named constructor parameters.
+/// </para>
+/// <para>
+/// <strong>Extensibility:</strong> this class holds no compile-time reference to any
+/// opt-in capability (field-level encryption, the audit trail). Sibling packages contribute to the
+/// model and to <c>DbContextOptionsBuilder</c> through collections bundled into
+/// <see cref="PersistenceContextDependencies"/>: <see cref="IPersistenceModelConventionFactory"/>
+/// (model-finalizing convention contributions), <see cref="IPersistenceModelConfigurator"/> (extra
+/// entity configurations, applied in <see cref="OnModelCreating"/>), and
+/// <see cref="IPersistenceOptionsExtension"/> (<see cref="DbContextOptionsBuilder"/> mutations,
+/// applied in <see cref="OnConfiguring"/> via <see cref="PersistenceContextDependencies.ApplyTo"/>). A
+/// capability package registers its own implementation of whichever of these it needs — this class
+/// never enumerates capabilities by name.
 /// </para>
 /// <para>
 /// <strong>Model building:</strong> <see cref="OnModelCreating"/> calls
 /// <see cref="ModelBuilder.ApplyConfigurationsFromAssembly"/> for the calling (concrete) context's
-/// assembly, automatically discovering all <c>IEntityTypeConfiguration&lt;T&gt;</c> implementations.
-/// It also registers <see cref="EncryptionModelConvention"/> to apply field-level encryption
-/// to any property annotated with <c>.Encrypt()</c>.
+/// assembly, automatically discovering all <c>IEntityTypeConfiguration&lt;T&gt;</c> implementations,
+/// then applies every registered <see cref="IPersistenceModelConfigurator"/>.
 /// Downstream contexts must call <c>base.OnModelCreating(modelBuilder)</c> first if they override
 /// this method.
 /// </para>
@@ -44,151 +56,83 @@ namespace SharedKernel.Persistence.EfCore.Context;
 /// </remarks>
 public abstract class SharedKernelDbContext : DbContext
 {
-    private readonly AuditInterceptor _auditInterceptor;
-    private readonly SoftDeleteInterceptor _softDeleteInterceptor;
-    private readonly ConcurrencyInterceptor _concurrencyInterceptor;
-    private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor> _additionalInterceptors;
-    private readonly IOptionsMonitor<EncryptionOptions> _encryptionOptions;
-    private readonly IEncryptionVersionOverride _encryptionVersionOverride;
-    private readonly ISynchronousSymmetricEncryptionService? _symmetricEncryptionService;
-    private readonly bool _auditTrailEnabled;
+    private readonly PersistenceContextDependencies _dependencies;
+    private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Metadata.Conventions.IConvention> _additionalModelConventions;
 
     /// <summary>
-    /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the three
-    /// standard interceptors.
+    /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the platform's always-on
+    /// interceptors plus every capability <paramref name="dependencies"/> carries.
     /// </summary>
     /// <param name="options">EF Core context options supplied by the DI container.</param>
-    /// <param name="auditInterceptor">Scoped interceptor that populates audit fields.</param>
-    /// <param name="softDeleteInterceptor">Scoped interceptor that converts deletes to soft-deletes.</param>
-    /// <param name="concurrencyInterceptor">Interceptor that wraps concurrency exceptions.</param>
-    /// <param name="additionalInterceptors">
-    /// Optional consumer-supplied interceptors. Platform three (Audit, SoftDelete, Concurrency) always
-    /// fire before these — this ordering is intentional and cannot be overridden.
+    /// <param name="dependencies">
+    /// Every interceptor/convention/configurator/options-extension/exception-classifier dependency this
+    /// context needs, bundled into one required parameter. A derived context MUST declare exactly
+    /// <c>MyContext(DbContextOptions&lt;MyContext&gt; options, PersistenceContextDependencies dependencies)
+    /// : base(options, dependencies)</c> and forward both parameters unchanged — see
+    /// <see cref="PersistenceContextDependencies"/>'s own remarks for why a shorter, hand-written
+    /// constructor is unsafe.
     /// </param>
-    /// <param name="encryptionOptions">
-    /// Optional live options monitor for field-level encryption. When <see langword="null"/> or when
-    /// <c>WithEncryption()</c> has not been called, encryption defaults to disabled (pass-through).
-    /// All existing <c>SharedKernelDbContext</c> subclass constructors remain compatible — this
-    /// parameter is nullable optional and defaults to a no-op monitor.
-    /// </param>
-    /// <param name="encryptionVersionOverride">
-    /// Optional scoped rotation-target-version accessor passed to <see cref="EncryptionModelConvention"/>.
-    /// When <see langword="null"/> (e.g., <c>WithEncryption()</c> has not been called), a shared
-    /// no-op instance is used and <see cref="EncryptedValueConverter"/> always encrypts with
-    /// <see cref="EncryptionOptions.CurrentVersion"/>.
-    /// </param>
-    /// <param name="symmetricEncryptionService">
-    /// Optional synchronous AES-256-GCM service used by <see cref="EncryptedValueConverter"/>. When the context
-    /// is constructed by DI after <c>.WithEncryption()</c>, the service this package registers under its own
-    /// internal keyed-DI slot always takes precedence over this argument; the argument is the fallback for hand
-    /// construction (tests). When neither is available, the converter operates in disabled pass-through mode.
-    /// </param>
-    /// <param name="auditTrailMarker">
-    /// WO-071/P-457. Optional marker resolved from DI — present only when
-    /// <c>EfCorePersistenceBuilder.WithAuditTrail()</c> registered <see cref="AuditTrailFeatureMarker"/>.
-    /// When non-<see langword="null"/>, <see cref="OnModelCreating"/> applies
-    /// <see cref="AuditRecordEntityConfiguration"/> so <c>AuditRecord</c> becomes part of this
-    /// context's model. A downstream context that wants the audit trail must declare this parameter
-    /// in its own constructor and forward it to <c>base(...)</c>, exactly like
-    /// <paramref name="encryptionOptions"/>/<paramref name="encryptionVersionOverride"/> already
-    /// require for <c>.WithEncryption()</c>. Defaults to <see langword="null"/> — every existing
-    /// downstream context is unaffected. See <see cref="AuditTrailFeatureMarker"/>'s remarks for why
-    /// a marker type is used instead of a raw <see langword="bool"/> (DI cannot resolve a primitive
-    /// constructor parameter automatically).
-    /// </param>
-    protected SharedKernelDbContext(
-        DbContextOptions options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor,
-        IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null,
-        IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        IEncryptionVersionOverride? encryptionVersionOverride = null,
-        ISynchronousSymmetricEncryptionService? symmetricEncryptionService = null,
-        AuditTrailFeatureMarker? auditTrailMarker = null)
+    protected SharedKernelDbContext(DbContextOptions options, PersistenceContextDependencies dependencies)
         : base(options)
     {
-        _auditInterceptor = auditInterceptor;
-        _softDeleteInterceptor = softDeleteInterceptor;
-        _concurrencyInterceptor = concurrencyInterceptor;
-        _additionalInterceptors = additionalInterceptors?.ToList() ?? [];
-        _encryptionOptions = encryptionOptions ?? NullOptionsMonitor<EncryptionOptions>.Instance;
-        _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
-        // This package's own encryption service, registered by EfCorePersistenceBuilder.WithEncryption()
-        // under a package-internal keyed-DI slot (never the ambient unkeyed slot), ALWAYS wins over
-        // whatever this constructor parameter carries when it is resolvable — a downstream context that
-        // mirrors this base constructor's full parameter list would otherwise have
-        // symmetricEncryptionService silently auto-populated by DI from an unrelated general-purpose
-        // registration. The explicit parameter remains the fallback for hand construction (tests) and
-        // for the "no .WithEncryption() call at all" pass-through case.
-        _symmetricEncryptionService =
-            ResolveKeyedSymmetricEncryptionService(options) ?? symmetricEncryptionService;
-        _auditTrailEnabled = auditTrailMarker is not null;
+        ArgumentNullException.ThrowIfNull(dependencies);
 
-        // WO-051/P-322: initialised from AuditInterceptor's own constructor-captured IUserContext —
-        // deliberately NOT a new constructor parameter on this class (auditInterceptor is already
-        // passed in above). Under the default, non-pooled registration this is the correct value for
-        // this instance's entire lifetime. Under .WithDbContextPooling(), RefreshUserContext(...) is
-        // called once per lease to replace it with the CURRENT scope's real IUserContext.
-        CurrentUserContext = auditInterceptor.UserContext;
+        _dependencies = dependencies;
+        _additionalModelConventions = dependencies.ModelConventionFactories
+            .Select(factory => factory.CreateConvention(this, options))
+                .ToList();
+
+        // Initialised from AuditInterceptor's own
+        // constructor-captured ICurrentActorContext — deliberately NOT a new constructor parameter on
+        // this class (it is already reachable through dependencies.AuditInterceptor). Under the
+        // default, non-pooled registration this is the correct value for this instance's entire
+        // lifetime. Under.WithDbContextPooling(), RefreshActor(...) is called once per lease to
+        // replace it with the current scope's real ICurrentActorContext.
+        CurrentActor = dependencies.AuditInterceptor.ActorContext;
     }
 
     /// <summary>
-    /// Gets the <see cref="IUserContext"/> that <see cref="AuditInterceptor"/> and
-    /// <see cref="SoftDeleteInterceptor"/> resolve audit fields from.
+    /// Gets the <see cref="ICurrentActorContext"/> that <see cref="AuditInterceptor"/> and
+    /// <see cref="SoftDeleteInterceptor"/> resolve actor identity from.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Under the default (non-pooled) registration this is set once at construction — from
-    /// <see cref="AuditInterceptor.UserContext"/> — and never changes for this instance's lifetime,
+    /// <see cref="AuditInterceptor.ActorContext"/> — and never changes for this instance's lifetime,
     /// which is already correct because a fresh <see cref="SharedKernelDbContext"/> instance is
     /// constructed per DI scope.
     /// </para>
     /// <para>
-    /// <strong>Pooling (WO-051/P-322):</strong> under
+    /// <strong>Pooling:</strong> under
     /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>, a pooled instance's constructor runs
     /// ONCE per pooled slot, not once per lease. <see cref="AuditInterceptor"/>/
     /// <see cref="SoftDeleteInterceptor"/> read this property LIVE off
     /// <c>eventData.Context</c> inside <c>SavingChanges</c>/<c>SavingChangesAsync</c> — always the
     /// CURRENT executing instance — instead of their own constructor-captured field, so calling
-    /// <see cref="RefreshUserContext"/> once per lease keeps audit attribution correct across
+    /// <see cref="RefreshActor"/> once per lease keeps audit attribution correct across
     /// unrelated requests reusing the same pooled instance.
     /// </para>
     /// </remarks>
-    public IUserContext CurrentUserContext { get; private set; }
+    public ICurrentActorContext CurrentActor { get; private set; }
 
     /// <summary>
-    /// Replaces <see cref="CurrentUserContext"/> with <paramref name="userContext"/>.
+    /// Replaces <see cref="CurrentActor"/> with <paramref name="actorContext"/>.
     /// </summary>
-    /// <param name="userContext">The current scope's real <see cref="IUserContext"/>.</param>
+    /// <param name="actorContext">The current scope's real <see cref="ICurrentActorContext"/>.</param>
     /// <remarks>
-    /// Called once per lease by the factory delegate <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>
-    /// registers. Non-pooled consumers never need to call this — the constructor-set value is already
-    /// correct for a non-pooled instance's lifetime.
+    /// <see langword="internal"/> — called only by
+    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>'s own factory delegate, within this
+    /// same assembly. Not a public extensibility seam.
     /// </remarks>
-    public void RefreshUserContext(IUserContext userContext) => CurrentUserContext = userContext;
-
-    /// <summary>
-    /// Gets the scoped <see cref="IEncryptionVersionOverride"/> instance injected into this context,
-    /// or the shared no-op instance when <c>WithEncryption()</c> has not been called.
-    /// </summary>
-    /// <remarks>
-    /// Exposed so that <see cref="EncryptionRotationService{TContext}"/> can direct this context's
-    /// <see cref="EncryptedValueConverter"/> instances to a target key version during a rotation
-    /// batch — the same instance is resolved by <see cref="EncryptionModelConvention"/> via
-    /// <see cref="ConfigureConventions"/>, so setting <see cref="IEncryptionVersionOverride.OverrideVersion"/>
-    /// here affects this context's converters without any additional DI resolution.
-    /// </remarks>
-    /// <seealso cref="IEncryptionVersionOverride"/>
-    internal IEncryptionVersionOverride CurrentEncryptionVersionOverride => _encryptionVersionOverride;
+    internal void RefreshActor(ICurrentActorContext actorContext) => CurrentActor = actorContext;
 
     /// <summary>Gets the clock this context's audit interceptor uses, attached to every aggregate it materializes.</summary>
     /// <seealso cref="DomainClockMaterializationInterceptor"/>
-    internal SharedKernel.Primitives.Clocks.IClock Clock => _auditInterceptor.Clock;
+    internal SharedKernel.Primitives.Clocks.IClock Clock => _dependencies.AuditInterceptor.Clock;
 
     /// <inheritdoc />
     /// <remarks>
-    /// <strong>Pooling guard (WO-051/P-322):</strong> when <c>optionsBuilder.Options.IsFrozen</c> is
+    /// <strong>Pooling guard:</strong> when <c>optionsBuilder.Options.IsFrozen</c> is
     /// <see langword="true"/> — which EF Core sets for every instance constructed via
     /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>'s
     /// <c>AddPooledDbContextFactory&lt;TContext&gt;</c> registration, confirmed empirically to be
@@ -198,67 +142,106 @@ public abstract class SharedKernelDbContext : DbContext
     /// enabled.") the first time the context's internal services are built (e.g., on
     /// <c>SaveChangesAsync</c> or <c>EnsureCreatedAsync</c>), not immediately at the mutation call
     /// site itself. <see cref="EfCorePersistenceBuilder{TContext}.WithDbContextPooling"/>'s pooled
-    /// registration therefore pre-adds the identical platform-three-plus-additional interceptor set
-    /// (and the <see cref="IEncryptionVersionOverride"/> extension) directly into the pool's own
-    /// <c>optionsAction</c> — BEFORE freezing — so this method correctly does nothing extra for a
-    /// pooled context; for a non-pooled context (<c>Options.IsFrozen == false</c>), this method
-    /// performs the wiring exactly as before.
+    /// registration therefore calls the SAME <see cref="PersistenceContextDependencies.ApplyTo"/>
+    /// this method calls, directly against the pool's own <c>optionsAction</c> — BEFORE freezing —
+    /// so this method correctly does nothing extra for a pooled context; for a non-pooled context
+    /// (<c>Options.IsFrozen == false</c>), this method performs the wiring exactly as before. Calling
+    /// the identical method from both paths (rather than two independently-maintained copies of the
+    /// same interceptor/options-extension wiring) is what makes the two paths structurally incapable
+    /// of drifting apart.
     /// </remarks>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.Options.IsFrozen)
-        {
-            // Platform interceptors always fire first — consumer interceptors are appended after.
-            var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
-            {
-                _auditInterceptor,
-                _softDeleteInterceptor,
-                _concurrencyInterceptor,
-                DomainClockMaterializationInterceptor.FromContext,
-            };
-            interceptors.AddRange(_additionalInterceptors);
-
-            optionsBuilder.AddInterceptors(interceptors);
-
-            // EF Core's default model cache is keyed by context type and is shared process-wide across
-            // all DbContext instances of this type — including instances from different IServiceProvider
-            // containers. Incorporate this context's IEncryptionVersionOverride instance into the cache
-            // key so EncryptionModelConvention's converters are always bound to the override singleton
-            // actually injected into THIS container. See EncryptionAwareModelCacheKeyFactory for the
-            // full rationale.
-            optionsBuilder.WithEncryptionVersionOverride(_encryptionVersionOverride);
-        }
+            _dependencies.ApplyTo(optionsBuilder);
 
         base.OnConfiguring(optionsBuilder);
     }
 
     /// <summary>
-    /// Applies all <c>IEntityTypeConfiguration&lt;T&gt;</c> implementations discovered in the
-    /// concrete context's assembly, and registers the <see cref="EncryptionModelConvention"/>
-    /// for field-level encryption.
+    /// Applies every <c>IEntityTypeConfiguration&lt;T&gt;</c> in the concrete context's assembly whose
+    /// entity type this context actually exposes, then every registered
+    /// <see cref="IPersistenceModelConfigurator"/>.
     /// </summary>
     /// <param name="modelBuilder">The builder used to construct the model for this context.</param>
     /// <remarks>
+    /// <para>
     /// Downstream contexts that override this method must call
     /// <c>base.OnModelCreating(modelBuilder)</c> first to ensure configurations are applied.
+    /// </para>
+    /// <para>
+    /// <strong>Scoped assembly scan:</strong> <c>ApplyConfigurationsFromAssembly</c> is called
+    /// with a predicate that only lets a discovered <c>IEntityTypeConfiguration&lt;T&gt;</c> through
+    /// when <c>T</c> is a type this context exposes — either via one of its own public
+    /// <c>DbSet&lt;T&gt;</c> properties, or via <see cref="AdditionalConfiguredEntityTypes"/>. When two
+    /// or more <c>SharedKernelDbContext</c> subclasses live in the SAME assembly (a multi-context
+    /// service), a configuration for an entity type only the OTHER context exposes is never applied to
+    /// this one — closing the bleed the unscoped scan used to allow (every configuration in the
+    /// assembly reaching every context, silently inert only because EF Core ignores a configuration for
+    /// an entity type never reachable from the model, not because nothing happened). A candidate type
+    /// that does not implement <c>IEntityTypeConfiguration&lt;T&gt;</c> at all (an unrelated type the
+    /// scan also visits) is let through unfiltered — <c>ApplyConfigurationsFromAssembly</c> already
+    /// ignores it internally, so the predicate has nothing meaningful to decide for it.
+    /// </para>
     /// </remarks>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly, IsConfigurationEntityTypeExposed);
 
-        // WO-071/P-457: AuditRecordEntityConfiguration lives in THIS assembly
-        // (SharedKernel.Persistence.EfCore), not the downstream concrete context's assembly, so the
-        // ApplyConfigurationsFromAssembly(GetType().Assembly) scan above never discovers it — applied
-        // explicitly here, and only when WithAuditTrail() opted in.
-        if (_auditTrailEnabled)
-            modelBuilder.ApplyConfiguration(new AuditRecordEntityConfiguration());
+        // Opt-in capabilities (e.g. the audit trail) apply extra configurations that live
+        // in THEIR OWN assembly, not the downstream concrete context's — the assembly scan above
+        // never discovers them. See IPersistenceModelConfigurator.
+        foreach (var configurator in _dependencies.ModelConfigurators)
+            configurator.Configure(modelBuilder);
 
         base.OnModelCreating(modelBuilder);
     }
 
+    /// <summary>
+    /// Entity types this context configures beyond what its own public <c>DbSet&lt;T&gt;</c>
+    /// properties already expose — e.g. a child entity type reachable only through a navigation, with
+    /// its own dedicated <c>IEntityTypeConfiguration&lt;T&gt;</c> but no <c>DbSet&lt;T&gt;</c> of its
+    /// own on this context. Empty by default.
+    /// </summary>
+    /// <remarks>
+    /// The explicit opt-in half of <see cref="OnModelCreating"/>'s scoped assembly scan — a
+    /// context that needs a configuration applied for a non-DbSet entity type overrides this property
+    /// instead of losing the scan's scoping altogether.
+    /// </remarks>
+    protected virtual IEnumerable<Type> AdditionalConfiguredEntityTypes => [];
+
+    // Predicate for ApplyConfigurationsFromAssembly: true for any candidate type that either
+    // does not implement IEntityTypeConfiguration<T> at all (EF Core ignores it either way — nothing
+    // for this predicate to meaningfully decide) or does, and T is exposed by this context's own
+    // DbSet<T> properties or AdditionalConfiguredEntityTypes.
+    private bool IsConfigurationEntityTypeExposed(Type candidateType)
+    {
+        var configuredEntityType = candidateType
+            .GetInterfaces()
+                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEntityTypeConfiguration<>))
+                    .Select(i => i.GetGenericArguments()[0])
+                        .FirstOrDefault();
+
+        if (configuredEntityType is null)
+            return true;
+
+        return ExposedEntityTypes.Contains(configuredEntityType);
+    }
+
+    private HashSet<Type>? _exposedEntityTypesCache;
+
+    private HashSet<Type> ExposedEntityTypes =>
+        _exposedEntityTypesCache ??= GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
+                    .Select(p => p.PropertyType.GetGenericArguments()[0])
+                        .Concat(AdditionalConfiguredEntityTypes)
+                            .ToHashSet();
+
     /// <inheritdoc />
     /// <remarks>
-    /// <strong>Concurrency-conflict translation (CORRECTED, WO-051/P-315):</strong> wraps the base
+    /// <para>
+    /// <strong>Concurrency-conflict translation:</strong> wraps the base
     /// save call so <see cref="ConcurrencyInterceptor.TryTranslate"/> can convert a
     /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> affecting an
     /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency"/> entity into a
@@ -270,6 +253,14 @@ public abstract class SharedKernelDbContext : DbContext
     /// filter (<c>when (... is { } conflict)</c>) means a non-matching exception is never caught
     /// here at all — it propagates with its original stack trace fully intact, identical to
     /// today's behavior for every exception this translation does not apply to.
+    /// </para>
+    /// <para>
+    /// <strong>DbUpdateException classification:</strong> a non-concurrency
+    /// <see cref="DbUpdateException"/> (a unique-constraint or foreign-key violation,...) is offered
+    /// to every registered <see cref="IDbUpdateExceptionClassifier"/>, in registration order; the
+    /// first non-<see langword="null"/> result replaces it. See
+    /// <see cref="IDbUpdateExceptionClassifier"/>.
+    /// </para>
     /// </remarks>
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -277,14 +268,19 @@ public abstract class SharedKernelDbContext : DbContext
         {
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
-        catch (DbUpdateConcurrencyException ex) when (_concurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        catch (DbUpdateConcurrencyException ex) when (_dependencies.ConcurrencyInterceptor.TryTranslate(ex) is { } translated)
         {
-            throw conflict;
+            throw translated;
+        }
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException && TryClassify(ex) is { } classified)
+        {
+            throw classified;
         }
     }
 
     /// <inheritdoc />
-    /// <remarks>See <see cref="SaveChanges(bool)"/> for the concurrency-conflict translation this override performs.</remarks>
+    /// <remarks>See <see cref="SaveChanges(bool)"/> for the concurrency-conflict and
+    /// <see cref="DbUpdateException"/> classification this override performs.</remarks>
     public override async Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
@@ -293,38 +289,41 @@ public abstract class SharedKernelDbContext : DbContext
         {
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex) when (_concurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        catch (DbUpdateConcurrencyException ex) when (_dependencies.ConcurrencyInterceptor.TryTranslate(ex) is { } translated)
         {
-            throw conflict;
+            throw translated;
         }
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException && TryClassify(ex) is { } classified)
+        {
+            throw classified;
+        }
+    }
+
+    // Offers a non-concurrency DbUpdateException to every registered IDbUpdateExceptionClassifier,
+    // in registration order, returning the first non-null translation.
+    private Exception? TryClassify(DbUpdateException exception)
+    {
+        foreach (var classifier in _dependencies.ExceptionClassifiers)
+        {
+            if (classifier.TryClassify(exception) is { } classified)
+                return classified;
+        }
+
+        return null;
     }
 
     /// <inheritdoc />
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // Pass the synchronous encryption service to the convention so every EncryptedValueConverter
-        // it builds delegates AES-256-GCM to it.
-        configurationBuilder.Conventions.Add(
-            _ => new EncryptionModelConvention(
-                _encryptionOptions,
-                _symmetricEncryptionService,
-                _encryptionVersionOverride));
+        configurationBuilder.Conventions.Add(_ => new SoftDeleteQueryFilterConvention());
+
+        foreach (var convention in _additionalModelConventions)
+            configurationBuilder.Conventions.Add(_ => convention);
+
+        // Always last: fails the model build loudly if a '.Encrypt(...)' annotation survived every
+        // IPersistenceModelConventionFactory contribution above unconsumed — see the convention's own remarks.
+        configurationBuilder.Conventions.Add(_ => new EncryptAnnotationRegisteredGuardConvention());
 
         base.ConfigureConventions(configurationBuilder);
-    }
-
-    // Resolves this package's own ISynchronousSymmetricEncryptionService from the DI scope's
-    // IServiceProvider — the same one AddDbContext<TContext> used to construct this instance — via the
-    // keyed-DI slot EfCorePersistenceBuilder.WithEncryption() registers
-    // (PersistenceEncryptionKeys.SymmetricEncryptionServiceKey). Never the ambient unkeyed slot.
-    // CoreOptionsExtension.ApplicationServiceProvider is EF Core's own public mechanism for a DbContext
-    // to reach the container that constructed it; it is null for a hand-built DbContextOptions (e.g.
-    // unit tests that construct a SharedKernelDbContext subclass directly), in which case this returns
-    // null and the caller falls back to whatever was explicitly passed to the constructor.
-    private static ISynchronousSymmetricEncryptionService? ResolveKeyedSymmetricEncryptionService(DbContextOptions options)
-    {
-        var applicationServiceProvider = options.FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider;
-        return applicationServiceProvider?.GetKeyedService<ISynchronousSymmetricEncryptionService>(
-            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey);
     }
 }
