@@ -1,5 +1,6 @@
 using System.Globalization;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Exceptions;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Guards;
@@ -46,9 +47,9 @@ namespace SharedKernel.Domain.Monetary;
 /// <example>
 /// <code>
 /// var price = Money.Create(19.99m, Currency.Usd).Value;
-/// var total = price * 3;                       // 59.97 USD
-/// var shares = total.Allocate(2);              // 29.98 USD, 29.99 USD
-/// Console.WriteLine(total);                    // "59.97 USD"
+/// var total = price * 3; // 59.97 USD
+/// var shares = total.Allocate(2); // 29.98 USD, 29.99 USD
+/// Console.WriteLine(total); // "59.97 USD"
 /// </code>
 /// </example>
 public sealed class Money : ValueObject, IComparable<Money>, IFormattable
@@ -59,6 +60,20 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
         Guard.Throw.InvalidEnumValue(roundingPolicy);
         Currency = currency;
         Amount = Round(amount, currency.MinorUnitDigits, roundingPolicy);
+    }
+
+    // EF Core complex-type constructor binding (06.Persistence.EfCore): the two parameters match
+    // Amount and Currency exactly, so EF Core's constructor-binding discovery selects this constructor over
+    // the three-parameter one above, whose unmatched roundingPolicy parameter makes it ineligible. A value
+    // read back from storage is expected to already be rounded to the currency's minor unit; this constructor
+    // deliberately does NOT re-round it. Silently re-rounding a corrupted or bypassed value would hide data
+    // loss, so a stored amount with more decimal places than the currency allows fails loudly instead.
+    private Money(decimal amount, Currency currency)
+    {
+        Guard.Throw.Null(currency);
+        Currency = currency;
+        CheckRule(new StoredPrecisionRule(amount, currency));
+        Amount = amount;
     }
 
     /// <summary>
@@ -340,7 +355,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <exception cref="FormatException"><paramref name="format"/> is not a valid numeric format string.</exception>
     public string ToString(string? format, IFormatProvider? formatProvider)
     {
-        var amountFormat = string.IsNullOrEmpty(format) ? $"F{Currency.MinorUnitDigits}" : format;
+        var amountFormat = string.IsNullOrEmpty(format) ? $"F{Currency.MinorUnitDigits}": format;
         return $"{Amount.ToString(amountFormat, formatProvider)} {Currency.Code}";
     }
 
@@ -533,8 +548,8 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
         {
             var order = Enumerable.Range(0, ratios.Count)
                 .OrderByDescending(i => remainders[i])
-                .ThenByDescending(i => i)
-                .ToArray();
+                    .ThenByDescending(i => i)
+                        .ToArray();
 
             for (var i = 0; i < leftover; i++)
                 shares[order[i]]++;
@@ -552,5 +567,18 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
         for (var i = 0; i < digits; i++)
             scale *= 10m;
         return scale;
+    }
+
+    // Backs the EF Core materialization constructor's precision guard. Not IBusinessRule-public: it exists
+    // solely to reuse CheckRule's existing throw shape and is never reachable outside this file.
+    private sealed class StoredPrecisionRule(decimal amount, Currency currency) : IBusinessRule
+    {
+        public string Code => "money.stored_precision_exceeded";
+
+        public string Message =>
+            $"Stored amount {amount.ToString(CultureInfo.InvariantCulture)} has more decimal places than " +
+            $"{currency.Code}'s {currency.MinorUnitDigits}-digit minor unit allows.";
+
+        public bool IsBroken() => Math.Round(amount, currency.MinorUnitDigits, MidpointRounding.ToEven) != amount;
     }
 }
