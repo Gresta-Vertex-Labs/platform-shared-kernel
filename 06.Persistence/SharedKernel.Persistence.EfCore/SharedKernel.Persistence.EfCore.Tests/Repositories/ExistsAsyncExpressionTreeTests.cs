@@ -5,7 +5,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
 // ---------------------------------------------------------------------------
-// T-26 — EfRepository.ExistsAsync expression-tree predicate (P-099 Part 1)
+// EfRepository.ExistsAsync expression-tree predicate
 // ---------------------------------------------------------------------------
 
 public sealed class ExistsAsyncExpressionTreeTests

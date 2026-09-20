@@ -65,7 +65,7 @@ internal sealed class StubSpecificationEvaluator<T> : ISpecificationEvaluator<T>
 internal sealed class StubBackedReadRepository(
     TestDbContext ctx,
     StubSpecificationEvaluator<TestAggregate> evaluator)
-    : EfReadRepository<TestAggregate, TestId>(ctx, evaluator)
+        : EfReadRepository<TestAggregate, TestId>(ctx, evaluator)
 {
     public StubSpecificationEvaluator<TestAggregate> Evaluator { get; } = evaluator;
 }
@@ -85,7 +85,7 @@ internal sealed class TestNameProjectionSpec : Specification<TestAggregate>,
 public sealed class SpecificationEvaluatorInterfaceTests
 {
     // -----------------------------------------------------------------------
-    // Contract shape — interface declares GetProjectedQuery (P-097)
+    // Contract shape — interface declares GetProjectedQuery
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -93,7 +93,26 @@ public sealed class SpecificationEvaluatorInterfaceTests
     {
         var method = typeof(ISpecificationEvaluator<>).GetMethod("GetProjectedQuery");
         method.Should().NotBeNull(
-            "GetProjectedQuery<TResult> must be declared on ISpecificationEvaluator<T> (P-097 promotion)");
+            "GetProjectedQuery<TResult> must be declared on ISpecificationEvaluator<T> (promotion)");
+    }
+
+    [Fact]
+    public void ISpecificationEvaluator_Declares_GetQuery()
+    {
+        // Moved here from SharedKernel.Persistence.Abstractions.Tests — the interface now
+        // lives in SharedKernel.Persistence.EfCore.
+        var method = typeof(ISpecificationEvaluator<>).GetMethod("GetQuery");
+        method.Should().NotBeNull("ISpecificationEvaluator<T> must expose GetQuery");
+    }
+
+    [Fact]
+    public void ISpecificationEvaluator_Declares_GetKeysetQuery()
+    {
+        // Moved here from SharedKernel.Persistence.Abstractions.Tests.
+        var method = typeof(ISpecificationEvaluator<>).GetMethod("GetKeysetQuery");
+        method.Should().NotBeNull("ISpecificationEvaluator<T> must expose GetKeysetQuery<TKey>");
+        method!.IsGenericMethodDefinition.Should().BeTrue(
+            "GetKeysetQuery must be a method-level generic over TKey, avoiding any TKey-erasure reflection");
     }
 
     [Fact]

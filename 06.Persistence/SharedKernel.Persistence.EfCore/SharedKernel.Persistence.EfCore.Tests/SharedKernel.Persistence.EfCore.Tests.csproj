@@ -5,8 +5,21 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <!-- T-60: TransactionBehavior end-to-end test requires MediatR pipeline and Application.Behaviors -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <!-- P-557/W1: the former P-228 05.Application.Behaviors dual-interface IUnitOfWork bridge (and
+         its EfUnitOfWorkDualInterfaceTests.cs proof) moved to
+         13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence, which is legally positioned to
+         reference both this package and 05.Application.Behaviors — this project no longer needs
+         that reference. -->
+    <!--
+      P-557/W2 (coordinator follow-up): the Postgres/ folder is a genuine integration-test suite
+      proving EfCore data-path fixes against REAL PostgreSQL (Testcontainers) rather than SQLite —
+      SharedKernel.Persistence.EfCore itself still never references Npgsql (that hard rule is about
+      PRODUCTION code); this TEST project referencing the PostgreSQL provider package is the same
+      pattern SharedKernel.Persistence.PostgreSQL.Tests already uses, just from the EfCore side, so
+      xmin-bound concurrency tokens (UsePostgreSQL()) are genuinely exercised, not merely a raw
+      bytea column that never changes on UPDATE.
+    -->
+    <ProjectReference Include="..\..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

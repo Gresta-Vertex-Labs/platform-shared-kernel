@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -21,7 +22,7 @@ namespace SharedKernel.Persistence.EfCore.Tests.Diagnostics;
 public sealed class RetryDiagnosticsCollection;
 
 /// <summary>
-/// WO-053/P-333 (C-131): <see cref="PersistenceRetryDiagnosticListener"/>'s
+/// <see cref="PersistenceRetryDiagnosticListener"/>'s
 /// <c>TransientRetryAttempt</c> Warning (EventId <c>6007</c>) and its opt-in DI registration.
 /// </summary>
 /// <remarks>
@@ -47,13 +48,13 @@ public sealed class PersistenceRetryDiagnosticListenerTests
             .AddSharedKernelEfCore<RetryDiagListenerTestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithTransientFaultRetry()
-            .Build();
+                        .WithTransientFaultRetry()
+                            .Build();
 
         var provider = services.BuildServiceProvider();
         provider.GetServices<IHostedService>()
             .OfType<PersistenceRetryDiagnosticListener>()
-            .Should().ContainSingle();
+                .Should().ContainSingle();
     }
 
     [Fact]
@@ -64,19 +65,19 @@ public sealed class PersistenceRetryDiagnosticListenerTests
             .AddSharedKernelEfCore<RetryDiagListenerTestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                        .Build();
 
         var provider = services.BuildServiceProvider();
         provider.GetServices<IHostedService>()
             .OfType<PersistenceRetryDiagnosticListener>()
-            .Should().BeEmpty();
+                .Should().BeEmpty();
     }
 
     [Fact]
     public async Task StartAsync_ObservesRealExecutionStrategyRetryingEvent_LogsWarning_PerAttempt()
     {
         // Arrange — a genuine EF Core retrying ExecutionStrategy (SQLite, provider-neutral technique
-        // already proven for WO-051/P-320's own retry tests) whose ShouldRetryOn always retries a
+        // already proven for this package's own retry tests) whose ShouldRetryOn always retries a
         // simulated transient InvalidOperationException, verified to publish real
         // Microsoft.EntityFrameworkCore.Infrastructure.ExecutionStrategyRetrying DiagnosticListener
         // events (confirmed via direct compilation against the real EF Core 10.0.5 package before
@@ -96,20 +97,20 @@ public sealed class PersistenceRetryDiagnosticListenerTests
             // EF escalates ManyServiceProvidersCreatedWarning to an exception, which fails
             // these tests only when the full suite runs (CI), never in isolation. The extra
             // providers are intentional test isolation, so the warning is suppressed here.
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-                .AddInterceptors(faultInjector)
-                .Options;
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
+                        .AddInterceptors(faultInjector)
+                            .Options;
 
-            var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+            var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
             var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
             var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-                userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+                userContext, clock);
             var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-                userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+                userContext, clock);
             var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
-            using var ctx = new RetryDiagListenerTestDbContext(options, audit, softDelete, concurrency);
+            using var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
             await ctx.Database.OpenConnectionAsync();
             await ctx.Database.EnsureCreatedAsync();
             ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
@@ -142,10 +143,8 @@ public sealed class RetryDiagListenerTestDbContext : SharedKernel.Persistence.Ef
 
     public RetryDiagListenerTestDbContext(
         DbContextOptions<RetryDiagListenerTestDbContext> options,
-        SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor auditInterceptor,
-        SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor softDeleteInterceptor,
-        SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor concurrencyInterceptor)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+        PersistenceContextDependencies dependencies)
+            : base(options, dependencies)
     {
     }
 

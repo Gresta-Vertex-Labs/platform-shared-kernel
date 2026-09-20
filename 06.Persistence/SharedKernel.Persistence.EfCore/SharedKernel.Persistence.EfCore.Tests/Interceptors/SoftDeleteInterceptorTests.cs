@@ -1,9 +1,8 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using NSubstitute;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
@@ -16,7 +15,7 @@ public sealed class SoftDeleteInterceptorTests
         var now = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
         var userId = Guid.NewGuid();
         using var ctx = TestDbContextFactory.CreateTestDbContext(
-            userContext: TestDbContextFactory.CreateAuthenticatedUserContext(userId),
+            actorContext: TestDbContextFactory.CreateAuthenticatedActorContext(userId),
             clock: TestDbContextFactory.CreateClock(now));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "ToSoftDelete", new SystemClock());
@@ -33,7 +32,7 @@ public sealed class SoftDeleteInterceptorTests
         ctx.ChangeTracker.Clear();
         var stillThere = await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
+                .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
 
         stillThere.Should().NotBeNull();
         stillThere!.IsDeleted.Should().BeTrue();
@@ -44,10 +43,10 @@ public sealed class SoftDeleteInterceptorTests
     [Fact]
     public async Task SaveChanges_Unauthenticated_DeletedBy_IsSystem()
     {
-        // Arrange — P-091: unauthenticated → DeletedBy = "system"
+        // Arrange — an actor context resolving to "system" writes it verbatim as DeletedBy
         var now = DateTimeOffset.UtcNow;
         using var ctx = TestDbContextFactory.CreateTestDbContext(
-            userContext: TestDbContextFactory.CreateUnauthenticatedUserContext(),
+            actorContext: new FakeAuditActorContext("system"),
             clock: TestDbContextFactory.CreateClock(now));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "SoftDeleteSystem", new SystemClock());
@@ -62,20 +61,16 @@ public sealed class SoftDeleteInterceptorTests
         ctx.ChangeTracker.Clear();
         var stillThere = await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
+                .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
         stillThere!.DeletedBy.Should().Be("system");
     }
 
     [Fact]
     public async Task SaveChanges_AuthenticatedWithGuidEmpty_DeletedBy_IsSystem()
     {
-        // Arrange — P-091: IsAuthenticated == true but no SubjectId → "system"
-        var mock = Substitute.For<IUserContext>();
-        mock.SubjectId.Returns((string?)null);
-        mock.IsAuthenticated.Returns(true);
-        mock.Roles.Returns([]);
-
-        using var ctx = TestDbContextFactory.CreateTestDbContext(userContext: mock);
+        // Arrange — SoftDeleteInterceptor writes IAuditActorContext.ActorId verbatim,
+        // whatever the registered actor context resolves it to (here, "system").
+        using var ctx = TestDbContextFactory.CreateTestDbContext(actorContext: new FakeAuditActorContext("system"));
         var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
         ctx.AuditableAggregates.Add(aggregate);
         await ctx.SaveChangesAsync();
@@ -88,7 +83,7 @@ public sealed class SoftDeleteInterceptorTests
         ctx.ChangeTracker.Clear();
         var stillThere = await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
+                .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
         stillThere!.DeletedBy.Should().Be("system");
     }
 

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -52,17 +53,17 @@ public sealed class DbContextDiagnosticsExtensionsTests
     {
         var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite("Data Source=/nonexistent/path/that/cannot/be/created.db")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
 
-        var serviceOptions = TestDbContextFactory.DefaultServiceOptions();
-        var userContext = TestDbContextFactory.CreateUnauthenticatedUserContext();
+        var userContext = TestDbContextFactory.CreateUnauthenticatedActorContext();
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         using var ctx = new TestDbContext(
             options,
-            new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(userContext, clock, serviceOptions),
-            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(userContext, clock, serviceOptions),
-            new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor());
+            new PersistenceContextDependencies(
+                new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(userContext, clock),
+            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(userContext, clock),
+            new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor()));
 
         var act = async () => await ctx.CheckReadinessAsync();
 

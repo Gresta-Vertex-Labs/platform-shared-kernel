@@ -12,11 +12,11 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Diagnostics;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-319 — PersistenceActivitySource / PersistenceTagKeys / RepositoryTracing tracing spans,
+// PersistenceActivitySource / PersistenceTagKeys / RepositoryTracing tracing spans,
 // and the automatic TagWith(spec.GetType().Name) query annotation.
 //
-// Cross-test correlation (discovered during this phase, mirrors 02.Caching's own documented
-// OtelTracingTests/OtelMetricsTests hazard, WO-050/P-304): PersistenceActivitySource.Source is a
+// Cross-test correlation (mirrors 02.Caching's own documented
+// OtelTracingTests/OtelMetricsTests hazard): PersistenceActivitySource.Source is a
 // single process-wide static ActivitySource, and xUnit runs different test CLASSES in parallel by
 // default (only tests WITHIN one class/collection are sequential). StreamingRepositoryTests.cs (a
 // different class) also drives TestAggregate.StreamAsync through the identical traced repository,
@@ -165,7 +165,7 @@ public sealed class RepositoryTracingTests
     }
 
     // -------------------------------------------------------------------------
-    // WO-051/P-319 (T-77) — failure-path span tagging. Disposing the underlying DbContext before
+    // Failure-path span tagging. Disposing the underlying DbContext before
     // invoking a traced read forces a genuine ObjectDisposedException INSIDE the traced operation
     // delegate (Set<TAggregate>() throws once the context is disposed) — proving RepositoryTracing
     // catches it, tags Outcome=="failure"/ErrorType, sets ActivityStatusCode.Error, and rethrows
@@ -211,7 +211,7 @@ public sealed class RepositoryTracingTests
     }
 
     // -------------------------------------------------------------------------
-    // WO-051/P-319 (T-78) — negative assertion: no span tag value ever equals a raw SQL parameter,
+    // Negative assertion: no span tag value ever equals a raw SQL parameter,
     // entity property value, or tenant/user identifier from the fixture, across a representative
     // sample of traced operations.
     // -------------------------------------------------------------------------
@@ -220,7 +220,7 @@ public sealed class RepositoryTracingTests
     public async Task TracedOperations_NeverIncludeRawEntityPropertyOrParameterValues_InSpanTags()
     {
         // Arrange — distinctive "sensitive" values that must never leak into a span tag, mirroring
-        // the cache.key_prefix-never-full-key precedent from 02.Caching's P-304.
+        // the cache.key_prefix-never-full-key precedent from 02.Caching.
         const string sensitiveName = "Sensitive-Secret-Value-9f3a";
         var sensitiveId = TestId.New();
 
@@ -267,7 +267,7 @@ public sealed class RepositoryTracingTests
     }
 
     // -------------------------------------------------------------------------
-    // WO-053/P-333 (C-134) — EfRepository.GetByIdAsync/.ExistsAsync were, until this phase, the only
+    // EfRepository.GetByIdAsync/.ExistsAsync were, until this phase, the only
     // two EfRepository public members never wrapped in RepositoryTracing.ExecuteTracedAsync.
     // -------------------------------------------------------------------------
 

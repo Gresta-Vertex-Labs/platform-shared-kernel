@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -10,11 +11,11 @@ namespace SharedKernel.Persistence.EfCore.Tests.MultiTenancy;
 // Concrete TenantedRepository implementations for tests
 // ---------------------------------------------------------------------------
 
-internal sealed class SdTenantedRepo(SoftDeletableTenantedDbContext ctx)
-    : TenantedRepository<SoftDeletableTenantedAggregate, TenantedTestId>(ctx);
+internal sealed class SdTenantedRepo(SoftDeletableTenantedDbContext ctx, ICrossTenantScope crossTenantScope)
+    : TenantedRepository<SoftDeletableTenantedAggregate, TenantedTestId>(ctx, crossTenantScope);
 
 // ---------------------------------------------------------------------------
-// T-28 — TenantedRepository soft-delete filter semantics (P-100)
+// T-28 — TenantedRepository soft-delete filter semantics
 // ---------------------------------------------------------------------------
 
 public sealed class TenantedRepositoryFilterSemanticsTests
@@ -28,9 +29,9 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     {
         // Arrange
         var tenantId = Guid.NewGuid();
-        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(
-            TestDbContextFactory.CreateTenantProvider(tenantId));
-        var repo = new SdTenantedRepo(ctx);
+        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
+        var crossTenantScope = new CrossTenantScope();
+        var repo = new SdTenantedRepo(ctx, crossTenantScope);
 
         var id = TenantedTestId.New();
         var entity = new SoftDeletableTenantedAggregate(id, "ToSoftDelete", tenantId, new SystemClock());
@@ -43,6 +44,7 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         ctx.ChangeTracker.Clear();
 
         // Act
+        using var scope1 = crossTenantScope.Enter();
         var result = await repo.GetByIdForTenantAsync(id, tenantId);
 
         // Assert
@@ -59,9 +61,9 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     public async Task GetByIdForTenantIncludingDeletedAsync_Returns_SoftDeletedEntity()
     {
         var tenantId = Guid.NewGuid();
-        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(
-            TestDbContextFactory.CreateTenantProvider(tenantId));
-        var repo = new SdTenantedRepo(ctx);
+        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
+        var crossTenantScope = new CrossTenantScope();
+        var repo = new SdTenantedRepo(ctx, crossTenantScope);
 
         var id = TenantedTestId.New();
         var entity = new SoftDeletableTenantedAggregate(id, "IncludeDeleted", tenantId, new SystemClock());
@@ -74,6 +76,7 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         ctx.ChangeTracker.Clear();
 
         // Act — both filters bypassed
+        using var scope1 = crossTenantScope.Enter();
         var result = await repo.GetByIdForTenantIncludingDeletedAsync(id, tenantId);
 
         // Assert
@@ -91,9 +94,10 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
 
-        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(
-            TestDbContextFactory.CreateTenantProvider(tenantA));
-        var repo = new SdTenantedRepo(ctx);
+        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantA);
+        var crossTenantScope = new CrossTenantScope();
+        var repo = new SdTenantedRepo(ctx, crossTenantScope);
+        using var scope1 = crossTenantScope.Enter();
 
         var id = TenantedTestId.New();
         await ctx.SdAggregates.AddAsync(
@@ -121,7 +125,7 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         // GetByIdForTenantIncludingDeletedAsync behave identically.
         typeof(ISoftDeletable)
             .IsAssignableFrom(typeof(TenantedTestAggregate))
-            .Should().BeFalse("TenantedTestAggregate is not soft-deletable — both tenant-lookup methods are equivalent");
+                .Should().BeFalse("TenantedTestAggregate is not soft-deletable — both tenant-lookup methods are equivalent");
     }
 
     [Fact]
@@ -129,6 +133,6 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     {
         typeof(ISoftDeletable)
             .IsAssignableFrom(typeof(SoftDeletableTenantedAggregate))
-            .Should().BeTrue("SoftDeletableTenantedAggregate implements ISoftDeletable");
+                .Should().BeTrue("SoftDeletableTenantedAggregate implements ISoftDeletable");
     }
 }

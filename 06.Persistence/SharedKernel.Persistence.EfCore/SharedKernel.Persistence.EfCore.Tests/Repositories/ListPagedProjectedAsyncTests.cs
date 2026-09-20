@@ -26,7 +26,7 @@ internal sealed class PagedNameProjectionSpec : PagedSpecification<TestAggregate
 }
 
 // ---------------------------------------------------------------------------
-// T-29 — ListPagedProjectedAsync integration tests (P-101)
+// T-29 — ListPagedProjectedAsync integration tests
 // ---------------------------------------------------------------------------
 
 public sealed class ListPagedProjectedAsyncTests
@@ -136,6 +136,6 @@ public sealed class ListPagedProjectedAsyncTests
         var method = typeof(SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<,>)
             .GetMethod("ListPagedProjectedAsync");
         method.Should().NotBeNull(
-            "IReadRepository<TAggregate, TId> must declare ListPagedProjectedAsync<TResult> (P-101)");
+            "IReadRepository<TAggregate, TId> must declare ListPagedProjectedAsync<TResult>");
     }
 }

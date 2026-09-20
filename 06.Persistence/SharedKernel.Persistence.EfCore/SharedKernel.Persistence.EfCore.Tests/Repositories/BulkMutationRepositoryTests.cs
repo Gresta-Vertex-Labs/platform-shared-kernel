@@ -18,6 +18,12 @@ internal sealed class BulkTestRepository(TestDbContext ctx)
 internal sealed class BulkAuditableRepository(TestDbContext ctx)
     : EfRepository<AuditableTestAggregate, TestId>(ctx);
 
+internal sealed class BulkSdTenantedRepository(SoftDeletableTenantedDbContext ctx)
+    : EfRepository<SoftDeletableTenantedAggregate, TenantedTestId>(ctx);
+
+internal sealed class BulkConcurrentRepository(TestDbContext ctx)
+    : EfRepository<ConcurrentTestAggregate, TestId>(ctx);
+
 // ---------------------------------------------------------------------------
 // Helper specifications
 // ---------------------------------------------------------------------------
@@ -27,8 +33,18 @@ internal sealed class NameEqualsSpec : Specification<TestAggregate>
     public NameEqualsSpec(string name) => AddCriteria(e => e.Name == name);
 }
 
-internal sealed class AllAggregatesSpec : Specification<TestAggregate>
+internal sealed class NoCriteriaSpec : Specification<TestAggregate>
 {
+}
+
+internal sealed class SdTenantedNameEqualsSpec : Specification<SoftDeletableTenantedAggregate>
+{
+    public SdTenantedNameEqualsSpec(string name) => AddCriteria(e => e.Name == name);
+}
+
+internal sealed class ConcurrentNameEqualsSpec : Specification<ConcurrentTestAggregate>
+{
+    public ConcurrentNameEqualsSpec(string name) => AddCriteria(e => e.Name == name);
 }
 
 internal sealed class AuditableNameEqualsSpec : Specification<AuditableTestAggregate>
@@ -139,8 +155,8 @@ public sealed class BulkMutationRepositoryTests
 
         var beforeModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id)).ModifiedOn;
+                .Select(e => new { e.Id, e.ModifiedOn })
+                    .FirstAsync(e => e.Id == id)).ModifiedOn;
 
         var affected = await repo.ExecuteUpdateAsync(
             new AuditableNameEqualsSpec("Original"),
@@ -150,8 +166,8 @@ public sealed class BulkMutationRepositoryTests
 
         var afterModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id)).ModifiedOn;
+                .Select(e => new { e.Id, e.ModifiedOn })
+                    .FirstAsync(e => e.Id == id)).ModifiedOn;
 
         afterModifiedOn.Should().Be(beforeModifiedOn, "AuditInterceptor must not run for bulk mutations");
     }
@@ -188,7 +204,7 @@ public sealed class BulkMutationRepositoryTests
     }
 
     // -------------------------------------------------------------------------
-    // T-112 (WO-053/P-337, DO-59) — bulk restore is a USAGE PATTERN of the already-shipped
+    // Bulk restore is a USAGE PATTERN of the already-shipped
     // ExecuteUpdateAsync, not a new production method. This proves the documented pattern
     // (06.Persistence/CLAUDE.md's "Soft-Delete Restore" section) genuinely works: a bulk
     // soft-delete followed by a bulk restore, both via ExecuteUpdateAsync, bypassing
@@ -212,8 +228,8 @@ public sealed class BulkMutationRepositoryTests
 
         var originalModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id1)).ModifiedOn;
+                .Select(e => new { e.Id, e.ModifiedOn })
+                    .FirstAsync(e => e.Id == id1)).ModifiedOn;
 
         // Bulk soft-delete via ExecuteUpdateAsync directly (mirrors the documented bulk
         // soft-delete example — no repository-level "bulk delete" helper exists; the setter
@@ -222,8 +238,8 @@ public sealed class BulkMutationRepositoryTests
             new AuditableNameEqualsSpec("BulkRestoreMe"),
             setters => setters
                 .SetProperty(e => ((ISoftDeletable)e).IsDeleted, true)
-                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)DateTimeOffset.UtcNow)
-                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, "bulk-tester"));
+                    .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)DateTimeOffset.UtcNow)
+                        .SetProperty(e => ((ISoftDeletable)e).DeletedBy, "bulk-tester"));
         deletedCount.Should().Be(2);
 
         // Invisible through the normal global soft-delete filter.
@@ -236,8 +252,8 @@ public sealed class BulkMutationRepositoryTests
             new AuditableNameEqualsSpec("BulkRestoreMe", includeDeleted: true),
             setters => setters
                 .SetProperty(e => ((ISoftDeletable)e).IsDeleted, false)
-                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)null)
-                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, (string?)null));
+                    .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)null)
+                        .SetProperty(e => ((ISoftDeletable)e).DeletedBy, (string?)null));
 
         // Assert — every targeted row is genuinely restored and visible again through the global
         // filter with no IncludeDeleted flag needed.
@@ -251,7 +267,7 @@ public sealed class BulkMutationRepositoryTests
         // untouched by either bulk call, exactly like every other IBulkMutationRepository call.
         var finalModifiedOn = (await ctx.AuditableAggregates
             .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id1)).ModifiedOn;
+                .FirstAsync(e => e.Id == id1)).ModifiedOn;
         finalModifiedOn.Should().Be(originalModifiedOn, "bulk mutations must bypass AuditInterceptor entirely");
     }
 }
@@ -364,10 +380,72 @@ public sealed class BulkSpecificationGuardTests
         var repo = new BulkTestRepository(ctx);
 
         var act = async () => await repo.ExecuteUpdateAsync(
-            new AllAggregatesSpec(),
+            new NameEqualsSpec("Match"),
             setters => setters.SetProperty(e => e.Name, "Unchanged"));
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_AllRowsSpecification_DoesNotThrow()
+    {
+        // A criteria-less bulk mutation is rejected UNLESS the caller explicitly
+        // opts in via AllRowsSpecification<T>.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkTestRepository(ctx);
+
+        var act = async () => await repo.ExecuteUpdateAsync(
+            new AllRowsSpecification<TestAggregate>(),
+            setters => setters.SetProperty(e => e.Name, "Unchanged"));
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_NoCriteriaAndNotAllRows_ThrowsUnsupportedSpecificationException()
+    {
+        // The previously-accepted "just don't set Criteria" shape is now rejected —
+        // callers wanting every row must say so explicitly via AllRowsSpecification<T>.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkTestRepository(ctx);
+
+        var act = async () => await repo.ExecuteUpdateAsync(
+            new NoCriteriaSpec(),
+            setters => setters.SetProperty(e => e.Name, "Unchanged"));
+
+        var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
+        exception.Which.Message.Should().Contain("Criteria").And.Contain(nameof(AllRowsSpecification<TestAggregate>));
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_SetsTenantId_ThrowsUnsupportedSpecificationException()
+    {
+        // TenantId must never be settable via a bulk mutation — it would bypass
+        // TenantWriteGuardInterceptor entirely.
+        using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext();
+        var repo = new BulkSdTenantedRepository(ctx);
+
+        var act = async () => await repo.ExecuteUpdateAsync(
+            new SdTenantedNameEqualsSpec("Match"),
+            setters => setters.SetProperty(e => e.TenantId, Guid.NewGuid()));
+
+        var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
+        exception.Which.Message.Should().Contain("TenantId");
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_SetsRowVersion_ThrowsUnsupportedSpecificationException()
+    {
+        // The concurrency token must never be forgeable via a bulk mutation.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkConcurrentRepository(ctx);
+
+        var act = async () => await repo.ExecuteUpdateAsync(
+            new ConcurrentNameEqualsSpec("Match"),
+            setters => setters.SetProperty(e => e.RowVersion, [1, 2, 3, 4]));
+
+        var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
+        exception.Which.Message.Should().Contain("RowVersion");
     }
 
     [Fact]

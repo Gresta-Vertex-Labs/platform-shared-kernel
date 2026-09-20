@@ -12,7 +12,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
 /// <summary>
-/// T-33: IRepository.GetBySpecAsync write-side tracked fetch tests (P-106 Cap 1).
+/// IRepository.GetBySpecAsync write-side tracked fetch tests.
 /// </summary>
 public sealed class WriteRepositoryGetBySpecAsyncTests
 {

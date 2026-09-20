@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -11,7 +12,7 @@ using SharedKernel.Testing.Logging;
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
 /// <summary>
-/// WO-053/P-333 (C-129): <see cref="ConcurrencyInterceptor"/>'s <c>ConcurrencyConflictDetected</c>
+/// <see cref="ConcurrencyInterceptor"/>'s <c>ConcurrencyConflictDetected</c>
 /// Warning (EventId <c>6000</c>).
 /// </summary>
 public sealed class ConcurrencyInterceptorLoggingTests
@@ -23,19 +24,19 @@ public sealed class ConcurrencyInterceptorLoggingTests
         var inMemoryLogger = new InMemoryLogger<ConcurrencyInterceptor>();
         var interceptor = new ConcurrencyInterceptor(inMemoryLogger);
 
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
 
-        using var ctx = new TestDbContext(options, audit, softDelete, interceptor);
+        using var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, interceptor));
         ctx.Database.EnsureCreated();
 
         var id = TestId.New();
@@ -73,19 +74,19 @@ public sealed class ConcurrencyInterceptorLoggingTests
         // Arrange
         var inMemoryLogger = new InMemoryLogger<ConcurrencyInterceptor>();
         var interceptor = new ConcurrencyInterceptor(inMemoryLogger);
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
 
-        using var ctx = new TestDbContext(options, audit, softDelete, interceptor);
+        using var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, interceptor));
         ctx.Database.EnsureCreated();
 
         var id = TestId.New();

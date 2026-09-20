@@ -5,7 +5,7 @@ using SharedKernel.Persistence.EfCore.Conversions;
 namespace SharedKernel.Persistence.EfCore.Tests.Conversions;
 
 /// <summary>
-/// WO-066/P-440/D-104/C-146 — <see cref="CurrencyValueConverter"/> unit tests.
+/// <see cref="CurrencyValueConverter"/> unit tests.
 /// </summary>
 public sealed class CurrencyValueConverterTests
 {

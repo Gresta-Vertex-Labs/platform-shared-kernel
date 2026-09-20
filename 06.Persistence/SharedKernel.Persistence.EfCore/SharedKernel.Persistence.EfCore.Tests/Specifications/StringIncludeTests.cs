@@ -13,13 +13,11 @@ using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using NSubstitute;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 
 // ---------------------------------------------------------------------------
-// T-37: SpecificationEvaluator<T> string-include tests (P-107)
+// T-37: SpecificationEvaluator<T> string-include tests
 // ---------------------------------------------------------------------------
 
 // Test entities with navigation property
@@ -71,8 +69,8 @@ public sealed class ParentEntityConfig : EntityTypeConfigurationBase<ParentEntit
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         builder.HasMany(e => e.Children)
             .WithOne()
-            .HasForeignKey(c => c.ParentId)
-            .IsRequired();
+                .HasForeignKey(c => c.ParentId)
+                    .IsRequired();
     }
 }
 
@@ -95,10 +93,8 @@ public sealed class StringIncludeDbContext : SharedKernelDbContext
 
     public StringIncludeDbContext(
         DbContextOptions<StringIncludeDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency)
-        : base(options, audit, softDelete, concurrency)
+        PersistenceContextDependencies dependencies)
+            : base(options, dependencies)
     {
     }
 
@@ -132,27 +128,24 @@ public sealed class StringIncludeTests
 {
     private static StringIncludeDbContext CreateContext()
     {
-        var userCtx = Substitute.For<IUserContext>();
-        userCtx.SubjectId.Returns((string?)null);
-        userCtx.IsAuthenticated.Returns(false);
+        var actorContext = new SharedKernel.Testing.Persistence.FakeAuditActorContext();
         var clock = new SystemClock();
 
         var options = new DbContextOptionsBuilder<StringIncludeDbContext>()
             .UseSqlite("DataSource=:memory:")
-            .ConfigureWarnings(w => w
-                .Ignore(RelationalEventId.AmbientTransactionWarning)
+                .ConfigureWarnings(w => w
+                    .Ignore(RelationalEventId.AmbientTransactionWarning)
                 // The rest of this assembly already suppresses this; only this chain did not,
                 // so once the other EF failures were fixed this became the test that happened
                 // to cross EF's 20-internal-provider threshold and fail in its place.
-                .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                    .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                        .Options;
 
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
-        var audit = new AuditInterceptor(userCtx, clock, svcOpts);
-        var softDelete = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        var ctx = new StringIncludeDbContext(options, audit, softDelete, concurrency);
+        var ctx = new StringIncludeDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
         ctx.Database.OpenConnection();
         ctx.Database.EnsureCreated();
 

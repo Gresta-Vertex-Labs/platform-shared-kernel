@@ -10,7 +10,11 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 /// <summary>
-/// T-31: EfTransactionalUnitOfWork double-dispatch fix tests (P-105 Fix 1).
+/// <see cref="EfTransactionalUnitOfWork"/> domain-event dispatch
+/// now always happens PRE-COMMIT, inside <see cref="EfTransactionalUnitOfWork.SaveChangesAsync"/>
+/// itself — the former "defer dispatch until the explicit transaction commits" special case
+/// no longer exists, because dispatch runs before the physical save regardless of whether an
+/// explicit transaction is active.
 /// </summary>
 public sealed class EfTransactionalUnitOfWorkDispatchTests
 {
@@ -22,7 +26,7 @@ public sealed class EfTransactionalUnitOfWorkDispatchTests
     }
 
     [Fact]
-    public async Task SaveChanges_WithActiveTransaction_DoesNotDispatchUntilCommit()
+    public async Task SaveChanges_WithActiveTransaction_DispatchesDuringSaveChangesAsync_NotOnCommit()
     {
         // Arrange
         var (ctx, dispatcher) = CreateContextWithDispatcher();
@@ -32,17 +36,17 @@ public sealed class EfTransactionalUnitOfWorkDispatchTests
         entity.RaiseTestEvent();
         ctx.AuditableAggregates.Add(entity);
 
-        // Act — begin transaction then save (should NOT dispatch yet)
+        // Act — begin transaction then save.
         await using var tx = await uow.BeginTransactionAsync();
         await uow.SaveChangesAsync();
 
-        // Assert — not dispatched during SaveChangesAsync while transaction active
-        await dispatcher.DidNotReceive().DispatchAsync(Arg.Any<IReadOnlyList<IDomainEvent>>(), Arg.Any<CancellationToken>());
+        // Assert — dispatched exactly once ALREADY, before CommitAsync is even called.
+        await dispatcher.Received(1).DispatchAsync(Arg.Any<IReadOnlyList<IDomainEvent>>(), Arg.Any<CancellationToken>());
 
-        // Act — commit
+        // Act — commit.
         await tx.CommitAsync();
 
-        // Assert — dispatched exactly once after commit
+        // Assert — CommitAsync does not dispatch again; still exactly once total.
         await dispatcher.Received(1).DispatchAsync(Arg.Any<IReadOnlyList<IDomainEvent>>(), Arg.Any<CancellationToken>());
     }
 
@@ -65,9 +69,14 @@ public sealed class EfTransactionalUnitOfWorkDispatchTests
     }
 
     [Fact]
-    public async Task SaveChanges_WithRollback_DoesNotDispatch()
+    public async Task SaveChanges_WithRollback_AlreadyDispatchedEventsAreNotUndispatched()
     {
-        // Arrange
+        // Because dispatch runs pre-commit (inside SaveChangesAsync), a SUBSEQUENT
+        // rollback cannot "undo" a dispatch that already happened — this is the documented caveat on
+        // EfPersistenceTransaction.RollbackAsync. A handler with only in-process, same-DbContext
+        // effects rolls back atomically with everything else; a handler with a genuinely external
+        // effect must never be registered as an IDomainEventDispatcher handler for exactly this
+        // reason (see DomainEventDispatchLoop's remarks).
         var (ctx, dispatcher) = CreateContextWithDispatcher();
         var uow = new EfTransactionalUnitOfWork(ctx, dispatcher);
 
@@ -80,8 +89,9 @@ public sealed class EfTransactionalUnitOfWorkDispatchTests
         await uow.SaveChangesAsync();
         await tx.RollbackAsync();
 
-        // Assert — never dispatched
-        await dispatcher.DidNotReceive().DispatchAsync(Arg.Any<IReadOnlyList<IDomainEvent>>(), Arg.Any<CancellationToken>());
+        // Assert — the dispatch that happened during SaveChangesAsync already fired; rollback does
+        // not (and cannot) retract it.
+        await dispatcher.Received(1).DispatchAsync(Arg.Any<IReadOnlyList<IDomainEvent>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

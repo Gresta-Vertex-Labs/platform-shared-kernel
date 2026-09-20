@@ -1,12 +1,13 @@
-using System.Data.Common;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using System.Data.Common;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
@@ -32,7 +33,7 @@ internal sealed class RoundTripCountingInterceptor : DbCommandInterceptor
 }
 
 /// <summary>
-/// WO-051/P-323 (T-93): <see cref="EfReadRepository{TAggregate,TId}.GetByIdsChunkedAsync"/> tests.
+/// <see cref="EfReadRepository{TAggregate,TId}.GetByIdsChunkedAsync"/> tests.
 /// </summary>
 public sealed class GetByIdsChunkedAsyncTests
 {
@@ -41,19 +42,18 @@ public sealed class GetByIdsChunkedAsyncTests
         var counter = new RoundTripCountingInterceptor();
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .AddInterceptors(counter)
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                .AddInterceptors(counter)
+                    .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                        .Options;
 
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var serviceOptions = TestDbContextFactory.DefaultServiceOptions();
 
-        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var audit = new AuditInterceptor(userContext, clock);
+        var softDelete = new SoftDeleteInterceptor(userContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        var ctx = new TestDbContext(options, audit, softDelete, concurrency);
+        var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
         ctx.Database.EnsureCreated();
         return (ctx, counter);
     }

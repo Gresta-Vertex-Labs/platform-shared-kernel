@@ -10,7 +10,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
 /// <summary>
-/// T-32: GetByIdsAsync expression-tree IN clause with strongly-typed IDs (P-105 Fix 2).
+/// GetByIdsAsync expression-tree IN clause with strongly-typed IDs.
 /// </summary>
 public sealed class GetByIdsAsyncStronglyTypedIdTests
 {

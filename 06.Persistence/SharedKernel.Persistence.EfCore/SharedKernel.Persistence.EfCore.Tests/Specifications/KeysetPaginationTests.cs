@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -7,9 +8,9 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-317 — keyset (cursor/seek) pagination: ISpecificationEvaluator<T>.GetKeysetQuery<TKey>
+// Keyset (cursor/seek) pagination: ISpecificationEvaluator<T>.GetKeysetQuery<TKey>
 // and EfReadRepository<TAggregate,TId>.ListKeysetAsync<TKey>.
-// WO-051/P-318 — ISpecification<T>.AsSplitQuery propagation (step 2c).
+// ISpecification<T>.AsSplitQuery propagation (step 2c).
 //
 // Sort key is `long` (KeysetTestAggregate.SequenceNumber) rather than DateTimeOffset — SQLite's
 // EF Core provider does not support ORDER BY over DateTimeOffset columns (a provider-specific test
@@ -22,6 +23,19 @@ namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 public sealed class KeysetPaginationTests
 {
     private readonly SpecificationEvaluator<KeysetTestAggregate> _evaluator = new();
+
+    // ListKeysetAsync now returns CursorPagedList<T> (04.Contracts) — NextAfterKey/NextAfterId
+    // are gone in favor of one opaque NextCursor string. Decode it back to (key, id) to build the next
+    // page's spec, mirroring how a real caller would round-trip a wire cursor.
+    private static (long? Key, object? Id) DecodeCursor(string? cursor)
+    {
+        if (cursor is null)
+            return (null, null);
+
+        var decoded = PageCursor.Decode<long, TestId>(cursor);
+        decoded.IsSuccess.Should().BeTrue("the cursor this evaluator produced must always decode successfully");
+        return (decoded.Value.Key, decoded.Value.Id);
+    }
 
     private static (TestDbContext Ctx, List<KeysetTestAggregate> Seeded) CreateAndSeedSequentialContext(int count)
     {
@@ -79,8 +93,7 @@ public sealed class KeysetPaginationTests
             var page = await repo.ListKeysetAsync(spec);
 
             allItems.AddRange(page.Items.Select(i => i.Name));
-            afterKey = page.NextAfterKey;
-            afterId = page.NextAfterId;
+            (afterKey, afterId) = DecodeCursor(page.NextCursor);
             hasMore = page.HasMore;
             pageCount++;
         } while (hasMore && pageCount < 10); // safety bound against an infinite loop on a bug
@@ -146,8 +159,9 @@ public sealed class KeysetPaginationTests
 
         // Act — fetch page 2 using the CURSOR returned by page 1 (anchored to Seq20's key/id, not a
         // numeric offset that the intervening insert would have invalidated).
+        var (page1AfterKey, page1AfterId) = DecodeCursor(page1.NextCursor);
         var page2 = await repo.ListKeysetAsync(
-            new KeysetBySequenceSpec(afterKey: page1.NextAfterKey, afterId: page1.NextAfterId, take: 2));
+            new KeysetBySequenceSpec(afterKey: page1AfterKey, afterId: page1AfterId, take: 2));
 
         // Assert — page 2 continues strictly after the cursor: Seq30, Seq40. The newly-inserted
         // Seq15 (which sorts BEFORE the cursor) never reappears, and nothing from page 1 is
@@ -173,8 +187,7 @@ public sealed class KeysetPaginationTests
 
         // Assert
         page.HasMore.Should().BeFalse();
-        page.NextAfterKey.Should().BeNull();
-        page.NextAfterId.Should().BeNull();
+        page.NextCursor.Should().BeNull();
         page.Items.Should().HaveCount(3);
     }
 
@@ -198,8 +211,7 @@ public sealed class KeysetPaginationTests
             var page = await repo.ListKeysetAsync(spec);
 
             allItems.AddRange(page.Items.Select(i => i.Name));
-            afterKey = page.NextAfterKey;
-            afterId = page.NextAfterId;
+            (afterKey, afterId) = DecodeCursor(page.NextCursor);
             hasMore = page.HasMore;
             pageCount++;
         } while (hasMore && pageCount < 10);
@@ -213,8 +225,8 @@ public sealed class KeysetPaginationTests
     public async Task ListKeysetAsync_DuplicateSortKeys_ReturnsEveryRowExactlyOnce(bool descending)
     {
         // Several rows share each sort key, so page boundaries fall inside a run of equal keys and only
-        // the Id tiebreak decides what comes next. Before P-540 the tiebreak sorted ascending while the
-        // seek predicate compared Ids descending, so a descending walk skipped or repeated rows here.
+        // the Id tiebreak decides what comes next. Regression guard: the tiebreak used to sort ascending
+        // while the seek predicate compared Ids descending, so a descending walk skipped or repeated rows.
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var clock = new SystemClock();
         long[] keys = [0, 1, 1, 1, 2, 2, 2, 2, 3];
@@ -233,8 +245,7 @@ public sealed class KeysetPaginationTests
         {
             var page = await repo.ListKeysetAsync(new KeysetBySequenceSpec(afterKey, afterId, take: 2, descending));
             seen.AddRange(page.Items);
-            afterKey = page.NextAfterKey;
-            afterId = page.NextAfterId;
+            (afterKey, afterId) = DecodeCursor(page.NextCursor);
             hasMore = page.HasMore;
             pageCount++;
         } while (hasMore && pageCount < 20);
@@ -245,28 +256,29 @@ public sealed class KeysetPaginationTests
     }
 
     [Fact]
-    public async Task ListAsync_WithKeysetSpecification_SilentlyIgnoresCursor_AlwaysFirstPage()
+    public async Task ListAsync_WithKeysetSpecification_ThrowsInsteadOfSilentlyIgnoringCursor()
     {
-        // Arrange — hard constraint: passing a KeysetSpecification<T,TKey> to the ordinary
-        // ListAsync/GetQuery path compiles and runs but silently ignores AfterKey/AfterId.
+        // Passing a KeysetSpecification<T,TKey> to the
+        // ordinary ListAsync/GetQuery path used to compile and run, silently ignoring AfterKey/AfterId
+        // and always returning the first page — a real, previously-undetectable bug class. It now
+        // throws loudly instead.
         var (ctx, seeded) = CreateAndSeedSequentialContext(5);
         using var _disposeCtx = ctx;
         var repo = new KeysetTestReadRepository(ctx);
 
-        // A spec that, if the cursor were honored, would start from the middle of the set.
         var midCursorSpec = new KeysetBySequenceSpec(
             afterKey: seeded[2].SequenceNumber, afterId: seeded[2].Id, take: 2);
 
         // Act — via the ORDINARY ListAsync (not ListKeysetAsync).
-        var result = await repo.ListAsync(midCursorSpec);
+        var act = async () => await repo.ListAsync(midCursorSpec);
 
-        // Assert — Skip is always 0 on a keyset spec, so ListAsync (ignorant of AfterKey/AfterId)
-        // always returns the first page regardless of the supplied cursor.
-        result.Select(a => a.Name).Should().ContainInOrder("Item0", "Item1");
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*ListKeysetAsync*");
     }
 
     // -----------------------------------------------------------------------
-    // WO-051/P-318 — AsSplitQuery propagation (evaluator step 2c)
+    // AsSplitQuery propagation (evaluator step 2c)
     // -----------------------------------------------------------------------
 
     [Fact]

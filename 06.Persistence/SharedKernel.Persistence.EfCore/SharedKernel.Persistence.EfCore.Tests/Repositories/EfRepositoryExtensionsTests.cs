@@ -81,7 +81,7 @@ public sealed class UpdateAsyncTrackingTests
         var loaded = await repo.GetByIdAsync(id);
         ctx.Entry(loaded!).CurrentValues["Name"] = "Updated";
 
-        // Act — entity is tracked, state != Detached, so .Update() should NOT be called
+        // Act — entity is tracked, state != Detached, so.Update() should NOT be called
         await repo.UpdateAsync(loaded!);
         await ctx.SaveChangesAsync();
         ctx.ChangeTracker.Clear();
@@ -184,7 +184,7 @@ public sealed class BulkWriteTests
         var repo = new ExtendedTestRepository(ctx);
         var aggregates = Enumerable.Range(1, 5)
             .Select(i => new TestAggregate(TestId.New(), $"Item{i}", new SystemClock()))
-            .ToList();
+                .ToList();
 
         // Verify staged without commit
         await repo.AddRangeAsync(aggregates);
@@ -534,10 +534,10 @@ public sealed class IncludeDeletedTests
     [Fact]
     public void QueryableExtensions_ClassNoLongerExists_InAssembly()
     {
-        // P-080: QueryableExtensions.IgnoreSoftDeleteFilter() has been removed.
+        // QueryableExtensions.IgnoreSoftDeleteFilter() has been removed.
         var assembly = typeof(EfReadRepository<,>).Assembly;
         var type = assembly.GetTypes().FirstOrDefault(t => t.Name == "QueryableExtensions");
-        type.Should().BeNull("QueryableExtensions was deleted in P-080 — use spec.IncludeDeleted = true instead");
+        type.Should().BeNull("QueryableExtensions was deleted — use spec.IncludeDeleted = true instead");
     }
 }
 
@@ -651,17 +651,14 @@ public sealed class DomainEventDispatchTests
     }
 
     /// <summary>
-    /// T-21: Dispatch failure does not roll back already-committed data.
-    /// This is a documented known trade-off: once the DB transaction commits, dispatch errors are
-    /// surfaced to the caller but the committed row remains in the database.
-    /// Note: when dispatch throws, event clearing (which follows dispatch) is also skipped — the
-    /// caller receives the exception and is responsible for deciding how to handle the undispatched events.
+    /// Dispatch failure now PREVENTS the commit entirely — dispatch runs BEFORE the
+    /// physical save, so nothing is written when a handler throws. This replaces the former "known
+    /// trade-off" (dispatch ran post-commit, so a dispatch failure left already-committed data
+    /// behind) — the new ordering removes that trade-off structurally.
     /// </summary>
     [Fact]
-    public async Task SaveChangesAsync_DispatchFailure_DoesNotRollbackCommittedData()
+    public async Task SaveChangesAsync_DispatchFailure_NothingIsCommitted()
     {
-        // Known trade-off: domain event dispatch happens post-commit.
-        // A dispatch failure does not roll back the committed aggregate state.
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var uow = new EfUnitOfWork(ctx, new ThrowingDispatcher());
 
@@ -670,15 +667,44 @@ public sealed class DomainEventDispatchTests
         aggregate.RaiseTestEvent();
         ctx.AuditableAggregates.Add(aggregate);
 
-        // Act — dispatcher throws after commit; the exception propagates to the caller
+        // Act — dispatcher throws BEFORE the physical save ever runs.
         var act = async () => await uow.SaveChangesAsync();
         await act.Should().ThrowAsync<InvalidOperationException>("dispatcher is expected to throw");
 
-        // Assert — the committed row is still in the database despite the dispatch failure
+        // Assert — nothing was committed: dispatch runs pre-commit, so a handler failure leaves the
+        // database exactly as it was before SaveChangesAsync was called.
         ctx.ChangeTracker.Clear();
         var saved = await ctx.AuditableAggregates.IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == id);
-        saved.Should().NotBeNull(
-            "committed data must survive dispatch failure — this is the documented known trade-off");
+        saved.Should().BeNull(
+            "dispatch runs before the physical save, so a dispatch failure commits nothing at all");
+    }
+
+    /// <summary>
+    /// A hard-deleted aggregate's domain events are captured and dispatched BEFORE
+    /// the delete physically commits — the pre-W2 design lost these events entirely, because EF Core
+    /// stops tracking a Deleted entry once the save that removes it succeeds.
+    /// </summary>
+    [Fact]
+    public async Task SaveChangesAsync_HardDeletedAggregate_EventsAreStillDispatched()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var dispatched = new List<IDomainEvent>();
+        var uow = new EfUnitOfWork(ctx, new CaptureDispatcher(dispatched));
+
+        var aggregate = new AuditableTestAggregate(TestId.New(), "ToHardDelete", new SystemClock());
+        ctx.AuditableAggregates.Add(aggregate);
+        await uow.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var reloaded = await ctx.AuditableAggregates.FirstAsync(e => e.Id == aggregate.Id);
+        reloaded.RaiseTestEvent();
+        ctx.AuditableAggregates.Remove(reloaded);
+
+        await uow.SaveChangesAsync();
+
+        dispatched.Should().NotBeEmpty(
+            "the event raised immediately before a hard delete must still be dispatched, even though " +
+            "EF Core stops tracking the entry once the delete commits");
     }
 
     private sealed class CaptureDispatcher(List<IDomainEvent> captured)
@@ -727,4 +753,4 @@ internal sealed class ConcreteAuditRepo(TestDbContext ctx)
 internal sealed class ConcreteAuditReadRepo(
     TestDbContext ctx,
     ISpecificationEvaluator<AuditableTestAggregate> evaluator)
-    : EfReadRepository<AuditableTestAggregate, TestId>(ctx, evaluator);
+        : EfReadRepository<AuditableTestAggregate, TestId>(ctx, evaluator);

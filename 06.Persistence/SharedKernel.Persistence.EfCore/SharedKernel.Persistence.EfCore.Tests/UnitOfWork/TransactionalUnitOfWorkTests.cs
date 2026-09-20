@@ -8,7 +8,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 // ---------------------------------------------------------------------------
-// T-27 — ITransactionalUnitOfWork integration tests (P-099 Part 2)
+// ITransactionalUnitOfWork integration tests
 // ---------------------------------------------------------------------------
 
 public sealed class TransactionalUnitOfWorkTests
@@ -27,8 +27,11 @@ public sealed class TransactionalUnitOfWorkTests
     [Fact]
     public void ITransactionalUnitOfWork_Declares_BeginTransactionAsync()
     {
-        var method = typeof(ITransactionalUnitOfWork).GetMethod("BeginTransactionAsync");
-        method.Should().NotBeNull("ITransactionalUnitOfWork must declare BeginTransactionAsync");
+        // Two overloads now exist (CancellationToken; IsolationLevel?, CancellationToken) —
+        // disambiguate by parameter types.
+        var method = typeof(ITransactionalUnitOfWork).GetMethod(
+            "BeginTransactionAsync", [typeof(CancellationToken)]);
+        method.Should().NotBeNull("ITransactionalUnitOfWork must declare BeginTransactionAsync(CancellationToken)");
         method!.ReturnType.Should().Be(typeof(Task<IPersistenceTransaction>));
     }
 
@@ -145,7 +148,7 @@ public sealed class TransactionalUnitOfWorkTests
     }
 
     // -----------------------------------------------------------------------
-    // WO-051/P-320 — ExecuteInTransactionAsync (retry-safe alternative)
+    // ExecuteInTransactionAsync (retry-safe alternative)
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -235,7 +238,7 @@ public sealed class TransactionalUnitOfWorkTests
     [Fact]
     public async Task BeginTransactionAsync_NoRetryStrategyConfigured_DoesNotThrow()
     {
-        // Arrange — SQLite's default execution strategy never retries, so the WO-051/P-320 guard
+        // Arrange — SQLite's default execution strategy never retries, so the retry-detection guard
         // must not fire for the platform's default (non-retry) configuration.
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var uow = new EfTransactionalUnitOfWork(ctx);

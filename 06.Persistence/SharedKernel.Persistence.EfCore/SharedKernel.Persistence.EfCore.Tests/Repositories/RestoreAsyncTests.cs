@@ -7,7 +7,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
 /// <summary>
-/// WO-053/P-337 (C-138/C-139): <see cref="IRestorableRepository{TAggregate,TId}"/> and
+/// <see cref="IRestorableRepository{TAggregate,TId}"/> and
 /// <see cref="SharedKernel.Persistence.EfCore.Repositories.EfRepository{TAggregate,TId}.RestoreAsync"/>.
 /// </summary>
 public sealed class RestoreAsyncTests
@@ -30,7 +30,7 @@ public sealed class RestoreAsyncTests
 
         var deleted = await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-            .FirstAsync(e => e.Id == id);
+                .FirstAsync(e => e.Id == id);
         deleted.IsDeleted.Should().BeTrue();
 
         // Act
@@ -127,9 +127,9 @@ public sealed class RestoreAsyncTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(userId);
-        using var ctx = TestDbContextFactory.CreateTestDbContextWithOptions(
-            userContext, TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow), TestDbContextFactory.DefaultServiceOptions());
+        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(userId);
+        using var ctx = TestDbContextFactory.CreateTestDbContext(
+            actorContext, TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow));
         var repo = new BulkAuditableRepository(ctx);
 
         var id = TestId.New();

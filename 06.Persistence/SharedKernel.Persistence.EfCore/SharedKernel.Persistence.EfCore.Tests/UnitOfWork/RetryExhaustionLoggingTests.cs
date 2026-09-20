@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -15,7 +16,7 @@ using SharedKernel.Persistence.EfCore.Tests.Diagnostics;
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 /// <summary>
-/// WO-053/P-333 (C-132): <see cref="EfUnitOfWork"/>/<see cref="EfTransactionalUnitOfWork"/>'s
+/// <see cref="EfUnitOfWork"/>/<see cref="EfTransactionalUnitOfWork"/>'s
 /// <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>).
 /// </summary>
 /// <remarks>
@@ -40,20 +41,20 @@ public sealed class RetryExhaustionLoggingTests
             // EF escalates ManyServiceProvidersCreatedWarning to an exception, which fails
             // these tests only when the full suite runs (CI), never in isolation. The extra
             // providers are intentional test isolation, so the warning is suppressed here.
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-            .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-            .AddInterceptors(faultInjector)
-            .Options;
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
+                        .AddInterceptors(faultInjector)
+                            .Options;
 
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
-        var ctx = new RetryDiagListenerTestDbContext(options, audit, softDelete, concurrency);
+        var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
         return (ctx, faultInjector);
     }
 
@@ -119,19 +120,19 @@ public sealed class RetryExhaustionLoggingTests
             // EF escalates ManyServiceProvidersCreatedWarning to an exception, which fails
             // these tests only when the full suite runs (CI), never in isolation. The extra
             // providers are intentional test isolation, so the warning is suppressed here.
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-            .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-            .Options;
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
+                        .Options;
 
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+        var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock, TestDbContextFactory.DefaultServiceOptions());
+            userContext, clock);
         var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
-        await using var ctx = new RetryDiagListenerTestDbContext(options, audit, softDelete, concurrency);
+        await using var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.EnsureCreatedAsync();
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });

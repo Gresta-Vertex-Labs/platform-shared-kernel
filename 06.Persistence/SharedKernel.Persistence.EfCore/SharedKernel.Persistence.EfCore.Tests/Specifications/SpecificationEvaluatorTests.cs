@@ -202,6 +202,8 @@ internal sealed class PagedSpec : Specification<TestAggregate>
 {
     public PagedSpec(int skip, int take)
     {
+        // Paging requires a primary sort — the evaluator now throws otherwise.
+        ApplyOrderBy(e => e.Name!);
         ApplyPaging(skip, take);
     }
 }

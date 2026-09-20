@@ -13,7 +13,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 // ---------------------------------------------------------------------------
-// T-25 — EfUnitOfWork single-constructor DI tests (P-098)
+// T-25 — EfUnitOfWork single-constructor DI tests
 // ---------------------------------------------------------------------------
 
 public sealed class EfUnitOfWorkSingleConstructorTests
@@ -21,10 +21,10 @@ public sealed class EfUnitOfWorkSingleConstructorTests
     [Fact]
     public void EfUnitOfWork_Has_Exactly_OnePublicConstructor()
     {
-        // P-098 hard rule: exactly one public constructor; second constructor creates DI ambiguity.
+        // Hard rule: exactly one public constructor; second constructor creates DI ambiguity.
         var constructors = typeof(EfUnitOfWork).GetConstructors();
         constructors.Should().HaveCount(1,
-            "EfUnitOfWork must have exactly one public constructor (P-098). " +
+            "EfUnitOfWork must have exactly one public constructor. " +
             "A second constructor causes the DI container to silently select the shorter one, " +
             "bypassing the IDomainEventDispatcher parameter.");
     }
@@ -56,7 +56,7 @@ public sealed class EfUnitOfWorkSingleConstructorTests
         dispatcher.DispatchAsync(
             Arg.Any<IReadOnlyList<IDomainEvent>>(),
             Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+                .Returns(Task.CompletedTask);
 
         // Create EfUnitOfWork via the single constructor — dispatcher provided.
         var uow = new EfUnitOfWork(ctx, dispatcher);
@@ -108,7 +108,7 @@ public sealed class EfUnitOfWorkSingleConstructorTests
         dispatcher.DispatchAsync(
             Arg.Any<IReadOnlyList<IDomainEvent>>(),
             Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+                .Returns(Task.CompletedTask);
 
         var services = new ServiceCollection();
         services.AddSingleton<SharedKernelDbContext>(ctx); // register as base type for EfUnitOfWork

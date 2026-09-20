@@ -45,7 +45,7 @@ internal sealed class MoneyValueObject : IValueObject
     private MoneyValueObject() { }
 }
 
-/// <summary>Entity with an <see cref="IValueObject"/> property — verifies <c>OwnsOne</c> auto-apply.</summary>
+/// <summary>Entity with an <see cref="IValueObject"/> property — verifies complex-type auto-apply.</summary>
 internal class EntityWithValueObject : AggregateRoot<ConventionTestId>
 {
     public string Title { get; private set; } = string.Empty;
@@ -97,12 +97,8 @@ internal sealed class ValueObjectConventionDbContext : SharedKernelDbContext
 {
     public DbSet<EntityWithValueObject> Entities => Set<EntityWithValueObject>();
 
-    public ValueObjectConventionDbContext(
-        DbContextOptions<ValueObjectConventionDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency)
-        : base(options, audit, softDelete, concurrency) { }
+    public ValueObjectConventionDbContext(DbContextOptions<ValueObjectConventionDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies) { }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -124,7 +120,7 @@ internal sealed class EntityWithValueObjectConfig : EntityTypeConfigurationBase<
     {
         base.Configure(builder);
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
-        // Price (MoneyValueObject) — ValueObjectOwnershipBuilder.Apply() will auto-configure OwnsOne.
+        // Price (MoneyValueObject) — ValueObjectOwnershipBuilder.Apply() will auto-configure a complex type.
     }
 }
 
@@ -132,12 +128,8 @@ internal sealed class SimpleConventionDbContext : SharedKernelDbContext
 {
     public DbSet<SimpleConventionEntity> Entities => Set<SimpleConventionEntity>();
 
-    public SimpleConventionDbContext(
-        DbContextOptions<SimpleConventionDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency)
-        : base(options, audit, softDelete, concurrency) { }
+    public SimpleConventionDbContext(DbContextOptions<SimpleConventionDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies) { }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -164,12 +156,8 @@ internal sealed class FullAuditConventionDbContext : SharedKernelDbContext
 {
     public DbSet<FullAuditConventionEntity> Entities => Set<FullAuditConventionEntity>();
 
-    public FullAuditConventionDbContext(
-        DbContextOptions<FullAuditConventionDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency)
-        : base(options, audit, softDelete, concurrency) { }
+    public FullAuditConventionDbContext(DbContextOptions<FullAuditConventionDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies) { }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -197,7 +185,7 @@ internal sealed class FullAuditConventionEntityConfig : EntityTypeConfigurationB
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// EF Core domain primitive convention tests (T-10 / WO-008 P-033).
+/// EF Core domain primitive convention tests.
 /// </summary>
 public sealed class DomainPrimitiveConventionTests
 {
@@ -205,16 +193,14 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<ValueObjectConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
-        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
+        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new ValueObjectConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock, svcOpts),
-            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
-            new ConcurrencyInterceptor());
+            new PersistenceContextDependencies(
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -223,16 +209,14 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<SimpleConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
-        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
+        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new SimpleConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock, svcOpts),
-            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
-            new ConcurrencyInterceptor());
+            new PersistenceContextDependencies(
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -241,32 +225,30 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<FullAuditConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
-        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                    .Options;
+        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new FullAuditConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock, svcOpts),
-            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
-            new ConcurrencyInterceptor());
+            new PersistenceContextDependencies(
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }
 
     // -----------------------------------------------------------------------
-    // ValueObjectOwnershipBuilder (renamed from ValueObjectOwnershipConvention — P-102)
+    // ValueObjectOwnershipBuilder (renamed from ValueObjectOwnershipConvention)
     // -----------------------------------------------------------------------
 
     [Fact]
     public void ValueObjectOwnershipConvention_DoesNotExist_In_Assembly()
     {
-        // T-30: P-102 renames ValueObjectOwnershipConvention to ValueObjectOwnershipBuilder.
+        // ValueObjectOwnershipConvention was renamed to ValueObjectOwnershipBuilder.
         var assembly = typeof(SharedKernel.Persistence.EfCore.Conventions.ValueObjectOwnershipBuilder).Assembly;
         var oldType = assembly.GetTypes().FirstOrDefault(t => t.Name == "ValueObjectOwnershipConvention");
         oldType.Should().BeNull(
-            "ValueObjectOwnershipConvention was renamed to ValueObjectOwnershipBuilder (P-102). " +
+            "ValueObjectOwnershipConvention was renamed to ValueObjectOwnershipBuilder. " +
             "The old class name must not exist in the assembly.");
     }
 
@@ -275,31 +257,41 @@ public sealed class DomainPrimitiveConventionTests
     {
         var assembly = typeof(SharedKernel.Persistence.EfCore.Conventions.ValueObjectOwnershipBuilder).Assembly;
         var newType = assembly.GetTypes().FirstOrDefault(t => t.Name == "ValueObjectOwnershipBuilder");
-        newType.Should().NotBeNull("ValueObjectOwnershipBuilder must exist in the EfCore assembly (P-102 rename)");
+        newType.Should().NotBeNull("ValueObjectOwnershipBuilder must exist in the EfCore assembly (rename)");
         newType!.IsAbstract.Should().BeTrue("ValueObjectOwnershipBuilder is a static class (sealed + abstract in IL)");
     }
 
     [Fact]
-    public void ValueObjectOwnershipBuilder_AutoApplies_OwnsOne_ForIValueObjectProperty()
+    public void ValueObjectOwnershipBuilder_AutoApplies_ComplexProperty_ForIValueObjectProperty()
     {
         using var ctx = CreateValueObjectContext();
 
         var entityType = ctx.Model.FindEntityType(typeof(EntityWithValueObject));
         entityType.Should().NotBeNull();
 
-        var priceNav = entityType!.FindNavigation(nameof(EntityWithValueObject.Price));
-        priceNav.Should().NotBeNull("ValueObjectOwnershipBuilder.Apply() should configure OwnsOne for IValueObject properties");
-        priceNav!.ForeignKey.IsOwnership.Should().BeTrue("Price is an owned value object");
+        // EF Core 10 complex types, not owned entity types — no navigation, no separate table.
+        entityType!.FindNavigation(nameof(EntityWithValueObject.Price)).Should().BeNull(
+            "a value object is configured as a complex type, never as an owned navigation");
+
+        var priceComplexProperty = entityType.FindComplexProperty(nameof(EntityWithValueObject.Price));
+        priceComplexProperty.Should().NotBeNull(
+            "ValueObjectOwnershipBuilder.Apply() should configure a complex type for IValueObject properties");
     }
 
     [Fact]
-    public void ValueObjectOwnershipBuilder_OwnedType_RegisteredAsOwned()
+    public void ValueObjectOwnershipBuilder_ComplexType_DeclaresEveryScalarMember()
     {
         using var ctx = CreateValueObjectContext();
 
-        var ownedType = ctx.Model.FindEntityType(typeof(MoneyValueObject));
-        ownedType.Should().NotBeNull("MoneyValueObject should be registered as an owned entity type");
-        ownedType!.IsOwned().Should().BeTrue();
+        var entityType = ctx.Model.FindEntityType(typeof(EntityWithValueObject));
+        var priceComplexProperty = entityType!.FindComplexProperty(nameof(EntityWithValueObject.Price));
+        priceComplexProperty.Should().NotBeNull();
+
+        // Complex types do not auto-discover scalar members by convention (unlike owned entity types) —
+        // ValueObjectOwnershipBuilder must declare every one explicitly, or constructor binding fails.
+        var complexType = priceComplexProperty!.ComplexType;
+        complexType.FindProperty(nameof(MoneyValueObject.Amount)).Should().NotBeNull();
+        complexType.FindProperty(nameof(MoneyValueObject.Currency)).Should().NotBeNull();
     }
 
     [Fact]
@@ -312,7 +304,7 @@ public sealed class DomainPrimitiveConventionTests
 
         var ownedNavigations = entityType!.GetNavigations()
             .Where(n => n.ForeignKey.IsOwnership)
-            .ToList();
+                .ToList();
         ownedNavigations.Should().BeEmpty("No IValueObject properties on SimpleConventionEntity");
     }
 

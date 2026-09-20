@@ -55,7 +55,8 @@ public sealed class DomainClockMaterializationInterceptorTests
     [Fact]
     public async Task LoadedAggregate_SoftDeletesAtTheClockTime_NotYearOne()
     {
-        // Before P-541 the aggregate had no clock after loading; before P-540 it recorded 0001-01-01.
+        // Regression guard: the aggregate previously had no clock after loading, and before that it
+        // recorded 0001-01-01 instead of the real clock time.
         var now = new DateTimeOffset(2026, 6, 15, 12, 30, 0, TimeSpan.Zero);
         var (context, id) = SeedOne(now);
         using var _ = context;

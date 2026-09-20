@@ -4,7 +4,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using NSubstitute;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
@@ -17,12 +16,11 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-318 (T-72/T-74) — AsSplitQuery genuinely issuing multiple SQL statements for a
+// AsSplitQuery genuinely issuing multiple SQL statements for a
 // specification with TWO SIBLING collection Includes, for both GetQuery (entity materialization)
 // and GetProjectedQuery (DTO projection), with correct duplicate-free materialized results.
 // ---------------------------------------------------------------------------
@@ -117,10 +115,8 @@ public sealed class SplitQueryDbContext : SharedKernelDbContext
 
     public SplitQueryDbContext(
         DbContextOptions<SplitQueryDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency)
-        : base(options, audit, softDelete, concurrency)
+        PersistenceContextDependencies dependencies)
+            : base(options, dependencies)
     {
     }
 
@@ -196,23 +192,20 @@ public sealed class AsSplitQueryMultiStatementTests
     {
         var counter = new CommandCountingInterceptor();
 
-        var userCtx = Substitute.For<IUserContext>();
-        userCtx.SubjectId.Returns((string?)null);
-        userCtx.IsAuthenticated.Returns(false);
+        var actorContext = new SharedKernel.Testing.Persistence.FakeAuditActorContext();
         var clock = new SystemClock();
 
         var options = new DbContextOptionsBuilder<SplitQueryDbContext>()
             .UseSqlite("DataSource=:memory:")
-            .AddInterceptors(counter)
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-            .Options;
+                .AddInterceptors(counter)
+                    .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                        .Options;
 
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
-        var audit = new AuditInterceptor(userCtx, clock, svcOpts);
-        var softDelete = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        var ctx = new SplitQueryDbContext(options, audit, softDelete, concurrency);
+        var ctx = new SplitQueryDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
         ctx.Database.OpenConnection();
         ctx.Database.EnsureCreated();
 
