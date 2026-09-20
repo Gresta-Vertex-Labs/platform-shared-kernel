@@ -100,6 +100,11 @@ SharedKernel.Application.Behaviors.Logging.LoggingBehavior<TRequest, TResponse>.
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>.TracingBehavior() -> void
+SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction
+SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction.CommitAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction.RollbackAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+SharedKernel.Application.Behaviors.Transaction.ITransactionalUnitOfWork
+SharedKernel.Application.Behaviors.Transaction.ITransactionalUnitOfWork.BeginTransactionAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction!>!
 SharedKernel.Application.Behaviors.Transaction.IUnitOfWork
 SharedKernel.Application.Behaviors.Transaction.IUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TResponse>
