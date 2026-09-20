@@ -11,6 +11,8 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
@@ -21,7 +23,7 @@ using SharedKernel.Testing.Containers;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-315 (D-66) — the real PostgreSQL xmin concurrency-conflict proof.
+// The real PostgreSQL xmin concurrency-conflict proof.
 // ---------------------------------------------------------------------------
 
 public sealed record ConcurrentPgId(Guid Value) : StronglyTypedId<Guid>(Value)
@@ -60,10 +62,8 @@ public sealed class ConcurrencyTestDbContext : SharedKernelDbContext
 
     public ConcurrencyTestDbContext(
         DbContextOptions<ConcurrencyTestDbContext> options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+        PersistenceContextDependencies dependencies)
+            : base(options, dependencies)
     {
     }
 
@@ -83,14 +83,14 @@ public sealed class ConcurrencyTestDbContext : SharedKernelDbContext
 }
 
 /// <summary>
-/// T-38 successor (WO-051/P-315, D-66): proves the genuine, working PostgreSQL optimistic
+/// T-38 successor: proves the genuine, working PostgreSQL optimistic
 /// concurrency mechanism — <c>XminConcurrencyTokenConvention</c> binding
 /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency.RowVersion"/> to the real
 /// <c>xmin</c> system column, auto-wired by <c>UsePostgreSQL()</c> — end to end against a real
 /// PostgreSQL Testcontainer.
 /// </summary>
 /// <remarks>
-/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// Shares the <see cref="PostgreSqlContainerFixture"/> registered by
 /// <see cref="PostgreSqlTestCollection"/> with the other <c>[Collection("PostgreSQL")]</c> classes in
 /// this assembly instead of starting its own dedicated container. Targets its own uniquely-named
 /// database (rather than the fixture's shared default database) because EF Core's
@@ -117,26 +117,20 @@ public sealed class ConcurrencyIntegrationTests
     {
         // UsePostgreSQL() returns the non-generic DbContextOptionsBuilder (it operates on the
         // shared base type so it composes with both generic and non-generic builders) — call it
-        // as a statement against the generic builder instance, then read .Options off that same
+        // as a statement against the generic builder instance, then read.Options off that same
         // generic instance to get a properly-typed DbContextOptions<ConcurrencyTestDbContext>.
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
         builder.UsePostgreSQL(connectionString);
         var options = builder.Options;
 
-        var userContext = Substitute.For<IUserContext>();
-        userContext.IsAuthenticated.Returns(true);
-        userContext.SubjectId.Returns(Guid.NewGuid().ToString("D"));
+        var actorContext = new FakeAuditActorContext();
+        var clock = new FakeClock();
 
-        var clock = Substitute.For<IClock>();
-        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-
-        var serviceOptions = Options.Create(new PersistenceServiceOptions());
-
-        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        return new ConcurrencyTestDbContext(options, audit, softDelete, concurrency);
+        return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
     }
 
     [Fact]

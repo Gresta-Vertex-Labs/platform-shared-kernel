@@ -4,17 +4,20 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Conventions;
 
 /// <summary>
-/// WO-051/P-315 (T-64): <see cref="XminConcurrencyTokenConvention"/> model-metadata test — pure EF
+/// <see cref="XminConcurrencyTokenConvention"/> model-metadata test — pure EF
 /// Core model-building inspection. Building <see cref="DbContext.Model"/> does not require a live
 /// database connection (only executing a query does), so this test deliberately does NOT spin up a
 /// PostgreSQL Testcontainer — it reuses the already-Testcontainer-covered
@@ -31,20 +34,14 @@ public sealed class XminConcurrencyTokenConventionTests
         builder.UsePostgreSQL("Host=localhost;Database=xmin_metadata_test;Username=test;Password=test");
         var options = builder.Options;
 
-        var userContext = Substitute.For<IUserContext>();
-        userContext.IsAuthenticated.Returns(false);
-        userContext.SubjectId.Returns((string?)null);
+        var actorContext = new FakeAuditActorContext();
+        var clock = new FakeClock();
 
-        var clock = Substitute.For<IClock>();
-        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-
-        var serviceOptions = Options.Create(new PersistenceServiceOptions());
-
-        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        return new ConcurrencyTestDbContext(options, audit, softDelete, concurrency);
+        return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
     }
 
     [Fact]
@@ -53,7 +50,7 @@ public sealed class XminConcurrencyTokenConventionTests
         // Arrange
         using var ctx = CreateContextWithoutConnecting();
 
-        // Act — accessing .Model triggers model building/finalization (including
+        // Act — accessing.Model triggers model building/finalization (including
         // XminConcurrencyTokenConvention) without opening a database connection.
         var entityType = ctx.Model.FindEntityType(typeof(ConcurrentPgAggregate));
         entityType.Should().NotBeNull();

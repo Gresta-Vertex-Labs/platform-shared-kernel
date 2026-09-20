@@ -4,7 +4,7 @@ using SharedKernel.Persistence.PostgreSQL.Conventions;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Conventions;
 
 /// <summary>
-/// WO-051/P-315 (T-62): <see cref="XminRowVersionValueConverter"/> round-trip unit tests — pure
+/// <see cref="XminRowVersionValueConverter"/> round-trip unit tests — pure
 /// BCL conversion logic, no live database required.
 /// </summary>
 public sealed class XminRowVersionValueConverterTests
@@ -50,18 +50,24 @@ public sealed class XminRowVersionValueConverterTests
     }
 
     [Fact]
-    public void ConvertToProvider_NonFourByteLength_ConvertsToZero_DoesNotThrow()
+    public void ConvertToProvider_EmptyArray_ConvertsToZero_DoesNotThrow()
     {
         // A freshly-constructed aggregate's default/empty RowVersion (never sent to the server for
         // a value-generated OnAddOrUpdate column) must not throw — it converts to 0 instead.
         var emptyResult = (uint)_converter.ConvertToProvider!(Array.Empty<byte>())!;
         emptyResult.Should().Be(0u);
+    }
 
-        var shortResult = (uint)_converter.ConvertToProvider!(new byte[] { 0x01, 0x02 })!;
-        shortResult.Should().Be(0u);
+    [Theory]
+    [InlineData(new byte[] { 0x01, 0x02 })]
+    [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 })]
+    public void ConvertToProvider_NonEmptyNonFourByteLength_Throws(byte[] malformed)
+    {
+        // A genuinely malformed non-4-byte, non-empty RowVersion must throw rather than
+        // silently zero out to a value that reads back as a DIFFERENT, still-4-byte xmin.
+        var act = () => _converter.ConvertToProvider!(malformed);
 
-        var longResult = (uint)_converter.ConvertToProvider!(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 })!;
-        longResult.Should().Be(0u);
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]

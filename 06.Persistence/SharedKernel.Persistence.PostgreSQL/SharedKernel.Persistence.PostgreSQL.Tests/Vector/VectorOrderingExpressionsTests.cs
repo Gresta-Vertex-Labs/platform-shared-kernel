@@ -6,7 +6,7 @@ using PgVector = Pgvector.Vector;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Vector;
 
 /// <summary>
-/// WO-053/P-339 (C-144/C-145): <see cref="VectorDistanceMetric"/> and
+/// <see cref="VectorDistanceMetric"/> and
 /// <see cref="VectorOrderingExpressions.ByDistance{TAggregate}"/>. These are pure expression-tree
 /// construction tests — no PostgreSQL/Testcontainer is required, since
 /// <c>Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions</c>' distance methods are EF-Core
@@ -22,10 +22,17 @@ public sealed class VectorOrderingExpressionsTests
     }
 
     [Fact]
-    public void VectorDistanceMetric_HasExactlyCosineAndL2Members()
+    public void VectorDistanceMetric_HasExactlyCosineL2L1AndInnerProductMembers()
     {
+        // Widened from the original two (Cosine/L2) to the four metrics pgvector's own
+        // index operator classes support.
         var values = Enum.GetValues<VectorDistanceMetric>();
-        values.Should().BeEquivalentTo([VectorDistanceMetric.Cosine, VectorDistanceMetric.L2]);
+        values.Should().BeEquivalentTo([
+            VectorDistanceMetric.Cosine,
+            VectorDistanceMetric.L2,
+            VectorDistanceMetric.L1,
+            VectorDistanceMetric.InnerProduct,
+        ]);
     }
 
     [Fact]
@@ -82,6 +89,32 @@ public sealed class VectorOrderingExpressionsTests
     }
 
     [Fact]
+    public void ByDistance_L1_BuildsExpressionCallingL1Distance()
+    {
+        var queryVector = new PgVector(new float[] { 1f, 2f, 3f });
+
+        var expr = VectorOrderingExpressions.ByDistance<VectorTestEntity>(
+            e => e.Embedding, queryVector, VectorDistanceMetric.L1);
+
+        var convert = expr.Body.Should().BeOfType<UnaryExpression>().Subject;
+        var call = convert.Operand.Should().BeAssignableTo<MethodCallExpression>().Subject;
+        call.Method.Name.Should().Be("L1Distance");
+    }
+
+    [Fact]
+    public void ByDistance_InnerProduct_BuildsExpressionCallingMaxInnerProduct()
+    {
+        var queryVector = new PgVector(new float[] { 1f, 2f, 3f });
+
+        var expr = VectorOrderingExpressions.ByDistance<VectorTestEntity>(
+            e => e.Embedding, queryVector, VectorDistanceMetric.InnerProduct);
+
+        var convert = expr.Body.Should().BeOfType<UnaryExpression>().Subject;
+        var call = convert.Operand.Should().BeAssignableTo<MethodCallExpression>().Subject;
+        call.Method.Name.Should().Be("MaxInnerProduct");
+    }
+
+    [Fact]
     public void ByDistance_FirstCallArgument_IsTheVectorSelectorMemberAccess()
     {
         // Arrange
@@ -135,12 +168,12 @@ public sealed class VectorOrderingExpressionsTests
     }
 
     // -------------------------------------------------------------------------
-    // T-121 (WO-053/P-339, C-145) — zero-reflection-at-runtime behavioral proof. True static-
+    // T-121 — zero-reflection-at-runtime behavioral proof. True static-
     // analysis enforcement of the reflection-elimination rule remains 00.Governance's
     // jurisdiction (SK0xxx MakeGenericMethod/Invoke rule) — this is the practical, behavioral
     // proxy available at this layer: repeated calls across multiple TAggregate/metric
     // combinations behave correctly and with stable performance characteristics consistent with
-    // the compile-time-resolved MethodInfo (a statically-typed delegate-cast, WO-053's own
+    // the compile-time-resolved MethodInfo (a statically-typed delegate-cast, this package's own
     // "((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.CosineDistance).Method" technique)
     // rather than a per-call Type.GetMethod/MakeGenericMethod runtime lookup.
     // -------------------------------------------------------------------------

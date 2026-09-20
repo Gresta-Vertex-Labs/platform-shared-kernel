@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Persistence.PostgreSQL.Connections;
+using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.PostgreSQL.Conventions;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Persistence.PostgreSQL.Jsonb;
@@ -21,7 +21,7 @@ namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 /// All tests require a real PostgreSQL Testcontainer.
 /// </summary>
 /// <remarks>
-/// WO-053/P-336: deliberately does NOT join the shared <c>[Collection("PostgreSQL")]</c>/
+/// Deliberately does NOT join the shared <c>[Collection("PostgreSQL")]</c>/
 /// <see cref="PostgreSqlTestCollection"/> fixture the other three PostgreSQL.Tests integration
 /// classes were migrated onto — this class's pgvector round-trip test requires the
 /// <c>pgvector/pgvector:pg16</c> image, which the shared fixture's plain <c>postgres:16.4</c> image
@@ -82,7 +82,7 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
     {
         var dataSource = new NpgsqlDataSourceBuilder(ConnectionString)
             .EnableDynamicJson()
-            .Build();
+                .Build();
 
         await using var conn = await dataSource.OpenConnectionAsync();
         await using var cmd = conn.CreateCommand();

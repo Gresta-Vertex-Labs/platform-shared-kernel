@@ -12,6 +12,8 @@ using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
@@ -23,7 +25,7 @@ using SharedKernel.Testing.Logging;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-320 — proves the required two-call pairing (UsePostgreSQL(..., maxRetryCount) +
+// Proves the required two-call pairing (UsePostgreSQL(..., maxRetryCount) +
 // the retry-safety guard on EfTransactionalUnitOfWork.BeginTransactionAsync) against real
 // PostgreSQL: when Npgsql retry-on-failure is genuinely enabled, BeginTransactionAsync must throw
 // an actionable InvalidOperationException directing the caller to ExecuteInTransactionAsync, which
@@ -89,7 +91,7 @@ file sealed class TransientFaultInjectionInterceptor(int failuresBeforeSuccess) 
 }
 
 /// <remarks>
-/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// Shares the <see cref="PostgreSqlContainerFixture"/> registered by
 /// <see cref="PostgreSqlTestCollection"/> instead of starting its own dedicated container per test
 /// method — see <see cref="ConcurrencyIntegrationTests"/>'s identical remark for why a
 /// uniquely-named database is targeted rather than the fixture's shared default database (this class
@@ -122,20 +124,14 @@ public sealed class TransientFaultRetryIntegrationTests
             builder.AddInterceptors(interceptors);
         var options = builder.Options;
 
-        var userContext = Substitute.For<IUserContext>();
-        userContext.IsAuthenticated.Returns(true);
-        userContext.SubjectId.Returns(Guid.NewGuid().ToString("D"));
+        var actorContext = new FakeAuditActorContext();
+        var clock = new FakeClock();
 
-        var clock = Substitute.For<IClock>();
-        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-
-        var serviceOptions = Options.Create(new PersistenceServiceOptions());
-
-        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        return new ConcurrencyTestDbContext(options, audit, softDelete, concurrency);
+        return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
     }
 
     [Fact]
@@ -288,7 +284,7 @@ public sealed class TransientFaultRetryIntegrationTests
     }
 
     // -------------------------------------------------------------------------
-    // T-100 (WO-053/P-333) — TransientRetryAttempt (6007) / TransientRetryExhausted (6008)
+    // T-100 — TransientRetryAttempt (6007) / TransientRetryExhausted (6008)
     // structured-logging proofs against a REAL PostgreSQL Testcontainer, reusing this class's own
     // T-79 injected-transient-fault technique. The internal PersistenceRetryDiagnosticListener has
     // no InternalsVisibleTo grant to this project — it is exercised purely through its public
@@ -316,8 +312,8 @@ public sealed class TransientFaultRetryIntegrationTests
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
                 opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3).AddInterceptors(faultInjector))
-            .WithTransientFaultRetry(maxRetryCount: 3)
-            .Build();
+                    .WithTransientFaultRetry(maxRetryCount: 3)
+                        .Build();
 
         await using var provider = services.BuildServiceProvider();
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
@@ -363,8 +359,8 @@ public sealed class TransientFaultRetryIntegrationTests
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
                 opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3))
-            .WithTransientFaultRetry(maxRetryCount: 3)
-            .Build();
+                    .WithTransientFaultRetry(maxRetryCount: 3)
+                        .Build();
 
         await using var provider = services.BuildServiceProvider();
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
@@ -410,8 +406,8 @@ public sealed class TransientFaultRetryIntegrationTests
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
                 opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3).AddInterceptors(faultInjector))
-            .WithTransientFaultRetry(maxRetryCount: 3)
-            .Build();
+                    .WithTransientFaultRetry(maxRetryCount: 3)
+                        .Build();
 
         await using var provider = services.BuildServiceProvider();
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();

@@ -4,7 +4,7 @@ namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 /// <summary>
 /// Shares a single <see cref="PostgreSqlContainerFixture"/> instance across every
-/// <c>[Collection("PostgreSQL")]</c>-tagged integration test class in this assembly (WO-053/P-336).
+/// <c>[Collection("PostgreSQL")]</c>-tagged integration test class in this assembly.
 /// </summary>
 /// <remarks>
 /// Completes the sharing the pre-existing <c>[Collection("PostgreSQL")]</c> tags on

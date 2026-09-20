@@ -12,8 +12,8 @@ using PgVector = Pgvector.Vector;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Vector;
 
 // ---------------------------------------------------------------------------
-// Minimal EF Core entity + DbContext for the nearest-neighbor correctness proofs (T-118/T-119/
-// T-120, WO-053/P-339). No SharedKernelDbContext/interceptors are needed — these tests exercise
+// Minimal EF Core entity + DbContext for the nearest-neighbor correctness proofs.
+// No SharedKernelDbContext/interceptors are needed — these tests exercise
 // only SpecificationEvaluator<T>.GetQuery + VectorOrderingExpressions.ByDistance server-side.
 // ---------------------------------------------------------------------------
 
@@ -70,7 +70,7 @@ internal sealed class NearestByDistanceSpec : Specification<VectorTestProduct>
 }
 
 /// <summary>
-/// T-118/T-119/T-120 (WO-053/P-339, C-144/C-145): real PostgreSQL Testcontainer proofs that
+/// T-118/T-119/T-120: real PostgreSQL Testcontainer proofs that
 /// <see cref="VectorOrderingExpressions.ByDistance{TAggregate}"/> produces genuinely correct,
 /// server-side nearest-neighbor ordering — <see cref="VectorOrderingExpressionsTests"/>
 /// (same test project, no container) only proves the built <see cref="Expression"/> tree's SHAPE;
@@ -111,7 +111,9 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
         }
 
         var builder = new DbContextOptionsBuilder<VectorNearestNeighborTestDbContext>();
-        builder.UsePostgreSQL(ConnectionString);
+        // Pgvector support is now opt-in; this test genuinely maps a Pgvector.Vector
+        // column, so it must opt in.
+        builder.UsePostgreSQL(ConnectionString, useVector: true);
         var options = builder.Options;
 
         var ctx = new VectorNearestNeighborTestDbContext(options);
@@ -123,9 +125,9 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
     public async Task ByDistance_Cosine_ReturnsRowsInGenuineAscendingCosineDistanceOrder_ServerSideOrderBy()
     {
         // Arrange — manually-computed cosine distances from queryVector = [1,0,0]:
-        //   A = [1,0,0] -> cosine similarity 1      -> distance 0
-        //   B = [1,1,0] -> cosine similarity 1/sqrt2 -> distance ~0.2929
-        //   C = [0,1,0] -> cosine similarity 0      -> distance 1
+        // A = [1,0,0] -> cosine similarity 1 -> distance 0
+        // B = [1,1,0] -> cosine similarity 1/sqrt2 -> distance ~0.2929
+        // C = [0,1,0] -> cosine similarity 0 -> distance 1
         // Seeded out of ascending-distance order (C, A, B) to prove the ORDER BY genuinely
         // reorders the result set rather than coincidentally matching insertion order.
         await using var ctx = await CreateContextAsync();
@@ -141,7 +143,7 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
         var spec = new NearestByDistanceSpec(queryVector, VectorDistanceMetric.Cosine);
         var query = evaluator.GetQuery(ctx.Products, spec);
 
-        // Assert — a server-side ORDER BY ... <=> ... clause, never client-side evaluation.
+        // Assert — a server-side ORDER BY... <=>... clause, never client-side evaluation.
         query.ToQueryString().Should().Contain("<=>");
 
         var results = await query.ToListAsync();
@@ -152,9 +154,9 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
     public async Task ByDistance_L2_ReturnsRowsInGenuineAscendingL2DistanceOrder_ServerSideOrderBy()
     {
         // Arrange — manually-computed L2 (Euclidean) distances from the origin queryVector = [0,0,0]:
-        //   Near = [1,0,0] -> distance 1
-        //   Mid  = [2,0,0] -> distance 2
-        //   Far  = [3,0,0] -> distance 3
+        // Near = [1,0,0] -> distance 1
+        // Mid = [2,0,0] -> distance 2
+        // Far = [3,0,0] -> distance 3
         // Seeded in REVERSE distance order to prove the ORDER BY genuinely reorders.
         await using var ctx = await CreateContextAsync();
         var queryVector = new PgVector(new float[] { 0f, 0f, 0f });
@@ -169,7 +171,7 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
         var spec = new NearestByDistanceSpec(queryVector, VectorDistanceMetric.L2);
         var query = evaluator.GetQuery(ctx.Products, spec);
 
-        // Assert — a server-side ORDER BY ... <-> ... clause.
+        // Assert — a server-side ORDER BY... <->... clause.
         query.ToQueryString().Should().Contain("<->");
 
         var results = await query.ToListAsync();

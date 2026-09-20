@@ -1,9 +1,8 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Microsoft.Extensions.Options;
 using Npgsql;
-using NSubstitute;
+using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
@@ -11,18 +10,18 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 // ---------------------------------------------------------------------------
-// WO-051/P-317 — proves keyset (cursor/seek) pagination with a DateTimeOffset sort key — the
+// Proves keyset (cursor/seek) pagination with a DateTimeOffset sort key — the
 // documented, canonical KeysetSpecification<T,TKey> shape (see its own <example>) — genuinely
 // works against real PostgreSQL. SQLite's EF Core provider cannot ORDER BY a DateTimeOffset column
 // at all (a provider limitation, proven separately in SharedKernel.Persistence.EfCore.Tests using a
@@ -66,10 +65,8 @@ public sealed class KeysetPgDbContext : SharedKernelDbContext
 
     public KeysetPgDbContext(
         DbContextOptions<KeysetPgDbContext> options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+        PersistenceContextDependencies dependencies)
+            : base(options, dependencies)
     {
     }
 
@@ -99,7 +96,7 @@ internal sealed class KeysetPgByCreatedOnSpec : KeysetSpecification<KeysetPgAggr
 }
 
 /// <remarks>
-/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// Shares the <see cref="PostgreSqlContainerFixture"/> registered by
 /// <see cref="PostgreSqlTestCollection"/> instead of starting its own dedicated container — see
 /// <see cref="ConcurrencyIntegrationTests"/>'s identical remark for why a uniquely-named database is
 /// targeted rather than the fixture's shared default database.
@@ -125,20 +122,14 @@ public sealed class KeysetPaginationIntegrationTests
         builder.UsePostgreSQL(connectionString);
         var options = builder.Options;
 
-        var userContext = Substitute.For<IUserContext>();
-        userContext.IsAuthenticated.Returns(true);
-        userContext.SubjectId.Returns(Guid.NewGuid().ToString("D"));
+        var actorContext = new FakeAuditActorContext();
+        var clock = new FakeClock();
 
-        var clock = Substitute.For<IClock>();
-        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-
-        var serviceOptions = Options.Create(new PersistenceServiceOptions());
-
-        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var audit = new AuditInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        return new KeysetPgDbContext(options, audit, softDelete, concurrency);
+        return new KeysetPgDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
     }
 
     [Fact]
@@ -176,8 +167,19 @@ public sealed class KeysetPaginationIntegrationTests
             var page = await repo.ListKeysetAsync(spec);
 
             allItems.AddRange(page.Items.Select(i => i.Name));
-            afterKey = page.NextAfterKey;
-            afterId = page.NextAfterId;
+            if (page.NextCursor is null)
+            {
+                afterKey = null;
+                afterId = null;
+            }
+            else
+            {
+                var decoded = PageCursor.Decode<DateTimeOffset, KeysetPgId>(page.NextCursor);
+                decoded.IsSuccess.Should().BeTrue();
+                afterKey = decoded.Value.Key;
+                afterId = decoded.Value.Id;
+            }
+
             hasMore = page.HasMore;
             pageCount++;
         } while (hasMore && pageCount < 10);
