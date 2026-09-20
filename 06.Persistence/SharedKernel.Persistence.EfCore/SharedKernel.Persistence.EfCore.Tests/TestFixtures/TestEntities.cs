@@ -63,8 +63,8 @@ public sealed class AuditableTestAggregate : AuditableSoftDeletableAggregateRoot
 public sealed record TestDomainEvent : DomainEvent;
 
 // ---------------------------------------------------------------------------
-// Full-auditable, concurrency-token-bearing aggregate (WO-051/P-315 —
-// ConcurrencyInterceptor's provider-neutral SQLite proof; see ConcurrencyInterceptorTests)
+// Full-auditable, concurrency-token-bearing aggregate — used for
+// ConcurrencyInterceptor's provider-neutral SQLite proof; see ConcurrencyInterceptorTests
 // ---------------------------------------------------------------------------
 
 public sealed class ConcurrentTestAggregate : FullAuditableAggregateRoot<TestId>
@@ -85,7 +85,7 @@ public sealed class ConcurrentTestAggregate : FullAuditableAggregateRoot<TestId>
 }
 
 // ---------------------------------------------------------------------------
-// Keyset pagination aggregate (WO-051/P-317) — a directly-controllable long sort key,
+// Keyset pagination aggregate — a directly-controllable long sort key,
 // avoiding SQLite's lack of ORDER BY support for DateTimeOffset (a provider-specific test
 // limitation, not a defect in the keyset seek-predicate algorithm itself).
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ public sealed class SoftDeletableTenantedAggregate
 
     public SoftDeletableTenantedAggregate(
         TenantedTestId id, string name, Guid tenantId, IClock clock)
-        : base(id, clock)
+            : base(id, clock)
     {
         Name = name;
         TenantId = tenantId;

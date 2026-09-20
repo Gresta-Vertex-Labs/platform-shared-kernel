@@ -11,7 +11,7 @@ using SharedKernel.Security.Abstractions;
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
 /// <summary>
-/// T-34, T-35, T-36: EfCorePersistenceBuilder new feature tests (P-106 Caps 2, 3, 4).
+/// EfCorePersistenceBuilder new feature tests.
 /// </summary>
 public sealed class EfCorePersistenceBuilderNewFeaturesTests
 {
@@ -29,8 +29,8 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithDbContextFactory()
-            .Build();
+                    .WithDbContextFactory()
+                        .Build();
 
         // Assert — IDbContextFactory<TestDbContext> is registered (descriptor present)
         var descriptor = services.FirstOrDefault(sd =>
@@ -39,8 +39,13 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
     }
 
     [Fact]
-    public void WithoutDbContextFactory_DoesNotRegister_IDbContextFactory()
+    public void WithoutDbContextFactory_StillRegisters_IDbContextFactory()
     {
+        // IDbContextFactory<TContext> is now UNCONDITIONALLY registered — TContext direct
+        // injection itself rides on it (via TenantAwareDbContextFactory<TContext>), so it must exist
+        // regardless of whether WithDbContextFactory()/RequireDbContextFactory() was ever called.
+        // WithDbContextFactory() is a no-op kept only for source compatibility (see its own remarks).
+
         // Arrange
         var services = new ServiceCollection();
 
@@ -48,12 +53,14 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                    .Build();
 
-        // Assert — IDbContextFactory<TestDbContext> descriptor is NOT present
+        // Assert — the PUBLIC (unkeyed) IDbContextFactory<TestDbContext> descriptor IS present.
         var descriptor = services.FirstOrDefault(sd =>
-            sd.ServiceType == typeof(IDbContextFactory<TestDbContext>));
-        descriptor.Should().BeNull("IDbContextFactory<TContext> should not be registered when WithDbContextFactory() not called");
+            sd.ServiceType == typeof(IDbContextFactory<TestDbContext>) && !sd.IsKeyedService);
+        descriptor.Should().NotBeNull(
+            "IDbContextFactory<TContext> is always registered, regardless of " +
+            "whether WithDbContextFactory() was called");
     }
 
     [Fact]
@@ -64,8 +71,8 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithDbContextFactory()
-            .Build();
+                    .WithDbContextFactory()
+                        .Build();
 
         // Assert — IDbContextFactory descriptor is registered
         var descriptor = services.FirstOrDefault(sd =>
@@ -91,8 +98,8 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .AddInterceptor<TrackingInterceptor>()
-            .Build();
+                    .AddInterceptor<TrackingInterceptor>()
+                        .Build();
 
         // Register the tracking interceptor with the shared call log
         services.AddScoped(_ => callLog);
@@ -105,7 +112,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         // Act — resolve the interceptor to confirm it was registered
         var interceptorRegistered = scope.ServiceProvider
             .GetServices<ISaveChangesInterceptor>()
-            .Any(i => i is TrackingInterceptor);
+                .Any(i => i is TrackingInterceptor);
 
         // Assert
         interceptorRegistered.Should().BeTrue("TrackingInterceptor should be registered via AddInterceptor<T>()");
@@ -129,8 +136,8 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithCompiledModel(compiledModel)
-                .Build();
+                        .WithCompiledModel(compiledModel)
+                            .Build();
 
         act.Should().NotThrow();
     }

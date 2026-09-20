@@ -13,7 +13,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
 /// <summary>
-/// WO-053/P-338 (C-141/C-142/C-143): <see cref="IReadReplicaContextAccessor{TContext}"/>,
+/// <see cref="IReadReplicaContextAccessor{TContext}"/>,
 /// <see cref="EfCorePersistenceBuilder{TContext}.WithReadReplica"/>, and
 /// <see cref="EfReadRepository{TAggregate,TId}"/>'s optional replica-routing constructor parameter.
 /// </summary>
@@ -31,7 +31,7 @@ public sealed class ReadReplicaRoutingTests
     private sealed class ReplicaRoutedReadRepository(
         TestDbContext ctx,
         IReadReplicaContextAccessor<SharedKernelDbContext>? accessor)
-        : EfReadRepository<TestAggregate, TestId>(ctx, new SpecificationEvaluator<TestAggregate>(), accessor);
+            : EfReadRepository<TestAggregate, TestId>(ctx, new SpecificationEvaluator<TestAggregate>(), accessor);
 
     [Fact]
     public async Task GetEffectiveContext_NoActiveTransaction_RoutesReadToReplica()
@@ -100,7 +100,7 @@ public sealed class ReadReplicaRoutingTests
     }
 
     [Fact]
-    public void WithReadReplica_RegistersKeyedReplicaOptions_AndScopedAccessor()
+    public async Task WithReadReplica_RegistersKeyedReplicaOptions_AndScopedAccessor()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -110,13 +110,16 @@ public sealed class ReadReplicaRoutingTests
             .AddSharedKernelEfCore<TestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithReadReplica(opts =>
+                        .WithReadReplica(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                        .Build();
 
         var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
+        // ReadReplicaContextAccessor<TContext> now implements IAsyncDisposable (the
+        // replica DbContext it lazily constructs must be disposed) — a scope holding one can only be
+        // disposed asynchronously.
+        await using var scope = provider.CreateAsyncScope();
 
         // Assert
         var accessor = scope.ServiceProvider.GetService<IReadReplicaContextAccessor<SharedKernelDbContext>>();
@@ -128,7 +131,7 @@ public sealed class ReadReplicaRoutingTests
     }
 
     [Fact]
-    public void WithReadReplica_SameScope_ReplicaContextInstanceIsCachedOncePerScope_NeverReconstructed()
+    public async Task WithReadReplica_SameScope_ReplicaContextInstanceIsCachedOncePerScope_NeverReconstructed()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -136,13 +139,14 @@ public sealed class ReadReplicaRoutingTests
             .AddSharedKernelEfCore<TestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithReadReplica(opts =>
+                        .WithReadReplica(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                        .Build();
 
         var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
+        // See the previous test's remarks — async-disposable accessor.
+        await using var scope = provider.CreateAsyncScope();
 
         var accessor = scope.ServiceProvider.GetRequiredService<IReadReplicaContextAccessor<SharedKernelDbContext>>();
         var primaryContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
@@ -164,12 +168,12 @@ public sealed class ReadReplicaRoutingTests
         // Arrange
         var services = new ServiceCollection();
 
-        // Act — no .WithReadReplica(...) call.
+        // Act — no.WithReadReplica(...) call.
         services
             .AddSharedKernelEfCore<TestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
                     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                        .Build();
 
         var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();

@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
@@ -27,12 +27,8 @@ public sealed class TestDbContext : SharedKernelDbContext
     public DbSet<ConcurrentTestAggregate> ConcurrentAggregates => Set<ConcurrentTestAggregate>();
     public DbSet<KeysetTestAggregate> KeysetAggregates => Set<KeysetTestAggregate>();
 
-    public TestDbContext(
-        DbContextOptions<TestDbContext> options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+    public TestDbContext(DbContextOptions<TestDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies)
     {
     }
 
@@ -117,13 +113,8 @@ public sealed class TenantedTestDbContext : TenantedDbContext
 {
     public DbSet<TenantedTestAggregate> TenantedAggregates => Set<TenantedTestAggregate>();
 
-    public TenantedTestDbContext(
-        DbContextOptions<TenantedTestDbContext> options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor,
-        ITenantProvider tenantProvider)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor, tenantProvider)
+    public TenantedTestDbContext(DbContextOptions<TenantedTestDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies)
     {
     }
 
@@ -163,13 +154,8 @@ public sealed class SoftDeletableTenantedDbContext : TenantedDbContext
 {
     public DbSet<SoftDeletableTenantedAggregate> SdAggregates => Set<SoftDeletableTenantedAggregate>();
 
-    public SoftDeletableTenantedDbContext(
-        DbContextOptions<SoftDeletableTenantedDbContext> options,
-        AuditInterceptor audit,
-        SoftDeleteInterceptor softDelete,
-        ConcurrencyInterceptor concurrency,
-        ITenantProvider tenantProvider)
-        : base(options, audit, softDelete, concurrency, tenantProvider)
+    public SoftDeletableTenantedDbContext(DbContextOptions<SoftDeletableTenantedDbContext> options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies)
     {
     }
 

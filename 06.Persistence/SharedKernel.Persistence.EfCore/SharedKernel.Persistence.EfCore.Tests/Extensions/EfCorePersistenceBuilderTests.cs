@@ -1,11 +1,12 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Persistence.Abstractions.Specifications;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
@@ -22,13 +23,13 @@ public sealed class EfCorePersistenceBuilderTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithMultiTenancy()
-                .Build();
+                        .WithMultiTenancy()
+                            .Build();
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*WithMultiTenancy*")
-            .Which.Message.Should().Contain("TenantedDbContext");
+                .Which.Message.Should().Contain("TenantedDbContext");
     }
 
     [Fact]
@@ -42,8 +43,8 @@ public sealed class EfCorePersistenceBuilderTests
             services
                 .AddSharedKernelEfCore<TenantedTestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithMultiTenancy()
-                .Build();
+                        .WithMultiTenancy()
+                            .Build();
 
         // Assert
         act.Should().NotThrow();
@@ -59,7 +60,7 @@ public sealed class EfCorePersistenceBuilderTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                    .Build();
 
         var provider = services.BuildServiceProvider();
 
@@ -71,15 +72,17 @@ public sealed class EfCorePersistenceBuilderTests
         var specEval = scope.ServiceProvider.GetService(typeof(ISpecificationEvaluator<TestAggregate>));
         specEval.Should().NotBeNull();
 
-        // Placeholder IUserContext: AnonymousUserContext, IsAuthenticated=false, no subject
-        var userCtx = scope.ServiceProvider.GetService<IUserContext>();
-        userCtx.Should().NotBeNull();
-        userCtx!.IsAuthenticated.Should().BeFalse();
-        userCtx.SubjectId.Should().BeNull();
+        // Placeholder ICurrentActorContext: AnonymousActorContext, resolves to the configured
+        // (or default "system") service name — the IUserContext placeholder is gone.
+        var actorCtx = scope.ServiceProvider.GetService<ICurrentActorContext>();
+        actorCtx.Should().NotBeNull();
+        actorCtx.Should().BeOfType<AnonymousActorContext>();
+        actorCtx!.ActorId.Should().Be("system");
+        actorCtx.ActorKind.Should().Be(ActorKind.System);
     }
 
     [Fact]
-    public void Build_MultiTenancy_RegistersEmptyTenantProviderByDefault()
+    public void Build_MultiTenancy_DefaultTenantContext_ResolvesNullTenant()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -88,42 +91,43 @@ public sealed class EfCorePersistenceBuilderTests
         services
             .AddSharedKernelEfCore<TenantedTestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithMultiTenancy()
-            .Build();
+                    .WithMultiTenancy()
+                        .Build();
 
         var provider = services.BuildServiceProvider();
 
-        // Assert — P-092: without a tenant the default provider returns Guid.Empty
+        // Assert — without a real tenant context the default (NullCurrentTenantContext)
+        // resolves TenantId as null (fail-closed — no Guid.Empty sentinel any more).
         using var scope = provider.CreateScope();
-        var tenantProvider = scope.ServiceProvider.GetService<ITenantProvider>();
-        tenantProvider.Should().NotBeNull();
-        tenantProvider!.TenantId.Should().Be(Guid.Empty);
+        var tenantContext = scope.ServiceProvider.GetService<ICurrentTenantContext>();
+        tenantContext.Should().NotBeNull();
+        tenantContext!.TenantId.Should().BeNull();
     }
 
     [Fact]
-    public void Build_WithExistingUserContext_DoesNotOverrideIt()
+    public void Build_WithExistingActorContext_DoesNotOverrideIt()
     {
         // Arrange
         var services = new ServiceCollection();
         var customId = Guid.NewGuid();
 
-        // Register a custom IUserContext first
-        services.AddScoped<IUserContext>(_ => new CustomUserContext(customId));
+        // Register a custom ICurrentActorContext first
+        services.AddScoped<ICurrentActorContext>(_ => new CustomActorContext(customId));
 
         // Act
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .Build();
+                    .Build();
 
         var provider = services.BuildServiceProvider();
 
         // Assert — the custom one should win (Build() checks "if not already registered")
         using var scope = provider.CreateScope();
-        var userCtx = scope.ServiceProvider.GetService<IUserContext>();
-        userCtx.Should().NotBeNull();
-        userCtx!.SubjectId.Should().Be(customId.ToString("D"));
-        userCtx.IsAuthenticated.Should().BeTrue();
+        var actorCtx = scope.ServiceProvider.GetService<ICurrentActorContext>();
+        actorCtx.Should().NotBeNull();
+        actorCtx!.ActorId.Should().Be(customId.ToString("D"));
+        actorCtx.Should().NotBeOfType<AnonymousActorContext>();
     }
 }
 
@@ -131,26 +135,8 @@ public sealed class EfCorePersistenceBuilderTests
 // Test helper
 // ---------------------------------------------------------------------------
 
-internal sealed class CustomUserContext(Guid userId) : IUserContext
+internal sealed class CustomActorContext(Guid userId) : ICurrentActorContext
 {
-    public string? SubjectId { get; } = userId.ToString("D");
-    public string? ClientId => null;
-    public Guid? TenantId => null;
-    public string? SessionId => null;
-    public string? Name => null;
-    public string? Email => null;
-    public IReadOnlyCollection<string> Roles => [];
-    public IReadOnlyCollection<string> Permissions => [];
-    public string? FindClaim(string claimType) => null;
-    public IReadOnlyList<string> FindClaims(string claimType) => [];
-    public bool IsAuthenticated => true;
-    public IdentityKind IdentityKind => IdentityKind.User;
-    public bool HasRole(string role) => false;
-    public bool HasPermission(string permission) => false;
-    public IReadOnlyCollection<string> AuthenticationMethods => [];
-    public string? AuthContextClassReference => null;
-    public DateTimeOffset? AuthTime => null;
-    public bool IsSenderConstrained => false;
-    public bool WasAuthenticatedWith(string method) => false;
-    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
+    public string ActorId { get; } = userId.ToString("D");
+    public ActorKind ActorKind => ActorKind.User;
 }
