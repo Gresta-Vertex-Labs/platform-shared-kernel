@@ -104,7 +104,64 @@ public sealed class EncryptionBlindIndexIntegrationTests
         var query = context.Customers.Where(x => x.Ssn == "333-33-3333");
         var sql = query.ToQueryString();
         var act = () => query.ToListAsync();
-        await act.Should().ThrowAsync<InvalidOperationException>(because: $"generated SQL was: {sql}").WithMessage("*WithBlindIndex*");
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>(because: $"generated SQL was: {sql}");
+        // Ssn has no blind index at all — the remedy must say to ADD one, never claim one already exists.
+        thrown.Which.Message.Should().Contain("WhereBlindIndexEquals").And.Contain(".WithBlindIndex()");
+    }
+
+    [Fact]
+    public async Task EqualityOnBlindIndexedColumn_AlsoThrowsInsteadOfSilentlyReturningNothing()
+    {
+        // H12: a blind-indexed column (Email) is exactly the one a caller is MOST likely to reach for a naive
+        // '==' against, since (unlike a non-indexed encrypted column) it visibly looks searchable. Before the fix,
+        // EncryptedColumnEqualityGuardInterceptor explicitly excluded blind-indexed columns from its guarded list,
+        // so this query silently returned zero rows instead of failing loudly.
+        var connectionString = ConnectionString("sk_enc_equality_guard_blindindexed");
+        var tenantId = Guid.NewGuid();
+        await using var sp = EncryptionTestHost.Build(connectionString, actorContext: new FakeAuditActorContext(tenantId: tenantId));
+
+        await using var scope = sp.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        context.Customers.Add(new EncCustomer(EncCustomerId.New(), tenantId, Clock, "leo@example.com", "777-77-7777"));
+        await context.SaveChangesAsync();
+
+        var query = context.Customers.Where(x => x.Email == "leo@example.com");
+        var sql = query.ToQueryString();
+        var act = () => query.ToListAsync();
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>(because: $"generated SQL was: {sql}");
+        thrown.Which.Message.Should().Contain("WhereBlindIndexEquals");
+        // Email ALREADY has a blind index — the remedy must say to use it, never tell the caller to add one again.
+        thrown.Which.Message.Should().NotContain(".WithBlindIndex()");
+    }
+
+    [Fact]
+    public async Task WhereBlindIndexEquals_DoesNotEmbedTheBlindIndexAsASqlLiteral()
+    {
+        var connectionString = ConnectionString("sk_enc_blind_index_parameterized");
+        var tenantId = Guid.NewGuid();
+        await using var sp = EncryptionTestHost.Build(connectionString, actorContext: new FakeAuditActorContext(tenantId: tenantId));
+
+        await using var scope = sp.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        context.Customers.Add(new EncCustomer(EncCustomerId.New(), tenantId, Clock, "mia@example.com", "888-88-8888"));
+        await context.SaveChangesAsync();
+
+        var blindIndexService = scope.ServiceProvider.GetRequiredService<IBlindIndexService>();
+        var expectedBlindIndex = blindIndexService.Compute("customer.email", "mia@example.com", tenantId);
+
+        var query = context.Customers.WhereBlindIndexEquals(blindIndexService, x => x.Email, "customer.email", "mia@example.com", tenantId: tenantId);
+        var sql = query.ToQueryString();
+
+        // The 64-character HMAC digest — a keyed pseudonym of the plaintext, PII by derivation — must never
+        // appear inline in the generated command text: EF.Parameter forces it into a bound parameter instead,
+        // which ToQueryString() renders as a "SET @..." prologue, not inline in the WHERE clause's literal text.
+        var whereClauseOnly = sql[sql.IndexOf("SELECT", StringComparison.Ordinal)..];
+        whereClauseOnly.Should().NotContain(expectedBlindIndex, because: $"generated SQL was: {sql}");
+
+        var found = await query.ToListAsync();
+        found.Should().ContainSingle();
     }
 
     [Fact]

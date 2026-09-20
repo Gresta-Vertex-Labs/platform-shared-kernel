@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -5,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
+using SharedKernel.Persistence.EfCore.Encryption.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -420,6 +422,50 @@ public sealed class EncryptionCoreIntegrationTests
 
         var act = () => context.Model.GetEntityTypes().ToList();
         act.Should().Throw<InvalidOperationException>().WithMessage("*WithEncryption*");
+    }
+
+    [Fact]
+    public async Task EncryptFailure_RecordsMetric_ThenRethrows()
+    {
+        // A key with the WRONG length (16 bytes, not AES-256-GCM's required 32). CryptographicKey's own
+        // constructor only rejects EMPTY material, so this is accepted at registration and fails later, inside
+        // AesGcmCipher's own key-size check, the first time something actually tries to encrypt with it — a
+        // realistic misconfiguration (e.g. a key rotated in from the wrong algorithm family), not a contrived one.
+        var connectionString = ConnectionString("sk_enc_encrypt_failure_metric");
+        var tenantId = Guid.NewGuid();
+        var badKey = new CryptographicKey("bad", new byte[16]);
+        var keyProvider = new StaticEncryptionKeyProvider("bad", [badKey]);
+
+        await using var sp = EncryptionTestHost.Build(
+            connectionString,
+            actorContext: new FakeAuditActorContext(tenantId: tenantId),
+            configureServices: services =>
+            {
+                services.AddSingleton<IEncryptionKeyProvider>(keyProvider);
+                services.AddSingleton<ISynchronousEncryptionKeyProvider>(keyProvider);
+            });
+        await using var scope = sp.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+        await context.Database.EnsureCreatedAsync();
+
+        long encryptFailures = 0;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == EncryptionMeter.Name && instrument.Name == EncryptionMeter.EncryptFailuresTotal)
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => Interlocked.Add(ref encryptFailures, measurement));
+        listener.Start();
+
+        context.Customers.Add(new EncCustomer(EncCustomerId.New(), tenantId, Clock, "willfail@example.com", "000-00-0000"));
+        var act = () => context.SaveChangesAsync();
+
+        // Never a silent failure: the exception still propagates (the save genuinely did not happen)...
+        await act.Should().ThrowAsync<CryptographicException>();
+        // ...and, until this fix, EncryptionMeter.RecordEncryptFailure was defined but never called anywhere —
+        // the encrypt write path had no failure telemetry at all.
+        Interlocked.Read(ref encryptFailures).Should().BeGreaterThan(0);
     }
 
     [Fact]

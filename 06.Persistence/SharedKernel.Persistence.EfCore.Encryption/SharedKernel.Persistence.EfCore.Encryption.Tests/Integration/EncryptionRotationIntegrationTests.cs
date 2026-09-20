@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
 using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -230,6 +231,132 @@ public sealed class EncryptionRotationIntegrationTests
         var readContext = readScope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
         var loaded = await readContext.Customers.SingleAsync(x => x.Id == id);
         loaded.BillingAddress.Line1.Should().Be("42 Complex Type Way");
+    }
+
+    [Fact]
+    public async Task Rotate_RowWithUnparseableStoredValue_CountsAndSkipsWithoutSilentlyReportingSuccess()
+    {
+        var connectionString = ConnectionString("sk_enc_rotate_unparseable");
+        var tenantId = Guid.NewGuid();
+        var actor = new FakeAuditActorContext(tenantId: tenantId);
+        var goodId = EncCustomerId.New();
+        var corruptId = EncCustomerId.New();
+
+        await using (var writeSp = EncryptionTestHost.Build(connectionString, currentKeyId: "v1", actorContext: actor))
+        {
+            await using var scope = writeSp.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+            await context.Database.EnsureCreatedAsync();
+            context.Customers.Add(new EncCustomer(goodId, tenantId, Clock, "good@example.com", "111-11-1111", note: "hi"));
+            context.Customers.Add(new EncCustomer(corruptId, tenantId, Clock, "corrupt@example.com", "222-22-2222", note: "will be corrupted"));
+            await context.SaveChangesAsync();
+        }
+
+        // Simulate a truncated/corrupted stored value for ONE column on ONE row — no EF, no interceptors — the
+        // shape a still-in-progress plaintext-to-encrypted migration or genuine data corruption both take.
+        await using (var raw = new NpgsqlConnection(connectionString))
+        {
+            await raw.OpenAsync();
+            await using var command = raw.CreateCommand();
+            command.CommandText = "UPDATE customers SET note = 'not-a-valid-encrypted-payload' WHERE id = @id";
+            command.Parameters.AddWithValue("id", corruptId.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using var rotateSp = EncryptionTestHost.Build(connectionString, currentKeyId: "v2", actorContext: actor);
+        await using var scope2 = rotateSp.CreateAsyncScope();
+        var rotationJob = scope2.ServiceProvider.GetRequiredService<IEncryptionRotationJob>();
+        var report = await rotationJob.RotateAsync(expectedCurrentKeyId: "v2");
+
+        var debug = $"processed={report.RowsProcessed} rotated={report.RowsRotated} failed={report.RowsFailed} skipped={report.RowsSkippedUnparseable}";
+        report.Completed.Should().BeTrue(because: debug);
+        report.RowsProcessed.Should().Be(8, because: debug); // 2 rows x 4 encrypted targets each.
+        report.RowsFailed.Should().Be(0, because: debug);
+        // Every target rotates except the corrupted Note — a clean report must never claim that one succeeded too.
+        report.RowsSkippedUnparseable.Should().Be(1, because: debug);
+        report.RowsRotated.Should().Be(7, because: debug); // 4 (goodId) + 3 (corruptId: Email, Ssn, BillingAddress.Line1).
+
+        // Rotation never overwrites a value it could not parse — the corrupted text survives untouched.
+        await using var verify = new NpgsqlConnection(connectionString);
+        await verify.OpenAsync();
+        await using var verifyCommand = verify.CreateCommand();
+        verifyCommand.CommandText = "SELECT note FROM customers WHERE id = @id";
+        verifyCommand.Parameters.AddWithValue("id", corruptId.Value);
+        var stillCorrupt = (string)(await verifyCommand.ExecuteScalarAsync())!;
+        stillCorrupt.Should().Be("not-a-valid-encrypted-payload");
+    }
+
+    [Fact]
+    public async Task Rotate_BlindIndexDerivedFromDivergentSyncProvider_MatchesReencryptedAsyncKey_NotStaleSyncOne()
+    {
+        // H10 repro: a KMS-backed IEncryptionKeyProvider (asynchronous) reports "v2" is now current, while the
+        // ISynchronousEncryptionKeyProvider blind-index derivation reads from is STUCK reporting "v1" — the exact
+        // divergence window a periodically-refreshed EncryptionKeyRingCache bridge can be caught in right after an
+        // operator flips the current key but before the next scheduled refresh. Every other fixture in this
+        // project implements both interfaces off ONE shared StaticEncryptionKeyProvider, so this divergence is
+        // impossible to reproduce without two genuinely independent provider instances — see DivergentKeyProviders.
+        var connectionString = ConnectionString("sk_enc_rotate_divergent_blind_index");
+        var tenantId = Guid.NewGuid();
+        var actor = new FakeAuditActorContext(tenantId: tenantId);
+        var id = EncCustomerId.New();
+        const string email = "divergent@example.com";
+
+        // Write under a host where async and sync genuinely agree ("v1" is current both ways).
+        await using (var writeSp = EncryptionTestHost.Build(connectionString, currentKeyId: "v1", actorContext: actor))
+        {
+            await using var scope = writeSp.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+            await context.Database.EnsureCreatedAsync();
+            context.Customers.Add(new EncCustomer(id, tenantId, Clock, email, "999-99-9999"));
+            await context.SaveChangesAsync();
+        }
+
+        // Rotate under a host where they DISAGREE: the asynchronous provider (what RotateAsync validates
+        // expectedCurrentKeyId against, and what re-encryption itself resolves through) says "v2"; the synchronous
+        // provider (the ambient one BlindIndexService.Compute(string,...) would read from) is left stuck on "v1".
+        await using var rotateSp = EncryptionTestHost.Build(connectionString, currentKeyId: "v2", actorContext: actor, configureServices: services =>
+        {
+            services.AddSingleton<IEncryptionKeyProvider>(new FixedCurrentAsyncKeyProvider("v2"));
+            services.AddSingleton<ISynchronousEncryptionKeyProvider>(new FixedCurrentSyncKeyProvider("v1"));
+        });
+        await using (var scope = rotateSp.CreateAsyncScope())
+        {
+            var rotationJob = scope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>();
+            var report = await rotationJob.RotateAsync(expectedCurrentKeyId: "v2");
+            report.Completed.Should().BeTrue();
+            report.RowsFailed.Should().Be(0);
+        }
+
+        // Raw ciphertext is now under "v2"...
+        await using (var raw = new NpgsqlConnection(connectionString))
+        {
+            await raw.OpenAsync();
+            await using var command = raw.CreateCommand();
+            command.CommandText = "SELECT email FROM customers WHERE id = @id";
+            command.Parameters.AddWithValue("id", id.Value);
+            var stored = (string)(await command.ExecuteScalarAsync())!;
+            EncryptedPayload.TryParse(stored, out var payload).Should().BeTrue();
+            payload!.KeyId.Should().Be("v2");
+        }
+
+        // ...and a lookup from a NORMAL, internally-consistent "v2" host (async and sync agree, exactly as
+        // EncryptionKeyRingCache would once it eventually refreshes) finds the row. Before the fix, rotation would
+        // have derived the blind index from the STALE synchronous provider's "v1" material while re-encrypting the
+        // ciphertext itself under the fresh "v2" key — this lookup would then find nothing, permanently, since no
+        // future consistent host ever recomputes a "v1"-keyed blind index again.
+        await using var readSp = EncryptionTestHost.Build(connectionString, currentKeyId: "v2", actorContext: actor);
+        await using var readScope = readSp.CreateAsyncScope();
+        var readContext = readScope.ServiceProvider.GetRequiredService<EncryptionTestDbContext>();
+        var blindIndexService = readScope.ServiceProvider.GetRequiredService<IBlindIndexService>();
+
+        var found = await readContext.Customers
+            .WhereBlindIndexEquals(
+                blindIndexService, x => x.Email, "customer.email", email,
+                normalize: static s => s.Trim().ToLowerInvariant(), // matches EncCustomerConfig's own registered normalize delegate.
+                tenantId: tenantId)
+                    .ToListAsync();
+
+        found.Should().ContainSingle(x => x.Id == id);
     }
 
     [Fact]
