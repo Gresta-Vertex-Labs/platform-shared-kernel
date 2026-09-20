@@ -2,14 +2,34 @@
   <PropertyGroup>
     <Description>Dapper micro-ORM read-side helpers for SharedKernel: StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService base (single/multi-mapping queries, QueryMultipleAsync), and AddSharedKernelDapper DI extension.</Description>
     <PackageTags>persistence;dapper;micro-orm;read-model;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <!-- References Abstractions for IDbConnectionFactory; PostgreSQL for NpgsqlConnectionFactory -->
-    <!-- Does NOT reference SharedKernel.Persistence.EfCore -->
+    <!--
+      P-557/W1: references Abstractions only, for IDbConnectionFactory. The former PostgreSQL
+      reference (for NpgsqlConnectionFactory) is gone — that type moved to the new
+      SharedKernel.Persistence.Npgsql package, and this package never needs a compile-time
+      reference to it: a consuming service registers IDbConnectionFactory itself (via
+      SharedKernel.Persistence.Npgsql's AddSharedKernelNpgsql(), or any other implementation) and
+      this package's DapperReadService only ever depends on the Abstractions-level interface.
+      Does NOT reference SharedKernel.Persistence.EfCore.
+    -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
-    <ProjectReference Include="..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <!-- Options-bound configuration (ISectionBoundOptions/AddValidatedOptions) — 01.Core, within the
+         06.Persistence -> 01-05 layering ceiling. -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

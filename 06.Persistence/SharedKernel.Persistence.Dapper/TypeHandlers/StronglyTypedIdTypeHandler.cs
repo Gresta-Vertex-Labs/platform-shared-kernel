@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
 using SharedKernel.Domain.StronglyTypedIds;
 
@@ -18,9 +19,9 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// <para>
 /// Consuming services implement a concrete one-liner handler per strongly-typed ID type:
 /// <code>
-/// public sealed class OrderIdTypeHandler : StronglyTypedIdTypeHandler&lt;OrderId, Guid&gt;
+/// public sealed class OrderIdTypeHandler: StronglyTypedIdTypeHandler&lt;OrderId, Guid&gt;
 /// {
-///     protected override OrderId FromValue(Guid value) => new(value);
+/// protected override OrderId FromValue(Guid value) => new(value);
 /// }
 /// </code>
 /// </para>
@@ -29,8 +30,10 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// consuming service's own call to <see cref="SqlMapper.AddTypeHandler{T}"/>.
 /// </para>
 /// <para>
-/// Zero reflection in the hot path — <see cref="SetValue"/> uses the <c>implicit operator TValue</c>
-/// on <see cref="StronglyTypedId{TValue}"/> (a static method call); <see cref="Parse"/> delegates
+/// Zero reflection in the hot path — <see cref="SetValue"/> uses the <c>explicit operator TValue</c>
+/// on <see cref="StronglyTypedId{TValue}"/> (a static method call, invoked via a cast — a C# cast
+/// expression triggers a user-defined conversion operator whether it is declared
+/// <see langword="implicit"/> or <see langword="explicit"/>); <see cref="Parse"/> delegates
 /// to the abstract <see cref="FromValue"/> factory method implemented by the subclass.
 /// </para>
 /// </remarks>
@@ -41,12 +44,12 @@ public abstract class StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>
 {
     /// <summary>
     /// Writes the underlying <typeparamref name="TValue"/> to the database parameter.
-    /// Uses the <c>implicit operator TValue</c> on <typeparamref name="TStronglyTypedId"/> —
+    /// Uses the <c>explicit operator TValue</c> on <typeparamref name="TStronglyTypedId"/> —
     /// no reflection, AOT-safe.
     /// </summary>
     public override void SetValue(IDbDataParameter parameter, TStronglyTypedId? value)
     {
-        parameter.Value = value is null ? DBNull.Value : (object)(TValue)value; // implicit operator TValue on StronglyTypedId<TValue>
+        parameter.Value = value is null ? DBNull.Value : (object)(TValue)value; // explicit operator TValue on StronglyTypedId<TValue>
     }
 
     /// <summary>
@@ -55,7 +58,7 @@ public abstract class StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>
     /// </summary>
     public override TStronglyTypedId Parse(object value)
     {
-        return FromValue((TValue)Convert.ChangeType(value, typeof(TValue)));
+        return FromValue((TValue)Convert.ChangeType(value, typeof(TValue), CultureInfo.InvariantCulture));
     }
 
     /// <summary>

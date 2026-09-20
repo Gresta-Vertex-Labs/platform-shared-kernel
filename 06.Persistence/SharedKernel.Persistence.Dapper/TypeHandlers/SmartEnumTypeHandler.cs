@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
 using SharedKernel.Primitives.Enums;
 
@@ -27,7 +28,7 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// <para>
 /// Consuming services register a concrete one-liner subclass per SmartEnum type:
 /// <code>
-/// public sealed class OrderStatusTypeHandler : SmartEnumTypeHandler&lt;OrderStatus, int&gt; { }
+/// public sealed class OrderStatusTypeHandler: SmartEnumTypeHandler&lt;OrderStatus, int&gt; { }
 /// </code>
 /// </para>
 /// </remarks>
@@ -52,14 +53,17 @@ public abstract class SmartEnumTypeHandler<TEnum, TValue>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no <typeparamref name="TEnum"/> member matches the database value.
     /// </exception>
+    /// <remarks>
+    /// No longer force-runs <typeparamref name="TEnum"/>'s static constructor before
+    /// looking up the value: <c>SmartEnum&lt;TEnum,TValue&gt;</c> itself already guarantees every
+    /// member is registered before <see cref="SmartEnum{TEnum, TValue}.TryFromValue"/> can observe
+    /// an empty list (see that type's own <c>ForceEnumStaticConstructor</c> remarks) — calling
+    /// <c>RuntimeHelpers.RunClassConstructor</c> here a second time, on every single row, was
+    /// redundant reflection with no correctness benefit.
+    /// </remarks>
     public override TEnum Parse(object value)
     {
-        var typedValue = (TValue)Convert.ChangeType(value, typeof(TValue));
-
-        // Force the concrete TEnum class constructor to run so that all static members
-        // (e.g., Status.Active, Status.Inactive) are registered in the SmartEnum list
-        // before the value lookup is attempted.
-        System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(TEnum).TypeHandle);
+        var typedValue = (TValue)Convert.ChangeType(value, typeof(TValue), CultureInfo.InvariantCulture);
 
         if (!SmartEnum<TEnum, TValue>.TryFromValue(typedValue, out var result) || result is null)
         {
