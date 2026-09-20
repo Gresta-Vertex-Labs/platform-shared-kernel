@@ -93,7 +93,7 @@ Format when blocked:
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published (WO-066/P-439, P-12) closed — `dotnet test` (Release): 423/423 green. `dotnet pack` succeeded with no `<Version>`/`<PackageVersion>`/`<PackageReleaseNotes>` element added, per the post-2026-08-25 MinVer versioning switch. Extracted `.nuspec`: dependencies are exactly `SharedKernel.Core` + `SharedKernel.Guards` + `SharedKernel.Primitives` — zero external NuGet, zero new project references. Reflection against the built assembly confirmed `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` are all publicly exported; the cross-currency-arithmetic and allocation minor-unit-conservation regression checks are both present and passing. All 6 phases of 03.Domain (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-066's `03.Domain` work closed end to end. `samples/OrderApi/Domain/Money.cs`'s evaluation-for-replacement remains flagged as outside this domain's jurisdiction, for `arch-lead`/root routing. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | P-543 complete: published as `1.0.0-alpha.0.935` from `9f3ee5f`; CloudEvents `EventEnvelope<TEvent>` over `IIntegrationEvent` with a required `[IntegrationEvent]` name and version; `Envelope`, `ResultEnvelopeExtensions`, the serializer context and the `03.Domain` reference removed; `long` totals; `PageRequest`, `CursorPageRequest` and `PageCursor` added; public API tracked; 105 tests; the earlier `ContractsPurityRules` real-assembly gap is fixed. `ConsumerVerify` 5/5 against the feed. | — |
 | 05 | [Application](05.Application/state-map.md) | Pre-publish | `◐` | P-544 in progress: `SharedKernel.Application` and `.Behaviors` redesigned before first publish (fixed pipeline with `PipelineStage` extensibility, `IRequestContext`, fail-closed authorization, validation as `Error.Validation(errors)`, success-only commit, nested-command guard with `ICommandScope` post-commit callbacks, `IRequestIdempotencyStore` with fingerprint and reservation token); fire-and-forget, resilience, streaming behaviors, parallel domain events and dual approval removed; caching behaviors split into `.Behaviors.Caching`. Solution builds with 0 errors; affected suites green. | P-556 complete 2026-09-18 — `.Behaviors.Caching` had its own pre-publish pass (key namespacing by query type and scope, fail-closed `CacheScope`, `CacheKeyRef` invalidation targets, uncancellable post-commit eviction, EventIds 5200-5299). The 02.Caching blocker is gone: P-549 closed the `Result<T>` L2 gap and P-547/548/550 published the provider packages. All three `05.Application` packages are published to GitHub Packages as `1.0.0-alpha.0.1116` (2026-09-19), together with the `01.Core`/`02.Caching`/`03.Domain` dependencies republished at the same height. |
-| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | **`SK.06.Tests` now closed 138/138** — `16.Testing`'s P-450 shipped, clearing the blocker; re-verified in the REAL `SharedKernel.Persistence.EfCore.Tests` project (not a standalone harness): 0 warnings/0 errors build, 415/415 tests green, `dotnet pack` clean. T-125/T-128 were already correctly covered; T-126/T-127 had genuine test-quality gaps (a loose `Throw<Exception>()` assertion where the task requires the concrete `CryptographicException`; zero coverage of `NullEncryptionKeyProvider`'s async contract) — both fixed this session. **All six `06.Persistence` phase keys (Design/Scaffold/Core/Tests/Docs/Published) are now `●`** — this domain's entire tracked scope is complete end to end. Root Phase Backlog P-448, P-440, P-456, P-457 all closed this session (each independently re-verified against its own acceptance criteria, not closed by association). | Nothing further is queued for `06.Persistence`. |
+| 06 | [Persistence](06.Persistence/state-map.md) | P-557 (pre-publish gold-standard pass) | `◐` | **P-557 (user-directed pre-publish gold-standard pass) implemented end to end — NOT yet published.** Domain split from 4 packages to 7 (`SharedKernel.Persistence.Npgsql`/`.EfCore.Encryption`/`.EfCore.Auditing` new); `.EfCore` dropped its `05.Application.Behaviors`/`12.Security.Abstractions` references for local seams bridged from a new `13.ServiceDefaults.Persistence`; field encryption and the audit trail both redesigned from scratch; PostgreSQL row-level security and tenant-safe Dapper read/command services shipped. Two independent post-implementation reviews found real Critical/High defects (a cross-tenant write bypass, an audit record that could commit independently of its business write, a rotation checkpoint that could silently skip whole tables, and more) — every one closed across four remediation waves except H8 (an audit-chain advisory-lock self-deadlock), which is mitigated with a bounded timeout, not structurally fixed. `dotnet pack` clean across all 7 packages. See `06.Persistence/state-map.md`'s `SK.06.P557` phase for the full record. | Publish to GitHub Packages (a `git tag` action, root `CLAUDE.md`'s MinVer-lockstep convention) — not yet taken. A parallel cleanup wave (packed READMEs, dead governance rules, tag-stripping-script indentation) was still finishing, outside this pass's own scope, as of this entry. |
 | 07 | [Messaging](07.Messaging/state-map.md) | PackagingRecipes | `●` | **SK.07.PackagingRecipes complete (8/8, P-349, WO-054)** — the final WO-054 phase, zero production-code behavior change. Found the phase's own premise stale in two ways during implementation: neither package's `README.md` actually existed on disk (only an empty domain-root file did — both were authored from scratch), and the tenant-context recipe's "from-scratch `TenantHeaderPropagator`" example to replace had already been replaced when `SK.07.AmbientPropagation` (P-345) shipped. `<PackageReadmeFile>`/`<None Include>` wired into both `.csproj` files; a complete `RedisIdempotencyStore : IIdempotencyStore` recipe (`IDistributedCache`-backed, `IdempotencyOptions.ExpiryWindow`-driven) added to both the new `Abstractions/README.md` and `CLAUDE.md`'s DI Registration section; the ambient-correlation/tenant-context recipe added to the new `MassTransit/README.md`. `dotnet pack` for both packages confirmed zero `NU5039`/`NU5128` warnings and `README.md` embedded in each `.nupkg`. 54/54 + 177/177 (excl. Integration) tests re-confirmed green, zero regressions. **All 99/99 WO-054 tasks across all 10 `07.Messaging` phases (P-340–P-349) are now complete — this domain's entire WO-054 scope is done.** | Nothing further is queued for `07.Messaging`. `13.ServiceDefaults`'s own WO-054/P-351 work (consuming `IMessageBusProbe`, already unblocked since P-347 shipped) remains that domain's own open item. |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | **SK.09.Published re-closed (P-09/P-10, 10/10) — WO-055 fully shipped, 158/158 tasks across the whole domain.** All three packages re-packed this session: `SharedKernel.Search.Abstractions`/`.Meilisearch`/`.ElasticSearch` each `1.0.0` → `1.1.0`, a deliberate single MINOR bump folding P-353's PATCH-shaped internal fixes and P-354's MINOR-shaped additive `SearchBulkWriteOptions` overloads together rather than shipping an intermediate PATCH artifact no consumer could ever depend on (recorded explicitly in both provider `.csproj` files and the P-09 task row, not silently collapsed). `dotnet pack` clean, zero `NU5039`/`NU5128`; all three `consumer-verify` harnesses re-run against the rebuilt 1.1.0 assemblies — 10/10 surfaces pass with zero DI exceptions. Full regression against real Docker containers: **371/371 passing**, zero regressions from the re-pack. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` for all three packages — WO-044 (131 tasks) and WO-055 (27 tasks) both fully shipped end to end. | — |
@@ -132,7 +132,7 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 16 |
+| ● Published | 15 |
 | ● Docs | 0 |
 | ● PackagingRecipes | 1 |
 | ● Phase 44 (Fail-Closed Tenant-Scoped Cache Service) | 0 |
@@ -153,7 +153,7 @@ Format when active:
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 0 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 3 |
 
@@ -3302,6 +3302,144 @@ command that returns without throwing genuinely has succeeded, so "invalidate on
 (`obj\Debug\net10.0\*.Tests.dll` not produced). Reproduced on a clean `obj`, in a domain this pass never
 touched, with no reference to any package it changed. Pre-existing; needs its own phase.
 
+### P-557 — Persistence: `06.Persistence` Pre-First-Publish Gold-Standard Pass
+
+**Status:** `◐` Dispatched — implemented end to end across seven sequential build waves plus four
+remediation waves; every implementation/test/docs task in `06.Persistence/state-map.md`'s `SK.06.P557`
+phase is `●`. Not yet published — publishing is a separate `git tag` action per root `CLAUDE.md`'s
+MinVer-lockstep versioning convention, and will require republishing this domain's already-published
+dependency closure (`SharedKernel.Primitives`/`.Core`/`.Configuration`/`.Cryptography`/`.Domain`/
+`.Contracts`) at the same build height.
+
+**Work Order:** — (user-directed pre-publish pass, recorded here so the P-ID cannot be reallocated)
+
+**Domains:** `06.Persistence` (all seven packages); `05.Application` (new local
+`ITransactionalUnitOfWork`/`IPersistenceTransaction` seams in `.Behaviors`, and a transactional branch
+in `TransactionBehavior`); `13.ServiceDefaults` (new `SharedKernel.ServiceDefaults.Persistence`
+security/transaction/audit-trail bridges, replacing the direct `05`/`12` references `06.Persistence`
+used to hold itself); `00.Governance` (`SK0042` non-constant-Dapper-SQL analyzer, a new
+`SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity` architecture-test lock);
+`03.Domain` (`Money` gained an additive, private, persistence-only 2-argument constructor).
+
+#### What is needed
+
+`06.Persistence` had never had a pre-publish pass of its own — every prior phase (WO-008 through
+P-498) added or fixed a capability inside the existing 4-package shape without ever stepping back to
+ask whether that shape, or the package's `05`/`12` dependencies, were right. With first publish
+approaching, the user commissioned a full gold-standard pass: fix every Critical/High/Medium finding a
+fresh review could surface, split the package graph cleanly, add public-API tracking, verify every
+provider-specific claim against real PostgreSQL (not SQLite/mocks), and bring every README to house
+style. Breaking changes were explicitly authorized — nothing in this domain has ever shipped to a feed.
+
+#### Why this is needed
+
+A senior-review pass (recorded in full in the implementation session's own planning notes, not
+reproduced here) found, among many smaller issues, several defects serious enough to justify the
+scope: an unnamed EF Core query filter meant the tenant filter and the soft-delete filter could
+silently replace each other; `IncludeDeleted` dropped the tenant filter along with soft-delete;
+`TenantedDbContext`'s constructor silently lost encryption/extra-interceptor wiring the moment a
+derived context declared its own shorter constructor; no write-side guard existed against a
+cross-tenant insert/update/delete at all; a soft-deleted aggregate's owned value objects and required
+child entities were hard-deleted by EF Core's own cascade-delete fixup; domain events raised on a
+hard-deleted aggregate were lost; field encryption ran through a `ValueConverter` with no access to the
+sibling primary-key/tenant-id properties associated data needs to bind, and its key-rotation job could
+silently skip rows while reporting success; the append-only audit trail hashed an un-truncated .NET
+timestamp against a database column that had already lost precision on write, producing a chain that
+reported "tampered" roughly 90% of the time by construction; and `SharedKernel.Persistence.EfCore` held
+direct references to `05.Application.Behaviors` and `12.Security.Abstractions` that a lower-numbered
+infrastructure domain should never need at all.
+
+#### What changed
+
+- **Package split, 4 → 7.** New `SharedKernel.Persistence.Npgsql` (Npgsql-only, no EF Core — the one
+  shared `NpgsqlDataSource`, advisory locks, tenant session binding), `SharedKernel.Persistence.EfCore.Encryption`,
+  and `SharedKernel.Persistence.EfCore.Auditing` (both split out of `.EfCore`, contributing back to it
+  purely through new public extensibility interfaces — `IPersistenceModelConventionFactory`/
+  `IPersistenceModelConfigurator`/`IPersistenceOptionsExtension`/`IDbUpdateExceptionClassifier` — never a
+  compile-time reference the other direction). `.Dapper` now references only `.Abstractions` — the old
+  `.PostgreSQL` reference is gone.
+- **`05`/`12` references removed.** `SharedKernel.Persistence.EfCore` no longer references
+  `SharedKernel.Application.Behaviors` or `SharedKernel.Security.Abstractions` at all. In their place,
+  `.Abstractions` declares local, ORM-agnostic seams (`ICurrentActorContext`, `ICurrentTenantContext` —
+  nullable, fail-closed by construction, replacing a `Guid.Empty`-sentinel design — `ICrossTenantScope`,
+  `ITenantSessionBinder`, `IAmbientDbTransaction`), and a new package, `13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence`,
+  bridges them to the real `12.Security`/`05.Application` types for services that use both. The old
+  dual-interface `IUnitOfWork` bridge (and a pre-existing bug where it cast to a concrete type it never
+  actually implemented) moved there too.
+- **A derived `DbContext`'s constructor collapsed from nine parameters to one** (`PersistenceContextDependencies`),
+  closing the class of bug where a shorter derived constructor silently dropped an opt-in capability.
+- **Named, independently-droppable query filters** (`PersistenceFilterNames.SoftDelete`/`.Tenant`) plus a
+  new `TenantWriteGuardInterceptor` and marking `TenantId` an EF Core concurrency token close both the
+  missing-write-guard defect and the harder attack a post-implementation review found: a detached stub
+  carrying the attacker's own legitimate `TenantId` and a victim's primary key.
+- **Domain-event dispatch moved pre-commit** (a dispatch-until-quiescent loop inside `SaveChangesAsync`
+  itself), closing the hard-delete event loss.
+- **`Money` gained a real two-column EF Core 10 complex-type mapping** (independently queryable amount/
+  currency columns), via an additive private constructor on `Money` itself (`03.Domain`).
+- **Field encryption rewritten as an interceptor pair** (`SavingChangesAsync` + `IMaterializationInterceptor`,
+  never a `ValueConverter`), with row-bound associated data (purpose + primary key + tenant id), blind
+  indexes, and a rotation engine that walks raw ADO.NET directly rather than the EF model — bypassing
+  every filter, no lost updates via compare-and-swap.
+- **The audit ledger rewritten around a `(TenantId, ResourceType)`-partitioned hash chain**, µs-precision
+  timestamp hashing (closing the ~90% false-tamper defect), and an explicit, enforced transaction-
+  semantics contract: a `Succeeded`-outcome record now *requires* and enlists in the caller's real ambient
+  transaction (throwing rather than silently mis-attesting when none is active), while a `Failed` record
+  always writes standalone. Three independent layers of immutability enforcement, the outermost a
+  PostgreSQL trigger set `ENABLE ALWAYS` so it cannot be bypassed via `session_replication_role='replica'`.
+- **PostgreSQL row-level security shipped as a new opt-in capability** (`.WithRowLevelSecurity()`) —
+  connection- and command-level session binding, a configurable cross-tenant escape token, defense in
+  depth alongside the application-layer tenant filter/guard.
+- **Dapper split into read-only and command services**, both with tenant-safe, fail-closed variants
+  (`TenantSafeDapperReadService`/`TenantSafeDapperCommandService`) that enlist in an ambient EF Core
+  transaction when one is active.
+- **Two independent post-implementation reviews** (a bulk-edit/mechanical-script-damage audit and an
+  adversarial security design review) ran after the seven build waves completed, finding defects neither
+  the waves' own tests nor an ordinary review pass had caught — five Critical and eight High findings,
+  every one closed except H8 (an audit-chain advisory-lock self-deadlock, mitigated with a bounded
+  timeout, not structurally fixed — see `06.Persistence/state-map.md`'s Findings table for the complete,
+  itemized list and resolution for each).
+
+#### Consequences in other domains
+
+- **`05.Application`:** `SharedKernel.Application.Behaviors` gained local `ITransactionalUnitOfWork`/
+  `IPersistenceTransaction` seams (same same-name-different-namespace bridge pattern as its existing
+  `IUnitOfWork`/`IAuditTrailWriter`/`AuditEntry` seams) and a new transactional branch in
+  `TransactionBehavior` — when the registered `IUnitOfWork` also implements `ITransactionalUnitOfWork`,
+  a real transaction now opens before the handler runs, closing the gap that made a `Succeeded` audit
+  record's new ambient-transaction requirement (above) unreachable end to end until this shipped.
+- **`13.ServiceDefaults`:** a new package, `SharedKernel.ServiceDefaults.Persistence`, hosts every bridge
+  `06.Persistence` used to hold directly — `SecurityCurrentActorContext`/`SecurityCurrentTenantContext`
+  (`12.Security`), `PersistenceUnitOfWorkAdapter`/`TransactionalPersistenceUnitOfWorkAdapter` and
+  `AuditTrailWriterBridge` (`05.Application`). `WithPersistenceTelemetry` (the `ServiceDefaults` base)
+  gained three previously-unwired instrumentation names (Dapper's `ActivitySource`, Encryption's and
+  Auditing's `Meter`s).
+- **`00.Governance`:** new `SK0042` (Warning-severity, non-constant `sql` argument to a Dapper service
+  method) and a new architecture-test lock, `SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity`,
+  scanning every real compiled `06.Persistence` assembly plus a Roslyn source-tree walk of every `.cs`
+  file physically under the domain (production and test) — mechanically enforcing the layering fix above.
+- **`03.Domain`:** `Money` gained a private, persistence-only 2-argument constructor (`03.Domain/CLAUDE.md`'s
+  public API surface is otherwise unaffected — the constructor is private).
+
+#### Known, not yet done
+
+- **Publishing.** None of the seven packages has been pushed to GitHub Packages — `dotnet pack`/a new
+  `SharedKernel.Persistence.ConsumerVerify` project prove the artifacts are publish-ready, but the
+  `git tag` itself is a separate, user-directed action.
+- **H8 (audit-chain advisory-lock self-deadlock)** is mitigated (a bounded `lock_timeout` converts an
+  indefinite hang into a fast, diagnosable failure) rather than structurally closed — the real fix needs
+  a timeout parameter threaded through `IAdvisoryTransactionLock.AcquireAsync` itself, which the
+  remediation wave that found it was not scoped to change.
+- **A parallel cleanup wave** (packed-README corrections across several domains, dead governance-rule
+  removal, indentation repair from a work-order-tag-stripping script's own collateral damage) was
+  reported still finishing, in files outside this phase's own package boundaries, as of this entry.
+
+#### Known, unrelated, not fixed
+
+The same pre-existing `SharedKernel.ServiceDefaults.Configuration.KeyVault.Tests`/`.Cryptography.KeyVault.Tests`
+MSB3030 (`obj\Release\net10.0\*.Tests.dll` not produced — a Windows path-length limit on this
+particular clone root) that P-556's own entry above already recorded. Confirmed independently, multiple
+times across this pass's build waves, to be pre-existing and unrelated to any file this pass touched.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} ({domain(s) affected}) — {trigger}`.
@@ -4313,3 +4451,5 @@ touched, with no reference to any package it changed. Pre-existing; needs its ow
 - [2026-09-18] P-554 published — `SharedKernel.DataPrivacy` on GitHub Packages as `1.0.0-alpha.0.1106`, with `SharedKernel.Primitives` republished from `09143b6` (01.Core) — user-directed
 - [2026-09-18] P-555 closed `●` — `SharedKernel.FeatureManagement` pre-first-publish pass: OpenFeature `IFeatureClient` + typed `FeatureFlag<T>`, working targeting, ambient accessor, per-scope consistency, startup validation, privacy-safe telemetry; SK0002 retargeted, `FakeFeatureClient` in 16.Testing (01.Core, 00.Governance, 16.Testing) — user-directed
 - [2026-09-18] P-555 published — `SharedKernel.FeatureManagement` on GitHub Packages as `1.0.0-alpha.0.1112`, with `SharedKernel.Primitives` republished from `e0c65d0`; every `01.Core` package is now published (01.Core) — user-directed
+- [2026-09-19/20] P-557 recorded `◐` — `06.Persistence` redesigned before its first publish by user ruling: split 4→7 packages (`.Npgsql`/`.EfCore.Encryption`/`.EfCore.Auditing` new); `.EfCore` dropped its `05.Application.Behaviors`/`12.Security.Abstractions` references for local seams bridged from a new `13.ServiceDefaults.Persistence`; a derived `DbContext` constructor collapsed to one parameter; named query filters + a `TenantId`-concurrency-token write-side defense closed a cross-tenant detached-stub attack; domain-event dispatch moved pre-commit; `Money` gained a two-column EF Core complex-type mapping; field encryption and the audit trail both rewritten from scratch; PostgreSQL row-level security and tenant-safe Dapper read/command services shipped. Two independent post-implementation reviews found 5 Critical + 8 High findings, all closed except one (an audit-chain advisory-lock self-deadlock) mitigated rather than structurally fixed; `dotnet pack` clean across all 7 packages (06.Persistence, 05.Application, 13.ServiceDefaults, 00.Governance, 03.Domain) — user-directed; publish pending
+- [2026-09-20] P-557 docs pass — `06.Persistence/CLAUDE.md` and `06.Persistence/state-map.md` brought current with the redesigned domain (both had still described the pre-split 4-package shape); this file's Domain Summary Board row 06 and Overall Progress bucket counts corrected (`● Published` 16→15, `◐ In Progress` 0→1) to stop claiming `06.Persistence` is published (06.Persistence) — persistence-arch-planner
