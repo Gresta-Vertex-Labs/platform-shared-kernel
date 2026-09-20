@@ -1,6 +1,6 @@
 # SharedKernel.Persistence.Abstractions
 
-Zero-ORM persistence contracts for Platform.SharedKernel microservices: `IRepository<TAggregate,TId>` (write-side), `IReadRepository<TAggregate,TId>` (read-side), `IUnitOfWork` / `ITransactionalUnitOfWork`, `IDbConnectionFactory`, and `ISpecificationEvaluator<T>`. **Zero ORM dependencies** — references only `SharedKernel.Primitives`, `SharedKernel.Domain`, and `SharedKernel.Contracts` (for `PagedList<T>`). No `IQueryable<T>` is ever exposed — every query is expressed via `ISpecification<T>` (from `03.Domain`). Implemented by `SharedKernel.Persistence.EfCore`.
+Zero-ORM persistence contracts for Platform.SharedKernel microservices: `IRepository<TAggregate,TId>` (write-side), `IReadRepository<TAggregate,TId>` (read-side), `IUnitOfWork` / `ITransactionalUnitOfWork`, and `IDbConnectionFactory`. **Zero ORM dependencies** — references only `SharedKernel.Primitives`, `SharedKernel.Domain`, and `SharedKernel.Contracts` (for `PagedList<T>`/`CursorPagedList<T>`). No `IQueryable<T>` is ever exposed — every query is expressed via `ISpecification<T>` (from `03.Domain`). Implemented by `SharedKernel.Persistence.EfCore`, which also declares `ISpecificationEvaluator<T>` — the queryable-pipeline translation contract stays out of this zero-ORM package because it is expressed in terms of `IQueryable<T>`.
 
 Application and domain code should depend on this package's interfaces only — never a concrete ORM type.
 
@@ -10,9 +10,8 @@ Application and domain code should depend on this package's interfaces only — 
 - `IReadRepository<TAggregate,TId>` — read-side: `ListAsync`, `CountAsync`, `AnyAsync`, `GetByIdsAsync`/`GetByIdsChunkedAsync`, `ListPagedAsync`, projection reads (`ListProjectedAsync`, `GetBySpecProjectedAsync`, `ListPagedProjectedAsync`), streaming reads (`StreamAsync`, `StreamProjectedAsync<TResult>`), and keyset/cursor pagination (`ListKeysetAsync<TKey>`)
 - `IUnitOfWork` — the single `SaveChangesAsync(CancellationToken)` save boundary
 - `ITransactionalUnitOfWork` — extends `IUnitOfWork` with `BeginTransactionAsync`/`ExecuteInTransactionAsync` for explicit, retry-safe multi-repository transactions
-- `IDbConnectionFactory` — raw `IDbConnection` source for Dapper and readiness probes, plus `CheckReadinessAsync`
-- `ISpecificationEvaluator<T>` — `GetQuery`/`GetProjectedQuery`/`GetKeysetQuery<TKey>`, translating `ISpecification<T>` into a queryable pipeline
-- `ByIdSpecification<TAggregate,TId>`, `KeysetPage<TAggregate,TKey>` — supporting specification/result types
+- `IDbConnectionFactory` — raw `DbConnection` source for Dapper and readiness probes (a concrete `System.Data.Common.DbConnection`, not the `IDbConnection` interface, so callers can `await using` it), plus `CheckReadinessAsync`
+- `ByIdSpecification<TAggregate,TId>` — supporting specification type; keyset/cursor reads return `04.Contracts`'s `CursorPagedList<TAggregate>` directly, with no Abstractions-local result type of its own
 
 ## Install
 
@@ -64,6 +63,8 @@ var activeOrders = await readRepository.ListAsync(new ActiveOrdersSpec(), ct);
 
 ## Keyset (cursor) pagination
 
+`ListKeysetAsync<TKey>` returns `SharedKernel.Contracts.Pagination.CursorPagedList<TAggregate>` — `Items`, an opaque `NextCursor` (`string?`), and `HasMore` (`NextCursor is not null`). Decode a returned cursor back into the specification's `afterKey`/`afterId` via `PageCursor.Decode<TKey, TId>`:
+
 ```csharp
 public sealed class OrdersByCreatedOnKeyset(DateTimeOffset? afterKey, object? afterId, int take)
     : KeysetSpecification<Order, DateTimeOffset>(o => o.CreatedOn, o => o.Id, afterKey, afterId, descending: false, take);
@@ -71,8 +72,9 @@ public sealed class OrdersByCreatedOnKeyset(DateTimeOffset? afterKey, object? af
 var page = await readRepository.ListKeysetAsync(new OrdersByCreatedOnKeyset(null, null, take: 50), ct);
 if (page.HasMore)
 {
+    var position = PageCursor.Decode<DateTimeOffset, Guid>(page.NextCursor).Value;
     var next = await readRepository.ListKeysetAsync(
-        new OrdersByCreatedOnKeyset(page.NextAfterKey, page.NextAfterId, take: 50), ct);
+        new OrdersByCreatedOnKeyset(position.Key, position.Id, take: 50), ct);
 }
 ```
 

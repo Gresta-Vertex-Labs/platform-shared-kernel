@@ -1,26 +1,26 @@
 # SharedKernel.Persistence.EfCore
 
-EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platform.SharedKernel microservices: `EfRepository<TAggregate,TId>` / `EfReadRepository<TAggregate,TId>`, `EfUnitOfWork` / `EfTransactionalUnitOfWork`, the platform's three save-changes interceptors (Audit, SoftDelete, Concurrency — deliberately **no** outbox interceptor, see below), `SpecificationEvaluator<T>`, `SharedKernelDbContext` / `TenantedDbContext`, field-level AES-256-GCM column encryption, and the `EfCorePersistenceBuilder` fluent DI entry point (`AddSharedKernelEfCore<TContext>`).
+EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platform.SharedKernel microservices: `EfRepository<TAggregate,TId>` / `EfReadRepository<TAggregate,TId>`, `EfUnitOfWork` / `EfTransactionalUnitOfWork`, the platform's three save-changes interceptors (Audit, SoftDelete, Concurrency — deliberately **no** outbox interceptor, see below), `SpecificationEvaluator<T>`, `SharedKernelDbContext` / `TenantedDbContext`, and the `EfCorePersistenceBuilder` fluent DI entry point (`AddSharedKernelEfCore<TContext>`). Field-level AES-256-GCM column encryption and the append-only audit trail are opt-in sibling packages — see below.
 
 > **Outbox scope note:** the outbox pattern is owned entirely by `07.Messaging` via MassTransit's `UseEntityFrameworkOutbox`. No `OutboxMessage`/`IOutboxWriter`/`OutboxInterceptor` types exist in this package.
 
 ## Included types
 
-- `SharedKernelDbContext` — abstract base; registers the three platform interceptors; `CurrentUserContext`/`RefreshUserContext` support DbContext pooling
-- `TenantedDbContext` — multi-tenant base; installs an expression-tree global tenant query filter; `RefreshRequestContext` for pooling
+- `SharedKernelDbContext` — abstract base; registers the three platform interceptors; `CurrentActor`/`RefreshActor` support DbContext pooling
+- `TenantedDbContext` — multi-tenant base; installs an expression-tree global tenant query filter; `CurrentTenant`/`RefreshTenant` for pooling
 - `EfRepository<TAggregate,TId>` / `EfReadRepository<TAggregate,TId>` — abstract bases consuming services extend per aggregate
 - `EfUnitOfWork` / `EfTransactionalUnitOfWork` — the `IUnitOfWork.SaveChangesAsync` save boundary and explicit-transaction support. `EfUnitOfWork` satisfies both this domain's `IUnitOfWork` and `05.Application.Behaviors`' same-named seam, so `TransactionBehavior` commits through it — once per request, for the outermost command only, and only when the handler returns a successful `Result`
 - `AuditInterceptor` / `SoftDeleteInterceptor` / `ConcurrencyInterceptor` — the platform three, always composed first
 - `DomainClockMaterializationInterceptor` — registered automatically; gives every aggregate loaded from the database the application `IClock`, so a loaded aggregate can raise timestamped events and soft-delete. `EntityTypeConfigurationBase` also maps each aggregate's `Version` event sequence number as a column (existing databases need a migration adding it)
 - `SpecificationEvaluator<T>` — criteria → keyset seek → includes → split-query → ordering → distinct → tracking → paging → projection, in that fixed order
 - `EntityTypeConfigurationBase<TEntity,TId>`, `StronglyTypedIdValueConverter<TId,TValue>` — EF Core configuration building blocks
-- `EncryptedValueConverter`, `.Encrypt()` extension, `EncryptionModelConvention` — transparent field-level AES-256-GCM column encryption
 - `IRestorableRepository<TAggregate,TId>` / `EfRepository.RestoreAsync` — single-entity soft-delete restore (stages only, same save boundary as every other write)
 - `IReadReplicaContextAccessor<TContext>` / `.WithReadReplica(...)` — opt-in read-replica routing for `IReadRepository`
-- `EfAuditTrailWriter` / `EfAuditQueryService` / `EfCoreAuditActorContext` / `AuditRecordImmutabilityInterceptor` / `.WithAuditTrail()` — opt-in, append-only, hash-chained audit trail implementing `SharedKernel.Persistence.Abstractions`'s `IAuditTrailWriter`/`IAuditQueryService`
-- `CurrencyValueConverter` / `MoneyValueConverter` / `.OwnsMoney(...)` / `ConfigureMoney()` — `03.Domain`'s `Money`/`Currency` value objects mapped to a single packed column
-- `[LoggerMessage]`-based structured logging (EventIds `6000-6010`) across `ConcurrencyInterceptor`, `MigrationAndSeedHostedService`, transient-retry diagnostics, and `EncryptionRotationService` — never a key byte or plaintext/ciphertext value
+- `CurrencyValueConverter` / `MoneyEntityTypeBuilderExtensions.Money(...)` / `ConfigureMoney()` — `03.Domain`'s `Money`/`Currency` value objects mapped as an EF Core 10 complex type with two independently queryable columns
+- `[LoggerMessage]`-based structured logging (EventId sub-block `6000-6099`) across `ConcurrencyInterceptor`, `MigrationAndSeedHostedService`, and transient-retry diagnostics — never a key byte or plaintext/ciphertext value
 - `EfCorePersistenceBuilder<TContext>` — fluent DI builder (`AddSharedKernelEfCore<TContext>(...)`)
+
+Field-level column encryption (`.WithEncryption()`) and the append-only audit trail (`.WithAuditTrail()`) are extension methods on `EfCorePersistenceBuilder<TContext>` shipped by two sibling packages — `SharedKernel.Persistence.EfCore.Encryption` and `SharedKernel.Persistence.EfCore.Auditing` — not by this package. See their own `README.md` files; both require an explicit `ProjectReference`/`PackageReference` of their own before their `.With…()` method is even callable.
 
 ## Install
 
@@ -64,66 +64,22 @@ services
     .Build();
 ```
 
-Consumer code injects `OrderDbContext` exactly as before — pooling and the per-lease user/tenant-context refresh are transparent. Cannot be combined with `.WithDbContextFactory()` or `.WithEncryption()` (both throw an actionable `InvalidOperationException` at `Build()` time).
+Consumer code injects `OrderDbContext` exactly as before — pooling and the per-lease user/tenant-context refresh are transparent. Cannot be combined with `.WithEncryption()` (throws an actionable `InvalidOperationException` at `Build()` time, enforced by the `SharedKernel.Persistence.EfCore.Encryption` package itself — this core builder has no compile-time knowledge that encryption exists).
 
-## Field-level encryption
+## Field-level encryption and the audit trail live in sibling packages
 
-`.WithEncryption()` builds its own synchronous encryption pipeline — a `SynchronousAesGcmEncryptionService` over the config-backed key provider — because EF Core value converters have no asynchronous path. `AddSharedKernelCryptography()` is NOT required for this path. It never resolves the ambient, unkeyed key-provider or encryption-service slots, so an unrelated general-purpose crypto registration elsewhere in the same container can never silently win or lose this package's own encryption wiring.
+Field-level column encryption (`.WithEncryption()`, `PropertyBuilder<T>.Encrypt()`) and the append-only, hash-chained audit trail (`.WithAuditTrail()`) are **not part of this package**. Both are extension methods on `EfCorePersistenceBuilder<TContext>` contributed by two opt-in sibling packages that each need their own `ProjectReference`/`PackageReference` before their `.With…()` method is even callable:
 
-Each encrypted column stores the canonical `EncryptedPayload.ToString()` encoding (Base64Url, recording the key id). The `Keys` dictionary key is that key id. Reading fails closed: a stored value that is not a well-formed payload (plaintext written straight to the database, a truncated or altered value) throws `CryptographicException` naming the property, never the value; a payload whose key id is not configured throws `EncryptionKeyNotFoundException`; a payload that fails authentication throws `CryptographicException`.
-
-**Migrating a column that already holds unencrypted data:** set `EncryptionOptions.AllowUnencryptedValues = true` temporarily. Non-payload values are then returned unchanged while writes are still encrypted; re-save every row (for example with your `IEncryptionRotationJob`), then turn the setting off. While it is on, anyone with database write access can plant plaintext the application reads as if it were decrypted.
-
-```csharp
-services
-    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
-    .WithEncryption(enc =>
-    {
-        enc.Enabled = true;
-        enc.CurrentVersion = "v1";
-        enc.Keys["v1"] = "<Base64-encoded 32-byte key>";
-    })
-    .Build();
-
-// Inside IEntityTypeConfiguration<Customer>.Configure:
-//   builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
-//
-// Rename-safe AAD binding — supply BEFORE ever encrypting a row you anticipate renaming the
-// underlying table/column for:
-//   builder.Property(x => x.Ssn).HasMaxLength(20).Encrypt(associatedDataOverride: "Customer.Ssn").IsRequired();
-```
-
-### KMS-backed field-level encryption (opt-in, `.WithExternalEncryptionKeyProvider<TProvider>()`)
-
-Directs the SAME field-level encryption pipeline at a KMS/HSM-backed `IEncryptionKeyProvider` (e.g. `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider`) instead of the config-backed default. Such a provider is asynchronous only, and the value converter needs an `ISynchronousEncryptionKeyProvider`; this method bridges the two by wrapping `TProvider` in a pre-warmed in-memory provider whose keys are loaded asynchronously ahead of time.
-
-```csharp
-// The consumer registers TProvider itself; this package resolves it by type.
-services.AddSharedKernelCryptography(configuration)
-    .AddAzureKeyVaultEncryption(configuration);   // registers AzureKeyVaultEncryptionKeyProvider as itself
-
-services
-    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
-    .WithEncryption(enc => enc.Enabled = true)                          // MUST come first
-    .WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>(refreshInterval: TimeSpan.FromMinutes(5))
-    .Build();
-```
-
-This additionally registers:
-
-- **`EncryptionKeyPreWarmingHostedService`** — warms the current key at boot, before the host accepts traffic (a failure fails startup), then refreshes it every `refreshInterval` (default 5 minutes, allowed 1 second to 1 day) on a `PeriodicTimer` driven by the registered `TimeProvider`. A key rotated at the key service (e.g. `AzureKeyVaultEncryptionKeyProvider.RotateDataKeyAsync`) becomes current without a restart, and previously warmed keys are kept so existing rows still decrypt. A failed refresh is logged (EventId 6011) and the last warmed keys stay in use.
-- **`EncryptionKeyPreWarmingInterceptor`** — a fifth interceptor that warms before writes (`SavingChangesAsync`) and reads (`ReaderExecutingAsync`, EF Core's async pre-materialization hook — the piece that protects a query-only/read-replica service).
-
-A row encrypted under a key id that is not warm (an older key, or one another replica rotated in) throws `EncryptionKeyNotFoundException` on first read, never blocking on the key service, and schedules a background warm of that id so a later read succeeds. Because key ids come from stored data that could be forged, on-demand warms are deduplicated per id, capped at 64 distinct ids in flight, skipped for invalid key ids, and an id the key service reports as unknown is not looked up again for `refreshInterval`. A failed on-demand warm is logged (EventId 6012) without the key id.
+- **`SharedKernel.Persistence.EfCore.Encryption`** — see its own `README.md` for `.WithEncryption()`, `.Encrypt()`, blind-index equality search, and key rotation.
+- **`SharedKernel.Persistence.EfCore.Auditing`** — see its own `README.md` for `.WithAuditTrail()`, `IAuditTrailWriter`, and chain verification.
 
 ## Configuration-section binding
 
-`.WithEncryption(...)` and `.WithServiceName(...)` also accept an `IConfiguration` overload — binds from `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` (`"SharedKernel:Encryption"`/`"SharedKernel:Persistence"`) instead of a code-only `Action<T>`. Both overloads compose under normal `IOptions<T>` later-registration-wins semantics:
+`.WithServiceName(...)` also accepts an `IConfiguration` overload — binds `PersistenceServiceOptions` from `PersistenceServiceOptions.SectionName` (`"SharedKernel:Persistence"`) instead of a code-only `Action<T>`:
 
 ```csharp
 services
     .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
-    .WithEncryption(configuration)     // binds configuration.GetSection(EncryptionOptions.SectionName)
     .WithServiceName(configuration)    // binds configuration.GetSection(PersistenceServiceOptions.SectionName)
     .Build();
 ```
@@ -131,7 +87,6 @@ services
 ```json
 {
   "SharedKernel": {
-    "Encryption": { "Enabled": true, "CurrentVersion": "v1", "Keys": { "v1": "<Base64-encoded 32-byte key>" } },
     "Persistence": { "ServiceName": "order-service" }
   }
 }
@@ -168,18 +123,19 @@ services
 
 ## Mapping `Money` (opt-in, requires `ConfigureMoney()`)
 
-`03.Domain`'s `Money`/`Currency` value objects map to a **single packed `"{amount}:{currencyCode}"` string column** (`HasMaxLength(40)`), not two independently-queryable columns — `Amount` and `Currency` are **NOT filterable or aggregatable in SQL** through this mapping (no `WHERE Currency = 'USD'`, no `ORDER BY Amount`, no `SUM(Amount)`). A service that needs that must map its own separate scalar `decimal`/`string` shadow columns instead. See [06.Persistence/CLAUDE.md](../CLAUDE.md) for the full D-105/D-106 rationale (a genuine two-column owned-type mapping is unreachable through any public EF Core 10 API).
+`03.Domain`'s `Money` value object maps as an **EF Core 10 complex type with two independently queryable columns** — `{property}_amount numeric(precision,scale)` and `{property}_currency char(3)` (exact column names follow whatever naming convention, e.g. snake_case, the consuming `DbContext` applies). `Amount` and `Currency` are filterable and aggregatable in SQL through this mapping (`WHERE`, `ORDER BY`, `SUM`, …) — `Money` now has a private, persistence-only two-parameter constructor EF Core's complex-type materialization binds directly. A stored amount with more decimal places than its currency's minor unit allows fails loudly on read instead of being silently re-rounded.
 
-`ConfigureMoney()` **must** be called from `ConfigureConventions()` before `.OwnsMoney(...)` is used anywhere in the model — omitting it fails model building, because EF Core's automatic navigation discovery walks `Money` (and transitively `Currency`) as candidate entity types before `OnModelCreating` ever runs:
+`ConfigureMoney()` **must** be called from `ConfigureConventions()` before `.Money(...)` is used anywhere in the model — omitting it fails model building, because EF Core's automatic navigation discovery walks `Money` (and transitively `Currency`) as a candidate entity type before `OnModelCreating` ever runs:
 
 ```csharp
 using SharedKernel.Persistence.EfCore.Conversions;
 
-public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options, /* ... */)
-    : SharedKernelDbContext(options, /* ... */)
+public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options, PersistenceContextDependencies dependencies)
+    : SharedKernelDbContext(options, dependencies)
 {
-    // Required once per DbContext — registers the Currency/Money conversions globally, before
-    // OnModelCreating's automatic navigation discovery ever walks a Money-typed property.
+    // Required once per DbContext — registers Money as a complex type before OnModelCreating's
+    // automatic navigation discovery ever walks a Money-typed property, and registers the
+    // Currency conversion globally for any standalone (not Money-nested) Currency property.
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.ConfigureMoney();
@@ -195,52 +151,13 @@ internal sealed class OrderEntityConfiguration : EntityTypeConfigurationBase<Ord
     {
         base.Configure(builder);
 
-        builder.OwnsMoney(x => x.Total);                                        // packed column "Total"
-        builder.OwnsMoney(x => x.ShippingFee, columnName: "shipping_fee_amount");
+        builder.Money(x => x.Total);                                                   // total_amount / total_currency
+        builder.Money(x => x.Discount, required: false, precision: 19, scale: 2, amountColumnName: "discount_amount");
     }
 }
 ```
 
-A `Money` property is deliberately excluded from `ValueObjectOwnershipBuilder`'s generic auto-owned scan — it must always be configured explicitly via `.OwnsMoney(...)`.
-
-## Append-only audit trail (opt-in)
-
-`.WithAuditTrail()` registers an append-only, hash-chained audit trail implementing `SharedKernel.Persistence.Abstractions`'s `IAuditTrailWriter`/`IAuditQueryService` — distinct from `AuditInterceptor` above, which only stamps mutable `CreatedBy`/`ModifiedBy`/`ModifiedOn` columns that the next edit overwrites. Omitting `.WithAuditTrail()` leaves `IAuditTrailWriter`/`IAuditQueryService` unregistered and no `AuditRecord` table in the model.
-
-```csharp
-services
-    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
-    .WithAuditTrail()   // registers EfAuditTrailWriter, EfAuditQueryService, AuditRecordImmutabilityInterceptor,
-                         // AuditTrailFeatureMarker (singleton), and a default IAuditActorContext bridging the
-                         // already-registered IUserContext/ITenantProvider
-    .Build();
-
-// AuditTrailFeatureMarker? must be declared on the DbContext's OWN constructor and forwarded to base(...) —
-// the same pattern .WithEncryption() already requires for its IOptionsMonitor<EncryptionOptions>?/IEncryptionVersionOverride? parameters.
-// A raw bool flag cannot do this: DI cannot auto-resolve a primitive constructor parameter, only a registered type.
-public sealed class OrderDbContext : SharedKernelDbContext
-{
-    public OrderDbContext(
-        DbContextOptions<OrderDbContext> options,
-        AuditInterceptor audit, SoftDeleteInterceptor softDelete, ConcurrencyInterceptor concurrency,
-        IEnumerable<ISaveChangesInterceptor>? additionalInterceptors,
-        AuditTrailFeatureMarker? auditTrailMarker)   // <-- required for AuditRecord to join this context's model
-        : base(options, audit, softDelete, concurrency, additionalInterceptors, auditTrailMarker: auditTrailMarker)
-    { }
-}
-
-var record = await auditTrailWriter.RecordAsync(new AuditEntry
-{
-    Action = "CustomerLimitChanged",
-    ResourceType = nameof(Customer),
-    ResourceId = customer.Id.ToString(),
-    BeforeSnapshot = JsonSerializer.Serialize(beforeState),
-    AfterSnapshot = JsonSerializer.Serialize(afterState),
-    ApprovalId = approvalRecord?.Id.ToString(),
-}, ct);
-```
-
-`AuditRecordImmutabilityInterceptor` (the fourth, opt-in-only interceptor `.WithAuditTrail()` registers) throws if any `AuditRecord` entry is `Modified` or `Deleted` — the load-bearing structural guarantee. **THIS IS AN APPLICATION-LEVEL GUARD ONLY — IT CANNOT STOP A DBA-LEVEL OR DIRECT-SQL MUTATION.** For real defense-in-depth, ALSO ISSUE A DATABASE-LEVEL `REVOKE UPDATE, DELETE` GRANT ON THE UNDERLYING `AuditRecord` TABLE FOR THE APPLICATION'S DATABASE ROLE. `IAuditQueryService.VerifyChainIntegrityAsync` detects a tampered record's hash mismatch after the fact — it proves tampering occurred, it does not prevent it.
+A `Money` property is deliberately excluded from `ValueObjectOwnershipBuilder`'s generic auto-owned scan — it must always be configured explicitly via `.Money(...)`.
 
 ## Explicit transactions, bulk mutation, streaming, keyset pagination
 

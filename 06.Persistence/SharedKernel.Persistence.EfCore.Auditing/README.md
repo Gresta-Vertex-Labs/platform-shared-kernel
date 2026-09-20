@@ -43,12 +43,15 @@ public sealed class WithdrawFundsHandler(IAuditTrailWriter auditTrail) : IComman
         // ... apply the withdrawal to the aggregate ...
 
         await auditTrail.RecordAsync(
-            new AuditEntry(
-                resourceType: "Account",
-                resourceId: request.AccountId.ToString(),
-                action: "Withdraw",
-                beforeSnapshot: beforeJson,
-                afterSnapshot: afterJson),
+            new AuditEntry
+            {
+                ResourceType = "Account",
+                ResourceId = request.AccountId.ToString(),
+                Action = "Withdraw",
+                Outcome = AuditOutcome.Succeeded,
+                BeforeSnapshot = beforeJson,
+                AfterSnapshot = afterJson,
+            },
             ct);
 
         return Result.Success();
