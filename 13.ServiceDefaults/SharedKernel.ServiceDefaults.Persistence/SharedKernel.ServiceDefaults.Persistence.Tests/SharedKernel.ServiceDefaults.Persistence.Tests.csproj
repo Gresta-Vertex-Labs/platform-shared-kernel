@@ -7,6 +7,19 @@
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- P-557/W6: AuditTrailWriterBridgeTests exercises the real AuditingBehavior<,> directly. -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <!--
+      AuditTransactionWiringPostgresTests: the real Postgres-backed proof that TransactionBehavior's
+      new transactional capability and this package's bridges make a Succeeded-outcome audit record
+      commit/roll back atomically with the business write it attests to, through the unmodified
+      production pipeline (AddAuditingBehavior/AddTransactionBehavior, never a hand-resolved
+      ITransactionalUnitOfWork). Needs .WithAuditTrail()/EfAuditTrailWriter (EfCore.Auditing), real
+      UsePostgreSQL()/AddSharedKernelNpgsql() (PostgreSQL/Npgsql), and IHmacSigner (Cryptography) —
+      mirroring 06.Persistence.EfCore.Auditing.Tests' own reference set for the same reasons.
+    -->
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -23,5 +36,6 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="MediatR" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 </Project>

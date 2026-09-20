@@ -7,6 +7,8 @@ using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Persistence.Security;
 using SharedKernel.ServiceDefaults.Persistence.UnitOfWork;
 using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
+using PersistenceIUnitOfWork = SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork;
+using PersistenceITransactionalUnitOfWork = SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork;
 
 namespace SharedKernel.ServiceDefaults.Persistence.Extensions;
 
@@ -59,18 +61,51 @@ public static class PersistenceSecurityExtensions
     /// <param name="builder">The persistence builder.</param>
     /// <returns>The same builder for further chaining.</returns>
     /// <remarks>
-    /// Registers <see cref="PersistenceUnitOfWorkAdapter"/> as
-    /// <see cref="AppBehaviorsIUnitOfWork"/>, resolving it against whichever
-    /// <c>SharedKernel.Persistence.Abstractions.IUnitOfWork</c> is registered in the same DI scope —
-    /// works correctly for both <c>EfUnitOfWork</c> and <c>EfTransactionalUnitOfWork</c> — see
-    /// <see cref="PersistenceUnitOfWorkAdapter"/>'s own remarks for the bug this replaces.
+    /// <para>
+    /// Registers <see cref="AppBehaviorsIUnitOfWork"/> with a factory that decides, the first time it
+    /// is resolved in a given DI scope, whether this scope's <c>06.Persistence</c> registrations also
+    /// support <c>05.Application.Behaviors</c>' <c>ITransactionalUnitOfWork</c> capability:
+    /// <list type="bullet">
+    /// <item><description>
+    /// When <c>06.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork</c> resolves (i.e. this
+    /// builder's own <c>.WithTransactionalUnitOfWork()</c> was called), the factory returns a
+    /// <see cref="TransactionalPersistenceUnitOfWorkAdapter"/> wrapping it — <c>TransactionBehavior</c>'s
+    /// runtime <c>is ITransactionalUnitOfWork</c> check then succeeds, and it opens an explicit
+    /// transaction before the inner pipeline runs (see that adapter's own remarks for the defect this
+    /// fixes: an audit-trail write that requires an already-open ambient transaction previously never
+    /// had one).
+    /// </description></item>
+    /// <item><description>
+    /// Otherwise it returns the plain <see cref="PersistenceUnitOfWorkAdapter"/> wrapping
+    /// <c>06.Persistence.Abstractions.UnitOfWork.IUnitOfWork</c> — <c>TransactionBehavior</c> behaves
+    /// exactly as it did before this capability existed.
+    /// </description></item>
+    /// </list>
+    /// This check is deferred to first resolution (never inspected eagerly against
+    /// <see cref="EfCorePersistenceBuilder{TContext}.Services"/> at THIS call site) specifically so
+    /// this method's position in the fluent chain relative to <c>.WithTransactionalUnitOfWork()</c> and
+    /// <c>.Build()</c> never matters — <c>.WithTransactionalUnitOfWork()</c> only sets a flag; the real
+    /// <c>ITransactionalUnitOfWork</c> registration it enables is not added to the service collection
+    /// until <see cref="EfCorePersistenceBuilder{TContext}.Build"/> runs, which happens after every
+    /// builder method call regardless of call order.
+    /// </para>
+    /// <para>
     /// Optional. Omitting this call leaves <see cref="AppBehaviorsIUnitOfWork"/> unregistered.
+    /// </para>
     /// </remarks>
     public static EfCorePersistenceBuilder<TContext> WithApplicationTransactionBehavior<TContext>(
         this EfCorePersistenceBuilder<TContext> builder)
         where TContext : SharedKernelDbContext
     {
-        builder.Services.AddScoped<AppBehaviorsIUnitOfWork, PersistenceUnitOfWorkAdapter>();
+        builder.Services.AddScoped<AppBehaviorsIUnitOfWork>(sp =>
+        {
+            var transactional = sp.GetService<PersistenceITransactionalUnitOfWork>();
+
+            return transactional is not null
+                ? new TransactionalPersistenceUnitOfWorkAdapter(transactional)
+                : new PersistenceUnitOfWorkAdapter(sp.GetRequiredService<PersistenceIUnitOfWork>());
+        });
+
         return builder;
     }
 }
