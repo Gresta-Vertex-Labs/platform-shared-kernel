@@ -1,109 +1,21 @@
 using System.Data;
+using System.Data.Common;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Diagnostics;
 
-// CS8767: ADO.NET's IDbConnection/IDbCommand interfaces have inconsistent nullable annotations
-// between getters and setters on ConnectionString/CommandText across target frameworks. The fakes
-// below intentionally use non-nullable string properties for simplicity.
-#pragma warning disable CS8767
-
 namespace SharedKernel.Persistence.Abstractions.Tests.Diagnostics;
 
 // ---------------------------------------------------------------------------
-// Minimal in-memory IDbConnection / IDbCommand fakes (C-89)
+// Minimal in-memory DbConnection / DbCommand fakes (retyped from
+// IDbConnection/IDbCommand to the real System.Data.Common abstract base classes, since
+// IDbConnectionFactory.CreateConnectionAsync now returns DbConnection directly and there is no
+// longer an IDbConnection-shaped implementation path at all).
 // ---------------------------------------------------------------------------
 
-/// <summary>Fake command that returns a fixed scalar value for SELECT 1.</summary>
-file sealed class FakeDbCommand : IDbCommand
-{
-    public string CommandText { get; set; } = string.Empty;
-    public int CommandTimeout { get; set; }
-    public CommandType CommandType { get; set; }
-    public IDbConnection? Connection { get; set; }
-    public IDataParameterCollection Parameters { get; } = new FakeParameterCollection();
-    public IDbTransaction? Transaction { get; set; }
-    public UpdateRowSource UpdatedRowSource { get; set; }
-
-    public void Cancel() { }
-    public IDbDataParameter CreateParameter() => throw new NotSupportedException();
-    public void Dispose() { }
-    public int ExecuteNonQuery() => 0;
-    public IDataReader ExecuteReader() => throw new NotSupportedException();
-    public IDataReader ExecuteReader(CommandBehavior behavior) => throw new NotSupportedException();
-    public object ExecuteScalar() => 1;
-    public void Prepare() { }
-}
-
-file sealed class FakeParameterCollection : List<object>, IDataParameterCollection
-{
-    public bool Contains(string parameterName) => false;
-    public int IndexOf(string parameterName) => -1;
-    public void RemoveAt(string parameterName) { }
-    public object this[string parameterName]
-    {
-        get => throw new NotSupportedException();
-        set => throw new NotSupportedException();
-    }
-}
-
-/// <summary>Fake connection that opens successfully and tracks disposal.</summary>
-file sealed class FakeDbConnection : IDbConnection
-{
-    public bool Disposed { get; private set; }
-
-    public string ConnectionString { get; set; } = string.Empty;
-    public int ConnectionTimeout => 0;
-    public string Database => "fake";
-    public ConnectionState State { get; private set; } = ConnectionState.Closed;
-
-    public IDbTransaction BeginTransaction() => throw new NotSupportedException();
-    public IDbTransaction BeginTransaction(IsolationLevel il) => throw new NotSupportedException();
-    public void ChangeDatabase(string databaseName) { }
-    public void Close() => State = ConnectionState.Closed;
-    public IDbCommand CreateCommand() => new FakeDbCommand { Connection = this };
-
-    public void Dispose()
-    {
-        Disposed = true;
-        State = ConnectionState.Closed;
-    }
-
-    public void Open() => State = ConnectionState.Open;
-}
-
-/// <summary>Connection factory that always returns a healthy open connection.</summary>
-file sealed class HealthyConnectionFactory : IDbConnectionFactory
-{
-    public FakeDbConnection? LastConnection { get; private set; }
-
-    public Task<IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
-    {
-        var connection = new FakeDbConnection();
-        connection.Open();
-        LastConnection = connection;
-        return Task.FromResult<IDbConnection>(connection);
-    }
-}
-
-/// <summary>Connection factory that always throws when a connection is requested.</summary>
-file sealed class ThrowingConnectionFactory : IDbConnectionFactory
-{
-    public Task<IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
-        => throw new InvalidOperationException("Connection refused.");
-}
-
-// ---------------------------------------------------------------------------
-// WO-051/P-325 — genuine-async proof fakes. Unlike FakeDbCommand/FakeDbConnection above (plain
-// IDbCommand/IDbConnection, which cannot prove which overload was actually invoked), these derive
-// from the real System.Data.Common.DbCommand/DbConnection abstract base classes so the
-// DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync `command is DbCommand` safe-cast
-// takes the TRUE branch. Every synchronous override THROWS — if the fix ever regresses to calling
-// the synchronous ExecuteScalar(), the test fails loudly instead of silently passing.
-// ---------------------------------------------------------------------------
-
-file sealed class AsyncOnlyParameterCollection : System.Data.Common.DbParameterCollection
+file sealed class FakeParameterCollection : DbParameterCollection
 {
     private readonly List<object> _items = [];
     public override int Count => _items.Count;
@@ -121,17 +33,117 @@ file sealed class AsyncOnlyParameterCollection : System.Data.Common.DbParameterC
     public override void Remove(object value) => _items.Remove(value);
     public override void RemoveAt(int index) => _items.RemoveAt(index);
     public override void RemoveAt(string parameterName) { }
-    protected override System.Data.Common.DbParameter GetParameter(int index) => (System.Data.Common.DbParameter)_items[index];
-    protected override System.Data.Common.DbParameter GetParameter(string parameterName) => throw new NotSupportedException();
-    protected override void SetParameter(int index, System.Data.Common.DbParameter value) => _items[index] = value;
-    protected override void SetParameter(string parameterName, System.Data.Common.DbParameter value) => throw new NotSupportedException();
+    protected override DbParameter GetParameter(int index) => (DbParameter)_items[index];
+    protected override DbParameter GetParameter(string parameterName) => throw new NotSupportedException();
+    protected override void SetParameter(int index, DbParameter value) => _items[index] = value;
+    protected override void SetParameter(string parameterName, DbParameter value) => throw new NotSupportedException();
+}
+
+/// <summary>Fake command that returns a fixed scalar value for SELECT 1.</summary>
+file sealed class FakeDbCommand : DbCommand
+{
+    [AllowNull]
+    public override string CommandText { get; set; } = string.Empty;
+    public override int CommandTimeout { get; set; }
+    public override CommandType CommandType { get; set; }
+    public override bool DesignTimeVisible { get; set; }
+    public override UpdateRowSource UpdatedRowSource { get; set; }
+    protected override DbConnection? DbConnection { get; set; }
+    protected override DbParameterCollection DbParameterCollection { get; } = new FakeParameterCollection();
+    protected override DbTransaction? DbTransaction { get; set; }
+
+    public override void Cancel() { }
+    protected override DbParameter CreateDbParameter() => throw new NotSupportedException();
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => throw new NotSupportedException();
+    public override int ExecuteNonQuery() => 0;
+    public override object ExecuteScalar() => 1;
+    public override void Prepare() { }
+}
+
+/// <summary>Fake connection that opens successfully and tracks disposal.</summary>
+file sealed class FakeDbConnection : DbConnection
+{
+    private ConnectionState _state = ConnectionState.Closed;
+
+    public new bool Disposed { get; private set; }
+
+    [AllowNull]
+    public override string ConnectionString { get; set; } = string.Empty;
+    public override string Database => "fake";
+    public override string DataSource => "fake";
+    public override string ServerVersion => "1.0";
+    public override ConnectionState State => _state;
+
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+    public override void ChangeDatabase(string databaseName) { }
+    public override void Close() => _state = ConnectionState.Closed;
+    protected override DbCommand CreateDbCommand() => new FakeDbCommand { Connection = this };
+    public override void Open() => _state = ConnectionState.Open;
+
+    protected override void Dispose(bool disposing)
+    {
+        Disposed = true;
+        _state = ConnectionState.Closed;
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>Connection factory that always returns a healthy open connection.</summary>
+file sealed class HealthyConnectionFactory : IDbConnectionFactory
+{
+    public FakeDbConnection? LastConnection { get; private set; }
+
+    public Task<DbConnection> CreateConnectionAsync(CancellationToken ct = default)
+    {
+        var connection = new FakeDbConnection();
+        connection.Open();
+        LastConnection = connection;
+        return Task.FromResult<DbConnection>(connection);
+    }
+}
+
+/// <summary>Connection factory that always throws when a connection is requested.</summary>
+file sealed class ThrowingConnectionFactory : IDbConnectionFactory
+{
+    public Task<DbConnection> CreateConnectionAsync(CancellationToken ct = default)
+        => throw new InvalidOperationException("Connection refused.");
+}
+
+// ---------------------------------------------------------------------------
+// Genuine-async proof fakes. Every synchronous override THROWS — if the probe ever
+// regresses to calling the synchronous ExecuteScalar(), the test fails loudly instead of silently
+// passing.
+// ---------------------------------------------------------------------------
+
+file sealed class AsyncOnlyParameterCollection : DbParameterCollection
+{
+    private readonly List<object> _items = [];
+    public override int Count => _items.Count;
+    public override object SyncRoot { get; } = new();
+    public override int Add(object value) { _items.Add(value); return _items.Count - 1; }
+    public override void AddRange(Array values) => _items.AddRange(values.Cast<object>());
+    public override void Clear() => _items.Clear();
+    public override bool Contains(object value) => _items.Contains(value);
+    public override bool Contains(string value) => false;
+    public override void CopyTo(Array array, int index) => _items.ToArray().CopyTo(array, index);
+    public override System.Collections.IEnumerator GetEnumerator() => _items.GetEnumerator();
+    public override int IndexOf(object value) => _items.IndexOf(value);
+    public override int IndexOf(string parameterName) => -1;
+    public override void Insert(int index, object value) => _items.Insert(index, value);
+    public override void Remove(object value) => _items.Remove(value);
+    public override void RemoveAt(int index) => _items.RemoveAt(index);
+    public override void RemoveAt(string parameterName) { }
+    protected override DbParameter GetParameter(int index) => (DbParameter)_items[index];
+    protected override DbParameter GetParameter(string parameterName) => throw new NotSupportedException();
+    protected override void SetParameter(int index, DbParameter value) => _items[index] = value;
+    protected override void SetParameter(string parameterName, DbParameter value) => throw new NotSupportedException();
 }
 
 /// <summary>
-/// Genuine <see cref="System.Data.Common.DbCommand"/> fake whose SYNCHRONOUS overrides throw and
-/// whose ASYNC overrides succeed and record invocation (WO-051/P-325).
+/// Genuine <see cref="DbCommand"/> fake whose SYNCHRONOUS overrides throw and whose ASYNC overrides
+/// succeed and record invocation.
 /// </summary>
-file sealed class AsyncOnlyDbCommand : System.Data.Common.DbCommand
+file sealed class AsyncOnlyDbCommand : DbCommand
 {
     public bool AsyncScalarCalled { get; private set; }
 
@@ -141,13 +153,13 @@ file sealed class AsyncOnlyDbCommand : System.Data.Common.DbCommand
     public override CommandType CommandType { get; set; }
     public override bool DesignTimeVisible { get; set; }
     public override UpdateRowSource UpdatedRowSource { get; set; }
-    protected override System.Data.Common.DbConnection? DbConnection { get; set; }
-    protected override System.Data.Common.DbParameterCollection DbParameterCollection { get; } = new AsyncOnlyParameterCollection();
-    protected override System.Data.Common.DbTransaction? DbTransaction { get; set; }
+    protected override DbConnection? DbConnection { get; set; }
+    protected override DbParameterCollection DbParameterCollection { get; } = new AsyncOnlyParameterCollection();
+    protected override DbTransaction? DbTransaction { get; set; }
 
     public override void Cancel() { }
-    protected override System.Data.Common.DbParameter CreateDbParameter() => throw new NotSupportedException();
-    protected override System.Data.Common.DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => throw new NotSupportedException();
+    protected override DbParameter CreateDbParameter() => throw new NotSupportedException();
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => throw new NotSupportedException();
 
     public override int ExecuteNonQuery() =>
         throw new InvalidOperationException("Synchronous ExecuteNonQuery must not be called — the async overload must be used.");
@@ -165,9 +177,9 @@ file sealed class AsyncOnlyDbCommand : System.Data.Common.DbCommand
 }
 
 /// <summary>
-/// Genuine <see cref="System.Data.Common.DbConnection"/> fake backing <see cref="AsyncOnlyDbCommand"/>.
+/// Genuine <see cref="DbConnection"/> fake backing <see cref="AsyncOnlyDbCommand"/>.
 /// </summary>
-file sealed class AsyncOnlyDbConnection : System.Data.Common.DbConnection
+file sealed class AsyncOnlyDbConnection : DbConnection
 {
     public AsyncOnlyDbCommand? LastCommand { get; private set; }
 
@@ -181,9 +193,9 @@ file sealed class AsyncOnlyDbConnection : System.Data.Common.DbConnection
     public override void ChangeDatabase(string databaseName) { }
     public override void Close() { }
     public override void Open() { }
-    protected override System.Data.Common.DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
         throw new NotSupportedException();
-    protected override System.Data.Common.DbCommand CreateDbCommand()
+    protected override DbCommand CreateDbCommand()
     {
         var command = new AsyncOnlyDbCommand();
         LastCommand = command;
@@ -195,11 +207,11 @@ file sealed class AsyncOnlyConnectionFactory : IDbConnectionFactory
 {
     public AsyncOnlyDbConnection? LastConnection { get; private set; }
 
-    public Task<IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
+    public Task<DbConnection> CreateConnectionAsync(CancellationToken ct = default)
     {
         var connection = new AsyncOnlyDbConnection();
         LastConnection = connection;
-        return Task.FromResult<IDbConnection>(connection);
+        return Task.FromResult<DbConnection>(connection);
     }
 }
 
@@ -212,7 +224,7 @@ public sealed class DatabaseReadinessTests
     [Fact]
     public async Task CheckReadinessAsync_GenuineDbCommand_InvokesAsyncOverload_NotSynchronous()
     {
-        // WO-051/P-325 — proves the async overload is genuinely invoked: AsyncOnlyDbCommand's
+        // Proves the async overload is genuinely invoked: AsyncOnlyDbCommand's
         // synchronous ExecuteScalar() throws, so this test would fail loudly if the fix regressed.
         var factory = new AsyncOnlyConnectionFactory();
 
@@ -259,7 +271,45 @@ public sealed class DatabaseReadinessTests
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsHealthy.Should().BeFalse();
-        result.Subject.ErrorMessage.Should().Be("Connection refused.");
+        // ErrorMessage never carries Exception.Message (a driver-level failure message can
+        // embed the connection string/host/credentials) — only the exception's CLR type name.
+        result.Subject.ErrorMessage.Should().Be(nameof(InvalidOperationException));
         result.Subject.Provider.Should().Be("unknown");
+    }
+
+    [Fact]
+    public async Task CheckReadinessAsync_TimeoutExceeded_ReturnsIsHealthyFalse_WithTimeoutMessage()
+    {
+        // A hung connection attempt must not block the probe indefinitely.
+        var factory = new HangingConnectionFactory();
+
+        var result = await factory.CheckReadinessAsync(timeout: TimeSpan.FromMilliseconds(50));
+
+        result.IsHealthy.Should().BeFalse();
+        result.ErrorMessage.Should().Be("Timeout");
+    }
+
+    [Fact]
+    public async Task CheckReadinessAsync_CallerCancellation_PropagatesOperationCanceledException()
+    {
+        // The caller's own cancellation (shutdown/deadline) must propagate, never be
+        // reported as a fabricated unhealthy result.
+        var factory = new HangingConnectionFactory();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await factory.CheckReadinessAsync(cancellationToken: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+}
+
+/// <summary>Connection factory whose connection never opens — used to prove the timeout guard.</summary>
+file sealed class HangingConnectionFactory : IDbConnectionFactory
+{
+    public async Task<DbConnection> CreateConnectionAsync(CancellationToken ct = default)
+    {
+        await Task.Delay(Timeout.Infinite, ct);
+        throw new UnreachableException();
     }
 }
