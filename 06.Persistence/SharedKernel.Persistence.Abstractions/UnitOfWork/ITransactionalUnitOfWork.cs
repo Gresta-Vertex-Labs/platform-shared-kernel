@@ -21,12 +21,22 @@ namespace SharedKernel.Persistence.Abstractions.UnitOfWork;
 /// the EF Core type couples application code to the ORM and bypasses the abstraction.
 /// </para>
 /// </remarks>
+#pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters.
+// The two ExecuteInTransactionAsync overloads (and their <TResult> counterparts below) are never
+// ambiguous to a caller: the simple overload takes exactly one required parameter (operation) plus
+// the trailing optional cancellationToken, while the isolation-level overload requires isolationLevel
+// and verifySucceeded as its own MANDATORY (non-defaulted, nullable-but-required) parameters — a call
+// site's argument COUNT alone already picks the correct overload, so no future addition to either
+// overload's optional-parameter list can silently rebind an existing call site to the other one. This
+// is the same overload shape RS0026's own linked guidance calls out as safe; suppressed rather than
+// redesigned to avoid flattening two genuinely different call shapes into one method with unreadable
+// "pass null for the parameters you don't need" ergonomics.
 public interface ITransactionalUnitOfWork : IUnitOfWork
 {
     /// <summary>
     /// Opens an explicit database transaction and returns a provider-agnostic transaction handle.
     /// </summary>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// An <see cref="IPersistenceTransaction"/> that represents the active transaction.
     /// Call <see cref="IPersistenceTransaction.CommitAsync"/> to commit or
@@ -36,10 +46,23 @@ public interface ITransactionalUnitOfWork : IUnitOfWork
     /// <remarks>
     /// Multiple repository operations within the returned transaction scope are committed
     /// atomically via <see cref="IPersistenceTransaction.CommitAsync"/>. Domain event dispatch
-    /// fires after <c>CommitAsync</c>, consistent with <c>EfUnitOfWork.SaveChangesAsync</c>
-    /// semantics.
+    /// happens inside each <c>IUnitOfWork.SaveChangesAsync</c> call made before <c>CommitAsync</c>,
+    /// not as a separate post-commit step.
     /// </remarks>
-    Task<IPersistenceTransaction> BeginTransactionAsync(CancellationToken ct = default);
+    Task<IPersistenceTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens an explicit database transaction at a specific <paramref name="isolationLevel"/> and
+    /// returns a provider-agnostic transaction handle.
+    /// </summary>
+    /// <param name="isolationLevel">
+    /// The transaction isolation level, or <see langword="null"/> to use the provider's default.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>See <see cref="BeginTransactionAsync(CancellationToken)"/>.</returns>
+    Task<IPersistenceTransaction> BeginTransactionAsync(
+        System.Data.IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Executes <paramref name="operation"/> inside an explicit database transaction, using the
@@ -49,18 +72,24 @@ public interface ITransactionalUnitOfWork : IUnitOfWork
     /// The unit of work to execute inside the transaction. May run MORE THAN ONCE when a retrying
     /// execution strategy is configured — it must be safe to re-run.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// <para>
-    /// WO-051/P-320 — the retry-SAFE alternative to <see cref="BeginTransactionAsync"/>'s
+    /// The retry-SAFE alternative to <see cref="BeginTransactionAsync(CancellationToken)"/>'s
     /// handle-based flow. EF Core's retrying execution strategies require the ENTIRE transactional
     /// unit (begin through commit) to run inside one <c>IExecutionStrategy.ExecuteAsync(...)</c>
-    /// delegate — the <see cref="BeginTransactionAsync"/> → caller-held
+    /// delegate — the <see cref="BeginTransactionAsync(CancellationToken)"/> → caller-held
     /// <see cref="IPersistenceTransaction"/> → <c>CommitAsync</c> shape hands control back to
     /// arbitrary caller code in between, which is structurally incompatible with that contract when
-    /// retry is enabled. Use this method instead of <see cref="BeginTransactionAsync"/> for any
-    /// service that has enabled Npgsql transient-fault retry
+    /// retry is enabled. Use this method instead of <see cref="BeginTransactionAsync(CancellationToken)"/>
+    /// for any service that has enabled Npgsql transient-fault retry
     /// (<c>UsePostgreSQL(..., maxRetryCount)</c>).
+    /// </para>
+    /// <para>
+    /// <strong>Re-run safety:</strong> the EF Core implementation clears its change
+    /// tracker at the start of every attempt (including the first), so <paramref name="operation"/>
+    /// must fetch/re-fetch whatever entities it needs through a repository — never close over an
+    /// entity instance obtained outside this delegate.
     /// </para>
     /// <para>
     /// BCL-only signature (<see cref="Func{T,TResult}"/>/<see cref="Task"/>/
@@ -69,7 +98,30 @@ public interface ITransactionalUnitOfWork : IUnitOfWork
     /// </remarks>
     Task ExecuteInTransactionAsync(
         Func<CancellationToken, Task> operation,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> inside an explicit database transaction at a specific
+    /// <paramref name="isolationLevel"/>, using the provider's retrying execution strategy when one
+    /// is configured, with an optional post-exhaustion success check.
+    /// </summary>
+    /// <param name="operation">See <see cref="ExecuteInTransactionAsync(Func{CancellationToken,Task},CancellationToken)"/>.</param>
+    /// <param name="isolationLevel">
+    /// The transaction isolation level, or <see langword="null"/> for the provider's default.
+    /// </param>
+    /// <param name="verifySucceeded">
+    /// Optional. Invoked once, ONLY when every retry attempt has been exhausted, to check whether
+    /// the operation actually succeeded server-side despite the client never observing a successful
+    /// acknowledgement — a real risk for a non-idempotent retrying operation. Returning
+    /// <see langword="true"/> suppresses the exhaustion failure instead of propagating a false
+    /// failure that would cause a caller to retry an operation that already committed.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        System.Data.IsolationLevel? isolationLevel,
+        Func<CancellationToken, Task<bool>>? verifySucceeded,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Executes <paramref name="operation"/> inside an explicit database transaction and returns its
@@ -80,10 +132,28 @@ public interface ITransactionalUnitOfWork : IUnitOfWork
     /// The unit of work to execute inside the transaction. May run MORE THAN ONCE when a retrying
     /// execution strategy is configured — it must be safe to re-run.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The value returned by <paramref name="operation"/>.</returns>
-    /// <remarks>See the non-generic overload's remarks for the full explanation (WO-051/P-320).</remarks>
+    /// <remarks>See the non-generic overload's remarks for the full explanation.</remarks>
     Task<TResult> ExecuteInTransactionAsync<TResult>(
         Func<CancellationToken, Task<TResult>> operation,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> inside an explicit database transaction at a specific
+    /// <paramref name="isolationLevel"/> and returns its result, using the provider's retrying
+    /// execution strategy when one is configured.
+    /// </summary>
+    /// <typeparam name="TResult">The operation's result type.</typeparam>
+    /// <param name="operation">See <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},CancellationToken)"/>.</param>
+    /// <param name="isolationLevel">
+    /// The transaction isolation level, or <see langword="null"/> for the provider's default.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The value returned by <paramref name="operation"/>.</returns>
+    Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        System.Data.IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default);
 }
+#pragma warning restore RS0026

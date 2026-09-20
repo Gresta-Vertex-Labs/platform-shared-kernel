@@ -24,21 +24,21 @@ public interface IPersistenceTransaction : IAsyncDisposable
     /// <summary>
     /// Commits all operations performed within the transaction to the backing store.
     /// </summary>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A <see cref="Task"/> that completes when the commit succeeds.</returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the transaction has already been committed or rolled back.
     /// </exception>
-    Task CommitAsync(CancellationToken ct = default);
+    Task CommitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rolls back all operations performed within the transaction.
     /// </summary>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A <see cref="Task"/> that completes when the rollback succeeds.</returns>
     /// <remarks>
     /// Safe to call even if no operations have been staged. A rollback does not throw when the
     /// transaction is in a valid state and has not already been committed.
     /// </remarks>
-    Task RollbackAsync(CancellationToken ct = default);
+    Task RollbackAsync(CancellationToken cancellationToken = default);
 }

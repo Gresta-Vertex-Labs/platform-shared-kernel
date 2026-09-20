@@ -14,7 +14,7 @@ namespace SharedKernel.Persistence.Abstractions.Repositories;
 /// </typeparam>
 /// <remarks>
 /// <para>
-/// WO-053/P-337. Deliberately NOT narrowed to
+/// Deliberately NOT narrowed to
 /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> at the interface level — a generic
 /// implementing class cannot conditionally satisfy a narrower constraint for only some closed-generic
 /// instantiations. The EF Core implementation enforces the real <c>ISoftDeletable</c>-or-not
@@ -38,9 +38,9 @@ public interface IRestorableRepository<TAggregate, TId>
     /// <see cref="IUnitOfWork.SaveChangesAsync"/> call.
     /// </summary>
     /// <param name="aggregate">The aggregate to restore.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// Restoring an aggregate that is already not deleted is an idempotent no-op success.
     /// </remarks>
-    Task RestoreAsync(TAggregate aggregate, CancellationToken ct = default);
+    Task RestoreAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 }

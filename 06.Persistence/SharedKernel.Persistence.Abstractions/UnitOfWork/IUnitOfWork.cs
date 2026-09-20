@@ -19,7 +19,7 @@ public interface IUnitOfWork
     /// <summary>
     /// Commits all staged changes to the backing store within the current unit of work boundary.
     /// </summary>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// The number of state entries written to the database. Zero is a valid result when no
     /// entities were modified.
@@ -28,5 +28,5 @@ public interface IUnitOfWork
     /// Thrown when an optimistic concurrency conflict is detected for an
     /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency"/> entity.
     /// </exception>
-    Task<int> SaveChangesAsync(CancellationToken ct = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
