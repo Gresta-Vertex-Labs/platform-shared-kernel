@@ -193,7 +193,7 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
             {
                 await _advisoryLock
                     .AcquireAsync(connection, transaction!, $"sk-audit-chain:{chainKey}", cancellationToken: cancellationToken)
-                        .ConfigureAwait(false);
+                    .ConfigureAwait(false);
             }
 
             if (entry.IdempotencyKey is { } key1)

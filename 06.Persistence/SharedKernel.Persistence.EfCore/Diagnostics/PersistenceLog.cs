@@ -125,8 +125,8 @@ internal static partial class PersistenceLog
     /// <summary>
     /// Logged, at Error level, by <c>MigrationAndSeedHostedService.StartAsync</c> when migrations-on-startup
     /// or at least one seeder is configured but no <see cref="SharedKernel.Persistence.Abstractions.Coordination.IMigrationLock"/>
-    /// is registered — startup coordination across replicas is NOT guaranteed in that configuration
-    ///. Never a hard failure: a deliberately single-replica or non-PostgreSQL
+    /// is registered — startup coordination across replicas is NOT guaranteed in that configuration.
+    /// Never a hard failure: a deliberately single-replica or non-PostgreSQL
     /// deployment proceeds without a lock.
     /// </summary>
     [LoggerMessage(

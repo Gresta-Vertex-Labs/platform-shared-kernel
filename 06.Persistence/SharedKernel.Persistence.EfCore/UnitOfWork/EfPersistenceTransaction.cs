@@ -13,7 +13,7 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// <see cref="IDbContextTransaction"/> and release database resources.
 /// </para>
 /// <para>
-/// <strong></strong> no longer dispatches domain events itself — dispatch now
+/// <strong>Domain events:</strong> no longer dispatches domain events itself — dispatch now
 /// happens inside every <c>EfTransactionalUnitOfWork.SaveChangesAsync</c> call, BEFORE the physical
 /// save, so it is already complete by the time <see cref="CommitAsync"/> runs. A caller MUST call
 /// <c>IUnitOfWork.SaveChangesAsync</c> at least once within this transaction's scope before

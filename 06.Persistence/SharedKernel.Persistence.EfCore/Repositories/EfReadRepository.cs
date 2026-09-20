@@ -170,7 +170,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
 
             return await EffectiveContext.Set<TAggregate>()
                 .Where(e => idList.Contains(e.Id))
-                    .ToListAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
         });
 
     /// <inheritdoc />

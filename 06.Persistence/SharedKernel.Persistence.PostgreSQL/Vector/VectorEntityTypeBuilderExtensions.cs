@@ -27,7 +27,7 @@ public static class VectorEntityTypeBuilderExtensions
     /// <param name="dimensions">The fixed number of dimensions for this vector column (must be greater than zero).</param>
     /// <returns>The same <paramref name="builder"/> for fluent chaining.</returns>
     /// <remarks>
-    /// <strong></strong> deliberately fixed to <see cref="Pgvector.Vector"/> —
+    /// <strong>Not generic:</strong> deliberately fixed to <see cref="Pgvector.Vector"/> —
     /// this method used to be generic over an arbitrary <c>TProperty</c>, and nothing prevented
     /// calling it with a plain <c>float[]</c> property. Tested against a real PostgreSQL
     /// Testcontainer: EF Core's own relational model validator rejects a <c>float[]</c> property
@@ -70,7 +70,7 @@ public static class VectorEntityTypeBuilderExtensions
     /// <c>Halfvec</c> support before relying on this for distance-ordered queries.
     /// </para>
     /// <para>
-    /// <strong></strong> fixed to <see cref="Pgvector.Vector"/>, same as
+    /// <strong>Not generic:</strong> fixed to <see cref="Pgvector.Vector"/>, same as
     /// <see cref="HasVectorColumn{TEntity}"/> and for the identical reason — a plain <c>float[]</c>
     /// property mapped via <c>HasColumnType(...)</c> fails EF Core's own relational model validation
     /// outright; there was never a working non-<see cref="Pgvector.Vector"/> path this generic
@@ -125,8 +125,8 @@ public static class VectorEntityTypeBuilderExtensions
             : builder.HasIndex(propertyExpression, indexName);
 
         indexBuilder
-            .HasMethod(method == VectorIndexMethod.Hnsw ? "hnsw": "ivfflat")
-                .HasOperators([OperatorClassFor(metric)]);
+            .HasMethod(method == VectorIndexMethod.Hnsw ? "hnsw" : "ivfflat")
+            .HasOperators([OperatorClassFor(metric)]);
 
         return builder;
     }

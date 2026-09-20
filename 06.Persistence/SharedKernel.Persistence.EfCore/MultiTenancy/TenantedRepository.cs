@@ -117,7 +117,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
         // never touching the "SoftDelete" filter at all.
         var query = DbContext.Set<TAggregate>()
             .IgnoreQueryFilters([PersistenceFilterNames.Tenant])
-                .Where(BuildTenantEqualsPredicate(tenantId));
+            .Where(BuildTenantEqualsPredicate(tenantId));
 
         return await query.FirstOrDefaultAsync(BuildIdEqualsPredicate(id), cancellationToken);
     }
@@ -169,8 +169,8 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
 
         return await DbContext.Set<TAggregate>()
             .IgnoreQueryFilters([PersistenceFilterNames.Tenant, PersistenceFilterNames.SoftDelete])
-                .Where(BuildTenantEqualsPredicate(tenantId))
-                    .FirstOrDefaultAsync(BuildIdEqualsPredicate(id), cancellationToken);
+            .Where(BuildTenantEqualsPredicate(tenantId))
+            .FirstOrDefaultAsync(BuildIdEqualsPredicate(id), cancellationToken);
     }
 
     private void RequireActiveCrossTenantScope(string methodName)

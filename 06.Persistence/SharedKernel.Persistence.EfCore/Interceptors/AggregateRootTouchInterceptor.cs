@@ -73,8 +73,8 @@ public sealed class AggregateRootTouchInterceptor : SaveChangesInterceptor
         // their own row — nothing to force).
         var changedOwnedEntries = changeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-                .Where(e => e.Metadata.FindOwnership() is not null)
-                    .ToList();
+            .Where(e => e.Metadata.FindOwnership() is not null)
+            .ToList();
 
         foreach (var ownedEntry in changedOwnedEntries)
             TouchRootIfUnchanged(changeTracker, ownedEntry, []);

@@ -142,7 +142,7 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
                             [.. completed], target.CheckpointKey, FormatPrimaryKeyText(after, target.KeyKind)).Encode();
                         var partialRemaining = remaining
                             .Where(kv => kv.Value > 0 && !string.Equals(kv.Key, expectedCurrentKeyId, StringComparison.Ordinal))
-                                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+                            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
 
                         // Surface progress made before cancellation the same way a completed run does — an
                         // operator watching the meter should see a cancelled/resumed run's progress too, not only
@@ -290,9 +290,9 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         DbConnection connection, RotationTarget target, object? after, int batchSize, CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT {target.PrimaryKeyColumn}, {target.CiphertextColumn}{(target.TenantColumn is null ? "": $", {target.TenantColumn}")}
+            SELECT {target.PrimaryKeyColumn}, {target.CiphertextColumn}{(target.TenantColumn is null ? "" : $", {target.TenantColumn}")}
             FROM {target.Table}
-            WHERE {(after is null ? "1 = 1": $"{target.PrimaryKeyColumn} > @after")}
+            WHERE {(after is null ? "1 = 1" : $"{target.PrimaryKeyColumn} > @after")}
             ORDER BY {target.PrimaryKeyColumn}
             {target.OrderByLimitClause(batchSize)}
             """;
@@ -400,8 +400,8 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         {
             var encryptedProperties = entityType.GetProperties()
                 .Where(p => p.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null)
-                    .Select(p => (Property: p, ComplexPropertyName: (string?)null, ShadowNameBase: p.Name))
-                        .ToList();
+                .Select(p => (Property: p, ComplexPropertyName: (string?)null, ShadowNameBase: p.Name))
+                .ToList();
 
             // EF Core 10 complex-type (value-object) sub-properties are flattened onto the SAME table as the
             // owning entity — they rotate through the identical Table/PrimaryKeyColumn/KeyKind/TenantColumn,
@@ -412,7 +412,7 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
                 encryptedProperties.AddRange(
                     complexProperty.ComplexType.GetProperties()
                         .Where(p => p.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null)
-                            .Select(p => (Property: p, ComplexPropertyName: (string?)complexProperty.Name, ShadowNameBase: $"{complexProperty.Name}_{p.Name}")));
+                        .Select(p => (Property: p, ComplexPropertyName: (string?)complexProperty.Name, ShadowNameBase: $"{complexProperty.Name}_{p.Name}")));
             }
 
             if (encryptedProperties.Count == 0)

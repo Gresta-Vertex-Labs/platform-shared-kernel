@@ -50,7 +50,7 @@ internal sealed class PostgreSQLConventionsOptionsExtension : IDbContextOptionsE
 
         public override string LogFragment =>
             "using SharedKernel PostgreSQL conventions (snake_case naming, xmin concurrency token"
-                + (TypedExtension.UseVector ? ", pgvector extension": string.Empty) + ") ";
+                + (TypedExtension.UseVector ? ", pgvector extension" : string.Empty) + ") ";
 
         // Distinct hash codes for useVector=true/false — two DbContexts differing only in this flag
         // must never share EF Core's cached internal service provider.

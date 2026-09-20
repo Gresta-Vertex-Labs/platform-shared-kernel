@@ -10,10 +10,17 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <remarks>
 /// <para>
 /// Implementations are resolved from DI as <c>IEnumerable{IPersistenceOptionsExtension}</c>
-/// and applied, in registration order, immediately after the platform interceptors are added — only
-/// for a non-pooled context (the same <c>!optionsBuilder.Options.IsFrozen</c> guard that already
-/// protects the interceptor-wiring call). <c>SharedKernel.Persistence.EfCore.Encryption</c> uses this
-/// to register its stable-singleton <c>EncryptionInterceptor</c>/<c>EncryptedColumnEqualityGuardInterceptor</c>
+/// and applied, in registration order, immediately after the platform interceptors are added —
+/// on BOTH the pooled and non-pooled paths. <see cref="Context.SharedKernelDbContext.OnConfiguring"/>
+/// calls <c>PersistenceContextDependencies.ApplyTo</c> (which applies every registered instance of
+/// this interface) only when <c>!optionsBuilder.Options.IsFrozen</c> — true for a non-pooled context,
+/// never for a pooled one, since a pooled context's options are frozen before
+/// <see cref="Context.SharedKernelDbContext.OnConfiguring"/> ever runs.
+/// <c>EfCorePersistenceBuilder{TContext}.Build()</c>'s pooled-factory callback calls the SAME
+/// <c>PersistenceContextDependencies.ApplyTo</c> method directly instead, against the pool's own
+/// <c>optionsAction</c>, before freezing — so both paths funnel through the identical application
+/// logic and cannot silently drift apart. <c>SharedKernel.Persistence.EfCore.Encryption</c> uses this
+/// interface to register its stable-singleton <c>EncryptionInterceptor</c>/<c>EncryptedColumnEqualityGuardInterceptor</c>
 /// pair (see <c>EncryptionInterceptorOptionsContributor</c>) without
 /// <see cref="Context.SharedKernelDbContext"/> knowing encryption exists.
 /// </para>

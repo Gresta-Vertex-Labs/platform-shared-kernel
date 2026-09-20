@@ -101,8 +101,8 @@ public static class MoneyEntityTypeBuilderExtensions
 
             var currency = cp.Property(m => m.Currency)
                 .HasConversion<CurrencyValueConverter>()
-                    .HasMaxLength(3)
-                        .IsFixedLength();
+                .HasMaxLength(3)
+                .IsFixedLength();
             if (currencyColumnName is not null)
                 currency.HasColumnName(currencyColumnName);
         });

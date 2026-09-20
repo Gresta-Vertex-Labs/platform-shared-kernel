@@ -126,7 +126,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         {
             builder.Property(nameof(IHasCreatedAudit.CreatedBy))
                 .HasMaxLength(256)
-                    .IsRequired();
+                .IsRequired();
 
             builder.Property(nameof(IHasCreatedAudit.CreatedOn))
                 .IsRequired();
@@ -136,7 +136,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         {
             builder.Property(nameof(IHasAudit.ModifiedBy))
                 .HasMaxLength(256)
-                    .IsRequired(false);
+                .IsRequired(false);
 
             builder.Property(nameof(IHasAudit.ModifiedOn))
                 .IsRequired(false);

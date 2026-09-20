@@ -40,7 +40,7 @@ public static class ModelConfigurationBuilderExtensions
     {
         configurationBuilder
             .Properties<TStronglyTypedId>()
-                .HaveConversion<StronglyTypedIdValueConverter<TStronglyTypedId, TValue>>();
+            .HaveConversion<StronglyTypedIdValueConverter<TStronglyTypedId, TValue>>();
 
         return configurationBuilder;
     }
@@ -105,7 +105,7 @@ public static class ModelConfigurationBuilderExtensions
 
         configurationBuilder
             .Properties<Currency>()
-                .HaveConversion<CurrencyValueConverter>();
+            .HaveConversion<CurrencyValueConverter>();
 
         return configurationBuilder;
     }

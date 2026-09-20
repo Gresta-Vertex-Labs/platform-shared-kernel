@@ -133,7 +133,7 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
         // other entries, but iterating and mutating the same live query would be fragile.
         var deletedSoftDeletableRoots = changeTracker.Entries<ISoftDeletable>()
             .Where(e => e.State == EntityState.Deleted)
-                .ToList();
+            .ToList();
 
         var visited = new HashSet<object>();
 
@@ -170,7 +170,7 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
 
         var stillDeleted = changeTracker.Entries()
             .Where(e => e.State == EntityState.Deleted && !visited.Contains(e.Entity))
-                .ToList();
+            .ToList();
 
         foreach (var dependentEntry in stillDeleted)
         {

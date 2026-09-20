@@ -147,9 +147,9 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
         var query = _dbContext.Set<AuditRecord>()
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType && r.OccurredOn >= from && r.OccurredOn <= to)
-                .OrderBy(r => r.Sequence)
-                    .AsNoTracking()
-                        .AsAsyncEnumerable();
+            .OrderBy(r => r.Sequence)
+            .AsNoTracking()
+            .AsAsyncEnumerable();
 
         await foreach (var record in query.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
@@ -170,9 +170,9 @@ public sealed class EfAuditQueryService : IAuditQueryService
         var chainKey = AuditChainKeyFormat.Build(tenantId, resourceType);
         var records = _dbContext.Set<AuditRecord>()
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType)
-                .OrderBy(r => r.Sequence)
-                    .AsNoTracking()
-                        .AsAsyncEnumerable();
+            .OrderBy(r => r.Sequence)
+            .AsNoTracking()
+            .AsAsyncEnumerable();
 
         var (result, _, _) = await VerifyStreamAsync(
             chainKey, records, expectedStartSequence: 1, expectedPreviousHash: null, captureHashAtSequence: null, cancellationToken)
@@ -211,10 +211,10 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
         var anchor = await _dbContext.Set<AuditRecord>()
             .AsNoTracking()
-                .SingleOrDefaultAsync(
-                r => r.TenantId == checkpoint.TenantId && r.ResourceType == checkpoint.ResourceType && r.Sequence == checkpoint.Sequence,
-                cancellationToken)
-                    .ConfigureAwait(false);
+            .SingleOrDefaultAsync(
+            r => r.TenantId == checkpoint.TenantId && r.ResourceType == checkpoint.ResourceType && r.Sequence == checkpoint.Sequence,
+            cancellationToken)
+            .ConfigureAwait(false);
 
         if (anchor is null)
         {
@@ -228,9 +228,9 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
         var rest = _dbContext.Set<AuditRecord>()
             .Where(r => r.TenantId == checkpoint.TenantId && r.ResourceType == checkpoint.ResourceType && r.Sequence > checkpoint.Sequence)
-                .OrderBy(r => r.Sequence)
-                    .AsNoTracking()
-                        .AsAsyncEnumerable();
+            .OrderBy(r => r.Sequence)
+            .AsNoTracking()
+            .AsAsyncEnumerable();
 
         // When expectedHead names the anchor itself (a degenerate but not forbidden pairing), there is
         // no later record to capture a hash from — the anchor's OWN (already signature- and
@@ -340,7 +340,7 @@ public sealed class EfAuditQueryService : IAuditQueryService
         var canonicalBytes = AuditCheckpointCanonicalEncoder.Encode(checkpoint);
         var valid = await _signatureService!
             .VerifyAsync(canonicalBytes, checkpoint.Signature, checkpoint.SigningKeyId, cancellationToken)
-                .ConfigureAwait(false);
+            .ConfigureAwait(false);
 
         if (!valid)
         {

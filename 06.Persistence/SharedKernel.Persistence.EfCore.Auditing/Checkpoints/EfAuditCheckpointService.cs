@@ -56,9 +56,9 @@ public sealed class EfAuditCheckpointService : IAuditCheckpointService
 
         var head = await _dbContext.Set<AuditRecord>()
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType)
-                .OrderByDescending(r => r.Sequence)
-                    .FirstOrDefaultAsync(cancellationToken)
-                        .ConfigureAwait(false);
+            .OrderByDescending(r => r.Sequence)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         if (head is null)
         {
@@ -75,7 +75,7 @@ public sealed class EfAuditCheckpointService : IAuditCheckpointService
 
         var signature = await _signatureService
             .SignAsync(canonicalBytes, _signingKeyId, cancellationToken)
-                .ConfigureAwait(false);
+            .ConfigureAwait(false);
 
         return new AuditChainCheckpoint
         {

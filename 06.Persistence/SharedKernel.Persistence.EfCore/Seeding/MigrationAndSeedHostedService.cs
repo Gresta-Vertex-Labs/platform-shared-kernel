@@ -46,7 +46,7 @@ namespace SharedKernel.Persistence.EfCore.Seeding;
 /// </list>
 /// </para>
 /// <para>
-/// <strong></strong> no longer issues raw PostgreSQL <c>pg_advisory_lock</c> SQL
+/// <strong>Provider-neutral:</strong> no longer issues raw PostgreSQL <c>pg_advisory_lock</c> SQL
 /// directly — a hard violation of this package's "never provider-specific SQL" rule. The concrete
 /// PostgreSQL implementation (<c>NpgsqlAdvisoryMigrationLock</c>) lives in
 /// <c>SharedKernel.Persistence.Npgsql</c>. See <see cref="IMigrationLock"/>'s remarks for the full

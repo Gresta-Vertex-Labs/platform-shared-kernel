@@ -83,11 +83,11 @@ public sealed class AuditRecordEntityConfiguration : IEntityTypeConfiguration<Au
         // AuditChainKeyFormat.Build's C# logic, which the writer uses to query this same column.
         builder.Property<string>(AuditSchema.ChainKey)
             .HasColumnName(AuditSchema.ChainKey)
-                .HasComputedColumnSql(
-                $"COALESCE(\"{AuditSchema.TenantId}\"::text, 'system') || '|' || \"{AuditSchema.ResourceType}\"",
-                stored: true)
-                    .HasMaxLength(300)
-                        .IsRequired();
+            .HasComputedColumnSql(
+            $"COALESCE(\"{AuditSchema.TenantId}\"::text, 'system') || '|' || \"{AuditSchema.ResourceType}\"",
+            stored: true)
+            .HasMaxLength(300)
+            .IsRequired();
 
         // Chain uniqueness + "read the chain head" lookup (ORDER BY sequence DESC LIMIT 1 WHERE
         // chain_key = @k) — the one index every append and every full-chain verification relies on.
@@ -99,7 +99,7 @@ public sealed class AuditRecordEntityConfiguration : IEntityTypeConfiguration<Au
         // "sequence" that doesn't match the CLR property "Sequence").
         builder.HasIndex(AuditSchema.ChainKey, nameof(AuditRecord.Sequence))
             .IsUnique()
-                .HasDatabaseName(AuditSchema.IndexChainSequence);
+            .HasDatabaseName(AuditSchema.IndexChainSequence);
 
         // Retry-safe RecordAsync: a partial unique index (NULLs excluded) so multiple records with no
         // idempotency key never collide, while two records in the same chain sharing a REAL
@@ -107,8 +107,8 @@ public sealed class AuditRecordEntityConfiguration : IEntityTypeConfiguration<Au
         // record" (see EfAuditTrailWriter).
         builder.HasIndex(AuditSchema.ChainKey, nameof(AuditRecord.IdempotencyKey))
             .IsUnique()
-                .HasDatabaseName(AuditSchema.IndexChainIdempotencyKey)
-                    .HasFilter($"\"{AuditSchema.IdempotencyKey}\" IS NOT NULL");
+            .HasDatabaseName(AuditSchema.IndexChainIdempotencyKey)
+            .HasFilter($"\"{AuditSchema.IdempotencyKey}\" IS NOT NULL");
 
         // GetActorActionsAsync's access pattern (WHERE tenant_id = @t AND actor_id = @a ORDER BY
         // occurred_on). TenantId is nullable, and Postgres B-tree indexes handle a NULL column value

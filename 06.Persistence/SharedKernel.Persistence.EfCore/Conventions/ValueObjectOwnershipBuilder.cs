@@ -267,7 +267,7 @@ public static class ValueObjectOwnershipBuilder
         Type clrType) =>
         clrType
             .GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-                .Where(p => p.GetIndexParameters().Length == 0);
+            .Where(p => p.GetIndexParameters().Length == 0);
 
     private static bool IsCollectionType(Type type) =>
         type.IsArray ||

@@ -44,7 +44,7 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// that deliberately opted in to cross-tenant access via the one sanctioned, auditable escape hatch.
 /// </para>
 /// <para>
-/// <strong></strong> unlike its earlier design, this
+/// <strong>Pooling-safe:</strong> unlike its earlier design, this
 /// interceptor no longer captures <see cref="ICurrentTenantContext"/> in its own constructor — it
 /// reads tenant identity LIVE off <c>eventData.Context</c> (cast to <see cref="TenantedDbContext"/>),
 /// mirroring how <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c> already read

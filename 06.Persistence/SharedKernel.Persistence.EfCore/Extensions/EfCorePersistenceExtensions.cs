@@ -695,7 +695,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
             {
                 var relationalExtension = options.Options.Extensions
                     .OfType<RelationalOptionsExtension>()
-                        .FirstOrDefault();
+                    .FirstOrDefault();
 
                 if (relationalExtension is not null)
                 {

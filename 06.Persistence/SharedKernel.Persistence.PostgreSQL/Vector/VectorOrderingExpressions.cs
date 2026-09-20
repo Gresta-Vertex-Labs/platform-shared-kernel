@@ -9,11 +9,10 @@ namespace SharedKernel.Persistence.PostgreSQL.Vector;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The platform's first query-side pgvector ergonomics; <c>HasVectorColumn</c>/
-/// <c>VectorColumnAttribute</c> map only a column type, not even routed through
-/// <c>Pgvector.EntityFrameworkCore</c>'s own helper types. This helper is the first assist for the
-/// one thing a consumer actually wants to do with a vector column — find the nearest rows to a
-/// query vector.
+/// The platform's first query-side pgvector ergonomics; <c>HasVectorColumn</c> maps only a column
+/// type, not even routed through <c>Pgvector.EntityFrameworkCore</c>'s own helper types. This
+/// helper is the first assist for the one thing a consumer actually wants to do with a vector
+/// column — find the nearest rows to a query vector.
 /// </para>
 /// <para>
 /// <strong>Local alias, not a public-surface change:</strong> this file aliases

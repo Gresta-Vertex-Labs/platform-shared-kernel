@@ -137,7 +137,7 @@ internal sealed class PersistenceContextWiringValidator<TContext> : IHostedServi
     private static HashSet<Type> GetAttachedInterceptorTypes(IDbContextOptions options) =>
         options.Extensions.OfType<CoreOptionsExtension>().FirstOrDefault()?.Interceptors?
             .Select(i => i.GetType())
-                .ToHashSet() ?? [];
+            .ToHashSet() ?? [];
 
     private static void RequireAttached(HashSet<Type> attached, Type interceptorType, string source)
     {

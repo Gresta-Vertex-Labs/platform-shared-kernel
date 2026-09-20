@@ -79,9 +79,9 @@ internal static class DomainEventDispatchLoop
         {
             var pendingAggregates = dbContext.ChangeTracker
                 .Entries<IHasDomainEvents>()
-                    .Select(e => e.Entity)
-                        .Where(e => e.DomainEvents.Count > 0)
-                            .ToList();
+                .Select(e => e.Entity)
+                .Where(e => e.DomainEvents.Count > 0)
+                .ToList();
 
             if (pendingAggregates.Count == 0)
                 return;

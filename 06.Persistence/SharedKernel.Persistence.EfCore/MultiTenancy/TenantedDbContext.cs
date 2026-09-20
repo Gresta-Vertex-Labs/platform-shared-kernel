@@ -34,7 +34,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// leaks when no real tenant context is registered.
 /// </para>
 /// <para>
-/// <strong></strong> tenant identity is resolved through its own seam,
+/// <strong>Orthogonal to actor identity:</strong> tenant identity is resolved through its own seam,
 /// <see cref="ICurrentTenantContext"/> — orthogonal to <see cref="SharedKernelDbContext.CurrentActor"/>
 /// (<see cref="ICurrentActorContext"/>), which only ever carries actor identity now. A consuming
 /// service bridges <see cref="ICurrentTenantContext"/> to its real tenant source (typically
@@ -43,7 +43,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// that already use <c>12.Security</c>.
 /// </para>
 /// <para>
-/// <strong></strong> this class's
+/// <strong>Pooling-safe:</strong> this class's
 /// constructor takes NO <see cref="ICurrentTenantContext"/> dependency at all — <see cref="CurrentTenant"/>
 /// starts as the fail-closed <see cref="MultiTenancy.NullCurrentTenantContext.Instance"/> and is
 /// attached per lease by <see cref="RefreshTenant"/>, exactly mirroring how

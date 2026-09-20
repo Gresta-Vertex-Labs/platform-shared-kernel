@@ -79,7 +79,7 @@ public abstract class SharedKernelDbContext : DbContext
         _dependencies = dependencies;
         _additionalModelConventions = dependencies.ModelConventionFactories
             .Select(factory => factory.CreateConvention(this, options))
-                .ToList();
+            .ToList();
 
         // Initialised from AuditInterceptor's own
         // constructor-captured ICurrentActorContext — deliberately NOT a new constructor parameter on
@@ -229,9 +229,9 @@ public abstract class SharedKernelDbContext : DbContext
     {
         var configuredEntityType = candidateType
             .GetInterfaces()
-                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEntityTypeConfiguration<>))
-                    .Select(i => i.GetGenericArguments()[0])
-                        .FirstOrDefault();
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEntityTypeConfiguration<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .FirstOrDefault();
 
         if (configuredEntityType is null)
             return true;
@@ -250,8 +250,8 @@ public abstract class SharedKernelDbContext : DbContext
     private HashSet<Type> ExposedEntityTypes(ModelBuilder modelBuilder) =>
         _exposedEntityTypesCache ??= modelBuilder.Model.GetEntityTypes()
             .Select(e => e.ClrType)
-                .Concat(AdditionalConfiguredEntityTypes)
-                    .ToHashSet();
+            .Concat(AdditionalConfiguredEntityTypes)
+            .ToHashSet();
 
     /// <inheritdoc />
     /// <remarks>
