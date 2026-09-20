@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
+using SharedKernel.Persistence.PostgreSQL.Vector;
 
 namespace SharedKernel.Persistence.PostgreSQL.Conventions;
 
 /// <summary>
-/// EF Core <see cref="IConventionSetPlugin"/> that adds <see cref="SnakeCaseNamingConvention"/> and
-/// <see cref="XminConcurrencyTokenConvention"/> to every model built for a
-/// <c>DbContext</c> configured via <c>UsePostgreSQL()</c>.
+/// EF Core <see cref="IConventionSetPlugin"/> that adds <see cref="SnakeCaseNamingConvention"/>,
+/// <see cref="XminConcurrencyTokenConvention"/>, and (opt-in) <see cref="VectorExtensionConvention"/>
+/// to every model built for a <c>DbContext</c> configured via <c>UsePostgreSQL()</c>.
 /// </summary>
 /// <remarks>
 /// <see cref="IConventionSetPlugin"/> is EF Core's supported extension point for a provider or
@@ -15,7 +16,7 @@ namespace SharedKernel.Persistence.PostgreSQL.Conventions;
 /// community naming-convention packages. Registered into EF Core's internal service provider by
 /// <see cref="PostgreSQLConventionsOptionsExtension.ApplyServices"/>.
 /// </remarks>
-internal sealed class PostgreSQLConventionSetPlugin : IConventionSetPlugin
+internal sealed class PostgreSQLConventionSetPlugin(bool useVector) : IConventionSetPlugin
 {
     /// <inheritdoc />
     /// <remarks>
@@ -28,6 +29,10 @@ internal sealed class PostgreSQLConventionSetPlugin : IConventionSetPlugin
     {
         conventionSet.ModelFinalizingConventions.Add(new SnakeCaseNamingConvention());
         conventionSet.ModelFinalizingConventions.Add(new XminConcurrencyTokenConvention());
+
+        if (useVector)
+            conventionSet.ModelFinalizingConventions.Add(new VectorExtensionConvention());
+
         return conventionSet;
     }
 }

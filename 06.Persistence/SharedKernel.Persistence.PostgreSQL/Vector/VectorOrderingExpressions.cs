@@ -9,7 +9,7 @@ namespace SharedKernel.Persistence.PostgreSQL.Vector;
 /// </summary>
 /// <remarks>
 /// <para>
-/// WO-053/P-339 — the platform's first query-side pgvector ergonomics; <c>HasVectorColumn</c>/
+/// The platform's first query-side pgvector ergonomics; <c>HasVectorColumn</c>/
 /// <c>VectorColumnAttribute</c> map only a column type, not even routed through
 /// <c>Pgvector.EntityFrameworkCore</c>'s own helper types. This helper is the first assist for the
 /// one thing a consumer actually wants to do with a vector column — find the nearest rows to a
@@ -53,7 +53,9 @@ namespace SharedKernel.Persistence.PostgreSQL.Vector;
 /// (<c>CosineDistance</c>/<c>L2Distance</c>/<c>L1Distance</c>/<c>HammingDistance</c>/
 /// <c>JaccardDistance</c>/<c>MaxInnerProduct</c>), each an EF-Core query-translation placeholder
 /// method meaningfully invoked only inside a LINQ expression tree — never client-side. This helper
-/// deliberately narrows to the two most common metrics via <see cref="VectorDistanceMetric"/>.
+/// narrows to the four metrics pgvector's own index operator classes support (Cosine/L2/L1/
+/// InnerProduct) via <see cref="VectorDistanceMetric"/>; <c>HammingDistance</c>/<c>JaccardDistance</c>
+/// apply only to <c>bit</c>-vector columns and remain out of scope.
 /// </para>
 /// <para>
 /// Deliberately does NOT call any <c>ApplyOrderBy</c>/<c>AddOrderBy</c> builder method itself and
@@ -67,9 +69,9 @@ namespace SharedKernel.Persistence.PostgreSQL.Vector;
 /// handling changes.
 /// </para>
 /// <para>
-/// Scoped to <see cref="Pgvector.Vector"/>-typed properties only — a documented limitation, not a
-/// defect. A <c>float[]</c>-typed vector column (the other type <c>HasVectorColumn</c> supports) is
-/// out of scope for this helper.
+/// Scoped to <see cref="Pgvector.Vector"/>-typed properties — the only type
+/// <c>HasVectorColumn{TEntity}</c> accepts (narrowed it from a generic <c>TProperty</c>
+/// after confirming a plain <c>float[]</c> column never worked at all).
 /// </para>
 /// </remarks>
 public static class VectorOrderingExpressions
@@ -79,6 +81,12 @@ public static class VectorOrderingExpressions
 
     private static readonly System.Reflection.MethodInfo L2DistanceMethod =
         ((Func<PgVector, PgVector, double>)VectorDbFunctionsExtensions.L2Distance).Method;
+
+    private static readonly System.Reflection.MethodInfo L1DistanceMethod =
+        ((Func<PgVector, PgVector, double>)VectorDbFunctionsExtensions.L1Distance).Method;
+
+    private static readonly System.Reflection.MethodInfo MaxInnerProductMethod =
+        ((Func<PgVector, PgVector, double>)VectorDbFunctionsExtensions.MaxInnerProduct).Method;
 
     /// <summary>
     /// Builds a boxed-to-<see cref="object"/> ordering key-selector expression that orders
@@ -96,15 +104,15 @@ public static class VectorOrderingExpressions
     /// </returns>
     /// <example>
     /// <code>
-    /// public sealed class NearestProductsSpecification : Specification&lt;Product&gt;
+    /// public sealed class NearestProductsSpecification: Specification&lt;Product&gt;
     /// {
-    ///     public NearestProductsSpecification(Vector queryEmbedding, int topK)
-    ///     {
-    ///         AddCriteria(p =&gt; p.IsActive);
-    ///         ApplyOrderBy(VectorOrderingExpressions.ByDistance&lt;Product&gt;(
-    ///             p =&gt; p.Embedding, queryEmbedding, VectorDistanceMetric.Cosine));
-    ///         ApplyPaging(skip: 0, take: topK);
-    ///     }
+    /// public NearestProductsSpecification(Vector queryEmbedding, int topK)
+    /// {
+    /// AddCriteria(p =&gt; p.IsActive);
+    /// ApplyOrderBy(VectorOrderingExpressions.ByDistance&lt;Product&gt;(
+    /// p =&gt; p.Embedding, queryEmbedding, VectorDistanceMetric.Cosine));
+    /// ApplyPaging(skip: 0, take: topK);
+    /// }
     /// }
     /// </code>
     /// </example>
@@ -120,6 +128,8 @@ public static class VectorOrderingExpressions
         {
             VectorDistanceMetric.Cosine => CosineDistanceMethod,
             VectorDistanceMetric.L2 => L2DistanceMethod,
+            VectorDistanceMetric.L1 => L1DistanceMethod,
+            VectorDistanceMetric.InnerProduct => MaxInnerProductMethod,
             _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "Unsupported vector distance metric."),
         };
 
