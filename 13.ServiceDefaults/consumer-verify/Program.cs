@@ -89,6 +89,6 @@ static void Verify(bool condition, string label)
 /// </summary>
 internal sealed class NoOpDbConnectionFactory : IDbConnectionFactory
 {
-    public Task<IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
+    public Task<System.Data.Common.DbConnection> CreateConnectionAsync(CancellationToken ct = default)
         => throw new NotSupportedException("This harness only verifies DI resolution, not query execution.");
 }
