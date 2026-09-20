@@ -9,10 +9,10 @@ namespace SharedKernel.Persistence.EfCore.Conversions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// WO-066/P-440/D-104. This is a DELIBERATE REFINEMENT of the pattern used by
+/// This is a DELIBERATE REFINEMENT of the pattern used by
 /// <see cref="StronglyTypedIdValueConverter{TStronglyTypedId,TValue}"/>: <see cref="Currency"/>
 /// derives from <see cref="SharedKernel.Domain.ValueObjects.SingleValueObject{TValue}"/>, which
-/// already exposes a public <see cref="Currency.Create"/> factory (WO-051/P-310), so
+/// already exposes a public <see cref="Currency.Create"/> factory, so
 /// reconstruction never needs the reflection-located-constructor + compiled
 /// <c>Expression.New</c> technique <see cref="StronglyTypedIdValueConverter{TStronglyTypedId,TValue}"/>
 /// relies on — that technique exists only because <c>StronglyTypedId&lt;TValue&gt;</c> has no

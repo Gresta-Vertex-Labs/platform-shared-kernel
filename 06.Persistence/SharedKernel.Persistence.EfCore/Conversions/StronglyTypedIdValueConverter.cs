@@ -74,7 +74,7 @@ public sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
             var ctor = typeof(TStronglyTypedId).GetConstructor([typeof(TValue)])
                        ?? throw new InvalidOperationException(
                            $"Type '{typeof(TStronglyTypedId).Name}' does not have a public constructor that accepts a single '{typeof(TValue).Name}' argument. " +
-                           $"Ensure the strongly-typed ID record is declared as: public sealed record {typeof(TStronglyTypedId).Name}({typeof(TValue).Name} Value) : StronglyTypedId<{typeof(TValue).Name}>(Value);");
+                           $"Ensure the strongly-typed ID record is declared as: public sealed record {typeof(TStronglyTypedId).Name}({typeof(TValue).Name} Value): StronglyTypedId<{typeof(TValue).Name}>(Value);");
 
             var param = System.Linq.Expressions.Expression.Parameter(typeof(TValue), "value");
             var newExpr = System.Linq.Expressions.Expression.New(ctor, param);

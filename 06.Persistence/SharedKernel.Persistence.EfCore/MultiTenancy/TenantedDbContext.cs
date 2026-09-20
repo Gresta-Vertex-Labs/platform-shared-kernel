@@ -1,57 +1,86 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
 /// <summary>
 /// Abstract EF Core DbContext base for multi-tenant services.
-/// Installs a runtime-captured global query filter on all <see cref="IHasTenant"/> entities
-/// so that every query is automatically scoped to the current tenant.
+/// Installs a runtime-captured, named global query filter on all root <see cref="IHasTenant"/>
+/// entities so that every query is automatically scoped to the current tenant.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Filter semantics:</strong> the global filter is <c>e.TenantId == tenantProvider.TenantId</c>.
-/// The <em>value</em> of <see cref="ITenantProvider.TenantId"/> is resolved at query-execution
-/// time, not at startup. This means rotating the current tenant (e.g., across HTTP requests in
-/// a scoped context) works correctly without rebuilding the context.
+/// <strong>Filter semantics:</strong> the global filter is
+/// <c>e.TenantId == CurrentTenant.TenantId</c> (a nullable comparison — see below), installed under
+/// the named key <see cref="PersistenceFilterNames.Tenant"/> so it can never
+/// silently replace — or be replaced by — the soft-delete filter
+/// (<see cref="PersistenceFilterNames.SoftDelete"/>) that
+/// <c>Conventions.SoftDeleteQueryFilterConvention</c> installs on the same entity types; EF Core
+/// combines every named filter on an entity type with a logical AND. The value is resolved at
+/// query-execution time, not at startup, so rotating the current tenant (e.g., across HTTP requests
+/// in a scoped context) works correctly without rebuilding the context.
 /// </para>
 /// <para>
-/// <strong>Zero-row sentinel:</strong> when the tenant provider returns <see cref="Guid.Empty"/> (no tenant
-/// resolved), the filter becomes
-/// <c>e.TenantId == Guid.Empty</c> which returns zero rows. No production entity should carry
-/// <c>TenantId == Guid.Empty</c>. This is intentional — it prevents cross-tenant data leaks when
-/// no real tenant provider is registered.
+/// <strong>Fail-closed sentinel:</strong> when <see cref="CurrentTenant"/>'s
+/// <see cref="ICurrentTenantContext.TenantId"/> resolves <see langword="null"/> (no tenant
+/// resolved), the filter matches zero rows. No production entity should carry a
+/// <see langword="null"/>-equivalent tenant id — this is intentional, and prevents cross-tenant data
+/// leaks when no real tenant context is registered.
 /// </para>
 /// <para>
-/// <strong>Filter implementation (CORRECTED, WO-051/P-322):</strong> the global filter lambda is
-/// built using expression trees (<c>Expression.Parameter</c>, <c>Expression.Property</c>,
-/// <c>Expression.Constant</c>, <c>Expression.Equal</c>, <c>Expression.Lambda</c>) via the
-/// non-generic <c>modelBuilder.Entity(clrType).HasQueryFilter</c> overload. The filter binds
-/// through <c>Expression.Constant(this, GetType())</c> → <see cref="TenantProvider"/> →
-/// <c>TenantId</c> — a captured "this DbContext instance" constant, NOT a specific captured
-/// <see cref="ITenantProvider"/> object. EF Core's query-filter compilation specially rebinds this
-/// exact shape to whichever instance is EXECUTING the query, not the instance whose
-/// <see cref="OnModelCreating"/> built the (process-wide-cached) model — the same idiom
-/// Microsoft's own multi-tenancy sample uses. This closes a confirmed pre-existing defect
-/// (independent of pooling): the previous design baked
-/// <c>Expression.Constant(specificProviderObject, typeof(ITenantProvider))</c> into the compiled
-/// filter, permanently freezing every subsequent query — for the process's entire lifetime — to
-/// whichever <see cref="ITenantProvider"/> instance constructed the very first
-/// <see cref="TenantedDbContext"/> of this concrete type, because EF Core's default model cache is
-/// keyed only by context type and is shared process-wide. Because <see cref="TenantProvider"/> is
-/// read off <c>this</c> live on every query, it is also what makes
-/// <see cref="RefreshRequestContext"/> effective under <c>.WithDbContextPooling()</c>. The
-/// <c>PropertyInfo</c> lookup for <see cref="TenantProvider"/> (a protected property declared on
-/// this very class) is a one-time, model-build-time-only reflection call — not a per-query hot
-/// path — mirroring the platform's existing documented startup-time reflection exceptions
-/// (<c>ValueObjectOwnershipBuilder</c>, <c>EncryptedEntityBatchProcessorRegistry</c>). No
-/// <c>GetMethod</c>/<c>MakeGenericMethod</c>/<c>Invoke</c> dispatch pattern is used anywhere in
-/// this class.
+/// <strong></strong> tenant identity is resolved through its own seam,
+/// <see cref="ICurrentTenantContext"/> — orthogonal to <see cref="SharedKernelDbContext.CurrentActor"/>
+/// (<see cref="ICurrentActorContext"/>), which only ever carries actor identity now. A consuming
+/// service bridges <see cref="ICurrentTenantContext"/> to its real tenant source (typically
+/// <c>12.Security.Abstractions</c>'s <c>ITenantProvider</c>) at its own composition root —
+/// <c>13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence</c> ships that bridge for services
+/// that already use <c>12.Security</c>.
+/// </para>
+/// <para>
+/// <strong></strong> this class's
+/// constructor takes NO <see cref="ICurrentTenantContext"/> dependency at all — <see cref="CurrentTenant"/>
+/// starts as the fail-closed <see cref="MultiTenancy.NullCurrentTenantContext.Instance"/> and is
+/// attached per lease by <see cref="RefreshTenant"/>, exactly mirroring how
+/// <see cref="SharedKernelDbContext.CurrentActor"/> is attached. This is what makes
+/// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c> safely combinable with
+/// <c>WithMultiTenancy()</c>: EF Core's pooled-context activator never has a genuinely Scoped
+/// service to resolve for this class's own constructor. Every path that hands a
+/// <see cref="TenantedDbContext"/> instance to calling code — the scoped <c>TContext</c>
+/// registration, the decorated <c>IDbContextFactory&lt;TContext&gt;</c>, and
+/// <see cref="ReadReplica.ReadReplicaContextAccessor{TContext}"/> — calls <see cref="RefreshTenant"/>
+/// immediately after obtaining the instance, whether it was freshly constructed or reused from the
+/// pool. <see cref="Dispose"/>/<see cref="DisposeAsync"/> additionally reset
+/// <see cref="CurrentTenant"/> back to <see cref="MultiTenancy.NullCurrentTenantContext.Instance"/>
+/// BEFORE calling the base implementation — EF Core 10 has no public/overridable
+/// "returned to pool" hook (<c>IResettableService</c>/<c>IDbContextPoolable</c> are internal,
+/// explicit-interface-implemented on <see cref="DbContext"/> itself, confirmed by reflection), but
+/// <c>Dispose()</c>/<c>DisposeAsync()</c> ARE public virtual and ARE the exact method the pool's
+/// return-to-pool interception hangs off — so resetting here is genuinely fail-closed defense in
+/// depth against a caller that keeps using a reference after disposing it (a bug either way, since
+/// <see cref="DbContext"/> is never safe for concurrent/post-dispose use, but one that now reads and
+/// writes nothing instead of silently serving a leaked instance's stale — or a reused pool slot's
+/// NEXT — tenant's data).
+/// </para>
+/// <para>
+/// <strong>Filter implementation:</strong> the global filter lambda is built using expression trees
+/// (<c>Expression.Parameter</c>, <c>Expression.Property</c>, <c>Expression.Constant</c>,
+/// <c>Expression.Equal</c>, <c>Expression.Lambda</c>) via the non-generic
+/// <c>modelBuilder.Entity(clrType).HasQueryFilter(key, lambda)</c> overload. The filter binds through
+/// <c>Expression.Constant(this, GetType())</c> → <see cref="CurrentTenant"/> →
+/// <c>TenantId</c> — a captured "this DbContext instance" constant, rebound by EF Core's
+/// query-filter compilation to whichever instance is EXECUTING the query, never the instance whose
+/// <see cref="OnModelCreating"/> built the (process-wide-cached) model.
+/// </para>
+/// <para>
+/// <strong>Root types only:</strong> a TPH-derived (non-root) entity type shares
+/// its base type's table and cannot carry its own query filter — only entity types with
+/// <c>BaseType == null</c> are considered.
 /// </para>
 /// <para>
 /// Multi-tenant services must extend this class instead of <see cref="SharedKernelDbContext"/>.
@@ -59,64 +88,89 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// </para>
 /// <para>
 /// <strong>Cross-tenant access:</strong> admin or migration paths that need to bypass the filter
-/// should call <c>.IgnoreQueryFilters()</c> on the relevant queryable, or use
-/// <c>TenantedRepository&lt;T,TId&gt;.GetByIdForTenantAsync</c>.
+/// must enter an <see cref="ICrossTenantScope"/> explicitly (<c>ICrossTenantScope.Enter()</c>), then
+/// call <c>.IgnoreQueryFilters([PersistenceFilterNames.Tenant])</c> — never a bare
+/// <c>.IgnoreQueryFilters()</c>, which would also drop the soft-delete filter — or use
+/// <c>TenantedRepository&lt;T,TId&gt;.GetByIdForTenantAsync</c>, which now enforces the same
+/// active-scope requirement.
 /// </para>
 /// </remarks>
 public abstract class TenantedDbContext : SharedKernelDbContext
 {
-    // WO-051/P-322: one-time, model-build-time-only reflection lookup for the TenantProvider
-    // property declared below — never invoked in a query hot path. See this class's own remarks
-    // for why a PropertyInfo-based Expression.Property is required here (TenantProvider is
-    // protected, so the string-name overload of Expression.Property, which only finds PUBLIC
-    // members via Type.GetProperty(string), cannot locate it).
-    private static readonly PropertyInfo TenantProviderPropertyInfo =
-        typeof(TenantedDbContext).GetProperty(nameof(TenantProvider), BindingFlags.NonPublic | BindingFlags.Instance)!;
+    // Model-build-time-only reflection lookup for the public CurrentTenant property declared on
+    // this class — never invoked in a query hot path. Public, so the string-name overload of
+    // Expression.Property (Type.GetProperty(string)) already finds it without BindingFlags.
+    private static readonly System.Reflection.PropertyInfo CurrentTenantPropertyInfo =
+        typeof(TenantedDbContext).GetProperty(nameof(CurrentTenant))!;
 
-    /// <summary>Provides access to the current tenant provider for subclass model configuration.</summary>
-    /// <remarks>
-    /// Settable only via <see cref="RefreshRequestContext"/> (WO-051/P-322) — see that method and
-    /// this class's own remarks for the pooling-safety and pre-existing-staleness-defect rationale.
-    /// </remarks>
-    protected ITenantProvider TenantProvider { get; private set; }
+    private ICurrentTenantContext _currentTenant = NullCurrentTenantContext.Instance;
 
     /// <summary>
     /// Initialises a new <see cref="TenantedDbContext"/>.
     /// </summary>
     /// <param name="options">EF Core context options supplied by the DI container.</param>
-    /// <param name="auditInterceptor">Scoped interceptor that populates audit fields.</param>
-    /// <param name="softDeleteInterceptor">Scoped interceptor that converts deletes to soft-deletes.</param>
-    /// <param name="concurrencyInterceptor">Interceptor that wraps concurrency exceptions.</param>
-    /// <param name="tenantProvider">
-    /// Service that resolves the current tenant identifier at query-execution time.
+    /// <param name="dependencies">
+    /// Every interceptor/convention/configurator/options-extension/exception-classifier dependency this
+    /// context needs, bundled into one required parameter — see
+    /// <see cref="PersistenceContextDependencies"/>. A derived context MUST declare exactly
+    /// <c>MyContext(DbContextOptions&lt;MyContext&gt; options, PersistenceContextDependencies dependencies)
+    /// : base(options, dependencies)</c> and forward both parameters unchanged.
     /// </param>
-    protected TenantedDbContext(
-        DbContextOptions options,
-        AuditInterceptor auditInterceptor,
-        SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor,
-        ITenantProvider tenantProvider)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+    /// <remarks>
+    /// Deliberately takes NO <see cref="ICurrentTenantContext"/> constructor parameter —
+    /// see the class remarks above ("real pooling fix, not a guard"). <see cref="CurrentTenant"/>
+    /// starts fail-closed; the caller obtaining this instance (never application code directly —
+    /// always <c>EfCorePersistenceBuilder</c>'s registrations) is responsible for calling
+    /// <see cref="RefreshTenant"/> before returning it to application code.
+    /// </remarks>
+    protected TenantedDbContext(DbContextOptions options, PersistenceContextDependencies dependencies)
+        : base(options, dependencies)
     {
-        TenantProvider = tenantProvider;
     }
 
     /// <summary>
-    /// Replaces both <see cref="SharedKernelDbContext.CurrentUserContext"/> (via the base class) and
-    /// <see cref="TenantProvider"/> with the supplied instances.
+    /// Gets the <see cref="ICurrentTenantContext"/> the tenant global query filter and
+    /// <c>TenantWriteGuardInterceptor</c> resolve tenant identity from.
     /// </summary>
-    /// <param name="userContext">The current scope's real <see cref="IUserContext"/>.</param>
-    /// <param name="tenantProvider">The current scope's real <see cref="ITenantProvider"/>.</param>
     /// <remarks>
-    /// Called once per lease by the factory delegate <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>
-    /// registers, for <see cref="TenantedDbContext"/>-derived contexts. Non-pooled consumers never
-    /// need to call this — the constructor-set value is already correct for a non-pooled instance's
-    /// lifetime (a fresh instance is constructed per DI scope).
+    /// Fail-closed (<see cref="MultiTenancy.NullCurrentTenantContext.Instance"/>) until
+    /// <see cref="RefreshTenant"/> is called — which every supported way of obtaining a
+    /// <see cref="TenantedDbContext"/> instance does exactly once, immediately, before handing it to
+    /// application code. Reset back to fail-closed on <see cref="Dispose"/>/
+    /// <see cref="DisposeAsync"/>.
     /// </remarks>
-    public void RefreshRequestContext(IUserContext userContext, ITenantProvider tenantProvider)
+    public ICurrentTenantContext CurrentTenant => _currentTenant;
+
+    /// <summary>Replaces <see cref="CurrentTenant"/> with <paramref name="tenantContext"/>.</summary>
+    /// <param name="tenantContext">The current scope's real <see cref="ICurrentTenantContext"/>.</param>
+    /// <remarks>
+    /// <see langword="internal"/> — called only by
+    /// <c>EfCorePersistenceBuilder</c>'s own registrations (the scoped <c>TContext</c> factory
+    /// delegate, the decorated <c>IDbContextFactory&lt;TContext&gt;</c>) and
+    /// <see cref="ReadReplica.ReadReplicaContextAccessor{TContext}"/>, within this same assembly. Not
+    /// a public extensibility seam.
+    /// </remarks>
+    internal void RefreshTenant(ICurrentTenantContext tenantContext) => _currentTenant = tenantContext;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Resets <see cref="CurrentTenant"/> to the fail-closed
+    /// <see cref="MultiTenancy.NullCurrentTenantContext.Instance"/> BEFORE calling
+    /// <see cref="DbContext.Dispose()"/> — see the class remarks for why this, not
+    /// <c>IResettableService</c>, is the real "returned to pool" hook available in EF Core 10.
+    /// </remarks>
+    public override void Dispose()
     {
-        RefreshUserContext(userContext);
-        TenantProvider = tenantProvider;
+        _currentTenant = NullCurrentTenantContext.Instance;
+        base.Dispose();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="Dispose"/>.</remarks>
+    public override async ValueTask DisposeAsync()
+    {
+        _currentTenant = NullCurrentTenantContext.Instance;
+        await base.DisposeAsync();
     }
 
     /// <summary>
@@ -137,30 +191,65 @@ public abstract class TenantedDbContext : SharedKernelDbContext
     }
 
     /// <summary>
-    /// Installs the expression-tree tenant query filter on all <see cref="IHasTenant"/> entity
+    /// Installs the expression-tree tenant query filter on all root <see cref="IHasTenant"/> entity
     /// types currently registered in the model. Call this after all entity configurations are applied.
     /// </summary>
     /// <param name="modelBuilder">The builder used to construct the model for this context.</param>
     /// <remarks>
+    /// <para>
     /// Subclasses that bypass the assembly-scan path in <c>OnModelCreating</c> should call this
     /// method explicitly after applying their entity configurations to ensure tenant isolation is
     /// preserved.
+    /// </para>
+    /// <para>
+    /// <strong>Write-side protection:</strong> in addition to the query filter, this method marks
+    /// <c>TenantId</c> as an EF Core concurrency token on every entity type it visits — see
+    /// <see cref="ApplyTenantConcurrencyToken"/>.
+    /// </para>
     /// </remarks>
     protected void ApplyTenantFilters(ModelBuilder modelBuilder)
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
+            if (entityType.BaseType is not null)
+                continue; // TPH-derived type — shares its root's filter.
+
             if (!typeof(IHasTenant).IsAssignableFrom(entityType.ClrType))
                 continue;
 
             ApplyTenantFilterExpression(modelBuilder, entityType.ClrType);
+            ApplyTenantConcurrencyToken(modelBuilder, entityType.ClrType);
         }
     }
 
-    // Builds a lambda: e => e.TenantId == this.TenantProvider.TenantId
+    // A detached IHasTenant entity re-attached via Update()/Remove() (EfRepository.
+    // MarkAsModifiedIfDetached) is written with a WHERE clause naming only its primary key — TenantId
+    // plays no part in it. TenantWriteGuardInterceptor already rejects any entry whose IN-MEMORY
+    // TenantId differs from the caller's current tenant, but that check cannot see which tenant the
+    // TARGETED ROW actually belongs to: a caller who builds a detached stub carrying their OWN
+    // (legitimate) TenantId and a VICTIM's primary key passes that check, and an unconditional
+    // Update()/Remove() would then silently rewrite or delete the victim's row, because the physical
+    // UPDATE/DELETE statement never mentions TenantId at all.
+    //
+    // Marking TenantId a concurrency token closes this: EF Core adds it to the UPDATE/DELETE WHERE
+    // clause, compared against the OriginalValue captured on this entry. For a genuinely tracked
+    // entity (loaded through the tenant query filter) OriginalValue already equals the row's real
+    // TenantId, so this is a no-op. For a freshly-attached DETACHED entry, EF Core has no source for
+    // "original" other than the value already on the object — the SAME value
+    // TenantWriteGuardInterceptor already required to equal the caller's current tenant. The WHERE
+    // clause therefore becomes "Id = <target> AND TenantId = <caller's own tenant>": a victim row
+    // belonging to a DIFFERENT tenant matches zero rows, and EF Core raises
+    // DbUpdateConcurrencyException instead of silently succeeding — translated by
+    // ConcurrencyInterceptor.TryTranslate into the same tenant-isolation Forbidden error
+    // TenantWriteGuardInterceptor raises proactively.
+    private static void ApplyTenantConcurrencyToken(ModelBuilder modelBuilder, Type clrType) =>
+        modelBuilder.Entity(clrType).Property(nameof(IHasTenant.TenantId)).IsConcurrencyToken();
+
+    // Builds a lambda: e => this.CurrentTenant.TenantId.HasValue && e.TenantId == this.CurrentTenant.TenantId
     // using expression trees, where "this" is a captured DbContext-instance constant that EF Core
-    // rebinds to whichever instance is executing the query (WO-051/P-322 — see this class's own
-    // remarks for the full rationale and the pre-existing defect this corrects).
+    // rebinds to whichever instance is executing the query. The HasValue guard makes the
+    // fail-closed "no tenant resolved" behavior explicit rather than relying on a Guid==Guid?
+    // comparison's implicit false-on-null.
     private void ApplyTenantFilterExpression(ModelBuilder modelBuilder, Type clrType)
     {
         // Parameter: e
@@ -169,25 +258,30 @@ public abstract class TenantedDbContext : SharedKernelDbContext
         // e.TenantId
         var tenantIdProperty = Expression.Property(param, nameof(IHasTenant.TenantId));
 
-        // this  — a captured "this DbContext instance" constant. EF Core's query-filter compilation
+        // this — a captured "this DbContext instance" constant. EF Core's query-filter compilation
         // recognizes a ConstantExpression whose Value is the DbContext instance the model was built
-        // from and rebinds it, per query execution, to the CURRENT executing instance — never a
-        // frozen reference to whichever instance first built the (process-wide-cached) model.
+        // from and rebinds it, per query execution, to the CURRENT executing instance.
         var thisConst = Expression.Constant(this, GetType());
 
-        // this.TenantProvider
-        var tenantProviderAccess = Expression.Property(thisConst, TenantProviderPropertyInfo);
+        // this.CurrentTenant
+        var currentTenantAccess = Expression.Property(thisConst, CurrentTenantPropertyInfo);
 
-        // this.TenantProvider.TenantId
-        var tenantIdAccess = Expression.Property(tenantProviderAccess, nameof(ITenantProvider.TenantId));
+        // this.CurrentTenant.TenantId (Guid?)
+        var tenantIdAccess = Expression.Property(currentTenantAccess, nameof(ICurrentTenantContext.TenantId));
 
-        // e.TenantId == this.TenantProvider.TenantId
-        var equalExpr = Expression.Equal(tenantIdProperty, tenantIdAccess);
+        // this.CurrentTenant.TenantId.HasValue
+        var hasValue = Expression.Property(tenantIdAccess, nameof(Nullable<Guid>.HasValue));
 
-        // e => e.TenantId == this.TenantProvider.TenantId
-        var lambda = Expression.Lambda(equalExpr, param);
+        // e.TenantId == this.CurrentTenant.TenantId (Guid promoted to Guid? for the comparison)
+        var equalExpr = Expression.Equal(Expression.Convert(tenantIdProperty, typeof(Guid?)), tenantIdAccess);
 
-        // Apply via non-generic overload — no reflection on entity type needed
-        modelBuilder.Entity(clrType).HasQueryFilter(lambda);
+        // this.CurrentTenant.TenantId.HasValue && e.TenantId == this.CurrentTenant.TenantId
+        var guarded = Expression.AndAlso(hasValue, equalExpr);
+
+        // e =>...
+        var lambda = Expression.Lambda(guarded, param);
+
+        // Apply via non-generic overload, named "Tenant" — no reflection on entity type needed.
+        modelBuilder.Entity(clrType).HasQueryFilter(PersistenceFilterNames.Tenant, lambda);
     }
 }

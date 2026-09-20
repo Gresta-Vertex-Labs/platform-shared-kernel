@@ -28,8 +28,8 @@ public static class ModelConfigurationBuilderExtensions
     /// <code>
     /// protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     /// {
-    ///     configurationBuilder.ConfigureStronglyTypedId&lt;OrderId, Guid&gt;();
-    ///     configurationBuilder.ConfigureStronglyTypedId&lt;CustomerId, Guid&gt;();
+    /// configurationBuilder.ConfigureStronglyTypedId&lt;OrderId, Guid&gt;();
+    /// configurationBuilder.ConfigureStronglyTypedId&lt;CustomerId, Guid&gt;();
     /// }
     /// </code>
     /// </example>
@@ -40,15 +40,15 @@ public static class ModelConfigurationBuilderExtensions
     {
         configurationBuilder
             .Properties<TStronglyTypedId>()
-            .HaveConversion<StronglyTypedIdValueConverter<TStronglyTypedId, TValue>>();
+                .HaveConversion<StronglyTypedIdValueConverter<TStronglyTypedId, TValue>>();
 
         return configurationBuilder;
     }
 
     /// <summary>
-    /// Registers <see cref="CurrencyValueConverter"/> and <see cref="MoneyValueConverter"/> globally
-    /// so that every <see cref="Currency"/>- and <see cref="Money"/>-typed property in the model is
-    /// automatically mapped as a scalar column, without per-property configuration.
+    /// Pre-declares <see cref="Money"/> as an EF Core 10 complex type, and registers
+    /// <see cref="CurrencyValueConverter"/> globally for any standalone (not <see cref="Money"/>-nested)
+    /// <see cref="Currency"/> property, so both map correctly without per-property registration.
     /// </summary>
     /// <param name="configurationBuilder">
     /// The <see cref="ModelConfigurationBuilder"/> from <c>ConfigureConventions</c>.
@@ -56,52 +56,56 @@ public static class ModelConfigurationBuilderExtensions
     /// <returns>The same builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// WO-066/P-440/D-106. This call is REQUIRED — not merely a convenience — for any
-    /// <c>DbContext</c> that maps a <see cref="Money"/>- or <see cref="Currency"/>-typed property,
-    /// including via <see cref="MoneyEntityTypeBuilderExtensions.OwnsMoney{TEntity}"/>.
+    /// This call is REQUIRED — not merely a convenience — for any <c>DbContext</c> that maps
+    /// a <see cref="Money"/>-typed property via <see cref="MoneyEntityTypeBuilderExtensions.Money{TEntity}"/>.
     /// </para>
     /// <para>
-    /// <strong>Why this is mandatory (not just per-property <c>.HasConversion(...)</c>):</strong>
-    /// EF Core's automatic navigation/entity-type discovery walks every DbSet-reachable entity
-    /// type's CLR properties as soon as the context's model starts building — BEFORE
-    /// <c>OnModelCreating</c>'s body (and therefore before any per-property
-    /// <c>.Property(...).HasConversion(...)</c> call inside an
+    /// <strong>Why this is mandatory:</strong> EF Core's automatic navigation/entity-type discovery
+    /// walks every DbSet-reachable entity type's CLR properties as soon as the context's model starts
+    /// building — BEFORE <c>OnModelCreating</c>'s body (and therefore before any per-property
+    /// <c>.ComplexProperty(...)</c> call inside an
     /// <see cref="Microsoft.EntityFrameworkCore.IEntityTypeConfiguration{TEntity}"/>) ever runs. A
-    /// <see cref="Money"/>-typed property with no GLOBALLY-registered conversion yet is, at that
-    /// point, indistinguishable from a genuine navigation — EF auto-discovers <c>Money</c> as an
-    /// owned/related entity type and recurses into ITS properties, discovering
-    /// <see cref="Money.Currency"/> as a second, nested entity type. A later per-property
-    /// <c>.HasConversion(...)</c> call successfully converts the OUTER property back to a scalar,
-    /// but the transitively-discovered, now-orphaned <see cref="Currency"/> entity type can be left
-    /// behind in the model, causing model finalization to fail with "No suitable constructor was
-    /// found for the type 'Currency'" (empirically confirmed against EF Core 10 while building this
-    /// converter). Calling <see cref="ConfigureMoney"/> from <c>ConfigureConventions</c> — which
-    /// runs before any entity-type/navigation discovery — registers both conversions early enough
-    /// that <see cref="Money"/>/<see cref="Currency"/> are never considered navigation candidates in
-    /// the first place, exactly mirroring why <see cref="ConfigureStronglyTypedId{TStronglyTypedId,TValue}"/>
-    /// (also a <c>ConfigureConventions</c>-time, not <c>OnModelCreating</c>-time, registration) never
-    /// exhibits this problem.
+    /// <see cref="Money"/>-typed property EF has not yet been told is complex is, at that point,
+    /// indistinguishable from a genuine navigation, and model finalization fails with "No suitable
+    /// constructor was found for the type 'Money'" (empirically confirmed against EF Core 10.0.5 while
+    /// building this convention). <c>configurationBuilder.ComplexProperties&lt;Money&gt;()</c> — which
+    /// runs before any entity-type/navigation discovery — settles the question early enough that
+    /// <see cref="Money"/> is never considered a navigation candidate in the first place, exactly
+    /// mirroring why <see cref="ConfigureStronglyTypedId{TStronglyTypedId,TValue}"/> (also a
+    /// <c>ConfigureConventions</c>-time, not <c>OnModelCreating</c>-time, registration) never exhibits
+    /// this problem. <see cref="Money.Currency"/> needs no equivalent early registration of its own:
+    /// once <see cref="Money"/> itself is settled as complex, EF never walks into its members during
+    /// the early phase at all, and <see cref="MoneyEntityTypeBuilderExtensions.Money{TEntity}"/> maps
+    /// <see cref="Money.Currency"/> to a scalar column itself, per property, via
+    /// <see cref="CurrencyValueConverter"/>.
+    /// </para>
+    /// <para>
+    /// <strong>The global <see cref="Currency"/> conversion is a separate, independent concern:</strong>
+    /// it exists only for a service that also has a <see cref="Currency"/> property that is
+    /// <em>not</em> nested inside a <see cref="Money"/> value (e.g. a "preferred currency" field).
+    /// <see cref="Currency"/> derives from <see cref="SharedKernel.Domain.ValueObjects.SingleValueObject{TValue}"/>,
+    /// so <see cref="Conventions.ValueObjectOwnershipBuilder"/> never auto-configures it either — without
+    /// this registration, a standalone <see cref="Currency"/> property would need its own explicit
+    /// <c>.HasConversion&lt;CurrencyValueConverter&gt;()</c> call.
     /// </para>
     /// </remarks>
     /// <example>
     /// <code>
     /// protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     /// {
-    ///     configurationBuilder.ConfigureMoney();
-    ///     base.ConfigureConventions(configurationBuilder);
+    /// configurationBuilder.ConfigureMoney();
+    /// base.ConfigureConventions(configurationBuilder);
     /// }
     /// </code>
     /// </example>
     public static ModelConfigurationBuilder ConfigureMoney(
         this ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder
-            .Properties<Currency>()
-            .HaveConversion<CurrencyValueConverter>();
+        configurationBuilder.ComplexProperties<Money>();
 
         configurationBuilder
-            .Properties<Money>()
-            .HaveConversion<MoneyValueConverter>();
+            .Properties<Currency>()
+                .HaveConversion<CurrencyValueConverter>();
 
         return configurationBuilder;
     }

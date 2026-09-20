@@ -1,11 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Extensions.Options;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
@@ -16,29 +14,23 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// <para>
 /// On <see cref="SavingChangesAsync"/> / <see cref="SavingChanges"/>:
 /// <list type="bullet">
-///   <item><description>
-///     For entities in <see cref="EntityState.Added"/> state that implement
-///     <see cref="IHasCreatedAudit"/>: sets <c>CreatedBy</c> and <c>CreatedOn</c>.
-///   </description></item>
-///   <item><description>
-///     For entities in <see cref="EntityState.Modified"/> state that implement
-///     <see cref="IHasAudit"/>: sets <c>ModifiedBy</c> and <c>ModifiedOn</c>.
-///   </description></item>
+/// <item><description>
+/// For entities in <see cref="EntityState.Added"/> state that implement
+/// <see cref="IHasCreatedAudit"/>: sets <c>CreatedBy</c> and <c>CreatedOn</c>.
+/// </description></item>
+/// <item><description>
+/// For entities in <see cref="EntityState.Modified"/> state that implement
+/// <see cref="IHasAudit"/>: sets <c>ModifiedBy</c> and <c>ModifiedOn</c>.
+/// </description></item>
 /// </list>
 /// </para>
 /// <para>
-/// <strong>Audit string format (P-091, updated WO-019):</strong> The audit column value is:
-/// <list type="bullet">
-///   <item><description>
-///     <c>IUserContext.SubjectId</c> (the identity provider's subject, an API key's or certificate's client id;
-///     at most 255 characters for OIDC) when the caller is authenticated and has a subject.
-///   </description></item>
-///   <item><description>
-///     <c>PersistenceServiceOptions.ServiceName</c> (default <c>"system"</c>) otherwise —
-///     unauthenticated, background jobs, seeding operations.
-///   </description></item>
-/// </list>
-/// Audit columns are configured with <c>HasMaxLength(256)</c> which accommodates both formats.
+/// <strong>Actor resolution:</strong> <c>CreatedBy</c>/<c>ModifiedBy</c> is written as
+/// <see cref="ICurrentActorContext.ActorId"/> — the fallback-to-service-name rule that used to live
+/// here (checking <c>IUserContext.IsAuthenticated</c>/<c>SubjectId</c>) now lives entirely inside
+/// whichever <see cref="ICurrentActorContext"/> implementation is registered (the default
+/// <see cref="AnonymousActorContext"/>, or a consuming service's real bridge over its identity
+/// provider). This interceptor no longer references <c>SharedKernel.Security.Abstractions</c> at all.
 /// </para>
 /// <para>
 /// <strong>Mutation rule:</strong> All field writes go exclusively through
@@ -49,49 +41,41 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </remarks>
 public sealed class AuditInterceptor : SaveChangesInterceptor
 {
-    private readonly IUserContext _userContext;
+    private readonly ICurrentActorContext _actorContext;
     private readonly IClock _clock;
-    private readonly IOptions<PersistenceServiceOptions> _serviceOptions;
 
     /// <summary>
     /// Initialises a new <see cref="AuditInterceptor"/> with the required dependencies.
     /// </summary>
-    /// <param name="userContext">
-    /// Scoped DI dependency providing the current user's identity. Never <see langword="null"/>.
+    /// <param name="actorContext">
+    /// Scoped DI dependency providing the current actor's identity. Never <see langword="null"/>.
     /// </param>
     /// <param name="clock">
     /// Abstracted system clock for deterministic timestamp production. Never <see langword="null"/>.
     /// </param>
-    /// <param name="serviceOptions">
-    /// Options providing the unauthenticated audit fallback string (defaults to <c>"system"</c>).
-    /// </param>
-    public AuditInterceptor(
-        IUserContext userContext,
-        IClock clock,
-        IOptions<PersistenceServiceOptions> serviceOptions)
+    public AuditInterceptor(ICurrentActorContext actorContext, IClock clock)
     {
-        _userContext = userContext;
+        _actorContext = actorContext;
         _clock = clock;
-        _serviceOptions = serviceOptions;
     }
 
     /// <summary>
-    /// Gets the <see cref="IUserContext"/> captured at construction time.
+    /// Gets the <see cref="ICurrentActorContext"/> captured at construction time.
     /// </summary>
     /// <remarks>
-    /// WO-051/P-322 — exposed solely so <see cref="SharedKernelDbContext"/>'s constructor can
-    /// initialise <see cref="SharedKernelDbContext.CurrentUserContext"/> from this instance without
-    /// requiring a new, separately-injected <c>IUserContext</c> constructor parameter on
+    /// Exposed solely so <see cref="SharedKernelDbContext"/>'s constructor can
+    /// initialise <see cref="SharedKernelDbContext.CurrentActor"/> from this instance without
+    /// requiring a new, separately-injected constructor parameter on
     /// <see cref="SharedKernelDbContext"/> itself. This interceptor no longer reads this field
     /// directly inside <see cref="ApplyAudit"/> — see that method's remarks for why.
     /// </remarks>
-    internal IUserContext UserContext => _userContext;
+    internal ICurrentActorContext ActorContext => _actorContext;
 
     /// <summary>Gets the clock captured at construction time.</summary>
     /// <remarks>
     /// Exposed so <see cref="SharedKernelDbContext"/> can give the same clock to
     /// <see cref="DomainClockMaterializationInterceptor"/> without a new constructor parameter, mirroring
-    /// <see cref="UserContext"/>.
+    /// <see cref="ActorContext"/>.
     /// </remarks>
     internal IClock Clock => _clock;
 
@@ -116,21 +100,21 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     // Applies audit fields to Added and Modified entries via EF ChangeTracker.
     //
-    // WO-051/P-322: resolves the current IUserContext LIVE off
-    // ((SharedKernelDbContext)context).CurrentUserContext instead of this interceptor's own
-    // constructor-captured _userContext field. Under the default (non-pooled) registration this
-    // produces an identical value to before, since SharedKernelDbContext.CurrentUserContext is
-    // itself initialised from this same interceptor's captured IUserContext at construction time.
-    // Under .WithDbContextPooling(), CurrentUserContext is refreshed per lease via
-    // RefreshUserContext(...) — reading it here (rather than this interceptor's own frozen field,
+    // Resolves the current ICurrentActorContext LIVE off
+    // ((SharedKernelDbContext)context).CurrentActor instead of this interceptor's own
+    // constructor-captured _actorContext field. Under the default (non-pooled) registration this
+    // produces an identical value to before, since SharedKernelDbContext.CurrentActor is
+    // itself initialised from this same interceptor's captured ICurrentActorContext at construction
+    // time. Under.WithDbContextPooling(), CurrentActor is refreshed per lease via
+    // RefreshActor(...) — reading it here (rather than this interceptor's own frozen field,
     // which is never updated on lease) is what prevents a pooled instance from misattributing audit
     // fields to whichever request first constructed it.
     private void ApplyAudit(DbContext? context)
     {
         if (context is null) return;
 
-        var userContext = ((SharedKernelDbContext)context).CurrentUserContext;
-        var userId = ResolveUserId(userContext);
+        var actorContext = ((SharedKernelDbContext)context).CurrentActor;
+        var userId = actorContext.ActorId;
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries())
@@ -148,10 +132,4 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
         }
     }
-
-    // Resolves the audit string from the given IUserContext per P-091/WO-019 rules.
-    private string ResolveUserId(IUserContext userContext)
-        => userContext.IsAuthenticated && userContext.SubjectId is { } subjectId
-            ? subjectId
-            : _serviceOptions.Value.ServiceName;
 }
