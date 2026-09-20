@@ -26,7 +26,7 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// <c>ClaimTenantResolutionStrategy</c> has access to a populated <see cref="HttpContext.User"/>.
 /// </para>
 /// <para>
-/// <b>Opt-in tenant-status gate (WO-061/P-400):</b> after a strategy resolves a non-<see cref="Guid.Empty"/>
+/// <b>Opt-in tenant-status gate:</b> after a strategy resolves a non-<see cref="Guid.Empty"/>
 /// tenant, an <see cref="ITenantStatusValidator"/> is resolved from
 /// <see cref="HttpContext.RequestServices"/> via <c>GetService</c> — never <c>GetRequiredService</c>,
 /// since it is genuinely optional. When registered, a <see langword="false"/> result from
@@ -76,7 +76,7 @@ public sealed class TenantResolutionMiddleware(
 
             var resolved = await strategy
                 .TryResolveAsync(context, context.RequestAborted)
-                .ConfigureAwait(false);
+                    .ConfigureAwait(false);
 
             if (resolved is { } tenantId)
             {
@@ -88,7 +88,7 @@ public sealed class TenantResolutionMiddleware(
 
         if (resolvedStrategyName is not null)
         {
-            // Optional gate (WO-061/P-400): "not registered" (null) always passes through
+            // Optional gate: "not registered" (null) always passes through
             // unchanged — only a registered validator returning false fails closed. Null-safe on
             // RequestServices itself, which is null for a bare HttpContext never routed through the
             // real ASP.NET Core hosting pipeline (e.g. a DefaultHttpContext built directly in a
@@ -97,7 +97,7 @@ public sealed class TenantResolutionMiddleware(
             var isActive = statusValidator is null
                 || await statusValidator
                     .IsActiveAsync(resolvedTenantId, context.RequestAborted)
-                    .ConfigureAwait(false);
+                        .ConfigureAwait(false);
 
             if (isActive)
             {

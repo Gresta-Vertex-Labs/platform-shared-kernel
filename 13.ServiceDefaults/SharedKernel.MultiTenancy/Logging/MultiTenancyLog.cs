@@ -8,7 +8,7 @@ namespace SharedKernel.MultiTenancy.Logging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This package's first-ever production logging (WO-061/P-395). Reserves <c>EventId</c> range
+/// This package's first-ever production logging. Reserves <c>EventId</c> range
 /// <c>13100</c>–<c>13199</c> within <c>01.Core</c>'s platform-wide <c>13000</c>–<c>13999</c> domain
 /// block (the sibling package, <c>SharedKernel.ServiceDefaults</c>, owns
 /// <c>13000</c>–<c>13099</c> via <c>ServiceDefaults.Logging.ServiceDefaultsLog</c>).

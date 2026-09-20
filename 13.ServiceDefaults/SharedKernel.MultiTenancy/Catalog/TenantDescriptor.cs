@@ -26,7 +26,7 @@ namespace SharedKernel.MultiTenancy.Catalog;
 /// <param name="DefaultCulture">
 /// A bare BCL culture name (e.g. <c>"en-US"</c>), or <see langword="null"/> when the tenant has no
 /// configured default culture. Forward-compatible for <c>13.ServiceDefaults</c>'s
-/// <c>AddSharedKernelLocalization</c> (WO-078/P-483) — no localization logic exists anywhere in
+/// <c>AddSharedKernelLocalization</c> — no localization logic exists anywhere in
 /// this type; it is a plain data carrier.
 /// </param>
 /// <param name="Settings">

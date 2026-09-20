@@ -30,7 +30,7 @@ public static class MultiTenancyExtensions
     /// <see cref="Guid.Empty"/> — a silent (zero-rows) failure mode by design, not a crash.
     /// </para>
     /// <para>
-    /// <b>Startup-time validation (WO-061/P-396):</b> <see cref="TenantResolutionOptions"/> is
+    /// <b>Startup-time validation:</b> <see cref="TenantResolutionOptions"/> is
     /// registered with <c>.ValidateOnStart()</c>, backed by <see cref="TenantResolutionOptionsValidator"/>
     /// — a genuine DI-aware cross-check against the real registered
     /// <see cref="ITenantResolutionStrategy"/> set. A host with an empty or DI-unmatched

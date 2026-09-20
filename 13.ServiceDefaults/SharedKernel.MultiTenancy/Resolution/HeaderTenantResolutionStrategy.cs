@@ -19,7 +19,7 @@ public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTen
     /// <c>01.Core</c>'s <see cref="WellKnownHeaders.TenantId"/> so this header name cannot drift
     /// independently from the identical literal used by
     /// <c>11.Communication.Rest.TenantIdDelegatingHandler</c> and
-    /// <c>11.Communication.Grpc.TenantIdInterceptor</c> (WO-042/P-261).
+    /// <c>11.Communication.Grpc.TenantIdInterceptor</c>.
     /// </summary>
     public const string DefaultHeaderName = WellKnownHeaders.TenantId;
 

@@ -22,7 +22,7 @@ namespace SharedKernel.MultiTenancy.Extensions;
 /// and <c>ValidateOnStart()</c>'s validation pass runs against the ROOT service provider — a
 /// Scoped constructor dependency on a Singleton validator is the same captive-dependency pitfall
 /// <c>SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions</c> documents for its
-/// own <c>IMtlsCertificateValidator</c> resolution (WO-058/P-378). <see cref="Validate"/> instead
+/// own <c>IMtlsCertificateValidator</c> resolution. <see cref="Validate"/> instead
 /// creates a fresh <see cref="IServiceScope"/> per validation call — the same safe pattern that
 /// precedent established — so the real, currently-registered strategy set (including any custom
 /// strategy a consumer adds after calling <see cref="MultiTenancyExtensions.AddSharedKernelMultiTenancy"/>)
@@ -52,9 +52,9 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
 
         var duplicates = strategyOrder
             .GroupBy(strategyName => strategyName, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToArray();
+                .Where(group => group.Count() > 1)
+                    .Select(group => group.Key)
+                        .ToArray();
 
         if (duplicates.Length > 0)
         {
@@ -66,12 +66,12 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
         using var scope = serviceProvider.CreateScope();
         var registeredNames = scope.ServiceProvider
             .GetServices<ITenantResolutionStrategy>()
-            .Select(s => s.StrategyName)
-            .ToHashSet(StringComparer.Ordinal);
+                .Select(s => s.StrategyName)
+                    .ToHashSet(StringComparer.Ordinal);
 
         var unmatched = strategyOrder
             .Where(strategyName => !registeredNames.Contains(strategyName))
-            .ToArray();
+                .ToArray();
 
         if (unmatched.Length > 0)
         {
