@@ -29,11 +29,16 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <item>
 /// <description>
 /// <c>entry.Outcome == AuditOutcome.Succeeded</c>: the new record is written on the SAME database
-/// connection and transaction as the caller's own business write, when one is active (the EF Core
-/// implementation resolves this via <c>IAmbientDbTransaction</c>). It commits or rolls back
-/// ATOMICALLY together with that business write — if something else in the same transaction later
-/// fails and the whole transaction rolls back, this "succeeded" record vanishes with it, which is
-/// correct: the business action it describes did not, in the end, actually happen either.
+/// connection and transaction as the caller's own business write — REQUIRED, never merely preferred
+/// (the EF Core implementation resolves this via <c>IAmbientDbTransaction</c>). It commits or rolls
+/// back ATOMICALLY together with that business write — if something else in the same transaction
+/// later fails and the whole transaction rolls back, this "succeeded" record vanishes with it, which
+/// is correct: the business action it describes did not, in the end, actually happen either. Calling
+/// this with <c>Outcome.Succeeded</c> while NO ambient transaction is active throws
+/// <see cref="InvalidOperationException"/> rather than silently falling back to a standalone,
+/// independently-committed write — an unconditional "succeeded" attestation with no transactional tie
+/// to the business write it describes would be worse than no attestation at all: it could commit
+/// before, and regardless of, a business write that never actually happens.
 /// </description>
 /// </item>
 /// <item>
@@ -62,10 +67,21 @@ public interface IAuditTrailWriter
     /// <param name="entry">The caller-supplied audit entry to record.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The fully-resolved <see cref="AuditRecord"/> that was written.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="entry"/>.<see cref="AuditEntry.Outcome"/> is <see cref="AuditOutcome.Succeeded"/>
+    /// but no ambient database transaction is active — see type-level remarks.
+    /// </exception>
     /// <remarks>
+    /// <para>
     /// When <paramref name="entry"/>.<see cref="AuditEntry.IdempotencyKey"/> is set and a record with
     /// the same key already exists in the target chain, this call is retry-safe: it returns the
-    /// EXISTING record rather than appending a duplicate.
+    /// EXISTING record rather than appending a duplicate — PROVIDED <paramref name="entry"/> describes
+    /// the SAME logical event (<see cref="AuditEntry.Action"/>, <see cref="AuditEntry.ResourceType"/>,
+    /// <see cref="AuditEntry.ResourceId"/> and <see cref="AuditEntry.Outcome"/> all match the existing
+    /// record). Reusing an idempotency key for a genuinely DIFFERENT event throws
+    /// <see cref="InvalidOperationException"/> rather than silently discarding it — an idempotency key
+    /// must uniquely identify one logical audit event.
+    /// </para>
     /// </remarks>
     Task<AuditRecord> RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default);
 }

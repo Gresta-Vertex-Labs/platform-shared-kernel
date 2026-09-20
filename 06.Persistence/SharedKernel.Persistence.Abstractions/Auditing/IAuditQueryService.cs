@@ -87,38 +87,48 @@ public interface IAuditQueryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Streams every record in a <c>(TenantId, ResourceType)</c> chain whose <see cref="AuditRecord.OccurredOn"/>
-    /// falls within <c>[from, to]</c>, in <see cref="AuditRecord.Sequence"/> order, without buffering
-    /// the whole range in memory.
+    /// Streams every record in the CALLER'S OWN <c>(TenantId, ResourceType)</c> chain whose
+    /// <see cref="AuditRecord.OccurredOn"/> falls within <c>[from, to]</c>, in
+    /// <see cref="AuditRecord.Sequence"/> order, without buffering the whole range in memory.
     /// </summary>
-    /// <param name="tenantId">The tenant partition to export, or <see langword="null"/> for the system chain.</param>
     /// <param name="resourceType">The resource-type partition to export.</param>
     /// <param name="from">The inclusive start of the <see cref="AuditRecord.OccurredOn"/> range.</param>
     /// <param name="to">The inclusive end of the <see cref="AuditRecord.OccurredOn"/> range.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <remarks>
+    /// The tenant is resolved from the caller's own <see cref="ICurrentTenantContext"/> — see type-level
+    /// remarks; there is deliberately no <c>tenantId</c> parameter here to forge. A system/background
+    /// caller (<see cref="ICurrentTenantContext.TenantId"/> <see langword="null"/>) exports the system
+    /// chain.
+    /// </remarks>
     IAsyncEnumerable<AuditRecord> ExportRangeAsync(
-        Guid? tenantId,
         string resourceType,
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Verifies the ENTIRE <c>(tenantId, resourceType)</c> chain, from its first record
-    /// (<see cref="AuditRecord.Sequence"/> 1) to its current head, detecting any tampered record, any
-    /// gap (a deleted or reordered record), and any broken chain link.
+    /// Verifies the ENTIRE <c>(TenantId, resourceType)</c> chain for the CALLER'S OWN tenant, from its
+    /// first record (<see cref="AuditRecord.Sequence"/> 1) to its current head, detecting any tampered
+    /// record, any gap (a deleted or reordered record), and any broken chain link.
     /// </summary>
-    /// <param name="tenantId">The tenant partition to verify, or <see langword="null"/> for the system chain.</param>
     /// <param name="resourceType">The resource-type partition to verify.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
+    /// <para>
+    /// The tenant is resolved from the caller's own <see cref="ICurrentTenantContext"/> — see
+    /// type-level remarks; there is deliberately no <c>tenantId</c> parameter here to forge. A
+    /// system/background caller (<see cref="ICurrentTenantContext.TenantId"/> <see langword="null"/>)
+    /// verifies the system chain.
+    /// </para>
+    /// <para>
     /// <strong>Cannot detect tail truncation on its own</strong> — a chain missing its last N records
     /// looks identical to a chain that genuinely only ever had that many; nothing on record proves a
     /// later record ever existed. Detecting that requires an independently-stored, previously-created
     /// <see cref="AuditChainCheckpoint"/> — see <see cref="VerifyChainFromCheckpointAsync"/>.
+    /// </para>
     /// </remarks>
     Task<AuditChainVerificationResult> VerifyFullChainAsync(
-        Guid? tenantId,
         string resourceType,
         CancellationToken cancellationToken = default);
 

@@ -40,7 +40,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <para>
 /// <strong>Sequence, not wall-clock time, orders the chain:</strong> <see cref="Sequence"/> is a
 /// per-chain-monotonic, contiguous <see cref="long"/> assigned by the writer under a per-chain lock at
-/// append time — never derived from <see cref="OccurredOn"/>. <see cref="IAuditQueryService.VerifyChainIntegrityAsync"/>
+/// append time — never derived from <see cref="OccurredOn"/>. <see cref="IAuditQueryService.VerifyFullChainAsync"/>
 /// and its checkpoint-anchored counterpart walk the chain strictly in <see cref="Sequence"/> order, so
 /// clock skew between concurrent writers (different machines, different NTP drift) can never produce a
 /// false "broken chain" report the way ordering by <see cref="OccurredOn"/> could.
