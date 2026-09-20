@@ -5,6 +5,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.Persistence.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- P-557/W6: AuditTrailWriterBridgeTests exercises the real AuditingBehavior<,> directly. -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -20,5 +22,6 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="MediatR" />
   </ItemGroup>
 </Project>
