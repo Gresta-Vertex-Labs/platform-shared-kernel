@@ -96,14 +96,18 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         var sqlGenerationHelper = context.GetService<ISqlGenerationHelper>();
         var targets = BuildTargets(context.Model, sqlGenerationHelper);
 
-        var startEntityIndex = 0;
-        object? resumeAfter = null;
+        // Identified BY NAME (RotationTarget.CheckpointKey), never by position — see EncryptionRotationCheckpoint's
+        // remarks for why a positional index cannot survive an '.Encrypt(...)' property being added to or removed
+        // from the model between the call that produced this checkpoint and this one.
+        var completed = new HashSet<string>(StringComparer.Ordinal);
+        string? inProgressTargetKey = null;
+        var lastPrimaryKeyText = "";
         if (checkpointToken is not null)
         {
             var checkpoint = EncryptionRotationCheckpoint.Decode(checkpointToken);
-            startEntityIndex = checkpoint.EntityTypeIndex;
-            if (startEntityIndex < targets.Count)
-                resumeAfter = ParsePrimaryKeyText(checkpoint.LastPrimaryKeyText, targets[startEntityIndex].KeyKind);
+            completed = new HashSet<string>(checkpoint.CompletedTargetKeys, StringComparer.Ordinal);
+            inProgressTargetKey = checkpoint.InProgressTargetKey;
+            lastPrimaryKeyText = checkpoint.LastPrimaryKeyText;
         }
 
         var connection = context.Database.GetDbConnection();
@@ -114,24 +118,44 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         long rowsProcessed = 0;
         long rowsRotated = 0;
         long rowsFailed = 0;
+        long rowsSkippedUnparseable = 0;
         var remaining = new Dictionary<string, long>(StringComparer.Ordinal);
 
         try
         {
-            for (var entityIndex = startEntityIndex; entityIndex < targets.Count; entityIndex++)
+            foreach (var target in targets)
             {
-                var target = targets[entityIndex];
-                var after = entityIndex == startEntityIndex ? resumeAfter : null;
+                // Already fully scanned by a previous call — durable by name, immune to every other target's
+                // position shifting around it.
+                if (completed.Contains(target.CheckpointKey))
+                    continue;
+
+                var after = string.Equals(target.CheckpointKey, inProgressTargetKey, StringComparison.Ordinal)
+                    ? ParsePrimaryKeyText(lastPrimaryKeyText, target.KeyKind)
+                    : null;
 
                 while (true)
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        var token = new EncryptionRotationCheckpoint(entityIndex, FormatPrimaryKeyText(after, target.KeyKind)).Encode();
+                        var token = new EncryptionRotationCheckpoint(
+                            [.. completed], target.CheckpointKey, FormatPrimaryKeyText(after, target.KeyKind)).Encode();
                         var partialRemaining = remaining
                             .Where(kv => kv.Value > 0 && !string.Equals(kv.Key, expectedCurrentKeyId, StringComparison.Ordinal))
                                 .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-                        return new EncryptionRotationReport(rowsProcessed, rowsRotated, rowsFailed, false, token, partialRemaining);
+
+                        // Surface progress made before cancellation the same way a completed run does — an
+                        // operator watching the meter should see a cancelled/resumed run's progress too, not only
+                        // a run that happened to finish in one call.
+                        foreach (var (keyId, count) in partialRemaining)
+                            EncryptionMeter.RecordRotationRowsFailed(keyId, count);
+                        if (rowsRotated > 0)
+                            EncryptionMeter.RecordRotationRowsRotated(expectedCurrentKeyId, rowsRotated);
+                        if (rowsSkippedUnparseable > 0)
+                            EncryptionMeter.RecordRotationRowsSkippedUnparseable("(model)", rowsSkippedUnparseable);
+
+                        return new EncryptionRotationReport(
+                            rowsProcessed, rowsRotated, rowsFailed, rowsSkippedUnparseable, false, token, partialRemaining);
                     }
 
                     var page = await ReadPageAsync(connection, target, after, batchSize, cancellationToken).ConfigureAwait(false);
@@ -143,8 +167,21 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
                         rowsProcessed++;
                         after = row.PrimaryKey;
 
-                        if (row.Ciphertext is null || !EncryptedPayload.TryParse(row.Ciphertext, out var payload))
+                        // A NULL stored value (a nullable encrypted property never populated) is not this job's
+                        // concern at all — nothing to rotate, not a skip. A NON-NULL value that fails to parse is
+                        // different: either a column still mid-migration (see EncryptionOptions.AllowUnencryptedValues)
+                        // or corrupted data — either way, silently moving on without counting it hides exactly the
+                        // information an operator needs before trusting a "rotation complete" report and retiring
+                        // the old key.
+                        if (row.Ciphertext is null)
                             continue;
+
+                        if (!EncryptedPayload.TryParse(row.Ciphertext, out var payload))
+                        {
+                            rowsSkippedUnparseable++;
+                            EncryptionLog.RotationRowUnparseable(_logger, target.EntityTypeName);
+                            continue;
+                        }
 
                         remaining[payload.KeyId] = remaining.GetValueOrDefault(payload.KeyId) + 1;
 
@@ -167,7 +204,13 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
 
                         string? newBlindIndex = null;
                         if (target.BlindIndexColumn is not null)
-                            newBlindIndex = await ComputeBlindIndexAsync(target, row, reencrypted.Value, aad, cancellationToken).ConfigureAwait(false);
+                        {
+                            // Pinned to the SAME currentKey RotateAsync already validated above — never the
+                            // (possibly stale) ambient ISynchronousEncryptionKeyProvider — see
+                            // IBlindIndexService.Compute(CryptographicKey, ...)'s remarks for why.
+                            newBlindIndex = await ComputeBlindIndexAsync(target, row, reencrypted.Value, aad, currentKey, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
 
                         var applied = await CompareAndSwapAsync(
                             connection, target, row.PrimaryKey, row.Ciphertext, reencrypted.Value.ToString(), newBlindIndex, cancellationToken)
@@ -185,9 +228,10 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
                         }
                     }
 
-                    EncryptionLog.RotationBatchProcessed(
-                        _logger, target.EntityTypeName, page.Count, expectedCurrentKeyId, after?.ToString() ?? "(none)");
+                    EncryptionLog.RotationBatchProcessed(_logger, target.EntityTypeName, page.Count, expectedCurrentKeyId);
                 }
+
+                completed.Add(target.CheckpointKey);
             }
         }
         finally
@@ -202,13 +246,16 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
             EncryptionMeter.RecordRotationRowsFailed(keyId, count);
 
         EncryptionMeter.RecordRotationRowsRotated(expectedCurrentKeyId, rowsRotated);
-        EncryptionLog.RotationCompleted(_logger, "(model)", expectedCurrentKeyId, rowsProcessed, rowsRotated, rowsFailed);
+        if (rowsSkippedUnparseable > 0)
+            EncryptionMeter.RecordRotationRowsSkippedUnparseable("(model)", rowsSkippedUnparseable);
 
-        return new EncryptionRotationReport(rowsProcessed, rowsRotated, rowsFailed, true, null, remainingOutstanding);
+        EncryptionLog.RotationCompleted(_logger, "(model)", expectedCurrentKeyId, rowsProcessed, rowsRotated, rowsFailed, rowsSkippedUnparseable);
+
+        return new EncryptionRotationReport(rowsProcessed, rowsRotated, rowsFailed, rowsSkippedUnparseable, true, null, remainingOutstanding);
     }
 
     private async Task<string?> ComputeBlindIndexAsync(
-        RotationTarget target, RotationRow row, EncryptedPayload reencrypted, byte[] aad, CancellationToken cancellationToken)
+        RotationTarget target, RotationRow row, EncryptedPayload reencrypted, byte[] aad, CryptographicKey currentKey, CancellationToken cancellationToken)
     {
         var service = ResolveService(target.Purpose, target.PerTenantKey, row.TenantId);
         var decrypted = await service.DecryptAsync(reencrypted, aad, cancellationToken).ConfigureAwait(false);
@@ -219,7 +266,7 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         {
             var plaintext = Encoding.UTF8.GetString(decrypted.Value);
             var normalized = target.Normalize is null ? plaintext : target.Normalize(plaintext);
-            return _blindIndexService.Compute(target.Purpose, normalized, row.TenantId);
+            return _blindIndexService.Compute(currentKey, target.Purpose, normalized, row.TenantId);
         }
         finally
         {
@@ -430,6 +477,7 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
 
                 targets.Add(new RotationTarget(
                     EntityTypeName: entityType.Name,
+                    PropertyPath: propertyPath,
                     Table: table,
                     PrimaryKeyColumn: sqlGenerationHelper.DelimitIdentifier(pkProperty.GetColumnName()),
                     KeyKind: keyKind,
@@ -447,6 +495,7 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
 
     private sealed record RotationTarget(
         string EntityTypeName,
+        string PropertyPath,
         string Table,
         string PrimaryKeyColumn,
         RotationKeyKind KeyKind,
@@ -463,6 +512,11 @@ public sealed class EncryptionRotationService<TContext> : IEncryptionRotationJob
         // relational provider this platform ships (PostgreSQL today; SQL Server/SQLite also accept it via
         // their own compatibility, but this package is validated against PostgreSQL only).
         public string OrderByLimitClause(int batchSize) => $"LIMIT {batchSize}";
+
+        // The durable checkpoint identity for this target — see EncryptionRotationCheckpoint's remarks. Two
+        // different '.Encrypt(...)' properties on the SAME entity type (e.g. Email and Ssn) share EntityTypeName
+        // but never PropertyPath, so this is unique across the whole model without needing anything positional.
+        public string CheckpointKey => $"{EntityTypeName}::{PropertyPath}";
     }
 
     private sealed record RotationRow(object PrimaryKey, string? Ciphertext, Guid? TenantId);

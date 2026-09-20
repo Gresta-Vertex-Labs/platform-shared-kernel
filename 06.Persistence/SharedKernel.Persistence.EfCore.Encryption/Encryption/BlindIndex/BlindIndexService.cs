@@ -28,18 +28,22 @@ internal sealed class BlindIndexService : IBlindIndexService
     }
 
     /// <inheritdoc />
-    public string Compute(string purpose, string normalizedValue, Guid? tenantId)
+    public string Compute(string purpose, string normalizedValue, Guid? tenantId) =>
+        Compute(_keyProvider.GetCurrentKey(), purpose, normalizedValue, tenantId);
+
+    /// <inheritdoc />
+    public string Compute(CryptographicKey key, string purpose, string normalizedValue, Guid? tenantId)
     {
+        ArgumentNullException.ThrowIfNull(key);
         ArgumentException.ThrowIfNullOrEmpty(purpose);
         ArgumentNullException.ThrowIfNull(normalizedValue);
 
-        var rootKey = _keyProvider.GetCurrentKey();
         var context = tenantId is { } id ? id.ToByteArray() : ReadOnlySpan<byte>.Empty;
 
         Span<byte> subkey = stackalloc byte[32];
         try
         {
-            SubkeyDerivation.DeriveKey(rootKey.Material, $"blindindex:{purpose}", context, subkey);
+            SubkeyDerivation.DeriveKey(key.Material, $"blindindex:{purpose}", context, subkey);
             var hmac = _hmacSigner.Sign(Encoding.UTF8.GetBytes(normalizedValue), subkey);
             return Convert.ToHexStringLower(hmac);
         }

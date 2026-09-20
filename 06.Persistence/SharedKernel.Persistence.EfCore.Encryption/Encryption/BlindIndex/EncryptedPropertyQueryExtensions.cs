@@ -62,8 +62,22 @@ public static class EncryptedPropertyQueryExtensions
             [typeof(string)],
             parameter,
             Expression.Constant(shadowPropertyName));
+
+        // EF.Parameter(...) forces the query pipeline to treat blindIndex as a query PARAMETER, never a SQL
+        // literal — without it, a hand-built Expression.Constant here (this predicate is assembled directly via
+        // Expression APIs, not compiled from C# lambda syntax, so it never goes through the closure-capture shape
+        // EF Core's own constant-parameterization heuristics are tuned for) risks the 64-character HMAC digest of
+        // the caller's plaintext — a keyed pseudonym of what is very often PII — being rendered inline in
+        // CommandText, and therefore into provider query logs even without EnableSensitiveDataLogging (which gates
+        // parameter values, not literals baked into the command text), and defeats plan-cache reuse for the
+        // hottest query shape this package offers.
+        var blindIndexParameter = Expression.Call(
+            typeof(EF),
+            nameof(EF.Parameter),
+            [typeof(string)],
+            Expression.Constant(blindIndex));
         var predicate = Expression.Lambda<Func<T, bool>>(
-            Expression.Equal(shadowAccess, Expression.Constant(blindIndex)),
+            Expression.Equal(shadowAccess, blindIndexParameter),
             parameter);
 
         return query.Where(predicate);

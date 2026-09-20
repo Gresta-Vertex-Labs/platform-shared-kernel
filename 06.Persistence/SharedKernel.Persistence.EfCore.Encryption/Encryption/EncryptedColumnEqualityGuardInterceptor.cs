@@ -51,7 +51,7 @@ public sealed class EncryptedColumnEqualityGuardInterceptor : DbCommandIntercept
     /// </summary>
     public const string DisableTagText = "SharedKernel:Persistence:Encryption:AllowEncryptedColumnEquality";
 
-    private readonly ConditionalWeakTable<IModel, (string ColumnName, Regex Pattern)[]> _guardedColumnsByModel = new();
+    private readonly ConditionalWeakTable<IModel, (string ColumnName, bool HasBlindIndex, Regex Pattern)[]> _guardedColumnsByModel = new();
 
     /// <inheritdoc />
     public override InterceptionResult<System.Data.Common.DbDataReader> ReaderExecuting(
@@ -84,16 +84,18 @@ public sealed class EncryptedColumnEqualityGuardInterceptor : DbCommandIntercept
 
         var guardedColumns = _guardedColumnsByModel.GetValue(context.Model, static model => BuildGuardedColumnList(model));
 
-        foreach (var (columnName, pattern) in guardedColumns)
+        foreach (var (columnName, hasBlindIndex, pattern) in guardedColumns)
         {
-            if (pattern.IsMatch(command.CommandText))
-            {
-                throw new InvalidOperationException(
-                    $"A generated query appears to filter encrypted column '{columnName}' by equality. This " +
-                    "column holds ciphertext, so the filter can never match — encrypted properties without " +
-                    "'.WithBlindIndex()' cannot be searched by value. Add '.WithBlindIndex()' to the property and " +
-                    "query with EncryptedPropertyQueryExtensions.WhereBlindIndexEquals instead.");
-            }
+            if (!pattern.IsMatch(command.CommandText))
+                continue;
+
+            var remedy = hasBlindIndex
+                ? "Query with EncryptedPropertyQueryExtensions.WhereBlindIndexEquals instead of a direct equality comparison."
+                : "Add '.WithBlindIndex()' to the property, then query with EncryptedPropertyQueryExtensions.WhereBlindIndexEquals instead.";
+
+            throw new InvalidOperationException(
+                $"A generated query appears to filter encrypted column '{columnName}' by equality. This " +
+                $"column holds ciphertext, so the filter can never match. {remedy}");
         }
     }
 
@@ -102,26 +104,31 @@ public sealed class EncryptedColumnEqualityGuardInterceptor : DbCommandIntercept
     // equality/Contains filter compiles to. Deliberately independent of ISqlGenerationHelper.DelimitIdentifier,
     // whose quoting is provider- and identifier-dependent (a simple lowercase identifier is often left
     // unquoted) and therefore cannot be relied on to match the generated SQL text verbatim.
-    private static (string ColumnName, Regex Pattern)[] BuildGuardedColumnList(IModel model)
+    //
+    // A blind-indexed column is GUARDED TOO, not exempted: it is exactly the column a caller is most likely to
+    // reach for a naive '==' against, since (unlike a non-indexed encrypted column) it visibly LOOKS searchable.
+    // The regex only ever matches the ENCRYPTED column's own physical name (e.g. "email"), never the separate
+    // blind-index shadow column's name (e.g. "email_blind_index") that WhereBlindIndexEquals itself compiles a
+    // filter against — the two are different columns, so guarding the former can never false-positive on the
+    // latter.
+    private static (string ColumnName, bool HasBlindIndex, Regex Pattern)[] BuildGuardedColumnList(IModel model)
     {
-        var columns = new List<(string, Regex)>();
+        var columns = new List<(string, bool, Regex)>();
 
         void AddIfGuarded(IProperty property)
         {
             if (property.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is null)
                 return;
 
-            if (property.FindAnnotation(PropertyBuilderEncryptExtensions.BlindIndexAnnotationKey)?.Value is true)
-                return;
-
             var columnName = property.GetColumnName();
             if (columnName is null || columns.Exists(c => c.Item1 == columnName))
                 return;
 
+            var hasBlindIndex = property.FindAnnotation(PropertyBuilderEncryptExtensions.BlindIndexAnnotationKey)?.Value is true;
             var pattern = new Regex(
                 $@"\.""?{Regex.Escape(columnName)}""?\s*(=|IN\b)",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
-            columns.Add((columnName, pattern));
+            columns.Add((columnName, hasBlindIndex, pattern));
         }
 
         foreach (var entityType in model.GetEntityTypes())

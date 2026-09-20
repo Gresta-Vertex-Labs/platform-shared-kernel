@@ -2,6 +2,7 @@
 SharedKernel.Persistence.EfCore.Encryption.BlindIndex.EncryptedPropertyQueryExtensions
 SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService
 SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService.Compute(string! purpose, string! normalizedValue, System.Guid? tenantId) -> string!
+SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService.Compute(SharedKernel.Cryptography.Symmetric.CryptographicKey! key, string! purpose, string! normalizedValue, System.Guid? tenantId) -> string!
 SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter
 SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor
 SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.EncryptedColumnEqualityGuardInterceptor() -> void
@@ -47,8 +48,8 @@ SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Che
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.CheckpointToken.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Completed.get -> bool
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Completed.init -> void
-SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Deconstruct(out long RowsProcessed, out long RowsRotated, out long RowsFailed, out bool Completed, out string? CheckpointToken, out System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
-SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.EncryptionRotationReport(long RowsProcessed, long RowsRotated, long RowsFailed, bool Completed, string? CheckpointToken, System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Deconstruct(out long RowsProcessed, out long RowsRotated, out long RowsFailed, out long RowsSkippedUnparseable, out bool Completed, out string? CheckpointToken, out System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.EncryptionRotationReport(long RowsProcessed, long RowsRotated, long RowsFailed, long RowsSkippedUnparseable, bool Completed, string? CheckpointToken, System.Collections.Generic.IReadOnlyDictionary<string!, long>! RowsRemainingByKeyId) -> void
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Equals(SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport? other) -> bool
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsFailed.get -> long
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsFailed.init -> void
@@ -58,6 +59,8 @@ SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.Row
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRemainingByKeyId.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRotated.get -> long
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsRotated.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsSkippedUnparseable.get -> long
+SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport.RowsSkippedUnparseable.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>.EncryptionRotationService(Microsoft.EntityFrameworkCore.IDbContextFactory<TContext!>! contextFactory, SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService! encryptionService, SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider! keyProvider, SharedKernel.Persistence.EfCore.Encryption.BlindIndex.IBlindIndexService! blindIndexService, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext!>!>! logger) -> void
 SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationService<TContext>.RotateAsync(string! expectedCurrentKeyId, string? checkpointToken = null, int batchSize = 500, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Encryption.Rotation.EncryptionRotationReport!>!
@@ -67,6 +70,7 @@ const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Dec
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.EncryptFailuresTotal = "persistence.encryption.encrypt_failures" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Name = "SharedKernel.Persistence.EfCore.Encryption" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RotationRowsFailedTotal = "persistence.encryption.rotation_rows_failed" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RotationRowsSkippedUnparseableTotal = "persistence.encryption.rotation_rows_skipped_unparseable" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RotationRowsRotatedTotal = "persistence.encryption.rotation_rows_rotated" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.EncryptedColumnEqualityGuardInterceptor.DisableTagText = "SharedKernel:Persistence:Encryption:AllowEncryptedColumnEquality" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.MaxPurposeLength = 200 -> int
@@ -79,6 +83,7 @@ static SharedKernel.Persistence.EfCore.Encryption.BlindIndex.EncryptedPropertyQu
 static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordDecryptFailure(string! reason) -> void
 static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordEncryptFailure(string! reason) -> void
 static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordRotationRowsFailed(string! sourceKeyId, long count) -> void
+static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordRotationRowsSkippedUnparseable(string! entityType, long count) -> void
 static SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.RecordRotationRowsRotated(string! targetKeyId, long count) -> void
 static SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions.SectionName.get -> string!
 static SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions.WithEncryption<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Persistence.EfCore.Encryption.EncryptionOptions!>? configure = null) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!

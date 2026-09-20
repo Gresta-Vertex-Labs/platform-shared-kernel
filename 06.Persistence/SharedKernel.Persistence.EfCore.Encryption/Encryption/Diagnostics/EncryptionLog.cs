@@ -28,13 +28,17 @@ internal static partial class EncryptionLog
 
     /// <summary>
     /// Logged by <c>EncryptionRotationService</c> at each batch boundary. Never logs a key byte, a Base64-encoded
-    /// key string, or any column plaintext/ciphertext value — only counts and already-non-secret key id strings.
+    /// key string, a row's primary key, or any column plaintext/ciphertext value — only counts and already-
+    /// non-secret key id strings. Earlier revisions of this message logged the last-processed primary key's text
+    /// form as "checkpoint"; for a non-Guid rotation key (e.g. a string business key) that value can itself be
+    /// PII, so it was removed rather than only truncated or hashed — the resumable checkpoint token itself is
+    /// returned to the caller in <c>EncryptionRotationReport.CheckpointToken</c>, never logged.
     /// </summary>
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 301,
         Level = LogLevel.Information,
-        Message = "Encryption rotation for '{EntityType}' processed {RowsInBatch} row(s) toward key '{ToKeyId}' (checkpoint '{Checkpoint}').")]
-    internal static partial void RotationBatchProcessed(ILogger logger, string entityType, int rowsInBatch, string toKeyId, string? checkpoint);
+        Message = "Encryption rotation for '{EntityType}' processed {RowsInBatch} row(s) toward key '{ToKeyId}'.")]
+    internal static partial void RotationBatchProcessed(ILogger logger, string entityType, int rowsInBatch, string toKeyId);
 
     /// <summary>
     /// Logged by <c>EncryptionRotationService</c> once, on overall completion of a rotation run. Never logs a key
@@ -43,8 +47,9 @@ internal static partial class EncryptionLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 302,
         Level = LogLevel.Information,
-        Message = "Encryption rotation for '{EntityType}' to key '{ToKeyId}' completed: {RowsProcessed} processed, {RowsRotated} rotated, {RowsFailed} failed.")]
-    internal static partial void RotationCompleted(ILogger logger, string entityType, string toKeyId, long rowsProcessed, long rowsRotated, long rowsFailed);
+        Message = "Encryption rotation for '{EntityType}' to key '{ToKeyId}' completed: {RowsProcessed} processed, {RowsRotated} rotated, {RowsFailed} failed, {RowsSkippedUnparseable} skipped (unparseable).")]
+    internal static partial void RotationCompleted(
+        ILogger logger, string entityType, string toKeyId, long rowsProcessed, long rowsRotated, long rowsFailed, long rowsSkippedUnparseable);
 
     /// <summary>
     /// Logged by <c>EncryptionRotationService</c> when a row's compare-and-swap update did not match — another
@@ -56,4 +61,17 @@ internal static partial class EncryptionLog
         Level = LogLevel.Debug,
         Message = "Encryption rotation for '{EntityType}' skipped one row: a concurrent writer changed it between read and re-encrypt.")]
     internal static partial void RotationRowConcurrentlyModified(ILogger logger, string entityType);
+
+    /// <summary>
+    /// Logged by <c>EncryptionRotationService</c> when a row's stored value was neither <see langword="null"/> nor
+    /// a parseable encrypted payload — left un-rotated and counted in
+    /// <c>EncryptionRotationReport.RowsSkippedUnparseable</c>. Warning, not Debug: unlike a concurrent-write
+    /// collision, this needs a human to look at the data, not just a second rotation pass. The row's primary key
+    /// and the stored value are never logged.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 304,
+        Level = LogLevel.Warning,
+        Message = "Encryption rotation for '{EntityType}' skipped one row: its stored value did not parse as an encrypted payload.")]
+    internal static partial void RotationRowUnparseable(ILogger logger, string entityType);
 }

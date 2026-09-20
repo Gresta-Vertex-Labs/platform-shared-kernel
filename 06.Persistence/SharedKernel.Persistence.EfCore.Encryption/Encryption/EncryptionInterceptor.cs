@@ -313,7 +313,21 @@ public sealed class EncryptionInterceptor : ISaveChangesInterceptor, IMaterializ
                 var aad = AssociatedDataBuilder.Build(purpose, GetPrimaryKey(), tenantId);
                 var service = ResolveService(purpose, perTenantKey, tenantId);
 
-                propertyEntry.CurrentValue = service.EncryptToString(plaintext, aad);
+                try
+                {
+                    propertyEntry.CurrentValue = service.EncryptToString(plaintext, aad);
+                }
+                catch (Exception)
+                {
+                    // Never a silent failure: EncryptToString can throw (e.g. misconfigured key material — see
+                    // AesGcmCipher.EnsureKeySize), and until this metric existed the encrypt write path had no
+                    // failure telemetry at all. The exception itself already carries the diagnostic detail; the
+                    // metric exists so a dashboard/alert can see this without every caller instrumenting its own
+                    // SaveChanges call. Never tagged with a key id, property name, or any plaintext/ciphertext
+                    // value — see EncryptionMeter's own remarks.
+                    EncryptionMeter.RecordEncryptFailure("encrypt_failed");
+                    throw;
+                }
 
                 if (blindIndexed)
                 {

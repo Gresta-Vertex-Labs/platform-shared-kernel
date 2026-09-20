@@ -43,6 +43,10 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
         foreach (var entityType in modelBuilder.Metadata.GetEntityTypes().ToList())
         {
             var validatedRotationKeyShape = false;
+            // Every '.Encrypt(...)' purpose claimed so far on THIS entity type, keyed by purpose, valued by the
+            // property path that first claimed it — see ValidatePurposeUnique's remarks for why a purpose must be
+            // unique per row.
+            var seenPurposes = new Dictionary<string, string>(StringComparer.Ordinal);
 
             void EnsureRotationKeyShapeValidated()
             {
@@ -70,6 +74,7 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                         "supported by field-level encryption.");
                 }
 
+                ValidatePurposeUnique(entityType, seenPurposes, purpose, property.Name);
                 EnsureRotationKeyShapeValidated();
 
                 if (property.FindAnnotation(PropertyBuilderEncryptExtensions.BlindIndexAnnotationKey)?.Value is true)
@@ -102,6 +107,8 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                             "'string' — only 'string' properties are supported by field-level encryption.");
                     }
 
+                    var propertyPath = $"{complexProperty.Name}.{property.Name}";
+                    ValidatePurposeUnique(entityType, seenPurposes, purpose, propertyPath);
                     EnsureRotationKeyShapeValidated();
 
                     if (property.FindAnnotation(PropertyBuilderEncryptExtensions.BlindIndexAnnotationKey)?.Value is true)
@@ -115,6 +122,30 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                 }
             }
         }
+    }
+
+    // The authenticated associated data for an encrypted property is purpose + the OWNING ROW's primary key (+
+    // tenant id) — never a table/column component (see AssociatedDataBuilder's remarks). Two encrypted properties
+    // on the SAME entity type that share a purpose would therefore compute IDENTICAL associated data for the same
+    // row, since only the purpose can tell them apart: their ciphertext becomes freely swappable between the two
+    // columns and still passes AES-GCM authentication, silently defeating the very tamper/swap detection AAD
+    // binding exists to provide. Rejected at model-build time, once, per entity type — cheap, and the only point
+    // that can catch it before a row is ever written.
+    private static void ValidatePurposeUnique(
+        IConventionEntityType entityType, Dictionary<string, string> seenPurposes, string purpose, string propertyPath)
+    {
+        if (seenPurposes.TryGetValue(purpose, out var firstPropertyPath))
+        {
+            throw new InvalidOperationException(
+                $"'{entityType.ShortName()}.{propertyPath}' calls '.Encrypt(\"{purpose}\")', but " +
+                $"'{entityType.ShortName()}.{firstPropertyPath}' already claimed that purpose. Every " +
+                "'.Encrypt(...)' property on one entity type must have its own unique purpose — the authenticated " +
+                "associated data is purpose + primary key (+ tenant id), so two columns sharing a purpose on the " +
+                "same row would authenticate identically, letting their ciphertext be swapped between the two " +
+                "columns undetected.");
+        }
+
+        seenPurposes.Add(purpose, propertyPath);
     }
 
     // Mirrors the shape EncryptionRotationService<TContext>.BuildTargets actually rotates — see
@@ -167,6 +198,11 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
         }
     }
 
+    // The blind index is always a lowercase-hex HMAC-SHA256 digest (BlindIndexService.Compute): exactly 64
+    // characters, never more. Fixing the column at that length (instead of leaving it unbounded `text`) and
+    // indexing it is what makes WhereBlindIndexEquals an actual index lookup rather than a sequential scan.
+    private const int BlindIndexLength = 64;
+
     // shadowPropertyNameBase is property.Name for a direct entity property, or "{ComplexPropertyName}_{property.Name}"
     // for a property inside a complex type — always added on entityType, since a complex type has no table of its
     // own to add a shadow property to.
@@ -183,5 +219,8 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                 $"'{entityType.ShortName()}' — a property with that name may already exist with an incompatible shape.");
 
         shadowProperty.IsRequired(false);
+        shadowProperty.HasMaxLength(BlindIndexLength);
+
+        entityType.Builder.HasIndex([shadowPropertyName]);
     }
 }

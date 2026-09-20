@@ -32,6 +32,13 @@ public static class EncryptionMeter
     /// <summary>Counter name: the number of rows an <c>IEncryptionRotationJob</c> run failed to rotate, tagged with the source key id.</summary>
     public const string RotationRowsFailedTotal = "persistence.encryption.rotation_rows_failed";
 
+    /// <summary>
+    /// Counter name: the number of rows an <c>IEncryptionRotationJob</c> run skipped because their stored value did
+    /// not parse as an encrypted payload, tagged with the entity type name. Never tagged with a row's primary key
+    /// or any column value.
+    /// </summary>
+    public const string RotationRowsSkippedUnparseableTotal = "persistence.encryption.rotation_rows_skipped_unparseable";
+
     private static readonly Meter Instance = new(Name, "1.0");
 
     private static readonly Counter<long> EncryptFailures =
@@ -45,6 +52,9 @@ public static class EncryptionMeter
 
     private static readonly Counter<long> RotationRowsFailed =
         Instance.CreateCounter<long>(RotationRowsFailedTotal, unit: "{row}", description: "Rows a rotation run failed to re-encrypt.");
+
+    private static readonly Counter<long> RotationRowsSkippedUnparseable =
+        Instance.CreateCounter<long>(RotationRowsSkippedUnparseableTotal, unit: "{row}", description: "Rows a rotation run skipped because their stored value did not parse as an encrypted payload.");
 
     /// <summary>Records a failed encrypt attempt.</summary>
     /// <param name="reason">A short, stable, non-sensitive reason code.</param>
@@ -61,4 +71,8 @@ public static class EncryptionMeter
     /// <summary>Records rows a rotation run failed to re-encrypt away from <paramref name="sourceKeyId"/>.</summary>
     public static void RecordRotationRowsFailed(string sourceKeyId, long count) =>
         RotationRowsFailed.Add(count, new KeyValuePair<string, object?>("key_id", sourceKeyId));
+
+    /// <summary>Records rows a rotation run skipped for <paramref name="entityType"/> because they did not parse as an encrypted payload.</summary>
+    public static void RecordRotationRowsSkippedUnparseable(string entityType, long count) =>
+        RotationRowsSkippedUnparseable.Add(count, new KeyValuePair<string, object?>("entity_type", entityType));
 }

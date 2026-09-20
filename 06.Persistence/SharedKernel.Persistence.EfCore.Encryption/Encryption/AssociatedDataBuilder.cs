@@ -22,6 +22,13 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// any of those never invalidates existing ciphertext; renaming <c>purpose</c> itself does, since it is one of the
 /// bound components.
 /// </para>
+/// <para>
+/// <strong>"Another column" holds only because <c>purpose</c> is unique per entity type.</strong> Two
+/// <c>.Encrypt(...)</c> properties on the SAME entity type sharing a purpose would compute IDENTICAL AAD for the
+/// same row (only the purpose distinguishes them), making their ciphertext freely swappable between the two
+/// columns and still authenticate — <see cref="EncryptionModelConvention"/> rejects this at model-build time
+/// (<c>ValidatePurposeUnique</c>), so it can never reach a running save.
+/// </para>
 /// </remarks>
 internal static class AssociatedDataBuilder
 {
