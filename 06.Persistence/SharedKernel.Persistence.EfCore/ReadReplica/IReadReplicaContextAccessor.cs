@@ -5,7 +5,7 @@ namespace SharedKernel.Persistence.EfCore.ReadReplica;
 /// <summary>
 /// Resolves the <see cref="SharedKernelDbContext"/> instance an
 /// <c>EfReadRepository{TAggregate,TId}</c> read should execute against — either the primary
-/// context passed in, or a lazily-constructed read-replica context (WO-053/P-338).
+/// context passed in, or a lazily-constructed read-replica context.
 /// </summary>
 /// <typeparam name="TContext">
 /// The <see cref="SharedKernelDbContext"/>-derived type this accessor operates over.

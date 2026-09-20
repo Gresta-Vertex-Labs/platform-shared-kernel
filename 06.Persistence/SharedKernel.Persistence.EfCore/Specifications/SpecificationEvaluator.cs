@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Specifications;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Specifications;
 
@@ -11,19 +13,19 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// Translates an <see cref="ISpecification{T}"/> into a composable <see cref="IQueryable{T}"/>
 /// pipeline in the following strict order:
 /// <list type="number">
-///   <item><description>TagWith(spec.GetType().Name) — automatic, applied first (WO-051/P-319)</description></item>
-///   <item><description>IgnoreQueryFilters — only when <c>spec.IncludeDeleted == true</c></description></item>
-///   <item><description>Criteria (Where clause — <see langword="null"/> matches all entities)</description></item>
-///   <item><description>Keyset seek predicate — <see cref="GetKeysetQuery{TKey}"/> only; skipped on the first page (WO-051/P-317)</description></item>
-///   <item><description>Includes (expression-based Include / ThenInclude eager loading)</description></item>
-///   <item><description>StringIncludes (string-based Include paths — applied after expression includes, before ordering)</description></item>
-///   <item><description>AsSplitQuery — only when <c>spec.AsSplitQuery == true</c> (WO-051/P-318)</description></item>
-///   <item><description>OrderBy / OrderByDescending (primary sort)</description></item>
-///   <item><description>ThenBys (secondary sorts — only when a primary sort is set)</description></item>
-///   <item><description>Distinct</description></item>
-///   <item><description>AsNoTracking</description></item>
-///   <item><description>Skip / Take — paging; <strong>always the final operation</strong> for the aggregate pipeline</description></item>
-///   <item><description>Select(spec.Selector) — projection overload only; applied after Skip/Take</description></item>
+/// <item><description>TagWith(spec.GetType().Name) — automatic, applied first</description></item>
+/// <item><description>IgnoreQueryFilters(["SoftDelete"]) — only when <c>spec.IncludeDeleted == true</c>; the tenant filter is never dropped this way</description></item>
+/// <item><description>Criteria (Where clause — <see langword="null"/> matches all entities)</description></item>
+/// <item><description>Keyset seek predicate — <see cref="GetKeysetQuery{TKey}"/> only; skipped on the first page</description></item>
+/// <item><description>Includes (expression-based Include / ThenInclude eager loading)</description></item>
+/// <item><description>StringIncludes (string-based Include paths — applied after expression includes, before ordering)</description></item>
+/// <item><description>AsSplitQuery — only when <c>spec.AsSplitQuery == true</c></description></item>
+/// <item><description>Distinct (moved BEFORE ordering)</description></item>
+/// <item><description>OrderBy / OrderByDescending (primary sort)</description></item>
+/// <item><description>ThenBys (secondary sorts — only when a primary sort is set)</description></item>
+/// <item><description>AsNoTracking</description></item>
+/// <item><description>Skip / Take — paging; <strong>always the final operation</strong> for the aggregate pipeline; requires a primary sort</description></item>
+/// <item><description>Select(spec.Selector) — projection overload only; applied after Skip/Take</description></item>
 /// </list>
 /// </summary>
 /// <typeparam name="T">The entity type this evaluator operates on.</typeparam>
@@ -33,9 +35,22 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// ThenBy entries are silently ignored when no primary sort has been configured.
 /// </para>
 /// <para>
-/// <strong>Breaking change (P-080):</strong> <c>QueryableExtensions.IgnoreSoftDeleteFilter()</c>
+/// <strong>Distinct-before-ordering:</strong> applying <c>.Distinct()</c> AFTER
+/// <c>.OrderBy(...)</c> — the pre-W2 order — does not reliably produce a correctly-ordered distinct
+/// result once translated to SQL; the provider-correct shape computes the distinct set first, then
+/// orders it. Every specification's row shape and result set are identical either way; only the
+/// generated SQL's structure changes.
+/// </para>
+/// <para>
+/// <strong>Paging requires an order:</strong> <c>Skip</c>/<c>Take</c> without a
+/// primary sort produces a database-dependent, unstable row order across identical calls — this
+/// evaluator now throws <see cref="InvalidOperationException"/> rather than silently returning
+/// whatever order the storage engine happens to produce.
+/// </para>
+/// <para>
+/// <strong>Breaking change:</strong> <c>QueryableExtensions.IgnoreSoftDeleteFilter()</c>
 /// has been removed. Use <c>spec.IncludeDeleted = true</c> instead — this evaluator calls
-/// <c>.IgnoreQueryFilters()</c> automatically at step 0.
+/// <c>.IgnoreQueryFilters(["SoftDelete"])</c> automatically at step 0.
 /// </para>
 /// </remarks>
 public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
@@ -44,7 +59,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     /// <inheritdoc />
     /// <remarks>
     /// <para>
-    /// <strong>Split-query application point (WO-051/P-318):</strong> step 2c calls
+    /// <strong>Split-query application point:</strong> step 2c calls
     /// <c>.AsSplitQuery()</c> immediately after <c>StringIncludes</c> and before ordering, but only
     /// when <c>spec.</c><see cref="ISpecification{T}.AsSplitQuery"/> is <see langword="true"/>. See
     /// <see cref="ISpecification{T}.AsSplitQuery"/>'s own remarks (declared in
@@ -59,10 +74,11 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     {
         var query = inputQuery.TagWith(spec.GetType().Name);
 
-        // 0. IgnoreQueryFilters — bypasses ALL global query filters (soft-delete + tenant).
-        //    Applied before Criteria to prevent filter interference.
+        // 0. IgnoreQueryFilters — SELECTIVE: only the "SoftDelete" named filter is
+        // dropped. The "Tenant" named filter is NEVER dropped here — cross-tenant access is only
+        // possible via an explicit ICrossTenantScope.
         if (spec.IncludeDeleted)
-            query = query.IgnoreQueryFilters();
+            query = query.IgnoreQueryFilters([PersistenceFilterNames.SoftDelete]);
 
         // 1. Criteria
         if (spec.Criteria is not null)
@@ -73,8 +89,8 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
             (current, include) => current.Include(include));
 
         // 2b. StringIncludes — applied after expression includes, before ordering.
-        //     Intended for deep navigation paths (e.g., "Orders.Items.Product").
-        //     Empty list is a no-op; existing specs are unaffected.
+        // Intended for deep navigation paths (e.g., "Orders.Items.Product").
+        // Empty list is a no-op; existing specs are unaffected.
         foreach (var path in spec.StringIncludes)
         {
             if (!string.IsNullOrWhiteSpace(path))
@@ -82,12 +98,12 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         }
 
         // 2c. AsSplitQuery — only when the spec declares two or more collection Includes and
-        //     opts in via ApplySplitQuery(). Default false — behavior is byte-for-byte unchanged
-        //     for every existing specification (WO-051/P-318).
+        // opts in via ApplySplitQuery(). Default false — behavior is byte-for-byte unchanged
+        // for every existing specification.
         if (spec.AsSplitQuery)
             query = query.AsSplitQuery();
 
-        query = ApplyOrderingDistinctTrackingAndPaging(query, spec);
+        query = ApplyDistinctOrderingTrackingAndPaging(query, spec);
 
         return query;
     }
@@ -107,7 +123,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     /// Selector is applied at step 8 — after Skip/Take — to preserve the paging-last invariant.
     /// </para>
     /// <para>
-    /// <strong>Split-query application point (WO-051/P-318):</strong> because this method delegates
+    /// <strong>Split-query application point:</strong> because this method delegates
     /// to <see cref="GetQuery"/> for steps 0–7, <c>spec.</c><see cref="ISpecification{T}.AsSplitQuery"/>
     /// is honored identically for a projected query — see <see cref="GetQuery"/>'s own remarks, and
     /// <see cref="ISpecification{T}.AsSplitQuery"/>'s remarks in <c>SharedKernel.Domain</c>, for the
@@ -128,7 +144,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     /// <inheritdoc />
     /// <remarks>
     /// See <see cref="ISpecificationEvaluator{T}.GetKeysetQuery{TKey}"/> for the full pipeline and
-    /// deviation documentation (WO-051/P-317).
+    /// deviation documentation.
     /// </remarks>
     public IQueryable<T> GetKeysetQuery<TKey>(
         IQueryable<T> inputQuery,
@@ -137,9 +153,9 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     {
         var query = inputQuery.TagWith(spec.GetType().Name);
 
-        // 0. IgnoreQueryFilters
+        // 0. IgnoreQueryFilters — selective, see GetQuery's remarks.
         if (spec.IncludeDeleted)
-            query = query.IgnoreQueryFilters();
+            query = query.IgnoreQueryFilters([PersistenceFilterNames.SoftDelete]);
 
         // 1. Criteria
         if (spec.Criteria is not null)
@@ -164,26 +180,32 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         if (spec.AsSplitQuery)
             query = query.AsSplitQuery();
 
-        // 3. OrderBy / OrderByDescending, 4. ThenBys, 5. Distinct, 6. AsNoTracking.
-        query = ApplyOrderingDistinctTrackingAndPaging(
+        // 3. Distinct, 4. OrderBy/ThenBys, 5. AsNoTracking (a KeysetSpecification always declares a
+        // primary sort in its own constructor, so the "paging requires order" guard never fires).
+        query = ApplyDistinctOrderingTrackingAndPaging(
             query, spec, applyPaging: false);
 
         // 7. Paging deviation: never Skip (always 0 for a keyset spec); Take one row beyond the
-        //    declared page size so the caller can compute HasMore without a second round-trip.
+        // declared page size so the caller can compute HasMore without a second round-trip.
         query = query.Take(spec.Take!.Value + 1);
 
         return query;
     }
 
-    // Applies steps 3-6 (OrderBy/ThenBys/Distinct/AsNoTracking) and, when applyPaging is true,
-    // step 7 (Skip/Take) — shared by GetQuery and GetKeysetQuery (which applies its own deviated
-    // paging step separately).
-    private static IQueryable<T> ApplyOrderingDistinctTrackingAndPaging(
+    // Applies steps 3-6 (Distinct/OrderBy/ThenBys/AsNoTracking) and, when applyPaging is true, step 7
+    // (Skip/Take) — shared by GetQuery and GetKeysetQuery (which applies its own deviated paging step
+    // separately). Distinct runs BEFORE ordering; paging without a primary sort
+    // throws rather than silently returning a database-dependent row order.
+    private static IQueryable<T> ApplyDistinctOrderingTrackingAndPaging(
         IQueryable<T> query,
         ISpecification<T> spec,
         bool applyPaging = true)
     {
-        // 3. Primary sort
+        // 3. Distinct — before ordering.
+        if (spec.IsDistinct)
+            query = query.Distinct();
+
+        // 4. Primary sort
         var hasPrimarySort = false;
         IOrderedQueryable<T>? ordered = null;
 
@@ -198,7 +220,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
             hasPrimarySort = true;
         }
 
-        // 4. ThenBys — only when primary sort is set
+        // 4b. ThenBys — only when primary sort is set
         if (hasPrimarySort && ordered is not null)
         {
             foreach (var (keySelector, descending) in spec.ThenBys)
@@ -211,17 +233,22 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
             query = ordered;
         }
 
-        // 5. Distinct
-        if (spec.IsDistinct)
-            query = query.Distinct();
-
-        // 6. AsNoTracking
+        // 5. AsNoTracking
         if (spec.AsNoTracking)
             query = query.AsNoTracking();
 
-        // 7. Skip / Take — ALWAYS LAST for the aggregate pipeline
-        if (applyPaging)
+        // 6. Skip / Take — ALWAYS LAST for the aggregate pipeline
+        if (applyPaging && (spec.Skip.HasValue || spec.Take.HasValue))
         {
+            if (!hasPrimarySort)
+            {
+                throw new InvalidOperationException(
+                    $"'{spec.GetType().Name}' declares Skip/Take paging but no primary sort " +
+                    "(OrderBy/OrderByDescending). Paging without a deterministic order produces a " +
+                    "database-dependent, unstable row order across identical calls — add " +
+                    "ApplyOrderBy/ApplyOrderByDescending to the specification.");
+            }
+
             if (spec.Skip.HasValue)
                 query = query.Skip(spec.Skip.Value);
 
@@ -233,13 +260,13 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     }
 
     // Builds the standard keyset/seek-pagination tuple-comparison predicate:
-    //     (OrderKey > @afterKey) OR (OrderKey == @afterKey AND Id > @afterId)
+    // (OrderKey > @afterKey) OR (OrderKey == @afterKey AND Id > @afterId)
     // flipped to "<" throughout when spec.Descending == true. Rebinds spec.OrderBy/OrderByDescending
     // and spec.ThenBys[0].KeySelector (both Expression<Func<T,object>>, each wrapped in an outer
     // Convert(..., typeof(object)) node) onto one shared parameter, then unwraps each Convert node
     // back to its real typed operand before comparison — CRITICAL so any registered ValueConverter
-    // (e.g. StronglyTypedIdValueConverter on the Id) is applied server-side by the LINQ provider
-    // (WO-051/P-317, the same precedent P-105 established for GetByIdsAsync's Contains fix).
+    // (e.g. StronglyTypedIdValueConverter on the Id) is applied server-side by the LINQ provider —
+    // the same precedent already established for GetByIdsAsync's Contains fix.
     private static Expression<Func<T, bool>> BuildKeysetSeekPredicate<TKey>(KeysetSpecification<T, TKey> spec)
         where TKey : struct, IComparable<TKey>
     {
@@ -254,8 +281,20 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         var keyOperand = UnwrapConvert(keyBody);
         var idOperand = UnwrapConvert(idBody);
 
-        var afterKeyConstant = Expression.Constant(spec.AfterKey!.Value, keyOperand.Type);
-        var afterIdConstant = Expression.Constant(spec.AfterId, idOperand.Type);
+        // Parameterized via a closure-shaped field access, not a bare
+        // Expression.Constant(value, type) — see ByIdSpecification's remarks for why this matters.
+        var keyHolder = new KeyHolder<TKey>(spec.AfterKey!.Value);
+        var afterKeyConstant = Expression.Field(Expression.Constant(keyHolder), nameof(KeyHolder<TKey>.Value));
+
+        // AfterId's runtime type is validated/coerced against the tiebreaker's
+        // actual CLR type up front, with a clear diagnostic, instead of letting a raw
+        // Expression.Constant type mismatch throw an opaque ArgumentException (or, for the closure
+        // form, an InvalidCastException deferred to parameter materialization).
+        var coercedAfterId = CoerceAfterId(spec.AfterId, idOperand.Type);
+        var idHolder = new IdHolder(coercedAfterId);
+        var afterIdConstant = Expression.Convert(
+            Expression.Field(Expression.Constant(idHolder), nameof(IdHolder.Value)),
+            idOperand.Type);
 
         var keyGreaterOrLess = BuildOrderingComparison(keyOperand, afterKeyConstant, spec.Descending);
         var keyEquals = Expression.Equal(keyOperand, afterKeyConstant);
@@ -265,6 +304,47 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         var seekBody = Expression.OrElse(keyGreaterOrLess, tieBreak);
 
         return Expression.Lambda<Func<T, bool>>(seekBody, param);
+    }
+
+    // Validates that `afterId`'s runtime type matches (or can be safely, deterministically coerced
+    // to) `targetType` — the aggregate's actual identity-tiebreaker CLR type — throwing a clear,
+    // actionable InvalidOperationException instead of letting a type mismatch surface as an opaque
+    // exception from deep inside expression-tree construction or query-parameter materialization
+    //. A typical cause: a caller decoded a wire cursor with PageCursor.Decode<TKey,
+    // TId> using the wrong TId, or hand-built a KeysetSpecification with an AfterId of the wrong type.
+    private static object CoerceAfterId(object? afterId, Type targetType)
+    {
+        if (afterId is null)
+        {
+            throw new InvalidOperationException(
+                "KeysetSpecification.AfterId must not be null when AfterKey is set — both cursor " +
+                "components are required together.");
+        }
+
+        if (targetType.IsInstanceOfType(afterId))
+            return afterId;
+
+        if (targetType == typeof(Guid) && afterId is string guidText && Guid.TryParse(guidText, out var guid))
+            return guid;
+
+        if (typeof(IConvertible).IsAssignableFrom(afterId.GetType())
+            && typeof(IConvertible).IsAssignableFrom(targetType))
+        {
+            try
+            {
+                return Convert.ChangeType(afterId, targetType, CultureInfo.InvariantCulture);
+            }
+            catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+            {
+                // Falls through to the diagnostic exception below.
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"KeysetSpecification.AfterId has runtime type '{afterId.GetType().Name}' but this " +
+            $"aggregate's identity tiebreaker expects '{targetType.Name}'. This usually means a " +
+            "wire cursor was decoded with the wrong TId — decode with the same type the cursor was " +
+            "encoded with.");
     }
 
     // Unwraps a single outer Convert(..., typeof(object)) node (inserted by the compiler when a
@@ -280,7 +360,7 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     // including types with no native `>`/`<` operator overload (e.g. Guid). Falls back to
     // unwrapping a StronglyTypedId<TValue>-shaped explicit conversion when CompareTo isn't found
     // directly on the operand's own type, so a strongly-typed ID used as the mandatory Id
-    // tiebreaker still compares correctly via its underlying primitive value (WO-051/P-317).
+    // tiebreaker still compares correctly via its underlying primitive value.
     private static Expression BuildOrderingComparison(Expression left, Expression right, bool descending)
     {
         var operandType = left.Type;
@@ -358,5 +438,20 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     {
         protected override Expression VisitParameter(ParameterExpression node) =>
             node == source ? target : base.VisitParameter(node);
+    }
+
+    // Mimics a compiler-generated closure display class so EF Core's query-parameter extraction
+    // recognizes and parameterizes the captured sort-key cursor value.
+    private sealed class KeyHolder<TKey>(TKey value)
+        where TKey : struct, IComparable<TKey>
+    {
+        public readonly TKey Value = value;
+    }
+
+    // Same purpose as KeyHolder<TKey>, for the (already type-checked/coerced) identity cursor value —
+    // held as `object` here because the target CLR type is only known at Expression.Convert time.
+    private sealed class IdHolder(object value)
+    {
+        public readonly object Value = value;
     }
 }

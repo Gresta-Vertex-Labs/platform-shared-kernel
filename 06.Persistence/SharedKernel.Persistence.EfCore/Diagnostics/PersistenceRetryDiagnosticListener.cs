@@ -9,8 +9,7 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// <summary>
 /// Hosted service that subscribes to EF Core's own provider-neutral
 /// <see cref="CoreEventId.ExecutionStrategyRetrying"/> diagnostic event and logs a
-/// <c>TransientRetryAttempt</c> Warning (EventId <c>6007</c>) for each observed retry
-/// (WO-053/P-333).
+/// <c>TransientRetryAttempt</c> Warning (EventId <c>6007</c>) for each observed retry.
 /// </summary>
 /// <remarks>
 /// <para>

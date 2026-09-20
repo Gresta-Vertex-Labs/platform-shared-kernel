@@ -13,43 +13,91 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// <see cref="IDbContextTransaction"/> and release database resources.
 /// </para>
 /// <para>
-/// Domain event dispatch fires after <see cref="CommitAsync"/> completes successfully, consistent
-/// with <c>EfUnitOfWork.SaveChangesAsync</c> semantics — dispatch is delegated back to the owning
-/// <see cref="EfTransactionalUnitOfWork"/>'s <c>DispatchAndClearEventsAsync</c>.
+/// <strong></strong> no longer dispatches domain events itself — dispatch now
+/// happens inside every <c>EfTransactionalUnitOfWork.SaveChangesAsync</c> call, BEFORE the physical
+/// save, so it is already complete by the time <see cref="CommitAsync"/> runs. A caller MUST call
+/// <c>IUnitOfWork.SaveChangesAsync</c> at least once within this transaction's scope before
+/// <see cref="CommitAsync"/> for anything — including domain events — to take effect; committing an
+/// empty transaction with no prior save is a legitimate no-op.
 /// </para>
 /// </remarks>
 internal sealed class EfPersistenceTransaction : IPersistenceTransaction
 {
     private readonly IDbContextTransaction _transaction;
-    private readonly EfTransactionalUnitOfWork _owner;
+    private readonly AmbientDbTransactionAccessor? _ambientTransactionAccessor;
 
-    internal EfPersistenceTransaction(IDbContextTransaction transaction, EfTransactionalUnitOfWork owner)
+    /// <summary>
+    /// Initialises a new <see cref="EfPersistenceTransaction"/>, publishing
+    /// <paramref name="connection"/>/<paramref name="transaction"/> through
+    /// <paramref name="ambientTransactionAccessor"/> so a Dapper command service resolving
+    /// <c>SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction</c> can enlist in
+    /// this same transaction for the remainder of its scope.
+    /// </summary>
+    internal EfPersistenceTransaction(
+        IDbContextTransaction transaction,
+        System.Data.Common.DbConnection connection,
+        AmbientDbTransactionAccessor? ambientTransactionAccessor = null)
     {
         _transaction = transaction;
-        _owner = owner;
+        _ambientTransactionAccessor = ambientTransactionAccessor;
+
+        if (_ambientTransactionAccessor is not null)
+            _ambientTransactionAccessor.Current = (connection, transaction.GetDbTransaction());
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Commits the underlying <see cref="IDbContextTransaction"/>, then dispatches and clears any
-    /// domain events collected during the transaction — consistent with
-    /// <c>EfUnitOfWork.SaveChangesAsync</c>'s post-commit dispatch semantics.
-    /// </remarks>
-    public async Task CommitAsync(CancellationToken ct = default)
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
-        await _transaction.CommitAsync(ct);
-        await _owner.DispatchAndClearEventsAsync(ct);
+        try
+        {
+            await _transaction.CommitAsync(cancellationToken);
+        }
+        finally
+        {
+            ClearAmbient();
+        }
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// Domain events are <strong>not</strong> dispatched on rollback. The change-tracker still
-    /// holds staged events; callers must discard the unit-of-work scope after a rollback.
+    /// <strong>Pre-commit dispatch caveat:</strong> if <c>IUnitOfWork.SaveChangesAsync</c> was called
+    /// within this transaction's scope before rolling back, any domain events it raised were ALREADY
+    /// dispatched (pre-commit, in-process) even though the underlying data change is now rolled
+    /// back. This is why <c>IDomainEventDispatcher</c> handlers must only affect the SAME
+    /// <see cref="Microsoft.EntityFrameworkCore.DbContext"/> (so their effects roll back atomically
+    /// too) — see <c>DomainEventDispatchLoop</c>'s remarks. A handler with a genuinely external
+    /// effect must never be registered here.
     /// </remarks>
-    public Task RollbackAsync(CancellationToken ct = default)
-        => _transaction.RollbackAsync(ct);
+    public async Task RollbackAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _transaction.RollbackAsync(cancellationToken);
+        }
+        finally
+        {
+            ClearAmbient();
+        }
+    }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
-        => _transaction.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await _transaction.DisposeAsync();
+        }
+        finally
+        {
+            ClearAmbient();
+        }
+    }
+
+    // Clearing is idempotent — Commit/Rollback/Dispose can each observe the ambient slot already
+    // cleared by whichever of the three ran first.
+    private void ClearAmbient()
+    {
+        if (_ambientTransactionAccessor is not null)
+            _ambientTransactionAccessor.Current = null;
+    }
 }

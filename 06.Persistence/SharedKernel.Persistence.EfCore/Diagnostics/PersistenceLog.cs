@@ -4,8 +4,7 @@ using SharedKernel.Primitives.Logging;
 namespace SharedKernel.Persistence.EfCore.Diagnostics;
 
 /// <summary>
-/// <c>[LoggerMessage]</c> source-generated log statements for <c>SharedKernel.Persistence.EfCore</c>
-/// (WO-053/P-333).
+/// <c>[LoggerMessage]</c> source-generated log statements for <c>SharedKernel.Persistence.EfCore</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -115,47 +114,24 @@ internal static partial class PersistenceLog
         Message = "Transient fault retry exhausted after {AttemptCount} attempt(s) for a database operation.")]
     internal static partial void TransientRetryExhausted(ILogger logger, Exception exception, int attemptCount);
 
-    /// <summary>
-    /// Logged by <c>EncryptionRotationService{TContext}.RotateAsync</c> at each batch boundary.
-    /// Never logs a key byte, a Base64-encoded key string, or any column plaintext/ciphertext
-    /// value — only counts and already-non-secret version-tag strings.
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 9,
-        Level = LogLevel.Information,
-        Message = "Encryption rotation batch {BatchNumber} processed {RowsInBatch} row(s) from version '{FromVersion}' to '{ToVersion}'.")]
-    internal static partial void EncryptionRotationBatchProcessed(
-        ILogger logger, int batchNumber, int rowsInBatch, string fromVersion, string toVersion);
+    // The former EncryptionRotationBatchProcessed/EncryptionRotationCompleted/
+    // EncryptionKeyRefreshFailed/EncryptionKeyOnDemandWarmFailed moved to
+    // SharedKernel.Persistence.EfCore.Encryption's own EncryptionLog, which claims its own dedicated
+    // 6300-6399 sub-block (SharedKernel.Persistence.EfCore.Encryption/Encryption/Diagnostics/
+    // EncryptionLog.cs) — this class is `internal` and therefore unreachable from that sibling
+    // package. IDs 6009-6012 were never actually used by it and remain free within this sub-block,
+    // alongside every ID from 6014 up. The entry below claims 6013, the first gap left by 6000-6008.
 
     /// <summary>
-    /// Logged by <c>EncryptionRotationService{TContext}.RotateAsync</c> once, on overall
-    /// completion. Never logs a key byte, a Base64-encoded key string, or any column
-    /// plaintext/ciphertext value — only counts and already-non-secret version-tag strings.
+    /// Logged, at Error level, by <c>MigrationAndSeedHostedService.StartAsync</c> when migrations-on-startup
+    /// or at least one seeder is configured but no <see cref="SharedKernel.Persistence.Abstractions.Coordination.IMigrationLock"/>
+    /// is registered — startup coordination across replicas is NOT guaranteed in that configuration
+    ///. Never a hard failure: a deliberately single-replica or non-PostgreSQL
+    /// deployment proceeds without a lock.
     /// </summary>
     [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 10,
-        Level = LogLevel.Information,
-        Message = "Encryption rotation from version '{FromVersion}' to '{ToVersion}' completed: {RowsProcessed} processed, {RowsRotated} rotated, {RowsFailed} failed.")]
-    internal static partial void EncryptionRotationCompleted(
-        ILogger logger, string fromVersion, string toVersion, int rowsProcessed, int rowsRotated, int rowsFailed);
-
-    /// <summary>
-    /// Logged by <c>EncryptionKeyPreWarmingHostedService</c> when a periodic refresh of the current key from the
-    /// external key provider fails. The previously warmed keys stay in use. Never logs key material.
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 11,
-        Level = LogLevel.Warning,
-        Message = "Refreshing the current encryption key from the external key provider failed; the last warmed keys remain in use.")]
-    internal static partial void EncryptionKeyRefreshFailed(ILogger logger, Exception exception);
-
-    /// <summary>
-    /// Logged by <c>PreWarmedEncryptionKeyProvider</c> when a background warm of a key id that a stored payload
-    /// referenced fails. The key id is deliberately not logged: it is read from stored data, which may be forged.
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 12,
-        Level = LogLevel.Warning,
-        Message = "Warming an encryption key referenced by a stored value failed; decrypting values that use it keeps failing until a warm succeeds.")]
-    internal static partial void EncryptionKeyOnDemandWarmFailed(ILogger logger, Exception exception);
+        EventId = LoggingEventIdRanges.Persistence + 13,
+        Level = LogLevel.Error,
+        Message = "No IMigrationLock is registered for context '{ContextType}' — startup migration/seed coordination across replicas is NOT guaranteed.")]
+    internal static partial void NoMigrationLockRegistered(ILogger logger, string contextType);
 }

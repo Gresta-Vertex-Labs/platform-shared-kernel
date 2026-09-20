@@ -28,7 +28,7 @@ public interface IDataSeeder<TContext>
     /// Seeds <paramref name="context"/> with the data owned by this seeder.
     /// </summary>
     /// <param name="context">A dedicated <typeparamref name="TContext"/> instance for this seeder.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when seeding has finished.</returns>
-    Task SeedAsync(TContext context, CancellationToken ct = default);
+    Task SeedAsync(TContext context, CancellationToken cancellationToken = default);
 }

@@ -13,9 +13,9 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// BCL <see cref="System.Diagnostics.ActivitySource"/> — zero new NuGet dependency, AOT-safe.
 /// </para>
 /// <para>
-/// <strong>THIS EXACT NAME/VERSION IS THE COORDINATION POINT for <c>13.ServiceDefaults</c>' paired
-/// phase (P-326, <c>WithPersistenceTelemetry</c>-shaped wiring)</strong> — do not rename without
-/// updating that consumer (WO-051/P-319).
+/// <strong>THIS EXACT NAME/VERSION IS THE COORDINATION POINT for <c>13.ServiceDefaults</c>'
+/// <c>WithPersistenceTelemetry</c> wiring</strong> — do not rename without
+/// updating that consumer.
 /// </para>
 /// </remarks>
 internal static class PersistenceActivitySource

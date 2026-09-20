@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Persistence.Abstractions.Connections;
+using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 
@@ -12,7 +12,7 @@ namespace SharedKernel.Persistence.EfCore.Seeding;
 /// <summary>
 /// Startup orchestration that applies pending EF Core migrations and runs registered
 /// <see cref="IDataSeeder{TContext}"/> implementations for <typeparamref name="TContext"/>,
-/// guarded by a PostgreSQL advisory lock so multiple replicas racing on startup serialize to a
+/// guarded by an <see cref="IMigrationLock"/> so multiple replicas racing on startup serialize to a
 /// single instance.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="SharedKernelDbContext"/> subclass to migrate/seed.</typeparam>
@@ -25,25 +25,32 @@ namespace SharedKernel.Persistence.EfCore.Seeding;
 /// <para>
 /// <strong>StartAsync sequence:</strong>
 /// <list type="number">
-///   <item><description>
-///   If an <see cref="IDbConnectionFactory"/> is registered, acquire a PostgreSQL advisory lock via
-///   <c>pg_advisory_lock(hashtext(lockKey))</c>, where <c>lockKey</c> is
-///   <typeparamref name="TContext"/>'s full type name. If no <see cref="IDbConnectionFactory"/> is
-///   registered (e.g., a non-PostgreSQL provider), the lock step is skipped — migrations/seeding
-///   proceed without cross-replica coordination.
-///   </description></item>
-///   <item><description>
-///   If migrations-on-startup was requested, resolve <see cref="IDbContextFactory{TContext}"/> and
-///   call <c>Database.MigrateAsync</c>.
-///   </description></item>
-///   <item><description>
-///   Run each registered seeder in registration order, each resolved in its own DI scope with its
-///   own <typeparamref name="TContext"/> instance via <see cref="IDbContextFactory{TContext}"/>.
-///   </description></item>
-///   <item><description>
-///   Release the advisory lock via <c>pg_advisory_unlock</c> in a <c>finally</c> block.
-///   </description></item>
+/// <item><description>
+/// If an <see cref="IMigrationLock"/> is registered, acquire it (named after
+/// <typeparamref name="TContext"/>'s full type name) before doing anything else. If none is
+/// registered, log an Error-level warning — startup coordination across replicas
+/// is NOT guaranteed in that configuration — and proceed without a lock, rather than crash-looping
+/// a deliberately single-replica or non-PostgreSQL deployment.
+/// </description></item>
+/// <item><description>
+/// If migrations-on-startup was requested, resolve <see cref="IDbContextFactory{TContext}"/> and
+/// call <c>Database.MigrateAsync</c>.
+/// </description></item>
+/// <item><description>
+/// Run each registered seeder in registration order, each resolved in its own DI scope with its
+/// own <typeparamref name="TContext"/> instance via <see cref="IDbContextFactory{TContext}"/>.
+/// </description></item>
+/// <item><description>
+/// Release the lock (if acquired) by disposing its handle in a <c>finally</c> block.
+/// </description></item>
 /// </list>
+/// </para>
+/// <para>
+/// <strong></strong> no longer issues raw PostgreSQL <c>pg_advisory_lock</c> SQL
+/// directly — a hard violation of this package's "never provider-specific SQL" rule. The concrete
+/// PostgreSQL implementation (<c>NpgsqlAdvisoryMigrationLock</c>) lives in
+/// <c>SharedKernel.Persistence.Npgsql</c>. See <see cref="IMigrationLock"/>'s remarks for the full
+/// rationale, including the StartupGate/liveness-probe integration guidance.
 /// </para>
 /// <para>
 /// <see cref="StopAsync"/> is a no-op.
@@ -57,6 +64,8 @@ namespace SharedKernel.Persistence.EfCore.Seeding;
 internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     where TContext : SharedKernelDbContext
 {
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(2);
+
     private readonly IServiceProvider _serviceProvider;
     private readonly bool _runMigrations;
     private readonly IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps;
@@ -69,15 +78,15 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     /// <param name="runMigrations">Whether to call <c>Database.MigrateAsync</c> on startup.</param>
     /// <param name="seedSteps">
     /// One entry per registered <see cref="IDataSeeder{TContext}"/> — the seeder's own type name
-    /// (captured at <c>.AddSeeder&lt;TSeeder&gt;()</c> call time, for the <c>SeederApplied</c> log,
-    /// WO-053/P-333) paired with a closed-generic delegate resolving its seeder from the supplied
+    /// (captured at <c>.AddSeeder&lt;TSeeder&gt;()</c> call time, for the <c>SeederApplied</c> log)
+    /// paired with a closed-generic delegate resolving its seeder from the supplied
     /// scope's <see cref="IServiceProvider"/> and calling <see cref="IDataSeeder{TContext}.SeedAsync"/>
     /// with the supplied context — no reflection is needed here.
     /// </param>
     /// <param name="logger">
-    /// Optional logger for the lifecycle Information/Warning logs (EventIds <c>6001</c>-<c>6006</c>,
-    /// WO-053/P-333). Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/>
-    /// otherwise.
+    /// Optional logger for the lifecycle Information/Warning/Error logs (EventIds <c>6001</c>-<c>6006</c>,
+    /// <c>6009</c>). Resolved by DI when registered; falls back to
+    /// <see cref="NullLogger{T}"/> otherwise.
     /// </param>
     public MigrationAndSeedHostedService(
         IServiceProvider serviceProvider,
@@ -96,34 +105,34 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     {
         var contextTypeName = typeof(TContext).Name;
         var lockKey = typeof(TContext).FullName ?? typeof(TContext).Name;
-        var connectionFactory = _serviceProvider.GetService<IDbConnectionFactory>();
+        var migrationLock = _serviceProvider.GetService<IMigrationLock>();
 
-        System.Data.IDbConnection? lockConnection = null;
+        IAsyncDisposable? lockHandle = null;
 
         PersistenceLog.MigrationAndSeedStarted(_logger, contextTypeName);
 
         try
         {
-            if (connectionFactory is not null)
+            if (migrationLock is not null)
             {
-                lockConnection = await connectionFactory.CreateConnectionAsync(cancellationToken);
-                using var lockCommand = lockConnection.CreateCommand();
-                lockCommand.CommandText = "SELECT pg_advisory_lock(hashtext(@lockKey))";
-                AddParameter(lockCommand, "lockKey", lockKey);
-
-                // GENUINE ASYNC (CORRECTED, WO-051/P-325): the acquire call legitimately honors the
-                // caller-supplied token — abandoning an acquire that's being cancelled is fine.
-                if (lockCommand is System.Data.Common.DbCommand dbLockCommand)
-                    await dbLockCommand.ExecuteNonQueryAsync(cancellationToken);
-                else
-                    lockCommand.ExecuteNonQuery();
-
+                lockHandle = await migrationLock.AcquireAsync(lockKey, LockTimeout, cancellationToken);
                 PersistenceLog.AdvisoryLockAcquired(_logger, contextTypeName);
+            }
+            else
+            {
+                PersistenceLog.NoMigrationLockRegistered(_logger, contextTypeName);
             }
 
             if (_runMigrations)
             {
-                var contextFactory = _serviceProvider.GetRequiredService<IDbContextFactory<TContext>>();
+                // IDbContextFactory<TContext> is now registered SCOPED (it attaches the
+                // calling scope's actor/tenant identity — see TenantAwareDbContextFactory<TContext>),
+                // so it can no longer be resolved directly from the root _serviceProvider. A
+                // migration run has no meaningful tenant identity of its own — a fresh, empty scope
+                // gets the builder's fail-closed defaults, which is correct: schema migration touches
+                // no tenant-scoped rows.
+                await using var migrationScope = _serviceProvider.CreateAsyncScope();
+                var contextFactory = migrationScope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
                 await using var migrationContext = await contextFactory.CreateDbContextAsync(cancellationToken);
                 await migrationContext.Database.MigrateAsync(cancellationToken);
             }
@@ -148,43 +157,16 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         }
         finally
         {
-            if (lockConnection is not null)
+            if (lockHandle is not null)
             {
-                try
-                {
-                    using var unlockCommand = lockConnection.CreateCommand();
-                    unlockCommand.CommandText = "SELECT pg_advisory_unlock(hashtext(@lockKey))";
-                    AddParameter(unlockCommand, "lockKey", lockKey);
-
-                    // GENUINE ASYNC (CORRECTED, WO-051/P-325): the release call MUST use
-                    // CancellationToken.None, never the StartAsync-supplied token — the original
-                    // synchronous ExecuteNonQuery() ignored cancellation entirely and always ran to
-                    // completion. Awaiting ExecuteNonQueryAsync with a possibly-already-cancelled
-                    // token here would risk throwing OperationCanceledException and SKIPPING the
-                    // unlock — a genuine correctness regression this fix must not introduce.
-                    if (unlockCommand is System.Data.Common.DbCommand dbUnlockCommand)
-                        await dbUnlockCommand.ExecuteNonQueryAsync(CancellationToken.None);
-                    else
-                        unlockCommand.ExecuteNonQuery();
-
-                    PersistenceLog.AdvisoryLockReleased(_logger, contextTypeName);
-                }
-                finally
-                {
-                    lockConnection.Dispose();
-                }
+                // Release MUST use CancellationToken.None — an already-cancelled StartAsync token
+                // must never skip releasing a lock this instance successfully acquired.
+                await lockHandle.DisposeAsync();
+                PersistenceLog.AdvisoryLockReleased(_logger, contextTypeName);
             }
         }
     }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private static void AddParameter(System.Data.IDbCommand command, string name, object value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value;
-        command.Parameters.Add(parameter);
-    }
 }

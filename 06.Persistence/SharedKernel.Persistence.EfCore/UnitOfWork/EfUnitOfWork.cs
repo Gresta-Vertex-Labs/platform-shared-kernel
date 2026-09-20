@@ -1,14 +1,11 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Domain;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Options;
-using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
@@ -28,11 +25,10 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// this call before the database commit is issued.
 /// </para>
 /// <para>
-/// <strong>Domain event dispatch (P-080, Cap 4):</strong> After <c>SaveChangesAsync</c> succeeds,
-/// this class collects all domain events from tracked <see cref="IHasDomainEvents"/> entities,
-/// calls <see cref="IDomainEventDispatcher.DispatchAsync"/> if a dispatcher is registered, then
-/// clears domain events on each aggregate regardless of dispatcher registration (prevents
-/// double-dispatch on subsequent saves).
+/// <strong>Domain event dispatch:</strong> <see cref="SaveChangesAsync"/> now
+/// dispatches domain events BEFORE the physical database save — see
+/// <see cref="DomainEventDispatchLoop"/> for the full rationale (hard-delete event loss,
+/// double-dispatch on handler failure, and dropped handler writes, all fixed by this reordering).
 /// </para>
 /// <para>
 /// <strong>Opt-in dispatcher:</strong> <c>IDomainEventDispatcher</c> is optional. If no
@@ -41,34 +37,25 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// the persistence builder.
 /// </para>
 /// <para>
-/// <strong>Single constructor rule (P-098):</strong> This class has exactly one public
+/// <strong>Single constructor rule:</strong> This class has exactly one public
 /// constructor. <c>IDomainEventDispatcher?</c> is a nullable optional parameter resolved by the
 /// DI container — DI resolves <see langword="null"/> when no implementation is registered and
 /// resolves the registered implementation when present. Adding a second constructor is a hard
 /// violation: the DI container may silently select the shorter constructor and skip the dispatcher.
 /// </para>
 /// <para>
-/// <strong>Known trade-off:</strong> dispatch failure after a successful commit does not roll back
-/// the committed transaction. Domain events raised in that save cycle are cleared and lost. This
-/// is a deliberate design decision — the persistence boundary is the DbContext transaction;
-/// event dispatch is a best-effort post-commit concern.
+/// <strong>05.Application bridge:</strong> this class no longer implements
+/// <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> directly — that dual-interface
+/// bridge moved to <c>13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence</c>,
+/// which is legally positioned to reference both this package and <c>05.Application.Behaviors</c>. Its
+/// adapter wraps this package's own <see cref="SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork"/>
+/// rather than casting to a concrete type — the fix for a confirmed pre-existing defect where the old
+/// direct-cast registration threw <see cref="InvalidCastException"/> whenever
+/// <c>WithTransactionalUnitOfWork()</c> was also enabled (the resolved instance was an
+/// <see cref="EfTransactionalUnitOfWork"/>, which never implemented the dual interface).
 /// </para>
 /// <para>
-/// <strong>DUAL-INTERFACE BRIDGE (P-228):</strong> <see cref="EfUnitOfWork"/> additionally implements
-/// <see cref="AppBehaviorsIUnitOfWork"/> (<c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c>)
-/// — the minimal local seam that <c>TransactionBehavior</c> depends on, declared in
-/// <c>05.Application.Behaviors</c> because <c>05.Application</c> cannot reference <c>06.Persistence</c>.
-/// Both interfaces declare a structurally compatible <c>Task&lt;int&gt; SaveChangesAsync(CancellationToken)</c>
-/// member, so the single existing method body satisfies both contracts — no branching, no second method.
-/// Registration against the second interface is opt-in via
-/// <c>EfCorePersistenceBuilder.WithApplicationTransactionBehavior()</c> — omitting it leaves
-/// <see cref="AppBehaviorsIUnitOfWork"/> unregistered. <c>TransactionBehavior</c> calls
-/// <see cref="SaveChangesAsync"/> only for the outermost command in a DI scope and only when that
-/// command succeeds: a failed <c>Result</c> or a thrown exception commits nothing, and a command sent
-/// from inside another command's handler shares the outer command's single commit.
-/// </para>
-/// <para>
-/// <strong>Transient-fault retry-exhaustion logging (WO-053/P-333):</strong>
+/// <strong>Transient-fault retry-exhaustion logging:</strong>
 /// <see cref="SaveChangesAsync"/> catches
 /// <see cref="Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException"/> — the exception
 /// type EF Core's own <c>ExecutionStrategy</c> throws (confirmed empirically) when the DbContext's
@@ -84,7 +71,7 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// execution strategy is configured at all — that shape of exception is never thrown in that case.
 /// </para>
 /// </remarks>
-public sealed class EfUnitOfWork : IUnitOfWork, AppBehaviorsIUnitOfWork
+public sealed class EfUnitOfWork : IUnitOfWork
 {
     private readonly SharedKernelDbContext _dbContext;
     private readonly IDomainEventDispatcher? _dispatcher;
@@ -102,8 +89,8 @@ public sealed class EfUnitOfWork : IUnitOfWork, AppBehaviorsIUnitOfWork
     /// registered. Never supply a second constructor — see class remarks.
     /// </param>
     /// <param name="logger">
-    /// Optional logger for the <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>,
-    /// WO-053/P-333). Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/>
+    /// Optional logger for the <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>).
+    /// Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/>
     /// otherwise.
     /// </param>
     /// <param name="retryOptions">
@@ -128,39 +115,19 @@ public sealed class EfUnitOfWork : IUnitOfWork, AppBehaviorsIUnitOfWork
     }
 
     /// <inheritdoc />
-    public async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        int result;
+        // Dispatch runs BEFORE the physical save — see DomainEventDispatchLoop.
+        await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
 
         try
         {
-            result = await _dbContext.SaveChangesAsync(ct);
+            return await _dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (RetryLimitExceededException ex)
         {
             PersistenceLog.TransientRetryExhausted(_logger, ex, (_retryOptions?.MaxRetryCount ?? 0) + 1);
             throw;
         }
-
-        // Collect all domain events from tracked aggregates post-commit.
-        var aggregatesWithEvents = _dbContext.ChangeTracker
-            .Entries<IHasDomainEvents>()
-            .Select(e => e.Entity)
-            .Where(e => e.DomainEvents.Count > 0)
-            .ToList();
-
-        var allEvents = aggregatesWithEvents
-            .SelectMany(e => e.DomainEvents)
-            .ToList();
-
-        // Dispatch if a dispatcher is registered and there are events to dispatch.
-        if (_dispatcher is not null && allEvents.Count > 0)
-            await _dispatcher.DispatchAsync(allEvents, ct);
-
-        // Always clear domain events — prevents double-dispatch on subsequent saves.
-        foreach (var aggregate in aggregatesWithEvents)
-            aggregate.ClearDomainEvents();
-
-        return result;
     }
 }

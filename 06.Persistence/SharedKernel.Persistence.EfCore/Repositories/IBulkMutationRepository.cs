@@ -23,9 +23,9 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// <strong>Bypass warning:</strong> both methods bypass the EF Core change tracker entirely. As a
 /// direct consequence:
 /// <list type="bullet">
-///   <item><description><see cref="SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork.SaveChangesAsync"/> is NOT invoked and has no effect on these rows.</description></item>
-///   <item><description>The three platform interceptors (Audit, SoftDelete, Concurrency) do NOT run.</description></item>
-///   <item><description>Domain events are NOT collected or dispatched for affected aggregates.</description></item>
+/// <item><description><see cref="SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork.SaveChangesAsync"/> is NOT invoked and has no effect on these rows.</description></item>
+/// <item><description>The three platform interceptors (Audit, SoftDelete, Concurrency) do NOT run.</description></item>
+/// <item><description>Domain events are NOT collected or dispatched for affected aggregates.</description></item>
 /// </list>
 /// <see cref="ExecuteDeleteAsync"/> always issues a hard physical <c>DELETE</c>, even when
 /// <typeparamref name="TAggregate"/> implements
@@ -53,12 +53,12 @@ public interface IBulkMutationRepository<TAggregate, TId>
     /// A delegate describing which columns to set and to what values, via
     /// <see cref="UpdateSettersBuilder{TSource}.SetProperty{TProperty}(System.Linq.Expressions.Expression{Func{TSource,TProperty}}, TProperty)"/>.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of rows updated.</returns>
     Task<int> ExecuteUpdateAsync(
         ISpecification<TAggregate> spec,
         Action<UpdateSettersBuilder<TAggregate>> setPropertyCalls,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Executes a single server-side hard physical <c>DELETE</c> statement over all rows matching
@@ -70,7 +70,7 @@ public interface IBulkMutationRepository<TAggregate, TId>
     /// are honored — <see cref="ISpecification{T}.Includes"/>, <see cref="ISpecification{T}.StringIncludes"/>,
     /// ordering, and paging are rejected with <see cref="UnsupportedSpecificationException"/>.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of rows deleted.</returns>
-    Task<int> ExecuteDeleteAsync(ISpecification<TAggregate> spec, CancellationToken ct = default);
+    Task<int> ExecuteDeleteAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
 }
