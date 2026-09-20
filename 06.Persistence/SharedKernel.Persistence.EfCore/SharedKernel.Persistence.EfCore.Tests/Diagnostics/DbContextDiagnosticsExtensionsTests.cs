@@ -53,8 +53,8 @@ public sealed class DbContextDiagnosticsExtensionsTests
     {
         var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite("Data Source=/nonexistent/path/that/cannot/be/created.db")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var userContext = TestDbContextFactory.CreateUnauthenticatedActorContext();
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);

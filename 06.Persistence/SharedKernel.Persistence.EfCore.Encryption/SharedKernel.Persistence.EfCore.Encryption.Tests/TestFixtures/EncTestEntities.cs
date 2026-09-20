@@ -106,14 +106,14 @@ public sealed class EncCustomerConfig : EntityTypeConfigurationBase<EncCustomer,
 
         builder.Property(x => x.Email)
             .HasMaxLength(1024)
-                .IsRequired()
-                    .Encrypt("customer.email")
-                        .WithBlindIndex(static s => s.Trim().ToLowerInvariant());
+            .IsRequired()
+            .Encrypt("customer.email")
+            .WithBlindIndex(static s => s.Trim().ToLowerInvariant());
 
         builder.Property(x => x.Ssn)
             .HasMaxLength(1024)
-                .IsRequired()
-                    .Encrypt("customer.ssn", perTenantKey: true);
+            .IsRequired()
+            .Encrypt("customer.ssn", perTenantKey: true);
 
         builder.Property(x => x.Note)
             .HasMaxLength(2048)

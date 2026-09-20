@@ -236,8 +236,8 @@ public sealed class EncryptionBlindIndexIntegrationTests
         // GUARD, not the fact that the query is meaningless — but it must no longer throw.
         var tagged = await context.Customers
             .TagWith(EncryptedColumnEqualityGuardInterceptor.DisableTagText)
-                .Where(x => x.Ssn == "666-66-6666")
-                    .ToListAsync();
+            .Where(x => x.Ssn == "666-66-6666")
+            .ToListAsync();
 
         tagged.Should().BeEmpty();
     }

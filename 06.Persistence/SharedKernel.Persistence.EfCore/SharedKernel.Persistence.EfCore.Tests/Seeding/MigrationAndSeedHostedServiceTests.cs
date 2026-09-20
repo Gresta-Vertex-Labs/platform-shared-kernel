@@ -115,9 +115,9 @@ public sealed class MigrationAndSeedHostedServiceTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
                 opts.UseSqlite(connectionString).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                    .AddSeeder<FirstTrackingSeeder>()
-                        .AddSeeder<SecondTrackingSeeder>()
-                            .Build();
+            .AddSeeder<FirstTrackingSeeder>()
+            .AddSeeder<SecondTrackingSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
@@ -125,7 +125,7 @@ public sealed class MigrationAndSeedHostedServiceTests
 
         var hostedService = provider.GetServices<IHostedService>()
             .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
-                .Single();
+            .Single();
 
         // Act
         await hostedService.StartAsync(CancellationToken.None);
@@ -151,8 +151,8 @@ public sealed class MigrationAndSeedHostedServiceTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts => opts.UseSqlite(connection)
                 .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                    .AddSeeder<IdempotentSeedTestSeeder>()
-                        .Build();
+            .AddSeeder<IdempotentSeedTestSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var initCtx = provider.GetRequiredService<SeedTestDbContext>();

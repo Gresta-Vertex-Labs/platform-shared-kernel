@@ -262,9 +262,9 @@ public sealed class PgOrderTagConfig : IEntityTypeConfiguration<PgOrderTag>
         // rather than being silently accepted or cascaded around.
         builder.HasOne<PgOrderAggregate>()
             .WithMany()
-                .HasForeignKey(e => e.OrderId)
-                    .IsRequired()
-                        .OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(e => e.OrderId)
+            .IsRequired()
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

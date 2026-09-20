@@ -57,10 +57,10 @@ public sealed class EncryptionOwnedTypeShadowKeyGuardTests
 
         services.AddSharedKernelEfCore<ShadowKeyGuardDbContext>(options => options
             .UsePostgreSQL(ConnectionString("sk_enc_shadow_key_guard"))
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-                    .WithMultiTenancy()
-                        .WithEncryption()
-                            .Build();
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithMultiTenancy()
+            .WithEncryption()
+            .Build();
 
         await using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using var scope = sp.CreateAsyncScope();

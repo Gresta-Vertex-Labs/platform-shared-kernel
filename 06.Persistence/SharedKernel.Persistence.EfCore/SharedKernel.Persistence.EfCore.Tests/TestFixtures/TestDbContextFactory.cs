@@ -50,8 +50,8 @@ internal static class TestDbContextFactory
     {
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var audit = new AuditInterceptor(actorContext, clock);
         var softDelete = new SoftDeleteInterceptor(actorContext, clock);
@@ -69,8 +69,8 @@ internal static class TestDbContextFactory
     {
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
@@ -97,8 +97,8 @@ internal static class TestDbContextFactory
 
         var options = new DbContextOptionsBuilder<SoftDeletableTenantedDbContext>()
             .UseSqlite(connection)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());

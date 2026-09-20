@@ -33,8 +33,8 @@ public sealed class ConcurrencyInterceptorLoggingTests
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         using var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, interceptor));
         ctx.Database.EnsureCreated();
@@ -83,8 +83,8 @@ public sealed class ConcurrencyInterceptorLoggingTests
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         using var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, interceptor));
         ctx.Database.EnsureCreated();

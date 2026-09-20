@@ -104,9 +104,9 @@ public sealed class MoneyPostgresTests
         // SUM(amount) GROUP BY currency — a real server-side aggregate over the nested complex column.
         var sums = await verifyCtx.Orders
             .Where(o => o.Name.StartsWith("USD") || o.Name.StartsWith("EUR"))
-                .GroupBy(o => o.Total.Currency)
-                    .Select(g => new { Currency = g.Key, Sum = g.Sum(o => o.Total.Amount) })
-                        .ToListAsync();
+            .GroupBy(o => o.Total.Currency)
+            .Select(g => new { Currency = g.Key, Sum = g.Sum(o => o.Total.Amount) })
+            .ToListAsync();
 
         sums.Should().ContainSingle(x => x.Currency == Currency.Usd && x.Sum == 45m);
         sums.Should().ContainSingle(x => x.Currency == Currency.Eur && x.Sum == 20m);
@@ -114,9 +114,9 @@ public sealed class MoneyPostgresTests
         // ORDER BY amount.
         var ordered = await verifyCtx.Orders
             .Where(o => o.Total.Currency == Currency.Usd)
-                .OrderBy(o => o.Total.Amount)
-                    .Select(o => o.Total.Amount)
-                        .ToListAsync();
+            .OrderBy(o => o.Total.Amount)
+            .Select(o => o.Total.Amount)
+            .ToListAsync();
         ordered.Should().Equal(5m, 10m, 30m);
 
         // WHERE amount > x.

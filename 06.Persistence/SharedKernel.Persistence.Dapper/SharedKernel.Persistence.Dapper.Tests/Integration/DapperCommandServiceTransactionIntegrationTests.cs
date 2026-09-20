@@ -82,8 +82,8 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
 
         services
             .AddSharedKernelEfCore<CommandServiceTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-                .WithTransactionalUnitOfWork()
-                    .Build();
+            .WithTransactionalUnitOfWork()
+            .Build();
 
         services.AddScoped<LogTableCommandService>();
 

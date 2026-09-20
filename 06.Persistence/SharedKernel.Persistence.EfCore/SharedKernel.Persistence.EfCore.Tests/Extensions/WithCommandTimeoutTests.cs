@@ -24,9 +24,9 @@ public sealed class WithCommandTimeoutTests
         services
             .AddSharedKernelEfCore<TestDbContext>(opts =>
                 opts.UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithCommandTimeout(45)
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithCommandTimeout(45)
+            .Build();
 
         var provider = services.BuildServiceProvider();
         using var ctx = provider.GetRequiredService<TestDbContext>();

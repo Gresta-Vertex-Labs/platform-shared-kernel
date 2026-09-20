@@ -39,8 +39,8 @@ public sealed class PersistenceServiceOptionsValidatorTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithServiceName("payment-service")
-                    .Build();
+            .WithServiceName("payment-service")
+            .Build();
         var provider = services.BuildServiceProvider();
 
         // Act
@@ -58,8 +58,8 @@ public sealed class PersistenceServiceOptionsValidatorTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithServiceName(serviceName)
-                    .Build();
+            .WithServiceName(serviceName)
+            .Build();
         var provider = services.BuildServiceProvider();
 
         // Act

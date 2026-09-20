@@ -28,14 +28,14 @@ public sealed class TenantedDbContextTests
 
         var options1 = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr)
-                .EnableServiceProviderCaching(false)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .Options;
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var options2 = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr)
-                .EnableServiceProviderCaching(false)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .Options;
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 
@@ -72,12 +72,12 @@ public sealed class TenantedDbContextTests
 
         var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var optionsQuery = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr).EnableServiceProviderCaching(false)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 
@@ -100,8 +100,8 @@ public sealed class TenantedDbContextTests
         // The cross-tenant escape hatch must be explicit and attributable.
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -128,13 +128,13 @@ public sealed class TenantedDbContextTests
         var actorContext1 = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenant1);
         var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var optionsAdmin = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr)
-                .EnableServiceProviderCaching(false)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .Options;
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 

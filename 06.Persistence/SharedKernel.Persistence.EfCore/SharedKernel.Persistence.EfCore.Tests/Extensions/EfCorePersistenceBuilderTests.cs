@@ -137,15 +137,15 @@ public sealed class EfCorePersistenceBuilderTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithTransientFaultRetry()
-                            .WithTransactionalUnitOfWork()
-                                .Build();
+                .WithTransientFaultRetry()
+                .WithTransactionalUnitOfWork()
+                .Build();
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*WithTransientFaultRetry*")
-                .Which.Message.Should().Contain("ExecuteInTransactionAsync",
-                    "the error must name the retry-safe alternative, not just refuse the combination");
+            .Which.Message.Should().Contain("ExecuteInTransactionAsync",
+                "the error must name the retry-safe alternative, not just refuse the combination");
     }
 
     [Fact]
@@ -160,8 +160,8 @@ public sealed class EfCorePersistenceBuilderTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithTransactionalUnitOfWork()
-                            .Build();
+                .WithTransactionalUnitOfWork()
+                .Build();
 
         // Assert
         act.Should().NotThrow();
@@ -181,10 +181,10 @@ public sealed class EfCorePersistenceBuilderTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .ReplaceService<Microsoft.EntityFrameworkCore.Storage.IExecutionStrategyFactory, AlwaysRetryStrategyFactory>())
-                            .WithTransactionalUnitOfWork()
-                                .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+                .ReplaceService<Microsoft.EntityFrameworkCore.Storage.IExecutionStrategyFactory, AlwaysRetryStrategyFactory>())
+            .WithTransactionalUnitOfWork()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
@@ -200,8 +200,8 @@ public sealed class EfCorePersistenceBuilderTests
         // Assert
         (await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*retrying execution strategy*"))
-                .Which.Message.Should().Contain("WithTransactionalUnitOfWork",
-                    "the error must name the offending combination, not just that something is wrong");
+            .Which.Message.Should().Contain("WithTransactionalUnitOfWork",
+                "the error must name the offending combination, not just that something is wrong");
     }
 
     [Fact]
@@ -215,9 +215,9 @@ public sealed class EfCorePersistenceBuilderTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
                 options.UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithTransactionalUnitOfWork()
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithTransactionalUnitOfWork()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();

@@ -21,8 +21,8 @@ namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 /// <summary>
 /// Starts TWO independent, real PostgreSQL containers acting as primary/replica stand-ins, each
-/// seeded with a distinguishable marker row, for <see cref="ReadReplicaRoutingIntegrationTests"/>
-///. Deliberately NOT the shared single-container
+/// seeded with a distinguishable marker row, for <see cref="ReadReplicaRoutingIntegrationTests"/>.
+/// Deliberately NOT the shared single-container
 /// <see cref="SharedKernel.Testing.Containers.PostgreSqlContainerFixture"/>/<see cref="PostgreSqlTestCollection"/>
 /// fixture — this proof specifically requires two DISTINCT database servers to demonstrate routing
 /// occurs at the connection level, not merely the API-surface level.
@@ -31,15 +31,15 @@ public sealed class ReadReplicaTwoContainerFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _primaryContainer = new PostgreSqlBuilder("postgres:16.4")
         .WithDatabase("sk_replica_primary")
-            .WithUsername("sharedkernel")
-                .WithPassword("sharedkernel")
-                    .Build();
+        .WithUsername("sharedkernel")
+        .WithPassword("sharedkernel")
+        .Build();
 
     private readonly PostgreSqlContainer _replicaContainer = new PostgreSqlBuilder("postgres:16.4")
         .WithDatabase("sk_replica_replica")
-            .WithUsername("sharedkernel")
-                .WithPassword("sharedkernel")
-                    .Build();
+        .WithUsername("sharedkernel")
+        .WithPassword("sharedkernel")
+        .Build();
 
     /// <summary>Connection string for the "primary" stand-in container.</summary>
     public string PrimaryConnectionString => _primaryContainer.GetConnectionString();
@@ -114,8 +114,8 @@ public sealed class ReadReplicaRoutingIntegrationTests : IClassFixture<ReadRepli
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts => opts.UsePostgreSQL(_fixture.PrimaryConnectionString))
-                .WithReadReplica(opts => opts.UsePostgreSQL(_fixture.ReplicaConnectionString))
-                    .Build();
+            .WithReadReplica(opts => opts.UsePostgreSQL(_fixture.ReplicaConnectionString))
+            .Build();
 
         return services.BuildServiceProvider();
     }

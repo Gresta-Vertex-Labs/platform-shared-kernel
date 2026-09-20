@@ -220,8 +220,8 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
 
         services
             .AddSharedKernelEfCore<EnlistedTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-                .WithTransactionalUnitOfWork()
-                    .Build();
+            .WithTransactionalUnitOfWork()
+            .Build();
 
         services.AddScoped<TenantOrderCommandService>();
 

@@ -44,8 +44,8 @@ public sealed class CommandTimeoutIntegrationTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts => opts.UsePostgreSQL(ConnectionString))
-                .WithCommandTimeout(1)
-                    .Build();
+            .WithCommandTimeout(1)
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<ConcurrencyTestDbContext>();
@@ -68,8 +68,8 @@ public sealed class CommandTimeoutIntegrationTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts => opts.UsePostgreSQL(ConnectionString))
-                .WithCommandTimeout(30)
-                    .Build();
+            .WithCommandTimeout(30)
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<ConcurrencyTestDbContext>();

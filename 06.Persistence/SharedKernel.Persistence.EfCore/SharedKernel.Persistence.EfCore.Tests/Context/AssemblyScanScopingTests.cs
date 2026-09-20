@@ -133,8 +133,8 @@ public sealed class AssemblyScanScopingTests
         where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
     [Fact]
     public void WidgetContext_Model_DoesNotIncludeGadget_EvenThoughItsConfigLivesInTheSameAssembly()

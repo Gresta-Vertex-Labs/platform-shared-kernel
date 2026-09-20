@@ -155,8 +155,8 @@ public sealed class BulkMutationRepositoryTests
 
         var beforeModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-                .Select(e => new { e.Id, e.ModifiedOn })
-                    .FirstAsync(e => e.Id == id)).ModifiedOn;
+            .Select(e => new { e.Id, e.ModifiedOn })
+            .FirstAsync(e => e.Id == id)).ModifiedOn;
 
         var affected = await repo.ExecuteUpdateAsync(
             new AuditableNameEqualsSpec("Original"),
@@ -166,8 +166,8 @@ public sealed class BulkMutationRepositoryTests
 
         var afterModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-                .Select(e => new { e.Id, e.ModifiedOn })
-                    .FirstAsync(e => e.Id == id)).ModifiedOn;
+            .Select(e => new { e.Id, e.ModifiedOn })
+            .FirstAsync(e => e.Id == id)).ModifiedOn;
 
         afterModifiedOn.Should().Be(beforeModifiedOn, "AuditInterceptor must not run for bulk mutations");
     }
@@ -228,8 +228,8 @@ public sealed class BulkMutationRepositoryTests
 
         var originalModifiedOn = (await ctx.AuditableAggregates
             .IgnoreQueryFilters()
-                .Select(e => new { e.Id, e.ModifiedOn })
-                    .FirstAsync(e => e.Id == id1)).ModifiedOn;
+            .Select(e => new { e.Id, e.ModifiedOn })
+            .FirstAsync(e => e.Id == id1)).ModifiedOn;
 
         // Bulk soft-delete via ExecuteUpdateAsync directly (mirrors the documented bulk
         // soft-delete example — no repository-level "bulk delete" helper exists; the setter
@@ -238,8 +238,8 @@ public sealed class BulkMutationRepositoryTests
             new AuditableNameEqualsSpec("BulkRestoreMe"),
             setters => setters
                 .SetProperty(e => ((ISoftDeletable)e).IsDeleted, true)
-                    .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)DateTimeOffset.UtcNow)
-                        .SetProperty(e => ((ISoftDeletable)e).DeletedBy, "bulk-tester"));
+                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)DateTimeOffset.UtcNow)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, "bulk-tester"));
         deletedCount.Should().Be(2);
 
         // Invisible through the normal global soft-delete filter.
@@ -252,8 +252,8 @@ public sealed class BulkMutationRepositoryTests
             new AuditableNameEqualsSpec("BulkRestoreMe", includeDeleted: true),
             setters => setters
                 .SetProperty(e => ((ISoftDeletable)e).IsDeleted, false)
-                    .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)null)
-                        .SetProperty(e => ((ISoftDeletable)e).DeletedBy, (string?)null));
+                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)null)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, (string?)null));
 
         // Assert — every targeted row is genuinely restored and visible again through the global
         // filter with no IncludeDeleted flag needed.

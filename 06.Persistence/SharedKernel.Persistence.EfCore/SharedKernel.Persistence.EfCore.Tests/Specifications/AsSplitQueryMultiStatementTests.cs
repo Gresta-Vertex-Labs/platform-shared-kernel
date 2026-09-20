@@ -197,9 +197,9 @@ public sealed class AsSplitQueryMultiStatementTests
 
         var options = new DbContextOptionsBuilder<SplitQueryDbContext>()
             .UseSqlite("DataSource=:memory:")
-                .AddInterceptors(counter)
-                    .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .Options;
+            .AddInterceptors(counter)
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var audit = new AuditInterceptor(actorContext, clock);
         var softDelete = new SoftDeleteInterceptor(actorContext, clock);

@@ -66,9 +66,9 @@ public sealed class DbContextPoolingTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options => options
                 .UseSqlite(connection)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithDbContextPooling(poolSize: 1)
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithDbContextPooling(poolSize: 1)
+            .Build();
 
         // ValidateScopes = true (H-A6): a pooled DbContext's OPTIONS/interceptors/other constructor
         // parameters must never resolve a scoped service from what is effectively the root provider —
@@ -139,9 +139,9 @@ public sealed class DbContextPoolingTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options => options
                 .UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithDbContextPooling(poolSize: 4)
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithDbContextPooling(poolSize: 4)
+            .Build();
 
         var act = () => services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -169,10 +169,10 @@ public sealed class DbContextPoolingTests
         services
             .AddSharedKernelEfCore<TenantedTestDbContext>(options => options
                 .UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithMultiTenancy()
-                            .WithDbContextPooling(poolSize: 4)
-                                .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithMultiTenancy()
+            .WithDbContextPooling(poolSize: 4)
+            .Build();
 
         var act = () => services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -202,10 +202,10 @@ public sealed class DbContextPoolingTests
         services
             .AddSharedKernelEfCore<TenantedTestDbContext>(options => options
                 .UseSqlite(connection)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithMultiTenancy()
-                            .WithDbContextPooling(poolSize: 1)
-                                .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithMultiTenancy()
+            .WithDbContextPooling(poolSize: 1)
+            .Build();
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -280,8 +280,8 @@ public sealed class DbContextPoolingTests
 
         var options = new DbContextOptionsBuilder<SoftDeletableTenantedDbContext>()
             .UseSqlite(connection)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var tenantAId = Guid.NewGuid();
         var tenantBId = Guid.NewGuid();
@@ -339,9 +339,9 @@ public sealed class DbContextPoolingTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options => options
                     .UseSqlite("DataSource=:memory:")
-                        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                            .WithDbContextPooling()
-                                .Build();
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+                .WithDbContextPooling()
+                .Build();
 
         act.Should().NotThrow();
     }
@@ -359,10 +359,10 @@ public sealed class DbContextPoolingTests
             services
                 .AddSharedKernelEfCore<TestDbContext>(options => options
                     .UseSqlite("DataSource=:memory:")
-                        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                            .WithDbContextPooling()
-                                .WithDbContextFactory()
-                                    .Build();
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+                .WithDbContextPooling()
+                .WithDbContextFactory()
+                .Build();
 
         act.Should().NotThrow();
 
@@ -392,9 +392,9 @@ public sealed class DbContextPoolingTests
         services
             .AddSharedKernelEfCore<TestDbContext>(options => options
                 .UseSqlite("DataSource=:memory:")
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithDbContextPooling(poolSize: 8)
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithDbContextPooling(poolSize: 8)
+            .Build();
 
         // The PUBLIC (unkeyed) registration is now TenantAwareDbContextFactory<TContext>,
         // wrapping the real AddPooledDbContextFactory-registered factory under a private key.
@@ -419,8 +419,8 @@ public sealed class DbContextPoolingTests
         defaultServices
             .AddSharedKernelEfCore<TestDbContext>(options => options
                 .UseSqlite(defaultConnection)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .Build();
         var defaultProvider = defaultServices.BuildServiceProvider();
 
         using (var warmupScope = defaultProvider.CreateScope())
@@ -444,9 +444,9 @@ public sealed class DbContextPoolingTests
         pooledServices
             .AddSharedKernelEfCore<TestDbContext>(options => options
                 .UseSqlite(pooledConnection)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithDbContextPooling(poolSize: 32)
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithDbContextPooling(poolSize: 32)
+            .Build();
         var pooledProvider = pooledServices.BuildServiceProvider();
 
         using (var warmupScope = pooledProvider.CreateScope())

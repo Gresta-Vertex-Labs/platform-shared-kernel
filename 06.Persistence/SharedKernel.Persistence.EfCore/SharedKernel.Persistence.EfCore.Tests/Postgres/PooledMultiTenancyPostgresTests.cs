@@ -46,9 +46,9 @@ public sealed class PooledMultiTenancyPostgresTests
 
         services
             .AddSharedKernelEfCore<PgTestDbContext>(opts => opts.UsePostgreSQL(ConnectionString))
-                .WithMultiTenancy()
-                    .WithDbContextPooling(poolSize: poolSize)
-                        .Build();
+            .WithMultiTenancy()
+            .WithDbContextPooling(poolSize: poolSize)
+            .Build();
 
         // ValidateScopes/ValidateOnBuild — the same technique that proved the pooling+actor fix
         // (DbContextPoolingTests) and the pooling+multitenancy wiring fix (this wave) never resolves

@@ -346,11 +346,11 @@ public sealed class EncryptionCoreIntegrationTests
         services
             .AddSharedKernelEfCore<EncryptionTestDbContext>(options => options
                 .UsePostgreSQL(ConnectionString("sk_enc_pooled_tenants"))
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithMultiTenancy()
-                            .WithDbContextPooling(poolSize: 2)
-                                .WithEncryption()
-                                    .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithMultiTenancy()
+            .WithDbContextPooling(poolSize: 2)
+            .WithEncryption()
+            .Build();
 
         await using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 

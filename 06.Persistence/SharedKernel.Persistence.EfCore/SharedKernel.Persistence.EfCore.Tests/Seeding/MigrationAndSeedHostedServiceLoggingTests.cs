@@ -28,9 +28,9 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
                 opts.UseSqlite(connectionString)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .AddSeeder<SeedTestSeeder>()
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<SeedTestSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
@@ -38,7 +38,7 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
 
         var hostedService = provider.GetServices<IHostedService>()
             .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
-                .Single();
+            .Single();
 
         // Act
         await hostedService.StartAsync(CancellationToken.None);
@@ -70,9 +70,9 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
                 opts.UseSqlite(connectionString)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .AddSeeder<ThrowingSeeder>()
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<ThrowingSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
@@ -80,7 +80,7 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
 
         var hostedService = provider.GetServices<IHostedService>()
             .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
-                .Single();
+            .Single();
 
         // Act
         Func<Task> act = () => hostedService.StartAsync(CancellationToken.None);
@@ -110,9 +110,9 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
                 opts.UseSqlite(connectionString)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .AddSeeder<ThrowingSeeder>()
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<ThrowingSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
@@ -120,7 +120,7 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
 
         var hostedService = provider.GetServices<IHostedService>()
             .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
-                .Single();
+            .Single();
 
         // Act
         Func<Task> act = () => hostedService.StartAsync(CancellationToken.None);
@@ -155,9 +155,9 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
                 opts.UseSqlite(connectionString)
-                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .AddSeeder<SeedTestSeeder>()
-                            .Build();
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<SeedTestSeeder>()
+            .Build();
 
         var provider = services.BuildServiceProvider();
         await using var ctx = provider.GetRequiredService<SeedTestDbContext>();

@@ -73,8 +73,8 @@ public sealed class SoftDeleteCascadePostgresTests
         // same-table owned VO all still physically exist, fully intact.
         var rescued = await verifyCtx.Orders
             .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete])
-                .Include(o => o.Lines)
-                    .FirstOrDefaultAsync(o => o.Id == orderId);
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
 
         rescued.Should().NotBeNull("the soft-deleted root row must still physically exist");
         rescued!.IsDeleted.Should().BeTrue();
@@ -118,8 +118,8 @@ public sealed class SoftDeleteCascadePostgresTests
         await using var verifyCtx = CreateContext(tenantId);
         var rescued = await verifyCtx.Orders
             .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete])
-                .Include(o => o.Lines)
-                    .FirstAsync(o => o.Id == orderId);
+            .Include(o => o.Lines)
+            .FirstAsync(o => o.Id == orderId);
 
         rescued.IsDeleted.Should().BeTrue();
         rescued.Lines.Should().ContainSingle(l => l.LineId == lineIdToKeep);

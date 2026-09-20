@@ -69,8 +69,8 @@ public sealed class ParentEntityConfig : EntityTypeConfigurationBase<ParentEntit
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         builder.HasMany(e => e.Children)
             .WithOne()
-                .HasForeignKey(c => c.ParentId)
-                    .IsRequired();
+            .HasForeignKey(c => c.ParentId)
+            .IsRequired();
     }
 }
 
@@ -133,13 +133,13 @@ public sealed class StringIncludeTests
 
         var options = new DbContextOptionsBuilder<StringIncludeDbContext>()
             .UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w
-                    .Ignore(RelationalEventId.AmbientTransactionWarning)
+            .ConfigureWarnings(w => w
+                .Ignore(RelationalEventId.AmbientTransactionWarning)
                 // The rest of this assembly already suppresses this; only this chain did not,
                 // so once the other EF failures were fixed this became the test that happened
                 // to cross EF's 20-internal-provider threshold and fail in its place.
-                    .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                        .Options;
+                .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var audit = new AuditInterceptor(actorContext, clock);
         var softDelete = new SoftDeleteInterceptor(actorContext, clock);

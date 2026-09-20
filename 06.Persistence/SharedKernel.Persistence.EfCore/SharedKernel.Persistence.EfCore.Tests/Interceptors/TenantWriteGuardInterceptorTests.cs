@@ -28,8 +28,8 @@ public sealed class TenantWriteGuardInterceptorTests
     {
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connection)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
         crossTenantScope = new CrossTenantScope();
@@ -82,8 +82,8 @@ public sealed class TenantWriteGuardInterceptorTests
 
         var options = new DbContextOptionsBuilder<SoftDeletableTenantedDbContext>()
             .UseSqlite(connection)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .Options;
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var tenantId = Guid.NewGuid();
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);

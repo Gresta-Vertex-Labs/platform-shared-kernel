@@ -42,9 +42,9 @@ public sealed class RetryExhaustionLoggingTests
             // these tests only when the full suite runs (CI), never in isolation. The extra
             // providers are intentional test isolation, so the warning is suppressed here.
                 .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-                        .AddInterceptors(faultInjector)
-                            .Options;
+                .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
+                .AddInterceptors(faultInjector)
+                .Options;
 
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -121,8 +121,8 @@ public sealed class RetryExhaustionLoggingTests
             // these tests only when the full suite runs (CI), never in isolation. The extra
             // providers are intentional test isolation, so the warning is suppressed here.
                 .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
-                    .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-                        .Options;
+                .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
+                .Options;
 
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
