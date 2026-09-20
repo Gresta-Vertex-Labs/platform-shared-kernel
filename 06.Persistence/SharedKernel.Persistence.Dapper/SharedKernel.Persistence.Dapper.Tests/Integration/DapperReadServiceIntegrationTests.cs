@@ -15,7 +15,7 @@ public sealed class TestRow
 }
 
 // ---------------------------------------------------------------------------
-// WO-051/P-321 — multi-mapping / QueryMultipleAsync DTOs
+// Multi-mapping / QueryMultipleAsync DTOs
 // ---------------------------------------------------------------------------
 
 public sealed class OrderRow
@@ -46,7 +46,7 @@ public sealed record OrderDashboardDto(int OrderCount, decimal TotalRevenue);
 /// T-39(1-4): DapperReadService integration tests against a real PostgreSQL Testcontainer.
 /// </summary>
 /// <remarks>
-/// WO-053/P-336: shares <see cref="PostgreSqlContainerFixture"/> (16.Testing's canonical PostgreSQL
+/// Shares <see cref="PostgreSqlContainerFixture"/> (16.Testing's canonical PostgreSQL
 /// Testcontainers fixture) via <see cref="IClassFixture{TFixture}"/> instead of starting its own
 /// dedicated container per test method. No <c>[CollectionDefinition]</c> is needed — this is the only
 /// PostgreSQL-touching test class in this assembly (<c>TypeHandlerTests</c> needs no container), so a
@@ -72,16 +72,16 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
         // against the SAME persistent database now that the container is shared via IClassFixture —
         // unlike before this class had its own dedicated container, so drop order is load-bearing:
         // child tables (dapper_order/dapper_payment) must drop before the parent (dapper_customer)
-        // or the second test method's run fails with PostgresException 2BP01 ("cannot drop table ...
+        // or the second test method's run fails with PostgresException 2BP01 ("cannot drop table...
         // because other objects depend on it").
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
         await conn.ExecuteAsync("""
             DROP TABLE IF EXISTS dapper_test;
             CREATE TABLE dapper_test (
-                id      SERIAL PRIMARY KEY,
-                name    TEXT NOT NULL,
-                value   INT  NOT NULL
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                value INT NOT NULL
             );
             INSERT INTO dapper_test (name, value) VALUES ('Alpha', 1), ('Beta', 2), ('Gamma', 3);
 
@@ -89,18 +89,18 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
             DROP TABLE IF EXISTS dapper_order;
             DROP TABLE IF EXISTS dapper_customer;
             CREATE TABLE dapper_customer (
-                id      SERIAL PRIMARY KEY,
-                name    TEXT NOT NULL
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL
             );
             CREATE TABLE dapper_order (
-                id            SERIAL PRIMARY KEY,
-                total         NUMERIC NOT NULL,
-                customer_id   INT NOT NULL REFERENCES dapper_customer(id)
+                id SERIAL PRIMARY KEY,
+                total NUMERIC NOT NULL,
+                customer_id INT NOT NULL REFERENCES dapper_customer(id)
             );
             CREATE TABLE dapper_payment (
-                id          SERIAL PRIMARY KEY,
-                order_id    INT NOT NULL REFERENCES dapper_order(id),
-                amount      NUMERIC NOT NULL
+                id SERIAL PRIMARY KEY,
+                order_id INT NOT NULL REFERENCES dapper_order(id),
+                amount NUMERIC NOT NULL
             );
             INSERT INTO dapper_customer (name) VALUES ('Ada'), ('Grace');
             INSERT INTO dapper_order (total, customer_id) VALUES (100, 1), (200, 2);
@@ -116,25 +116,42 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
 
     private sealed class TestReadService(IDbConnectionFactory factory) : DapperReadService(factory)
     {
-        public Task<IEnumerable<TestRow>> GetAllAsync(CancellationToken ct)
-            => QueryAsync<TestRow>("SELECT name, value FROM dapper_test ORDER BY id", null, ct);
+        public Task<IReadOnlyList<TestRow>> GetAllAsync(CancellationToken ct)
+            => QueryAsync<TestRow>("SELECT name, value FROM dapper_test ORDER BY id", null, cancellationToken: ct);
 
         public Task<TestRow?> GetByNameAsync(string name, CancellationToken ct)
             => QuerySingleOrDefaultAsync<TestRow>(
-                "SELECT name, value FROM dapper_test WHERE name = @name", new { name }, ct);
+                "SELECT name, value FROM dapper_test WHERE name = @name", new { name }, cancellationToken: ct);
 
         public Task<TestRow?> GetMissingAsync(CancellationToken ct)
             => QuerySingleOrDefaultAsync<TestRow>(
                 "SELECT name, value FROM dapper_test WHERE name = @name",
-                new { name = "DOES_NOT_EXIST" }, ct);
+                new { name = "DOES_NOT_EXIST" }, cancellationToken: ct);
 
-        public Task<int> InsertAsync(string name, int value, CancellationToken ct)
-            => ExecuteAsync("INSERT INTO dapper_test (name, value) VALUES (@name, @value)",
-                new { name, value }, ct);
+        // QueryFirstOrDefaultAsync/ExecuteScalarAsync/QueryUnbufferedAsync coverage.
 
-        // WO-051/P-321 — multi-mapping / QueryMultipleAsync / protected ConnectionFactory seam.
+        public Task<TestRow?> GetFirstByValueDescendingAsync(CancellationToken ct)
+            => QueryFirstOrDefaultAsync<TestRow>(
+                "SELECT name, value FROM dapper_test ORDER BY value DESC", null, cancellationToken: ct);
 
-        public Task<IEnumerable<OrderWithCustomerDto>> GetOrdersWithCustomerAsync(CancellationToken ct) =>
+        public Task<int> CountAsync(CancellationToken ct)
+            => ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dapper_test", null, cancellationToken: ct);
+
+        public async Task<List<TestRow>> GetAllUnbufferedAsync(CancellationToken ct)
+        {
+            var results = new List<TestRow>();
+            await foreach (var row in QueryUnbufferedAsync<TestRow>(
+                "SELECT name, value FROM dapper_test ORDER BY id", null, cancellationToken: ct))
+            {
+                results.Add(row);
+            }
+
+            return results;
+        }
+
+        // Multi-mapping / QueryMultipleAsync / protected ConnectionFactory seam.
+
+        public Task<IReadOnlyList<OrderWithCustomerDto>> GetOrdersWithCustomerAsync(CancellationToken ct) =>
             QueryAsync<OrderRow, CustomerRow, OrderWithCustomerDto>(
                 sql: """
                      SELECT o.id, o.total, c.id, c.name
@@ -143,9 +160,9 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
                      """,
                 map: (order, customer) => new OrderWithCustomerDto(order, customer),
                 splitOn: "id",
-                ct: ct);
+                cancellationToken: ct);
 
-        public Task<IEnumerable<OrderWithCustomerAndPaymentDto>> GetOrdersWithCustomerAndPaymentAsync(CancellationToken ct) =>
+        public Task<IReadOnlyList<OrderWithCustomerAndPaymentDto>> GetOrdersWithCustomerAndPaymentAsync(CancellationToken ct) =>
             QueryAsync<OrderRow, CustomerRow, PaymentRow, OrderWithCustomerAndPaymentDto>(
                 sql: """
                      SELECT o.id, o.total, c.id, c.name, p.id, p.amount
@@ -156,7 +173,7 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
                      """,
                 map: (order, customer, payment) => new OrderWithCustomerAndPaymentDto(order, customer, payment),
                 splitOn: "id",
-                ct: ct);
+                cancellationToken: ct);
 
         public Task<OrderDashboardDto> GetDashboardAsync(CancellationToken ct) =>
             QueryMultipleAsync(
@@ -167,7 +184,7 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
                     var revenue = await grid.ReadSingleAsync<decimal>();
                     return new OrderDashboardDto(count, revenue);
                 },
-                ct: ct);
+                cancellationToken: ct);
 
         // Exercises the promoted protected ConnectionFactory extension seam directly.
         public async Task<int> CountViaConnectionFactoryAsync(CancellationToken ct)
@@ -176,6 +193,17 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
             return await connection.ExecuteScalarAsync<int>(
                 new CommandDefinition("SELECT COUNT(*) FROM dapper_order", cancellationToken: ct));
         }
+    }
+
+    // DapperReadService.ExecuteAsync was removed; a write now goes through
+    // DapperCommandService instead.
+    private sealed class TestCommandService(IDbConnectionFactory factory) : DapperCommandService(factory)
+    {
+        public Task<int> InsertAsync(string name, int value, CancellationToken ct)
+            => ExecuteAsync(
+                "INSERT INTO dapper_test (name, value) VALUES (@name, @value)",
+                new { name, value },
+                cancellationToken: ct);
     }
 
     // -----------------------------------------------------------------------
@@ -220,11 +248,46 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
     public async Task ExecuteAsync_Returns_Affected_Row_Count()
     {
         var factory = CreateFactory();
-        var service = new TestReadService(factory);
+        var service = new TestCommandService(factory);
 
         var affected = await service.InsertAsync("Delta", 4, CancellationToken.None);
 
         affected.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task QueryFirstOrDefaultAsync_Returns_FirstMatchingRow()
+    {
+        var factory = CreateFactory();
+        var service = new TestReadService(factory);
+
+        var row = await service.GetFirstByValueDescendingAsync(CancellationToken.None);
+
+        row.Should().NotBeNull();
+        row!.Value.Should().Be(3, "Gamma has the highest seeded value and ORDER BY value DESC puts it first");
+    }
+
+    [Fact]
+    public async Task ExecuteScalarAsync_Returns_ScalarResult()
+    {
+        var factory = CreateFactory();
+        var service = new TestReadService(factory);
+
+        var count = await service.CountAsync(CancellationToken.None);
+
+        count.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public async Task QueryUnbufferedAsync_StreamsEveryRow()
+    {
+        var factory = CreateFactory();
+        var service = new TestReadService(factory);
+
+        var rows = await service.GetAllUnbufferedAsync(CancellationToken.None);
+
+        rows.Should().HaveCountGreaterThanOrEqualTo(3);
+        rows.Select(r => r.Name).Should().Contain(["Alpha", "Beta", "Gamma"]);
     }
 
     [Fact]
@@ -243,7 +306,7 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
     }
 
     // -----------------------------------------------------------------------
-    // WO-051/P-321 — multi-mapping / QueryMultipleAsync / ConnectionFactory seam tests
+    // Multi-mapping / QueryMultipleAsync / ConnectionFactory seam tests
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -309,7 +372,7 @@ public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSql
     {
         public int OpenCount { get; private set; }
 
-        public async Task<System.Data.IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
+        public async Task<System.Data.Common.DbConnection> CreateConnectionAsync(CancellationToken ct = default)
         {
             OpenCount++;
             return await dataSource.OpenConnectionAsync(ct);
