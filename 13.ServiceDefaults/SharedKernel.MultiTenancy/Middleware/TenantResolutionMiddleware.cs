@@ -76,7 +76,7 @@ public sealed class TenantResolutionMiddleware(
 
             var resolved = await strategy
                 .TryResolveAsync(context, context.RequestAborted)
-                    .ConfigureAwait(false);
+                .ConfigureAwait(false);
 
             if (resolved is { } tenantId)
             {
@@ -97,7 +97,7 @@ public sealed class TenantResolutionMiddleware(
             var isActive = statusValidator is null
                 || await statusValidator
                     .IsActiveAsync(resolvedTenantId, context.RequestAborted)
-                        .ConfigureAwait(false);
+                    .ConfigureAwait(false);
 
             if (isActive)
             {

@@ -355,7 +355,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <exception cref="FormatException"><paramref name="format"/> is not a valid numeric format string.</exception>
     public string ToString(string? format, IFormatProvider? formatProvider)
     {
-        var amountFormat = string.IsNullOrEmpty(format) ? $"F{Currency.MinorUnitDigits}": format;
+        var amountFormat = string.IsNullOrEmpty(format) ? $"F{Currency.MinorUnitDigits}" : format;
         return $"{Amount.ToString(amountFormat, formatProvider)} {Currency.Code}";
     }
 
@@ -548,8 +548,8 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
         {
             var order = Enumerable.Range(0, ratios.Count)
                 .OrderByDescending(i => remainders[i])
-                    .ThenByDescending(i => i)
-                        .ToArray();
+                .ThenByDescending(i => i)
+                .ToArray();
 
             for (var i = 0; i < leftover; i++)
                 shares[order[i]]++;

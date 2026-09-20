@@ -32,7 +32,7 @@ public sealed class AuditTrailWriterBridgeTests
         public string ResourceType => "TestResource";
         public string? BeforeSnapshot => "{\"before\":true}";
 
-        public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "{\"after\":true}": null;
+        public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "{\"after\":true}" : null;
     }
 
     [Fact]

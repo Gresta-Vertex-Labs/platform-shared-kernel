@@ -83,15 +83,15 @@ public static class PersistenceTelemetryExtensions
 
         builder.Services
             .AddOpenTelemetry()
-                .WithTracing(tracing => tracing
-                    .AddSource(EfCoreInstrumentationName)
-                        .AddSource(DapperInstrumentationName)
-                            .AddSource(NpgsqlInstrumentationName))
-                                .WithMetrics(metrics => metrics
-                                    .AddMeter(EfCoreInstrumentationName)
-                                        .AddMeter(EncryptionMeterInstrumentationName)
-                                            .AddMeter(AuditingMeterInstrumentationName)
-                                                .AddMeter(NpgsqlInstrumentationName));
+            .WithTracing(tracing => tracing
+                .AddSource(EfCoreInstrumentationName)
+                .AddSource(DapperInstrumentationName)
+                .AddSource(NpgsqlInstrumentationName))
+            .WithMetrics(metrics => metrics
+                .AddMeter(EfCoreInstrumentationName)
+                .AddMeter(EncryptionMeterInstrumentationName)
+                .AddMeter(AuditingMeterInstrumentationName)
+                .AddMeter(NpgsqlInstrumentationName));
 
         return builder;
     }
