@@ -625,3 +625,193 @@ All 6 persistence projects registered in Platform.SharedKernel.slnx under /06.Pe
 - SharedKernel.Persistence.EfCore.Tests
 - SharedKernel.Persistence.PostgreSQL
 - SharedKernel.Persistence.PostgreSQL.Tests
+
+## P-557/W4 (2026-09-19) — Npgsql/PostgreSQL/Dapper gold-standard wave: key reusable findings
+
+Note: as of P-557/W1-W4 the domain was restructured into 7 packages (Abstractions, EfCore,
+EfCore.Auditing, EfCore.Encryption, Npgsql, PostgreSQL, Dapper) — the "6 project" solution-file
+listing above and much of this file's earlier history predates that split. Treat entries below this
+point as the current architecture; treat entries above as historical record of an earlier shape.
+
+**PostgreSQL superusers bypass row-level security unconditionally, even under `FORCE ROW LEVEL
+SECURITY`.** Testcontainers' PostgreSQL image's own `initdb`-created user IS a superuser. Any test
+proving RLS actually filters rows MUST connect through a separately-created, genuinely unprivileged
+role (`CREATE ROLE x LOGIN PASSWORD '...'; GRANT SELECT ON table TO x;`) — connecting as the fixture's
+default user will silently see every row regardless of the policy, looking like "RLS doesn't work"
+when actually the test setup never engaged it. Pattern used:
+`06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/Integration/TenantSafeDapperReadServiceIntegrationTests.cs`.
+
+**Dapper's default column-to-property mapper does NOT strip underscores.** `tenant_id` does not
+auto-bind to a `TenantId` property (unlike EF Core's naming conventions). Every raw-SQL SELECT that
+needs a snake_case-to-PascalCase mapping must alias explicitly: `tenant_id AS "TenantId"`. Found by a
+real test returning `Guid.Empty` for every row despite correct seed data.
+
+**`Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<T>` has ONLY `Expression<Func<...>>`
+-typed constructors, never plain `Func<...>` delegates** (confirmed via reflection against the real
+EF Core 10.0.5 assembly). The lambdas passed to it compile as expression trees, so C# pattern-matching
+(`is`/`is not`) directly inside those lambda BODIES throws CS8122 ("Expression tree cannot contain an
+'is' pattern-matching operator") — extract any null-check logic into a plain helper METHOD and call it
+from the lambda instead (a `MethodCallExpression` referencing a real method is legal inside an
+expression tree; the `is` check just can't be inlined there).
+
+**The real EF Core Npgsql provider convention-level API for the pgvector extension is
+`NpgsqlModelBuilderExtensions.HasPostgresExtension(this IConventionModelBuilder, string name, bool
+fromDataAnnotation = false)`** — call it directly as `modelBuilder.HasPostgresExtension("vector")`
+inside an `IModelFinalizingConvention.ProcessModelFinalizing`. Do NOT reach for
+`IConventionModel.GetOrAddPostgresExtension` — that method exists too but takes a MANDATORY 3rd
+`version` string argument (no default), a trap if you assume a 2-arg `(schema, name)` shape from a
+design doc's sketch. Confirmed via a throwaway reflection probe project (`dotnet run` against a
+scratch csproj referencing the real NuGet package) rather than guessed — grepping the installed `.dll`
+for method-name STRINGS only confirms the method exists, not its parameter list; when unsure, write
+and run a tiny reflection probe against the real package before committing to a signature.
+
+**`Dapper.SqlMapper.QueryUnbufferedAsync<T>` has NO `CommandDefinition`/`CancellationToken`-accepting
+overload** (Dapper 2.1.79, confirmed via reflection) — only `(DbConnection, string sql, object?
+param, DbTransaction?, int? commandTimeout, CommandType?)`. A wrapper can only honor a
+`CancellationToken` by checking `ct.ThrowIfCancellationRequested()` per yielded row.
+
+**`SmartEnum<TEnum,TValue>`'s own base type ALREADY force-runs the derived type's static constructor
+once per closed generic type** (a `_forceEnumStaticConstructor` field initializer calling
+`RuntimeHelpers.RunClassConstructor` at the BASE type's own static init) so `TryFromValue`/`FromValue`/
+`List` never observe an empty registration list. Any consumer code (e.g. a Dapper
+`SmartEnumTypeHandler`) that ALSO calls `RunClassConstructor` before every `Parse` is genuinely
+redundant, safe to delete — confirmed by reading `01.Core/SharedKernel.Primitives/Enums/SmartEnum.cs`'s
+own XML doc remarks on that field, not by inference.
+
+**`StronglyTypedId<TValue>`'s conversion operator is `explicit`, not `implicit`** (03.Domain's
+"identifiers convert only explicitly" rule). Old XML doc comments elsewhere claiming "implicit
+operator" are stale prose, not a real bug: a C# cast expression invokes a user-defined conversion
+operator whether declared `implicit` or `explicit`. Grep any future "implicit operator" claim in this
+domain's docs against the real 03.Domain source before trusting it.
+
+**A `public sealed class`'s public constructor cannot declare a parameter of a LESS-accessible type**
+(CS0051). Fix: declare the public constructor parameter as the PUBLIC interface the internal type
+implements, then cast down at internal call sites within the same assembly that need the interface's
+missing setter/extra members.
+
+**CPM (Directory.Packages.props) can carry a genuinely-broken version pin that no existing project
+graph happened to surface.** `Npgsql` was pinned at `10.0.2`, but `Npgsql.EntityFrameworkCore.PostgreSQL`
+`10.0.2` (also pinned) actually requires `Npgsql >= 10.0.3` — silent until a new project referenced
+BOTH packages directly for the first time, which then failed `NU1605` (warning-as-error). Fixed by
+bumping the CPM pin to `10.0.3` (already in the local NuGet cache) — a legitimate, minimal,
+version-correctness-only fix, not scope creep, when a new legitimate reference pattern is the first to
+expose a pre-existing CPM mismatch.
+
+**PostgreSQL's `SHOW` output unit is inconsistent across GUCs** — `lock_timeout` set to `2500` (ms)
+reports back as `"2500ms"`, while `statement_timeout` set to a round number of seconds reports as
+`"Ns"`. Do not assume a consistent unit string; confirm empirically per-GUC when asserting server-side
+effectiveness in a test.
+
+**EF Core's `ctx.Model` (the "read-optimized" runtime model) strips check-constraint metadata** —
+`entityType.GetCheckConstraints()` throws `InvalidOperationException` directing you to
+`ctx.GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model` instead. Keys/
+indexes/FKs are fine on the runtime model; check constraints specifically are not.
+
+**EF Core's default table-naming convention prefers the `DbSet<T>` PROPERTY name over the full CLR
+type name when a DbSet property exists.** A test trying to force 63-byte identifier truncation via an
+extremely long CLASS name will silently fail if that entity also has a short-named `DbSet<T>`
+property — force the scenario with an explicit `.ToTable("...")` call instead.
+
+## P-557/W7 (2026-09-19/20) — Hardening sweep: a whitespace-collapse regex disaster and recovery, plus a real pack-check methodology
+
+**CRITICAL, highest-value lesson of this session: never run a "collapse space before punctuation"
+regex (`[ \t]+([.,;:)])` -> `$1`, meant to clean up leftover double-spaces after deleting inline
+work-order-tag citations) across `.cs` files without treating it as a genuine code-mutation, not a
+prose-cleanup.** It silently corrupted SIX independently-discovered shapes, spread across the entire
+354-file scope, each requiring its own detection regex and its own repair rule (never share a repair
+script across shapes — each was verified against real UNTOUCHED precedent elsewhere in the 20-domain
+repo before trusting a fix):
+1. Leading-punctuation continuation lines (`.Method()`/`)`/`;`/`,` at column 0, indentation eaten) —
+   fix: restore from the anchor line's indent + 4 (fluent-chain root is always less-indented).
+2. Leading-colon continuation lines (`: base(...)`, `: IInterface`, ternary `:` branch on its own
+   line) — TWO different rules depending on the anchor: same-as-anchor when the anchor is itself a
+   ternary `?`-line (already the one-level-deeper continuation), anchor+4 otherwise (ctor signature,
+   class declaration).
+3. `.NET`-in-prose (space before a proper noun eaten: `word.NET` from `word .NET`) — distinguish from
+   legitimate zero-space compounds (`ADO.NET`/`ASP.NET`) by checking the 3 characters before `.NET`.
+4. Orphaned-sentence-period doc-comment lines (`/// The default.\n///.\n/// </param>` — a trailing
+   `///.` line on its own with nothing else) — the space before the period on the PREVIOUS line was
+   eaten and the period got pushed onto its own continuation line.
+5. Same-line primary-constructor/base-list/named-ctor-initializer colon (`class Foo(x): IBar`,
+   `Ctor(x): base(y)` — established house style ALWAYS has a space before this `:`, confirmed via
+   dozens of untouched precedents (`class Foo(x) : IBar`) before writing the fix). Two DIFFERENT
+   regexes needed: one for `(class|record|struct) Name(...):`, one for the more general
+   `identifier(...): (base|this)(`, since the first requires the type keyword and the second doesn't.
+6. Single-line ternary colon (`cond ? true: false` missing the space before `:`, space after intact)
+   — BY FAR the most pervasive shape, ~55 instances. Cannot be safely regex-fixed in bulk: a bare
+   `identifier:` after a `?` on the same line is indistinguishable by pattern alone from a correctly
+   un-spaced named-argument (`Foo(commandTimeout: x)`) or tuple-element-name (`(Property: p, ...)`)
+   colon, which must NEVER gain a space. Fixed via individually-vetted exact-substring
+   (file, find, replace) triples applied by a tiny C# script that verifies each substring occurs
+   EXACTLY once (or an explicitly-allowed N times for a genuinely duplicated line) before writing —
+   zero risk of an unintended match, at the cost of being fully manual to assemble. A SEVENTH shape
+   (a fluent-chain continuation INSIDE an XML doc `<code>` sample, `///.Build()` instead of
+   `///     .Build()`) was found only later, while investigating pack-time warnings — the `///` marker
+   absorbing the leading dot meant the ORIGINAL leading-dot detector (which required the dot at column
+   0) never matched it.
+
+**Detection technique that generalizes to any future corruption hunt in this repo:** for a suspected
+corrupted shape, grep the SAME pattern across the ~15 domains OUTSIDE the touched scope first. Zero
+hits outside + many hits inside == very high confidence the pattern is corruption, not house style.
+Used this to settle every one of the 7 shapes above before writing a single repair rule, and it also
+positively CONFIRMED house-style conventions this repo had never written down (e.g. "a wrapped
+constructor initializer/base-list is always anchor-indent+4", "a same-line primary-ctor base-list
+always has a space before the colon").
+
+**PublicApiAnalyzer's RS0026/RS0027 (multiple public overloads with optional parameters) are INVISIBLE
+to `dotnet build`, even `dotnet build --no-incremental`, once MSBuild's cache considers a project
+up-to-date at its CURRENT assembly version — they only reliably surface on a genuine recompile at a
+DIFFERENT version, e.g. `dotnet pack -p:MinVerVersionOverride=<new-version>`.** Spent much of this
+session believing "zero RS0026 in the whole domain" based on repeated full-solution `dotnet build`
+checks, only to find 9 real occurrences across 6 files the moment packing forced a real recompile.
+**Lesson for any future pack-check or public-API-review task: never trust a `dotnet build`-based
+"zero warnings" claim for PublicApiAnalyzer diagnostics — force a real recompile via pack (or
+`--no-incremental` PLUS a version bump) before concluding the check passed.** All 9 occurrences here
+were genuinely safe (overloads disambiguated by required-parameter type/count/generic-arity, never
+actually ambiguous to a caller) and were suppressed with a paired `#pragma warning disable/restore
+RS0026` (or `RS0027` for the one `HasJsonbColumn` case, a related-but-distinct rule) plus a written,
+per-site justification — never a blanket suppression, never a redesign of an already-good,
+already-tested, already-documented public overload set just to silence an overly-conservative
+analyzer rule.
+
+**This repo's real pack-check mechanism is already built, not a throwaway scratch folder:**
+`Directory.Build.props` sets `PackageOutputPath` to the repo-root `nupkgs/` for every project, and
+root `NuGet.Config` routes every `SharedKernel.*` `PackageReference` (no inline version — Central
+Package Management via `Directory.Packages.props`'s `SharedKernelPackageVersion` property) to that
+folder as a local feed, `nuget.org` for everything else. To pack-check a domain that has NEVER been
+published before (06.Persistence's case — zero prior `PackageVersion` entries existed for any of its
+7 IDs in `Directory.Packages.props`, a gap this session had to fill), pack the FULL transitive
+`SharedKernel.*` dependency closure at ONE shared explicit version
+(`-p:MinVerVersionOverride=<same-version-for-everything>`) — packing at floating/independent MinVer
+heights reproduces the exact "dependency stamped at a height that was never published" hazard
+`.github/workflows/publish-package.yml`'s own dependency-gate step exists to catch. `SKPKG003`
+(`Directory.Build.targets`, `BeforeTargets="Pack"`) is a repo-authored guard requiring every packable
+project to have an adjacent `README.md` — like RS0026 above, it NEVER fires on `dotnet build`, only on
+`dotnet pack`. Found three 06.Persistence packages (`.EfCore.Auditing`, `.EfCore.Encryption`,
+`.Npgsql`) with no README at all this way — a real, would-have-blocked-a-real-publish defect, invisible
+to every earlier full-solution build check this session ran.
+
+**A consumer-verify project (packages resolved via `PackageReference`, never `ProjectReference`,
+pointed at the local feed) is worth writing even pre-first-publish — it caught real, previously-
+undocumented hard DI dependencies that reading the source/docs alone had missed.**
+`EfAuditTrailWriter`'s constructor takes MANDATORY (non-nullable, no default) `IDbConnectionFactory`
+and `IAmbientDbTransaction` parameters, but `WithAuditTrail()`'s own XML doc `REQUIRES` list framed
+`AddSharedKernelNpgsql()` as a soft, gracefully-degrading nice-to-have ("without it, falls back to
+retry alone" — true only for the ONE genuinely-optional `IAdvisoryTransactionLock? = null` parameter)
+and never mentioned `EfCorePersistenceBuilder.WithTransactionalUnitOfWork()` at all, despite it being
+the ONLY registration source for the mandatory `IAmbientDbTransaction`. Reading a constructor's actual
+nullability directly (not the prose describing it) is what surfaces this class of doc/reality drift —
+confirmed the fix was accurate by re-reading `EfAuditTrailWriter`'s real constructor signature before
+touching the XML doc, never trusting the OLD prose as a starting point.
+
+**Central Package Management (`Directory.Packages.props`) needs a `PackageVersion` entry for every
+`SharedKernel.*` id a `ConsumerVerify`/other pure-`PackageReference` project will reference — a
+domain's own production `.csproj` files use `ProjectReference` and never need one, so this gap is
+invisible until the FIRST `PackageReference`-based consumer of that domain is written.** Add
+alphabetically, matching the existing `Version="$(SharedKernelPackageVersion)"` pattern exactly.
+
+**`dotnet pack`'s own compiler pass can surface entirely different warnings than the identical
+project's `dotnet build` pass moments earlier — always grep pack output separately, never assume a
+green build implies a clean pack.** Applies beyond RS0026/RS0027/SKPKG003 above; treat every
+`dotnet pack` invocation on a not-recently-packed project as capable of surfacing genuinely new
+information, not merely re-confirming the build.
