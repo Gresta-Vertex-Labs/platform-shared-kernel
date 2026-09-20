@@ -242,12 +242,13 @@ How every production log statement is written.
 
 #### Persistence
 
-Multi-tenant EF Core safety.
+Multi-tenant EF Core safety, and SQL-injection prevention in the Dapper read/command layer.
 
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that drops the global tenant filter | Call `base.OnModelCreating` or `ApplyTenantFilters` |
 | [SK0202](#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` outside the permitted scope | Keep it inside the persistence layer or a `TenantedRepository` |
+| [SK0042](#sk0042-nonconstantdappersqlargument) | A non-constant `sql` argument on a Dapper query/command method | Fixed SQL text, values through parameters |
 
 #### Messaging
 
@@ -1447,6 +1448,54 @@ public sealed record GetOrderSummaryQuery(Guid Id) : ICacheableQuery<OrderSummar
 
 ```text
 warning SK0041: 'Orders.GetSummaryQuery' shares its simple type name with Billing.GetSummaryQuery, and both implement ICacheableQuery<TValue>. Cache entries are namespaced by the query's simple type name, so these queries share one namespace: if they ever produce the same CacheKey, one is served the other's cached value, deserialized into the wrong type without an error. Rename one of them.
+```
+
+---
+
+<a id="sk0042-nonconstantdappersqlargument"></a>
+### SK0042 — NonConstantDapperSqlArgument
+
+**Category:** Security · **Default severity:** Warning
+
+The `sql` argument passed to a `SharedKernel.Persistence.Dapper` query/command method, or to a raw Dapper `SqlMapper` extension method, must be a compile-time constant.
+
+#### Why it matters
+
+Every query/command method on `DapperReadService`/`DapperCommandService`, and every Dapper `SqlMapper` extension method, takes its SQL as a plain `string` parameter named `sql`. Nothing in the type system stops a caller from building that string with `$"...{value}..."` or string concatenation instead of a parameterized placeholder — the code compiles identically either way, and the difference only shows up as a SQL-injection vulnerability at runtime, against whichever value reaches the interpolated hole. `06.Persistence/CLAUDE.md`'s "parameterized queries only" rule was prose with no compiler enforcement behind it until this analyzer.
+
+#### What it flags
+
+- An interpolated string passed as the `sql` argument of a matching method — always flagged, since an interpolated string is never a compile-time constant.
+- Any other `sql` argument expression the compiler cannot prove is a compile-time constant (`SemanticModel.GetConstantValue` returns no value) — a plain local variable built earlier by concatenation, a method call, a field that is not `const`, and so on.
+- Matched call sites: an invocation whose target method declares a `string sql` parameter, on `SharedKernel.Persistence.Dapper.ReadModels.DapperReadService`, `SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService` (including through a subclass), or `Dapper.SqlMapper` itself (a caller that bypasses the base classes and calls Dapper directly).
+
+#### What it does not flag
+
+- A string literal, a `const` field or local, or a concatenation of only such constants passed as `sql` — the exact case a parameterized query's fixed SQL text is written as.
+- A call to an unrelated method that happens to have a `string sql` parameter but is not declared on `DapperReadService`/`DapperCommandService`/`Dapper.SqlMapper`.
+- Every other argument to a matched method (the `parameters` argument is meant to carry caller-supplied values — that is the whole point of a parameterized query).
+
+#### Example
+
+```csharp
+using SharedKernel.Persistence.Dapper.ReadModels;
+
+public sealed class OrderReadService(IDbConnectionFactory factory) : DapperReadService(factory)
+{
+    public Task<IReadOnlyList<OrderRow>> FindByStatusAsync(string status, CancellationToken ct) =>
+        // Flagged: SK0042 — string interpolation builds the SQL text itself
+        QueryAsync<OrderRow>($"SELECT * FROM orders WHERE status = '{status}'", null, ct: ct);
+
+    public Task<IReadOnlyList<OrderRow>> FindByStatusFixedAsync(string status, CancellationToken ct) =>
+        // Compliant — fixed SQL text, the value flows through a real parameter
+        QueryAsync<OrderRow>("SELECT * FROM orders WHERE status = @status", new { status }, ct: ct);
+}
+```
+
+#### Diagnostic
+
+```text
+warning SK0042: The 'sql' argument passed to 'QueryAsync' is not a compile-time constant. Build SQL from literal/const text only and pass values through parameters — string interpolation or concatenation here is a SQL-injection vulnerability.
 ```
 
 ---

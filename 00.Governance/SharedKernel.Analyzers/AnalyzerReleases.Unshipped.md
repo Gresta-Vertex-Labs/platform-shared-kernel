@@ -10,6 +10,7 @@ SK0038 | Design | Warning | IntegrationEventMissingAttribute
 SK0039 | Design | Warning | InvalidIntegrationEventAttribute
 SK0040 | Design | Warning | PipelineMarkerResponseShapeMismatch
 SK0041 | Design | Warning | DuplicateCacheableQueryName
+SK0042 | Security | Warning | NonConstantDapperSqlArgument
 
 ### Removed Rules
 
