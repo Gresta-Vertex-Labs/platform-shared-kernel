@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.TestFixtures;
 using SharedKernel.Testing.Containers;
@@ -240,5 +242,126 @@ public sealed class AuditCheckpointPostgresTests
         var withExpectedHead = await queryService.VerifyChainFromCheckpointAsync(earlyCheckpoint, laterCheckpoint);
         withExpectedHead.IsIntact.Should().BeFalse("the later, independently-signed checkpoint proves the chain once reached sequence 4 — it no longer does");
         withExpectedHead.BrokenAtSequence.Should().Be(laterCheckpoint.Sequence);
+    }
+
+    [Fact]
+    public async Task VerifyChainFromCheckpointAsync_TailDeletedAndReplacedWithForgedRecords_ReachingTheSameFinalSequence_ReportsBroken()
+    {
+        // H7 regression: an attacker holding the chain's HMAC key (but NOT the separate ECDSA
+        // checkpoint-signing key) can delete records after an early checkpoint and re-append forged
+        // ones that chain correctly and land on the EXACT SAME final sequence as a later,
+        // independently-signed checkpoint. Every recomputed hash and link validates, and the sequence
+        // IS reached — pre-fix, VerifyChainFromCheckpointAsync compared only
+        // "lastSequenceSeen < expectedHead.Sequence" and would report this rewritten history as
+        // Intact. Comparing expectedHead.RecordHash against whatever is ACTUALLY at that sequence
+        // today is what catches a same-length rewrite that mere sequence-reachability cannot.
+        var connectionString = ConnectionString("sk_audit_checkpoint_forged_tail_rewrite");
+        var tenantId = Guid.NewGuid();
+        await using var sp = BuildWithCheckpoints(connectionString, new FakeAuditActorContext(tenantId: tenantId));
+        await EnsureCreatedAsync(sp);
+
+        AuditChainCheckpoint earlyCheckpoint;
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            await writer.RecordAsync(FailedEntry("Order", "order-1"));
+            earlyCheckpoint = await scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().CreateCheckpointAsync(tenantId, "Order");
+        }
+
+        AuditChainCheckpoint laterCheckpoint;
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            await writer.RecordAsync(FailedEntry("Order", "order-2"));
+            await writer.RecordAsync(FailedEntry("Order", "order-3"));
+            laterCheckpoint = await scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().CreateCheckpointAsync(tenantId, "Order");
+        }
+
+        laterCheckpoint.Sequence.Should().Be(3);
+
+        // The attacker: delete sequences 2-3, re-append TWO forged records with DIFFERENT content that
+        // still chain correctly from the early checkpoint's anchor and land on the SAME final sequence
+        // (3) — signed with the REAL chain HMAC key (AuditTestHost.HmacKey) via the REAL production
+        // hashing algorithm, exactly as an attacker who compromised only that key (never the
+        // checkpoint's separate signing key) legitimately could.
+        var signer = new HmacSha256Signer();
+        var occurredOn = AuditTimestamp.TruncateToMicroseconds(DateTimeOffset.UtcNow);
+        var occurredOnMicros = AuditTimestamp.ToUtcMicroseconds(occurredOn);
+
+        var forged2Fields = new AuditRecordHasher.Fields(
+            Id: Guid.CreateVersion7(), TenantId: tenantId, ActorId: "forged-actor", ActorKind: ActorKind.User,
+            Action: "Forged", ResourceType: "Order", ResourceId: "order-2-forged", Sequence: 2,
+            OccurredOnUtcMicroseconds: occurredOnMicros, BeforeSnapshot: null, AfterSnapshot: null,
+            CorrelationId: null, ApprovalId: null, Outcome: AuditOutcome.Failed, ErrorCode: "forged.error",
+            ClientId: null, SessionId: null, ImpersonatorId: null, SourceService: null, IdempotencyKey: null,
+            PreviousRecordHash: earlyCheckpoint.RecordHash, HashAlgorithm: "HMAC-SHA256", KeyId: "default", SchemaVersion: 2);
+        var forged2Hash = AuditRecordHasher.ComputeHashHex(signer, AuditTestHost.HmacKey, in forged2Fields);
+
+        var forged3Fields = new AuditRecordHasher.Fields(
+            Id: Guid.CreateVersion7(), TenantId: tenantId, ActorId: "forged-actor", ActorKind: ActorKind.User,
+            Action: "Forged", ResourceType: "Order", ResourceId: "order-3-forged", Sequence: 3,
+            OccurredOnUtcMicroseconds: occurredOnMicros, BeforeSnapshot: null, AfterSnapshot: null,
+            CorrelationId: null, ApprovalId: null, Outcome: AuditOutcome.Failed, ErrorCode: "forged.error",
+            ClientId: null, SessionId: null, ImpersonatorId: null, SourceService: null, IdempotencyKey: null,
+            PreviousRecordHash: forged2Hash, HashAlgorithm: "HMAC-SHA256", KeyId: "default", SchemaVersion: 2);
+        var forged3Hash = AuditRecordHasher.ComputeHashHex(signer, AuditTestHost.HmacKey, in forged3Fields);
+
+        await using (var raw = new NpgsqlConnection(connectionString))
+        {
+            await raw.OpenAsync();
+
+            await using (var delete = raw.CreateCommand())
+            {
+                delete.CommandText = $"""DELETE FROM "{AuditSchema.TableName}" WHERE "{AuditSchema.Sequence}" > @afterSequence""";
+                delete.Parameters.AddWithValue("afterSequence", earlyCheckpoint.Sequence);
+                await delete.ExecuteNonQueryAsync();
+            }
+
+            await InsertForgedRecordAsync(raw, occurredOn, forged2Fields, forged2Hash);
+            await InsertForgedRecordAsync(raw, occurredOn, forged3Fields, forged3Hash);
+        }
+
+        await using var verifyScope = sp.CreateAsyncScope();
+        var queryService = verifyScope.ServiceProvider.GetRequiredService<IAuditQueryService>();
+
+        var result = await queryService.VerifyChainFromCheckpointAsync(earlyCheckpoint, laterCheckpoint);
+
+        result.IsIntact.Should().BeFalse("the record actually found at the expected head sequence does not match what the independently-signed checkpoint attested to");
+        result.BrokenAtSequence.Should().Be(laterCheckpoint.Sequence);
+    }
+
+    private static async Task InsertForgedRecordAsync(
+        NpgsqlConnection connection, DateTimeOffset occurredOn, AuditRecordHasher.Fields fields, string recordHash)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO "{AuditSchema.TableName}" (
+                "{AuditSchema.Id}", "{AuditSchema.TenantId}", "{AuditSchema.ActorId}", "{AuditSchema.ActorKind}",
+                "{AuditSchema.Action}", "{AuditSchema.ResourceType}", "{AuditSchema.ResourceId}", "{AuditSchema.Sequence}",
+                "{AuditSchema.OccurredOn}", "{AuditSchema.Outcome}", "{AuditSchema.ErrorCode}",
+                "{AuditSchema.HashAlgorithm}", "{AuditSchema.SchemaVersion}", "{AuditSchema.KeyId}",
+                "{AuditSchema.RecordHash}", "{AuditSchema.PreviousRecordHash}"
+            ) VALUES (
+                @id, @tenantId, @actorId, @actorKind, @action, @resourceType, @resourceId, @sequence,
+                @occurredOn, @outcome, @errorCode, @hashAlgorithm, @schemaVersion, @keyId, @recordHash, @previousRecordHash
+            )
+            """;
+        command.Parameters.AddWithValue("id", fields.Id);
+        command.Parameters.AddWithValue("tenantId", (object?)fields.TenantId ?? DBNull.Value);
+        command.Parameters.AddWithValue("actorId", fields.ActorId);
+        command.Parameters.AddWithValue("actorKind", (int)fields.ActorKind);
+        command.Parameters.AddWithValue("action", fields.Action);
+        command.Parameters.AddWithValue("resourceType", fields.ResourceType);
+        command.Parameters.AddWithValue("resourceId", fields.ResourceId);
+        command.Parameters.AddWithValue("sequence", fields.Sequence);
+        command.Parameters.AddWithValue("occurredOn", occurredOn);
+        command.Parameters.AddWithValue("outcome", (int)fields.Outcome);
+        command.Parameters.AddWithValue("errorCode", (object?)fields.ErrorCode ?? DBNull.Value);
+        command.Parameters.AddWithValue("hashAlgorithm", fields.HashAlgorithm);
+        command.Parameters.AddWithValue("schemaVersion", fields.SchemaVersion);
+        command.Parameters.AddWithValue("keyId", fields.KeyId);
+        command.Parameters.AddWithValue("recordHash", recordHash);
+        command.Parameters.AddWithValue("previousRecordHash", (object?)fields.PreviousRecordHash ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync();
     }
 }

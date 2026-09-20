@@ -57,6 +57,15 @@ public static class EfCorePersistenceBuilderAuditingExtensions
     /// <see cref="AuditRecordMutationGuardInterceptor"/>'s remarks for why the application-level guards alone
     /// are not sufficient.
     /// </para>
+    /// <para>
+    /// <strong>Idempotent via a dedicated marker, never by checking whether an
+    /// <see cref="IAuditTrailWriter"/> is already registered:</strong> a consumer that registers its
+    /// OWN <see cref="IAuditTrailWriter"/> (a decorator, a custom writer, a <c>16.Testing</c> fake)
+    /// BEFORE calling this method still gets every supporting registration below — options validation,
+    /// the model configurator, the immutability interceptor, the mutation guard — and its
+    /// pre-registered writer still wins resolution (<c>TryAddScoped</c> never overwrites an existing
+    /// registration). Only a SECOND call to <c>WithAuditTrail()</c> itself is a no-op.
+    /// </para>
     /// <para>Optional. Omitting this call leaves all existing behavior unchanged — no <c>AuditRecord</c> table, no audit services registered.</para>
     /// </remarks>
     public static EfCorePersistenceBuilder<TContext> WithAuditTrail<TContext>(
@@ -67,8 +76,10 @@ public static class EfCorePersistenceBuilderAuditingExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (builder.Services.Any(sd => sd.ServiceType == typeof(IAuditTrailWriter)))
+        if (builder.Services.Any(sd => sd.ServiceType == typeof(AuditTrailFeatureMarker)))
             return builder;
+
+        builder.Services.AddSingleton<AuditTrailFeatureMarker>();
 
         builder.Services.AddValidatedOptions<AuditChainOptions, AuditChainOptionsValidator>(
             configuration, validateDataAnnotations: true);
@@ -79,8 +90,10 @@ public static class EfCorePersistenceBuilderAuditingExtensions
 
         builder.Services.TryAddSingleton<IAuditChainKeyProvider, ConfiguredAuditChainKeyProvider>();
 
-        builder.Services.AddScoped<IAuditTrailWriter, EfAuditTrailWriter>();
-        builder.Services.AddScoped<IAuditQueryService, EfAuditQueryService>();
+        // TryAdd, never Add: a consumer that registered its own IAuditTrailWriter/IAuditQueryService
+        // BEFORE calling WithAuditTrail() keeps winning resolution — see remarks above.
+        builder.Services.TryAddScoped<IAuditTrailWriter, EfAuditTrailWriter>();
+        builder.Services.TryAddScoped<IAuditQueryService, EfAuditQueryService>();
 
         return builder;
     }

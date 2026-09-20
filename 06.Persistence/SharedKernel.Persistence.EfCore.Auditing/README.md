@@ -59,8 +59,9 @@ public sealed class WithdrawFundsHandler(IAuditTrailWriter auditTrail) : IComman
 ## Verifying a chain
 
 ```csharp
-var result = await auditQueryService.VerifyFullChainAsync(tenantId, resourceType: "Account", ct);
-if (!result.IsValid)
+// The tenant is resolved from the caller's own ICurrentTenantContext — never a parameter here.
+var result = await auditQueryService.VerifyFullChainAsync(resourceType: "Account", ct);
+if (!result.IsIntact)
 {
     // result.BrokenAtSequence / result.BrokenAtRecordId identify exactly where tampering was detected.
 }

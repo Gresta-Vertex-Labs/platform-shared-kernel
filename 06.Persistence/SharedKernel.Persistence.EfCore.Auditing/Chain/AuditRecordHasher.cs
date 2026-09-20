@@ -34,10 +34,22 @@ internal static class AuditHashAlgorithmNames
 /// (<see cref="IAuditChainKeyProvider"/>), unlike an unkeyed content hash — an attacker with database
 /// access alone cannot recompute a valid replacement digest for a tampered or forged record.
 /// </para>
+/// <para>
+/// <strong><see cref="AuditRecord.KeyId"/> and <see cref="AuditRecord.HashAlgorithm"/> ARE part of the
+/// hashed payload</strong> (<see cref="Fields.KeyId"/>/<see cref="Fields.HashAlgorithm"/>) — both are
+/// stored, unauthenticated, alongside the record they describe, so leaving them out of the hash would
+/// let a holder of ANY one key (including a since-retired one) forge a record under ITS id and have
+/// verification resolve and accept it, and would make a routine key rotation (same content, new
+/// <see cref="AuditRecord.KeyId"/>) indistinguishable from a genuine key-swap forgery. Including them
+/// binds each record to the SPECIFIC key that was actually current when it was written.
+/// </para>
 /// </remarks>
 internal static class AuditRecordHasher
 {
-    private static readonly byte[] DomainSeparator = Encoding.ASCII.GetBytes("AUDITv1");
+    // v2: adds HashAlgorithm/KeyId to the hashed payload (see type remarks) — bumped alongside
+    // AuditRecord.SchemaVersion (now 2) so a v1-encoded record can never silently re-verify under the
+    // v2 field set, and vice versa.
+    private static readonly byte[] DomainSeparator = Encoding.ASCII.GetBytes("AUDITv2");
 
     /// <summary>The exact set of fields fed into the hash, independent of how the caller currently holds them.</summary>
     public readonly record struct Fields(
@@ -62,6 +74,8 @@ internal static class AuditRecordHasher
         string? SourceService,
         string? IdempotencyKey,
         string? PreviousRecordHash,
+        string HashAlgorithm,
+        string KeyId,
         int SchemaVersion);
 
     /// <summary>Builds the hashed field set from a fully-materialized <see cref="AuditRecord"/> (the verify-time path).</summary>
@@ -87,6 +101,8 @@ internal static class AuditRecordHasher
         record.SourceService,
         record.IdempotencyKey,
         record.PreviousRecordHash,
+        record.HashAlgorithm,
+        record.KeyId,
         record.SchemaVersion);
 
     /// <summary>Computes the hex HMAC-SHA256 digest of the canonical encoding of <paramref name="fields"/>, keyed by <paramref name="key"/>.</summary>
@@ -124,5 +140,7 @@ internal static class AuditRecordHasher
         CanonicalEncoding.WriteOptionalString(buffer, fields.SourceService);
         CanonicalEncoding.WriteOptionalString(buffer, fields.IdempotencyKey);
         CanonicalEncoding.WriteOptionalString(buffer, fields.PreviousRecordHash);
+        CanonicalEncoding.WriteString(buffer, fields.HashAlgorithm);
+        CanonicalEncoding.WriteString(buffer, fields.KeyId);
     }
 }

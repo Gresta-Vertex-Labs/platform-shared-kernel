@@ -43,6 +43,13 @@ public sealed class AuditChainOptionsValidator : IValidateOptions<AuditChainOpti
                 $"least {MinimumKeyLengthBytes} are required.");
         }
 
+        if (options.AdvisoryLockTimeout < TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{nameof(AuditChainOptions.AdvisoryLockTimeout)} must not be negative (use " +
+                $"{nameof(TimeSpan)}.{nameof(TimeSpan.Zero)} to disable the timeout, not a negative value).");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

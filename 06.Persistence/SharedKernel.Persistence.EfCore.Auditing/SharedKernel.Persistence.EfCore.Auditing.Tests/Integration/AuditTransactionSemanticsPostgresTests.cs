@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.TestFixtures;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
@@ -153,6 +154,97 @@ public sealed class AuditTransactionSemanticsPostgresTests
         auditRecords.Should().ContainSingle();
         auditRecords[0].Outcome.Should().Be(AuditOutcome.Failed);
         auditRecords[0].ErrorCode.Should().Be("order.validation_failed");
+    }
+
+    [Fact]
+    public async Task SucceededOutcome_NoAmbientTransactionAtAll_ThrowsAndWritesNothing()
+    {
+        // C2 regression: a Succeeded-outcome attestation with NO transactional tie to the business
+        // write it describes must never be allowed to stand alone — see EfAuditTrailWriter's remarks.
+        var connectionString = ConnectionString("sk_audit_tx_succeeded_no_ambient_refused");
+        await using var sp = await BuildAndCreateAsync(connectionString);
+
+        await using var scope = sp.CreateAsyncScope();
+        var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+
+        var act = async () => await writer.RecordAsync(new AuditEntry
+        {
+            Action = "OrderCreated",
+            ResourceType = "Order",
+            ResourceId = "order-standalone",
+            Outcome = AuditOutcome.Succeeded,
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        await using var verifyScope = sp.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+        (await verifyContext.Set<AuditRecord>().CountAsync()).Should().Be(
+            0, "the refusal must be total — no partial/orphaned record from the rejected attempt");
+    }
+
+    [Fact]
+    public async Task FailedOutcome_SameChainAsAmbientSucceededTransaction_TimesOutRatherThanHangingForever()
+    {
+        // H8 regression: a Succeeded entry enlisted in an ambient transaction holds that chain's
+        // advisory lock for the transaction's whole remaining lifetime. A Failed entry on the SAME
+        // chain, from the same logical request, opens its OWN connection and — pre-fix — blocks on
+        // that lock FOREVER (the ambient transaction is idle-in-transaction awaiting application code,
+        // so Postgres's own deadlock detector never fires). AdvisoryLockTimeout bounds the wait.
+        var connectionString = ConnectionString("sk_audit_tx_deadlock_bounded");
+        var tenantId = Guid.NewGuid();
+
+        var sp = AuditTestHost.Build(
+            connectionString, new FakeAuditActorContext(tenantId: tenantId),
+            configureServices: services => services.PostConfigure<AuditChainOptions>(
+                o => o.AdvisoryLockTimeout = TimeSpan.FromSeconds(2)));
+        await using (sp)
+        {
+            await using (var scope = sp.CreateAsyncScope())
+                await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+
+            await using var scope1 = sp.CreateAsyncScope();
+            var context = scope1.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+            var unitOfWork = scope1.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+            var writer1 = scope1.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+
+            await using var tx = await unitOfWork.BeginTransactionAsync();
+
+            var orderId = Guid.NewGuid();
+            context.Orders.Add(new AuditTestOrder(orderId, "deadlock-probe-order"));
+            await context.SaveChangesAsync();
+
+            // Holds chain (tenantId, "Order")'s advisory lock for the rest of THIS transaction.
+            await writer1.RecordAsync(new AuditEntry
+            {
+                Action = "OrderCreated",
+                ResourceType = "Order",
+                ResourceId = orderId.ToString(),
+                Outcome = AuditOutcome.Succeeded,
+            });
+
+            // Still inside tx1 — a nested Failed write on the SAME chain opens its own connection and
+            // contends for the same lock.
+            await using var scope2 = sp.CreateAsyncScope();
+            var writer2 = scope2.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+
+            var recordTask = writer2.RecordAsync(new AuditEntry
+            {
+                Action = "SubOperationRejected",
+                ResourceType = "Order",
+                ResourceId = orderId.ToString(),
+                Outcome = AuditOutcome.Failed,
+                ErrorCode = "sub.failed",
+            });
+
+            var completed = await Task.WhenAny(recordTask, Task.Delay(TimeSpan.FromSeconds(20)));
+            completed.Should().Be(recordTask, "AdvisoryLockTimeout must fail the call within a bounded time, never hang forever");
+
+            var act = async () => await recordTask;
+            (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable);
+
+            await tx.RollbackAsync();
+        }
     }
 
     [Fact]

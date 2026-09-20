@@ -205,6 +205,35 @@ public sealed class WithAuditTrailBuilderTests
     }
 
     [Fact]
+    public void WithAuditTrail_PreRegisteredCustomAuditTrailWriter_StillRegistersEveryImmutabilityGuard_AndTheCustomWriterStillWinsResolution()
+    {
+        // H5 regression: gating WithAuditTrail()'s idempotency on "is an IAuditTrailWriter already
+        // registered" used to make the WHOLE method a no-op the moment a consumer, a decorator, or a
+        // 16.Testing fake pre-registered its own IAuditTrailWriter — silently skipping options
+        // validation, the model configurator, the immutability interceptor, the mutation guard, and
+        // IAuditQueryService, none of which have anything to do with which writer wins resolution.
+        var customWriter = Substitute.For<IAuditTrailWriter>();
+
+        using var provider = BuildServices(services => services.AddScoped<IAuditTrailWriter>(_ => customWriter));
+
+        // The pre-registered custom writer must still win DI resolution — TryAddScoped never overwrites it.
+        using (var scope = provider.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().Should().BeSameAs(customWriter);
+        }
+
+        // Every supporting registration below must STILL be present, not silently skipped.
+        provider.GetServices<IPersistenceModelConfigurator>().OfType<AuditRecordModelConfigurator>().Should().ContainSingle();
+        provider.GetServices<IPersistenceOptionsExtension>().OfType<AuditRecordMutationGuardOptionsContributor>().Should().ContainSingle();
+
+        using (var scope = provider.CreateScope())
+        {
+            scope.ServiceProvider.GetServices<ISaveChangesInterceptor>().OfType<AuditRecordImmutabilityInterceptor>().Should().ContainSingle();
+            scope.ServiceProvider.GetService<IAuditQueryService>().Should().NotBeNull().And.BeOfType<EfAuditQueryService>();
+        }
+    }
+
+    [Fact]
     public void WithAuditTrail_CalledTwice_IsIdempotent()
     {
         var services = new ServiceCollection();

@@ -148,6 +148,149 @@ public sealed class AuditChainMutationGuardPostgresTests
     }
 
     [Fact]
+    public async Task MutationGuardInterceptor_TruncateViaRawSqlThroughDbContext_IsRejected()
+    {
+        // Medium regression: the interceptor's regex used to match only UPDATE/DELETE FROM — never
+        // TRUNCATE. A raw TRUNCATE reached THROUGH this DbContext is invisible to
+        // AuditRecordImmutabilityInterceptor (change-tracker based); only the widened
+        // AuditRecordMutationGuardInterceptor regex catches it at the APPLICATION layer — distinct
+        // from DatabaseTrigger_TruncateRealAuditTable_IsRejected above, which proves the separate,
+        // mandatory DATABASE-layer trigger against a raw connection that bypasses the app entirely.
+        var connectionString = ConnectionString("sk_audit_guard_truncate_via_context");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+        }
+
+        await using var testScope = sp.CreateAsyncScope();
+        var context = testScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+
+        var act = async () => await context.Database.ExecuteSqlRawAsync($"""TRUNCATE TABLE "{AuditSchema.TableName}" """);
+
+        await act.Should().ThrowAsync<AuditRecordImmutableException>();
+    }
+
+    [Fact]
+    public async Task MutationGuardInterceptor_SchemaQualifiedDeleteThroughDbContext_IsRejected()
+    {
+        // Medium regression: the un-widened regex required the bare table name immediately after
+        // "DELETE FROM" — a schema-qualified reference ("public"."audit_records") slipped past it.
+        var connectionString = ConnectionString("sk_audit_guard_schema_qualified_delete");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+        }
+
+        await using var testScope = sp.CreateAsyncScope();
+        var context = testScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+
+        var act = async () => await context.Database.ExecuteSqlRawAsync($"""DELETE FROM "public"."{AuditSchema.TableName}" """);
+
+        await act.Should().ThrowAsync<AuditRecordImmutableException>();
+    }
+
+    [Fact]
+    public async Task MutationGuardInterceptor_UpdateOnlyThroughDbContext_IsRejected()
+    {
+        // Medium regression: Postgres's UPDATE ONLY table_name (table-inheritance syntax) — the
+        // un-widened regex required the table name immediately after "UPDATE", with no room for ONLY.
+        var connectionString = ConnectionString("sk_audit_guard_update_only");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+        }
+
+        await using var testScope = sp.CreateAsyncScope();
+        var context = testScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+
+        var act = async () => await context.Database.ExecuteSqlRawAsync($"""UPDATE ONLY "{AuditSchema.TableName}" SET "{AuditSchema.Action}" = 'Tampered'""");
+
+        await act.Should().ThrowAsync<AuditRecordImmutableException>();
+    }
+
+    [Fact]
+    public async Task MutationGuardInterceptor_AlterTableDisableTriggerThroughDbContext_IsRejected()
+    {
+        // Medium regression: the un-widened regex covered only UPDATE/DELETE FROM — an attacker (or a
+        // careless migration) disabling the immutability TRIGGER itself via raw SQL reached through
+        // this DbContext was not caught at the application layer at all.
+        var connectionString = ConnectionString("sk_audit_guard_alter_disable_trigger");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+
+        await using var testScope = sp.CreateAsyncScope();
+        var context = testScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+
+        var act = async () => await context.Database.ExecuteSqlRawAsync($"""ALTER TABLE "{AuditSchema.TableName}" DISABLE TRIGGER ALL""");
+
+        await act.Should().ThrowAsync<AuditRecordImmutableException>();
+    }
+
+    [Fact]
+    public async Task MutationGuardInterceptor_DropTableThroughDbContext_IsRejected()
+    {
+        // Medium regression: DROP TABLE was not covered by the un-widened regex at all.
+        var connectionString = ConnectionString("sk_audit_guard_drop_table");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+
+        await using var testScope = sp.CreateAsyncScope();
+        var context = testScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+
+        var act = async () => await context.Database.ExecuteSqlRawAsync($"""DROP TABLE "{AuditSchema.TableName}" """);
+
+        await act.Should().ThrowAsync<AuditRecordImmutableException>();
+    }
+
+    [Fact]
+    public async Task RecordAsync_FailedOutcome_UnderlyingWriteItselfFails_ThrowsAndInsertsNothing()
+    {
+        // Medium regression: AuditingLog.FailureAuditWriteFailed (EventId 6405) was defined but never
+        // called — this exercises the exact path that now calls it: a Failed-outcome write (its own,
+        // independent connection/transaction) that itself fails at the DB layer. A resourceType longer
+        // than the real varchar(200) column forces a genuine Postgres 22001 ("value too long") error —
+        // a real data-layer failure, not a simulated one.
+        var connectionString = ConnectionString("sk_audit_guard_failure_write_itself_fails");
+        await using var sp = AuditTestHost.Build(connectionString, new FakeAuditActorContext());
+
+        await using (var scope = sp.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
+
+        await using var testScope = sp.CreateAsyncScope();
+        var writer = testScope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+
+        var oversizedResourceType = new string('x', 201);
+
+        var act = async () => await writer.RecordAsync(new AuditEntry
+        {
+            Action = "Tested",
+            ResourceType = oversizedResourceType,
+            ResourceId = "order-1",
+            Outcome = AuditOutcome.Failed,
+            ErrorCode = "test.failure",
+        });
+
+        await act.Should().ThrowAsync<PostgresException>();
+
+        await using var verifyScope = sp.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+        (await verifyContext.Set<AuditRecord>().CountAsync()).Should().Be(0, "the failed write must roll back completely, not leave a partial row");
+    }
+
+    [Fact]
     public async Task DatabaseTrigger_RawUpdateAgainstRealAuditTable_IsRejected()
     {
         var connectionString = ConnectionString("sk_audit_guard_trigger_update");

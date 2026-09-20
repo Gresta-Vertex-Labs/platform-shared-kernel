@@ -23,13 +23,19 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// <see cref="AuditRecord"/>'s remarks for why.
 /// </para>
 /// <para>
-/// <strong>Tenant scoping is enforced here, never trusted from a caller-constructed specification:</strong>
+/// <strong>Tenant scoping is enforced here, never trusted from a caller-supplied parameter:</strong>
 /// <see cref="GetResourceHistoryAsync"/>/<see cref="GetActorActionsAsync"/> pre-filter the source
 /// <see cref="IQueryable{T}"/> by <see cref="ICurrentTenantContext.TenantId"/> BEFORE handing it to the
 /// evaluator, so <see cref="AuditResourceHistorySpecification"/>/<see cref="AuditActorActionsSpecification"/>
 /// — which deliberately carry no tenant parameter — can never be used to read another tenant's chain
-/// even if a caller constructed one directly. <see cref="GetResourceHistoryAcrossTenantsAsync"/> is the
-/// sole, separately-named, <see cref="ICrossTenantScope"/>-gated exception.
+/// even if a caller constructed one directly. <see cref="ExportRangeAsync"/>/<see cref="VerifyFullChainAsync"/>
+/// likewise resolve <see cref="ICurrentTenantContext.TenantId"/> internally and take no <c>tenantId</c>
+/// parameter at all — there is nothing there for a caller to forge. <see cref="GetResourceHistoryAcrossTenantsAsync"/>
+/// is the sole, separately-named, <see cref="ICrossTenantScope"/>-gated exception.
+/// <see cref="VerifyChainFromCheckpointAsync"/> is a different case again: its <c>tenantId</c> comes
+/// from an <see cref="AuditChainCheckpoint"/> whose signature is verified BEFORE any of its fields
+/// (including <see cref="AuditChainCheckpoint.TenantId"/>) are trusted, so it is not a forgeable
+/// caller-supplied parameter either.
 /// </para>
 /// </remarks>
 public sealed class EfAuditQueryService : IAuditQueryService
@@ -127,13 +133,17 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
     /// <inheritdoc />
     public async IAsyncEnumerable<AuditRecord> ExportRangeAsync(
-        Guid? tenantId,
         string resourceType,
         DateTimeOffset from,
         DateTimeOffset to,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
+
+        // The tenant is resolved from the caller's OWN context — never trusted from a parameter that
+        // could be forged to stream another tenant's full history (before/after snapshots, actor/
+        // session/impersonator ids included). See IAuditQueryService's remarks.
+        var tenantId = _tenantContext.TenantId;
 
         var query = _dbContext.Set<AuditRecord>()
             .Where(r => r.TenantId == tenantId && r.ResourceType == resourceType && r.OccurredOn >= from && r.OccurredOn <= to)
@@ -149,11 +159,13 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
     /// <inheritdoc />
     public async Task<AuditChainVerificationResult> VerifyFullChainAsync(
-        Guid? tenantId,
         string resourceType,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
+
+        // Same tenant-resolution rule as ExportRangeAsync above — never a caller-supplied parameter.
+        var tenantId = _tenantContext.TenantId;
 
         var chainKey = AuditChainKeyFormat.Build(tenantId, resourceType);
         var records = _dbContext.Set<AuditRecord>()
@@ -162,8 +174,9 @@ public sealed class EfAuditQueryService : IAuditQueryService
                     .AsNoTracking()
                         .AsAsyncEnumerable();
 
-        var (result, _) = await VerifyStreamAsync(chainKey, records, expectedStartSequence: 1, expectedPreviousHash: null, cancellationToken)
-            .ConfigureAwait(false);
+        var (result, _, _) = await VerifyStreamAsync(
+            chainKey, records, expectedStartSequence: 1, expectedPreviousHash: null, captureHashAtSequence: null, cancellationToken)
+                .ConfigureAwait(false);
         return result;
     }
 
@@ -219,9 +232,17 @@ public sealed class EfAuditQueryService : IAuditQueryService
                     .AsNoTracking()
                         .AsAsyncEnumerable();
 
-        var (result, lastSequenceSeen) = await VerifyStreamAsync(
+        // When expectedHead names the anchor itself (a degenerate but not forbidden pairing), there is
+        // no later record to capture a hash from — the anchor's OWN (already signature- and
+        // hash-verified) RecordHash is the answer.
+        var captureAtSequence = expectedHead is null || expectedHead.Sequence == checkpoint.Sequence
+            ? (long?)null
+            : expectedHead.Sequence;
+
+        var (result, lastSequenceSeen, capturedHeadHash) = await VerifyStreamAsync(
             chainKey, rest, expectedStartSequence: checkpoint.Sequence + 1, expectedPreviousHash: checkpoint.RecordHash,
-            cancellationToken, recordsAlreadyChecked: 1, initialLastSequenceSeen: checkpoint.Sequence)
+            captureHashAtSequence: captureAtSequence, cancellationToken,
+            recordsAlreadyChecked: 1, initialLastSequenceSeen: checkpoint.Sequence)
                 .ConfigureAwait(false);
 
         if (!result.IsIntact || expectedHead is null)
@@ -235,14 +256,32 @@ public sealed class EfAuditQueryService : IAuditQueryService
             return Broken(chainKey, expectedHead.Sequence, null, "the chain does not reach the expected head sequence (tail truncated)", result.RecordsChecked);
         }
 
+        // The chain DOES reach expectedHead's sequence — but reaching a sequence number is not the
+        // same as reaching the RECORD expectedHead actually attested to. An attacker holding the
+        // chain's HMAC key (but not this checkpoint's separate ECDSA signing key) can delete records
+        // after the anchor and re-append forged ones that chain correctly and land on the exact same
+        // final sequence — every recomputed hash and link would still validate. Comparing the
+        // independently-signed expectedHead.RecordHash against what is ACTUALLY at that sequence today
+        // is what catches that rewrite; the sequence-reachability check above alone cannot.
+        var actualHeadHash = expectedHead.Sequence == checkpoint.Sequence ? checkpoint.RecordHash : capturedHeadHash;
+
+        if (!string.Equals(actualHeadHash, expectedHead.RecordHash, StringComparison.Ordinal))
+        {
+            return Broken(
+                chainKey, expectedHead.Sequence, null,
+                "the chain reaches the expected head sequence, but the record found there does not " +
+                "match the expected head's hash (the tail was deleted and replaced)", result.RecordsChecked);
+        }
+
         return result;
     }
 
-    private async Task<(AuditChainVerificationResult Result, long LastSequenceSeen)> VerifyStreamAsync(
+    private async Task<(AuditChainVerificationResult Result, long LastSequenceSeen, string? CapturedHeadHash)> VerifyStreamAsync(
         string chainKey,
         IAsyncEnumerable<AuditRecord> records,
         long expectedStartSequence,
         string? expectedPreviousHash,
+        long? captureHashAtSequence,
         CancellationToken cancellationToken,
         int recordsAlreadyChecked = 0,
         long initialLastSequenceSeen = 0)
@@ -251,6 +290,7 @@ public sealed class EfAuditQueryService : IAuditQueryService
         var previousHash = expectedPreviousHash;
         var recordsChecked = recordsAlreadyChecked;
         var lastSequenceSeen = initialLastSequenceSeen;
+        string? capturedHash = null;
 
         await foreach (var record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
@@ -259,30 +299,33 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
             if (record.Sequence != expectedSequence)
             {
-                return (Broken(chainKey, expectedSequence, record.Id, $"expected sequence {expectedSequence} but found {record.Sequence} (a record was deleted or reordered)", recordsChecked), lastSequenceSeen);
+                return (Broken(chainKey, expectedSequence, record.Id, $"expected sequence {expectedSequence} but found {record.Sequence} (a record was deleted or reordered)", recordsChecked), lastSequenceSeen, capturedHash);
             }
 
             if (!_keyProvider.TryGetKey(record.KeyId, out var key))
             {
-                return (Broken(chainKey, record.Sequence, record.Id, $"key id '{record.KeyId}' is not known to the configured IAuditChainKeyProvider", recordsChecked), lastSequenceSeen);
+                return (Broken(chainKey, record.Sequence, record.Id, $"key id '{record.KeyId}' is not known to the configured IAuditChainKeyProvider", recordsChecked), lastSequenceSeen, capturedHash);
             }
 
             var recomputedHash = AuditRecordHasher.ComputeHashHex(_hmacSigner, key.Material, AuditRecordHasher.FromRecord(record));
             if (!string.Equals(recomputedHash, record.RecordHash, StringComparison.Ordinal))
             {
-                return (Broken(chainKey, record.Sequence, record.Id, "the record's stored hash does not match its recomputed hash (tampered)", recordsChecked), lastSequenceSeen);
+                return (Broken(chainKey, record.Sequence, record.Id, "the record's stored hash does not match its recomputed hash (tampered)", recordsChecked), lastSequenceSeen, capturedHash);
             }
 
             if (!string.Equals(record.PreviousRecordHash, previousHash, StringComparison.Ordinal))
             {
-                return (Broken(chainKey, record.Sequence, record.Id, "the record's previous-hash link does not match the prior record actually found (broken link)", recordsChecked), lastSequenceSeen);
+                return (Broken(chainKey, record.Sequence, record.Id, "the record's previous-hash link does not match the prior record actually found (broken link)", recordsChecked), lastSequenceSeen, capturedHash);
             }
+
+            if (captureHashAtSequence == record.Sequence)
+                capturedHash = record.RecordHash;
 
             previousHash = record.RecordHash;
             expectedSequence++;
         }
 
-        return (AuditChainVerificationResult.Intact(recordsChecked), lastSequenceSeen);
+        return (AuditChainVerificationResult.Intact(recordsChecked), lastSequenceSeen, capturedHash);
     }
 
     private AuditChainVerificationResult Broken(string chainKey, long sequence, Guid? recordId, string reason, int recordsChecked)

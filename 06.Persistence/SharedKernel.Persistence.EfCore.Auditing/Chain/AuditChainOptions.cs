@@ -35,4 +35,29 @@ public sealed class AuditChainOptions : ISectionBoundOptions
     /// <c>.WithAuditChainCheckpoints()</c> is opted into. Ignored otherwise.
     /// </summary>
     public string? CheckpointSigningKeyId { get; set; }
+
+    /// <summary>
+    /// The PostgreSQL <c>lock_timeout</c> applied while <c>EfAuditTrailWriter</c> holds its OWN
+    /// connection and transaction (the <c>Outcome == Failed</c>, or <c>Outcome == Succeeded</c> with no
+    /// ambient transaction, path) and attempts to acquire the per-chain advisory lock or write the
+    /// record. Defaults to 5 seconds. <see cref="TimeSpan.Zero"/> disables the timeout (waits
+    /// indefinitely) — the pre-fix, unbounded-wait behavior; not recommended.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Bounds a specific, real self-deadlock class: a <c>Succeeded</c>-outcome entry recorded inside an
+    /// ambient transaction acquires and HOLDS the per-chain advisory lock for that transaction's entire
+    /// remaining lifetime; a <c>Failed</c>-outcome entry recorded on the SAME chain, from the SAME
+    /// logical request, before that ambient transaction commits or rolls back, opens its OWN connection
+    /// and blocks trying to acquire the SAME lock. Because the ambient transaction is idle-in-transaction
+    /// awaiting application code — not itself waiting on a lock — PostgreSQL's own deadlock detector sees
+    /// no cycle and never fires; without a bound, the blocked acquisition would hang forever. This
+    /// timeout converts that hang into a fast, diagnosable failure instead.
+    /// </para>
+    /// <para>
+    /// Set with <c>SET LOCAL lock_timeout</c> on the writer's own connection/transaction only — it never
+    /// affects the caller's ambient transaction or any other connection.
+    /// </para>
+    /// </remarks>
+    public TimeSpan AdvisoryLockTimeout { get; set; } = TimeSpan.FromSeconds(5);
 }

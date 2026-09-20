@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
@@ -38,6 +39,20 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// <see cref="AuditRecordEntityConfiguration"/>'s <c>chain_key, sequence</c> unique index) — correct,
 /// but under heavy concurrent contention on one chain, more retries.
 /// </para>
+/// <para>
+/// <strong>The unique-constraint-retry fallback assumes READ COMMITTED isolation</strong> (Postgres's
+/// own default, and what a plain <c>ITransactionalUnitOfWork.BeginTransactionAsync()</c> call without an
+/// explicit <see cref="System.Data.IsolationLevel"/> uses). Each retry re-reads the chain head with a
+/// fresh statement-level snapshot, which is what lets a later attempt observe a DIFFERENT (newer) head
+/// than an earlier one on the SAME connection. Under REPEATABLE READ or SERIALIZABLE, a transaction sees
+/// one consistent snapshot for its entire duration — every retry inside the SAME ambient transaction
+/// would keep re-reading the SAME (already-stale) head and keep colliding on the SAME candidate
+/// sequence, exhausting <see cref="MaxSequenceRetries"/> under contention that READ COMMITTED would have
+/// resolved. This only matters for a <c>Outcome.Succeeded</c> write enlisted in an ambient transaction
+/// explicitly opened at a stricter isolation level AND contending with a concurrent appender to the SAME
+/// chain — the <c>Outcome.Failed</c>/no-ambient-transaction path always opens its own fresh transaction
+/// and is unaffected.
+/// </para>
 /// </remarks>
 public sealed class EfAuditTrailWriter : IAuditTrailWriter
 {
@@ -46,8 +61,12 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
     // plus a re-insert) — a Postgres-backed test with a dozen genuinely concurrent, lock-free writers
     // on the same chain needed more than 5 to reliably avoid exhaustion under real contention.
     private const int MaxSequenceRetries = 10;
-    private const int SchemaVersion = 1;
+
+    // v2: HashAlgorithm/KeyId joined the hashed payload (see AuditRecordHasher's remarks) — a hash-
+    // format break, so this bumped from 1 alongside AuditRecordHasher's own domain-separator version.
+    private const int SchemaVersion = 2;
     private const string PostgresUniqueViolationSqlState = "23505";
+    private const string PostgresLockNotAvailableSqlState = "55P03";
     private const string SavepointName = "sk_audit_append_attempt";
 
     private readonly IDbConnectionFactory _connectionFactory;
@@ -58,6 +77,7 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
     private readonly IClock _clock;
     private readonly IHmacSigner _hmacSigner;
     private readonly IAuditChainKeyProvider _keyProvider;
+    private readonly TimeSpan _advisoryLockTimeout;
     private readonly ILogger<EfAuditTrailWriter> _logger;
 
     /// <summary>Initialises a new <see cref="EfAuditTrailWriter"/>.</summary>
@@ -69,6 +89,7 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
         IClock clock,
         IHmacSigner hmacSigner,
         IAuditChainKeyProvider keyProvider,
+        IOptions<AuditChainOptions> options,
         ILogger<EfAuditTrailWriter> logger,
         IAdvisoryTransactionLock? advisoryLock = null)
     {
@@ -79,6 +100,7 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(hmacSigner);
         ArgumentNullException.ThrowIfNull(keyProvider);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _connectionFactory = connectionFactory;
@@ -88,6 +110,7 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
         _clock = clock;
         _hmacSigner = hmacSigner;
         _keyProvider = keyProvider;
+        _advisoryLockTimeout = options.Value.AdvisoryLockTimeout;
         _logger = logger;
         _advisoryLock = advisoryLock;
 
@@ -111,10 +134,31 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
         var key = _keyProvider.GetCurrentKey();
 
         // Transaction semantics — see IAuditTrailWriter's remarks for the exact rule: a SUCCEEDED
-        // entry enlists in the caller's own ambient transaction (commits/rolls back atomically with
-        // it); a FAILED entry — or a SUCCEEDED one with no ambient transaction active — always gets
-        // its own connection and its own transaction, committed here, independent of anything else.
-        var ambient = entry.Outcome == AuditOutcome.Succeeded ? _ambientTransaction.Current : null;
+        // entry enlists in the caller's own ambient transaction, and ONLY the caller's own ambient
+        // transaction — there is no standalone fallback. Recording a "succeeded" attestation with no
+        // transactional tie to the business write it describes would be worse than no attestation at
+        // all (it could commit before, and regardless of, a business write that never actually
+        // happens), so this is a hard, fail-loud requirement, not a graceful degradation.
+        var ambientAtEntry = _ambientTransaction.Current;
+
+        if (entry.Outcome == AuditOutcome.Succeeded && ambientAtEntry is null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(RecordAsync)} was called with {nameof(AuditEntry.Outcome)}=" +
+                $"{nameof(AuditOutcome.Succeeded)}, but no ambient database transaction is active " +
+                $"({nameof(IAmbientDbTransaction)}.{nameof(IAmbientDbTransaction.Current)} is null). A " +
+                $"{nameof(AuditOutcome.Succeeded)}-outcome audit record is only ever written INSIDE the " +
+                "SAME transaction as the business write it attests to, so it can commit or roll back " +
+                "atomically together with it. Call this from inside an active ITransactionalUnitOfWork " +
+                "transaction (BeginTransactionAsync/ExecuteInTransactionAsync), or record " +
+                $"{nameof(AuditOutcome.Failed)} if there is no business write for this entry to be " +
+                "atomic with.");
+        }
+
+        // A FAILED entry — the only remaining case — always gets its own connection and its own
+        // transaction, committed here, independent of anything else (including any ambient
+        // transaction that may also happen to be open).
+        var ambient = entry.Outcome == AuditOutcome.Succeeded ? ambientAtEntry : null;
         var ownsConnection = ambient is null;
 
         DbConnection connection;
@@ -133,12 +177,22 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
         try
         {
             if (ownsConnection)
+            {
                 transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+                // Bounds every lock wait on THIS writer's own, independent connection/transaction —
+                // in particular the advisory-lock acquisition below — so a specific, real self-deadlock
+                // (a Succeeded entry holding this chain's advisory lock for its ambient transaction's
+                // whole lifetime, while a Failed entry on the SAME chain from the SAME logical request
+                // blocks trying to acquire it) fails fast instead of hanging forever. Never applied to
+                // an ambient (enlisted) transaction — see AuditChainOptions.AdvisoryLockTimeout's remarks.
+                await SetLockTimeoutAsync(connection, transaction, _advisoryLockTimeout, cancellationToken).ConfigureAwait(false);
+            }
 
             if (_advisoryLock is not null)
             {
                 await _advisoryLock
-                    .AcquireAsync(connection, transaction!, $"sk-audit-chain:{chainKey}", cancellationToken)
+                    .AcquireAsync(connection, transaction!, $"sk-audit-chain:{chainKey}", cancellationToken: cancellationToken)
                         .ConfigureAwait(false);
             }
 
@@ -148,6 +202,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                     .ConfigureAwait(false);
                 if (existing is not null)
                 {
+                    EnsureIdempotencyFingerprintMatches(entry, existing, chainKey, key1);
+
                     if (ownsConnection)
                         await transaction!.CommitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -178,7 +234,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                     id, tenantId, actorId, actorKind, entry.Action, entry.ResourceType, entry.ResourceId,
                     sequence, occurredOnMicros, entry.BeforeSnapshot, entry.AfterSnapshot, correlationId,
                     entry.ApprovalId, entry.Outcome, entry.ErrorCode, entry.ClientId, entry.SessionId,
-                    entry.ImpersonatorId, entry.SourceService, entry.IdempotencyKey, headHash, SchemaVersion);
+                    entry.ImpersonatorId, entry.SourceService, entry.IdempotencyKey, headHash,
+                    AuditHashAlgorithmNames.HmacSha256, key.Id, SchemaVersion);
 
                 var recordHash = AuditRecordHasher.ComputeHashHex(_hmacSigner, key.Material, in fields);
 
@@ -215,6 +272,13 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                 {
                     await InsertAsync(connection, transaction, record, cancellationToken).ConfigureAwait(false);
 
+                    // Releases (never leaves dangling) this attempt's own subtransaction before
+                    // committing — a savepoint created but never released/rolled-back would otherwise
+                    // accumulate across every RecordAsync call sharing one long-lived ambient
+                    // transaction, eventually overflowing Postgres's per-backend cached-subxid limit.
+                    if (canUseSavepoints)
+                        await transaction!.ReleaseAsync(SavepointName, cancellationToken).ConfigureAwait(false);
+
                     if (ownsConnection)
                         await transaction!.CommitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -226,9 +290,15 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                     // Undo just this attempt's aborted INSERT, not the whole transaction — any
                     // ambient business writes staged earlier in the SAME transaction (the
                     // Outcome=Succeeded/ambient-transaction path) must survive a sequence-conflict
-                    // retry untouched.
+                    // retry untouched. RELEASE immediately after — otherwise the rolled-back-to
+                    // savepoint stays defined (an un-released subtransaction) for the rest of this
+                    // ambient transaction's life, and the NEXT attempt's SAVEPOINT (same name) would
+                    // nest another one on top of it rather than replacing it.
                     if (canUseSavepoints)
+                    {
                         await transaction!.RollbackAsync(SavepointName, cancellationToken).ConfigureAwait(false);
+                        await transaction!.ReleaseAsync(SavepointName, cancellationToken).ConfigureAwait(false);
+                    }
 
                     if (entry.IdempotencyKey is { } key2)
                     {
@@ -236,6 +306,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                             .ConfigureAwait(false);
                         if (existing is not null)
                         {
+                            EnsureIdempotencyFingerprintMatches(entry, existing, chainKey, key2);
+
                             if (ownsConnection)
                                 await transaction!.CommitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -270,8 +342,24 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
             // Unreachable — the loop above always either returns or throws on its final attempt.
             throw new UnreachableException();
         }
-        catch
+        catch (Exception ex)
         {
+            if (ownsConnection && ex is DbException dbEx && IsLockTimeout(dbEx))
+            {
+                // The specific, real self-deadlock this writer can otherwise hit — see
+                // AuditChainOptions.AdvisoryLockTimeout's remarks. Logged distinctly from the generic
+                // "failed to record a failure" case below: this is a coordination/contention failure,
+                // not a data-layer one.
+                AuditingLog.AdvisoryLockTimedOut(_logger, chainKey, _advisoryLockTimeout);
+            }
+            else if (entry.Outcome == AuditOutcome.Failed)
+            {
+                // Recording a FAILURE itself failed — the compliance-relevant "why did this command
+                // fail" information may now be lost entirely, distinct from (and independent of)
+                // whatever happens to the business transaction that triggered it.
+                AuditingLog.FailureAuditWriteFailed(_logger, ex, chainKey);
+            }
+
             if (ownsConnection && transaction is not null)
                 await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             throw;
@@ -285,6 +373,64 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
 
     private static bool IsUniqueConstraintViolation(DbException exception) =>
         string.Equals(exception.SqlState, PostgresUniqueViolationSqlState, StringComparison.Ordinal);
+
+    private static bool IsLockTimeout(DbException exception) =>
+        string.Equals(exception.SqlState, PostgresLockNotAvailableSqlState, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Sets <c>lock_timeout</c> for the remainder of <paramref name="transaction"/> ONLY (<c>SET
+    /// LOCAL</c> auto-reverts at commit/rollback) — never the session/pool default, and never applied
+    /// to an ambient (enlisted) transaction this writer does not own. See
+    /// <see cref="AuditChainOptions.AdvisoryLockTimeout"/>'s remarks for why.
+    /// </summary>
+    private static async Task SetLockTimeoutAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        // TimeSpan.Zero means "no timeout" (Postgres's own lock_timeout=0 semantics) — the
+        // pre-fix, unbounded-wait behavior; an explicit opt-out, so nothing to set.
+        if (timeout <= TimeSpan.Zero)
+            return;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // A trusted, internally-computed integer (bound by AuditChainOptionsValidator to be
+        // non-negative) — never caller/user input — and Postgres's SET command does not accept a bind
+        // parameter in the value position, so this interpolation is safe.
+        command.CommandText = $"SET LOCAL lock_timeout = '{(int)timeout.TotalMilliseconds}ms'";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Rejects a reused <see cref="AuditEntry.IdempotencyKey"/> whose entry describes a DIFFERENT
+    /// logical event than the record already persisted under that key — see
+    /// <see cref="IAuditTrailWriter.RecordAsync"/>'s remarks.
+    /// </summary>
+    private static void EnsureIdempotencyFingerprintMatches(
+        AuditEntry entry,
+        AuditRecord existing,
+        string chainKey,
+        string idempotencyKey)
+    {
+        if (string.Equals(existing.Action, entry.Action, StringComparison.Ordinal) &&
+            string.Equals(existing.ResourceType, entry.ResourceType, StringComparison.Ordinal) &&
+            string.Equals(existing.ResourceId, entry.ResourceId, StringComparison.Ordinal) &&
+            existing.Outcome == entry.Outcome)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Idempotency key '{idempotencyKey}' on chain '{chainKey}' was already used to record a " +
+            $"DIFFERENT audit event (Action='{existing.Action}', ResourceType='{existing.ResourceType}', " +
+            $"ResourceId='{existing.ResourceId}', Outcome={existing.Outcome}) than the one now being " +
+            $"recorded (Action='{entry.Action}', ResourceType='{entry.ResourceType}', " +
+            $"ResourceId='{entry.ResourceId}', Outcome={entry.Outcome}). An idempotency key must " +
+            "uniquely identify exactly one logical audit event — reusing it for a different event is " +
+            "rejected rather than silently discarding the new one.");
+    }
 
     private static async Task<(long Sequence, string? RecordHash)> ReadChainHeadAsync(
         DbConnection connection,
