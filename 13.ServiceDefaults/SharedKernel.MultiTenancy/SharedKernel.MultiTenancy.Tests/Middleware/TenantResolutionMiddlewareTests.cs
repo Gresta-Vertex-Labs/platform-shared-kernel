@@ -202,7 +202,7 @@ public sealed class TenantResolutionMiddlewareTests
     [Fact]
     public async Task InvokeAsync_AuthenticatedClaimTenant_WinsOverConflictingHeaderTenant()
     {
-        // WO-061/P-393 acceptance criterion: a request carrying both a valid authenticated JWT
+        // Acceptance criterion: a request carrying both a valid authenticated JWT
         // tenant claim AND a different X-Tenant-Id header must resolve to the claim's tenant, not
         // the header's, under the corrected [Claim, Header, Database] default order.
         var claimTenantId = Guid.NewGuid();
@@ -231,8 +231,8 @@ public sealed class TenantResolutionMiddlewareTests
     [Fact]
     public async Task InvokeAsync_HeaderOnlyRequest_UnaffectedByClaimFirstOrder()
     {
-        // Pre-existing B2B/API-key header-only path is unaffected by the P-393 reorder — Claim
-        // returns null for an unauthenticated request, so Header still wins when there is no claim
+        // Pre-existing B2B/API-key header-only path is unaffected by the [Claim, Header, Database]
+        // reorder — Claim returns null for an unauthenticated request, so Header still wins when there is no claim
         // to compete with.
         var expectedTenantId = Guid.NewGuid();
         var context = new DefaultHttpContext();
@@ -302,7 +302,7 @@ public sealed class TenantResolutionMiddlewareTests
     [Fact]
     public async Task InvokeAsync_TenantStatusValidatorReturnsFalse_FailsClosedToGuidEmpty()
     {
-        // WO-061/P-400 acceptance criterion: a registered validator returning false for a
+        // Acceptance criterion: a registered validator returning false for a
         // syntactically-resolved tenant ID must still result in Guid.Empty/no-tenant behavior —
         // the same fail-closed path as "no strategy resolved", never a distinct outcome.
         var services = new ServiceCollection();

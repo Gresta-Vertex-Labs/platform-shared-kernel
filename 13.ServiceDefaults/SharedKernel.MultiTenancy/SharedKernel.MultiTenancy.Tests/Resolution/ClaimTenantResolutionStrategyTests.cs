@@ -54,7 +54,7 @@ public sealed class ClaimTenantResolutionStrategyTests
         User = new ClaimsPrincipal(identity),
         RequestServices = new ServiceCollection()
             .AddSingleton<IUserContextMapper, TenantClaimMapper>()
-            .BuildServiceProvider(),
+                .BuildServiceProvider(),
     };
 
     private sealed class TenantClaimMapper : IUserContextMapper

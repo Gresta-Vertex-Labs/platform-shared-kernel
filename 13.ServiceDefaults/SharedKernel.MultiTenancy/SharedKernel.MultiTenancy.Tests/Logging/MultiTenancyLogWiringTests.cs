@@ -10,7 +10,7 @@ using SharedKernel.Testing.Logging;
 namespace SharedKernel.MultiTenancy.Tests.Logging;
 
 /// <summary>
-/// Covers WO-061/P-395's <c>MultiTenancyLog</c> call-site wiring: this package's first-ever
+/// Covers <c>MultiTenancyLog</c>'s call-site wiring: this package's first-ever
 /// production logging. Proves the log calls genuinely fire from
 /// <see cref="TenantResolutionMiddleware.InvokeAsync"/> — not merely that
 /// <c>MultiTenancyLog</c>'s <c>[LoggerMessage]</c> methods compile — via <c>16.Testing</c>'s
@@ -77,7 +77,7 @@ public sealed class MultiTenancyLogWiringTests
     [Fact]
     public async Task InvokeAsync_TenantStatusValidatorRejects_LogsTenantNotResolved_NotTenantResolved()
     {
-        // WO-061/P-400: an inactive/suspended tenant reuses TenantNotResolved rather than a
+        // An inactive/suspended tenant reuses TenantNotResolved rather than a
         // distinct message — deliberately indistinguishable from an absent one in logs.
         var (factory, logger) = CreateLogging();
         var services = new ServiceCollection();

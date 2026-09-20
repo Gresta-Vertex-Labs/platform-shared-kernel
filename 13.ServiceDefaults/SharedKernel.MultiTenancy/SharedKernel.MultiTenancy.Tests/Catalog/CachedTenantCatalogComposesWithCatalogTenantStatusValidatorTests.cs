@@ -17,7 +17,7 @@ public sealed class CachedTenantCatalogComposesWithCatalogTenantStatusValidatorT
         inner.GetByIdAsync(tenantId, Arg.Any<CancellationToken>()).Returns(descriptor);
 
         // Both constructors accept the ITenantCatalog interface only — this compiles and behaves
-        // correctly with zero changes to either type, per P-472's own explicit acceptance criterion.
+        // correctly with zero changes to either type.
         var validator = new CatalogTenantStatusValidator(
             new CachedTenantCatalog(inner, new FakeCacheService(), new FakeTenantCacheKeyProvider()));
 

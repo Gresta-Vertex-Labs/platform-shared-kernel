@@ -9,7 +9,7 @@ using SharedKernel.Persistence.Abstractions.Connections;
 namespace SharedKernel.MultiTenancy.Tests.Extensions;
 
 /// <summary>
-/// Covers WO-061/P-396's GATING acceptance criterion for
+/// Covers the GATING acceptance criterion for
 /// <see cref="TenantResolutionOptionsValidator"/>: a misconfigured <see cref="TenantResolutionOptions.StrategyOrder"/>
 /// must fail a genuine <see cref="IHost.StartAsync"/> call — not merely resolving
 /// <see cref="IOptions{TOptions}"/> against a bare <see cref="ServiceProvider"/> in isolation. This is

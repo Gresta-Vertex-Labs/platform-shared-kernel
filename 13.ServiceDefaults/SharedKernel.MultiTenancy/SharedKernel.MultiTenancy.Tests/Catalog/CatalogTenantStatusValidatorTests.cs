@@ -12,7 +12,7 @@ public sealed class CatalogTenantStatusValidatorTests
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())
-            .Returns(new TenantDescriptor(
+                .Returns(new TenantDescriptor(
                 tenantId,
                 "Acme",
                 TenantStatus.Active,
@@ -36,7 +36,7 @@ public sealed class CatalogTenantStatusValidatorTests
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())
-            .Returns(new TenantDescriptor(
+                .Returns(new TenantDescriptor(
                 tenantId,
                 "Acme",
                 status,
@@ -58,7 +58,7 @@ public sealed class CatalogTenantStatusValidatorTests
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())
-            .Returns((TenantDescriptor?)null);
+                .Returns((TenantDescriptor?)null);
 
         var validator = new CatalogTenantStatusValidator(catalog);
 

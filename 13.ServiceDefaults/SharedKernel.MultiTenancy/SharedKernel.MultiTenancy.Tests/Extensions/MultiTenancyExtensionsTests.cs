@@ -72,8 +72,8 @@ public sealed class MultiTenancyExtensionsTests
     [Fact]
     public void AddSharedKernelMultiTenancy_DefaultStrategyOrder_ResolvesOptionsWithoutThrowing()
     {
-        // The default StrategyOrder ([Claim, Header, Database], WO-061/P-393) must pass its own
-        // startup validation (WO-061/P-396) against the three strategies this method itself
+        // The default StrategyOrder ([Claim, Header, Database]) must pass its own
+        // startup validation against the three strategies this method itself
         // registers — resolving IOptions<T>.Value forces the same IValidateOptions pipeline
         // .ValidateOnStart() runs eagerly at real host startup.
         var services = new ServiceCollection();

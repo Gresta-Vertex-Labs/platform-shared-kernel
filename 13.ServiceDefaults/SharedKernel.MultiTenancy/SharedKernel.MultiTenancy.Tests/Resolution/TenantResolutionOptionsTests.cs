@@ -8,7 +8,7 @@ public sealed class TenantResolutionOptionsTests
     [Fact]
     public void DefaultStrategyOrder_IsClaimHeaderDatabase()
     {
-        // Security-motivated default (WO-061/P-393) — Claim must outrank Header so a
+        // Security-motivated default — Claim must outrank Header so a
         // cryptographically-verified JWT tenant claim always wins over an unsigned, caller-supplied
         // X-Tenant-Id header for the same request. See TenantResolutionOptions.DefaultStrategyOrder's own
         // XML doc remarks for the full rationale — never revert this order without a security review.
@@ -32,7 +32,7 @@ public sealed class TenantResolutionOptionsTests
             {
                 [$"{TenantResolutionOptions.SectionName}:StrategyOrder:0"] = "Header",
             })
-            .Build();
+                .Build();
         var options = new TenantResolutionOptions();
 
         configuration.GetSection(TenantResolutionOptions.SectionName).Bind(options);
