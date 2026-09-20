@@ -73,6 +73,12 @@
     <Project Path="06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/SharedKernel.Persistence.Dapper.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/SharedKernel.Persistence.EfCore.Tests.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Auditing/SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Auditing/SharedKernel.Persistence.EfCore.Auditing.Tests/SharedKernel.Persistence.EfCore.Auditing.Tests.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Encryption/SharedKernel.Persistence.EfCore.Encryption.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Encryption/SharedKernel.Persistence.EfCore.Encryption.Tests/SharedKernel.Persistence.EfCore.Encryption.Tests.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.Tests/SharedKernel.Persistence.Npgsql.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.Tests/SharedKernel.Persistence.PostgreSQL.Tests.csproj" />
   </Folder>
