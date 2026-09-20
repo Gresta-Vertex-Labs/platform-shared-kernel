@@ -173,6 +173,43 @@ public static class SharedKernelLayeringRules
             .NotHaveDependencyOn("SharedKernel.Search.ElasticSearch");
 
     /// <summary>
+    /// 06.Persistence — every production AND test assembly in the domain must never reference
+    /// <c>SharedKernel.Application</c> or <c>SharedKernel.Security</c>.
+    /// </summary>
+    /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate — production or test.</param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting the assembly has no dependency on either forbidden
+    /// namespace prefix.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// 06.Persistence previously took a direct <c>ProjectReference</c> from
+    /// <c>SharedKernel.Persistence.EfCore</c> to <c>SharedKernel.Application.Behaviors</c> (for the
+    /// <c>IUnitOfWork</c> transaction-behavior bridge) and to <c>SharedKernel.Security.Abstractions</c>
+    /// (for <c>IUserContext</c>/<c>ITenantProvider</c>). Both were replaced with local seams owned by
+    /// this domain (<c>ICurrentActorContext</c>, <c>ICurrentTenantContext</c>) that a consuming
+    /// service's own composition root bridges to its real <c>05.Application</c>/<c>12.Security</c>
+    /// implementations — this package itself never reaches into either again. This rule mechanically
+    /// locks that removal in so a future change cannot silently reintroduce either dependency.
+    /// </para>
+    /// <para>
+    /// Checked against bare namespace prefixes, so it also catches a reference to
+    /// <c>SharedKernel.Application.Behaviors</c>/<c>SharedKernel.Application.Behaviors.Caching</c> and
+    /// <c>SharedKernel.Security.Abstractions</c>/<c>SharedKernel.Security.Oidc</c>/etc. — every package
+    /// under either domain, not merely their root package.
+    /// </para>
+    /// </remarks>
+    public static ConditionList PersistenceNeverReferencesApplicationOrSecurity(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn("SharedKernel.Application")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Security");
+
+    /// <summary>
     /// Hard rule (P-544): <c>SharedKernel.Application.Behaviors</c> must never reference
     /// <c>SharedKernel.Caching</c> (bare prefix — including <c>.Abstractions</c>; that reference
     /// belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>

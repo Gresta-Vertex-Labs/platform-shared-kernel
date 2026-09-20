@@ -127,6 +127,15 @@
          IntelligenceTopologyRulesTests/WorkflowTopologyRulesTests precedent — this phase's own
          acceptance criteria treat real-assembly verification as GATING, not optional. -->
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" PrivateAssets="all" />
+    <!-- Required to resolve every other real SharedKernel.Persistence.* production assembly in
+         PersistenceLayeringRulesTests, which mechanically locks in the removal of this domain's former
+         SharedKernel.Application/SharedKernel.Security dependencies across every package it now ships. -->
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Dapper\SharedKernel.Persistence.Dapper.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Security.Abstractions/.Oidc assemblies in
          SecurityArchitectureRulesTests (WO-057 P-373, SK.00.SecurityContextGuard) — both
          12.Security (.Abstractions/.Oidc) and 03.Domain are already fully Published as of this
