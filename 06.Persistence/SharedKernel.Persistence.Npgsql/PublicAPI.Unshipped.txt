@@ -1,0 +1,48 @@
+#nullable enable
+SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory
+SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
+SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.NpgsqlConnectionFactory(Npgsql.NpgsqlDataSource! dataSource) -> void
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindConnectionAsync(System.Data.Common.DbConnection! connection, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.NpgsqlTenantSessionBinder() -> void
+SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.ResetConnectionAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.AcquireAsync(string! lockKey, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.NpgsqlAdvisoryMigrationLock(Npgsql.NpgsqlDataSource! dataSource, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock!>? logger = null) -> void
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.NpgsqlAdvisoryTransactionLock() -> void
+SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.FailureRefreshInterval.get -> System.TimeSpan
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.FailureRefreshInterval.init -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.NpgsqlPeriodicPasswordProviderOptions() -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.Provider.get -> System.Func<Npgsql.NpgsqlConnectionStringBuilder!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>!
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.Provider.init -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.SuccessRefreshInterval.get -> System.TimeSpan
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.SuccessRefreshInterval.init -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode.get -> bool
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.get -> string!
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.get -> int?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.LockTimeoutMilliseconds.get -> int?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.LockTimeoutMilliseconds.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.NpgsqlPersistenceOptions() -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SslMode.get -> Npgsql.SslMode
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SslMode.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeoutMilliseconds.get -> int?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeoutMilliseconds.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.NpgsqlPersistenceOptionsValidator() -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.Validate(string? name, SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames
+const SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames.ActivitySourceName = "Npgsql" -> string!
+const SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames.MeterName = "Npgsql" -> string!
+static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null, SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string! name, System.Action<Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null, SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! connectionString) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SectionName.get -> string!
