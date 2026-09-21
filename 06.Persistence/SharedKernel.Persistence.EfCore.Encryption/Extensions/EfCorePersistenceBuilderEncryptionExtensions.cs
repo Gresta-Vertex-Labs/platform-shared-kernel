@@ -31,8 +31,8 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
     /// <returns>The same builder.</returns>
     /// <remarks>
     /// <para>
-    /// <see cref="EncryptionOptions"/> binds from <c>SharedKernel:Persistence:Encryption</c> when an
-    /// <see cref="IConfiguration"/> is registered, and is validated when the host starts; the key source is resolved
+    /// <see cref="EncryptionOptions"/> binds from <c>SharedKernel:Persistence:Encryption</c> of the configuration given to
+    /// <c>AddSharedKernelPostgres</c> (else the container's <see cref="IConfiguration"/>), and is validated when the host starts; the key source is resolved
     /// then too, so a missing key provider fails startup, not the first request.
     /// </para>
     /// <para>
@@ -47,7 +47,7 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         var services = builder.Services;
-        var settings = RegisterInfrastructure(services);
+        var settings = RegisterInfrastructure(services, builder.Configuration);
 
         configure?.Invoke(new FieldEncryptionBuilder(services, settings));
 
@@ -59,7 +59,7 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
         return builder;
     }
 
-    private static FieldEncryptionSettings RegisterInfrastructure(IServiceCollection services)
+    private static FieldEncryptionSettings RegisterInfrastructure(IServiceCollection services, IConfiguration? configuration)
     {
         if (services.FirstOrDefault(d => d.ServiceType == typeof(FieldEncryptionSettings))?.ImplementationInstance is FieldEncryptionSettings existing)
             return existing;
@@ -68,7 +68,7 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
         services.AddSingleton(settings);
 
         services.AddOptions<EncryptionOptions>().ValidateOnStart();
-        services.AddSingleton<IConfigureOptions<EncryptionOptions>, BindEncryptionOptionsFromConfiguration>();
+        services.AddSingleton<IConfigureOptions<EncryptionOptions>>(sp => new BindEncryptionOptionsFromConfiguration(sp, configuration));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EncryptionOptions>, KeySourceStartupCheck>());
 
@@ -89,11 +89,14 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
         return settings;
     }
 
-    /// <summary>Binds <see cref="EncryptionOptions.SectionName"/> when the container has an <see cref="IConfiguration"/>.</summary>
-    private sealed class BindEncryptionOptionsFromConfiguration(IServiceProvider services) : IConfigureOptions<EncryptionOptions>
+    /// <summary>
+    /// Binds <see cref="EncryptionOptions.SectionName"/> from the configuration given to <c>AddSharedKernelPostgres</c>
+    /// (the same one <c>UseAuditTrail()</c> reads), else from the container's <see cref="IConfiguration"/>.
+    /// </summary>
+    private sealed class BindEncryptionOptionsFromConfiguration(IServiceProvider services, IConfiguration? configuration) : IConfigureOptions<EncryptionOptions>
     {
         public void Configure(EncryptionOptions options) =>
-            services.GetService<IConfiguration>()?.GetSection(EncryptionOptions.SectionName).Bind(options);
+            (configuration ?? services.GetService<IConfiguration>())?.GetSection(EncryptionOptions.SectionName).Bind(options);
     }
 
     /// <summary>Resolves the key source when options are first validated (at host start), so a missing provider fails startup.</summary>

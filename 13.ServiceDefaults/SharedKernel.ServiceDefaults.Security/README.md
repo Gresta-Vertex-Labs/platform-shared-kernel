@@ -16,7 +16,7 @@ tenant rows and writes audit records with. There is no separate persistence or p
 | `IsAuthenticated` | `IUserContext.IsAuthenticated` |
 | `UserId` | `SubjectId`, else `ClientId`; `null` when unauthenticated |
 | `TenantId` | `ITenantProvider.TenantId`; `Guid.Empty` becomes `null` (fails closed) |
-| `ActorKind` | `IdentityKind`: `User` → `User`, `ServicePrincipal` → `Service`, otherwise `System` |
+| `ActorKind` | unauthenticated → `Anonymous`; otherwise `IdentityKind`: `User` → `User`, `ServicePrincipal` → `Service`, `System` → `System` |
 | `ClientId`, `SessionId` | `IUserContext` |
 | `HasPermissionAsync` | `IUserContext.HasPermission` (ordinal) |
 
@@ -25,3 +25,7 @@ registered.
 
 The registration uses `Add`, so it replaces the fail-closed anonymous default that
 `SharedKernel.Persistence.EfCore` registers, regardless of call order.
+
+An unauthenticated caller is `ActorKind.Anonymous`, never `System`: the audit trail and the cross-tenant-scope log can
+tell an anonymous request from the platform's own background work. Background jobs run under a
+`SystemRequestContext` (authenticated, `ActorKind.System`) in their own dependency-injection scope.

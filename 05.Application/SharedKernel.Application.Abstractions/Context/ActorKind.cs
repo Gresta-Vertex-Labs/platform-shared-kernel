@@ -12,9 +12,15 @@ public enum ActorKind
     Service = 1,
 
     /// <summary>
-    /// The platform itself, acting with no caller identity (a background job, a startup seeder, or an
-    /// unauthenticated request). Never confused with <see cref="Service"/>, which always names a
-    /// specific machine identity.
+    /// The platform itself, acting under a deliberate system identity (a background job, a startup seeder,
+    /// typically a <see cref="SystemRequestContext"/>). Never confused with <see cref="Service"/>, which always
+    /// names a specific machine identity, nor with <see cref="Anonymous"/>.
     /// </summary>
     System = 2,
+
+    /// <summary>
+    /// An unauthenticated caller: nobody was identified. Kept distinct from <see cref="System"/> so that an
+    /// audit trail never presents an anonymous request as the platform's own background work.
+    /// </summary>
+    Anonymous = 3,
 }

@@ -34,13 +34,25 @@ public sealed class SecurityRequestContextTests
     }
 
     [Fact]
-    public void Anonymous_HasNoUser_AndIsAttributedToTheSystem()
+    public void Anonymous_HasNoUser_AndIsAnAnonymousActor_NeverTheSystem()
     {
+        // Finding S7: unauthenticated callers were attributed to ActorKind.System, so the audit trail could not tell
+        // an anonymous request from the platform's own background work.
         var user = new FakeUserContext { IdentityKind = IdentityKind.Anonymous };
         var context = new SecurityRequestContext(user, new FakeTenantProvider());
 
         context.IsAuthenticated.Should().BeFalse();
         context.UserId.Should().BeNull();
+        context.ActorKind.Should().Be(ActorKind.Anonymous);
+    }
+
+    [Fact]
+    public void AuthenticatedSystemIdentity_IsTheSystemActor()
+    {
+        var user = new FakeUserContext { IdentityKind = IdentityKind.System, SubjectId = "scheduler" };
+        var context = new SecurityRequestContext(user, new FakeTenantProvider());
+
+        context.IsAuthenticated.Should().BeTrue();
         context.ActorKind.Should().Be(ActorKind.System);
     }
 

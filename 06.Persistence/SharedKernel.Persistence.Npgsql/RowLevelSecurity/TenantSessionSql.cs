@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 /// transaction-mode connection pooler such as PgBouncer.
 /// </para>
 /// </remarks>
-public static class TenantSessionSql
+internal static class TenantSessionSql
 {
     /// <summary>The custom setting holding the bound tenant id (empty when none is bound).</summary>
     public const string TenantIdSetting = "app.tenant_id";

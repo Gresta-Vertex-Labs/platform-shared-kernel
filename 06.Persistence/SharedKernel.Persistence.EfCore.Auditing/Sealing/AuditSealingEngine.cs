@@ -23,8 +23,16 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Sealing;
 /// older than <c>pg_snapshot_xmin(pg_current_snapshot())</c> — the oldest transaction still running. Every
 /// transaction below that horizon has finished, so the set of records with <c>insert_xid</c> below it can no
 /// longer grow: a long-running transaction that commits late holds the horizon back instead of having its
-/// record skipped or sealed out of order. Records are sealed in <c>(insert_xid, id)</c> order, so the sealed
-/// set is always a prefix of that order and the last link is a sufficient watermark.
+/// record skipped or sealed out of order. Records are sealed in <c>(insert_xid, id)</c> order.
+/// </para>
+/// <para>
+/// <strong>No trusted watermark.</strong> A pass selects the records below the horizon that have no link
+/// (<c>NOT EXISTS</c>, an anti-join on the link table's primary key), scanning the <c>(insert_xid, id)</c> index from
+/// <see cref="AuditSealedFloor"/> — a bound this process learned itself, never the links' highest
+/// <c>record_insert_xid</c>. A link forged with a large <c>record_insert_xid</c> therefore cannot stop sealing or hide
+/// the backlog (finding S5). A link forged for a specific record makes that record look sealed; chain verification
+/// reports it (its MAC does not verify), and running the sealer under its own role (<see cref="AuditSealerOptions.DataSourceName"/>)
+/// with <c>INSERT</c> on the link and checkpoint tables revoked from the application role prevents it.
 /// </para>
 /// <para>
 /// <strong>Single sealer.</strong> Each pass runs in one transaction that first takes
@@ -34,7 +42,8 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Sealing;
 /// </para>
 /// </remarks>
 internal sealed class AuditSealingEngine(
-    IDbConnectionFactory connectionFactory,
+    AuditSealerConnectionFactory connectionFactory,
+    AuditSealedFloor sealedFloor,
     IAuditRecordAuthenticator authenticator,
     IClock clock,
     IOptions<AuditLedgerOptions> options,
@@ -68,10 +77,14 @@ internal sealed class AuditSealingEngine(
                     return new AuditSealPassResult(false, 0);
                 }
 
-                var batch = await ReadSealableAsync(connection, transaction, batchSize, cancellationToken).ConfigureAwait(false);
+                var horizon = await ReadHorizonAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+                var batch = await ReadSealableAsync(connection, transaction, sealedFloor.Value, batchSize, cancellationToken).ConfigureAwait(false);
                 if (batch.Count == 0)
                 {
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    // Every record below the horizon read before the scan has a link.
+                    sealedFloor.Advance(horizon);
                     return new AuditSealPassResult(true, 0);
                 }
 
@@ -96,6 +109,10 @@ internal sealed class AuditSealingEngine(
 
                 await InsertLinksAsync(connection, transaction, links, sealedOn, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                // The batch was the first unsealed records in (insert_xid, id) order, so every record of an earlier
+                // transaction is now sealed; when the batch was not full, every record below the horizon is.
+                sealedFloor.Advance(batch.Count < batchSize ? horizon : batch[^1].InsertXid);
 
                 var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
                 var oldestAge = (clock.UtcNow - batch.Min(b => b.Record.OccurredOn)).TotalSeconds;
@@ -131,43 +148,39 @@ internal sealed class AuditSealingEngine(
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
 
+    /// <summary>The oldest transaction id still running, as <c>bigint</c>: every transaction below it has ended.</summary>
+    internal const string HorizonSql = "SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint";
+
+    /// <summary>The records without a link from <c>@floor</c> on: an index range scan with an anti-join.</summary>
+    internal static readonly string UnsealedPredicate =
+        $"r.insert_xid >= @floor AND NOT EXISTS (SELECT 1 FROM {AuditLedgerSchema.LinksTable} l WHERE l.record_id = r.id)";
+
+    /// <summary>Reads the transaction-id horizon (<see cref="HorizonSql"/>).</summary>
+    internal static async Task<long> ReadHorizonAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
+    {
+        await using var command = LedgerDb.CreateCommand(connection, transaction, HorizonSql);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static async Task<List<(LedgerRecordFields Record, long InsertXid)>> ReadSealableAsync(
         DbConnection connection,
         DbTransaction transaction,
+        long floor,
         int batchSize,
         CancellationToken cancellationToken)
     {
-        long? watermarkXid = null;
-        Guid watermarkId = default;
-        await using (var watermark = LedgerDb.CreateCommand(connection, transaction,
-            $"SELECT record_insert_xid, record_id FROM {AuditLedgerSchema.LinksTable} ORDER BY record_insert_xid DESC, record_id DESC LIMIT 1"))
-        await using (var reader = await watermark.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
-        {
-            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                watermarkXid = reader.GetInt64(0);
-                watermarkId = reader.GetGuid(1);
-            }
-        }
-
         await using var command = LedgerDb.CreateCommand(connection, transaction, string.Empty);
-        var afterWatermark = string.Empty;
-        if (watermarkXid is { } xid)
-        {
-            LedgerDb.Add(command, "@wx", xid, DbType.Int64);
-            LedgerDb.Add(command, "@wid", watermarkId, DbType.Guid);
-            afterWatermark = "AND (r.insert_xid, r.id) > (@wx, @wid)";
-        }
-
+        LedgerDb.Add(command, "@floor", floor, DbType.Int64);
         LedgerDb.Add(command, "@batch", batchSize, DbType.Int32);
 
-        // The horizon is evaluated in the same statement (same snapshot) as the row selection.
+        // The horizon is evaluated in the same statement (same snapshot) as the row selection. The first records
+        // without a link in (insert_xid, id) order — never after a watermark read from the link table.
         command.CommandText =
             $"""
             SELECT {LedgerDb.RecordColumns}
             FROM {AuditLedgerSchema.RecordsTable} r
             WHERE r.insert_xid < (pg_snapshot_xmin(pg_current_snapshot())::text::bigint)
-              {afterWatermark}
+              AND {UnsealedPredicate}
             ORDER BY r.insert_xid, r.id
             LIMIT @batch
             """;

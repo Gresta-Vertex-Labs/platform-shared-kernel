@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Testing.Containers;
@@ -54,6 +55,7 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
         ServiceProvider sp, EncryptionMaintenanceRequest request, IProgress<EncryptionMaintenanceProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         await using var scope = sp.CreateAsyncScope();
+        using var crossTenant = scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().Enter("test: encryption maintenance");
         return await scope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>().RunAsync(request, progress, cancellationToken);
     }
 
@@ -247,6 +249,29 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
         var report = await RunAsync(bypass, new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v2" });
         report.ValuesReEncrypted.Should().Be(4); // both tenants: an email and an iban each
         (await KeyIdsAsync(cs, "SELECT email, billing_bank_iban FROM customers")).Should().OnlyContain(k => k == "v2");
+    }
+
+    [Fact]
+    public async Task RunWithoutAnActiveCrossTenantScope_IsRefused_AndNeverEntersOneItself()
+    {
+        // Finding S2: the job used to enter the cross-tenant scope itself, so any code that could resolve it could
+        // read and rewrite every tenant's rows without an attributable, deliberate bypass.
+        var cs = Cs("enc_m_scope");
+        await SeedCustomersAsync(cs, perTenant: 1);
+        await using var v2 = EncryptionHost.Build<CustomerDbContext>(cs, currentKeyId: "v2");
+
+        await using var scope = v2.CreateAsyncScope();
+        var crossTenant = scope.ServiceProvider.GetRequiredService<ICrossTenantScope>();
+        var job = scope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>();
+
+        var act = () => job.RunAsync(new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v2" });
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active cross-tenant scope*");
+        crossTenant.IsActive.Should().BeFalse();
+        (await KeyIdsAsync(cs, "SELECT email FROM customers")).Should().OnlyContain(k => k == "v1", "nothing was rewritten");
+
+        using (crossTenant.Enter("test: rotate to v2"))
+            (await job.RunAsync(new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v2" })).ValuesReEncrypted.Should().Be(4);
+        crossTenant.IsActive.Should().BeFalse();
     }
 
     private sealed class SynchronousProgress(Action<EncryptionMaintenanceProgress> report) : IProgress<EncryptionMaintenanceProgress>

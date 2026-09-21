@@ -5,7 +5,7 @@ SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.MissingReference = 1 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.ReferencedByDependent = 2 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.Unknown = 0 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
-SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes
+SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.ConstraintName.get -> string?
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.Error.get -> SharedKernel.Primitives.Errors.Error!
@@ -53,25 +53,23 @@ SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Disabled = 2 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Fail = 0 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Warn = 1 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.CrossTenant = "SharedKernel.Persistence.Npgsql.CrossTenant" -> string!
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.Migration = "SharedKernel.Persistence.Npgsql.Migration" -> string!
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.ReadOnly = "SharedKernel.Persistence.Npgsql.ReadOnly" -> string!
 const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.AuditNamespace = "sk:audit:" -> string!
 const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.MigrationNamespace = "sk:migration:" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.CheckViolation = "persistence.postgresql.check_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.ExclusionViolation = "persistence.postgresql.exclusion_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.ForeignKeyDependentExists = "persistence.postgresql.foreign_key_dependent_exists" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.ForeignKeyReferenceMissing = "persistence.postgresql.foreign_key_reference_missing" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.ForeignKeyViolation = "persistence.postgresql.foreign_key_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.InsufficientPrivilege = "persistence.postgresql.insufficient_privilege" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.LockTimeout = "persistence.postgresql.lock_timeout" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.NotNullViolation = "persistence.postgresql.not_null_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.StatementTimeout = "persistence.postgresql.statement_timeout" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.TransientConflict = "persistence.postgresql.transient_conflict" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.UniqueViolation = "persistence.postgresql.unique_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgreSqlErrorCodes.ValueTooLong = "persistence.postgresql.value_too_long" -> string!
-const SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql.TenantIdSetting = "app.tenant_id" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.CheckViolation = "persistence.postgresql.check_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ExclusionViolation = "persistence.postgresql.exclusion_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyDependentExists = "persistence.postgresql.foreign_key_dependent_exists" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyReferenceMissing = "persistence.postgresql.foreign_key_reference_missing" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyViolation = "persistence.postgresql.foreign_key_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.InsufficientPrivilege = "persistence.postgresql.insufficient_privilege" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.LockTimeout = "persistence.postgresql.lock_timeout" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.NotNullViolation = "persistence.postgresql.not_null_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.StatementTimeout = "persistence.postgresql.statement_timeout" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.TransientConflict = "persistence.postgresql.transient_conflict" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.UniqueViolation = "persistence.postgresql.unique_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ValueTooLong = "persistence.postgresql.value_too_long" -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Audit(string! name) -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Migration(string! name) -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.ToKey(string! lockName) -> long
@@ -84,5 +82,3 @@ static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.Ad
 static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! connectionStringName, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string! name, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SectionName.get -> string!
-static SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql.BindStatement(System.Guid? tenantId) -> string!
-static SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql.PolicyPredicate(string! quotedTenantColumn) -> string!

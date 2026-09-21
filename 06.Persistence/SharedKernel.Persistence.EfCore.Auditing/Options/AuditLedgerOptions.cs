@@ -102,6 +102,21 @@ public sealed class AuditSealerOptions
     /// Only effective when <see cref="AuditLedgerOptions.CheckpointSigningKeyId"/> is set.
     /// </summary>
     public TimeSpan CheckpointInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Gets or sets the service key of a separate database registration the sealer writes links and checkpoints
+    /// through, connected as a sealer role of its own; <see langword="null"/> (default) uses the application's
+    /// connection.
+    /// </summary>
+    /// <remarks>
+    /// Recommended in production: with it, the application role needs only <c>SELECT</c> on <c>audit_chain_links</c>
+    /// and <c>audit_checkpoints</c>, so nothing running as the application can forge a link or a checkpoint; the
+    /// startup self-check then reports an application role that can still <c>INSERT</c> into them. Register the
+    /// sealer's database under the same key:
+    /// <c>services.AddSharedKernelNpgsql(configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer")</c>
+    /// with <c>"Sealer": { "DataSourceName": "audit-sealer" }</c>. See the package README for the role script.
+    /// </remarks>
+    public string? DataSourceName { get; set; }
 }
 
 /// <summary>What the startup self-check does with a finding.</summary>

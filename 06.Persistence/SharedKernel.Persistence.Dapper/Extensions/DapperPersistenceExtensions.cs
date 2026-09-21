@@ -25,7 +25,7 @@ public static class DapperPersistenceExtensions
     /// <returns>The same <paramref name="services"/>.</returns>
     /// <remarks>
     /// <para>
-    /// Needs the connection registrations of <c>AddSharedKernelNpgsql(configuration)</c>. So that a
+    /// Needs the connection registrations of <c>AddSharedKernelNpgsql(configuration, name)</c> (or <c>AddSharedKernelPostgres</c>). So that a
     /// Dapper-only service works without EF Core, this also registers — unless already registered — an
     /// anonymous <see cref="IRequestContext"/> (no tenant; register the real one, e.g.
     /// <c>AddSharedKernelRequestContext()</c>, in any order) and the default <see cref="ICrossTenantScope"/>.

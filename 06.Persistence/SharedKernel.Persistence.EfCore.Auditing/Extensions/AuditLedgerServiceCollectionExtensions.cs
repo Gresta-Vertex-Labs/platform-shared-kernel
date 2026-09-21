@@ -59,7 +59,11 @@ public static class AuditLedgerServiceCollectionExtensions
 
         services.TryAddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<IAuditRecordAuthenticator, KeyringAuditRecordAuthenticator>();
-        services.TryAddSingleton<IAuditCheckpointSink, TableAuditCheckpointSink>();
+        // Links and table checkpoints are written through the sealer's connection (its own role when
+        // Sealer:DataSourceName is set); everything else uses the application's.
+        services.TryAddSingleton<AuditSealerConnectionFactory>();
+        services.TryAddSingleton<AuditSealedFloor>();
+        services.TryAddSingleton<IAuditCheckpointSink>(sp => new TableAuditCheckpointSink(sp.GetRequiredService<AuditSealerConnectionFactory>()));
         services.TryAddSingleton<AuditSealingEngine>();
         services.TryAddSingleton(sp => new AuditCheckpointWriter(
             sp.GetRequiredService<IDbConnectionFactory>(),

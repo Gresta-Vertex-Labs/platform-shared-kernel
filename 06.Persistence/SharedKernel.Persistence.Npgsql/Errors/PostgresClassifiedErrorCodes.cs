@@ -6,9 +6,11 @@ namespace SharedKernel.Persistence.Npgsql.Errors;
 /// </summary>
 /// <remarks>
 /// These are the platform's error codes, not PostgreSQL SQLSTATEs — for the SQLSTATE values themselves use
-/// Npgsql's <see cref="global::Npgsql.PostgresErrorCodes"/>.
+/// Npgsql's <see cref="global::Npgsql.PostgresErrorCodes"/>. Deliberately not named <c>PostgresErrorCodes</c>: both
+/// classes have a <c>UniqueViolation</c> (etc.) member, and a same-named type would silently shadow Npgsql's in any code
+/// that imports both namespaces, comparing a SQLSTATE against a platform code without a compiler error.
 /// </remarks>
-public static class PostgreSqlErrorCodes
+public static class PostgresClassifiedErrorCodes
 {
     /// <summary><c>23505</c>: a row with the same unique key already exists.</summary>
     public const string UniqueViolation = "persistence.postgresql.unique_violation";

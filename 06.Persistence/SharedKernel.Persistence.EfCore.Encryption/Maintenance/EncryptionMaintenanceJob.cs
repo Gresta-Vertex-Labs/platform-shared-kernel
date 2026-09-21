@@ -19,6 +19,8 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJob
     where TContext : SharedKernelDbContext
 {
+    private const string RunOperation = "IEncryptionRotationJob.RunAsync";
+
     private readonly TContext context;
     private readonly FieldEncryptionRuntime runtime;
     private readonly IOptions<EncryptionOptions> options;
@@ -47,6 +49,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
         ArgumentNullException.ThrowIfNull(request);
         var mode = request.Mode;
         Validate(request);
+        MaintenanceSession.RequireCrossTenantScope(context, services, RunOperation);
 
         var writes = (mode & (EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.EncryptPlaintext)) != 0;
         CryptographicKey? currentRootKey = null;
@@ -76,7 +79,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
         }
 
         await using var session = await MaintenanceSession
-            .OpenAsync(context, runtime, options.Value, services, $"encryption maintenance ({mode})", cancellationToken)
+            .OpenAsync(context, runtime, options.Value, services, RunOperation, cancellationToken)
             .ConfigureAwait(false);
 
         for (var index = 0; index < targets.Count; index++)
@@ -152,6 +155,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
         private long _plaintext;
         private long _undecryptable;
         private long _shredded;
+        private long _shreddedTenantNotErased;
         private long _staleBlindIndexes;
 
         private EncryptionMaintenanceMode Mode => request.Mode;
@@ -164,6 +168,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
             long targetScanned = 0;
             long targetPlaintext = 0;
             long targetUndecryptable = 0;
+            var shreddedNotErasedBefore = _shreddedTenantNotErased;
 
             while (true)
             {
@@ -212,6 +217,11 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
                 EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetPlaintext, "plaintext");
             if (targetUndecryptable > 0)
                 EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetUndecryptable, "undecryptable");
+            if (_shreddedTenantNotErased > shreddedNotErasedBefore)
+            {
+                EncryptionLog.MaintenanceValuesSkipped(
+                    job.logger, target.Key, _shreddedTenantNotErased - shreddedNotErasedBefore, "shredded tenant, not erased: delete the rows");
+            }
 
             // Without the row-security bypass the scan may have been filtered; refuse an empty scan of a table the
             // statistics say is not empty, rather than report completion over rows it never saw.
@@ -236,12 +246,13 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
             EncryptionMeter.RecordMaintenanceRowsSkipped("plaintext", _plaintext);
             EncryptionMeter.RecordMaintenanceRowsSkipped("undecryptable", _undecryptable);
             EncryptionMeter.RecordMaintenanceRowsSkipped("shredded", _shredded);
+            EncryptionMeter.RecordMaintenanceRowsSkipped("shredded_tenant_not_erased", _shreddedTenantNotErased);
             EncryptionLog.MaintenanceCompleted(
                 job.logger, Mode.ToString(), _scanned, _reEncrypted + _fromPlaintext + _blindIndexes, _concurrent, _plaintext, _undecryptable, _shredded);
 
             return new EncryptionMaintenanceReport(
                 Mode, completed, checkpointToken, _scanned, _reEncrypted, _fromPlaintext, _blindIndexes, _concurrent,
-                _plaintext, _undecryptable, _shredded, _staleBlindIndexes,
+                _plaintext, _undecryptable, _shredded, _shreddedTenantNotErased, _staleBlindIndexes,
                 new Dictionary<string, long>(_valuesByKeyId, StringComparer.Ordinal));
         }
 
@@ -254,6 +265,26 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
             var runtime = job.runtime;
             var associatedData = AssociatedDataBuilder.Build(member.Purpose, PrimaryKeyCanonicalizer.CanonicalizeSingleValue(row.Key), row.TenantId);
             var usesTenantKey = runtime.UsesTenantKey(member) && row.TenantId is not null;
+
+            // A shredded tenant's row is never written (no re-encryption, no recomputed blind index), and its values are
+            // counted for what they are: under the destroyed tenant key they are erased; under a root key or as
+            // plaintext they are not, whatever the platform refuses to read.
+            if (usesTenantKey && await LoadTenantKeyAsync(row.TenantId!.Value, create: false, cancellationToken).ConfigureAwait(false) is { IsShredded: true })
+            {
+                var parsed = EncryptedPayload.TryParse(row.Value, out var stored);
+                if (parsed && TenantKeyIds.TryParse(stored!.KeyId, out _))
+                {
+                    _shredded++;
+                    Count(EncryptionMaintenanceReport.TenantDataKeysLabel);
+                }
+                else
+                {
+                    _shreddedTenantNotErased++;
+                    Count(parsed ? stored!.KeyId : "(plaintext)");
+                }
+
+                return (false, false);
+            }
 
             string plaintext;
             string? currentKeyId;
@@ -308,7 +339,8 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
                     var tenantKey = await LoadTenantKeyAsync(row.TenantId!.Value, create: true, cancellationToken).ConfigureAwait(false);
                     if (tenantKey is null || tenantKey.IsShredded)
                     {
-                        _shredded++;
+                        // Shredded while this run was going: the value itself (root key or plaintext) is still readable.
+                        _shreddedTenantNotErased++;
                         Count(Label(currentKeyId ?? "(plaintext)"));
                         return (false, false);
                     }

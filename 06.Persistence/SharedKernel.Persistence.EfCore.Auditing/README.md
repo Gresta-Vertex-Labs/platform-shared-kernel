@@ -21,13 +21,21 @@ Distinct from `SharedKernel.Persistence.EfCore`'s `AuditInterceptor`, which only
 ## Setup
 
 ```csharp
-services.AddSharedKernelCryptography(configuration)   // IHmacSigner (+ .AddAsymmetricSigning() for checkpoints)
-    .AddAsymmetricSigning();
-services.AddSharedKernelNpgsql(configuration);          // IDbConnectionFactory
-services.AddSharedKernelEfCore<OrderDbContext>(o => o.UsePostgreSQL(sp))
-    .UseAuditTrail()                                    // binds SharedKernel:Persistence:Auditing from the same configuration
-    .Build();
+using SharedKernel.Persistence.EfCore.Auditing.Extensions;
+using SharedKernel.Persistence.EfCore.Extensions;
+
+builder.Services.AddSharedKernelCryptography(builder.Configuration)   // IHmacSigner
+    .AddAsymmetricSigning();                                          // checkpoints (optional)
+
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
+    .UseMultiTenancy(rowLevelSecurity: true)
+    .UseAuditTrail());          // binds SharedKernel:Persistence:Auditing from the same configuration
 ```
+
+`AddSharedKernelPostgres` registers the connection (`IDbConnectionFactory`), the unit of work whose
+`OnBeforeCommit` the writer enlists in, `ICrossTenantScope` and a fail-closed `IRequestContext`; register the real
+caller identity with `13.ServiceDefaults`' `AddSharedKernelRequestContext()`. This sample is compiled by the test suite
+(`ReadmeSampleTests`).
 
 ```json
 "SharedKernel": { "Persistence": { "Auditing": {
@@ -86,6 +94,12 @@ ambient `Activity`. Field lengths are checked before any SQL (`AuditFieldLimits`
 only accepted from an authenticated system identity or inside a cross-tenant scope. A reused `IdempotencyKey`
 returns the stored record; reused for a different event it throws.
 
+**Actor kinds.** `ActorKind` is `User`, `Service` (a machine identity), `System` (an authenticated system identity:
+a job running under `SystemRequestContext`) or `Anonymous`. An unauthenticated caller is always recorded as
+`Anonymous` — whatever its `IRequestContext` reports — with the service name as `ActorId`, so an anonymous request is
+never presented as the platform's own background work. Run background jobs under a `SystemRequestContext` to have them
+recorded as `System`.
+
 ## Reading, exporting, erasing
 
 * `QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = id })` — the caller's tenant, keyset
@@ -112,29 +126,59 @@ returns the stored record; reused for a different event it throws.
 ## Database roles (required for the guarantees)
 
 The triggers make the tables append-only for every role **except** the table owner and superusers, who can
-disable them. Own the tables with a migration role and run the application under a separate role:
+disable them. Own the tables with a migration role and run the application under a separate role. The roles are
+created once, by the platform's single role script in the
+[`SharedKernel.Persistence.Npgsql` README](../SharedKernel.Persistence.Npgsql/README.md#roles-the-one-canonical-script)
+(`app_migrator`, `app_runtime`, optionally `app_audit_sealer`). The migration, run as `app_migrator`, then sets the
+ledger's privileges itself:
 
-```sql
--- once, as an administrator
-CREATE ROLE app_migrator LOGIN PASSWORD '...';          -- runs migrations, owns the ledger tables
-CREATE ROLE app_runtime  LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS;
-GRANT CONNECT ON DATABASE orders TO app_runtime;
-GRANT USAGE ON SCHEMA public TO app_runtime;
-
--- after migrationBuilder.CreateAuditLedgerTable() ran as app_migrator
-GRANT SELECT, INSERT ON audit_records, audit_chain_links, audit_checkpoints TO app_runtime;
-GRANT SELECT, INSERT, DELETE ON audit_record_payloads TO app_runtime;   -- DELETE = payload erasure
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder) =>
+    migrationBuilder.CreateAuditLedgerTable(runtimeRole: "app_runtime", sealerRole: "app_audit_sealer");
 ```
 
-Never grant `UPDATE`, `TRUNCATE`, or `DELETE` on the other three tables. The ledger tables must not use
-row-level security: the ledger filters by tenant itself, and the sealer must read every tenant's records.
+It first revokes everything the roles hold on the four tables — including the `UPDATE`/`DELETE` that
+`ALTER DEFAULT PRIVILEGES` grants the runtime role on every new table — and then grants exactly:
+
+| Table | `app_runtime` | `app_audit_sealer` |
+|---|---|---|
+| `audit_records` | `SELECT, INSERT` | `SELECT` |
+| `audit_record_payloads` | `SELECT, INSERT, DELETE` (DELETE = payload erasure) | — |
+| `audit_chain_links`, `audit_checkpoints` | `SELECT` (plus `INSERT` when there is no sealer role) | `SELECT, INSERT` |
+
+The ledger tables must not use row-level security: the ledger filters by tenant itself, and the sealer must read
+every tenant's records.
+
+**A separate sealer role (recommended).** Without it, anything running as the application — a bug, an injected
+statement — can insert into `audit_chain_links`. A forged link cannot hide unsealed records from the sealer or the
+probe (they select records that have no link, never trusting the links' highest transaction id), and chain
+verification reports its MAC, but only a separate role keeps the application from writing seals at all:
+
+```csharp
+// ConnectionStrings:audit-sealer connects as app_audit_sealer
+builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
+```
+
+```json
+"SharedKernel": { "Persistence": {
+  "audit-sealer": { "ConnectionStringName": "audit-sealer" },
+  "Auditing": { "Sealer": { "DataSourceName": "audit-sealer" } }
+} }
+```
+
+Links and table checkpoints are then written as `app_audit_sealer`; everything else stays on the application's
+connection.
 
 The startup self-check (`SelfCheck`: `Off`, `Warn` (default), `Fail` — use `Fail` in production) reports a
 superuser runtime role, a runtime role that owns (or is a member of the owner of) a ledger table, any
 `UPDATE`/`DELETE`/`TRUNCATE` privilege on it, row-level security on it, and any missing trigger or trigger not
-`ENABLE ALWAYS` (which `session_replication_role = replica` would silently bypass).
+`ENABLE ALWAYS` (which `session_replication_role = replica` would silently bypass). With `Sealer:DataSourceName` set it
+also reports a runtime role that can still `INSERT` into `audit_chain_links` or `audit_checkpoints`, and checks the
+sealer role for superuser, ownership and `UPDATE`/`DELETE`/`TRUNCATE`.
 
-The sealer holds its lock with a transaction-scoped advisory lock, so it works behind a transaction-mode pooler.
+The sealer holds its lock with a transaction-scoped advisory lock, so it works behind a transaction-mode pooler. A
+process scans the ledger's sealed prefix once after it starts (an index range scan with an anti-join on the link
+table's key); after that each pass starts from a bound the process learned itself.
 
 ## Health and telemetry
 

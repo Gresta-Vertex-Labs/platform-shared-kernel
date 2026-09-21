@@ -18,15 +18,26 @@ namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 /// <see cref="EncryptionOptions.TenantKeyCacheDuration"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Key rows are read and written on a separate connection (never the context's own, which may have a data reader
 /// open while a row is materialized), so a key row created during a save is committed even if the business
 /// transaction rolls back. That leaves at most an unused key, never data without a key.
+/// </para>
+/// <para>
+/// "This tenant has no key row" is remembered for at most <see cref="AbsentCacheDuration"/>, so reading legacy
+/// (root-key) values of a tenant without a key does not query the table for every row, while a key created or a
+/// tenant shredded by another process is noticed soon.
+/// </para>
 /// </remarks>
 internal sealed class TenantKeyStore
 {
     internal const string TableName = "sk_tenant_encryption_keys";
 
+    /// <summary>The longest time "no key row" is remembered for a tenant.</summary>
+    internal static readonly TimeSpan AbsentCacheDuration = TimeSpan.FromSeconds(30);
+
     private readonly ConcurrentDictionary<Guid, TenantKeyEntry> _cache = new();
+    private readonly ConcurrentDictionary<Guid, long> _absent = new();
     private readonly Lazy<IEnvelopeEncryptionProvider> _envelope;
     private readonly EncryptionOptions _options;
     private readonly TimeProvider _timeProvider;
@@ -59,9 +70,15 @@ internal sealed class TenantKeyStore
 
     /// <summary>Loads (and, when <paramref name="create"/> is set, creates) the tenant's key, blocking the caller.</summary>
     /// <remarks>Used by the synchronous save and materialization paths on a cache miss only.</remarks>
-    public TenantKeyEntry? GetBlocking(Guid tenantId, Func<CancellationToken, Task<DbConnection>> openConnection, bool create) =>
-        TryGetCached(tenantId)
-        ?? Task.Run(() => GetAsync(tenantId, openConnection, create, CancellationToken.None).AsTask()).GetAwaiter().GetResult();
+    public TenantKeyEntry? GetBlocking(Guid tenantId, Func<CancellationToken, Task<DbConnection>> openConnection, bool create)
+    {
+        if (TryGetCached(tenantId) is { } cached)
+            return cached;
+        if (!create && IsKnownAbsent(tenantId))
+            return null;
+
+        return Task.Run(() => GetAsync(tenantId, openConnection, create, CancellationToken.None).AsTask()).GetAwaiter().GetResult();
+    }
 
     /// <summary>Loads (and, when <paramref name="create"/> is set, creates) the tenant's key.</summary>
     /// <returns>The entry, or <see langword="null"/> when the tenant has no key and <paramref name="create"/> is not set.</returns>
@@ -73,6 +90,8 @@ internal sealed class TenantKeyStore
     {
         if (TryGetCached(tenantId) is { } cached)
             return cached;
+        if (!create && IsKnownAbsent(tenantId))
+            return null;
 
         var connection = await openConnection(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
@@ -102,8 +121,12 @@ internal sealed class TenantKeyStore
             }
 
             if (row is null)
+            {
+                _absent[tenantId] = _timeProvider.GetTimestamp();
                 return null;
+            }
 
+            _absent.TryRemove(tenantId, out _);
             TenantKeyEntry entry;
             if (row.Value.Shredded)
             {
@@ -141,9 +164,58 @@ internal sealed class TenantKeyStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns the tenants of <paramref name="tenantIds"/> that are shredded, reading the key table itself (never the
+    /// cache). With a <paramref name="transaction"/>, the tenants' key rows are locked <c>FOR SHARE</c> until it ends,
+    /// so a concurrent shred waits for that transaction, and a shred that committed first is always seen.
+    /// </summary>
+    /// <remarks>Every tenant found shredded is also remembered as shredded by this process.</remarks>
+    public async Task<IReadOnlyList<Guid>> FindShreddedAsync(
+        IReadOnlyCollection<Guid> tenantIds, DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
+    {
+        var shredded = new List<Guid>();
+        await using (var command = CreateShreddedQuery(tenantIds, connection, transaction))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (reader.GetBoolean(1))
+                    shredded.Add(reader.GetGuid(0));
+            }
+        }
+
+        foreach (var tenantId in shredded)
+            MarkShredded(tenantId);
+        return shredded;
+    }
+
+    /// <summary>The synchronous form of <see cref="FindShreddedAsync"/>, for the synchronous save path.</summary>
+    public IReadOnlyList<Guid> FindShredded(IReadOnlyCollection<Guid> tenantIds, DbConnection connection, DbTransaction? transaction)
+    {
+        var shredded = new List<Guid>();
+        using (var command = CreateShreddedQuery(tenantIds, connection, transaction))
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                if (reader.GetBoolean(1))
+                    shredded.Add(reader.GetGuid(0));
+            }
+        }
+
+        foreach (var tenantId in shredded)
+            MarkShredded(tenantId);
+        return shredded;
+    }
+
+    /// <summary>Whether <paramref name="tenantId"/> was seen, recently, to have no key row.</summary>
+    public bool IsKnownAbsent(Guid tenantId) =>
+        _absent.TryGetValue(tenantId, out var since) && _timeProvider.GetElapsedTime(since) < EffectiveAbsentCacheDuration;
+
     /// <summary>Forgets this process's copy of the tenant's key and remembers it as shredded.</summary>
     public void MarkShredded(Guid tenantId)
     {
+        _absent.TryRemove(tenantId, out _);
         if (_cache.TryGetValue(tenantId, out var previous))
             previous.Clear();
 
@@ -164,6 +236,22 @@ internal sealed class TenantKeyStore
             "    shredded_at timestamptz NULL,\n" +
             "    CONSTRAINT ck_sk_tenant_encryption_keys_state CHECK ((shredded_at IS NULL) = (wrapped_key IS NOT NULL AND master_key_id IS NOT NULL))\n" +
             ");";
+    }
+
+    private TimeSpan EffectiveAbsentCacheDuration =>
+        _options.TenantKeyCacheDuration < AbsentCacheDuration ? _options.TenantKeyCacheDuration : AbsentCacheDuration;
+
+    // FOR SHARE, not FOR KEY SHARE: it must conflict with the shred's update of the row, so that shred and writer are
+    // ordered one after the other.
+    private DbCommand CreateShreddedQuery(IReadOnlyCollection<Guid> tenantIds, DbConnection connection, DbTransaction? transaction)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"SELECT tenant_id, shredded_at IS NOT NULL FROM {QualifiedTableName} WHERE tenant_id = ANY(@tenants)" +
+            (transaction is null ? string.Empty : " ORDER BY tenant_id FOR SHARE");
+        AddParameter(command, "tenants", tenantIds.ToArray());
+        return command;
     }
 
     private bool IsFresh(TenantKeyEntry entry) =>

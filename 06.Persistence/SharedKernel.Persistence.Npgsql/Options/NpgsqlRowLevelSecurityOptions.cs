@@ -2,17 +2,17 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 
 /// <summary>
 /// Row-level security settings of <see cref="NpgsqlPersistenceOptions"/>
-/// (<c>SharedKernel:Persistence:Npgsql:RowLevelSecurity</c>).
+/// (<c>RowLevelSecurity</c> in the database's settings section, <c>SharedKernel:Persistence:{connection name}:RowLevelSecurity</c>).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="Enabled"/> is normally switched on in code by <c>WithRowLevelSecurity()</c> on the EF Core
-/// builder; a Dapper-only service sets it in configuration. When on:
+/// <see cref="Enabled"/> is normally switched on in code by <c>UseMultiTenancy(rowLevelSecurity: true)</c> on the
+/// <c>AddSharedKernelPostgres</c> builder; a Dapper-only service sets it in configuration. When on:
 /// </para>
 /// <list type="bullet">
 /// <item><description>the connection strings may not use <c>Multiplexing</c> or <c>No Reset On Close</c>;</description></item>
 /// <item><description>Dapper sessions bind the tenant to their transaction;</description></item>
-/// <item><description>a startup check verifies the application role cannot bypass RLS (<see cref="PrivilegeCheck"/>);</description></item>
+/// <item><description>a startup check verifies the application role cannot bypass or widen RLS (<see cref="PrivilegeCheck"/>);</description></item>
 /// <item><description>work inside an active <c>ICrossTenantScope</c> runs on <see cref="CrossTenantConnectionString"/>.</description></item>
 /// </list>
 /// </remarks>
@@ -34,7 +34,8 @@ public sealed class NpgsqlRowLevelSecurityOptions
 
     /// <summary>
     /// What happens when the startup check finds that the application role is a superuser, has
-    /// <c>BYPASSRLS</c>, or owns a table with row-level security. Defaults to
+    /// <c>BYPASSRLS</c>, owns a table with row-level security, or is subject to a permissive policy that does not read the
+    /// tenant (typically: it is a member of the cross-tenant role). Defaults to
     /// <see cref="RowLevelSecurityPrivilegeCheck.Fail"/>.
     /// </summary>
     public RowLevelSecurityPrivilegeCheck PrivilegeCheck { get; set; } = RowLevelSecurityPrivilegeCheck.Fail;

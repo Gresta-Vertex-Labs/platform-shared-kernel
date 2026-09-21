@@ -46,7 +46,7 @@ internal sealed class RowLevelSecurityStartupCheck(
                 "Row-level security is enabled, but the application database role can bypass it: "
                     + string.Join("; ", problems) + ". Connect as an unprivileged role (see the "
                     + "SharedKernel.Persistence.Npgsql README for the role script), or set "
-                    + "'SharedKernel:Persistence:Npgsql:RowLevelSecurity:PrivilegeCheck' to 'Warn'.");
+                    + $"'{current.SectionPath}:RowLevelSecurity:PrivilegeCheck' to 'Warn'.");
         }
     }
 

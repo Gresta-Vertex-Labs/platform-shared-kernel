@@ -66,3 +66,4 @@ override SharedKernel.Application.Auditing.AuditEntry.ToString() -> string!
 static SharedKernel.Application.Auditing.AuditEntry.operator !=(SharedKernel.Application.Auditing.AuditEntry? left, SharedKernel.Application.Auditing.AuditEntry? right) -> bool
 static SharedKernel.Application.Auditing.AuditEntry.operator ==(SharedKernel.Application.Auditing.AuditEntry? left, SharedKernel.Application.Auditing.AuditEntry? right) -> bool
 static SharedKernel.Application.Context.AnonymousRequestContext.Instance.get -> SharedKernel.Application.Context.AnonymousRequestContext!
+SharedKernel.Application.Context.ActorKind.Anonymous = 3 -> SharedKernel.Application.Context.ActorKind

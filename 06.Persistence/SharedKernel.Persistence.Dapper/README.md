@@ -5,7 +5,7 @@ Dapper on PostgreSQL for Platform.SharedKernel services: an injectable session (
 ## Register
 
 ```csharp
-services.AddSharedKernelNpgsql(builder.Configuration, "orders");
+services.AddSharedKernelNpgsql(builder.Configuration, "orders");   // ConnectionStrings:orders + SharedKernel:Persistence:orders (see the Npgsql README)
 services.AddSharedKernelDapper(builder.Configuration, dapper => dapper
     .AddStronglyTypedId<OrderId, Guid>()
     .AddSmartEnum<OrderStatus, int>()
@@ -57,7 +57,7 @@ SQL is always parameterized — never interpolate values (`00.Governance` SK0042
 | `AddStronglyTypedId<OrderId, Guid>()` (optional factory for ids without a public constructor) | the underlying value |
 | `AddSmartEnum<OrderStatus, int>()` | the underlying value; unknown values throw |
 | `AddJsonb(context.Default.T)` | `jsonb`, via the source-generated `JsonTypeInfo<T>` |
-| always | pgvector `Vector`, `HalfVector`, `SparseVector` (needs `SharedKernel:Persistence:Npgsql:UseVector`) |
+| always | pgvector `Vector`, `HalfVector`, `SparseVector` (needs `UseVector: true` in the database's settings section, `SharedKernel:Persistence:{connection name}`) |
 | `AddTypeHandler(handler)` | anything else |
 
 `snake_case` columns map to PascalCase properties without aliases (`MatchNamesWithUnderscores(false)` turns it off). Dapper keeps this configuration process-wide; `DapperConfiguration.Apply(...)` is the one place it is set.

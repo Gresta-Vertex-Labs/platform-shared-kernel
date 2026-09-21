@@ -84,11 +84,11 @@ public sealed class AuditTransactionWiringPostgresTests
             [$"{AuditLedgerOptions.SectionName}:SelfCheck"] = "Off",
             [$"{AuditLedgerOptions.SectionName}:Keys:k1:Material"] =
                 Convert.ToBase64String(Enumerable.Repeat((byte)0x24, 32).ToArray()),
-            [$"{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.ConnectionString)}"] = connectionString,
+            [$"SharedKernel:Persistence:audit-wiring:{nameof(NpgsqlPersistenceOptions.ConnectionString)}"] = connectionString,
             // Testcontainers' Postgres image has no TLS configured — the documented, explicit opt-down
             // NpgsqlPersistenceOptionsValidator requires, matching real local-dev/CI usage.
-            [$"{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.SslMode)}"] = "Disable",
-            [$"{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode)}"] = "true",
+            [$"SharedKernel:Persistence:audit-wiring:{nameof(NpgsqlPersistenceOptions.SslMode)}"] = "Disable",
+            [$"SharedKernel:Persistence:audit-wiring:{nameof(NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode)}"] = "true",
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configurationValues).Build();
 

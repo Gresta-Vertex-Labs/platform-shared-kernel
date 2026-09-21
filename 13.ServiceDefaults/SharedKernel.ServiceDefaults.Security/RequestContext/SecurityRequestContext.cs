@@ -21,7 +21,9 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// sentinel to <see langword="null"/>, which fails closed. <see cref="ActorKind"/> maps
 /// <see cref="IdentityKind.User"/> to <see cref="Application.Context.ActorKind.User"/>,
 /// <see cref="IdentityKind.ServicePrincipal"/> to <see cref="Application.Context.ActorKind.Service"/>,
-/// and everything else (system, anonymous) to <see cref="Application.Context.ActorKind.System"/>.
+/// an authenticated <see cref="IdentityKind.System"/> identity to <see cref="Application.Context.ActorKind.System"/>,
+/// and every unauthenticated caller to <see cref="Application.Context.ActorKind.Anonymous"/> — never to
+/// <c>System</c>, so an audit trail cannot mistake an anonymous request for the platform's own background work.
 /// Permissions are checked with <see cref="IUserContext.HasPermission"/> (ordinal).
 /// </para>
 /// </remarks>
@@ -54,12 +56,15 @@ internal sealed class SecurityRequestContext : IRequestContext
     public Guid? TenantId => _tenantProvider.TenantId == Guid.Empty ? null : _tenantProvider.TenantId;
 
     /// <inheritdoc />
-    public ActorKind ActorKind => _userContext.IdentityKind switch
-    {
-        IdentityKind.User => ActorKind.User,
-        IdentityKind.ServicePrincipal => ActorKind.Service,
-        _ => ActorKind.System,
-    };
+    public ActorKind ActorKind => !_userContext.IsAuthenticated
+        ? ActorKind.Anonymous
+        : _userContext.IdentityKind switch
+        {
+            IdentityKind.User => ActorKind.User,
+            IdentityKind.ServicePrincipal => ActorKind.Service,
+            IdentityKind.System => ActorKind.System,
+            _ => ActorKind.Anonymous,
+        };
 
     /// <inheritdoc />
     public string? ClientId => _userContext.ClientId;

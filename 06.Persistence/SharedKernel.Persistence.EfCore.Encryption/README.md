@@ -9,19 +9,26 @@ Keys come from a KMS or configuration; rotation, plaintext migration and per-ten
 ```csharp
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
+using SharedKernel.Persistence.EfCore.Extensions;
 
-builder.Services
-    .AddSharedKernelEfCore<OrderDbContext>((sp, o) => o.UsePostgreSQL(sp))
-    .WithMultiTenancy()
-    .UseFieldEncryption(k => k
-        .UseKeyProvider<AzureKeyVaultEncryptionKeyProvider>()   // or .FromConfiguration()
-        .UseTenantDataKeys());                                  // optional: crypto-shredding
+// A KMS (Azure Key Vault): the key source and, for tenant data keys, the envelope provider that wraps them.
+builder.Services.AddSharedKernelCryptography(builder.Configuration)
+    .AddAzureKeyVaultEncryption(builder.Configuration);
+
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
+    .UseMultiTenancy(rowLevelSecurity: true)
+    .UseFieldEncryption(k => k.UseTenantDataKeys()));   // optional: per-tenant keys and crypto-shredding
+
+public sealed class OrderDbContext(DbContextOptions<OrderDbContext> o, PersistenceContextDependencies d)
+    : TenantedDbContext(o, d);
 ```
 
-Without a key-source call, the `IEncryptionKeyProvider` already in the container is used (for example the one
-`13.ServiceDefaults`' `AddSharedKernelKeyVaultKeyProvider()` registers). Register a provider once; nothing needs a
-second synchronous registration. Options bind from `SharedKernel:Persistence:Encryption` and are validated at host
-start together with the key source, so a missing provider fails startup rather than the first request.
+Without a key-source call, the `IEncryptionKeyProvider` already in the container is used (above: the Key Vault
+provider). `k.FromConfiguration()` reads keys from `SharedKernel:Persistence:Encryption:Keys` instead,
+`k.UseKeyProvider<TProvider>()` names a provider type. Register a provider once; nothing needs a second synchronous
+registration. Options bind from `SharedKernel:Persistence:Encryption` and are validated at host start together with
+the key source, so a missing provider fails startup rather than the first request. These samples are compiled by the
+test suite (`ReadmeSampleTests`).
 
 ```json
 "SharedKernel": { "Persistence": { "Encryption": {
@@ -103,12 +110,28 @@ run `RecomputeBlindIndexes`, confirm `VerifyOnly` reports `StaleBlindIndexes == 
 
 ## Maintenance job (`IEncryptionRotationJob`)
 
+A run reads and writes every tenant's rows, so it requires a cross-tenant scope the caller entered around it, in a
+scope whose `IRequestContext` identifies the job — the entry is logged under that identity. The job never enters the
+scope itself and throws `InvalidOperationException` without one.
+
 ```csharp
-var report = await job.RunAsync(new EncryptionMaintenanceRequest
+public sealed class KeyRotationJob(IServiceScopeFactory scopes) : BackgroundService
 {
-    Mode = EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.RecomputeBlindIndexes,
-    ExpectedCurrentKeyId = "k2",
-}, progress, stoppingToken);
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        // services resolve IRequestContext; register it for jobs as e.g. new SystemRequestContext([], "key-rotation")
+        using (services.GetRequiredService<ICrossTenantScope>().Enter("rotate field encryption to k2"))
+        {
+            var report = await services.GetRequiredService<IEncryptionRotationJob>().RunAsync(new EncryptionMaintenanceRequest
+            {
+                Mode = EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.RecomputeBlindIndexes,
+                ExpectedCurrentKeyId = "k2",
+            }, progress: null, stoppingToken);
+        }
+    }
+}
 ```
 
 | Mode | Does |
@@ -142,16 +165,43 @@ generated and wrapped by the registered `IEnvelopeEncryptionProvider` (a KMS mas
 a tenant's first encrypted write; existing values move with `ReEncrypt`.
 
 ```csharp
-await keys.ShredTenantAsync(tenantId, ct); // ITenantEncryptionKeyManager
+using (crossTenantScope.Enter("GDPR erasure request 2026-114"))   // required, as for the maintenance job
+{
+    TenantShredResult result = await keys.ShredTenantAsync(tenantId, cancellationToken: ct); // ITenantEncryptionKeyManager
+}
 ```
 
 Shredding deletes the wrapped key (keeping a tombstone, so the tenant id never gets a new key) and clears the
 tenant's blind indexes in the same transaction (a keyed hash of the plaintext would otherwise still let guesses be
-checked). Afterwards the tenant's values cannot be decrypted by anyone: reading one throws
+checked). Afterwards the tenant's values under its key cannot be decrypted by anyone: reading one throws
 `TenantKeyShreddedException` (`Persistence.Encryption.TenantKeyShredded`, NotFound), writing for the tenant too.
-This process forgets the key at once, other processes within `TenantKeyCacheDuration`. Wrapped keys in database
-backups keep the data recoverable until those backups expire or the master key is destroyed. Record the erasure in
-your audit trail; the log entry deliberately carries no tenant id.
+Columns that are not encrypted are not touched: delete or anonymize them yourself.
+
+**Only values under the tenant's key are erased.** Values written before `UseTenantDataKeys()` stay under a root key
+until the maintenance job moves them (`ReEncrypt`), and a column marked `.Encrypt()` late may still hold plaintext
+(`EncryptPlaintext`). Destroying the tenant key does not erase those, so `ShredTenantAsync` checks the tenant's rows
+first and, when any remain, throws `TenantShredIncompleteException` (`Persistence.Encryption.TenantShredIncomplete`,
+Conflict, with the counts) and changes nothing. Migrate them and shred again — the order is: `ReEncrypt |
+EncryptPlaintext` run, then shred. To shred anyway (and delete those rows afterwards), pass
+`new TenantShredOptions { AllowIncompleteErasure = true }`: `result.IsComplete` is then `false` and
+`RootKeyValues`/`PlaintextValues` say how many remain. The platform also refuses to read a root-key value of a
+shredded tenant (`TenantKeyShreddedException`), but anyone holding the root key still can until the rows are deleted;
+the maintenance job counts them as `ShreddedTenantValuesNotErased` (never as `ShreddedValues`) and never re-encrypts
+or re-indexes a shredded tenant's rows.
+
+**What other processes do after a shred:**
+
+| | Guarantee |
+|---|---|
+| Writes through EF Core in a transaction (the platform unit of work, `Database.BeginTransaction`) | Every save that encrypts a value of a tenant re-reads the tombstone inside its transaction and locks the tenant's key row (`FOR SHARE`). A shred that committed first is always seen (`TenantKeyShreddedException`); a shred that starts during the transaction waits for it, then clears what it wrote. No value is written under the key by a transaction that commits after the shred. |
+| Writes through EF Core without a transaction | The tombstone is re-read just before EF Core's own transaction starts: a shred committing inside that window is missed for that one save. |
+| Reads | This process forgets the key at once. Another process can still decrypt from its cached copy for up to `TenantKeyCacheDuration` (default 5 minutes). |
+| Dapper, raw SQL | Not checked. |
+
+Wrapped keys in database backups keep the data recoverable until those backups expire or the master key is destroyed.
+Record the erasure in your audit trail; the log entry deliberately carries no tenant id. Revoke `DELETE` on
+`sk_tenant_encryption_keys` from the application roles, so a tombstone cannot be removed (see the
+`SharedKernel.Persistence.Npgsql` README's role script).
 
 ## Diagnostics
 

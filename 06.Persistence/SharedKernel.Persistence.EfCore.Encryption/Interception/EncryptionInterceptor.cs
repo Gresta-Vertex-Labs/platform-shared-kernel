@@ -50,7 +50,10 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
     public InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
         if (eventData.Context is { } context)
+        {
+            PrepareTenantKeys(context);
             EncryptPending(context);
+        }
 
         return result;
     }
@@ -120,15 +123,49 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
     }
 
     // Loads (creating when needed) the data keys of every tenant this save writes for, asynchronously, so the
-    // synchronous encryption below never blocks on the key store.
+    // synchronous encryption below never blocks on the key store; then re-checks, in the save's transaction, that none
+    // of those tenants was shredded since (another process's shred is not in this process's key cache).
     private async Task PrepareTenantKeysAsync(DbContext context, CancellationToken cancellationToken)
     {
-        if (!runtime.Settings.TenantDataKeys)
+        if (TenantsWrittenWithTenantKeys(context) is not { } tenants)
             return;
+
+        var side = runtime.SideConnection(context);
+        foreach (var tenant in tenants)
+        {
+            var entry = await runtime.TenantKeys.GetAsync(RequireTenant(tenant), side, create: true, cancellationToken).ConfigureAwait(false);
+            if (entry is { IsShredded: true })
+                throw new TenantKeyShreddedException();
+        }
+
+        await runtime.EnsureNotShreddedAsync(context, tenants, cancellationToken).ConfigureAwait(false);
+    }
+
+    // The synchronous form of PrepareTenantKeysAsync.
+    private void PrepareTenantKeys(DbContext context)
+    {
+        if (TenantsWrittenWithTenantKeys(context) is not { } tenants)
+            return;
+
+        var side = runtime.SideConnection(context);
+        foreach (var tenant in tenants)
+        {
+            if (runtime.TenantKeys.GetBlocking(RequireTenant(tenant), side, create: true) is { IsShredded: true })
+                throw new TenantKeyShreddedException();
+        }
+
+        runtime.EnsureNotShredded(context, tenants);
+    }
+
+    // The tenants of the added or modified tenanted entries with encrypted members, or null when there are none.
+    private HashSet<Guid>? TenantsWrittenWithTenantKeys(DbContext context)
+    {
+        if (!runtime.Settings.TenantDataKeys)
+            return null;
 
         var metadata = EncryptionModelMetadata.For(context.Model);
         if (!metadata.HasEncryptedMembers)
-            return;
+            return null;
 
         HashSet<Guid>? tenants = null;
         foreach (var entry in context.ChangeTracker.Entries())
@@ -141,16 +178,7 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
             }
         }
 
-        if (tenants is null)
-            return;
-
-        var side = runtime.SideConnection(context);
-        foreach (var tenant in tenants)
-        {
-            var entry = await runtime.TenantKeys.GetAsync(RequireTenant(tenant), side, create: true, cancellationToken).ConfigureAwait(false);
-            if (entry is { IsShredded: true })
-                throw new TenantKeyShreddedException();
-        }
+        return tenants;
     }
 
     private void EncryptPending(DbContext context)
