@@ -25,7 +25,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// <para>
 /// <strong>Read-only:</strong> this class has no <c>ExecuteAsync</c> method — a
 /// write belongs on <see cref="DapperCommandService"/>, which enlists in
-/// <c>ITransactionalUnitOfWork</c>'s ambient transaction when one is active. Keeping writes off the
+/// <c>IUnitOfWork</c>'s ambient transaction when one is active. Keeping writes off the
 /// read base makes "this type only ever reads" a property callers can rely on without inspecting
 /// every method.
 /// </para>

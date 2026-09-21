@@ -23,7 +23,7 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// <strong>Bypass warning:</strong> both methods bypass the EF Core change tracker entirely. As a
 /// direct consequence:
 /// <list type="bullet">
-/// <item><description><see cref="SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork.SaveChangesAsync"/> is NOT invoked and has no effect on these rows.</description></item>
+/// <item><description><see cref="SharedKernel.Application.Transactions.IUnitOfWork.SaveChangesAsync"/> is NOT invoked and has no effect on these rows.</description></item>
 /// <item><description>The three platform interceptors (Audit, SoftDelete, Concurrency) do NOT run.</description></item>
 /// <item><description>Domain events are NOT collected or dispatched for affected aggregates.</description></item>
 /// </list>

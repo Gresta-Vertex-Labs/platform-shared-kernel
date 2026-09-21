@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -26,7 +27,6 @@ internal static class AuditTestHost
         string connectionString,
         FakeAuditActorContext? actorContext = null,
         bool withAdvisoryLock = true,
-        bool withTransactionalUnitOfWork = true,
         Action<IServiceCollection>? configureServices = null,
         Action<EfCorePersistenceBuilder<AuditChainTestDbContext>>? configureBuilder = null)
     {
@@ -35,8 +35,7 @@ internal static class AuditTestHost
 
         var actor = actorContext ?? new FakeAuditActorContext();
         services.AddSingleton(actor);
-        services.AddSingleton<ICurrentActorContext>(actor);
-        services.AddSingleton<ICurrentTenantContext>(actor);
+        services.AddSingleton<IRequestContext>(actor);
         // Registered under BOTH the interface and the concrete type (same singleton instance) — a
         // test needs the concrete CrossTenantScope.Enter() capability, never exposed on the
         // read-only ICrossTenantScope interface itself (see its own remarks).
@@ -77,8 +76,6 @@ internal static class AuditTestHost
                     .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
                         .WithAuditTrail(configuration);
 
-        if (withTransactionalUnitOfWork)
-            builder.WithTransactionalUnitOfWork();
 
         configureBuilder?.Invoke(builder);
 

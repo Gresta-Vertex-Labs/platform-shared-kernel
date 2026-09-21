@@ -33,7 +33,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///   </description></item>
 ///   <item><description>
 ///     Rule 3 — <see cref="ApplicationLayerMustNotReferenceDbContextTransaction"/>: enforces
-///     that <c>ITransactionalUnitOfWork</c> is the sole transaction entry point in the
+///     that <c>IUnitOfWork.ExecuteInTransactionAsync</c> is the sole transaction entry point in the
 ///     application layer; direct <c>IDbContextTransaction</c> coupling is prohibited.
 ///   </description></item>
 ///   <item><description>
@@ -151,7 +151,7 @@ public static class EfCorePackageHygieneRules
     /// <remarks>
     /// <para>
     /// This rule must be called with the <c>05.Application</c> assembly.
-    /// <c>ITransactionalUnitOfWork</c> is the only permitted transaction entry point
+    /// <c>IUnitOfWork.ExecuteInTransactionAsync</c> is the only permitted transaction entry point
     /// for application handlers. Direct injection of <c>IDbContextTransaction</c> couples
     /// application code to EF Core's specific transaction implementation, making the
     /// transaction abstraction boundary unenforceable.
@@ -180,7 +180,7 @@ public static class EfCorePackageHygieneRules
     /// <strong>Compliant pattern:</strong>
     /// <code>
     /// class CreateOrderHandler {
-    ///     public CreateOrderHandler(ITransactionalUnitOfWork unitOfWork) { }
+    ///     public CreateOrderHandler(IUnitOfWork unitOfWork) { }
     /// }
     /// </code>
     /// </para>

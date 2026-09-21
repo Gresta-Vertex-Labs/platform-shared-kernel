@@ -124,7 +124,7 @@ public sealed class RowLevelSecurityCommandInterceptor : DbCommandInterceptor
         if (command.Transaction is null || command.Connection is null)
             return Task.CompletedTask;
 
-        var tenantId = (eventData.Context as TenantedDbContext)?.CurrentTenant.TenantId;
+        var tenantId = (eventData.Context as TenantedDbContext)?.CurrentTenantId;
         return _tenantSessionBinder.BindAsync(
             command.Connection, command.Transaction, tenantId, _crossTenantScope.IsActive, cancellationToken);
     }

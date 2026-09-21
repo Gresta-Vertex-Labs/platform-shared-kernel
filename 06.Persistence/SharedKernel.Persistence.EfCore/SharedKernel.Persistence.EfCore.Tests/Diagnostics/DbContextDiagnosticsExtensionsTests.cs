@@ -62,7 +62,7 @@ public sealed class DbContextDiagnosticsExtensionsTests
             options,
             new PersistenceContextDependencies(
                 new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(userContext, clock),
-            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(userContext, clock),
+            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock),
             new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor()));
 
         var act = async () => await ctx.CheckReadinessAsync();

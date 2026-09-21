@@ -5,10 +5,9 @@ using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 
 /// <summary>
-/// Tests verifying that the default <c>AnonymousActorContext</c> uses
-/// <c>PersistenceServiceOptions.ServiceName</c> as the unauthenticated audit fallback
-/// (replaces the former hardcoded "system" literal — resolution now lives entirely inside
-/// <c>IAuditActorContext</c>, not <c>AuditInterceptor</c> itself).
+/// Tests verifying that an anonymous caller (<c>AnonymousRequestContext</c>, the default) is attributed to
+/// <c>PersistenceServiceOptions.ServiceName</c> — the unauthenticated audit fallback
+/// (the fallback lives in <c>AuditInterceptor</c>, which reads the service name from its options).
 /// </summary>
 public sealed class AuditInterceptorServiceNameTests
 {
@@ -18,9 +17,9 @@ public sealed class AuditInterceptorServiceNameTests
         // Arrange — override ServiceName to something distinguishable from "system"
         const string serviceName = "invoice-service";
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var actorContext = TestDbContextFactory.CreateUnauthenticatedActorContext(serviceName);
+        var actorContext = TestDbContextFactory.CreateUnauthenticatedActorContext();
 
-        using var ctx = TestDbContextFactory.CreateTestDbContext(actorContext, clock);
+        using var ctx = TestDbContextFactory.CreateTestDbContext(actorContext, clock, serviceName);
 
         var id = TestId.New();
         ctx.AuditableAggregates.Add(new AuditableTestAggregate(id, "test", clock));

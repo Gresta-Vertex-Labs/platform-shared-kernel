@@ -38,10 +38,10 @@ public sealed class TenantWriteGuardInterceptorTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actorContext, new SystemClock()),
-            new SoftDeleteInterceptor(actorContext, new SystemClock()),
+            new SoftDeleteInterceptor(new SystemClock()),
             new ConcurrencyInterceptor(),
             [new TenantWriteGuardInterceptor(crossTenantScope)]));
-        ctx.RefreshTenant(actorContext);
+        ctx.RefreshRequestContext(actorContext);
         return ctx;
     }
 
@@ -93,10 +93,10 @@ public sealed class TenantWriteGuardInterceptorTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actorContext, new SystemClock()),
-            new SoftDeleteInterceptor(actorContext, new SystemClock()),
+            new SoftDeleteInterceptor(new SystemClock()),
             new ConcurrencyInterceptor(),
             [new TenantWriteGuardInterceptor(crossTenantScope)]));
-        ctx.RefreshTenant(actorContext);
+        ctx.RefreshRequestContext(actorContext);
         await ctx.Database.EnsureCreatedAsync();
 
         var entity = new SoftDeletableTenantedAggregate(TenantedTestId.New(), "ToDelete", tenantId, new SystemClock());

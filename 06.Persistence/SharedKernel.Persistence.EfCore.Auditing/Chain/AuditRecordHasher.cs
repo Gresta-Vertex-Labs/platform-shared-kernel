@@ -2,7 +2,8 @@ using System.Buffers;
 using System.Text;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Auditing;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Chain;
 

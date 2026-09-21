@@ -1,3 +1,5 @@
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -70,7 +72,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditRecord second;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             second = await writer.RecordAsync(FailedEntry("Order", "order-2"));
         }
@@ -94,7 +96,7 @@ public sealed class AuditCheckpointPostgresTests
 
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             await writer.RecordAsync(FailedEntry("Order", "order-2"));
         }
@@ -107,7 +109,7 @@ public sealed class AuditCheckpointPostgresTests
 
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-3"));
         }
 
@@ -129,7 +131,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditRecord anchor;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             anchor = await writer.RecordAsync(FailedEntry("Order", "order-1"));
         }
 
@@ -167,7 +169,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditRecord written;
         await using (var scope = sp.CreateAsyncScope())
         {
-            written = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            written = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         var forgedCheckpoint = new AuditChainCheckpoint
@@ -201,7 +203,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditChainCheckpoint earlyCheckpoint;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             earlyCheckpoint = await scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().CreateCheckpointAsync(tenantId, "Order");
         }
@@ -210,7 +212,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditChainCheckpoint laterCheckpoint;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-2"));
             await writer.RecordAsync(FailedEntry("Order", "order-3"));
             fourth = await writer.RecordAsync(FailedEntry("Order", "order-4"));
@@ -263,7 +265,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditChainCheckpoint earlyCheckpoint;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             earlyCheckpoint = await scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().CreateCheckpointAsync(tenantId, "Order");
         }
@@ -271,7 +273,7 @@ public sealed class AuditCheckpointPostgresTests
         AuditChainCheckpoint laterCheckpoint;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-2"));
             await writer.RecordAsync(FailedEntry("Order", "order-3"));
             laterCheckpoint = await scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().CreateCheckpointAsync(tenantId, "Order");

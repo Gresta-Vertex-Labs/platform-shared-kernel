@@ -200,7 +200,7 @@ public sealed class DomainPrimitiveConventionTests
         var ctx = new ValueObjectConventionDbContext(
             options,
             new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -216,7 +216,7 @@ public sealed class DomainPrimitiveConventionTests
         var ctx = new SimpleConventionDbContext(
             options,
             new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -232,7 +232,7 @@ public sealed class DomainPrimitiveConventionTests
         var ctx = new FullAuditConventionDbContext(
             options,
             new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }

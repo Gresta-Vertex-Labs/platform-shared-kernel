@@ -1,7 +1,9 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Tests.Support;

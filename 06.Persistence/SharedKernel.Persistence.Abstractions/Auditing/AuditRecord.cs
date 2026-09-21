@@ -1,4 +1,5 @@
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 
 namespace SharedKernel.Persistence.Abstractions.Auditing;
 
@@ -60,7 +61,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <strong><see cref="TenantId"/> is nullable, never a <see cref="Guid.Empty"/> sentinel:</strong> a
 /// system-attributed action with no tenant in play (a startup seeder, a platform-wide background job)
 /// records <see langword="null"/>, distinguishable from a genuine tenant whose id happens to be all
-/// zeroes — mirrors <c>ICurrentTenantContext.TenantId</c>'s own fail-closed-nullable shape.
+/// zeroes — mirrors <c>IRequestContext.TenantId</c>'s own fail-closed-nullable shape.
 /// </para>
 /// <para>
 /// <strong><see cref="ActorId"/> format:</strong> reuses the platform's existing audit-string-format

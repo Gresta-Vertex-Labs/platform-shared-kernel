@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using FluentAssertions;
@@ -335,8 +336,8 @@ public sealed class EncryptionCoreIntegrationTests
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddLogging();
         services.AddScoped<FakeAuditActorContext>();
-        services.AddScoped<SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext>(sp => sp.GetRequiredService<FakeAuditActorContext>());
-        services.AddScoped<SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext>(sp => sp.GetRequiredService<FakeAuditActorContext>());
+        services.AddScoped<SharedKernel.Application.Context.IRequestContext>(sp => sp.GetRequiredService<FakeAuditActorContext>());
+        services.AddScoped<SharedKernel.Application.Context.IRequestContext>(sp => sp.GetRequiredService<FakeAuditActorContext>());
 
         var keyProvider = new StaticEncryptionKeyProvider("v1", [new CryptographicKey("v1", EncryptionTestHost.KeyV1), new CryptographicKey("v2", EncryptionTestHost.KeyV2)]);
         services.AddSingleton(keyProvider);
@@ -409,8 +410,8 @@ public sealed class EncryptionCoreIntegrationTests
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         var actor = new FakeAuditActorContext();
         services.AddSingleton(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext>(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
 
         services.AddSharedKernelEfCore<EncryptionTestDbContext>(options => options.UsePostgreSQL(ConnectionString("sk_enc_not_registered")).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMultiTenancy()

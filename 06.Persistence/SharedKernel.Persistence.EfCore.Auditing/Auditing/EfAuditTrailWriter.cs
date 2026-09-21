@@ -6,10 +6,12 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
+using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Propagation;
 
@@ -41,7 +43,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// </para>
 /// <para>
 /// <strong>The unique-constraint-retry fallback assumes READ COMMITTED isolation</strong> (Postgres's
-/// own default, and what a plain <c>ITransactionalUnitOfWork.BeginTransactionAsync()</c> call without an
+/// own default, and what a plain <c>IUnitOfWork.ExecuteInTransactionAsync</c> call without an
 /// explicit <see cref="System.Data.IsolationLevel"/> uses). Each retry re-reads the chain head with a
 /// fresh statement-level snapshot, which is what lets a later attempt observe a DIFFERENT (newer) head
 /// than an earlier one on the SAME connection. Under REPEATABLE READ or SERIALIZABLE, a transaction sees
@@ -72,8 +74,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAmbientDbTransaction _ambientTransaction;
     private readonly IAdvisoryTransactionLock? _advisoryLock;
-    private readonly ICurrentActorContext _actorContext;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _requestContext;
+    private readonly string _serviceName;
     private readonly IClock _clock;
     private readonly IHmacSigner _hmacSigner;
     private readonly IAuditChainKeyProvider _keyProvider;
@@ -84,19 +86,18 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
     public EfAuditTrailWriter(
         IDbConnectionFactory connectionFactory,
         IAmbientDbTransaction ambientTransaction,
-        ICurrentActorContext actorContext,
-        ICurrentTenantContext tenantContext,
+        IRequestContext requestContext,
         IClock clock,
         IHmacSigner hmacSigner,
         IAuditChainKeyProvider keyProvider,
         IOptions<AuditChainOptions> options,
         ILogger<EfAuditTrailWriter> logger,
-        IAdvisoryTransactionLock? advisoryLock = null)
+        IAdvisoryTransactionLock? advisoryLock = null,
+        IOptions<PersistenceServiceOptions>? serviceOptions = null)
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
         ArgumentNullException.ThrowIfNull(ambientTransaction);
-        ArgumentNullException.ThrowIfNull(actorContext);
-        ArgumentNullException.ThrowIfNull(tenantContext);
+        ArgumentNullException.ThrowIfNull(requestContext);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(hmacSigner);
         ArgumentNullException.ThrowIfNull(keyProvider);
@@ -105,8 +106,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
 
         _connectionFactory = connectionFactory;
         _ambientTransaction = ambientTransaction;
-        _actorContext = actorContext;
-        _tenantContext = tenantContext;
+        _requestContext = requestContext;
+        _serviceName = serviceOptions?.Value.ServiceName ?? new PersistenceServiceOptions().ServiceName;
         _clock = clock;
         _hmacSigner = hmacSigner;
         _keyProvider = keyProvider;
@@ -119,15 +120,35 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
     }
 
     /// <inheritdoc />
+    Task IAuditTrailWriter.RecordAsync(AuditEntry entry, CancellationToken cancellationToken) =>
+        RecordAsync(entry, cancellationToken);
+
+    /// <summary>
+    /// Appends <paramref name="entry"/> to its <c>(TenantId, ResourceType)</c> chain and returns the
+    /// persisted <see cref="AuditRecord"/>. See <see cref="IAuditTrailWriter"/> for the transaction rule.
+    /// </summary>
+    /// <param name="entry">The entry to record.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation.</param>
+    /// <returns>The persisted record.</returns>
+    /// <remarks>
+    /// The actor, actor kind, tenant, client, session and impersonator come from the scope's
+    /// <see cref="IRequestContext"/>; <c>SourceService</c> is the configured
+    /// <c>PersistenceServiceOptions.ServiceName</c>. A reused <see cref="AuditEntry.IdempotencyKey"/> for
+    /// the same event returns the existing record; for a different event it throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </remarks>
     public async Task<AuditRecord> RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
         var startedAt = Stopwatch.GetTimestamp();
-        var tenantId = _tenantContext.TenantId;
+        var tenantId = _requestContext.TenantId;
         var chainKey = AuditChainKeyFormat.Build(tenantId, entry.ResourceType);
-        var actorId = _actorContext.ActorId;
-        var actorKind = _actorContext.ActorKind;
+        var actorId = _requestContext.UserId is { Length: > 0 } userId ? userId : _serviceName;
+        var actorKind = _requestContext.ActorKind;
+        var clientId = _requestContext.ClientId;
+        var sessionId = _requestContext.SessionId;
+        var impersonatorId = _requestContext.ImpersonatorId;
         var occurredOn = AuditTimestamp.TruncateToMicroseconds(_clock.UtcNow);
         var occurredOnMicros = AuditTimestamp.ToUtcMicroseconds(occurredOn);
         var correlationId = Activity.Current?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId);
@@ -149,8 +170,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                 $"({nameof(IAmbientDbTransaction)}.{nameof(IAmbientDbTransaction.Current)} is null). A " +
                 $"{nameof(AuditOutcome.Succeeded)}-outcome audit record is only ever written INSIDE the " +
                 "SAME transaction as the business write it attests to, so it can commit or roll back " +
-                "atomically together with it. Call this from inside an active ITransactionalUnitOfWork " +
-                "transaction (BeginTransactionAsync/ExecuteInTransactionAsync), or record " +
+                "atomically together with it. Call this from inside IUnitOfWork.ExecuteInTransactionAsync " +
+                "(TransactionBehavior does this for every command), or record " +
                 $"{nameof(AuditOutcome.Failed)} if there is no business write for this entry to be " +
                 "atomic with.");
         }
@@ -233,8 +254,8 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                 var fields = new AuditRecordHasher.Fields(
                     id, tenantId, actorId, actorKind, entry.Action, entry.ResourceType, entry.ResourceId,
                     sequence, occurredOnMicros, entry.BeforeSnapshot, entry.AfterSnapshot, correlationId,
-                    entry.ApprovalId, entry.Outcome, entry.ErrorCode, entry.ClientId, entry.SessionId,
-                    entry.ImpersonatorId, entry.SourceService, entry.IdempotencyKey, headHash,
+                    entry.ApprovalId, entry.Outcome, entry.ErrorCode, clientId, sessionId,
+                    impersonatorId, _serviceName, entry.IdempotencyKey, headHash,
                     AuditHashAlgorithmNames.HmacSha256, key.Id, SchemaVersion);
 
                 var recordHash = AuditRecordHasher.ComputeHashHex(_hmacSigner, key.Material, in fields);
@@ -256,10 +277,10 @@ public sealed class EfAuditTrailWriter : IAuditTrailWriter
                     ApprovalId = entry.ApprovalId,
                     Outcome = entry.Outcome,
                     ErrorCode = entry.ErrorCode,
-                    ClientId = entry.ClientId,
-                    SessionId = entry.SessionId,
-                    ImpersonatorId = entry.ImpersonatorId,
-                    SourceService = entry.SourceService,
+                    ClientId = clientId,
+                    SessionId = sessionId,
+                    ImpersonatorId = impersonatorId,
+                    SourceService = _serviceName,
                     IdempotencyKey = entry.IdempotencyKey,
                     HashAlgorithm = AuditHashAlgorithmNames.HmacSha256,
                     SchemaVersion = SchemaVersion,

@@ -1,6 +1,7 @@
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Context;
 
 namespace SharedKernel.Testing.Persistence;
@@ -39,7 +40,7 @@ namespace SharedKernel.Testing.Persistence;
 public sealed class FakeAuditQueryService : IAuditQueryService
 {
     private readonly FakeAuditTrailWriter _writer;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _tenantContext;
     private readonly ICrossTenantScope _crossTenantScope;
 
     /// <summary>Initialises a new <see cref="FakeAuditQueryService"/> reading from <paramref name="writer"/>.</summary>
@@ -55,7 +56,7 @@ public sealed class FakeAuditQueryService : IAuditQueryService
     /// </param>
     public FakeAuditQueryService(
         FakeAuditTrailWriter writer,
-        ICurrentTenantContext? tenantContext = null,
+        IRequestContext? tenantContext = null,
         ICrossTenantScope? crossTenantScope = null)
     {
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));

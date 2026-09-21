@@ -92,7 +92,7 @@ public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsy
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
         var classifiers = new IDbUpdateExceptionClassifier[] { new PostgreSqlDbUpdateExceptionClassifier() };
 

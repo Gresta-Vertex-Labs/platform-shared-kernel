@@ -27,6 +27,7 @@ namespace SharedKernel.Testing.Application;
 public sealed class FakeRequestContext : IRequestContext
 {
     private static readonly string DefaultUserId = "11111111-1111-1111-1111-111111111111";
+    private ActorKind? _actorKind;
 
     /// <summary>Gets or sets a value indicating whether the current caller is authenticated.</summary>
     /// <remarks>Defaults to <see langword="true"/>.</remarks>
@@ -39,6 +40,26 @@ public sealed class FakeRequestContext : IRequestContext
     /// <summary>Gets or sets the tenant identifier associated with the current request.</summary>
     /// <remarks>Defaults to <see langword="null"/> — no tenant, a legitimate state for this seam.</remarks>
     public Guid? TenantId { get; set; }
+
+    /// <summary>Gets or sets the kind of actor the caller is.</summary>
+    /// <remarks>
+    /// Defaults to <see cref="Context.ActorKind.User"/> while <see cref="IsAuthenticated"/> is
+    /// <see langword="true"/> and <see cref="Context.ActorKind.System"/> otherwise, until set explicitly.
+    /// </remarks>
+    public ActorKind ActorKind
+    {
+        get => _actorKind ?? (IsAuthenticated ? ActorKind.User : ActorKind.System);
+        set => _actorKind = value;
+    }
+
+    /// <summary>Gets or sets the OAuth2 client id of the caller. Defaults to <see langword="null"/>.</summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>Gets or sets the caller's session id. Defaults to <see langword="null"/>.</summary>
+    public string? SessionId { get; set; }
+
+    /// <summary>Gets or sets the identity acting on the caller's behalf. Defaults to <see langword="null"/>.</summary>
+    public string? ImpersonatorId { get; set; }
 
     /// <summary>Gets or sets the permissions held by the current caller.</summary>
     /// <remarks>Defaults to an empty collection. Mirrors <c>FakeUserContext.Permissions</c>'s exact shape.</remarks>

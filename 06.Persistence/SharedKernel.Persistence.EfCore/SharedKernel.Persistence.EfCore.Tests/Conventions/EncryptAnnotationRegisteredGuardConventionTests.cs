@@ -53,7 +53,7 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
         var clock = new SystemClock();
         return new PersistenceContextDependencies(
             new AuditInterceptor(actor, clock),
-            new SoftDeleteInterceptor(actor, clock),
+            new SoftDeleteInterceptor(clock),
             new ConcurrencyInterceptor());
     }
 

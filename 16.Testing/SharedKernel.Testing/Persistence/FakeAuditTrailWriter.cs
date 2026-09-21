@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SharedKernel.Persistence.Abstractions.Auditing;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Testing.Clocks;
@@ -8,15 +9,14 @@ using SharedKernel.Testing.Clocks;
 namespace SharedKernel.Testing.Persistence;
 
 /// <summary>
-/// In-memory fake implementation of <see cref="IAuditTrailWriter"/> (<c>06.Persistence.Abstractions</c>)
-/// for use in unit tests.
+/// In-memory fake implementation of the shared <see cref="IAuditTrailWriter"/> that produces full
+/// <see cref="AuditRecord"/>s (actor, tenant, sequence, hash chain) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>NOT</b> <see cref="SharedKernel.Testing.Application.FakeAuditTrailWriter"/> — same class name,
-/// different namespace; this type fakes the RICH <c>06.Persistence.Abstractions</c> contract (actor/
-/// tenant/sequence/timestamp/hash-chain all resolved internally), never <c>05.Application.Behaviors</c>'s
-/// deliberately smaller local seam. See <c>Application/FakeAuditTrailWriter</c> for that fake.
+/// Differs from <see cref="SharedKernel.Testing.Application.FakeAuditTrailWriter"/> (same interface):
+/// that fake records the caller's <see cref="AuditEntry"/> verbatim; this one resolves identity from an
+/// <see cref="IRequestContext"/> and builds the ledger records <see cref="FakeAuditQueryService"/> reads.
 /// </para>
 /// <para>
 /// <b>Structural immutability:</b> this type — and <see cref="IAuditTrailWriter"/> itself — exposes
@@ -47,33 +47,25 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
     private readonly Lock _gate = new();
     private readonly List<AuditRecord> _records = [];
     private readonly Dictionary<string, (long Sequence, string Hash)> _headByChain = [];
-    private readonly ICurrentActorContext _actorContext;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _requestContext;
     private readonly IClock _clock;
 
     /// <summary>Initialises a new <see cref="FakeAuditTrailWriter"/>.</summary>
-    /// <param name="actorContext">
-    /// Resolves the current actor identity. Defaults to a fresh <see cref="FakeAuditActorContext"/>
-    /// for zero-config convenience when omitted.
-    /// </param>
-    /// <param name="tenantContext">
-    /// Resolves the current tenant identity. Defaults to the SAME fresh
-    /// <see cref="FakeAuditActorContext"/> instance <paramref name="actorContext"/> defaults to when
-    /// both are omitted, so a zero-config writer still gets matching actor/tenant identity.
+    /// <param name="requestContext">
+    /// Resolves the actor, actor kind, tenant, client, session and impersonator. Defaults to a fresh
+    /// <see cref="FakeAuditActorContext"/> for zero-config convenience when omitted.
     /// </param>
     /// <param name="clock">
     /// Resolves <see cref="AuditRecord.OccurredOn"/>. Defaults to a fresh <see cref="FakeClock"/> when omitted.
     /// </param>
-    public FakeAuditTrailWriter(
-        ICurrentActorContext? actorContext = null,
-        ICurrentTenantContext? tenantContext = null,
-        IClock? clock = null)
+    public FakeAuditTrailWriter(IRequestContext? requestContext = null, IClock? clock = null)
     {
-        var fallback = new FakeAuditActorContext();
-        _actorContext = actorContext ?? fallback;
-        _tenantContext = tenantContext ?? fallback;
+        _requestContext = requestContext ?? new FakeAuditActorContext();
         _clock = clock ?? new FakeClock();
     }
+
+    /// <summary>Gets or sets the value recorded as <see cref="AuditRecord.SourceService"/>. Defaults to <see langword="null"/>.</summary>
+    public string? SourceService { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether <see cref="RecordAsync"/> should unconditionally
@@ -95,6 +87,13 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
     }
 
     /// <inheritdoc />
+    Task IAuditTrailWriter.RecordAsync(AuditEntry entry, CancellationToken cancellationToken) =>
+        RecordAsync(entry, cancellationToken);
+
+    /// <summary>Records <paramref name="entry"/> and returns the resulting <see cref="AuditRecord"/>.</summary>
+    /// <param name="entry">The entry to record.</param>
+    /// <param name="cancellationToken">Ignored.</param>
+    /// <returns>The recorded (or, for a reused idempotency key, the previously recorded) record.</returns>
     public Task<AuditRecord> RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -106,7 +105,7 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
 
         lock (_gate)
         {
-            var tenantId = _tenantContext.TenantId;
+            var tenantId = _requestContext.TenantId;
             var chainKey = BuildChainKey(tenantId, entry.ResourceType);
 
             if (entry.IdempotencyKey is { } idempotencyKey)
@@ -124,8 +123,8 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
             {
                 Id = Guid.CreateVersion7(),
                 TenantId = tenantId,
-                ActorId = _actorContext.ActorId,
-                ActorKind = _actorContext.ActorKind,
+                ActorId = _requestContext.UserId ?? "system",
+                ActorKind = _requestContext.ActorKind,
                 Action = entry.Action,
                 ResourceType = entry.ResourceType,
                 ResourceId = entry.ResourceId,
@@ -137,10 +136,10 @@ public sealed class FakeAuditTrailWriter : IAuditTrailWriter
                 ApprovalId = entry.ApprovalId,
                 Outcome = entry.Outcome,
                 ErrorCode = entry.ErrorCode,
-                ClientId = entry.ClientId,
-                SessionId = entry.SessionId,
-                ImpersonatorId = entry.ImpersonatorId,
-                SourceService = entry.SourceService,
+                ClientId = _requestContext.ClientId,
+                SessionId = _requestContext.SessionId,
+                ImpersonatorId = _requestContext.ImpersonatorId,
+                SourceService = SourceService,
                 IdempotencyKey = entry.IdempotencyKey,
                 HashAlgorithm = "FAKE-NONCRYPTOGRAPHIC",
                 SchemaVersion = 1,

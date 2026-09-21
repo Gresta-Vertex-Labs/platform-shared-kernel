@@ -4,7 +4,7 @@ using NSubstitute;
 using SharedKernel.Domain;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.UnitOfWork;

@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -20,11 +21,11 @@ namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 // The three platform interceptors (plus TenantWriteGuardInterceptor, when WithMultiTenancy() is also
 // used) are registered SINGLETON when pooling is enabled; the scoped, decorated
 // IDbContextFactory<TContext> (TenantAwareDbContextFactory<TContext>) attaches the REAL per-request
-// ICurrentActorContext/ICurrentTenantContext once per lease.
+// IRequestContext/IRequestContext once per lease.
 //
 // WithMultiTenancy() + WithDbContextPooling() is now FULLY SUPPORTED — the
 // former hard incompatibility guard is gone, replaced by the real fix described above
-// (TenantedDbContext's constructor no longer takes ICurrentTenantContext at all; see its own class
+// (TenantedDbContext's constructor no longer takes IRequestContext at all; see its own class
 // remarks). The SQLite-backed wiring/no-throw proof lives here; the authoritative multi-tenant
 // concurrency proof (two concurrent scopes of different tenants sharing one pool, a background scope
 // with no tenant failing closed, and a scope inside an active ICrossTenantScope) lives against REAL
@@ -33,16 +34,27 @@ namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 // ---------------------------------------------------------------------------
 
 /// <summary>Mutable, scoped-DI-friendly actor fake for pooling tests.</summary>
-internal sealed class MutableTestActorContext : ICurrentActorContext
+internal sealed class MutableTestActorContext : IRequestContext
 {
     public string ActorId { get; set; } = "unset";
     public ActorKind ActorKind { get; set; } = ActorKind.User;
+    public bool IsAuthenticated => true;
+    public string? UserId => ActorId;
+    public Guid? TenantId { get; set; }
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }
 
 /// <summary>Mutable, scoped-DI-friendly tenant fake for pooling tests.</summary>
-internal sealed class MutableTestTenantContext : ICurrentTenantContext
+internal sealed class MutableTestTenantContext : IRequestContext
 {
     public Guid? TenantId { get; set; }
+    public bool IsAuthenticated => true;
+    public string? UserId => "tenant-test";
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }
 
 public sealed class DbContextPoolingTests
@@ -61,7 +73,7 @@ public sealed class DbContextPoolingTests
 
         var services = new ServiceCollection();
         services.AddScoped<MutableTestActorContext>();
-        services.AddScoped<ICurrentActorContext>(sp => sp.GetRequiredService<MutableTestActorContext>());
+        services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<MutableTestActorContext>());
 
         services
             .AddSharedKernelEfCore<TestDbContext>(options => options
@@ -150,7 +162,7 @@ public sealed class DbContextPoolingTests
         });
 
         act.Should().NotThrow(
-            "the default ICurrentActorContext registration, the singleton platform interceptors, and " +
+            "the default IRequestContext registration, the singleton platform interceptors, and " +
             "the pooled options callback must never resolve a scoped service from the root provider");
     }
 
@@ -181,7 +193,7 @@ public sealed class DbContextPoolingTests
         });
 
         act.Should().NotThrow(
-            "TenantedDbContext no longer takes ICurrentTenantContext in its constructor, and " +
+            "TenantedDbContext no longer takes IRequestContext in its constructor, and " +
             "TenantWriteGuardInterceptor's only dependency (ICrossTenantScope) is singleton-safe — " +
             "neither the pooled options callback nor TContext's own other constructor parameters " +
             "resolve a genuinely Scoped service from the pool-level activator");
@@ -197,7 +209,7 @@ public sealed class DbContextPoolingTests
 
         var services = new ServiceCollection();
         services.AddScoped<MutableTestTenantContext>();
-        services.AddScoped<ICurrentTenantContext>(sp => sp.GetRequiredService<MutableTestTenantContext>());
+        services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<MutableTestTenantContext>());
 
         services
             .AddSharedKernelEfCore<TenantedTestDbContext>(options => options
@@ -293,10 +305,10 @@ public sealed class DbContextPoolingTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actorContextA, new SystemClock()),
-            new SoftDeleteInterceptor(actorContextA, new SystemClock()),
+            new SoftDeleteInterceptor(new SystemClock()),
             new ConcurrencyInterceptor())))
         {
-            ctxA.RefreshTenant(actorContextA);
+            ctxA.RefreshRequestContext(actorContextA);
             await ctxA.Database.EnsureCreatedAsync();
             ctxA.SdAggregates.Add(new SoftDeletableTenantedAggregate(
                 TenantedTestId.New(), "TenantARow", tenantAId, new SystemClock()));
@@ -310,9 +322,9 @@ public sealed class DbContextPoolingTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actorContextB, new SystemClock()),
-            new SoftDeleteInterceptor(actorContextB, new SystemClock()),
+            new SoftDeleteInterceptor(new SystemClock()),
             new ConcurrencyInterceptor()));
-        ctxB.RefreshTenant(actorContextB);
+        ctxB.RefreshRequestContext(actorContextB);
 
         ctxB.SdAggregates.Add(new SoftDeletableTenantedAggregate(
             TenantedTestId.New(), "TenantBRow", tenantBId, new SystemClock()));

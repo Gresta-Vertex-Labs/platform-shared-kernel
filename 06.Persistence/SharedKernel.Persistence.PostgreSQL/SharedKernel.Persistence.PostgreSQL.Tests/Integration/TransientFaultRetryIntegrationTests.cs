@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NSubstitute;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -24,11 +24,9 @@ using SharedKernel.Testing.Logging;
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
 // ---------------------------------------------------------------------------
-// Proves the required two-call pairing (UsePostgreSQL(..., maxRetryCount) +
-// the retry-safety guard on EfTransactionalUnitOfWork.BeginTransactionAsync) against real
-// PostgreSQL: when Npgsql retry-on-failure is genuinely enabled, BeginTransactionAsync must throw
-// an actionable InvalidOperationException directing the caller to ExecuteInTransactionAsync, which
-// must itself still complete normally.
+// Proves EfUnitOfWork.ExecuteInTransactionAsync works end to end against real PostgreSQL with
+// Npgsql retry-on-failure genuinely enabled (UsePostgreSQL(..., maxRetryCount)) — retry and
+// transactions coexist (P-558; there is no handle-based BeginTransactionAsync any more).
 // ---------------------------------------------------------------------------
 
 /// <summary>
@@ -127,26 +125,10 @@ public sealed class TransientFaultRetryIntegrationTests
         var clock = new FakeClock();
 
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
-    }
-
-    [Fact]
-    public async Task BeginTransactionAsync_WithRetryEnabled_ThrowsActionableInvalidOperationException()
-    {
-        // Arrange
-        await using var ctx = CreateRetryEnabledContext(ConnectionString);
-        await ctx.Database.EnsureCreatedAsync();
-        var uow = new EfTransactionalUnitOfWork(ctx);
-
-        // Act
-        Func<Task> act = async () => await uow.BeginTransactionAsync();
-
-        // Assert
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Contain(nameof(EfTransactionalUnitOfWork.ExecuteInTransactionAsync));
     }
 
     [Fact]
@@ -155,7 +137,7 @@ public sealed class TransientFaultRetryIntegrationTests
         // Arrange
         await using var ctx = CreateRetryEnabledContext(ConnectionString);
         await ctx.Database.EnsureCreatedAsync();
-        var uow = new EfTransactionalUnitOfWork(ctx);
+        var uow = new EfUnitOfWork(ctx);
 
         var id = ConcurrentPgId.New();
 
@@ -252,7 +234,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
         var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: 1);
         await using var ctx = CreateRetryEnabledContext(ConnectionString, faultInjector);
-        var uow = new EfTransactionalUnitOfWork(ctx);
+        var uow = new EfUnitOfWork(ctx);
 
         var id = ConcurrentPgId.New();
         // The entity is constructed ONCE, outside the delegate — the delegate itself only adds it

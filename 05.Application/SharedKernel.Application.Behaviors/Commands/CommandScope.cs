@@ -34,6 +34,24 @@ internal sealed class CommandScope : ICommandScope
     }
 
     /// <summary>Pushes a new, empty callback frame — called once per command dispatch, including nested ones.</summary>
+    /// <summary>Gets the number of callbacks queued on the current frame (zero when no command is active).</summary>
+    internal int CurrentFrameCallbackCount => _frames.Count == 0 ? 0 : _frames.Peek().Count;
+
+    /// <summary>
+    /// Drops every callback queued on the current frame after the first <paramref name="count"/> —
+    /// used by <c>TransactionBehavior</c> so a retried transaction attempt never inherits the callbacks
+    /// a discarded attempt queued.
+    /// </summary>
+    internal void TruncateCurrentFrame(int count)
+    {
+        if (_frames.Count == 0)
+            return;
+
+        var frame = _frames.Peek();
+        if (frame.Count > count)
+            frame.RemoveRange(count, frame.Count - count);
+    }
+
     internal void Enter() => _frames.Push([]);
 
     /// <summary>

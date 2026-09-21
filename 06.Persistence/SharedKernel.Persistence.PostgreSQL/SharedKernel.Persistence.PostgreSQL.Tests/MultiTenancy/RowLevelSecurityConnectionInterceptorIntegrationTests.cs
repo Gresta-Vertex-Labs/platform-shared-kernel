@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -75,7 +76,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
             adminOptions,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actor, clock),
-                new SoftDeleteInterceptor(actor, clock),
+                new SoftDeleteInterceptor(clock),
                 new ConcurrencyInterceptor())))
         {
             await adminCtx.Database.EnsureCreatedAsync();
@@ -133,9 +134,8 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddSingleton<ICurrentActorContext, FixedActorContext>();
         services.AddSingleton<MutableTenantContext>();
-        services.AddSingleton<ICurrentTenantContext>(sp => sp.GetRequiredService<MutableTenantContext>());
+        services.AddSingleton<IRequestContext>(sp => sp.GetRequiredService<MutableTenantContext>());
         services.AddSingleton<CrossTenantScope>();
         services.AddSingleton<ICrossTenantScope>(sp => sp.GetRequiredService<CrossTenantScope>());
         services.AddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
@@ -458,13 +458,24 @@ internal sealed class RlsTestDbContext(
     public DbSet<RlsOrder> Orders => Set<RlsOrder>();
 }
 
-internal sealed class FixedActorContext : ICurrentActorContext
+internal sealed class FixedActorContext : IRequestContext
 {
-    public string ActorId => "rls-ef-test";
+    public bool IsAuthenticated => false;
+    public string? UserId => "rls-ef-test";
+    public Guid? TenantId => null;
     public ActorKind ActorKind => ActorKind.System;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }
 
-internal sealed class MutableTenantContext : ICurrentTenantContext
+internal sealed class MutableTenantContext : IRequestContext
 {
     public Guid? TenantId { get; set; }
+    public bool IsAuthenticated => false;
+    public string? UserId => "rls-ef-test";
+    public ActorKind ActorKind => ActorKind.System;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }

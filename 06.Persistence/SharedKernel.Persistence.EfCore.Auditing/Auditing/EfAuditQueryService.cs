@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
@@ -25,11 +26,11 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// <para>
 /// <strong>Tenant scoping is enforced here, never trusted from a caller-supplied parameter:</strong>
 /// <see cref="GetResourceHistoryAsync"/>/<see cref="GetActorActionsAsync"/> pre-filter the source
-/// <see cref="IQueryable{T}"/> by <see cref="ICurrentTenantContext.TenantId"/> BEFORE handing it to the
+/// <see cref="IQueryable{T}"/> by <see cref="IRequestContext.TenantId"/> BEFORE handing it to the
 /// evaluator, so <see cref="AuditResourceHistorySpecification"/>/<see cref="AuditActorActionsSpecification"/>
 /// — which deliberately carry no tenant parameter — can never be used to read another tenant's chain
 /// even if a caller constructed one directly. <see cref="ExportRangeAsync"/>/<see cref="VerifyFullChainAsync"/>
-/// likewise resolve <see cref="ICurrentTenantContext.TenantId"/> internally and take no <c>tenantId</c>
+/// likewise resolve <see cref="IRequestContext.TenantId"/> internally and take no <c>tenantId</c>
 /// parameter at all — there is nothing there for a caller to forge. <see cref="GetResourceHistoryAcrossTenantsAsync"/>
 /// is the sole, separately-named, <see cref="ICrossTenantScope"/>-gated exception.
 /// <see cref="VerifyChainFromCheckpointAsync"/> is a different case again: its <c>tenantId</c> comes
@@ -42,7 +43,7 @@ public sealed class EfAuditQueryService : IAuditQueryService
 {
     private readonly SharedKernelDbContext _dbContext;
     private readonly ISpecificationEvaluator<AuditRecord> _evaluator;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _tenantContext;
     private readonly ICrossTenantScope _crossTenantScope;
     private readonly IAuditChainKeyProvider _keyProvider;
     private readonly IHmacSigner _hmacSigner;
@@ -53,7 +54,7 @@ public sealed class EfAuditQueryService : IAuditQueryService
     public EfAuditQueryService(
         SharedKernelDbContext dbContext,
         ISpecificationEvaluator<AuditRecord> evaluator,
-        ICurrentTenantContext tenantContext,
+        IRequestContext tenantContext,
         ICrossTenantScope crossTenantScope,
         IAuditChainKeyProvider keyProvider,
         IHmacSigner hmacSigner,

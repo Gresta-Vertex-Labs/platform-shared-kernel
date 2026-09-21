@@ -1,15 +1,14 @@
 #nullable enable
 SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>
 SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>.EntityTypeConfigurationBase() -> void
-SharedKernel.Persistence.EfCore.Context.AnonymousActorContext
-SharedKernel.Persistence.EfCore.Context.AnonymousActorContext.ActorId.get -> string!
-SharedKernel.Persistence.EfCore.Context.AnonymousActorContext.ActorKind.get -> SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.EfCore.Context.AnonymousActorContext.AnonymousActorContext(Microsoft.Extensions.Options.IOptions<SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions!>! serviceOptions) -> void
 SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies
 SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies.PersistenceContextDependencies(SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor! auditInterceptor, SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor! softDeleteInterceptor, SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor! concurrencyInterceptor, System.Collections.Generic.IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor!>? additionalInterceptors = null, System.Collections.Generic.IEnumerable<SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConventionFactory!>? modelConventionFactories = null, System.Collections.Generic.IEnumerable<SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConfigurator!>? modelConfigurators = null, System.Collections.Generic.IEnumerable<SharedKernel.Persistence.EfCore.Extensibility.IPersistenceOptionsExtension!>? optionsExtensions = null, System.Collections.Generic.IEnumerable<SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier!>? exceptionClassifiers = null) -> void
 SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext
-SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.CurrentActor.get -> SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext!
+SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.RequestContext.get -> SharedKernel.Application.Context.IRequestContext!
 SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SharedKernelDbContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> void
+SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention
+SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention.EncryptAnnotationRegisteredGuardConvention() -> void
+SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention.ProcessModelFinalizing(Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder! modelBuilder, Microsoft.EntityFrameworkCore.Metadata.Conventions.IConventionContext<Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder!>! context) -> void
 SharedKernel.Persistence.EfCore.Conventions.SoftDeleteQueryFilterConvention
 SharedKernel.Persistence.EfCore.Conventions.SoftDeleteQueryFilterConvention.ProcessModelFinalizing(Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder! modelBuilder, Microsoft.EntityFrameworkCore.Metadata.Conventions.IConventionContext<Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder!>! context) -> void
 SharedKernel.Persistence.EfCore.Conventions.SoftDeleteQueryFilterConvention.SoftDeleteQueryFilterConvention() -> void
@@ -18,8 +17,6 @@ SharedKernel.Persistence.EfCore.Conversions.CurrencyValueConverter
 SharedKernel.Persistence.EfCore.Conversions.CurrencyValueConverter.CurrencyValueConverter() -> void
 SharedKernel.Persistence.EfCore.Conversions.ModelConfigurationBuilderExtensions
 SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions
-const SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.DefaultPrecision = 19 -> int
-const SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.DefaultScale = 4 -> int
 SharedKernel.Persistence.EfCore.Conversions.StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
 SharedKernel.Persistence.EfCore.Conversions.StronglyTypedIdValueConverter<TStronglyTypedId, TValue>.StronglyTypedIdValueConverter() -> void
 SharedKernel.Persistence.EfCore.Diagnostics.DbContextDiagnosticsExtensions
@@ -33,6 +30,7 @@ SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConventionFactory
 SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConventionFactory.CreateConvention(Microsoft.EntityFrameworkCore.DbContext! context, Microsoft.EntityFrameworkCore.DbContextOptions! options) -> Microsoft.EntityFrameworkCore.Metadata.Conventions.IConvention!
 SharedKernel.Persistence.EfCore.Extensibility.IPersistenceOptionsExtension
 SharedKernel.Persistence.EfCore.Extensibility.IPersistenceOptionsExtension.Apply(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
+SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.AddBuildAction(System.Action! action) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.AddInterceptor<TInterceptor>() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
@@ -50,28 +48,24 @@ SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.Wi
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.WithReadReplica(System.Action<Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configureReplicaDb) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.WithServiceName(Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.WithServiceName(string! serviceName) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.WithTransactionalUnitOfWork() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.WithTransientFaultRetry(int maxRetryCount = 6, System.TimeSpan? maxRetryDelay = null) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceExtensions
 SharedKernel.Persistence.EfCore.Interceptors.AggregateRootTouchInterceptor
 SharedKernel.Persistence.EfCore.Interceptors.AggregateRootTouchInterceptor.AggregateRootTouchInterceptor() -> void
 SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor
-SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor.AuditInterceptor(SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext! actorContext, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor.AuditInterceptor(SharedKernel.Application.Context.IRequestContext! requestContext, SharedKernel.Primitives.Clocks.IClock! clock, Microsoft.Extensions.Options.IOptions<SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions!>? serviceOptions = null) -> void
 SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor
 SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor.ConcurrencyInterceptor(Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor!>? logger = null) -> void
 SharedKernel.Persistence.EfCore.Interceptors.DomainClockMaterializationInterceptor
 SharedKernel.Persistence.EfCore.Interceptors.DomainClockMaterializationInterceptor.DomainClockMaterializationInterceptor(SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Persistence.EfCore.Interceptors.DomainClockMaterializationInterceptor.InitializedInstance(Microsoft.EntityFrameworkCore.Diagnostics.MaterializationInterceptionData materializationData, object! entity) -> object!
 SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor
-SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor.SoftDeleteInterceptor(SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext! actorContext, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor.SoftDeleteInterceptor(SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Persistence.EfCore.Interceptors.TenantWriteGuardInterceptor
 SharedKernel.Persistence.EfCore.Interceptors.TenantWriteGuardInterceptor.TenantWriteGuardInterceptor(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope) -> void
-SharedKernel.Persistence.EfCore.MultiTenancy.NullCurrentTenantContext
-SharedKernel.Persistence.EfCore.MultiTenancy.NullCurrentTenantContext.NullCurrentTenantContext() -> void
-SharedKernel.Persistence.EfCore.MultiTenancy.NullCurrentTenantContext.TenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.ApplyTenantFilters(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
-SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.CurrentTenant.get -> SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext!
+SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.CurrentTenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.TenantedDbContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> void
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.TenantedRepository(SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext! dbContext, SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope) -> void
@@ -114,24 +108,27 @@ SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.GetKeys
 SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.GetProjectedQuery<TResult>(System.Linq.IQueryable<T!>! inputQuery, SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<T!, TResult>! spec) -> System.Linq.IQueryable<TResult>!
 SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.GetQuery(System.Linq.IQueryable<T!>! inputQuery, SharedKernel.Domain.Specifications.ISpecification<T!>! spec) -> System.Linq.IQueryable<T!>!
 SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.SpecificationEvaluator() -> void
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.BeginTransactionAsync(System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction!>!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.BeginTransactionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction!>!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.EfTransactionalUnitOfWork(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork!>? logger = null, SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? retryOptions = null, SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction? ambientTransactionAccessor = null) -> void
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>!>? verifySucceeded, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
-SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork
-SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.EfUnitOfWork(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork!>? logger = null, SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? retryOptions = null) -> void
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.EfUnitOfWork(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork!>? logger = null, SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? retryOptions = null, SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction? ambientTransaction = null) -> void
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.IsTransactionActive.get -> bool
+SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.OnBeforeCommit(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
 SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+const SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.DefaultPrecision = 19 -> int
+const SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.DefaultScale = 4 -> int
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete = "SoftDelete" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.Tenant = "Tenant" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceMeter.ConcurrencyConflictsTotal = "persistence.concurrency_conflicts" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceMeter.Name = "SharedKernel.Persistence" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceMeter.TenantIsolationViolationsTotal = "persistence.tenant_isolation_violations" -> string!
+const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.Encrypt = "SharedKernel:Persistence:Encrypt" -> string!
+const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.EncryptApplied = "SharedKernel:Persistence:Encrypt:Applied" -> string!
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.ConfigureConventions(Microsoft.EntityFrameworkCore.ModelConfigurationBuilder! configurationBuilder) -> void
+override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.Dispose() -> void
+override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.DisposeAsync() -> System.Threading.Tasks.ValueTask
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.OnConfiguring(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.OnModelCreating(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SaveChanges(bool acceptAllChangesOnSuccess) -> int
@@ -146,8 +143,6 @@ override SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor.Savi
 override SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor.SavingChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>>
 override SharedKernel.Persistence.EfCore.Interceptors.TenantWriteGuardInterceptor.SavingChanges(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result) -> Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>
 override SharedKernel.Persistence.EfCore.Interceptors.TenantWriteGuardInterceptor.SavingChangesAsync(Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData! eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>>
-override SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.Dispose() -> void
-override SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.DisposeAsync() -> System.Threading.Tasks.ValueTask
 override SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.OnModelCreating(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
 override SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions.GetHashCode() -> int
@@ -158,11 +153,12 @@ static SharedKernel.Persistence.EfCore.Conversions.ModelConfigurationBuilderExte
 static SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.Money<TEntity>(this Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder, System.Linq.Expressions.Expression<System.Func<TEntity!, SharedKernel.Domain.Monetary.Money?>!>! propertyExpression, bool required = true, int precision = 19, int scale = 4, string? amountColumnName = null, string? currencyColumnName = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!
 static SharedKernel.Persistence.EfCore.Diagnostics.DbContextDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! context, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
 static SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceExtensions.AddSharedKernelEfCore<TContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configureDb) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+static SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceExtensions.AddSharedKernelEfCore<TContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<System.IServiceProvider!, Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configureDb) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 static SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions.SectionName.get -> string!
 static SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions.operator !=(SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? left, SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? right) -> bool
 static SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions.operator ==(SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? left, SharedKernel.Persistence.EfCore.Options.TransientFaultRetryOptions? right) -> bool
-static readonly SharedKernel.Persistence.EfCore.MultiTenancy.NullCurrentTenantContext.Instance -> SharedKernel.Persistence.EfCore.MultiTenancy.NullCurrentTenantContext!
 virtual SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>.Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder) -> void
+virtual SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.AdditionalConfiguredEntityTypes.get -> System.Collections.Generic.IEnumerable<System.Type!>!
 virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantIncludingDeletedAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.AnyAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
@@ -192,11 +188,3 @@ virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TI
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.RestoreAsync(TAggregate! aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateAsync(TAggregate! aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate!>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-static SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceExtensions.AddSharedKernelEfCore<TContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<System.IServiceProvider!, Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configureDb) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention
-SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention.EncryptAnnotationRegisteredGuardConvention() -> void
-SharedKernel.Persistence.EfCore.Conventions.EncryptAnnotationRegisteredGuardConvention.ProcessModelFinalizing(Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder! modelBuilder, Microsoft.EntityFrameworkCore.Metadata.Conventions.IConventionContext<Microsoft.EntityFrameworkCore.Metadata.Builders.IConventionModelBuilder!>! context) -> void
-SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames
-const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.Encrypt = "SharedKernel:Persistence:Encrypt" -> string!
-const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.EncryptApplied = "SharedKernel:Persistence:Encrypt:Applied" -> string!
-virtual SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.AdditionalConfiguredEntityTypes.get -> System.Collections.Generic.IEnumerable<System.Type!>!

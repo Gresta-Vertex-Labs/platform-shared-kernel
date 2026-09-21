@@ -50,7 +50,7 @@ public sealed class GetByIdsChunkedAsyncTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 
         var audit = new AuditInterceptor(userContext, clock);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

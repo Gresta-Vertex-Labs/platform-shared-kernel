@@ -14,7 +14,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.EfCorePackageHygieneRules"/> to enforce that application-layer
 /// code never couples directly to <c>Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction</c>.
-/// <c>ITransactionalUnitOfWork</c> is the only permitted transaction entry point for
+/// <c>IUnitOfWork.ExecuteInTransactionAsync</c> is the only permitted transaction entry point for
 /// application handlers.
 /// </para>
 /// <para>
@@ -50,7 +50,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <strong>Compliant pattern:</strong>
 /// <code>class CreateOrderHandler {
-///     public CreateOrderHandler(ITransactionalUnitOfWork unitOfWork) { }
+///     public CreateOrderHandler(IUnitOfWork unitOfWork) { }
 /// }</code>
 /// </para>
 /// </remarks>

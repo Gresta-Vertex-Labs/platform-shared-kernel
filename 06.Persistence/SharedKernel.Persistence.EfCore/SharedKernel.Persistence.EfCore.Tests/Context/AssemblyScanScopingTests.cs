@@ -126,7 +126,7 @@ public sealed class AssemblyScanScopingTests
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         return new PersistenceContextDependencies(
-            new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor());
+            new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor());
     }
 
     private static DbContextOptions<TContext> BuildOptions<TContext>()

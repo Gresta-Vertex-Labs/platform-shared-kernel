@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.Diagnostics;
@@ -16,7 +17,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// <remarks>
 /// <para>
 /// <strong>Fails closed:</strong> when no tenant is resolved
-/// (<see cref="ICurrentTenantContext.TenantId"/> is <see langword="null"/>) and no
+/// (<see cref="IRequestContext.TenantId"/> is <see langword="null"/>) and no
 /// <see cref="ICrossTenantScope"/> is active, every query method throws
 /// <see cref="InvalidOperationException"/> before issuing any SQL — there is no "query runs with an
 /// empty/wildcard tenant" fallback.
@@ -42,7 +43,7 @@ public abstract class TenantSafeDapperReadService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ITenantSessionBinder _tenantSessionBinder;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _tenantContext;
     private readonly ICrossTenantScope _crossTenantScope;
     private readonly ILogger _logger;
     private readonly int? _defaultCommandTimeoutSeconds;
@@ -51,7 +52,7 @@ public abstract class TenantSafeDapperReadService
     protected TenantSafeDapperReadService(
         IDbConnectionFactory connectionFactory,
         ITenantSessionBinder tenantSessionBinder,
-        ICurrentTenantContext tenantContext,
+        IRequestContext tenantContext,
         ICrossTenantScope crossTenantScope,
         DapperPersistenceOptions? options = null,
         ILogger<TenantSafeDapperReadService>? logger = null)

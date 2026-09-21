@@ -150,7 +150,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
     /// <remarks>
     /// <para>
     /// <strong>Fail-closed by construction:</strong> the tenant global query filter
-    /// (<c>MultiTenancy.TenantedDbContext</c>) reads <c>ICurrentTenantContext.TenantId</c>
+    /// (<c>MultiTenancy.TenantedDbContext</c>) reads <c>IRequestContext.TenantId</c>
     /// (<see cref="Nullable{T}"/>). When no tenant is resolved, that value is <see langword="null"/>
     /// and the filter returns <strong>zero rows</strong> — teams that forget to register a real
     /// tenant bridge see an empty result set immediately rather than a cross-tenant data leak. There

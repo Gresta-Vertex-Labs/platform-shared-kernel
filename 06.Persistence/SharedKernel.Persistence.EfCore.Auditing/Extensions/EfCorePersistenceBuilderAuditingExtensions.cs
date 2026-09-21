@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
@@ -49,10 +50,10 @@ public static class EfCorePersistenceBuilderAuditingExtensions
     /// outright rather than degrading gracefully. The one genuinely optional part of that registration is
     /// <c>IAdvisoryTransactionLock</c> for real per-chain append serialization — without a registered one,
     /// concurrent appends to the same chain fall back to unique-constraint retry alone (still correct, more
-    /// retries under contention; see <see cref="EfAuditTrailWriter"/>'s own remarks). <strong>REQUIRES</strong>
-    /// <c>EfCorePersistenceBuilder{TContext}.WithTransactionalUnitOfWork()</c> to have been called — also a
-    /// MANDATORY <see cref="EfAuditTrailWriter"/> constructor dependency (<c>IAmbientDbTransaction</c>), which
-    /// only that call registers. <strong>REQUIRES</strong> the PostgreSQL migration helper's
+    /// retries under contention; see <see cref="EfAuditTrailWriter"/>'s own remarks). No extra call is
+    /// needed for the ambient transaction: <c>IAmbientDbTransaction</c>, a
+    /// MANDATORY <see cref="EfAuditTrailWriter"/> constructor dependency, is registered by
+    /// <c>EfCorePersistenceBuilder{TContext}.Build()</c> itself. <strong>REQUIRES</strong> the PostgreSQL migration helper's
     /// <c>CreateImmutabilityTrigger</c> applied to the audit table in production — see
     /// <see cref="AuditRecordMutationGuardInterceptor"/>'s remarks for why the application-level guards alone
     /// are not sufficient.
@@ -92,7 +93,8 @@ public static class EfCorePersistenceBuilderAuditingExtensions
 
         // TryAdd, never Add: a consumer that registered its own IAuditTrailWriter/IAuditQueryService
         // BEFORE calling WithAuditTrail() keeps winning resolution — see remarks above.
-        builder.Services.TryAddScoped<IAuditTrailWriter, EfAuditTrailWriter>();
+        builder.Services.TryAddScoped<EfAuditTrailWriter>();
+        builder.Services.TryAddScoped<IAuditTrailWriter>(sp => sp.GetRequiredService<EfAuditTrailWriter>());
         builder.Services.TryAddScoped<IAuditQueryService, EfAuditQueryService>();
 
         return builder;

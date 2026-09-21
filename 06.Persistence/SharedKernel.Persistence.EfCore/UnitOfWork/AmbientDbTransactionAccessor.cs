@@ -5,12 +5,12 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
 /// <summary>
 /// Scoped, mutable implementation of <see cref="IAmbientDbTransaction"/> — the write side that
-/// <see cref="EfTransactionalUnitOfWork"/>/<see cref="EfPersistenceTransaction"/> update as an
-/// explicit transaction begins and ends.
+/// <see cref="EfUnitOfWork"/> updates as a
+/// transaction begins and ends.
 /// </summary>
 /// <remarks>
 /// Registered scoped by
-/// <c>EfCorePersistenceBuilder.WithTransactionalUnitOfWork()</c> — one instance per DI scope, shared
+/// <c>EfCorePersistenceBuilder.Build()</c> — one instance per DI scope, shared
 /// between the EF Core transaction machinery (which sets <see cref="Current"/>) and any Dapper
 /// command service resolving <see cref="IAmbientDbTransaction"/> to enlist in the same transaction.
 /// </remarks>

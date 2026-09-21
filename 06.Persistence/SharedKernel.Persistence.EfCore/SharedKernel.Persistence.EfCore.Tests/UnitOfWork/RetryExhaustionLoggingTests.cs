@@ -16,7 +16,7 @@ using SharedKernel.Persistence.EfCore.Tests.Diagnostics;
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 /// <summary>
-/// <see cref="EfUnitOfWork"/>/<see cref="EfTransactionalUnitOfWork"/>'s
+/// <see cref="EfUnitOfWork"/>'s
 /// <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>).
 /// </summary>
 /// <remarks>
@@ -50,8 +50,7 @@ public sealed class RetryExhaustionLoggingTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
             userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock);
+        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
         var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
         var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
@@ -128,8 +127,7 @@ public sealed class RetryExhaustionLoggingTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
             userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock);
+        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
         var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
         await using var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
@@ -150,30 +148,7 @@ public sealed class RetryExhaustionLoggingTests
     }
 
     [Fact]
-    public async Task EfTransactionalUnitOfWork_SaveChangesAsync_RetryExhausted_LogsWarning()
-    {
-        // Arrange
-        var (ctx, _) = CreateExhaustingContext();
-        await using var _1 = ctx;
-        await ctx.Database.OpenConnectionAsync();
-        await ctx.Database.EnsureCreatedAsync();
-        ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
-
-        var inMemoryLogger =
-            new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork>();
-        var tuow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: null);
-
-        // Act
-        Func<Task> act = () => tuow.SaveChangesAsync();
-
-        // Assert
-        await act.Should().ThrowAsync<RetryLimitExceededException>();
-        inMemoryLogger.Records.ShouldHaveLogged(new EventId(6008), LogLevel.Warning);
-    }
-
-    [Fact]
-    public async Task EfTransactionalUnitOfWork_ExecuteInTransactionAsync_RetryExhausted_LogsWarning()
+    public async Task EfUnitOfWork_ExecuteInTransactionAsync_RetryExhausted_LogsWarning()
     {
         // Arrange
         var (ctx, _) = CreateExhaustingContext();
@@ -182,8 +157,8 @@ public sealed class RetryExhaustionLoggingTests
         await ctx.Database.EnsureCreatedAsync();
 
         var inMemoryLogger =
-            new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork>();
-        var tuow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfTransactionalUnitOfWork(
+            new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
+        var tuow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
             ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: null);
 
         // Act — the operation delegate always faults on its INSERT, forcing exhaustion.

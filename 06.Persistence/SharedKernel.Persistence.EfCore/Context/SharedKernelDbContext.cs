@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -81,49 +81,64 @@ public abstract class SharedKernelDbContext : DbContext
             .Select(factory => factory.CreateConvention(this, options))
             .ToList();
 
-        // Initialised from AuditInterceptor's own
-        // constructor-captured ICurrentActorContext — deliberately NOT a new constructor parameter on
-        // this class (it is already reachable through dependencies.AuditInterceptor). Under the
-        // default, non-pooled registration this is the correct value for this instance's entire
-        // lifetime. Under.WithDbContextPooling(), RefreshActor(...) is called once per lease to
-        // replace it with the current scope's real ICurrentActorContext.
-        CurrentActor = dependencies.AuditInterceptor.ActorContext;
+        // Starts from the request context AuditInterceptor was constructed with — the current DI
+        // scope's IRequestContext under the default (non-pooled) registration, the fail-closed
+        // AnonymousRequestContext for a pooled slot. Every supported way of obtaining an instance
+        // (TenantAwareDbContextFactory) attaches the current scope's context before handing it out.
+        RequestContext = dependencies.AuditInterceptor.RequestContext;
     }
 
     /// <summary>
-    /// Gets the <see cref="ICurrentActorContext"/> that <see cref="AuditInterceptor"/> and
-    /// <see cref="SoftDeleteInterceptor"/> resolve actor identity from.
+    /// Gets the caller this context attributes changes to (audit columns, soft-delete stamps) and, for
+    /// a <see cref="MultiTenancy.TenantedDbContext"/>, filters tenant data by.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Under the default (non-pooled) registration this is set once at construction — from
-    /// <see cref="AuditInterceptor.ActorContext"/> — and never changes for this instance's lifetime,
-    /// which is already correct because a fresh <see cref="SharedKernelDbContext"/> instance is
-    /// constructed per DI scope.
-    /// </para>
-    /// <para>
-    /// <strong>Pooling:</strong> under
-    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>, a pooled instance's constructor runs
-    /// ONCE per pooled slot, not once per lease. <see cref="AuditInterceptor"/>/
-    /// <see cref="SoftDeleteInterceptor"/> read this property LIVE off
-    /// <c>eventData.Context</c> inside <c>SavingChanges</c>/<c>SavingChangesAsync</c> — always the
-    /// CURRENT executing instance — instead of their own constructor-captured field, so calling
-    /// <see cref="RefreshActor"/> once per lease keeps audit attribution correct across
-    /// unrelated requests reusing the same pooled instance.
+    /// Attached per DI-scope lease by <c>TenantAwareDbContextFactory&lt;TContext&gt;</c> — never
+    /// resolved through this class's constructor, which is what keeps pooling safe: a pooled
+    /// instance's constructor runs once per pool slot, not once per lease. The interceptors read this
+    /// property live off the executing context. Reset to <see cref="AnonymousRequestContext"/> on
+    /// <see cref="Dispose"/>/<see cref="DisposeAsync"/>.
     /// </para>
     /// </remarks>
-    public ICurrentActorContext CurrentActor { get; private set; }
+    public IRequestContext RequestContext { get; private set; }
 
     /// <summary>
-    /// Replaces <see cref="CurrentActor"/> with <paramref name="actorContext"/>.
+    /// Gets the identifier written to <c>CreatedBy</c>/<c>ModifiedBy</c>/<c>DeletedBy</c>: the
+    /// caller's <see cref="IRequestContext.UserId"/>, or the configured service name
+    /// (<c>PersistenceServiceOptions.ServiceName</c>) when there is none.
     /// </summary>
-    /// <param name="actorContext">The current scope's real <see cref="ICurrentActorContext"/>.</param>
+    internal string CurrentActorId =>
+        RequestContext.UserId is { Length: > 0 } userId ? userId : _dependencies.AuditInterceptor.ServiceName;
+
+    /// <summary>Replaces <see cref="RequestContext"/> with <paramref name="requestContext"/>.</summary>
+    /// <param name="requestContext">The current scope's <see cref="IRequestContext"/>.</param>
     /// <remarks>
-    /// <see langword="internal"/> — called only by
-    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>'s own factory delegate, within this
-    /// same assembly. Not a public extensibility seam.
+    /// <see langword="internal"/> — called only by this assembly's own registrations
+    /// (<c>TenantAwareDbContextFactory</c>, the read-replica accessor). Not a public extensibility seam.
     /// </remarks>
-    internal void RefreshActor(ICurrentActorContext actorContext) => CurrentActor = actorContext;
+    internal void RefreshRequestContext(IRequestContext requestContext) =>
+        RequestContext = requestContext ?? AnonymousRequestContext.Instance;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Resets <see cref="RequestContext"/> to the fail-closed <see cref="AnonymousRequestContext"/>
+    /// before disposing — the hook a pooled instance passes through when it returns to the pool, so a
+    /// later lease can never observe the previous caller.
+    /// </remarks>
+    public override void Dispose()
+    {
+        RequestContext = AnonymousRequestContext.Instance;
+        base.Dispose();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="Dispose"/>.</remarks>
+    public override async ValueTask DisposeAsync()
+    {
+        RequestContext = AnonymousRequestContext.Instance;
+        await base.DisposeAsync();
+    }
 
     /// <summary>Gets the clock this context's audit interceptor uses, attached to every aggregate it materializes.</summary>
     /// <seealso cref="DomainClockMaterializationInterceptor"/>

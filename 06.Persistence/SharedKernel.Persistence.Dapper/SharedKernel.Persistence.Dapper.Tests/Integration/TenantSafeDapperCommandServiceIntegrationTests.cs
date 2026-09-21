@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using System.Linq;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,7 @@ using Npgsql;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.Dapper.ReadModels;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -118,7 +119,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     private sealed class TenantOrderCommandService(
         IDbConnectionFactory connectionFactory,
         ITenantSessionBinder tenantSessionBinder,
-        ICurrentTenantContext tenantContext,
+        IRequestContext tenantContext,
         ICrossTenantScope crossTenantScope,
         IAmbientDbTransaction? ambientTransaction = null)
             : TenantSafeDapperCommandService(connectionFactory, tenantSessionBinder, tenantContext, crossTenantScope, ambientTransaction)
@@ -209,7 +210,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         // ITenantSessionBinder (only the IConfiguration-bound overload does, for the default
         // database) — this test needs it directly, so it is added explicitly here.
         services.AddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
-        services.AddSingleton<ICurrentTenantContext>(new FakeAuditActorContext(tenantId: TenantA));
+        services.AddSingleton<IRequestContext>(new FakeAuditActorContext(tenantId: TenantA));
 
         // Registered under BOTH the interface (what TenantSafeDapperCommandService's constructor
         // resolves) and the concrete type (so the test itself can call .Enter(), which is
@@ -220,7 +221,6 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
 
         services
             .AddSharedKernelEfCore<EnlistedTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-            .WithTransactionalUnitOfWork()
             .Build();
 
         services.AddScoped<TenantOrderCommandService>();
@@ -228,7 +228,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         return services.BuildServiceProvider();
     }
 
-    // A deliberately empty model — this suite only needs ITransactionalUnitOfWork/IAmbientDbTransaction
+    // A deliberately empty model — this suite only needs IUnitOfWork/IAmbientDbTransaction
     // for a connection+transaction to share with the enlisted Dapper command service; it never writes
     // through EF Core itself, so no DbSet/table is needed (and the unprivileged writer role this suite
     // connects as has no CREATE privilege on the schema to provision one).
@@ -246,14 +246,15 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         var provider = await BuildEnlistedProviderAsync();
         await using var scope = provider.CreateAsyncScope();
 
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<TenantOrderCommandService>();
 
-        await using var transaction = await uow.BeginTransactionAsync();
+        await RollbackAfterAsync(uow, async () =>
+        {
 
         commandService.IsCurrentlyEnlisted.Should().BeTrue();
 
-        await transaction.RollbackAsync();
+        });
     }
 
     [Fact]
@@ -268,11 +269,12 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         var provider = await BuildEnlistedProviderAsync();
         await using var scope = provider.CreateAsyncScope();
 
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<TenantOrderCommandService>();
         var crossTenantScope = scope.ServiceProvider.GetRequiredService<CrossTenantScope>();
 
-        await using var transaction = await uow.BeginTransactionAsync();
+        await RollbackAfterAsync(uow, async () =>
+        {
 
         using (crossTenantScope.Enter("earlier-in-the-same-transaction"))
         {
@@ -290,7 +292,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
             0, "the enlisted write must rebind LIVE and see the scope as inactive, not reuse a stale " +
                 "transaction-scoped binding left over from earlier in the same still-open transaction");
 
-        await transaction.RollbackAsync();
+        });
     }
 
     [Fact]
@@ -301,11 +303,12 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         var provider = await BuildEnlistedProviderAsync();
         await using var scope = provider.CreateAsyncScope();
 
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<TenantOrderCommandService>();
         var crossTenantScope = scope.ServiceProvider.GetRequiredService<CrossTenantScope>();
 
-        await using var transaction = await uow.BeginTransactionAsync();
+        await RollbackAfterAsync(uow, async () =>
+        {
 
         int affected;
         using (crossTenantScope.Enter("around-the-enlisted-call"))
@@ -316,6 +319,16 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
 
         affected.Should().Be(1, "the enlisted write must see the scope as active while it genuinely is");
 
-        await transaction.RollbackAsync();
+        });
     }
+
+    // Runs body inside a unit-of-work transaction and rolls it back afterwards (a failed Result
+    // commits nothing) — the P-558 replacement for the removed BeginTransactionAsync/RollbackAsync pair.
+    private static Task RollbackAfterAsync(IUnitOfWork uow, Func<Task> body) =>
+        uow.ExecuteInTransactionAsync(async _ =>
+        {
+            await body();
+            return SharedKernel.Primitives.Results.Result.Failure(
+                SharedKernel.Primitives.Errors.Error.Conflict("test.rollback", "Roll the test transaction back."));
+        });
 }

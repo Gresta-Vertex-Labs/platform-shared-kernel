@@ -93,7 +93,7 @@ public sealed class MoneyNamingConventionTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actorContext, clock),
-            new SoftDeleteInterceptor(actorContext, clock),
+            new SoftDeleteInterceptor(clock),
             new ConcurrencyInterceptor()));
 
         // Act — reading Model triggers finalization; no database round trip occurs.

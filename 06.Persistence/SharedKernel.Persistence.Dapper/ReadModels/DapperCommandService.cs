@@ -13,7 +13,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// </summary>
 /// <remarks>
 /// <para>
-/// When the caller's DI scope has an active <c>ITransactionalUnitOfWork</c> transaction
+/// When the caller's DI scope has an active <c>IUnitOfWork</c> transaction
 /// (opened via <c>BeginTransactionAsync</c>/<c>ExecuteInTransactionAsync</c>), every method on this
 /// class runs its command on THAT SAME connection and transaction — the write becomes part of the
 /// same atomic unit as any EF Core-tracked changes saved within that transaction's scope, and rolls
@@ -47,8 +47,8 @@ public abstract class DapperCommandService
     /// Factory used to open a connection when no ambient transaction is active.
     /// </param>
     /// <param name="ambientTransaction">
-    /// Optional. Resolved by DI when <c>EfCorePersistenceBuilder.WithTransactionalUnitOfWork()</c>
-    /// was called for this scope; <see langword="null"/> otherwise, in which case this service
+    /// Optional. Resolved by DI when <c>EfCorePersistenceBuilder.Build()</c> registered it
+    /// (always, with EF Core); <see langword="null"/> otherwise, in which case this service
     /// always opens its own connection.
     /// </param>
     /// <param name="options">Optional default command timeout — see <see cref="DapperReadService"/>'s constructor.</param>

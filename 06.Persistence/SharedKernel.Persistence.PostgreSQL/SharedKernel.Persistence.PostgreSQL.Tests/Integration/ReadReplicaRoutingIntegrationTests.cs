@@ -68,7 +68,7 @@ public sealed class ReadReplicaTwoContainerFixture : IAsyncLifetime
         var clock = new FakeClock();
 
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         await using var ctx = new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

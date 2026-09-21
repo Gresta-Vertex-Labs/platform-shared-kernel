@@ -119,7 +119,7 @@ public sealed class RowLevelSecurityConnectionInterceptor : DbConnectionIntercep
 
     private Task BindAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken)
     {
-        var tenantId = (eventData.Context as TenantedDbContext)?.CurrentTenant.TenantId;
+        var tenantId = (eventData.Context as TenantedDbContext)?.CurrentTenantId;
         return _tenantSessionBinder.BindConnectionAsync(connection, tenantId, _crossTenantScope.IsActive, cancellationToken);
     }
 

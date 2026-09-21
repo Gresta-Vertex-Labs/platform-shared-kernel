@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Primitives.Clocks;
 
@@ -47,7 +46,7 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </para>
 /// <para>
 /// <strong>Actor resolution:</strong> <c>DeletedBy</c> is populated from
-/// <see cref="ICurrentActorContext.ActorId"/> — see <see cref="AuditInterceptor"/>'s remarks for the
+/// the caller's user id, or the configured service name — see <see cref="AuditInterceptor"/>'s remarks for the
 /// full rationale (identical here). This interceptor no longer references
 /// <c>SharedKernel.Security.Abstractions</c> at all.
 /// </para>
@@ -65,35 +64,23 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </remarks>
 public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
 {
-    private readonly ICurrentActorContext _actorContext;
     private readonly IClock _clock;
 
     /// <summary>
     /// Initialises a new <see cref="SoftDeleteInterceptor"/> with the required dependencies.
     /// </summary>
-    /// <param name="actorContext">
-    /// Scoped DI dependency providing the current actor's identity.
-    /// </param>
     /// <param name="clock">
     /// Abstracted system clock for deterministic timestamp production.
     /// </param>
-    public SoftDeleteInterceptor(ICurrentActorContext actorContext, IClock clock)
+    /// <remarks>
+    /// The actor stamped on <c>DeletedBy</c> is read live off the executing context — see
+    /// <see cref="AuditInterceptor"/> — so this interceptor needs no identity of its own.
+    /// </remarks>
+    public SoftDeleteInterceptor(IClock clock)
     {
-        _actorContext = actorContext;
+        ArgumentNullException.ThrowIfNull(clock);
         _clock = clock;
     }
-
-    /// <summary>
-    /// Gets the <see cref="ICurrentActorContext"/> captured at construction time.
-    /// </summary>
-    /// <remarks>
-    /// Retained for symmetry with <see cref="AuditInterceptor.ActorContext"/>, though
-    /// unlike that type, <see cref="SharedKernelDbContext.CurrentActor"/> is initialised from
-    /// <see cref="AuditInterceptor"/> alone (both interceptors are always constructed with the same
-    /// scoped <see cref="ICurrentActorContext"/>, so either would produce an identical initial value).
-    /// This interceptor no longer reads this field directly inside <see cref="ApplySoftDelete"/>.
-    /// </remarks>
-    internal ICurrentActorContext ActorContext => _actorContext;
 
     /// <inheritdoc />
     public override InterceptionResult<int> SavingChanges(
@@ -117,15 +104,12 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
     // Converts Deleted state to Modified for ISoftDeletable entities, and rescues every dependent
     // EF's own cascade-delete fixup marked Deleted alongside a soft-deleted root — see class remarks.
     //
-    // Resolves the current ICurrentActorContext LIVE off
-    // ((SharedKernelDbContext)context).CurrentActor — see AuditInterceptor.ApplyAudit's remarks for
-    // the full pooling-safety rationale; identical reasoning applies here.
+    // The actor is read LIVE off the executing context — see AuditInterceptor.ApplyAudit.
     private void ApplySoftDelete(DbContext? context)
     {
         if (context is null) return;
 
-        var actorContext = ((SharedKernelDbContext)context).CurrentActor;
-        var userId = actorContext.ActorId;
+        var userId = ((SharedKernelDbContext)context).CurrentActorId;
         var now = _clock.UtcNow;
         var changeTracker = context.ChangeTracker;
 

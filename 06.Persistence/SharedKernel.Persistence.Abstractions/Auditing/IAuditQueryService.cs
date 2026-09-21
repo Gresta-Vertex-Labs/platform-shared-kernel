@@ -1,4 +1,6 @@
 using SharedKernel.Contracts.Pagination;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Context;
 
 namespace SharedKernel.Persistence.Abstractions.Auditing;
@@ -18,7 +20,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// </para>
 /// <para>
 /// <strong>Tenant scoping — every method except the two explicitly named "AcrossTenants" ones resolves
-/// its tenant from the caller's own <see cref="ICurrentTenantContext"/></strong>, never from a
+/// its tenant from the caller's own <see cref="IRequestContext"/></strong>, never from a
 /// caller-supplied parameter that could be forged to read another tenant's history. The two
 /// cross-tenant methods are separately named specifically so a call site cannot reach cross-tenant data
 /// by accident, and the implementation additionally requires an active <see cref="ICrossTenantScope"/>
@@ -96,9 +98,9 @@ public interface IAuditQueryService
     /// <param name="to">The inclusive end of the <see cref="AuditRecord.OccurredOn"/> range.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
-    /// The tenant is resolved from the caller's own <see cref="ICurrentTenantContext"/> — see type-level
+    /// The tenant is resolved from the caller's own <see cref="IRequestContext"/> — see type-level
     /// remarks; there is deliberately no <c>tenantId</c> parameter here to forge. A system/background
-    /// caller (<see cref="ICurrentTenantContext.TenantId"/> <see langword="null"/>) exports the system
+    /// caller (<see cref="IRequestContext.TenantId"/> <see langword="null"/>) exports the system
     /// chain.
     /// </remarks>
     IAsyncEnumerable<AuditRecord> ExportRangeAsync(
@@ -116,9 +118,9 @@ public interface IAuditQueryService
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
     /// <para>
-    /// The tenant is resolved from the caller's own <see cref="ICurrentTenantContext"/> — see
+    /// The tenant is resolved from the caller's own <see cref="IRequestContext"/> — see
     /// type-level remarks; there is deliberately no <c>tenantId</c> parameter here to forge. A
-    /// system/background caller (<see cref="ICurrentTenantContext.TenantId"/> <see langword="null"/>)
+    /// system/background caller (<see cref="IRequestContext.TenantId"/> <see langword="null"/>)
     /// verifies the system chain.
     /// </para>
     /// <para>

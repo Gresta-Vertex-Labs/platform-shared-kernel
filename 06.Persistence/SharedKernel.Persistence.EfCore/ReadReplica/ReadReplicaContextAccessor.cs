@@ -1,8 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.MultiTenancy;
 
 namespace SharedKernel.Persistence.EfCore.ReadReplica;
 
@@ -27,7 +26,7 @@ namespace SharedKernel.Persistence.EfCore.ReadReplica;
 /// <see cref="ActivatorUtilities.CreateInstance{T}(IServiceProvider, object[])"/> against the
 /// CURRENT scope's <see cref="IServiceProvider"/> — deliberately reusing the same scope-ambient,
 /// DI-resolved <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c>/<c>ConcurrencyInterceptor</c>
-/// instances (and their live <c>CurrentActor</c>) the primary context for this
+/// instances (and the live <c>RequestContext</c>) the primary context for this
 /// scope already resolved — audit-field consistency between primary and replica reads is automatic,
 /// with zero extra plumbing.
 /// </para>
@@ -68,12 +67,9 @@ internal sealed class ReadReplicaContextAccessor<TContext> : IReadReplicaContext
 
         var replica = ActivatorUtilities.CreateInstance<TContext>(_serviceProvider, _replicaOptions);
 
-        // TenantedDbContext's constructor no longer takes ICurrentTenantContext (see its
-        // own remarks) — ActivatorUtilities.CreateInstance can no longer attach it as a constructor
-        // argument, so it must be attached explicitly here, from the SAME scope-ambient
-        // ICurrentTenantContext the primary context's own TenantAwareDbContextFactory already used.
-        if (replica is TenantedDbContext tenanted)
-            tenanted.RefreshTenant(_serviceProvider.GetRequiredService<ICurrentTenantContext>());
+        // Attach the SAME scope-ambient caller (identity + tenant) the primary context carries —
+        // the constructor never resolves it (pooling safety), so it is attached explicitly.
+        replica.RefreshRequestContext(_serviceProvider.GetRequiredService<IRequestContext>());
 
         return _replicaContext = replica;
     }

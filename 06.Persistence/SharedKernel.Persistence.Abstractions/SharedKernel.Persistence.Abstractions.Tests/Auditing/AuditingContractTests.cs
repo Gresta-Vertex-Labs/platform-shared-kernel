@@ -1,3 +1,5 @@
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using System.Reflection;
 using FluentAssertions;
 using SharedKernel.Persistence.Abstractions.Auditing;
@@ -113,7 +115,7 @@ public sealed class AuditingContractTests
         predicate(MakeRecord(tenantId, "Invoice", "order-1")).Should().BeFalse("different ResourceType");
 
         // the specification itself is tenant-agnostic BY DESIGN — tenant scoping is applied
-        // by EfAuditQueryService against its own resolved ICurrentTenantContext, never accepted here.
+        // by EfAuditQueryService against its own resolved IRequestContext, never accepted here.
         predicate(MakeRecord(Guid.NewGuid(), "Order", "order-1")).Should().BeTrue(
             "the specification alone does not filter by tenant — that is EfAuditQueryService's job");
     }

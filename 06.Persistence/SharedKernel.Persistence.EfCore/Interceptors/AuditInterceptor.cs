@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.Abstractions.Context;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
@@ -25,12 +27,10 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </list>
 /// </para>
 /// <para>
-/// <strong>Actor resolution:</strong> <c>CreatedBy</c>/<c>ModifiedBy</c> is written as
-/// <see cref="ICurrentActorContext.ActorId"/> — the fallback-to-service-name rule that used to live
-/// here (checking <c>IUserContext.IsAuthenticated</c>/<c>SubjectId</c>) now lives entirely inside
-/// whichever <see cref="ICurrentActorContext"/> implementation is registered (the default
-/// <see cref="AnonymousActorContext"/>, or a consuming service's real bridge over its identity
-/// provider). This interceptor no longer references <c>SharedKernel.Security.Abstractions</c> at all.
+/// <strong>Actor resolution:</strong> <c>CreatedBy</c>/<c>ModifiedBy</c> is written as the executing
+/// context's <see cref="SharedKernelDbContext.RequestContext"/> <see cref="IRequestContext.UserId"/>,
+/// falling back to <see cref="PersistenceServiceOptions.ServiceName"/> (default <c>"system"</c>) when
+/// the caller has no user id — an anonymous request or a background job.
 /// </para>
 /// <para>
 /// <strong>Mutation rule:</strong> All field writes go exclusively through
@@ -41,41 +41,49 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </remarks>
 public sealed class AuditInterceptor : SaveChangesInterceptor
 {
-    private readonly ICurrentActorContext _actorContext;
     private readonly IClock _clock;
+    private readonly IOptions<PersistenceServiceOptions>? _serviceOptions;
 
     /// <summary>
     /// Initialises a new <see cref="AuditInterceptor"/> with the required dependencies.
     /// </summary>
-    /// <param name="actorContext">
-    /// Scoped DI dependency providing the current actor's identity. Never <see langword="null"/>.
+    /// <param name="requestContext">
+    /// The caller in the scope that constructed this interceptor — the initial
+    /// <see cref="SharedKernelDbContext.RequestContext"/> of a context built with it.
     /// </param>
-    /// <param name="clock">
-    /// Abstracted system clock for deterministic timestamp production. Never <see langword="null"/>.
+    /// <param name="clock">Abstracted system clock for deterministic timestamp production.</param>
+    /// <param name="serviceOptions">
+    /// Supplies the service-name fallback written when the caller has no user id. When
+    /// <see langword="null"/>, <c>"system"</c> is written.
     /// </param>
-    public AuditInterceptor(ICurrentActorContext actorContext, IClock clock)
+    public AuditInterceptor(
+        IRequestContext requestContext,
+        IClock clock,
+        IOptions<PersistenceServiceOptions>? serviceOptions = null)
     {
-        _actorContext = actorContext;
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(clock);
+
+        RequestContext = requestContext;
         _clock = clock;
+        _serviceOptions = serviceOptions;
     }
 
-    /// <summary>
-    /// Gets the <see cref="ICurrentActorContext"/> captured at construction time.
-    /// </summary>
+    /// <summary>Gets the request context captured at construction time.</summary>
     /// <remarks>
-    /// Exposed solely so <see cref="SharedKernelDbContext"/>'s constructor can
-    /// initialise <see cref="SharedKernelDbContext.CurrentActor"/> from this instance without
-    /// requiring a new, separately-injected constructor parameter on
-    /// <see cref="SharedKernelDbContext"/> itself. This interceptor no longer reads this field
-    /// directly inside <see cref="ApplyAudit"/> — see that method's remarks for why.
+    /// Exposed solely so <see cref="SharedKernelDbContext"/>'s constructor can initialise
+    /// <see cref="SharedKernelDbContext.RequestContext"/> without a separate constructor parameter.
+    /// Never read inside <see cref="ApplyAudit"/>, which uses the executing context's live value.
     /// </remarks>
-    internal ICurrentActorContext ActorContext => _actorContext;
+    internal IRequestContext RequestContext { get; }
+
+    /// <summary>Gets the service-name fallback written when the caller has no user id.</summary>
+    internal string ServiceName => _serviceOptions?.Value.ServiceName ?? new PersistenceServiceOptions().ServiceName;
 
     /// <summary>Gets the clock captured at construction time.</summary>
     /// <remarks>
     /// Exposed so <see cref="SharedKernelDbContext"/> can give the same clock to
-    /// <see cref="DomainClockMaterializationInterceptor"/> without a new constructor parameter, mirroring
-    /// <see cref="ActorContext"/>.
+    /// <see cref="DomainClockMaterializationInterceptor"/> without a new constructor parameter.
     /// </remarks>
     internal IClock Clock => _clock;
 
@@ -98,23 +106,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
-    // Applies audit fields to Added and Modified entries via EF ChangeTracker.
-    //
-    // Resolves the current ICurrentActorContext LIVE off
-    // ((SharedKernelDbContext)context).CurrentActor instead of this interceptor's own
-    // constructor-captured _actorContext field. Under the default (non-pooled) registration this
-    // produces an identical value to before, since SharedKernelDbContext.CurrentActor is
-    // itself initialised from this same interceptor's captured ICurrentActorContext at construction
-    // time. Under.WithDbContextPooling(), CurrentActor is refreshed per lease via
-    // RefreshActor(...) — reading it here (rather than this interceptor's own frozen field,
-    // which is never updated on lease) is what prevents a pooled instance from misattributing audit
-    // fields to whichever request first constructed it.
+    // Applies audit fields to Added and Modified entries via EF ChangeTracker. The actor is read LIVE
+    // off the executing context (never a constructor-captured value), so a pooled instance attributes
+    // each save to the lease actually performing it.
     private void ApplyAudit(DbContext? context)
     {
         if (context is null) return;
 
-        var actorContext = ((SharedKernelDbContext)context).CurrentActor;
-        var userId = actorContext.ActorId;
+        var userId = ((SharedKernelDbContext)context).CurrentActorId;
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries())

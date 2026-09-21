@@ -1,3 +1,5 @@
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -170,13 +172,13 @@ public sealed class WithAuditTrailBuilderTests
     }
 
     [Fact]
-    public void CoreBuilder_Registers_DefaultICurrentActorContext_When_NoneAlreadyRegistered()
+    public void CoreBuilder_Registers_DefaultRequestContext_When_NoneAlreadyRegistered()
     {
         using var scope = BuildServices().CreateScope();
 
-        var actorContext = scope.ServiceProvider.GetService<ICurrentActorContext>();
+        var actorContext = scope.ServiceProvider.GetService<IRequestContext>();
 
-        actorContext.Should().NotBeNull().And.BeOfType<AnonymousActorContext>();
+        actorContext.Should().NotBeNull().And.BeSameAs(AnonymousRequestContext.Instance);
     }
 
     [Fact]
@@ -187,9 +189,9 @@ public sealed class WithAuditTrailBuilderTests
         scope.ServiceProvider.GetService<IAuditTrailWriter>().Should().BeNull();
         scope.ServiceProvider.GetService<IAuditQueryService>().Should().BeNull();
 
-        // ICurrentActorContext is registered unconditionally by the core builder, independent of
-        //.WithAuditTrail() — see AnonymousActorContext's own remarks.
-        scope.ServiceProvider.GetService<ICurrentActorContext>().Should().NotBeNull();
+        // IRequestContext is registered unconditionally by the core builder, independent of
+        //.WithAuditTrail() — see AnonymousRequestContext.
+        scope.ServiceProvider.GetService<IRequestContext>().Should().NotBeNull();
     }
 
     [Fact]

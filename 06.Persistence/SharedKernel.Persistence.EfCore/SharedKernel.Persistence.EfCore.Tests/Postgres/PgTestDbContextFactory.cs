@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.Abstractions.Context;
@@ -36,8 +37,8 @@ internal static class PgTestDbContextFactory
 
     public static PgTestDbContext Create(
         string connectionString,
-        ICurrentActorContext actorContext,
-        ICurrentTenantContext tenantContext,
+        IRequestContext actorContext,
+        IRequestContext tenantContext,
         IClock? clock = null,
         IEnumerable<ISaveChangesInterceptor>? additionalInterceptors = null,
         IEnumerable<IDbUpdateExceptionClassifier>? exceptionClassifiers = null,
@@ -49,7 +50,7 @@ internal static class PgTestDbContextFactory
         clock ??= new SystemClock();
 
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new PgTestDbContext(
@@ -60,7 +61,23 @@ internal static class PgTestDbContextFactory
                 concurrency,
                 additionalInterceptors,
                 exceptionClassifiers: exceptionClassifiers));
-        ctx.RefreshTenant(tenantContext);
+        // Actor identity from actorContext, tenant from tenantContext — the two roles the former
+        // ICurrentActorContext/ICurrentTenantContext pair played, now one IRequestContext.
+        ctx.RefreshRequestContext(ReferenceEquals(actorContext, tenantContext)
+            ? actorContext
+            : new ActorWithTenantContext(actorContext, tenantContext));
         return ctx;
     }
+}
+
+/// <summary>Combines one context's caller identity with another context's tenant.</summary>
+internal sealed class ActorWithTenantContext(IRequestContext actor, IRequestContext tenant) : IRequestContext
+{
+    public bool IsAuthenticated => actor.IsAuthenticated;
+    public string? UserId => actor.UserId;
+    public Guid? TenantId => tenant.TenantId;
+    public ActorKind ActorKind => actor.ActorKind;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        actor.HasPermissionAsync(permission, cancellationToken);
 }

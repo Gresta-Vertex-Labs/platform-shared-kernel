@@ -51,7 +51,7 @@ public sealed class BulkUpdateEncryptedColumnGuardPostgresTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(actor, new SystemClock()),
-                new SoftDeleteInterceptor(actor, new SystemClock()),
+                new SoftDeleteInterceptor(new SystemClock()),
                 new ConcurrencyInterceptor()));
     }
 

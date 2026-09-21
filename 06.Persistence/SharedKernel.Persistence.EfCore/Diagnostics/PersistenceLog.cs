@@ -104,7 +104,7 @@ internal static partial class PersistenceLog
     internal static partial void TransientRetryAttempt(ILogger logger, int attemptNumber);
 
     /// <summary>
-    /// Logged by <c>EfUnitOfWork.SaveChangesAsync</c> / <c>EfTransactionalUnitOfWork</c> when a
+    /// Logged by <c>EfUnitOfWork.SaveChangesAsync</c> / <c>ExecuteInTransactionAsync</c> when a
     /// configured retrying execution strategy exhausts all attempts, immediately before the final
     /// exception is rethrown unchanged.
     /// </summary>

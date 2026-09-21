@@ -59,6 +59,8 @@
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj" />
   </Folder>
   <Folder Name="/05.Application/">
+    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.csproj" />
+    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.Tests/SharedKernel.Application.Abstractions.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.Tests/SharedKernel.Application.Behaviors.Caching.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />
@@ -166,6 +168,8 @@
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Scheduling/SharedKernel.ServiceDefaults.Scheduling.Tests/SharedKernel.ServiceDefaults.Scheduling.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Search/SharedKernel.ServiceDefaults.Search.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Search/SharedKernel.ServiceDefaults.Search.Tests/SharedKernel.ServiceDefaults.Search.Tests.csproj" />
+    <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.csproj" />
+    <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests/SharedKernel.ServiceDefaults.Security.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.Tests/SharedKernel.ServiceDefaults.Security.Mtls.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Storage/SharedKernel.ServiceDefaults.Storage.csproj" />

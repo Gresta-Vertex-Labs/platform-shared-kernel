@@ -28,7 +28,7 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </para>
 /// <list type="bullet">
 /// <item><description>
-/// The entry's current <c>TenantId</c> must equal <see cref="ICurrentTenantContext.TenantId"/>.
+/// The entry's current <c>TenantId</c> must equal the context's <c>CurrentTenantId</c> (<c>IRequestContext.TenantId</c>).
 /// A <see langword="null"/> current tenant (no tenant resolved) rejects every tenant-scoped write —
 /// fail closed, mirroring the read-side query filter's zero-row behavior.
 /// </description></item>
@@ -45,10 +45,10 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </para>
 /// <para>
 /// <strong>Pooling-safe:</strong> unlike its earlier design, this
-/// interceptor no longer captures <see cref="ICurrentTenantContext"/> in its own constructor — it
+/// interceptor never captures the caller's tenant in its own constructor — it
 /// reads tenant identity LIVE off <c>eventData.Context</c> (cast to <see cref="TenantedDbContext"/>),
 /// mirroring how <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c> already read
-/// <c>SharedKernelDbContext.CurrentActor</c> live rather than from a constructor-captured field. Its
+/// <c>SharedKernelDbContext.RequestContext</c> live rather than from a constructor-captured field. Its
 /// only constructor dependency, <see cref="ICrossTenantScope"/>, is <see cref="AsyncLocal{T}"/>-backed
 /// and registered singleton — safe to resolve from any provider, including EF Core's pooled-context
 /// activator. This is what lets <c>EfCorePersistenceBuilder.WithMultiTenancy()</c> register this
@@ -96,7 +96,7 @@ public sealed class TenantWriteGuardInterceptor : SaveChangesInterceptor
         // performing this save, not whichever scope happened to construct the pool slot. A context
         // that is somehow not a TenantedDbContext (should never happen in practice — only
         // TenantedDbContext subclasses register this interceptor) fails closed to "no tenant".
-        var currentTenantId = (context as TenantedDbContext)?.CurrentTenant.TenantId;
+        var currentTenantId = (context as TenantedDbContext)?.CurrentTenantId;
 
         foreach (var entry in context.ChangeTracker.Entries<IHasTenant>())
         {

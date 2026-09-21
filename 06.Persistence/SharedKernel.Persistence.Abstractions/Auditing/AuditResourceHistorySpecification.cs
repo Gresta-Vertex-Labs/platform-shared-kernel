@@ -16,7 +16,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <para>
 /// <strong>Deliberately carries no tenant parameter.</strong> Tenant scoping is applied by
 /// <see cref="IAuditQueryService.GetResourceHistoryAsync"/> itself, resolved from the caller's own
-/// <c>ICurrentTenantContext</c> — never from a value this publicly-constructible type could be handed
+/// <c>IRequestContext</c> — never from a value this publicly-constructible type could be handed
 /// a forged tenant id through. See <see cref="IAuditQueryService"/>'s remarks.
 /// </para>
 /// </remarks>

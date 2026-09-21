@@ -1,39 +1,38 @@
+using System.Data;
 using System.Threading;
-using SharedKernel.Application.Behaviors.Transaction;
+using SharedKernel.Application.Transactions;
+using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// In-memory fake implementation of <see cref="IUnitOfWork"/> (<c>05.Application.Behaviors</c>) for
-/// use in unit tests.
+/// In-memory fake implementation of the shared <see cref="IUnitOfWork"/>
+/// (<c>SharedKernel.Application.Abstractions</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
-/// This is <b>not</b> a fake for <c>SharedKernel.Persistence.Abstractions.IUnitOfWork</c>
-/// (<c>06.Persistence</c>) — <c>05.Application</c> ships its own, deliberately narrower local
-/// <see cref="IUnitOfWork"/> seam (a single <see cref="SaveChangesAsync"/> member), bridged to the
-/// real persistence <c>IUnitOfWork</c> only at each consuming service's composition root. This fake
-/// satisfies the LOCAL seam only. Lets a test assert <c>TransactionBehavior</c>'s exact contract —
-/// <see cref="SaveChangesAsync"/> is called exactly once after <c>next()</c> returns, never called
-/// if <c>next()</c> throws — without a real persistence provider.
+/// <para>
+/// P-558: one fake for the one unit-of-work contract the application pipeline and the persistence
+/// layer now share (the former <c>05.Application.Behaviors</c> and <c>06.Persistence</c> copies, and
+/// their two same-named fakes, are gone).
+/// </para>
+/// <para>
+/// Follows the contract's transaction rules without a database: an
+/// <c>ExecuteInTransactionAsync</c> call runs the operation, saves, runs every
+/// <see cref="OnBeforeCommit"/> callback and commits; an exception or a failed <c>Result</c> rolls
+/// back. <see cref="TransientFailures"/> simulates a retrying execution strategy replaying the
+/// operation, so a test can prove its handler is re-runnable. A call made while a transaction is
+/// already active joins it. <see cref="SaveChangesAsync"/> is a pure counter — it stages and writes
+/// nothing.
+/// </para>
 /// </remarks>
-/// <remarks>
-/// Local-seam-only scope: this type fakes <c>05.Application.Behaviors</c>' own <see cref="IUnitOfWork"/>
-/// exclusively and never references <c>06.Persistence</c>, <c>12.Security</c>, or <c>07.Messaging</c> —
-/// bridging the local seam to a real persistence provider is a decision made only at each consuming
-/// service's composition root, never inside this package.
-/// </remarks>
-/// <remarks>
-/// Deliberate naming collision, disambiguated only by namespace: a DIFFERENT, unrelated type,
-/// <see cref="SharedKernel.Testing.Persistence.FakeUnitOfWork"/> (P-335/WO-053), implements
-/// <c>SharedKernel.Persistence.Abstractions.ITransactionalUnitOfWork</c>/<c>IUnitOfWork</c>
-/// (<c>06.Persistence</c>) — the two types share a simple name because the two interfaces they fake
-/// happen to share a simple name.
-/// </remarks>
+#pragma warning disable RS0026 // Mirrors IUnitOfWork's overload set.
 public sealed class FakeUnitOfWork : IUnitOfWork
 {
+    private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
     private int _saveChangesCallCount;
+    private int _depth;
 
-    /// <summary>Gets the number of times <see cref="SaveChangesAsync"/> has been called, thread-safe.</summary>
+    /// <summary>Gets the number of times <see cref="SaveChangesAsync"/> has been called (including the implicit save of a transaction), thread-safe.</summary>
     public int SaveChangesCallCount => Volatile.Read(ref _saveChangesCallCount);
 
     /// <summary>Gets or sets the value <see cref="SaveChangesAsync"/> returns on success. Defaults to <c>1</c>.</summary>
@@ -46,8 +45,23 @@ public sealed class FakeUnitOfWork : IUnitOfWork
     /// </summary>
     public bool SimulateFailure { get; set; }
 
+    /// <summary>Gets or sets how many attempts fail with a simulated transient error before one commits.</summary>
+    public int TransientFailures { get; set; }
+
+    /// <summary>Gets the number of transaction attempts started (retries included).</summary>
+    public int TransactionCount { get; private set; }
+
+    /// <summary>Gets the number of committed transactions.</summary>
+    public int CommitCount { get; private set; }
+
+    /// <summary>Gets the number of rolled-back transaction attempts.</summary>
+    public int RollbackCount { get; private set; }
+
     /// <inheritdoc />
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+    public bool IsTransactionActive => _depth > 0;
+
+    /// <inheritdoc />
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _saveChangesCallCount);
 
@@ -56,4 +70,128 @@ public sealed class FakeUnitOfWork : IUnitOfWork
 
         return Task.FromResult(SaveChangesResult);
     }
+
+    /// <inheritdoc />
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, isolationLevel: null, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>Ignores <paramref name="isolationLevel"/> — this fake never issues SQL.</remarks>
+    public Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        return ExecuteInTransactionAsync<object?>(
+            async ct =>
+            {
+                await operation(ct);
+                return null;
+            },
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Ignores <paramref name="isolationLevel"/> — this fake never issues SQL.</remarks>
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        if (IsTransactionActive)
+        {
+            var joined = await operation(cancellationToken);
+            if (joined is not IHasSuccessFlag { IsSuccess: false })
+                await SaveChangesAsync(cancellationToken);
+            return joined;
+        }
+
+        while (true)
+        {
+            TransactionCount++;
+            _beforeCommit.Clear();
+            _depth++;
+
+            try
+            {
+                var result = await operation(cancellationToken);
+
+                if (result is IHasSuccessFlag { IsSuccess: false })
+                {
+                    Rollback();
+                    return result;
+                }
+
+                await SaveChangesAsync(cancellationToken);
+
+                if (TransientFailures > 0)
+                {
+                    TransientFailures--;
+                    Rollback();
+                    continue;
+                }
+
+                for (var i = 0; i < _beforeCommit.Count; i++)
+                    await _beforeCommit[i](cancellationToken);
+
+                CommitCount++;
+                _depth--;
+                _beforeCommit.Clear();
+                return result;
+            }
+            catch
+            {
+                if (_depth > 0)
+                    Rollback();
+
+                throw;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void OnBeforeCommit(Func<CancellationToken, Task> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+
+        if (!IsTransactionActive)
+            throw new InvalidOperationException("OnBeforeCommit can only be called while ExecuteInTransactionAsync is running.");
+
+        _beforeCommit.Add(callback);
+    }
+
+    /// <summary>
+    /// Clears every counter and resets <see cref="SaveChangesResult"/> to <c>1</c>,
+    /// <see cref="SimulateFailure"/> to <see langword="false"/> and <see cref="TransientFailures"/> to <c>0</c>.
+    /// </summary>
+    public void Reset()
+    {
+        Volatile.Write(ref _saveChangesCallCount, 0);
+        TransactionCount = 0;
+        CommitCount = 0;
+        RollbackCount = 0;
+        SaveChangesResult = 1;
+        SimulateFailure = false;
+        TransientFailures = 0;
+        _beforeCommit.Clear();
+        _depth = 0;
+    }
+
+    private void Rollback()
+    {
+        RollbackCount++;
+        _depth--;
+        _beforeCommit.Clear();
+    }
 }
+#pragma warning restore RS0026

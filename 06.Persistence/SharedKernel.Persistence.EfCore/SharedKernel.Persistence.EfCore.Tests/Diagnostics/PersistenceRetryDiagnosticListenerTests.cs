@@ -106,8 +106,7 @@ public sealed class PersistenceRetryDiagnosticListenerTests
             var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
             var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
                 userContext, clock);
-            var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-                userContext, clock);
+            var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
             var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
 
             using var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

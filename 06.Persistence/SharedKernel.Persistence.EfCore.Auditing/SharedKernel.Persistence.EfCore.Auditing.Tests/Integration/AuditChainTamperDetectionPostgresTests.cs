@@ -1,3 +1,4 @@
+using SharedKernel.Application.Auditing;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,7 +56,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord second;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             second = await writer.RecordAsync(FailedEntry("Order", "order-2"));
         }
@@ -92,7 +93,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord second;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             second = await writer.RecordAsync(FailedEntry("Order", "order-2"));
         }
@@ -136,7 +137,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord second, third;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             second = await writer.RecordAsync(FailedEntry("Order", "order-2"));
             third = await writer.RecordAsync(FailedEntry("Order", "order-3"));
@@ -175,7 +176,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord written;
         await using (var scope = sp.CreateAsyncScope())
         {
-            written = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            written = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using (var raw = new NpgsqlConnection(connectionString))
@@ -214,7 +215,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord written;
         await using (var scope = sp.CreateAsyncScope())
         {
-            written = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            written = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         written.KeyId.Should().Be(TwoIdsSameMaterialKeyProvider.CurrentKeyId);
@@ -274,7 +275,7 @@ public sealed class AuditChainTamperDetectionPostgresTests
         AuditRecord second;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             await writer.RecordAsync(FailedEntry("Order", "order-1"));
             second = await writer.RecordAsync(FailedEntry("Order", "order-2"));
         }

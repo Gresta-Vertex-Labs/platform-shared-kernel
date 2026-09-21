@@ -1,5 +1,5 @@
 using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 
 namespace SharedKernel.Persistence.Abstractions.Repositories;
 

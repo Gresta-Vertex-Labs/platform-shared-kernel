@@ -148,7 +148,7 @@ public sealed class MoneyValueConverterTests
         var ctx = new MoneyTestDbContext(
             options,
             new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
         ctx.Database.EnsureCreated();
         return ctx;
     }

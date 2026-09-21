@@ -10,10 +10,9 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 
 /// <summary>
 /// Startup <see cref="IHostedService"/> that constructs one real <typeparamref name="TContext"/>
-/// instance and verifies (a) every interceptor <c>EfCorePersistenceBuilder{TContext}.Build</c>
-/// registered for it is actually attached to its <see cref="DbContextOptions"/>, and (b) when
-/// <c>.WithTransactionalUnitOfWork()</c> was called, its live execution strategy is not a retrying
-/// one — failing loudly, before the host finishes starting, when either is not true.
+/// instance and verifies every interceptor <c>EfCorePersistenceBuilder{TContext}.Build</c>
+/// registered for it is actually attached to its <see cref="DbContextOptions"/> — failing loudly,
+/// before the host finishes starting, when one is not.
 /// </summary>
 /// <typeparam name="TContext">The concrete <see cref="Context.SharedKernelDbContext"/> subclass.</typeparam>
 /// <remarks>
@@ -25,21 +24,6 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// security, audit mutation guard, and any registered <see cref="IDbUpdateExceptionClassifier"/> were
 /// silently absent, discoverable only by a determined cross-tenant write actually succeeding. This
 /// validator makes that class of mistake fail at host startup instead.
-/// </para>
-/// <para>
-/// <strong>Retrying-execution-strategy check:</strong> <c>EfCorePersistenceBuilder{TContext}.Build</c>
-/// already fails eagerly, at <c>Build()</c> time, when <c>.WithTransientFaultRetry()</c> was called
-/// alongside <c>.WithTransactionalUnitOfWork()</c> — but that early check can only see whether
-/// <c>.WithTransientFaultRetry()</c> was called; it has no visibility into whether the
-/// <c>configureDb</c> delegate passed to <c>AddSharedKernelEfCore</c> separately enabled a retrying
-/// strategy directly (e.g. the PostgreSQL package's <c>UsePostgreSQL(..., maxRetryCount: ...)</c>,
-/// which this package never references). A consumer who configures retry that way alone, without
-/// ever calling <c>.WithTransientFaultRetry()</c>, sails past that early check and would otherwise
-/// only discover the incompatibility when <c>EfTransactionalUnitOfWork.BeginTransactionAsync</c>
-/// throws on the first transactional command in production. This validator closes that gap: it reads
-/// the SAME live signal that call already checks —
-/// <c>context.Database.CreateExecutionStrategy().RetriesOnFailure</c> — so it fires identically
-/// regardless of which call enabled retry, and does so once, at host startup.
 /// </para>
 /// <para>
 /// Registered by <c>EfCorePersistenceBuilder{TContext}.Build</c> whenever at least one capability
@@ -55,7 +39,6 @@ internal sealed class PersistenceContextWiringValidator<TContext> : IHostedServi
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly bool _multiTenancyEnabled;
-    private readonly bool _transactionalUnitOfWorkEnabled;
 
     /// <summary>Initialises a new <see cref="PersistenceContextWiringValidator{TContext}"/>.</summary>
     /// <param name="scopeFactory">Used to create one throwaway scope for the check.</param>
@@ -63,19 +46,12 @@ internal sealed class PersistenceContextWiringValidator<TContext> : IHostedServi
     /// Whether <c>EfCorePersistenceBuilder{TContext}.WithMultiTenancy</c> was called — when it was,
     /// <see cref="TenantWriteGuardInterceptor"/> must be found attached.
     /// </param>
-    /// <param name="transactionalUnitOfWorkEnabled">
-    /// Whether <c>EfCorePersistenceBuilder{TContext}.WithTransactionalUnitOfWork</c> was called —
-    /// when it was, the constructed context's live execution strategy must not report
-    /// <c>RetriesOnFailure</c>, regardless of which call enabled it. See the class remarks.
-    /// </param>
     public PersistenceContextWiringValidator(
         IServiceScopeFactory scopeFactory,
-        bool multiTenancyEnabled,
-        bool transactionalUnitOfWorkEnabled)
+        bool multiTenancyEnabled)
     {
         _scopeFactory = scopeFactory;
         _multiTenancyEnabled = multiTenancyEnabled;
-        _transactionalUnitOfWorkEnabled = transactionalUnitOfWorkEnabled;
     }
 
     /// <inheritdoc />
@@ -109,22 +85,6 @@ internal sealed class PersistenceContextWiringValidator<TContext> : IHostedServi
 
             foreach (var contributedType in GetAttachedInterceptorTypes(probe.Options))
                 RequireAttached(attached, contributedType, $"'{extension.GetType().Name}'");
-        }
-
-        if (_transactionalUnitOfWorkEnabled && context.Database.CreateExecutionStrategy().RetriesOnFailure)
-        {
-            throw new InvalidOperationException(
-                $"'{typeof(TContext).Name}' combines a retrying execution strategy with " +
-                "'.WithTransactionalUnitOfWork()'. This was not caught at 'Build()' time because " +
-                "retry was not enabled via '.WithTransientFaultRetry()' — most likely it comes from " +
-                "the PostgreSQL package's 'UsePostgreSQL(..., maxRetryCount: ...)' called directly " +
-                "inside the 'configureDb' delegate. EF Core forbids beginning a caller-owned " +
-                "transaction under a retrying execution strategy, so every " +
-                "'ITransactionalUnitOfWork.BeginTransactionAsync' call would throw at runtime — " +
-                "including every command routed through 'WithApplicationTransactionBehavior()' once " +
-                "wired. Drop the retry configuration, or drop '.WithTransactionalUnitOfWork()' and " +
-                "use 'ITransactionalUnitOfWork.ExecuteInTransactionAsync', which is retry-safe by " +
-                "design.");
         }
     }
 

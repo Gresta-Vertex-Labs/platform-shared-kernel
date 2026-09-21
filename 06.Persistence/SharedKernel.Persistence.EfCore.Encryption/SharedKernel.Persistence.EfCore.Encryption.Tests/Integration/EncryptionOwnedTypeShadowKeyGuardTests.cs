@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,8 +48,8 @@ public sealed class EncryptionOwnedTypeShadowKeyGuardTests
         services.AddLogging();
         var actor = new FakeAuditActorContext();
         services.AddSingleton(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext>(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
 
         var keyProvider = new StaticEncryptionKeyProvider("v1", [new CryptographicKey("v1", Enumerable.Repeat((byte)0x33, 32).ToArray())]);
         services.AddSingleton(keyProvider);

@@ -1,3 +1,5 @@
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,7 +62,7 @@ public sealed class AuditChainCorePostgresTests
         AuditRecord written;
         await using (var scope = sp.CreateAsyncScope())
         {
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             // Outcome=Failed deliberately (never Succeeded without an ambient transaction — see
             // AuditTransactionSemanticsPostgresTests for that contract) — this test is purely about
             // microsecond timestamp precision and hash round-tripping, orthogonal to Outcome.
@@ -95,7 +97,7 @@ public sealed class AuditChainCorePostgresTests
         var tasks = Enumerable.Range(0, writerCount).Select(async i =>
         {
             await using var scope = sp.CreateAsyncScope();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             return await writer.RecordAsync(FailedEntry("Order", $"order-{i}"));
         });
 
@@ -125,7 +127,7 @@ public sealed class AuditChainCorePostgresTests
         var tasks = Enumerable.Range(0, writerCount).Select(async i =>
         {
             await using var scope = sp.CreateAsyncScope();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             return await writer.RecordAsync(FailedEntry("Invoice", $"invoice-{i}"));
         });
 
@@ -162,7 +164,7 @@ public sealed class AuditChainCorePostgresTests
         for (var i = 0; i < writerCount; i++)
         {
             await using var scope = sp.CreateAsyncScope();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             var record = await writer.RecordAsync(FailedEntry("SkewedOrder", $"order-{i}"));
             writtenTimestamps.Add(record.OccurredOn);
         }
@@ -187,7 +189,7 @@ public sealed class AuditChainCorePostgresTests
         var tasks = Enumerable.Range(0, 8).Select(async _ =>
         {
             await using var scope = sp.CreateAsyncScope();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
             return await writer.RecordAsync(FailedEntry("Order", "order-1", idempotencyKey: "retry-key-1"));
         });
 
@@ -210,13 +212,13 @@ public sealed class AuditChainCorePostgresTests
         await EnsureCreatedAsync(sp);
 
         await using var scope1 = sp.CreateAsyncScope();
-        var first = await scope1.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+        var first = await scope1.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
             .RecordAsync(FailedEntry("Order", "order-1", idempotencyKey: "seq-key-1"));
 
         // A caller retrying RecordAsync after a network blip (the DB write succeeded, but the ack
         // never reached the caller) must get the SAME record back, never a thrown unique-violation.
         await using var scope2 = sp.CreateAsyncScope();
-        var second = await scope2.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+        var second = await scope2.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
             .RecordAsync(FailedEntry("Order", "order-1", idempotencyKey: "seq-key-1"));
 
         second.Id.Should().Be(first.Id);
@@ -232,13 +234,13 @@ public sealed class AuditChainCorePostgresTests
         await EnsureCreatedAsync(sp);
 
         await using var scope1 = sp.CreateAsyncScope();
-        var first = await scope1.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+        var first = await scope1.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
             .RecordAsync(FailedEntry("Order", "order-1", idempotencyKey: "reused-key"));
 
         // The SAME idempotency key, but a genuinely DIFFERENT logical event (different ResourceId) —
         // must be rejected, not silently discarded in favor of the first record.
         await using var scope2 = sp.CreateAsyncScope();
-        var act = async () => await scope2.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+        var act = async () => await scope2.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
             .RecordAsync(FailedEntry("Order", "order-2", idempotencyKey: "reused-key"));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -253,7 +255,7 @@ public sealed class AuditChainCorePostgresTests
     public async Task ExportRangeAsync_ResolvesTenantFromCallerContext_NeverLeaksAnotherTenantsRecords()
     {
         // C3 regression: ExportRangeAsync used to trust a caller-supplied tenantId parameter — now it
-        // has none; the tenant comes exclusively from the caller's own ICurrentTenantContext.
+        // has none; the tenant comes exclusively from the caller's own IRequestContext.
         var connectionString = ConnectionString("sk_audit_export_tenant_isolation");
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
@@ -261,11 +263,11 @@ public sealed class AuditChainCorePostgresTests
         await using var spA = AuditTestHost.Build(connectionString, new FakeAuditActorContext(tenantId: tenantA));
         await EnsureCreatedAsync(spA);
         await using (var scope = spA.CreateAsyncScope())
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a"));
 
         await using var spB = AuditTestHost.Build(connectionString, new FakeAuditActorContext(tenantId: tenantB));
         await using (var scope = spB.CreateAsyncScope())
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-b"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-b"));
 
         // Read as tenant B — must see ONLY tenant B's record, even though the same physical table also
         // holds tenant A's row for the same ResourceType.
@@ -285,7 +287,7 @@ public sealed class AuditChainCorePostgresTests
     public async Task VerifyFullChainAsync_ResolvesTenantFromCallerContext_NeverVerifiesAnotherTenantsChain()
     {
         // C3 regression: VerifyFullChainAsync used to trust a caller-supplied tenantId parameter — now
-        // it has none; the tenant comes exclusively from the caller's own ICurrentTenantContext.
+        // it has none; the tenant comes exclusively from the caller's own IRequestContext.
         var connectionString = ConnectionString("sk_audit_verify_tenant_isolation");
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
@@ -293,16 +295,16 @@ public sealed class AuditChainCorePostgresTests
         await using var spA = AuditTestHost.Build(connectionString, new FakeAuditActorContext(tenantId: tenantA));
         await EnsureCreatedAsync(spA);
         await using (var scopeA1 = spA.CreateAsyncScope())
-            await scopeA1.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a1"));
+            await scopeA1.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a1"));
         await using (var scopeA2 = spA.CreateAsyncScope())
-            await scopeA2.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a2"));
+            await scopeA2.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-a2"));
 
         // Tenant B's chain for the SAME resource type has only ONE record — verifying it as tenant B
         // must report exactly that single-record chain, never tenant A's two-record chain (which a
         // forged/leaked tenantId parameter could previously have targeted).
         await using var spB = AuditTestHost.Build(connectionString, new FakeAuditActorContext(tenantId: tenantB));
         await using (var scopeB = spB.CreateAsyncScope())
-            await scopeB.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-b1"));
+            await scopeB.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-b1"));
 
         await using var verifyScope = spB.CreateAsyncScope();
         var queryService = verifyScope.ServiceProvider.GetRequiredService<IAuditQueryService>();
@@ -350,7 +352,7 @@ public sealed class AuditChainCorePostgresTests
         AuditRecord recordA;
         await using (var scope = spA.CreateAsyncScope())
         {
-            recordA = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+            recordA = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
                 .RecordAsync(FailedEntry("SharedResource", "shared-1"));
         }
 
@@ -358,7 +360,7 @@ public sealed class AuditChainCorePostgresTests
         AuditRecord recordB;
         await using (var scope = spB.CreateAsyncScope())
         {
-            recordB = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+            recordB = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
                 .RecordAsync(FailedEntry("SharedResource", "shared-1"));
         }
 

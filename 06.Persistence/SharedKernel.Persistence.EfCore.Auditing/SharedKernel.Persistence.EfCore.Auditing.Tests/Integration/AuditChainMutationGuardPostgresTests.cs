@@ -1,3 +1,4 @@
+using SharedKernel.Application.Auditing;
 using System.Linq;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -66,7 +67,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -90,7 +91,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -112,7 +113,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -136,7 +137,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -162,7 +163,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -184,7 +185,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -206,7 +207,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await using var testScope = sp.CreateAsyncScope();
@@ -270,7 +271,7 @@ public sealed class AuditChainMutationGuardPostgresTests
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
 
         await using var testScope = sp.CreateAsyncScope();
-        var writer = testScope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+        var writer = testScope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
         var oversizedResourceType = new string('x', 201);
 
@@ -300,7 +301,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            written = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            written = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await ApplyImmutabilityTriggerAsync(connectionString);
@@ -326,7 +327,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            written = await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            written = await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await ApplyImmutabilityTriggerAsync(connectionString);
@@ -351,7 +352,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>().Database.EnsureCreatedAsync();
-            await scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
+            await scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>().RecordAsync(FailedEntry("Order", "order-1"));
         }
 
         await ApplyImmutabilityTriggerAsync(connectionString);
@@ -380,7 +381,7 @@ public sealed class AuditChainMutationGuardPostgresTests
         await ApplyImmutabilityTriggerAsync(connectionString);
 
         await using var testScope = sp.CreateAsyncScope();
-        var act = async () => await testScope.ServiceProvider.GetRequiredService<IAuditTrailWriter>()
+        var act = async () => await testScope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>()
             .RecordAsync(FailedEntry("Order", "order-1"));
 
         await act.Should().NotThrowAsync("the trigger only blocks UPDATE/DELETE/TRUNCATE — normal appends via IAuditTrailWriter's INSERT must be unaffected");

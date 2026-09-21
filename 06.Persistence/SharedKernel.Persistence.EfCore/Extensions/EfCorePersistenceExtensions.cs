@@ -19,7 +19,8 @@ using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Context;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Primitives.Clocks;
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 
@@ -126,7 +127,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private static readonly object InnerFactoryKey = new();
 
     private bool _multiTenancyEnabled;
-    private bool _transactionalUnitOfWorkEnabled;
     private bool _migrationsOnStartup;
     private bool _dbContextPoolingEnabled;
     private int _poolSize = 1024;
@@ -216,14 +216,13 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <returns>The same builder for further chaining.</returns>
     /// <remarks>
     /// <para>
-    /// Registers the default <see cref="ICurrentTenantContext"/>
-    /// (<see cref="MultiTenancy.NullCurrentTenantContext"/>, fail-closed — see its remarks) when
-    /// nothing else has already registered one, and always registers
+    /// The tenant comes from the scope's <see cref="IRequestContext"/> (fail-closed
+    /// <see cref="AnonymousRequestContext"/> — no tenant — when nothing else is registered). Always registers
     /// <see cref="Interceptors.TenantWriteGuardInterceptor"/> as an additional interceptor (H-A1) — the
     /// write-side half of tenant isolation, the tenant global query filter being the read-side half.
-    /// A consuming service bridges <see cref="ICurrentTenantContext"/> to its real tenant source at
-    /// its own composition root — <c>13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence</c>
-    /// ships that bridge for services already using <c>12.Security</c>.
+    /// A consuming service implements <see cref="IRequestContext"/> over its real identity source at
+    /// its own composition root — <c>13.ServiceDefaults</c> ships one for services already using
+    /// <c>12.Security</c>.
     /// </para>
     /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithMultiTenancy()
@@ -305,17 +304,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     {
         ArgumentNullException.ThrowIfNull(configureReplicaDb);
         _readReplicaConfigureDb = configureReplicaDb;
-        return this;
-    }
-
-    /// <summary>
-    /// Opts in to explicit transaction support by registering
-    /// <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped).
-    /// </summary>
-    /// <returns>The same builder for further chaining.</returns>
-    public EfCorePersistenceBuilder<TContext> WithTransactionalUnitOfWork()
-    {
-        _transactionalUnitOfWorkEnabled = true;
         return this;
     }
 
@@ -530,37 +518,14 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 "satisfies this guard, since the database then enforces isolation on every statement.");
         }
 
-        // A retrying execution strategy and an explicitly begun transaction are mutually exclusive in
-        // EF Core: EfTransactionalUnitOfWork.BeginTransactionAsync throws when one is configured,
-        // because the strategy cannot replay work that has already been committed inside a caller-owned
-        // transaction. That rule predates this builder, but '.WithApplicationTransactionBehavior()' in
-        // 13.ServiceDefaults.Persistence now routes every audited command through BeginTransactionAsync,
-        // so the combination below would throw on EVERY such command at runtime, in production, rather
-        // than once at startup. Fail here instead, while the composition root is still on screen.
-        // This can only see '.WithTransientFaultRetry()' — it has no visibility into retry enabled
-        // directly on the configureDb delegate (e.g. the PostgreSQL package's
-        // UsePostgreSQL(..., maxRetryCount:...)), since this package never references that provider.
-        // PersistenceContextWiringValidator{TContext} is the safety net for that case: it reads the
-        // SAME live execution-strategy signal EfTransactionalUnitOfWork itself checks, at host
-        // startup, regardless of which call enabled retry.
-        if (_transientFaultRetryOptions is not null && _transactionalUnitOfWorkEnabled)
-        {
-            throw new InvalidOperationException(
-                $"'{typeof(TContext).Name}' combines '.WithTransientFaultRetry()' with " +
-                "'.WithTransactionalUnitOfWork()', which EF Core does not allow: a retrying execution " +
-                "strategy cannot replay work spanning a transaction the caller began itself, so every " +
-                "'ITransactionalUnitOfWork.BeginTransactionAsync' call would throw at runtime — " +
-                "including every audited command once '.WithApplicationTransactionBehavior()' is wired. " +
-                "Drop '.WithTransientFaultRetry()', or drop '.WithTransactionalUnitOfWork()' and use " +
-                "'ITransactionalUnitOfWork.ExecuteInTransactionAsync', which is retry-safe by design.");
-        }
+        // No retry-vs-transaction guard: every transaction runs through EfUnitOfWork.ExecuteInTransactionAsync,
+        // inside the execution strategy, so a retrying strategy replays the whole unit of work.
 
         // The former "'.WithDbContextPooling()' cannot be combined with
-        // '.WithMultiTenancy()'" guard is GONE — replaced with a real fix. TenantedDbContext's
-        // constructor no longer takes ICurrentTenantContext at all (see its own class remarks); tenant
-        // identity is attached per lease by TenantAwareDbContextFactory<TContext>, exactly mirroring
-        // how ICurrentActorContext is already attached per lease today. TenantWriteGuardInterceptor
-        // likewise no longer captures ICurrentTenantContext in its constructor — it reads it LIVE off
+        // '.WithMultiTenancy()'" guard is GONE — replaced with a real fix. No context constructor takes
+        // the caller's identity; IRequestContext (identity + tenant) is attached per lease by
+        // TenantAwareDbContextFactory<TContext>. TenantWriteGuardInterceptor likewise never captures
+        // the tenant in its constructor — it reads it LIVE off
         // the executing context instance, so it is pooling-safe as a SINGLETON like the platform
         // three. The former "'.WithDbContextPooling()' cannot be combined with
         // '.WithDbContextFactory()'" guard is ALSO gone: IDbContextFactory<TContext> is now always
@@ -588,7 +553,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
 
         // Register PersistenceServiceOptions default if not already configured by WithServiceName().
-        // This ensures the default IAuditActorContext (AnonymousActorContext) can always resolve it.
+        // AuditInterceptor reads the service-name fallback from it.
         if (!_services.Any(sd => sd.ServiceType == typeof(IOptions<PersistenceServiceOptions>))
             && !_services.Any(sd => sd.ServiceType == typeof(IConfigureOptions<PersistenceServiceOptions>)))
         {
@@ -597,21 +562,21 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         if (_dbContextPoolingEnabled)
         {
-            // SINGLETON, with a DI-free seed ICurrentActorContext — never resolves
-            // ICurrentActorContext from DI at all, so EF's pool-level activator never has anything
-            // unsafe to resolve for these three. AuditInterceptor/SoftDeleteInterceptor already read
-            // actor identity LIVE off the executing SharedKernelDbContext.CurrentActor (never their
-            // own constructor-captured field) for their real per-save logic — this
-            // constructor-captured seed is truly a throwaway value, immediately superseded by
-            // RefreshActor on every lease.
-            _services.AddSingleton(sp => new AuditInterceptor(new PooledSeedActorContext(), sp.GetRequiredService<IClock>()));
-            _services.AddSingleton(sp => new SoftDeleteInterceptor(new PooledSeedActorContext(), sp.GetRequiredService<IClock>()));
+            // SINGLETON, seeded with the fail-closed AnonymousRequestContext — never resolves the
+            // scoped IRequestContext from DI, so EF's pool-level activator has nothing unsafe to
+            // resolve. The interceptors read the caller LIVE off the executing context, which
+            // TenantAwareDbContextFactory attaches on every lease.
+            _services.AddSingleton(sp => new AuditInterceptor(
+                AnonymousRequestContext.Instance,
+                sp.GetRequiredService<IClock>(),
+                sp.GetRequiredService<IOptions<PersistenceServiceOptions>>()));
+            _services.AddSingleton(sp => new SoftDeleteInterceptor(sp.GetRequiredService<IClock>()));
             _services.AddSingleton<ConcurrencyInterceptor>();
 
             if (_multiTenancyEnabled)
             {
                 // TenantWriteGuardInterceptor no longer captures
-                // ICurrentTenantContext in its own constructor (it reads tenant identity LIVE off the
+                // the tenant in its own constructor (it reads tenant identity LIVE off the
                 // executing context instance — see its own class remarks) and its only remaining
                 // dependency, ICrossTenantScope, is AsyncLocal-backed and singleton-registered — safe
                 // to resolve from the pool-level activator. It is the one AddInterceptor<T>()
@@ -652,7 +617,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
         else
         {
-            // Register interceptors as scoped so they receive per-request ICurrentActorContext / IClock.
+            // Scoped: AuditInterceptor captures the scope's IRequestContext as the initial caller of a
+            // context built with it (TenantAwareDbContextFactory attaches it again on every lease).
             _services.AddScoped<AuditInterceptor>();
             _services.AddScoped<SoftDeleteInterceptor>();
             _services.AddScoped<ConcurrencyInterceptor>();
@@ -771,17 +737,14 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
 
         RekeyLastRegistrationAsInner(_services, typeof(Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>), InnerFactoryKey);
-
-        // The PUBLIC IDbContextFactory<TContext> — scoped, attaches THIS scope's actor/tenant
-        // identity to every context it hands out. A background worker/hosted service that wants a
-        // specific identity creates its own scope, arranges for that scope's ICurrentActorContext/
-        // ICurrentTenantContext to report it, then resolves IDbContextFactory<TContext> from that
-        // scope — see TenantAwareDbContextFactory<TContext>'s own remarks.
+        // The PUBLIC IDbContextFactory<TContext> — scoped, attaches THIS scope's IRequestContext
+        // (caller identity + tenant) to every context it hands out. A background worker that wants a
+        // specific identity creates its own scope, makes that scope's IRequestContext report it, then
+        // resolves IDbContextFactory<TContext> from that scope.
         _services.AddScoped<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>(sp =>
             new TenantAwareDbContextFactory<TContext>(
                 sp.GetRequiredKeyedService<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>(InnerFactoryKey),
-                sp.GetRequiredService<ICurrentActorContext>(),
-                sp.GetRequiredService<ICurrentTenantContext>()));
+                sp.GetRequiredService<IRequestContext>()));
 
         // TContext direct injection always rides on the same public, tenant/actor-attaching factory —
         // pooled or not, multi-tenant or not.
@@ -805,46 +768,24 @@ public sealed class EfCorePersistenceBuilder<TContext>
                     sp.GetRequiredKeyedService<DbContextOptions<TContext>>(ReadReplicaKeys.ReplicaOptions)));
         }
 
-        if (_transactionalUnitOfWorkEnabled)
-        {
-            // When transactional UoW is enabled, EfTransactionalUnitOfWork serves as both
-            // IUnitOfWork and ITransactionalUnitOfWork — same scoped instance.
-            _services.AddScoped<EfTransactionalUnitOfWork>();
-            _services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
-            _services.AddScoped<ITransactionalUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
-
-            // The ambient (connection, transaction) publication seam a Dapper command
-            // service resolves (IAmbientDbTransaction) to enlist in this same explicit transaction.
-            _services.AddScoped<AmbientDbTransactionAccessor>();
-            _services.AddScoped<SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction>(
-                sp => sp.GetRequiredService<AmbientDbTransactionAccessor>());
-        }
-        else
-        {
-            // Standard non-transactional path.
-            _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
-        }
+        // The one unit of work — always registered. Transactions run through
+        // EfUnitOfWork.ExecuteInTransactionAsync (retry-safe), which publishes the open transaction on
+        // IAmbientDbTransaction so a Dapper command service or the audit-trail writer can enlist.
+        _services.AddScoped<AmbientDbTransactionAccessor>();
+        _services.AddScoped<SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction>(
+            sp => sp.GetRequiredService<AmbientDbTransactionAccessor>());
+        _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
-        // Default ICurrentActorContext when none is present. A consuming service's real bridge (e.g.
-        // 13.ServiceDefaults.Persistence's SecurityCurrentActorContext) replaces this — the platform's
-        // usual "TryAdd wins only if nothing else registered first" placeholder pattern, extended to
-        // registration order not mattering because callers use Add, not TryAdd, on their real bridge.
-        if (!_services.Any(sd => sd.ServiceType == typeof(ICurrentActorContext)))
+        // Default IRequestContext when none is registered yet: the fail-closed anonymous caller (no
+        // tenant, attributed to the service name). A consuming service registers its real one with
+        // Add (not TryAdd), so it wins whether it is registered before or after this call —
+        // 13.ServiceDefaults ships one over 12.Security's IUserContext/ITenantProvider.
+        if (!_services.Any(sd => sd.ServiceType == typeof(IRequestContext)))
         {
-            _services.Add(ServiceDescriptor.Scoped<ICurrentActorContext, AnonymousActorContext>());
-        }
-
-        // Default ICurrentTenantContext when none is present. Registered unconditionally (not only
-        // for multi-tenant services) because opt-in sibling capabilities that are NOT
-        // tenancy-specific — e.g. SharedKernel.Persistence.EfCore.Auditing's EfAuditTrailWriter — also
-        // resolve this seam, and a single-tenant service enabling one of them must not be forced to
-        // also call .WithMultiTenancy() just to satisfy that dependency.
-        if (!_services.Any(sd => sd.ServiceType == typeof(ICurrentTenantContext)))
-        {
-            _services.Add(ServiceDescriptor.Scoped<ICurrentTenantContext, NullCurrentTenantContext>());
+            _services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
         }
 
         // Default ICrossTenantScope when none is present.
@@ -889,16 +830,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // what it catches. A registration with no opt-in capability has nothing to verify, and adding
         // a hosted service for it would break this domain's "a plain EF Core registration schedules
         // no startup work" rule, which MigrationAndSeedHostedServiceTests asserts directly.
-        // transactionalUnitOfWorkEnabled is included as its own trigger (not folded under the
-        // interceptor/extension checks above) because it guards a DIFFERENT hazard on the same
-        // validator: a retrying execution strategy enabled directly via the configureDb delegate
-        // (e.g. UsePostgreSQL(..., maxRetryCount:...)) rather than via '.WithTransientFaultRetry()' —
-        // see the validator's own remarks for why the eager Build()-time check below cannot see that.
         var multiTenancyEnabled = _multiTenancyEnabled;
-        var transactionalUnitOfWorkEnabled = _transactionalUnitOfWorkEnabled;
         var hasCapabilitiesToVerify =
             multiTenancyEnabled
-            || transactionalUnitOfWorkEnabled
             || _additionalInterceptorTypes.Count > 0
             || _services.Any(sd =>
                 sd.ServiceType == typeof(IPersistenceOptionsExtension)
@@ -910,8 +844,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddHostedService<PersistenceContextWiringValidator<TContext>>(sp =>
                 new PersistenceContextWiringValidator<TContext>(
                     sp.GetRequiredService<IServiceScopeFactory>(),
-                    multiTenancyEnabled,
-                    transactionalUnitOfWorkEnabled));
+                    multiTenancyEnabled));
         }
 
         return _services;
@@ -970,14 +903,5 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
 
         services.Add(keyed);
-    }
-
-    // A DI-free seed ICurrentActorContext used ONLY to construct pooled
-    // interceptors at pool-slot-construction time — never observed by a real request. See the
-    // WithDbContextPooling() branch of Build() for the full rationale.
-    private sealed class PooledSeedActorContext : ICurrentActorContext
-    {
-        public string ActorId => string.Empty;
-        public ActorKind ActorKind => ActorKind.System;
     }
 }

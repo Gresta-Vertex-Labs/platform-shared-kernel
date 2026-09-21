@@ -126,7 +126,7 @@ public sealed class KeysetPaginationIntegrationTests
         var clock = new FakeClock();
 
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         return new KeysetPgDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

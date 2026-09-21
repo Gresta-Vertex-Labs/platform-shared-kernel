@@ -1,3 +1,5 @@
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Clocks;
@@ -34,7 +36,7 @@ public sealed class FakeAuditTrailWriterTests
     public async Task RecordAsync_ResolvesActorAndTenantFromActorContext()
     {
         var actorContext = new FakeAuditActorContext("actor-1", Guid.NewGuid());
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
 
         var record = await writer.RecordAsync(CreateEntry());
 
@@ -50,7 +52,7 @@ public sealed class FakeAuditTrailWriterTests
         // documented convention — TenantId must be set to null via the property SETTER, after
         // construction, to simulate "no tenant resolved".
         var actorContext = new FakeAuditActorContext { TenantId = null };
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
 
         var record = await writer.RecordAsync(CreateEntry());
 

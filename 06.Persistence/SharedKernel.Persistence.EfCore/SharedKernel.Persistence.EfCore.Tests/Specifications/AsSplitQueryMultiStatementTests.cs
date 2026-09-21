@@ -202,7 +202,7 @@ public sealed class AsSplitQueryMultiStatementTests
             .Options;
 
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new SplitQueryDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using SharedKernel.Persistence.Abstractions.Auditing;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Context;
 
 namespace SharedKernel.Persistence.EfCore.Auditing;
 

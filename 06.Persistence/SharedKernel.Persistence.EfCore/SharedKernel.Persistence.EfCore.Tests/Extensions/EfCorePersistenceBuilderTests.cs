@@ -1,9 +1,10 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -123,115 +124,42 @@ public sealed class EfCorePersistenceBuilderTests
     }
 
     [Fact]
-    public void Build_TransientFaultRetry_WithTransactionalUnitOfWork_ThrowsInvalidOperationException()
+    public void Build_AlwaysRegistersTheOneUnitOfWork_AndTheAmbientTransaction()
     {
-        // Arrange
+        // Arrange — P-558: there is no '.WithTransactionalUnitOfWork()' any more; the single
+        // EfUnitOfWork (retry-safe ExecuteInTransactionAsync, pre-commit hook) is always registered.
         var services = new ServiceCollection();
 
-        // Act — EF Core forbids beginning a caller-owned transaction under a retrying execution
-        // strategy, so this pairing would throw on every BeginTransactionAsync at runtime. Since
-        // 13.ServiceDefaults.Persistence's WithApplicationTransactionBehavior routes every audited
-        // command through that call, the failure would land on each command in production rather
-        // than once at startup.
+        services
+            .AddSharedKernelEfCore<TestDbContext>(options =>
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .Build();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        // Assert
+        scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Should().BeOfType<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
+        scope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction>()
+            .Current.Should().BeNull("no transaction is open outside ExecuteInTransactionAsync");
+    }
+
+    [Fact]
+    public void Build_TransientFaultRetry_IsCompatibleWithTransactions_DoesNotThrow()
+    {
+        // Arrange — the former retry-vs-transaction Build() guard is gone: every transaction runs
+        // inside the execution strategy (ExecuteInTransactionAsync), so a retrying strategy can replay it.
+        var services = new ServiceCollection();
+
         var act = () =>
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
                     options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                 .WithTransientFaultRetry()
-                .WithTransactionalUnitOfWork()
-                .Build();
-
-        // Assert
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*WithTransientFaultRetry*")
-            .Which.Message.Should().Contain("ExecuteInTransactionAsync",
-                "the error must name the retry-safe alternative, not just refuse the combination");
-    }
-
-    [Fact]
-    public void Build_TransactionalUnitOfWork_WithoutRetry_DoesNotThrow()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act — the transactional unit of work on its own stays fully supported; only the pairing
-        // with a retrying execution strategy is rejected.
-        var act = () =>
-            services
-                .AddSharedKernelEfCore<TestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithTransactionalUnitOfWork()
                 .Build();
 
         // Assert
         act.Should().NotThrow();
-    }
-
-    [Fact]
-    public async Task Build_TransactionalUnitOfWork_WithRetryEnabledOutsideWithTransientFaultRetry_HostedServiceThrowsAtStartup()
-    {
-        // Arrange — a retrying execution strategy configured directly on the DbContextOptionsBuilder,
-        // standing in for the PostgreSQL package's UsePostgreSQL(..., maxRetryCount:...) (Npgsql's own
-        // retry, configured inside the configureDb delegate this package never inspects), WITHOUT ever
-        // calling '.WithTransientFaultRetry()'. Build_TransientFaultRetry_WithTransactionalUnitOfWork_
-        // ThrowsInvalidOperationException above proves the eager Build()-time guard; this proves the
-        // PersistenceContextWiringValidator startup safety net that catches what that guard cannot see.
-        var services = new ServiceCollection();
-
-        services
-            .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
-                .ReplaceService<Microsoft.EntityFrameworkCore.Storage.IExecutionStrategyFactory, AlwaysRetryStrategyFactory>())
-            .WithTransactionalUnitOfWork()
-            .Build();
-
-        var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Should().ContainSingle(hs => hs is PersistenceContextWiringValidator<TestDbContext>);
-
-        // Act
-        var act = async () =>
-        {
-            foreach (var hostedService in hostedServices)
-                await hostedService.StartAsync(CancellationToken.None);
-        };
-
-        // Assert
-        (await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*retrying execution strategy*"))
-            .Which.Message.Should().Contain("WithTransactionalUnitOfWork",
-                "the error must name the offending combination, not just that something is wrong");
-    }
-
-    [Fact]
-    public async Task Build_TransactionalUnitOfWork_WithoutRetry_HostedServiceStartsCleanly()
-    {
-        // Arrange — the common, default case: '.WithTransactionalUnitOfWork()' alone, no retrying
-        // execution strategy configured anywhere. Proves the new startup check above does not produce
-        // a false positive for every ordinary transactional-unit-of-work consumer.
-        var services = new ServiceCollection();
-
-        services
-            .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithTransactionalUnitOfWork()
-            .Build();
-
-        var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Should().ContainSingle(hs => hs is PersistenceContextWiringValidator<TestDbContext>);
-
-        // Act
-        var act = async () =>
-        {
-            foreach (var hostedService in hostedServices)
-                await hostedService.StartAsync(CancellationToken.None);
-        };
-
-        // Assert
-        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -274,12 +202,12 @@ public sealed class EfCorePersistenceBuilderTests
         var specEval = scope.ServiceProvider.GetService(typeof(ISpecificationEvaluator<TestAggregate>));
         specEval.Should().NotBeNull();
 
-        // Placeholder ICurrentActorContext: AnonymousActorContext, resolves to the configured
-        // (or default "system") service name — the IUserContext placeholder is gone.
-        var actorCtx = scope.ServiceProvider.GetService<ICurrentActorContext>();
+        // Default IRequestContext: the fail-closed AnonymousRequestContext (no user, no tenant) —
+        // audit columns then fall back to the configured (default "system") service name.
+        var actorCtx = scope.ServiceProvider.GetService<IRequestContext>();
         actorCtx.Should().NotBeNull();
-        actorCtx.Should().BeOfType<AnonymousActorContext>();
-        actorCtx!.ActorId.Should().Be("system");
+        actorCtx.Should().BeSameAs(AnonymousRequestContext.Instance);
+        actorCtx!.UserId.Should().BeNull();
         actorCtx.ActorKind.Should().Be(ActorKind.System);
     }
 
@@ -298,10 +226,10 @@ public sealed class EfCorePersistenceBuilderTests
 
         var provider = services.BuildServiceProvider();
 
-        // Assert — without a real tenant context the default (NullCurrentTenantContext)
+        // Assert — without a real request context the default (AnonymousRequestContext)
         // resolves TenantId as null (fail-closed — no Guid.Empty sentinel any more).
         using var scope = provider.CreateScope();
-        var tenantContext = scope.ServiceProvider.GetService<ICurrentTenantContext>();
+        var tenantContext = scope.ServiceProvider.GetService<IRequestContext>();
         tenantContext.Should().NotBeNull();
         tenantContext!.TenantId.Should().BeNull();
     }
@@ -313,8 +241,8 @@ public sealed class EfCorePersistenceBuilderTests
         var services = new ServiceCollection();
         var customId = Guid.NewGuid();
 
-        // Register a custom ICurrentActorContext first
-        services.AddScoped<ICurrentActorContext>(_ => new CustomActorContext(customId));
+        // Register a custom IRequestContext first
+        services.AddScoped<IRequestContext>(_ => new CustomActorContext(customId));
 
         // Act
         services
@@ -326,10 +254,10 @@ public sealed class EfCorePersistenceBuilderTests
 
         // Assert — the custom one should win (Build() checks "if not already registered")
         using var scope = provider.CreateScope();
-        var actorCtx = scope.ServiceProvider.GetService<ICurrentActorContext>();
+        var actorCtx = scope.ServiceProvider.GetService<IRequestContext>();
         actorCtx.Should().NotBeNull();
-        actorCtx!.ActorId.Should().Be(customId.ToString("D"));
-        actorCtx.Should().NotBeOfType<AnonymousActorContext>();
+        actorCtx!.UserId.Should().Be(customId.ToString("D"));
+        actorCtx.Should().NotBeSameAs(AnonymousRequestContext.Instance);
     }
 }
 
@@ -337,8 +265,13 @@ public sealed class EfCorePersistenceBuilderTests
 // Test helper
 // ---------------------------------------------------------------------------
 
-internal sealed class CustomActorContext(Guid userId) : ICurrentActorContext
+internal sealed class CustomActorContext(Guid userId) : IRequestContext
 {
-    public string ActorId { get; } = userId.ToString("D");
+    public bool IsAuthenticated => true;
+    public string? UserId { get; } = userId.ToString("D");
+    public Guid? TenantId => null;
     public ActorKind ActorKind => ActorKind.User;
+
+    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }

@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.Abstractions.Context;
@@ -21,7 +22,7 @@ public sealed class TenantedDbContextTests
         var dbName = $"tenanted-{Guid.NewGuid():N}";
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
 
-        // TenantedDbContext takes a separate ICurrentTenantContext — tenant identity no
+        // TenantedDbContext takes a separate IRequestContext — tenant identity no
         // longer flows through the same seam as actor identity.
         var actorContext1 = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenant1);
         var actorContext2 = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenant2);
@@ -164,8 +165,8 @@ public sealed class TenantedDbContextTests
     }
 
     // Helper to build TenantedTestDbContext with resolved interceptors. TenantedDbContext
-    // takes a separate ICurrentTenantContext — FakeAuditActorContext implements both
-    // ICurrentActorContext and ICurrentTenantContext on one object, so the same fake serves both
+    // takes a separate IRequestContext — FakeAuditActorContext implements both
+    // IRequestContext and IRequestContext on one object, so the same fake serves both
     // roles here, exactly as before the seam split.
     private static TenantedTestDbContext BuildTenantedContext(
         DbContextOptions<TenantedTestDbContext> options,
@@ -173,10 +174,10 @@ public sealed class TenantedDbContextTests
         IClock clock)
     {
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDel = new SoftDeleteInterceptor(actorContext, clock);
+        var softDel = new SoftDeleteInterceptor(clock);
         var conc = new ConcurrencyInterceptor();
         var ctx = new TenantedTestDbContext(options, new PersistenceContextDependencies(audit, softDel, conc));
-        ctx.RefreshTenant(actorContext);
+        ctx.RefreshRequestContext(actorContext);
         return ctx;
     }
 }

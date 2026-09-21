@@ -1,23 +1,18 @@
 using System.Collections.Concurrent;
-using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application.Auditing;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// In-memory fake implementation of <see cref="SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter"/>
-/// (<c>05.Application.Behaviors</c>) for use in unit tests.
+/// In-memory fake implementation of the shared <see cref="IAuditTrailWriter"/>
+/// (<c>SharedKernel.Application.Abstractions</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>NOT</b> <see cref="SharedKernel.Testing.Persistence.FakeAuditTrailWriter"/> — same class name,
-/// different namespace, mirroring the already-shipped <c>FakeUnitOfWork</c>/<c>FakeUnitOfWork</c>
-/// naming-collision precedent exactly (<c>SharedKernel.Testing.Application</c> vs.
-/// <c>SharedKernel.Testing.Persistence</c>). This type fakes <c>05.Application.Behaviors</c>'s OWN,
-/// deliberately smaller local-seam <see cref="IAuditTrailWriter"/> — a caller-supplied
-/// <see cref="AuditEntry"/> recorded verbatim, with none of the richer resolution
-/// (<c>Id</c>/<c>ActorId</c>/<c>TenantId</c>/<c>OccurredOn</c>/hash-chaining) the REAL
-/// <c>06.Persistence.Abstractions.IAuditTrailWriter</c> performs — see
-/// <see cref="SharedKernel.Testing.Persistence.FakeAuditTrailWriter"/> for that fake.
+/// <b>NOT</b> <see cref="SharedKernel.Testing.Persistence.FakeAuditTrailWriter"/> — same interface,
+/// different namespace. This fake records the caller-supplied <see cref="AuditEntry"/> verbatim, with
+/// none of the identity resolution and hash-chaining the persistence fake (and the real EF Core writer)
+/// performs — use it to assert what <c>AuditingBehavior</c> recorded.
 /// </para>
 /// <para>
 /// Records every call — including when no assertion is ever made — into a thread-safe collection.

@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using System.Linq;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -119,7 +120,7 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
     private sealed class TenantOrderReadService(
         IDbConnectionFactory connectionFactory,
         ITenantSessionBinder tenantSessionBinder,
-        ICurrentTenantContext tenantContext,
+        IRequestContext tenantContext,
         ICrossTenantScope crossTenantScope)
             : TenantSafeDapperReadService(connectionFactory, tenantSessionBinder, tenantContext, crossTenantScope)
     {

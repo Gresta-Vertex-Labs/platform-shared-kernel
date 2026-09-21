@@ -5,8 +5,7 @@ using SharedKernel.Domain.Events;
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
 /// <summary>
-/// Shared pre-commit domain-event dispatch logic for <see cref="EfUnitOfWork"/> and
-/// <see cref="EfTransactionalUnitOfWork"/>.
+/// Pre-commit domain-event dispatch logic for <see cref="EfUnitOfWork"/>.
 /// </summary>
 /// <remarks>
 /// <para>

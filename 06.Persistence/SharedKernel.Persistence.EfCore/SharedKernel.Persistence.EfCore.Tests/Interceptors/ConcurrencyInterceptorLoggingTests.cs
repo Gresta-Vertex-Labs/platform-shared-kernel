@@ -28,8 +28,7 @@ public sealed class ConcurrencyInterceptorLoggingTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
             userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock);
+        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
@@ -78,8 +77,7 @@ public sealed class ConcurrencyInterceptorLoggingTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
             userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(
-            userContext, clock);
+        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")

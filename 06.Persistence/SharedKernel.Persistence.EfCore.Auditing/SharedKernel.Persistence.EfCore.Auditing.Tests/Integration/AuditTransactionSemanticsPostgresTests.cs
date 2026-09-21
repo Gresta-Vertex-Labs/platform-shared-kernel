@@ -1,12 +1,15 @@
+using SharedKernel.Application.Auditing;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Auditing;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.TestFixtures;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Integration;
@@ -20,6 +23,9 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Integration;
 [Collection("AuditPostgres")]
 public sealed class AuditTransactionSemanticsPostgresTests
 {
+    // Returned from an ExecuteInTransactionAsync operation to roll the transaction back.
+    private static readonly Result RollBack = Result.Failure(Error.Conflict("test.rollback", "Roll the test transaction back."));
+
     private readonly PostgreSqlContainerFixture _fixture;
 
     public AuditTransactionSemanticsPostgresTests(PostgreSqlContainerFixture fixture) => _fixture = fixture;
@@ -46,10 +52,11 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
-            await using var tx = await unitOfWork.BeginTransactionAsync();
+            await unitOfWork.ExecuteInTransactionAsync(async ct =>
+            {
 
             context.Orders.Add(new AuditTestOrder(orderId, "atomic-success-order"));
             await context.SaveChangesAsync();
@@ -62,7 +69,8 @@ public sealed class AuditTransactionSemanticsPostgresTests
                 Outcome = AuditOutcome.Succeeded,
             });
 
-            await tx.CommitAsync();
+            return Result.Success();
+            });
         }
 
         await using var verifyScope = sp.CreateAsyncScope();
@@ -82,10 +90,11 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
-            await using var tx = await unitOfWork.BeginTransactionAsync();
+            await unitOfWork.ExecuteInTransactionAsync(async ct =>
+            {
 
             context.Orders.Add(new AuditTestOrder(orderId, "atomic-rollback-order"));
             await context.SaveChangesAsync();
@@ -101,7 +110,8 @@ public sealed class AuditTransactionSemanticsPostgresTests
                 Outcome = AuditOutcome.Succeeded,
             });
 
-            await tx.RollbackAsync();
+            return RollBack;
+            });
         }
 
         await using var verifyScope = sp.CreateAsyncScope();
@@ -121,10 +131,11 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using (var scope = sp.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
-            var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
-            await using var tx = await unitOfWork.BeginTransactionAsync();
+            await unitOfWork.ExecuteInTransactionAsync(async ct =>
+            {
 
             // A command that ultimately fails may still have staged a partial, never-committed
             // business write before the failure was detected.
@@ -143,7 +154,8 @@ public sealed class AuditTransactionSemanticsPostgresTests
                 ErrorCode = "order.validation_failed",
             });
 
-            await tx.RollbackAsync();
+            return RollBack;
+            });
         }
 
         await using var verifyScope = sp.CreateAsyncScope();
@@ -165,7 +177,7 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using var sp = await BuildAndCreateAsync(connectionString);
 
         await using var scope = sp.CreateAsyncScope();
-        var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+        var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
         var act = async () => await writer.RecordAsync(new AuditEntry
         {
@@ -205,10 +217,11 @@ public sealed class AuditTransactionSemanticsPostgresTests
 
             await using var scope1 = sp.CreateAsyncScope();
             var context = scope1.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
-            var unitOfWork = scope1.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
-            var writer1 = scope1.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var unitOfWork = scope1.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var writer1 = scope1.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
-            await using var tx = await unitOfWork.BeginTransactionAsync();
+            await unitOfWork.ExecuteInTransactionAsync(async ct =>
+            {
 
             var orderId = Guid.NewGuid();
             context.Orders.Add(new AuditTestOrder(orderId, "deadlock-probe-order"));
@@ -226,7 +239,7 @@ public sealed class AuditTransactionSemanticsPostgresTests
             // Still inside tx1 — a nested Failed write on the SAME chain opens its own connection and
             // contends for the same lock.
             await using var scope2 = sp.CreateAsyncScope();
-            var writer2 = scope2.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+            var writer2 = scope2.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
             var recordTask = writer2.RecordAsync(new AuditEntry
             {
@@ -243,7 +256,8 @@ public sealed class AuditTransactionSemanticsPostgresTests
             var act = async () => await recordTask;
             (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable);
 
-            await tx.RollbackAsync();
+            return RollBack;
+            });
         }
     }
 
@@ -254,7 +268,7 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using var sp = await BuildAndCreateAsync(connectionString);
 
         await using var scope = sp.CreateAsyncScope();
-        var writer = scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>();
+        var writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
 
         var record = await writer.RecordAsync(new AuditEntry
         {
@@ -268,5 +282,81 @@ public sealed class AuditTransactionSemanticsPostgresTests
         await using var verifyScope = sp.CreateAsyncScope();
         var verifyContext = verifyScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
         (await verifyContext.Set<AuditRecord>().SingleAsync(r => r.Id == record.Id)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SucceededOutcome_WrittenFromOnBeforeCommit_CommitsWithTheBusinessWrite()
+    {
+        // The pipeline's path (P-558): AuditingBehavior queues the Succeeded entry on the unit of
+        // work's pre-commit hook, so it is written after the business save, inside the same transaction.
+        var connectionString = ConnectionString("sk_audit_tx_before_commit_hook");
+        await using var sp = await BuildAndCreateAsync(connectionString);
+
+        var orderId = Guid.NewGuid();
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            IAuditTrailWriter writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
+
+            await unitOfWork.ExecuteInTransactionAsync(_ =>
+            {
+                context.Orders.Add(new AuditTestOrder(orderId, "hooked-order"));
+                unitOfWork.OnBeforeCommit(ct => writer.RecordAsync(
+                    new AuditEntry
+                    {
+                        Action = "OrderCreated",
+                        ResourceType = "Order",
+                        ResourceId = orderId.ToString(),
+                        Outcome = AuditOutcome.Succeeded,
+                    },
+                    ct));
+                return Task.CompletedTask;
+            });
+        }
+
+        await using var verifyScope = sp.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+        (await verifyContext.Orders.CountAsync()).Should().Be(1);
+        (await verifyContext.Set<AuditRecord>().CountAsync(r => r.Outcome == AuditOutcome.Succeeded)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SucceededOutcome_WrittenFromOnBeforeCommit_VanishesWhenALaterCallbackFails()
+    {
+        var connectionString = ConnectionString("sk_audit_tx_before_commit_hook_fails");
+        await using var sp = await BuildAndCreateAsync(connectionString);
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            IAuditTrailWriter writer = scope.ServiceProvider.GetRequiredService<EfAuditTrailWriter>();
+
+            var act = () => unitOfWork.ExecuteInTransactionAsync(_ =>
+            {
+                var orderId = Guid.NewGuid();
+                context.Orders.Add(new AuditTestOrder(orderId, "doomed-order"));
+                unitOfWork.OnBeforeCommit(ct => writer.RecordAsync(
+                    new AuditEntry
+                    {
+                        Action = "OrderCreated",
+                        ResourceType = "Order",
+                        ResourceId = orderId.ToString(),
+                        Outcome = AuditOutcome.Succeeded,
+                    },
+                    ct));
+                unitOfWork.OnBeforeCommit(_ => throw new InvalidOperationException("commit-time failure"));
+                return Task.CompletedTask;
+            });
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        await using var verifyScope = sp.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<AuditChainTestDbContext>();
+        (await verifyContext.Orders.CountAsync()).Should().Be(0);
+        (await verifyContext.Set<AuditRecord>().CountAsync()).Should().Be(0, "the succeeded attestation rolled back with the business write");
     }
 }

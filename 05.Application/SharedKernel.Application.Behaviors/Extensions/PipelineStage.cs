@@ -15,9 +15,11 @@ namespace SharedKernel.Application.Behaviors.Extensions;
 /// <see cref="Query"/> ships no built-in behavior of its own — it exists purely so a sibling package
 /// (e.g. <c>SharedKernel.Application.Behaviors.Caching</c>'s <c>CachingBehavior</c>) has a stable,
 /// documented slot between validation and the command stage. <see cref="Command"/>'s built-ins are
-/// <c>CommandScopeBehavior</c>, <c>IdempotencyBehavior</c>, <c>TransactionBehavior</c>, and
-/// <c>AuditingBehavior</c>, in that order; a custom behavior added to <see cref="Command"/> (e.g.
-/// <c>CacheInvalidationBehavior</c>) runs innermost among them, closest to the handler.
+/// <c>CommandScopeBehavior</c>, <c>IdempotencyBehavior</c>, <c>AuditingBehavior</c> (records
+/// failures, outside the transaction), <c>TransactionBehavior</c>, and the inner half of auditing
+/// (queues the success record on the transaction's pre-commit hook), in that order; a custom behavior
+/// added to <see cref="Command"/> (e.g. <c>CacheInvalidationBehavior</c>) runs innermost among them,
+/// inside the transaction, closest to the handler.
 /// </para>
 /// </remarks>
 public enum PipelineStage
@@ -34,6 +36,6 @@ public enum PipelineStage
     /// <summary>The read-side stage — no built-in behavior of its own.</summary>
     Query,
 
-    /// <summary>The write-side stage — CommandScope, Idempotency, Transaction, Auditing.</summary>
+    /// <summary>The write-side stage — CommandScope, Idempotency, Auditing, Transaction.</summary>
     Command,
 }

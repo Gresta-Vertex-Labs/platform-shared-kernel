@@ -1,10 +1,10 @@
-using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Testing.Application;
 
 namespace SharedKernel.Testing.SelfTests.Application;
 
 /// <summary>
-/// Proves <see cref="FakeAuditTrailWriter"/> against <c>05.Application.Behaviors</c>'s local-seam
+/// Proves <see cref="FakeAuditTrailWriter"/> against the shared
 /// <c>IAuditTrailWriter</c> contract — no consuming domain has adopted this fake yet, so this
 /// self-test is the only behavioral proof today, per the SelfTests routing rule.
 /// </summary>
@@ -16,7 +16,16 @@ public sealed class FakeAuditTrailWriterTests
         string resourceId = "order-1",
         bool succeeded = true,
         string? errorCode = null) =>
-        new(action, resourceType, resourceId, "before", "after", succeeded, errorCode);
+        new()
+        {
+            Action = action,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            BeforeSnapshot = "before",
+            AfterSnapshot = "after",
+            Outcome = succeeded ? AuditOutcome.Succeeded : AuditOutcome.Failed,
+            ErrorCode = errorCode,
+        };
 
     [Fact]
     public async Task RecordAsync_RecordsEntry()
@@ -80,7 +89,7 @@ public sealed class FakeAuditTrailWriterTests
 
         await writer.RecordAsync(entry);
 
-        Assert.True(writer.Recorded[0].Succeeded);
+        Assert.Equal(AuditOutcome.Succeeded, writer.Recorded[0].Outcome);
         Assert.Null(writer.Recorded[0].ErrorCode);
     }
 
@@ -92,7 +101,7 @@ public sealed class FakeAuditTrailWriterTests
 
         await writer.RecordAsync(entry);
 
-        Assert.False(writer.Recorded[0].Succeeded);
+        Assert.Equal(AuditOutcome.Failed, writer.Recorded[0].Outcome);
         Assert.Equal("order.already_approved", writer.Recorded[0].ErrorCode);
     }
 }

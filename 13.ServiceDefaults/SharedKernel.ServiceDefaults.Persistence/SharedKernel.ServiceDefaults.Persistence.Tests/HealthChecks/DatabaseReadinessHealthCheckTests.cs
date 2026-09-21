@@ -38,7 +38,7 @@ public sealed class DatabaseReadinessHealthCheckTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(new FakeAuditActorContext(), new FakeClock()),
-            new SoftDeleteInterceptor(new FakeAuditActorContext(), new FakeClock()),
+            new SoftDeleteInterceptor(new FakeClock()),
             new ConcurrencyInterceptor()));
 
         var healthCheck = new DatabaseReadinessHealthCheck<TestDbContext>(context);
@@ -60,7 +60,7 @@ public sealed class DatabaseReadinessHealthCheckTests
             options,
             new PersistenceContextDependencies(
                 new AuditInterceptor(new FakeAuditActorContext(), new FakeClock()),
-            new SoftDeleteInterceptor(new FakeAuditActorContext(), new FakeClock()),
+            new SoftDeleteInterceptor(new FakeClock()),
             new ConcurrencyInterceptor()));
 
         context.Database.EnsureCreated();

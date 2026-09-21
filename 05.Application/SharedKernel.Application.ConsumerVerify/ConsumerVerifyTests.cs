@@ -6,7 +6,7 @@ using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Application.Behaviors.Transaction;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Context;
 using SharedKernel.Application.Extensions;
 using SharedKernel.Application.Messaging;
@@ -57,11 +57,47 @@ public sealed class Journal
 
 public sealed class UnitOfWork(Journal journal) : IUnitOfWork
 {
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+    private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
+
+    public bool IsTransactionActive { get; private set; }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         journal.Commits++;
         return Task.FromResult(1);
     }
+
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync<object?>(async ct => { await operation(ct); return null; }, cancellationToken);
+
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, System.Data.IsolationLevel? isolationLevel, CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, cancellationToken);
+
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, System.Data.IsolationLevel? isolationLevel, CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, cancellationToken);
+
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    {
+        IsTransactionActive = true;
+        _beforeCommit.Clear();
+        try
+        {
+            var result = await operation(cancellationToken);
+            if (result is IHasSuccessFlag { IsSuccess: false })
+                return result;
+
+            await SaveChangesAsync(cancellationToken);
+            foreach (var callback in _beforeCommit)
+                await callback(cancellationToken);
+            return result;
+        }
+        finally
+        {
+            IsTransactionActive = false;
+        }
+    }
+
+    public void OnBeforeCommit(Func<CancellationToken, Task> callback) => _beforeCommit.Add(callback);
 }
 
 public sealed class RequestContext : IRequestContext

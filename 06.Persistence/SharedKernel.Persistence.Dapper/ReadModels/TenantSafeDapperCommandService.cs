@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
@@ -19,7 +20,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// <remarks>
 /// <para>
 /// <strong>Fails closed:</strong> exactly like <see cref="TenantSafeDapperReadService"/> — when no
-/// tenant is resolved (<see cref="ICurrentTenantContext.TenantId"/> is <see langword="null"/>) and no
+/// tenant is resolved (<see cref="IRequestContext.TenantId"/> is <see langword="null"/>) and no
 /// <see cref="ICrossTenantScope"/> is active, every command method throws
 /// <see cref="InvalidOperationException"/> before issuing any SQL.
 /// </para>
@@ -30,7 +31,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// </para>
 /// <para>
 /// <strong>Ambient-transaction enlistment, tenant bound per statement:</strong> when the caller's DI
-/// scope has an active <c>ITransactionalUnitOfWork</c> transaction, every method here runs its
+/// scope has an active <c>IUnitOfWork</c> transaction, every method here runs its
 /// statement on that SAME connection/transaction — exactly like <see cref="DapperCommandService"/> —
 /// but ALSO rebinds the tenant/cross-tenant session setting, via <c>SET LOCAL</c>-equivalent
 /// transaction-scoped <see cref="ITenantSessionBinder.BindAsync"/>, immediately before that specific
@@ -56,7 +57,7 @@ public abstract class TenantSafeDapperCommandService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ITenantSessionBinder _tenantSessionBinder;
-    private readonly ICurrentTenantContext _tenantContext;
+    private readonly IRequestContext _tenantContext;
     private readonly ICrossTenantScope _crossTenantScope;
     private readonly IAmbientDbTransaction? _ambientTransaction;
     private readonly int? _defaultCommandTimeoutSeconds;
@@ -68,8 +69,8 @@ public abstract class TenantSafeDapperCommandService
     /// <param name="tenantContext">Resolves the current tenant identity.</param>
     /// <param name="crossTenantScope">Reports whether an explicit cross-tenant bypass is active.</param>
     /// <param name="ambientTransaction">
-    /// Optional. Resolved by DI when <c>EfCorePersistenceBuilder.WithTransactionalUnitOfWork()</c> was
-    /// called for this scope; <see langword="null"/> otherwise, in which case this service always
+    /// Optional. Resolved by DI when <c>EfCorePersistenceBuilder.Build()</c> registered it
+    /// (always, with EF Core); <see langword="null"/> otherwise, in which case this service always
     /// opens its own connection and transaction.
     /// </param>
     /// <param name="options">Optional default command timeout.</param>
@@ -77,7 +78,7 @@ public abstract class TenantSafeDapperCommandService
     protected TenantSafeDapperCommandService(
         IDbConnectionFactory connectionFactory,
         ITenantSessionBinder tenantSessionBinder,
-        ICurrentTenantContext tenantContext,
+        IRequestContext tenantContext,
         ICrossTenantScope crossTenantScope,
         IAmbientDbTransaction? ambientTransaction = null,
         DapperPersistenceOptions? options = null,

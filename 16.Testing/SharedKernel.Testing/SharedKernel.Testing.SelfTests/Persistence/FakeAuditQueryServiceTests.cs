@@ -1,3 +1,4 @@
+using SharedKernel.Application.Auditing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Clocks;
@@ -16,7 +17,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task GetResourceHistoryAsync_ReturnsOnlyMatchingResource_OrderedOldestFirst()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -55,7 +56,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task GetResourceHistoryAsync_Descending_ReturnsNewestFirst()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -74,7 +75,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task GetResourceHistoryAsync_RespectsTake_AndReportsHasMore()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         for (var i = 0; i < 5; i++)
@@ -95,7 +96,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task GetResourceHistoryAsync_CursorSeek_SkipsAlreadySeenPage()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -124,7 +125,7 @@ public sealed class FakeAuditQueryServiceTests
     {
         var clock = new FakeClock();
         var actorContext = new FakeAuditActorContext(actorId: "actor-1");
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext, clock);
+        var writer = new FakeAuditTrailWriter(actorContext, clock);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var recorded = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -176,7 +177,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task ExportRangeAsync_StreamsChainInSequenceOrder()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -198,7 +199,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task VerifyFullChainAsync_IntactChain_ReportsIntact()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         await writer.RecordAsync(Entry("Order", "order-1"));
@@ -215,7 +216,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task VerifyFullChainAsync_TamperedRecordHash_ReportsBroken()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var record = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -232,7 +233,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task VerifyFullChainAsync_BrokenLink_ReportsBrokenAtSecondRecord()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));
@@ -260,7 +261,7 @@ public sealed class FakeAuditQueryServiceTests
     public async Task VerifyFullChainAsync_GapInSequence_ReportsBroken()
     {
         var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
+        var writer = new FakeAuditTrailWriter(actorContext);
         var query = new FakeAuditQueryService(writer, actorContext);
 
         var first = await writer.RecordAsync(Entry("Order", "order-1"));

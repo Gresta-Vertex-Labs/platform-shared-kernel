@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.Dapper.ReadModels;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -53,7 +53,7 @@ public sealed class CommandServiceTestDbContext : SharedKernelDbContext
 
 /// <summary>
 /// A <see cref="DapperCommandService"/> subclass enlists in the SAME transaction and
-/// connection as <see cref="ITransactionalUnitOfWork"/>'s active explicit transaction: a write
+/// connection as <see cref="IUnitOfWork"/>'s active explicit transaction: a write
 /// through each survives together on commit and disappears together on rollback.
 /// </summary>
 public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLifetime
@@ -82,7 +82,6 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
 
         services
             .AddSharedKernelEfCore<CommandServiceTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-            .WithTransactionalUnitOfWork()
             .Build();
 
         services.AddScoped<LogTableCommandService>();
@@ -114,14 +113,14 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
         var provider = await BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
 
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<LogTableCommandService>();
 
-        await using var transaction = await uow.BeginTransactionAsync();
-
-        commandService.IsCurrentlyEnlisted.Should().BeTrue();
-
-        await transaction.RollbackAsync();
+        await uow.ExecuteInTransactionAsync(_ =>
+        {
+            commandService.IsCurrentlyEnlisted.Should().BeTrue();
+            return Task.CompletedTask;
+        });
     }
 
     [Fact]
@@ -142,18 +141,16 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
         await using var scope = provider.CreateAsyncScope();
 
         var ctx = scope.ServiceProvider.GetRequiredService<CommandServiceTestDbContext>();
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<LogTableCommandService>();
 
-        await using (var transaction = await uow.BeginTransactionAsync())
+        await uow.ExecuteInTransactionAsync(async ct =>
         {
             ctx.Widgets.Add(new EfWidget { Name = "commit-widget" });
-            await uow.SaveChangesAsync();
+            await uow.SaveChangesAsync(ct);
 
-            await commandService.InsertLogAsync("commit-log", CancellationToken.None);
-
-            await transaction.CommitAsync();
-        }
+            await commandService.InsertLogAsync("commit-log", ct);
+        });
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verifyCtx = verifyScope.ServiceProvider.GetRequiredService<CommandServiceTestDbContext>();
@@ -175,18 +172,20 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
         await using var scope = provider.CreateAsyncScope();
 
         var ctx = scope.ServiceProvider.GetRequiredService<CommandServiceTestDbContext>();
-        var uow = scope.ServiceProvider.GetRequiredService<ITransactionalUnitOfWork>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var commandService = scope.ServiceProvider.GetRequiredService<LogTableCommandService>();
 
-        await using (var transaction = await uow.BeginTransactionAsync())
+        var rollback = () => uow.ExecuteInTransactionAsync(async ct =>
         {
             ctx.Widgets.Add(new EfWidget { Name = "rollback-widget" });
-            await uow.SaveChangesAsync();
+            await uow.SaveChangesAsync(ct);
 
-            await commandService.InsertLogAsync("rollback-log", CancellationToken.None);
+            await commandService.InsertLogAsync("rollback-log", ct);
 
-            await transaction.RollbackAsync();
-        }
+            throw new InvalidOperationException("roll the transaction back");
+        });
+
+        await rollback.Should().ThrowAsync<InvalidOperationException>();
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verifyCtx = verifyScope.ServiceProvider.GetRequiredService<CommandServiceTestDbContext>();

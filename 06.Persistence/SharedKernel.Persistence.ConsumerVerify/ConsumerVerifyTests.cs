@@ -11,6 +11,7 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Specifications;
@@ -191,7 +192,6 @@ public sealed class ConsumerVerifyTests
         services.AddSharedKernelCryptography(configuration); // IHmacSigner — WithAuditTrail requires it
         services.AddSharedKernelNpgsql(configuration); // IDbConnectionFactory/IAdvisoryTransactionLock — EfAuditTrailWriter requires it (construction-only, never connects here)
         services.AddSharedKernelEfCore<ConsumerVerifyDbContext>(options => options.UseSqlite("DataSource=:memory:"))
-            .WithTransactionalUnitOfWork() // EfAuditTrailWriter also requires IAmbientDbTransaction, which only this registers
             .WithAuditTrail(configuration)
             .Build();
 

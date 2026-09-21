@@ -71,7 +71,7 @@ public sealed class XminConcurrencyTokenConventionFailLoudTests
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
         var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
+        var softDelete = new SoftDeleteInterceptor(clock);
         var concurrency = new ConcurrencyInterceptor();
 
         using var ctx = new UnconfiguredConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));

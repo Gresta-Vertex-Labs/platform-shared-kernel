@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -40,9 +41,9 @@ public sealed class PooledMultiTenancyPostgresTests
         var services = new ServiceCollection();
 
         services.AddScoped<MutableTestActorContext>();
-        services.AddScoped<ICurrentActorContext>(sp => sp.GetRequiredService<MutableTestActorContext>());
+        services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<MutableTestActorContext>());
         services.AddScoped<MutableTestTenantContext>();
-        services.AddScoped<ICurrentTenantContext>(sp => sp.GetRequiredService<MutableTestTenantContext>());
+        services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<MutableTestTenantContext>());
 
         services
             .AddSharedKernelEfCore<PgTestDbContext>(opts => opts.UsePostgreSQL(ConnectionString))

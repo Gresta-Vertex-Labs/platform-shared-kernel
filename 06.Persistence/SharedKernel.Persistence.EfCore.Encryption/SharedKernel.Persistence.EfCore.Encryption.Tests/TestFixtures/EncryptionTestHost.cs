@@ -1,3 +1,4 @@
+using SharedKernel.Application.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -53,8 +54,8 @@ public static class EncryptionTestHost
 
         var actor = actorContext ?? new FakeAuditActorContext();
         services.AddSingleton(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext>(actor);
-        services.AddSingleton<SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
+        services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
 
         configureServices?.Invoke(services);
 
