@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 
-namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>Migration helpers for field encryption.</summary>
 public static class EncryptionMigrationBuilderExtensions

@@ -65,7 +65,7 @@ public sealed class PersistenceContextDependencies
     /// Creates the dependencies for a context constructed by hand (a design-time factory, a test, a tool).
     /// </summary>
     /// <param name="requestContext">
-    /// The caller changes are attributed to and, for a <see cref="MultiTenancy.TenantedDbContext"/>, the
+    /// The caller changes are attributed to and, for a <see cref="TenantedDbContext"/>, the
     /// tenant data is filtered by. Defaults to the fail-closed <see cref="AnonymousRequestContext"/>.
     /// </param>
     /// <param name="clock">The clock for audit stamps and materialized aggregates. Defaults to the system clock.</param>

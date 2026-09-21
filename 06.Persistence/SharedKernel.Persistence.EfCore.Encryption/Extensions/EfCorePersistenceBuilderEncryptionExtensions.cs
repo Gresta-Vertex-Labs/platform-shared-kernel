@@ -4,7 +4,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
 using SharedKernel.Persistence.EfCore.Encryption.Configuration;
 using SharedKernel.Persistence.EfCore.Encryption.Crypto;
@@ -14,9 +17,8 @@ using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Metadata;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Extensions;
 
-namespace SharedKernel.Persistence.EfCore.Encryption.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>Wires field-level encryption into a SharedKernel EF Core context.</summary>
 public static class EfCorePersistenceBuilderEncryptionExtensions

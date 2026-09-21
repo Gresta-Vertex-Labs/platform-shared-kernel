@@ -628,7 +628,7 @@ public class EfCorePackageHygieneRulesTests
     [Fact]
     public void NoDirectEfPropertyUsageInEfCoreAssembly_RealEfCoreAssembly_RulePasses()
     {
-        var efCoreAssembly = typeof(SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<>).Assembly;
+        var efCoreAssembly = typeof(SharedKernel.Persistence.EfCorePersistenceBuilder<>).Assembly;
 
         var result = EfCorePackageHygieneRules
             .NoDirectEfPropertyUsageInEfCoreAssembly(efCoreAssembly)

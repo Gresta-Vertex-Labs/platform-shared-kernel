@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Conventions;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Tests.PostgreSql.Conventions;

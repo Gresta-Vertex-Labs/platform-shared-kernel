@@ -1,4 +1,6 @@
-namespace SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Diagnostics;
+
+namespace SharedKernel.Persistence.EfCore.Context;
 
 /// <summary>
 /// Well-known EF Core 10 NAMED global query filter keys this domain installs, so distinct filters on
@@ -9,6 +11,6 @@ public static class PersistenceFilterNames
     /// <summary>The soft-delete filter installed by <c>SoftDeleteQueryFilterConvention</c>.</summary>
     public const string SoftDelete = "SoftDelete";
 
-    /// <summary>The tenant-isolation filter installed by <c>MultiTenancy.TenantedDbContext</c>.</summary>
+    /// <summary>The tenant-isolation filter installed by <see cref="TenantedDbContext"/>.</summary>
     public const string Tenant = "Tenant";
 }

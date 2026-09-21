@@ -2,10 +2,10 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.Npgsql.Tests.Extensions;

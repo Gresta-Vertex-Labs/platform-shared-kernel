@@ -7,9 +7,8 @@ Keys come from a KMS or configuration; rotation, plaintext migration and per-ten
 ## Setup
 
 ```csharp
-using SharedKernel.Persistence.EfCore.Encryption;
-using SharedKernel.Persistence.EfCore.Encryption.Extensions;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;               // AddSharedKernelPostgres, UseMultiTenancy, UseFieldEncryption
+using SharedKernel.Persistence.EfCore.Context;
 
 // A KMS (Azure Key Vault): the key source and, for tenant data keys, the envelope provider that wraps them.
 builder.Services.AddSharedKernelCryptography(builder.Configuration)
@@ -42,7 +41,12 @@ mounted secret), never in a checked-in file.
 
 ## Marking properties
 
+`Encrypt`, `WithBlindIndex`, `BlindIndexNormalization` and `WhereEncryptedEquals` live in `SharedKernel.Persistence.EfCore`,
+with the other model-configuration and migration helpers.
+
 ```csharp
+using SharedKernel.Persistence.EfCore;
+
 modelBuilder.Entity<Customer>(b =>
 {
     b.Property(x => x.Email).HasMaxLength(320).Encrypt("customer.email")

@@ -6,15 +6,15 @@ using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Testing.Clocks;
-using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
 

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 

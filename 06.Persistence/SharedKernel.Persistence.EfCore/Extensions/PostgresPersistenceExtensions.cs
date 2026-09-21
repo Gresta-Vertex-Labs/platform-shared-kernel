@@ -5,11 +5,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 
-namespace SharedKernel.Persistence.EfCore.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// The one entry point of the SharedKernel PostgreSQL persistence stack.

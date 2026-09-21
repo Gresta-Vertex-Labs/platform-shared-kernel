@@ -11,6 +11,7 @@ using SharedKernel.Configuration.Extensions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
+using SharedKernel.Persistence.Npgsql;
 using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.Npgsql.Context;
 using SharedKernel.Persistence.Npgsql.Coordination;
@@ -18,7 +19,7 @@ using SharedKernel.Persistence.Npgsql.Diagnostics;
 using SharedKernel.Persistence.Npgsql.Options;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
-namespace SharedKernel.Persistence.Npgsql.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// DI extension methods for the SharedKernel Npgsql (EF-Core-free) persistence layer.

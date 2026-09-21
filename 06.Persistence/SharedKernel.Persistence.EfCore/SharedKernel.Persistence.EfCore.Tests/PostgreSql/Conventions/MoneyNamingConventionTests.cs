@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
 

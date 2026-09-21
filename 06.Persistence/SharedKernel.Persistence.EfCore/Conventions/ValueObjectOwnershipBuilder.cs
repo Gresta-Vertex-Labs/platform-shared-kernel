@@ -63,7 +63,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// <para>
 /// <strong><see cref="Money"/> is excluded — configure it with <c>.Money(...)</c>.</strong> A
 /// <see cref="Money"/>-typed property is always configured explicitly through
-/// <see cref="Conversions.MoneyEntityTypeBuilderExtensions.Money{TEntity}"/>, never by this generic
+/// <see cref="MoneyEntityTypeBuilderExtensions.Money{TEntity}"/>, never by this generic
 /// scan: precision/scale are column choices this utility has no basis to guess, and every
 /// <see cref="Money"/> property must be pre-declared complex via
 /// the platform's automatic <c>Money</c> mapping in

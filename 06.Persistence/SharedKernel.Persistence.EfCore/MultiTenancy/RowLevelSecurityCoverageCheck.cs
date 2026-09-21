@@ -12,19 +12,6 @@ using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
-/// <summary>What the startup check of row-level security coverage does when a tenant table is not protected.</summary>
-public enum RowLevelSecurityCheckMode
-{
-    /// <summary>Fails startup. The default outside the Development environment.</summary>
-    Fail = 0,
-
-    /// <summary>Logs a warning per unprotected table and starts. The default in the Development environment.</summary>
-    Warn = 1,
-
-    /// <summary>Skips the check.</summary>
-    Off = 2,
-}
-
 /// <summary>
 /// At startup — after the startup migrations — verifies that every tenant table of the model has row-level security
 /// enabled and forced and carries the tenant policy (<c>EnableTenantRowLevelSecurity</c>), so a table added without

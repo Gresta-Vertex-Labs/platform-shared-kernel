@@ -31,7 +31,7 @@ namespace SharedKernel.Persistence.EfCore.Context;
 /// (<c>CreatedBy</c>/<c>CreatedOn</c> are written once and never updated afterwards), the named soft-delete
 /// query filter and, on PostgreSQL, the <c>xmin</c> concurrency token of every aggregate root;</description></item>
 /// <item><description>stamps audit fields, turns deletes of soft-deletable entities into soft deletes, marks an
-/// aggregate root modified when a child changed, and (for a <see cref="MultiTenancy.TenantedDbContext"/>)
+/// aggregate root modified when a child changed, and (for a <see cref="TenantedDbContext"/>)
 /// rejects writes outside the current tenant — in one interceptor, with one change-detection pass;</description></item>
 /// <item><description>dispatches domain events raised by tracked aggregates before every asynchronous save,
 /// whichever code path calls it;</description></item>
@@ -70,7 +70,7 @@ public abstract class SharedKernelDbContext : DbContext
 
     /// <summary>
     /// Gets the caller this context attributes changes to and, for a
-    /// <see cref="MultiTenancy.TenantedDbContext"/>, filters tenant data by.
+    /// <see cref="TenantedDbContext"/>, filters tenant data by.
     /// </summary>
     /// <remarks>
     /// Attached each time the registration hands the context out (from the resolving scope's

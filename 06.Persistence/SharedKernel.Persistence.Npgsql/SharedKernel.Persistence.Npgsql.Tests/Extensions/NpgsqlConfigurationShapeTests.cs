@@ -4,8 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Npgsql.Diagnostics;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Persistence.Npgsql.Options;
 using SharedKernel.Testing.Containers;
 

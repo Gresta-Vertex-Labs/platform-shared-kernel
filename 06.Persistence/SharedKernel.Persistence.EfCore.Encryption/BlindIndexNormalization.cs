@@ -1,4 +1,6 @@
-namespace SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Persistence.EfCore.Encryption;
+
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// Built-in normalization applied to a value before its blind index is computed, so values that should compare
@@ -6,7 +8,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </summary>
 /// <remarks>
 /// Steps run in a fixed order: <see cref="Trim"/>, then <see cref="RemoveWhitespace"/>, then <see cref="CaseFold"/>,
-/// then a named <see cref="BlindIndex.IBlindIndexNormalizer"/> if the property declares one. Changing a property's
+/// then a named <see cref="Encryption.BlindIndex.IBlindIndexNormalizer"/> if the property declares one. Changing a property's
 /// normalization changes every index it produces: run the maintenance job with
 /// <c>EncryptionMaintenanceMode.RecomputeBlindIndexes</c> afterwards.
 /// </remarks>

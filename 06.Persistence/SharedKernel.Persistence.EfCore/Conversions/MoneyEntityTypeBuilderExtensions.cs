@@ -2,8 +2,9 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Monetary;
+using SharedKernel.Persistence.EfCore.Conversions;
 
-namespace SharedKernel.Persistence.EfCore.Conversions;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// Extension methods on <see cref="EntityTypeBuilder{TEntity}"/> for configuring a

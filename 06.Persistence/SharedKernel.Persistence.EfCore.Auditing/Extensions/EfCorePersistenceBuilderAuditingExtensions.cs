@@ -1,7 +1,9 @@
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.EfCore;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 
-namespace SharedKernel.Persistence.EfCore.Auditing.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>The audit ledger's seam on <see cref="EfCorePersistenceBuilder{TContext}"/>.</summary>
 public static class EfCorePersistenceBuilderAuditingExtensions

@@ -4,10 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.Npgsql.Connections;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 using SharedKernel.Testing.Containers;
 

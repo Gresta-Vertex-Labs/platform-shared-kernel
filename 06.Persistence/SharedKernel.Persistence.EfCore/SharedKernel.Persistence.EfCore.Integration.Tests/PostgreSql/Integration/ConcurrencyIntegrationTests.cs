@@ -2,20 +2,20 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using NSubstitute;
+using Npgsql;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Testing.Clocks;
-using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
 

@@ -6,13 +6,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Auditing;
 using SharedKernel.Cryptography.Extensions;
-using SharedKernel.Persistence.EfCore.Auditing.Extensions;
-using SharedKernel.Persistence.EfCore.Auditing.Migrations;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Auditing.Sealing;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
-using SharedKernel.Persistence.Npgsql.Extensions;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Registration;
 

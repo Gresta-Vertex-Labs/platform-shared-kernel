@@ -2,9 +2,9 @@ using System.Data;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Npgsql.Connections;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Testing.Containers;
 
 using SharedKernel.Testing.Persistence;

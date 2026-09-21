@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using SharedKernel.Persistence.EfCore.Auditing;
 
-namespace SharedKernel.Persistence.EfCore.Auditing.Migrations;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// <see cref="MigrationBuilder"/> extensions that create the audit ledger and make append-only tables

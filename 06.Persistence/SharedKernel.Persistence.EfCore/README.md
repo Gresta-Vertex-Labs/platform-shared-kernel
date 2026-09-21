@@ -40,6 +40,19 @@ What the one call gives you:
 | Services | `TContext` (scoped), `IDbContextFactory<TContext>` (scoped, attaches the scope's caller), `ICallerDbContextFactory<TContext>` (singleton, explicit caller), `IUnitOfWork` (the first registered context), `IUnitOfWork<TContext>` and a keyed `IUnitOfWork` per context type, the repositories, `ICrossTenantScope`, a fail-closed anonymous `IRequestContext` and `IClock` when none is registered. |
 | Startup | The model is built and validated when the host starts (`ValidateOnStart`), and a missing connection string fails the start naming `ConnectionStrings:{name}`. |
 
+## Namespaces
+
+Three namespaces cover almost every service:
+
+| Namespace | What lives there |
+|---|---|
+| `SharedKernel.Persistence` | Every registration and builder call of the persistence packages: `AddSharedKernelPostgres`, the `EfCorePersistenceBuilder<TContext>` with `UseMultiTenancy`, `UseAuditTrail`, `UseFieldEncryption`, `AddSharedKernelNpgsql`, `AddSharedKernelDapper`, `AddSharedKernelCrossTenantScope`, `UsePostgres`. (Readiness checks stay in `13.ServiceDefaults`.) |
+| `SharedKernel.Persistence.EfCore` | EF Core model-configuration, migration and query helpers: `Money`, `HasJsonbColumn`, `HasVectorColumn`/`HasVectorIndex`, `IsTenantShared`, `Encrypt`/`WithBlindIndex`/`BlindIndexNormalization`, `WhereEncryptedEquals`, `VectorOrderingExpressions`, `UseCrossTenantConnection`, `EnableTenantRowLevelSecurity*`, `CreateAuditLedgerTable`, `CreateTenantEncryptionKeyTable`. |
+| `SharedKernel.Persistence.EfCore.Context` | The context bases — `SharedKernelDbContext`, `TenantedDbContext`, `PersistenceContextDependencies` — and `PersistenceFilterNames`. |
+
+Contracts come from `SharedKernel.Persistence.Abstractions.Repositories` (`IRepository`, `IReadRepository`,
+`EntityVersion`) and `SharedKernel.Persistence.Abstractions.Context` (`ICrossTenantScope`).
+
 ## Options
 
 ```csharp

@@ -235,7 +235,7 @@ public sealed class MoneyPostgresTests
 
         await using var verifyCtx = CreateContext(tenantId);
         var rescued = await verifyCtx.Orders
-            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete])
+            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.SoftDelete])
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
         rescued.Should().NotBeNull();

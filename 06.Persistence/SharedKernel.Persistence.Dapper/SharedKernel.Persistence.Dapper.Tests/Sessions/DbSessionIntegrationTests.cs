@@ -10,14 +10,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Application.Context;
 using SharedKernel.Application.Transactions;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Persistence.Dapper.Extensions;
 using SharedKernel.Persistence.Dapper.Sessions;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.Npgsql.Errors;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Containers;
 

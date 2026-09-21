@@ -9,6 +9,8 @@ using SharedKernel.Configuration.Extensions;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Maintenance;
 using SharedKernel.Persistence.EfCore.Auditing.Querying;
@@ -18,7 +20,7 @@ using SharedKernel.Persistence.EfCore.Auditing.Writing;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 
-namespace SharedKernel.Persistence.EfCore.Auditing.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>Registers the audit ledger.</summary>
 public static class AuditLedgerServiceCollectionExtensions

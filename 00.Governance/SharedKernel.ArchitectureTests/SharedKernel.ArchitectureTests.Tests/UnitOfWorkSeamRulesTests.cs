@@ -77,7 +77,7 @@ public class UnitOfWorkSeamRulesTests
         yield return [typeof(SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder).Assembly];
         yield return [typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly];
-        yield return [typeof(SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions).Assembly];
     }
 
     [Theory]

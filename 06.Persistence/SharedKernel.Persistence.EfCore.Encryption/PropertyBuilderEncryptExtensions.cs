@@ -1,9 +1,10 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
 using SharedKernel.Persistence.EfCore.Encryption.Metadata;
 
-namespace SharedKernel.Persistence.EfCore.Encryption;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>Marks <see langword="string"/> properties for field-level AES-256-GCM encryption.</summary>
 /// <remarks>

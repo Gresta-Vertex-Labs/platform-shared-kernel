@@ -1,13 +1,13 @@
-using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Application.Context;
 using SharedKernel.Application.Transactions;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;

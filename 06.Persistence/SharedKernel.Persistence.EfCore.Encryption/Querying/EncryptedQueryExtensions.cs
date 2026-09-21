@@ -3,10 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Interception;
 using SharedKernel.Persistence.EfCore.Encryption.Metadata;
 
-namespace SharedKernel.Persistence.EfCore.Encryption;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>Equality lookups on encrypted properties through their blind index.</summary>
 /// <remarks>

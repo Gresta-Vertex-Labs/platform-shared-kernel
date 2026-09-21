@@ -2,8 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Seeding;
 

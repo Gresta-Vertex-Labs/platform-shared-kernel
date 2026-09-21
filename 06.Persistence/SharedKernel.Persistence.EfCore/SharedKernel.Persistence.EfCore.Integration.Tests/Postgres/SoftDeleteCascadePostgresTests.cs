@@ -72,7 +72,7 @@ public sealed class SoftDeleteCascadePostgresTests
         //...but the root row itself, its Lines (required owned collection, its own table), and the
         // same-table owned VO all still physically exist, fully intact.
         var rescued = await verifyCtx.Orders
-            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete])
+            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.SoftDelete])
             .Include(o => o.Lines)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -117,7 +117,7 @@ public sealed class SoftDeleteCascadePostgresTests
 
         await using var verifyCtx = CreateContext(tenantId);
         var rescued = await verifyCtx.Orders
-            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete])
+            .IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.SoftDelete])
             .Include(o => o.Lines)
             .FirstAsync(o => o.Id == orderId);
 

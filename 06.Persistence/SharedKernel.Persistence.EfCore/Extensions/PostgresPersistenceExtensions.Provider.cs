@@ -4,11 +4,12 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.Npgsql.Options;
 
-namespace SharedKernel.Persistence.EfCore.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// The platform's PostgreSQL provider setup for EF Core.

@@ -7,10 +7,10 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Application.Context;
 using SharedKernel.Cryptography.Signing;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Containers;
 

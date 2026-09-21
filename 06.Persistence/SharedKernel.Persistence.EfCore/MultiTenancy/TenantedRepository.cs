@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Repositories;
 

@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Pgvector;
 using Pgvector.Npgsql;
-using SharedKernel.Persistence.Dapper.Extensions;
+using SharedKernel.Persistence;
 using Testcontainers.PostgreSql;
 
 namespace SharedKernel.Persistence.Dapper.Tests.TypeHandlers;

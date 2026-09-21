@@ -3,8 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Testing.Logging;
 

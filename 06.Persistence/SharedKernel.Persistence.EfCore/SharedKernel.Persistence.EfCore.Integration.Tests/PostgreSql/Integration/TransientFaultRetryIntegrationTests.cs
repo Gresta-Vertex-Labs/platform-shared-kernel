@@ -7,16 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Application.Transactions;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Testing.Clocks;
-using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
 

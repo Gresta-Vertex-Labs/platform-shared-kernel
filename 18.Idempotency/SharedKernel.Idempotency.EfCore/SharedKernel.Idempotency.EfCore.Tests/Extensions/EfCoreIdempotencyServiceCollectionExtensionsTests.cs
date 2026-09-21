@@ -3,9 +3,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Persistence;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
 

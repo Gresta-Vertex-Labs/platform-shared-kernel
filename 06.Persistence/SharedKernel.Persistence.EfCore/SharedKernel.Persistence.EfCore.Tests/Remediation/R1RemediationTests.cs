@@ -222,7 +222,7 @@ public sealed class R1RemediationTests : IDisposable
         await using var context = Tenanted(Guid.NewGuid());
         var line = context.Model.FindEntityType(typeof(R1OrderLine))!;
 
-        line.GetDeclaredQueryFilters().Select(f => f.Key).Should().Contain(SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.Tenant);
+        line.GetDeclaredQueryFilters().Select(f => f.Key).Should().Contain(SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.Tenant);
         line.FindProperty(nameof(IHasTenant.TenantId))!.IsConcurrencyToken.Should().BeTrue();
         context.Model.FindEntityType(typeof(R1Country))!.GetDeclaredQueryFilters().Should().BeEmpty();
         context.Model.FindEntityType(typeof(R1Currency))!.GetDeclaredQueryFilters().Should().BeEmpty();

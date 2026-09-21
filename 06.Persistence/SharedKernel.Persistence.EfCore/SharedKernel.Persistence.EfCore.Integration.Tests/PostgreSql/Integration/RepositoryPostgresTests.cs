@@ -4,15 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Specifications;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
-using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
 

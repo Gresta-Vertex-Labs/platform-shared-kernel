@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Npgsql;
-using SharedKernel.Persistence.EfCore.Auditing.Migrations;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Integration;

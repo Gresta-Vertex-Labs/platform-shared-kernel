@@ -8,7 +8,7 @@ using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.TenantContext;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;

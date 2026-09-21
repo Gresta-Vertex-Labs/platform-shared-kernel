@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace SharedKernel.Persistence.EfCore.Jsonb;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// EF Core fluent extension methods for configuring JSONB columns on PostgreSQL.

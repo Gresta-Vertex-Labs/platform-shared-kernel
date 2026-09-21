@@ -3,8 +3,9 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.MultiTenancy;
 
-namespace SharedKernel.Persistence.EfCore.MultiTenancy;
+namespace SharedKernel.Persistence.EfCore.Context;
 
 /// <summary>
 /// Abstract EF Core DbContext base for multi-tenant services.

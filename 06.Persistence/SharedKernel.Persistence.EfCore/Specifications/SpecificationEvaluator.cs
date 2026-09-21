@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Specifications;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Specifications;

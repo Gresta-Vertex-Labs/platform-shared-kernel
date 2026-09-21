@@ -12,22 +12,19 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.Dapper.Extensions;
 using SharedKernel.Persistence.Dapper.Sessions;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Auditing;
-using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption;
-using SharedKernel.Persistence.EfCore.Encryption.Extensions;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Primitives.Clocks;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -304,7 +301,7 @@ public sealed class ConsumerVerifyTests
             Assert.Null(await scope.ServiceProvider.GetRequiredService<IReadRepository<Order, OrderId>>().GetByIdAsync(id));
 
             var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
-            Assert.Equal(0, await db.Orders.IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.Tenant]).CountAsync());
+            Assert.Equal(0, await db.Orders.IgnoreQueryFilters([SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.Tenant]).CountAsync());
         }
 
         // The audit trail recorded the write in tenant A's chain.

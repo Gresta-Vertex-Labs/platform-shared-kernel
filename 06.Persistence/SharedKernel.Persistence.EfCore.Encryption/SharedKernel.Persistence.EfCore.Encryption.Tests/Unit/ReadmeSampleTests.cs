@@ -4,13 +4,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Context;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
-using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;

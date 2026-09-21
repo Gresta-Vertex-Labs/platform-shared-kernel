@@ -21,8 +21,7 @@ Distinct from `SharedKernel.Persistence.EfCore`'s `AuditInterceptor`, which only
 ## Setup
 
 ```csharp
-using SharedKernel.Persistence.EfCore.Auditing.Extensions;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;   // AddSharedKernelPostgres, UseMultiTenancy, UseAuditTrail
 
 builder.Services.AddSharedKernelCryptography(builder.Configuration)   // IHmacSigner
     .AddAsymmetricSigning();                                          // checkpoints (optional)

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Application.Context;
+using SharedKernel.Persistence.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 
-namespace SharedKernel.Persistence.Abstractions.Context;
+namespace SharedKernel.Persistence;
 
 /// <summary>Registers the default <see cref="ICrossTenantScope"/>.</summary>
 public static class CrossTenantScopeServiceCollectionExtensions

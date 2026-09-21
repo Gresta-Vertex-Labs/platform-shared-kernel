@@ -7,7 +7,7 @@ using Npgsql;
 using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Persistence.EfCore.Auditing.Migrations;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Auditing.SelfCheck;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
 using SharedKernel.Testing.Containers;

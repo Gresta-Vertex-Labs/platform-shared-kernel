@@ -1,13 +1,13 @@
-using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Application.Context;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Testing.Containers;
 
 using SharedKernel.Testing.Persistence;

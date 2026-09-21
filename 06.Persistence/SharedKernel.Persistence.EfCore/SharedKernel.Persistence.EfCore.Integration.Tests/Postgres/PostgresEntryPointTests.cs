@@ -12,16 +12,16 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
-using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 

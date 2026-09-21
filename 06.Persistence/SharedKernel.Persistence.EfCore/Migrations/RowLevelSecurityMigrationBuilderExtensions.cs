@@ -2,9 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
-namespace SharedKernel.Persistence.EfCore.Migrations;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// <see cref="MigrationBuilder"/> helpers that create and drop the PostgreSQL row-level security (RLS)

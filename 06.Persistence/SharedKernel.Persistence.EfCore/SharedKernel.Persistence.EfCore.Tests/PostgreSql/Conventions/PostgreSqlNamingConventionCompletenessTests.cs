@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;
 
 using SharedKernel.Testing.Persistence;
 

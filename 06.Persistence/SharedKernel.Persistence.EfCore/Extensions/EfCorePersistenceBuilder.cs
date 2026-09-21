@@ -13,6 +13,7 @@ using SharedKernel.Application.Transactions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -25,7 +26,7 @@ using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Identifiers;
 
-namespace SharedKernel.Persistence.EfCore.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// Options for one context registered with <c>AddSharedKernelPostgres&lt;TContext&gt;(name, p =&gt; ...)</c>.

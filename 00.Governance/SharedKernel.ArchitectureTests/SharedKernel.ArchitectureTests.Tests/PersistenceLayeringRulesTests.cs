@@ -201,7 +201,7 @@ public sealed class PersistenceLayeringRulesTests
     [Fact]
     public void Npgsql_NeverReferencesEfCore()
     {
-        typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly
+        typeof(SharedKernel.Persistence.NpgsqlPersistenceExtensions).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name!)
             .Should().NotContain(name =>
@@ -229,9 +229,9 @@ public sealed class PersistenceLayeringRulesTests
     {
         yield return [typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly];
-        yield return [typeof(SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.NpgsqlPersistenceExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory).Assembly];
     }
 

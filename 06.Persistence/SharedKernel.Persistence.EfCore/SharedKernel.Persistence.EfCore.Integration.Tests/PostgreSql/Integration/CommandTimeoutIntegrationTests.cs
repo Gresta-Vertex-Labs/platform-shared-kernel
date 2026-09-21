@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;

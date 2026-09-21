@@ -1,8 +1,9 @@
 using System.Linq.Expressions;
 using Pgvector.EntityFrameworkCore;
 using PgVector = Pgvector.Vector;
+using SharedKernel.Persistence.EfCore.Vectors;
 
-namespace SharedKernel.Persistence.EfCore.Vectors;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// Builds nearest-neighbor <c>OrderBy</c> expressions for <see cref="Pgvector.Vector"/>-typed columns.

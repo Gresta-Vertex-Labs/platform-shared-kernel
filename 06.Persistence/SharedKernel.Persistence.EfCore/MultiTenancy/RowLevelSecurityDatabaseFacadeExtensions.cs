@@ -7,9 +7,10 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.Npgsql.Connections;
 
-namespace SharedKernel.Persistence.EfCore.MultiTenancy;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// Cross-tenant work for an EF Core context whose tables are protected by row-level security.

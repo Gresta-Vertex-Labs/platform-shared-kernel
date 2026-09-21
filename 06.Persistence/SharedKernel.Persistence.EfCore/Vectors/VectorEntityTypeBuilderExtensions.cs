@@ -1,8 +1,9 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SharedKernel.Persistence.EfCore.Vectors;
 
-namespace SharedKernel.Persistence.EfCore.Vectors;
+namespace SharedKernel.Persistence.EfCore;
 
 /// <summary>
 /// EF Core fluent extension methods for configuring pgvector columns and indexes on PostgreSQL.

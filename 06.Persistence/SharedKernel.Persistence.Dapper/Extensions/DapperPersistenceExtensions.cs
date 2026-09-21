@@ -4,11 +4,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Application.Context;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Dapper;
 using SharedKernel.Persistence.Dapper.Options;
 using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Persistence.Dapper.TypeHandlers;
 
-namespace SharedKernel.Persistence.Dapper.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// DI extension methods for the SharedKernel Dapper persistence layer.

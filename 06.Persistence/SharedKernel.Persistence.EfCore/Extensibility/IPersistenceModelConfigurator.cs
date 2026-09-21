@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <remarks>
 /// Implementations are resolved from DI as <c>IEnumerable{IPersistenceModelConfigurator}</c>
 /// and invoked once per model build, inside <see cref="Context.SharedKernelDbContext.OnModelCreating"/>,
-/// after the assembly scan and before <see cref="MultiTenancy.TenantedDbContext"/>'s tenant filters.
+/// after the assembly scan and before <see cref="Context.TenantedDbContext"/>'s tenant filters.
 /// Replaces the previous single-purpose <c>AuditTrailFeatureMarker</c> DI-marker-type mechanism with
 /// a general-purpose one any future opt-in capability can reuse.
 /// </remarks>

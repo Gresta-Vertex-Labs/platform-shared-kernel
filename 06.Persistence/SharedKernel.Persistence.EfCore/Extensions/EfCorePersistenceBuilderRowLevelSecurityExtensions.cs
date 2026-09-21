@@ -1,11 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.Npgsql.Options;
 
-namespace SharedKernel.Persistence.EfCore.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// Opt-in PostgreSQL row-level security (RLS) for <see cref="EfCorePersistenceBuilder{TContext}"/>.

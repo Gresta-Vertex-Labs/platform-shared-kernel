@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Persistence.Npgsql.Extensions;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.Npgsql.Options;
 
-namespace SharedKernel.Persistence.EfCore.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// Maps connection names to the shared <see cref="NpgsqlDataSource"/> registrations of
