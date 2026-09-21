@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Persistence.EfCore.Encryption.Rotation;
+using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 

@@ -1,160 +1,160 @@
 # SharedKernel.Persistence.EfCore.Encryption
 
-Field-level AES-256-GCM transparent encryption for EF Core 10 properties, built on `01.Core/SharedKernel.Cryptography`: `PropertyBuilder<T>.Encrypt()`, an HMAC-SHA256 blind index for equality lookups on encrypted columns without decrypting every row, and a resumable rotation job for moving encrypted data onto a new key. An opt-in sibling of `SharedKernel.Persistence.EfCore` — never referenced unless a service calls `.WithEncryption()`.
+Field-level AES-256-GCM encryption for EF Core 10 on PostgreSQL. Mark a `string` property with `.Encrypt("purpose")`
+and it is stored encrypted and read back as plaintext. Add `.WithBlindIndex()` to find rows by an encrypted value.
+Keys come from a KMS or configuration; rotation, plaintext migration and per-tenant crypto-shredding are built in.
 
-## Included types
-
-- `EfCorePersistenceBuilderEncryptionExtensions.WithEncryption()` — opts in; two overloads (code-configured and `IConfiguration`-bound)
-- `PropertyBuilderEncryptExtensions.Encrypt<TProperty>(purpose, perTenantKey: false)` — marks a `string` property (or, via the `ComplexTypePropertyBuilder<TProperty>` overload, a value object's own property) for transparent AES-256-GCM encryption
-- `PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(normalize: null)` — adds the HMAC-SHA256 shadow column an encrypted property needs for equality queries
-- `EncryptedPropertyQueryExtensions.WhereBlindIndexEquals()` — the only sanctioned way to query an encrypted property by value
-- `EncryptionInterceptor` — the `SaveChanges`-time encrypt-on-write / materialization-time decrypt-on-read interceptor
-- `EncryptionModelConvention` — validates every `.Encrypt(...)` property (supported CLR type, unique purpose, a rotatable primary key shape) and adds the blind-index shadow property; wires no `ValueConverter` (see [How it works](#how-it-works))
-- `EncryptedColumnEqualityGuardInterceptor` — fails loudly if a query compares an encrypted column with anything other than `WhereBlindIndexEquals`
-- `IBlindIndexService` — the HMAC-SHA256 blind-index computation seam
-- `IEncryptionRotationJob` / `EncryptionRotationService<TContext>` — re-encrypts every row not already on the current key, resumable across calls via an opaque checkpoint token
-- `EncryptionRotationReport` — what one `RotateAsync` call did: rows processed/rotated/failed/skipped, and whether it completed
-- `KeyRing.EncryptionKeyRingCache` — bridges an asynchronous-only key provider to the synchronous contract the runtime encrypt/decrypt path needs
-- `EncryptionOptions` — `AllowUnencryptedValues`, `KeyRingRetiredKeyIds`, `KeyRingRefreshInterval`; carries no key material
-- `EncryptionKeyNotFoundException` — thrown when a row's stored key id cannot be resolved
-- `Diagnostics.EncryptionMeter` / `Diagnostics.EncryptionLog` — the package's metrics and structured logging
-
-## Install
-
-```xml
-<ProjectReference Include="..\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" />
-```
-
-`.WithEncryption()` requires an `ISynchronousEncryptionKeyProvider` and/or an `IEncryptionKeyProvider` (both from `01.Core/SharedKernel.Cryptography`) already registered before it is called — this package never generates, stores, or defaults any key material itself.
-
-## Quick start
+## Setup
 
 ```csharp
-// A development/config-backed key. In production, register a KMS-backed provider instead
-// (e.g. SharedKernel.Cryptography.KeyVault.Azure, or 13.ServiceDefaults's
-// AddSharedKernelKeyVaultKeyProvider()) — .WithEncryption() bridges an asynchronous-only
-// provider to the synchronous path automatically.
-var keyProvider = new StaticEncryptionKeyProvider(
-    currentKeyId: "2026-09",
-    keys: [new CryptographicKey("2026-09", currentKeyMaterial)]);
-services.AddSingleton(keyProvider);
-services.AddSingleton<IEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
-services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
+using SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 
-services.AddSharedKernelEfCore<AppDbContext>(options => options.UsePostgreSQL(connectionString))
-    .WithEncryption(configuration)  // section "SharedKernel:Persistence:Encryption"; or the parameterless overload
-        .Build();
+builder.Services
+    .AddSharedKernelEfCore<OrderDbContext>((sp, o) => o.UsePostgreSQL(sp))
+    .WithMultiTenancy()
+    .UseFieldEncryption(k => k
+        .UseKeyProvider<AzureKeyVaultEncryptionKeyProvider>()   // or .FromConfiguration()
+        .UseTenantDataKeys());                                  // optional: crypto-shredding
 ```
 
+Without a key-source call, the `IEncryptionKeyProvider` already in the container is used (for example the one
+`13.ServiceDefaults`' `AddSharedKernelKeyVaultKeyProvider()` registers). Register a provider once; nothing needs a
+second synchronous registration. Options bind from `SharedKernel:Persistence:Encryption` and are validated at host
+start together with the key source, so a missing provider fails startup rather than the first request.
+
+```json
+"SharedKernel": { "Persistence": { "Encryption": {
+  "Keys": { "CurrentKeyId": "k2", "Keys": { "k1": "<base64 32 bytes>", "k2": "<base64 32 bytes>" } },
+  "BlindIndexKeys": { "CurrentVersion": "v1", "Keys": { "v1": "<base64 >= 32 bytes>" } }
+} } }
+```
+
+`Keys` is read only by `FromConfiguration()`. Keep key material in a secret store (Key Vault configuration, a
+mounted secret), never in a checked-in file.
+
+## Marking properties
+
 ```csharp
-public sealed class CustomerConfiguration : EntityTypeConfigurationBase<Customer, CustomerId>
+modelBuilder.Entity<Customer>(b =>
 {
-    public override void Configure(EntityTypeBuilder<Customer> builder)
-    {
-        base.Configure(builder);
-
-        builder.Property(c => c.Email).HasMaxLength(255).IsRequired()
-            .Encrypt("customer.email")
-                .WithBlindIndex(static s => s.Trim().ToLowerInvariant());
-
-        builder.Property(c => c.Ssn).HasMaxLength(20).IsRequired()
-            .Encrypt("customer.ssn", perTenantKey: true); // no blind index — never searched by value.
-    }
-}
-
-// Query by an encrypted value:
-var blindIndexService = serviceProvider.GetRequiredService<IBlindIndexService>();
-var customer = await context.Customers
-    .WhereBlindIndexEquals(blindIndexService, c => c.Email, "customer.email", "ada@example.com", normalize: static s => s.Trim().ToLowerInvariant())
-        .SingleOrDefaultAsync();
+    b.Property(x => x.Email).HasMaxLength(320).Encrypt("customer.email")
+        .WithBlindIndex(BlindIndexNormalization.Trim | BlindIndexNormalization.CaseFold);
+    b.Property(x => x.NationalId).Encrypt("customer.national_id");
+    b.ComplexProperty(x => x.Billing, a => a.ComplexProperty(x => x.Bank, bank =>
+        bank.Property(x => x.Iban).Encrypt("customer.billing.iban")
+            .WithBlindIndex(BlindIndexNormalization.RemoveWhitespace, normalizer: "iban")));
+});
 ```
 
-Every `.Encrypt(...)` property needs its OWN, UNIQUE purpose label — see [Design decisions](#design-decisions).
+- The **purpose** is a stable, lowercase, dotted label, unique across the whole model (checked at model build). It is
+  bound into every value and selects the column's own key. Renaming tables or columns never breaks stored data;
+  renaming a purpose does.
+- Works on entity properties and on complex-type properties at any depth. Rejected at model build: non-`string`
+  properties (byte arrays included; store another representation as a string), complex collections, JSON-mapped and
+  struct complex types, composite or shadow primary keys, and keys other than `Guid`, `long`, `int` or `string`.
+  Primary keys must be assigned on the client (a UUID v7 or strongly-typed id), because the key is bound into the value.
+- A declared `HasMaxLength(n)` is the plaintext length; the column is widened to fit the ciphertext.
+- The model stores only strings, flags and names, so `dotnet ef migrations add` and compiled models work.
+- A named normalizer is registered with `k.AddBlindIndexNormalizer<TNormalizer>()` (`IBlindIndexNormalizer`).
 
-## Rotating a key
+## Reading and querying
+
+Entities are decrypted when materialized. Everything else about an encrypted column is refused **before the query
+runs**: filtering, sorting, grouping, joining on it, projecting it (`Select(x => x.Email)`, or a complex value holding
+it), and `ExecuteUpdate` setters that write or read it. Only `== null` / `!= null` are allowed. Unrelated SQL and
+columns elsewhere with the same name are never affected. Hand-written SQL (`FromSql`, `ExecuteSql`) is not checked.
+
+To find rows by value, use the blind index:
 
 ```csharp
-public sealed class RotateCustomerKeysJob(IEncryptionRotationJob rotationJob)
-{
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        string? checkpoint = null;
-        EncryptionRotationReport report;
-        do
-        {
-            report = await rotationJob.RotateAsync(expectedCurrentKeyId: "2026-10", checkpointToken: checkpoint, cancellationToken: cancellationToken);
-            checkpoint = report.CheckpointToken;
-        }
-        while (!report.Completed);
-
-        if (report.RowsSkippedUnparseable > 0)
-        {
-            // Needs a human, not a retry — see EncryptionRotationReport.RowsSkippedUnparseable's remarks.
-        }
-    }
-}
+var customer = await db.Customers.WhereEncryptedEquals(x => x.Email, input).SingleOrDefaultAsync(ct);
 ```
 
-Register the new key with whatever `IEncryptionKeyProvider` your service uses, make it CURRENT there, then call `RotateAsync(expectedCurrentKeyId: "the new key's id")` — it fails fast if the provider's current key does not already match. Do not remove the old key from the provider until every `IEncryptionRotationJob.RotateAsync` call across the whole model reports `Completed: true` with an empty `RowsRemainingByKeyId`.
+Purpose, normalization and the caller's tenant come from the model and the context; the index travels as a query
+parameter. Blind indexes are tenant-bound: a tenanted entity is searched within one tenant (pass `tenantId:` to the
+`IQueryable` overload for a cross-tenant job). An index reveals which rows hold equal values; do not index
+low-cardinality properties.
 
-## How it works
+## Keys and crypto
 
-There is **no `ValueConverter`** for an encrypted property — a `ValueConverter` can only see the one property being converted, never the row's primary key or tenant id, both of which the authenticated associated data (AAD) requires. Encryption and decryption instead happen in `EncryptionInterceptor`, which has full entity-graph access: it temporarily overwrites each `.Encrypt(...)` property's tracked value with its ciphertext immediately before the physical save, and restores the plaintext immediately after (success or failure) — the tracked entity graph a caller keeps using never observably holds ciphertext.
+- **AES-256-GCM**, a random 96-bit nonce per value, and **one key per column**: HKDF-SHA256 derives it from the root
+  key (or the tenant's data key) and the purpose. Associated data binds purpose, primary key and tenant, so a value
+  copied to another row, column or tenant fails to decrypt.
+- **Blind indexes use their own versioned keys** (`IBlindIndexKeyProvider`, stored values look like `v1:3fa9…`), so
+  rotating the encryption key never touches lookups.
+- **Asynchronous-only providers** (a KMS) are bridged: keys are loaded at startup and refreshed every
+  `KeyRefreshInterval`. A key id the process has not loaded is fetched in the background the first time a value needs
+  it; that one read fails with `EncryptionKeyNotFoundException`, later reads succeed. List ids that must work from
+  the first request in `AdditionalDecryptionKeyIds`. The keyed `IEncryptionKeyProviderProbe`
+  (`FieldEncryptionServiceKeys.KeyRingProbe`) turns unhealthy when the keys were not refreshed within
+  `MaxKeyStaleness`, and otherwise reports the provider's own probe; wire it into readiness.
 
-AAD binds `purpose` + the row's primary key + (for every `IHasTenant` entity, unconditionally) the tenant id — never the physical table/column/schema name, so renaming any of those never invalidates existing ciphertext. Renaming `purpose` itself does, since it is one of the bound components.
+### Key rotation protocol
 
-## Reference
+1. Add the new key to the key source, not yet current. Wait at least `KeyRefreshInterval` (every process can now
+   decrypt with it).
+2. Make it current. Wait `KeyRefreshInterval` again (every process now encrypts with it).
+3. Run the maintenance job with `ReEncrypt` and `ExpectedCurrentKeyId` = the new key.
+4. Run `VerifyOnly`; retire the old key only when `report.IsSafeToRetire(oldKeyId)` is true.
 
-| Type | Purpose |
+Rotating the **blind-index key**: add the new version and make it current (lookups match every configured version),
+run `RecomputeBlindIndexes`, confirm `VerifyOnly` reports `StaleBlindIndexes == 0`, then remove the old version.
+
+## Maintenance job (`IEncryptionRotationJob`)
+
+```csharp
+var report = await job.RunAsync(new EncryptionMaintenanceRequest
+{
+    Mode = EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.RecomputeBlindIndexes,
+    ExpectedCurrentKeyId = "k2",
+}, progress, stoppingToken);
+```
+
+| Mode | Does |
 |---|---|
-| `PropertyBuilderEncryptExtensions.Encrypt<TProperty>(purpose, perTenantKey)` | Marks a `string` property (direct or complex-type) as encrypted. `perTenantKey` controls KEY DERIVATION only — AAD already binds the tenant id regardless. |
-| `PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(normalize)` | Adds an HMAC-SHA256 shadow column so the property can be searched by exact value. |
-| `IBlindIndexService.Compute(purpose, normalizedValue, tenantId)` | Derives the blind index from whichever key the registered `ISynchronousEncryptionKeyProvider` currently reports as current. |
-| `IBlindIndexService.Compute(key, purpose, normalizedValue, tenantId)` | The explicit-key overload — used by `EncryptionRotationService` to pin the blind index to the SAME key it is re-encrypting under, never the ambient synchronous provider's possibly-stale answer. |
-| `EncryptedPropertyQueryExtensions.WhereBlindIndexEquals(query, blindIndexService, property, purpose, value, normalize?, tenantId?)` | The only sanctioned equality lookup against an encrypted property. |
-| `EncryptedColumnEqualityGuardInterceptor.DisableTagText` | Pass to `.TagWith(...)` to opt one query out of the naive-equality guard. |
-| `IEncryptionRotationJob.RotateAsync(expectedCurrentKeyId, checkpointToken?, batchSize = 500, cancellationToken)` | Re-encrypts every row not already on `expectedCurrentKeyId`, resumable via the returned `EncryptionRotationReport.CheckpointToken`. |
-| `EncryptionRotationReport` | `RowsProcessed`, `RowsRotated`, `RowsFailed` (concurrent-writer collisions — safely retryable), `RowsSkippedUnparseable` (needs a human), `Completed`, `CheckpointToken`, `RowsRemainingByKeyId`. |
-| `EncryptionOptions.AllowUnencryptedValues` | Temporary migration setting: a stored value that fails to parse as an encrypted payload is returned unchanged instead of throwing. Never enable permanently. |
-| `EncryptionOptions.KeyRingRetiredKeyIds` / `.KeyRingRefreshInterval` | Historical key ids `EncryptionKeyRingCache` keeps warm, and how often it refreshes — only consulted when no genuine `ISynchronousEncryptionKeyProvider` was registered. |
+| `VerifyOnly` | Decrypts every value and counts it by key; writes nothing |
+| `ReEncrypt` | Moves values not on the current key (or the tenant's data key) onto it |
+| `RecomputeBlindIndexes` | Rewrites indexes under the current blind-index version and normalization |
+| `EncryptPlaintext` | Encrypts values still stored as plaintext (a column that was just marked `.Encrypt`) |
 
-## Pitfalls
+It walks every encrypted column in primary-key order in short transactions, with plain SQL (no query filter hides
+soft-deleted or other tenants' rows, no interceptor stamps audit columns), and writes with a batched
+compare-and-swap, so a value changed concurrently is left alone and counted. TPH columns shared by sibling types
+are processed once, TPT/TPC columns in the table that holds them. Cancelling returns a checkpoint token to resume.
+Run it from a hosted service, scheduled job or workflow activity, never from request handling (SK0303).
 
-- **A property with no blind index cannot be searched by value.** `.Where(x => x.Email == "...")` compiles but always returns zero rows — `EncryptedColumnEqualityGuardInterceptor` throws instead, for encrypted columns with OR without a blind index. Use `WhereBlindIndexEquals`.
-- **A LINQ projection bypasses decryption.** `.Select(x => x.Email)` returns raw ciphertext — decryption happens only on full entity materialization. Always read an encrypted property through its owning entity.
-- **The primary key must be client-generated.** It is part of the AAD, computed before the physical save — a store-generated (identity/serial) key is not yet known then and throws at save time.
-- **Two encrypted properties on the same entity type must never share a purpose.** AAD would be identical for both on the same row, making their ciphertext freely swappable — rejected at model-build time.
-- **A same-table owned entity type's OWN properties cannot be encrypted.** Its primary key is always a shadow property in EF Core 10, with no CLR-backed storage `EncryptionInterceptor` can read at materialization time. Move the property to the owning entity type, or use a complex type instead (which has no primary key of its own and is fully supported).
-- **Only `string` properties are supported.** `.Encrypt()` on any other CLR type throws at model build.
-- **Rotation supports only single-column primary keys** whose provider type is `Guid`, `long`, `int`, or `string`. A composite key with an encrypted property throws at model build, not only when a rotation happens to run.
-- **`.WithEncryption()` must actually be called.** A model with `.Encrypt(...)` annotations but no `.WithEncryption()` call throws at model build (a core-package guard, `EncryptAnnotationRegisteredGuardConvention`) — it never silently persists plaintext.
+A stored plaintext value is never read silently: materializing it throws. To encrypt an existing column, deploy the
+`.Encrypt(...)` model, then run `EncryptPlaintext` before serving reads.
 
-## Design decisions
+**Row-level security.** Each maintenance transaction runs with `row_security = off`, so a policy that would hide
+rows fails the run instead of letting it report completion over the visible rows only. Maintenance therefore needs
+a role that bypasses row-level security: the cross-tenant data source `AddSharedKernelNpgsql` registers for RLS is
+used automatically, or pass one with `k.UseMaintenanceDataSource(sp => …)`. A role that sees every row through a
+role-specific policy instead needs `RequireRowSecurityBypass = false`; the job then refuses a table that looks empty
+while PostgreSQL's statistics say it is not.
 
-- **No `ValueConverter`.** See [How it works](#how-it-works).
-- **AAD purpose uniqueness is enforced, not merely documented.** A model-build-time check rejects two `.Encrypt(...)` properties on one entity type sharing a purpose.
-- **The blind index is always parameterized, never inlined as a SQL literal.** It is a keyed pseudonym of the plaintext — often PII by derivation — so `WhereBlindIndexEquals` forces it through `EF.Parameter(...)` explicitly, since the predicate is built via `Expression` APIs directly rather than compiled from C# lambda syntax.
-- **Rotation is raw ADO.NET, never EF Core's change tracker, LINQ, or platform interceptors.** It reads with a plain `SELECT` (so soft-deleted and cross-tenant rows are included) and writes with a compare-and-swap `UPDATE ... WHERE pk = @pk AND ciphertext = @old` (so a concurrent writer's own save is detected — zero affected rows — rather than silently overwritten, and `AuditInterceptor` never stamps a rotation as a business change).
-- **The rotation checkpoint identifies its target by name, never by position.** `BuildTargets` rebuilds the target list from the live model on every call; a purely positional checkpoint would silently point at the wrong target (or skip one entirely) if an `.Encrypt(...)` property was added to or removed from the model between the call that produced the checkpoint and the one resuming from it.
-- **An unparseable stored value is counted and surfaced, never silently skipped.** `RowsSkippedUnparseable` is distinct from `RowsFailed` specifically so a clean-looking `Completed: true, RowsFailed: 0` report can never mask rows nobody actually rotated.
+## Per-tenant data keys and crypto-shredding
 
-## AI quick reference
+With `UseTenantDataKeys()` every encrypted value of a tenanted entity is encrypted under its tenant's own data key,
+generated and wrapped by the registered `IEnvelopeEncryptionProvider` (a KMS master key) and stored wrapped in
+`sk_tenant_encryption_keys` (create it with `migrationBuilder.CreateTenantEncryptionKeyTable()`). Keys are created on
+a tenant's first encrypted write; existing values move with `ReEncrypt`.
 
-- Register a `01.Core` key provider (`IEncryptionKeyProvider` and/or `ISynchronousEncryptionKeyProvider`) BEFORE calling `.WithEncryption()` — this package supplies no default.
-- `.Encrypt("stable.unique.purpose")` on a `string` property; `.WithBlindIndex()` only if it needs to be searched by exact value.
-- Query an encrypted property only via `WhereBlindIndexEquals` — never a direct `==`.
-- Rotation: loop `RotateAsync` while `!report.Completed`, passing `report.CheckpointToken` back in; check `RowsSkippedUnparseable` before declaring victory.
+```csharp
+await keys.ShredTenantAsync(tenantId, ct); // ITenantEncryptionKeyManager
+```
 
-## Compatibility
+Shredding deletes the wrapped key (keeping a tombstone, so the tenant id never gets a new key) and clears the
+tenant's blind indexes in the same transaction (a keyed hash of the plaintext would otherwise still let guesses be
+checked). Afterwards the tenant's values cannot be decrypted by anyone: reading one throws
+`TenantKeyShreddedException` (`Persistence.Encryption.TenantKeyShredded`, NotFound), writing for the tenant too.
+This process forgets the key at once, other processes within `TenantKeyCacheDuration`. Wrapped keys in database
+backups keep the data recoverable until those backups expire or the master key is destroyed. Record the erasure in
+your audit trail; the log entry deliberately carries no tenant id.
 
-`net10.0`. References `Microsoft.EntityFrameworkCore`/`.Relational`, `01.Core/SharedKernel.Cryptography`, `01.Core/SharedKernel.Configuration`, and `SharedKernel.Persistence.EfCore` — never `Npgsql` directly (PostgreSQL-specific wiring lives in `SharedKernel.Persistence.PostgreSQL`).
+## Diagnostics
 
-## Deliberately not included
-
-- **`byte[]`-typed encrypted properties.** Only `string` is supported today.
-- **Crypto-shredding via `perTenantKey`.** It gives genuine cross-tenant key ISOLATION, not per-tenant ERASURE — the subkey is deterministically re-derivable from the still-live root key and the (public) tenant id. Genuine per-tenant erasure needs a per-tenant root key registered under its own key id, deleted independently at offboarding — a key-management policy this package cannot automate.
-- **A raw-SQL-parser-grade naive-equality guard.** `EncryptedColumnEqualityGuardInterceptor` is a documented heuristic (regex over generated SQL text) — a safety net for the common mistake, not a proof of absence for every query shape. `.TagWith(EncryptedColumnEqualityGuardInterceptor.DisableTagText)` opts one query out for a genuine false positive.
-
-## Package
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [06.Persistence/CLAUDE.md](../CLAUDE.md) for the full interface contracts and implementation rules.
+Meter `SharedKernel.Persistence.EfCore.Encryption` (`EncryptionMeter`): encrypt/decrypt failures by reason,
+maintenance values written and skipped, tenant keys shredded. Logs use EventIds 6500-6699. No metric or log ever
+carries key material, a value, a primary key or a tenant id.

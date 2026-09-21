@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Persistence.EfCore.Encryption.Crypto;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 
