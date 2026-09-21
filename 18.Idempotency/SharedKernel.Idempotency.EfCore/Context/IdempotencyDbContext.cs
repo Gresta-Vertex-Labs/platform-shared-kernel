@@ -18,7 +18,7 @@ namespace SharedKernel.Idempotency.EfCore.Context;
 /// </para>
 /// <para>
 /// Configure the connection via <c>SharedKernel.Persistence.EfCore</c>'s
-/// <c>DbContextOptionsBuilder.UsePostgres(connectionString)</c> extension inside the
+/// <c>DbContextOptionsBuilder.UsePostgres(dataSource)</c> extension (an <c>NpgsqlDataSource</c>) inside the
 /// <c>configureDbContext</c> delegate passed to <c>AddSharedKernelEfCoreIdempotency</c> — this
 /// gets snake_case table/column naming conventions and pgvector support (unused here, harmless)
 /// for free, with no manual <c>ConfigureConventions</c> override required.

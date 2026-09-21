@@ -490,6 +490,7 @@ jobs:
             "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
             "04.Contracts/SharedKernel.Contracts.ConsumerVerify/SharedKernel.Contracts.ConsumerVerify.csproj" \
             "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" \
+            "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" \
             "samples/OrderApi/OrderApi.csproj" \
             ; do
             echo "::group::restore $proj"
@@ -591,6 +592,13 @@ jobs:
 
       - name: Run 05.Application consumer-verify
         run: dotnet test "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+
+      # SharedKernel.Persistence.ConsumerVerify restores all six 06.Persistence packages plus
+      # SharedKernel.Persistence.Testing from the packed feed and runs the composed scenario
+      # (multi-tenancy + RLS + audit + encryption + retry) against a Testcontainers PostgreSQL,
+      # so it needs the runner's Docker daemon, like the Caching harness above.
+      - name: Run 06.Persistence consumer-verify (Testcontainers PostgreSQL)
+        run: dotnet test "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
   # ---------------------------------------------------------------------------------------------
   actionlint:
