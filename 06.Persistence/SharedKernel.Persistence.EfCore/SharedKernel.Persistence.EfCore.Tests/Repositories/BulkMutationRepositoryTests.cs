@@ -5,6 +5,7 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
@@ -86,7 +87,7 @@ internal sealed class ThenBySpec : Specification<TestAggregate>
     public ThenBySpec()
     {
         ApplyOrderBy(e => e.Name!);
-        ApplyThenBy(e => e.Id.Value, descending: false);
+        ApplyThenBy(e => e.Id.Value);
     }
 }
 

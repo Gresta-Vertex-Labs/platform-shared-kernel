@@ -26,4 +26,7 @@ internal static partial class PersistenceModelAnnotationNames
     /// treats <see cref="Encrypt"/>'s presence WITHOUT this marker as proof that no encryption convention ever ran.
     /// </summary>
     public const string EncryptApplied = "SharedKernel:Persistence:Encrypt:Applied";
+
+    /// <summary>Set by <c>IsTenantShared()</c> on an entity type that is deliberately not tenant-scoped.</summary>
+    public const string TenantShared = "SharedKernel:Persistence:TenantShared";
 }

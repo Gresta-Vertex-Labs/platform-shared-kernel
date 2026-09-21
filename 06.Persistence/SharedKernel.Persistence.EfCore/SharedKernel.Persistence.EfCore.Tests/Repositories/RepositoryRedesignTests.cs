@@ -504,7 +504,7 @@ public sealed class RepositoryRedesignTests
         using var __ = context;
         var repo = new EfRepository<ShopOrder, ShopOrderId>(context);
 
-        await FluentActions.Awaiting(() => repo.UpdateAsync(orders[0], expectedVersion: 7))
+        await FluentActions.Awaiting(() => repo.UpdateAsync(orders[0], expectedVersion: EntityVersion.FromRowVersion(7)))
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*xmin*");
     }
 

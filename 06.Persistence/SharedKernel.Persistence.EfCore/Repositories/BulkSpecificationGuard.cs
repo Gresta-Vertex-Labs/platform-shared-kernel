@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.EfCore.Extensibility;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -52,11 +53,12 @@ internal static class BulkSpecificationGuard
     {
         ArgumentNullException.ThrowIfNull(entityType);
 
-        if (setters.Setters.Count == 0)
+        if (setters.Targets.Count == 0)
             throw new UnsupportedSpecificationException("A bulk update must set at least one property.");
 
-        var resolved = new List<IProperty>(setters.Setters.Count);
-        foreach (var (target, _) in setters.Setters)
+        var targets = setters.Targets;
+        var resolved = new List<IProperty>(targets.Count);
+        foreach (var target in targets)
         {
             var property = Resolve(entityType, target);
             EnsureWritable<T>(property, target);

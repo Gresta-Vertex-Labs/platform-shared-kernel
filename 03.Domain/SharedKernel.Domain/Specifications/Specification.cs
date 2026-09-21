@@ -50,7 +50,7 @@ namespace SharedKernel.Domain.Specifications;
 ///         AddCriteria(o =&gt; o.CustomerId == customerId);
 ///         AddInclude(o =&gt; o.Lines).ThenInclude(l =&gt; l.Product);
 ///         ApplyOrderByDescending(o =&gt; o.CreatedOn);
-///         ApplyThenBy(o =&gt; o.Id, descending: true);
+///         ApplyThenByDescending(o =&gt; o.Id);
 ///     }
 /// }
 /// </code>
@@ -146,18 +146,19 @@ public abstract class Specification<T> : ISpecification<T>
     protected void ApplyOrderByDescending(Expression<Func<T, object>> orderByDescending) =>
         SetOrderCore(orderByDescending, descending: true);
 
-    /// <summary>Adds a secondary sort key, applied after the primary sort and any earlier secondary keys.</summary>
+    /// <summary>
+    /// Adds an ascending secondary sort key, applied after the primary sort and any earlier secondary keys — the
+    /// counterpart of <see cref="ApplyOrderBy"/>, as <see cref="ApplyThenByDescending"/> is of
+    /// <see cref="ApplyOrderByDescending"/>.
+    /// </summary>
     /// <param name="keySelector">The sort key selector. Must not be <see langword="null"/>.</param>
-    /// <param name="descending">
-    /// <see langword="true"/> to sort this key in descending order; <see langword="false"/> for ascending.
-    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="keySelector"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">No primary sort is set yet.</exception>
-    protected void ApplyThenBy(Expression<Func<T, object>> keySelector, bool descending) =>
-        AddThenByCore(keySelector, descending);
+    protected void ApplyThenBy(Expression<Func<T, object>> keySelector) =>
+        AddThenByCore(keySelector, descending: false);
 
     /// <summary>
-    /// Adds a descending secondary sort key; equivalent to <c>ApplyThenBy(keySelector, descending: true)</c>.
+    /// Adds a descending secondary sort key, applied after the primary sort and any earlier secondary keys.
     /// </summary>
     /// <param name="keySelector">The sort key selector. Must not be <see langword="null"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="keySelector"/> is <see langword="null"/>.</exception>

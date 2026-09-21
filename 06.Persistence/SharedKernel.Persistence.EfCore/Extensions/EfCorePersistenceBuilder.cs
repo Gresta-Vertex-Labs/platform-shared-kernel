@@ -42,7 +42,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
 {
     private readonly List<Type> _interceptorTypes = [];
     private readonly List<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps = [];
-    private readonly List<Action<PostgreSqlProviderOptions>> _providerConfigurations = [];
+    private readonly List<Action<PostgresProviderOptions>> _providerConfigurations = [];
     private readonly List<Action<IServiceProvider, DbContextOptionsBuilder>> _dbContextConfigurations = [];
     private Action<IServiceProvider, NpgsqlDataSourceBuilder>? _configureDataSource;
     private NpgsqlDataSource? _dataSource;
@@ -75,7 +75,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <summary>Changes the PostgreSQL provider settings (retry — on by default —, pgvector).</summary>
     /// <param name="configure">Mutates the provider options.</param>
     /// <returns>This builder.</returns>
-    public EfCorePersistenceBuilder<TContext> ConfigureProvider(Action<PostgreSqlProviderOptions> configure)
+    public EfCorePersistenceBuilder<TContext> ConfigureProvider(Action<PostgresProviderOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
         _providerConfigurations.Add(configure);
@@ -267,7 +267,14 @@ public sealed class EfCorePersistenceBuilder<TContext>
             sp.GetRequiredService<ICrossTenantScope>()));
         services.AddSingleton<ICallerDbContextFactory<TContext>>(sp => new CallerDbContextFactory<TContext>(
             sp.GetRequiredKeyedService<IDbContextFactory<TContext>>(InnerFactoryKey.Instance)));
-        services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<TContext>>().CreateDbContext());
+        // The scope's own instance: registered with the scope's unit-of-work coordinator, so every context the scope
+        // resolves takes part in (and is saved by) the scope's transaction, whichever unit of work starts it.
+        services.AddScoped(sp =>
+        {
+            var context = sp.GetRequiredService<IDbContextFactory<TContext>>().CreateDbContext();
+            sp.GetRequiredService<UnitOfWorkCoordinator>().Track(context);
+            return context;
+        });
 
         // The first registered context is the unkeyed default; every context is also keyed by its type.
         services.TryAddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
@@ -280,12 +287,17 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         RepositoryRegistration.Register<TContext>(services);
 
+        // One process-wide signal: complete once every context's startup migration and seeding finished (at once when
+        // none runs). Readiness checks and schema-dependent background work (the audit sealer) wait for it.
+        var startupSignal = PersistenceStartupSignalRegistration.GetOrAdd(services);
+
         if (_migrateOnStartup || _seedSteps.Count > 0)
         {
+            startupSignal.Expect(typeof(TContext));
             var startup = new MigrationAndSeedHostedService<TContext>.StartupOptions(_migrateOnStartup, _startupLockTimeout);
             var seedSteps = _seedSteps.ToArray();
             services.AddHostedService(sp => new MigrationAndSeedHostedService<TContext>(
-                sp, startup, seedSteps, sp.GetService<ILogger<MigrationAndSeedHostedService<TContext>>>()));
+                sp, startup, seedSteps, sp.GetService<ILogger<MigrationAndSeedHostedService<TContext>>>(), startupSignal));
         }
 
         // Startup validation: builds and validates the model, warns when domain events have no dispatcher.
@@ -297,9 +309,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
     {
         // SQLSTATE classification first, once, so it is consulted before any consumer classifier.
         if (!services.Any(sd => sd.ServiceType == typeof(IDbUpdateExceptionClassifier)
-                && sd.ImplementationType == typeof(PostgreSqlDbUpdateExceptionClassifier)))
+                && sd.ImplementationType == typeof(PostgresDbUpdateExceptionClassifier)))
         {
-            services.Insert(0, ServiceDescriptor.Singleton<IDbUpdateExceptionClassifier, PostgreSqlDbUpdateExceptionClassifier>());
+            services.Insert(0, ServiceDescriptor.Singleton<IDbUpdateExceptionClassifier, PostgresDbUpdateExceptionClassifier>());
         }
 
         var serviceOptions = services.AddOptions<PersistenceServiceOptions>();
@@ -338,6 +350,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
             sp.GetService<ILoggerFactory>()));
 
         services.TryAddScoped<AmbientDbTransactionAccessor>();
+        services.TryAddScoped<UnitOfWorkCoordinator>();
         services.TryAddScoped<IAmbientDbTransaction>(sp => sp.GetRequiredService<AmbientDbTransactionAccessor>());
         services.TryAdd(ServiceDescriptor.Singleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>)));
     }
@@ -349,17 +362,17 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (_providerOverride is { } overrideSetup)
             return overrideSetup;
 
-        void Configure(PostgreSqlProviderOptions o)
+        void Configure(PostgresProviderOptions o)
         {
             foreach (var configure in _providerConfigurations)
                 configure(o);
         }
 
         if (_dataSource is { } dataSource)
-            return (_, options) => options.UsePostgreSQL(dataSource, Configure);
+            return (_, options) => options.UsePostgres(dataSource, Configure);
 
         var dataSourceName = PostgresDataSources.Register(services, Configuration, ConnectionName, _configureDataSource);
-        return (sp, options) => options.UsePostgreSQL(sp, dataSourceName, Configure);
+        return (sp, options) => options.UsePostgres(sp, dataSourceName, Configure);
     }
 
     // Moves the last registration of serviceType to a keyed slot, using only the public ServiceDescriptor shape.

@@ -126,7 +126,7 @@ public sealed class EfCorePersistenceBuilderTests
         var classifiers = provider.GetServices<SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier>().ToList();
 
         classifiers.Should().HaveCount(2);
-        classifiers[0].Should().BeOfType<SharedKernel.Persistence.EfCore.Exceptions.PostgreSqlDbUpdateExceptionClassifier>();
+        classifiers[0].Should().BeOfType<SharedKernel.Persistence.EfCore.Exceptions.PostgresDbUpdateExceptionClassifier>();
     }
 
     private sealed class NoOpClassifier : SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier

@@ -38,10 +38,15 @@ internal static class EfCorePersistenceBuilderRowLevelSecurityExtensions
     /// </para>
     /// </remarks>
     public static EfCorePersistenceBuilder<TContext> WithRowLevelSecurity<TContext>(
-        this EfCorePersistenceBuilder<TContext> builder)
+        this EfCorePersistenceBuilder<TContext> builder,
+        RowLevelSecurityCheckMode? coverageCheck = null)
         where TContext : SharedKernelDbContext
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp =>
+            new RowLevelSecurityCoverageCheck<TContext>(
+                sp, coverageCheck, sp.GetService<Microsoft.Extensions.Logging.ILogger<RowLevelSecurityCoverageCheck<TContext>>>()));
 
         builder.Services.TryAddSingleton<RowLevelSecurityCommandInterceptor>();
         builder.Services.TryAddSingleton<RowLevelSecurityTransactionInterceptor>();

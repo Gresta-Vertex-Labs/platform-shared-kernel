@@ -55,7 +55,7 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// </para>
 /// </remarks>
 #pragma warning disable RS0026 // The IHostApplicationBuilder and IServiceCollection overloads differ in their required receiver.
-public static class PostgresPersistenceExtensions
+public static partial class PostgresPersistenceExtensions
 {
     /// <summary>Registers <typeparamref name="TContext"/> on PostgreSQL with the platform defaults.</summary>
     /// <typeparam name="TContext">The context.</typeparam>
@@ -107,17 +107,23 @@ public static class PostgresPersistenceExtensions
     /// Also bind the tenant into every PostgreSQL transaction so row-level-security policies enforce isolation in
     /// the database (defense in depth). Requires the policies to be created by a migration.
     /// </param>
+    /// <param name="rowLevelSecurityCheck">
+    /// With <paramref name="rowLevelSecurity"/>: what happens when, after the startup migrations, a tenant table of the model
+    /// lacks forced row-level security or its tenant policy. Default: <see cref="RowLevelSecurityCheckMode.Fail"/>, or
+    /// <see cref="RowLevelSecurityCheckMode.Warn"/> in the Development environment.
+    /// </param>
     /// <returns>The same <paramref name="builder"/>.</returns>
     public static EfCorePersistenceBuilder<TContext> UseMultiTenancy<TContext>(
         this EfCorePersistenceBuilder<TContext> builder,
-        bool rowLevelSecurity = false)
+        bool rowLevelSecurity = false,
+        RowLevelSecurityCheckMode? rowLevelSecurityCheck = null)
         where TContext : TenantedDbContext
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.MultiTenancyRequested = true;
         if (rowLevelSecurity)
-            builder.WithRowLevelSecurity();
+            builder.WithRowLevelSecurity(rowLevelSecurityCheck);
 
         return builder;
     }

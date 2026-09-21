@@ -106,8 +106,12 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
             TouchAggregateRoots(entries, index);
             StampAudit(entries, actor, now);
 
-            if (context is TenantedDbContext tenanted && !tenanted.CrossTenantScope.IsActive)
-                GuardTenant(entries, tenanted.CurrentTenantId);
+            if (context is TenantedDbContext tenanted)
+            {
+                StampTenant(entries, index, tenanted.CurrentTenantId);
+                if (!tenanted.CrossTenantScope.IsActive)
+                    GuardTenant(entries, tenanted.CurrentTenantId);
+            }
         }
         finally
         {
@@ -199,18 +203,23 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    // Walks from a changed child to its top-most tracked parent: up the ownership chain, then across a required
-    // foreign key to an aggregate root. Returns null when the entry has no tracked parent.
+    // Walks from a changed child to its aggregate root: up the ownership chain, and across required foreign keys
+    // through any tracked principal (a grandchild reaches the root through its tracked parent). Returns the first
+    // aggregate root reached; when the walk crossed only ownerships, the top-most owner; otherwise null (a child that
+    // only references reference data never touches it).
     private static EntityEntry? FindRoot(EntityEntry entry, EntryIndex index)
     {
         var current = entry;
         var visited = new HashSet<EntityEntry>(ReferenceEqualityComparer.Instance) { entry };
+        var onlyOwnership = true;
 
         while (true)
         {
-            var parent = FindParent(current, index);
+            var (parent, viaOwnership) = FindParent(current, index);
             if (parent is null || !visited.Add(parent))
-                return ReferenceEquals(current, entry) ? null : current;
+                return onlyOwnership && !ReferenceEquals(current, entry) ? current : null;
+
+            onlyOwnership &= viaOwnership;
 
             if (IsAggregateRoot(parent.Metadata))
                 return parent;
@@ -219,22 +228,37 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    private static EntityEntry? FindParent(EntityEntry entry, EntryIndex index)
+    // The owner, else the tracked principal of a required foreign key, preferring (1) a principal that holds a
+    // navigation to this dependent and is an aggregate root, (2) one that holds such a navigation (an intermediate
+    // child), (3) an aggregate root without one (a plain reference by key).
+    private static (EntityEntry? Parent, bool ViaOwnership) FindParent(EntityEntry entry, EntryIndex index)
     {
         if (entry.Metadata.FindOwnership() is { } ownership)
-            return index.FindPrincipal(entry, ownership);
+            return (index.FindPrincipal(entry, ownership), true);
+
+        EntityEntry? composedChild = null;
+        EntityEntry? referencedRoot = null;
 
         foreach (var foreignKey in entry.Metadata.GetForeignKeys())
         {
-            if (foreignKey.IsRequired && IsAggregateRoot(foreignKey.PrincipalEntityType)
-                && index.FindPrincipal(entry, foreignKey) is { } principal)
-            {
-                return principal;
-            }
+            if (!foreignKey.IsRequired || index.FindPrincipal(entry, foreignKey) is not { } principal)
+                continue;
+
+            var composed = foreignKey.PrincipalToDependent is not null;
+            var isRoot = IsAggregateRoot(foreignKey.PrincipalEntityType);
+
+            if (composed && isRoot)
+                return (principal, false);
+
+            if (composed)
+                composedChild ??= principal;
+            else if (isRoot)
+                referencedRoot ??= principal;
         }
 
-        return null;
+        return (composedChild ?? referencedRoot, false);
     }
+
 
     private static void StampAudit(List<EntityEntry> entries, string actor, DateTimeOffset now)
     {
@@ -253,12 +277,34 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
+    // An added tenant entity without a TenantId (a child created through its aggregate) takes its aggregate's tenant
+    // when a tracked parent has one, else the caller's. The guard below then checks the result like any other write.
+    private static void StampTenant(List<EntityEntry> entries, EntryIndex index, Guid? currentTenantId)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.State != EntityState.Added || entry.Entity is not IHasTenant)
+                continue;
+
+            var tenantProperty = entry.Property(nameof(IHasTenant.TenantId));
+            if (tenantProperty.CurrentValue is not Guid tenantId || tenantId != Guid.Empty)
+                continue;
+
+            var inherited = FindRoot(entry, index)?.Entity is IHasTenant { TenantId: var parentTenant } && parentTenant != Guid.Empty
+                ? parentTenant
+                : currentTenantId;
+
+            if (inherited is { } value)
+                tenantProperty.CurrentValue = value;
+        }
+    }
+
     private static void GuardTenant(List<EntityEntry> entries, Guid? currentTenantId)
     {
         foreach (var entry in entries)
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)
-                || entry.Entity is not IHasTenant tenanted)
+                || entry.Entity is not IHasTenant)
             {
                 continue;
             }
@@ -269,19 +315,23 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
             // property modified whether or not its value changed.
             var tenantProperty = entry.Property(nameof(IHasTenant.TenantId));
             if (entry.State == EntityState.Modified && !Equals(tenantProperty.CurrentValue, tenantProperty.OriginalValue))
-                throw Reject(entityTypeName, "changed the TenantId of");
+                throw Reject(entityTypeName, TenantIsolationErrors.TenantChanged(entityTypeName));
 
-            if (currentTenantId is null || tenanted.TenantId != currentTenantId.Value)
-                throw Reject(entityTypeName, "written outside the current tenant for");
+            if (currentTenantId is null)
+                throw Reject(entityTypeName, TenantIsolationErrors.NoTenant(entityTypeName));
+
+            if (tenantProperty.CurrentValue is not Guid tenantId || tenantId != currentTenantId.Value)
+                throw Reject(entityTypeName, TenantIsolationErrors.OtherTenant(entityTypeName));
         }
     }
 
-    private static ForbiddenException Reject(string entityTypeName, string reason)
+    private static ForbiddenException Reject(string entityTypeName, SharedKernel.Primitives.Errors.Error error)
     {
         PersistenceMeter.TenantIsolationViolations.Add(1,
             new KeyValuePair<string, object?>(PersistenceTagKeys.AggregateType, entityTypeName));
-        return new ForbiddenException(TenantIsolationErrors.Build(entityTypeName, reason));
+        return new ForbiddenException(error);
     }
+
 
     // Resolves the tracked principal of a foreign key through the key values of the snapshot, built lazily per key.
     private sealed class EntryIndex(List<EntityEntry> entries)

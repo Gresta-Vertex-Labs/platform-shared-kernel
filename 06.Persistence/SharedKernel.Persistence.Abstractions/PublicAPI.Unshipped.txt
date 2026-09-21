@@ -31,6 +31,27 @@ SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Latenc
 SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Provider.get -> string!
 SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Provider.init -> void
 SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions
+SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<T>
+SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<T>.AllRowsSpecification() -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.Accept(SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate!>! visitor) -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.BulkUpdateSetters() -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.SetProperty<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! valueExpression) -> SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.SetProperty<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, TProperty value) -> SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.Targets.get -> System.Collections.Generic.IReadOnlyList<System.Linq.Expressions.LambdaExpression!>!
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.EntityVersion() -> void
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion other) -> bool
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToRowVersion() -> ulong
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider) -> bool
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteDeleteAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecutePurgeAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteUpdateAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Action<SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!>! setters, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>.SetExpression<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! valueExpression) -> void
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>.SetValue<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, TProperty value) -> void
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.AnyAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.CountAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
@@ -50,19 +71,30 @@ SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, T
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.AddAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.AddRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.FirstOrDefaultAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.GetByIdAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.ListAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, uint expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.GetHashCode() -> int
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.ToString() -> string!
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(object? obj) -> bool
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.GetHashCode() -> int
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString() -> string!
 static SharedKernel.Persistence.Abstractions.Context.CrossTenantScopeServiceCollectionExtensions.AddSharedKernelCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! factory, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
-static readonly SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.DefaultTimeout -> System.TimeSpan
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.FromRowVersion(ulong rowVersion) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.None.get -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! value) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Persistence.Abstractions.Repositories.EntityVersion result) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse(string? value, out SharedKernel.Persistence.Abstractions.Repositories.EntityVersion version) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator !=(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator ==(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool

@@ -95,17 +95,33 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
     }
 }
 
-/// <summary>Runs <see cref="AuditLedgerSelfCheck"/> at startup according to <see cref="AuditLedgerOptions.SelfCheck"/>.</summary>
+/// <summary>
+/// Runs <see cref="AuditLedgerSelfCheck"/> at startup according to <see cref="AuditLedgerOptions.SelfCheck"/> — once every
+/// hosted service has started and the startup migrations have completed (<see cref="SharedKernel.Persistence.EfCore.Seeding.IPersistenceStartup"/>), so a fresh
+/// deployment that creates the ledger tables with <c>MigrateOnStartup()</c> is checked against the migrated schema.
+/// </summary>
 internal sealed class AuditLedgerSelfCheckHostedService(
     AuditLedgerSelfCheck check,
     IOptions<AuditLedgerOptions> options,
-    ILogger<AuditLedgerSelfCheckHostedService> logger) : IHostedService
+    ILogger<AuditLedgerSelfCheckHostedService> logger,
+    SharedKernel.Persistence.EfCore.Seeding.IPersistenceStartup? persistenceStartup = null) : IHostedLifecycleService
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async Task StartedAsync(CancellationToken cancellationToken)
     {
         var mode = options.Value.SelfCheck;
         if (mode == AuditSelfCheckMode.Off)
             return;
+
+        if (persistenceStartup is not null)
+            await persistenceStartup.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         var findings = await check.RunAsync(cancellationToken).ConfigureAwait(false);
         if (findings.Count == 0)

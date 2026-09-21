@@ -46,6 +46,8 @@ namespace SharedKernel.Persistence.EfCore.Context;
 /// </remarks>
 public abstract class SharedKernelDbContext : DbContext
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Reflection.Assembly, bool> AssembliesWithConfigurations = new();
+
     private readonly PersistenceContextDependencies _dependencies;
     private readonly DbContextOptions _options;
     private readonly ILogger _logger;
@@ -176,16 +178,38 @@ public abstract class SharedKernelDbContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly, ShouldApplyConfiguration);
+        // Only when the assembly has configurations: EF Core warns (NoEntityTypeConfigurationsWarning) on every model
+        // build of a context whose entities are configured in OnModelCreating alone.
+        if (HasEntityTypeConfigurations(GetType().Assembly))
+            modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly, ShouldApplyConfiguration);
 
         foreach (var configurator in _dependencies.ModelConfigurators)
             configurator.Configure(modelBuilder);
+
+        MoneyMapping.Apply(modelBuilder);
 
         if (_dependencies.KeyGenerator is not null)
             ClientKeyGeneration.Apply(modelBuilder);
 
         base.OnModelCreating(modelBuilder);
     }
+
+    private static bool HasEntityTypeConfigurations(System.Reflection.Assembly assembly) =>
+        AssembliesWithConfigurations.GetOrAdd(assembly, static a =>
+        {
+            Type?[] types;
+            try
+            {
+                types = a.GetTypes();
+            }
+            catch (System.Reflection.ReflectionTypeLoadException ex)
+            {
+                types = ex.Types;
+            }
+
+            return types.Any(t => t is { IsAbstract: false, IsGenericTypeDefinition: false }
+                && t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEntityTypeConfiguration<>)));
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -222,8 +246,8 @@ public abstract class SharedKernelDbContext : DbContext
     /// <c>SaveChangesAsync</c>. Without a dispatcher the events are discarded with a warning.
     /// </para>
     /// <para>
-    /// A concurrency failure becomes a <c>ConflictException</c> (or <c>ForbiddenException</c> when the row
-    /// provably belongs to another tenant); other database errors are offered to the registered classifiers.
+    /// A concurrency failure becomes a <c>ConflictException</c> — also when the row belongs to another tenant, so the
+    /// answer never reveals that it exists; other database errors are offered to the registered classifiers.
     /// </para>
     /// </remarks>
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -257,12 +281,27 @@ public abstract class SharedKernelDbContext : DbContext
     /// entities), then saves everything as one unit. Handlers therefore run before the commit: they must only
     /// change data in this context; external effects belong after the commit (<c>ICommandScope.OnCompleted</c>)
     /// or in an outbox. See <see cref="SaveChanges(bool)"/> for exception translation.
+    /// <para>
+    /// When a domain-event handler throws, nothing is saved and the change tracker is cleared: the dispatched events
+    /// are no longer on their aggregates, so saving the remaining changes later would persist them without their
+    /// events. Reload and retry the whole operation.
+    /// </para>
     /// </remarks>
     public override async Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        await DomainEventDispatchLoop.RunAsync(this, DomainEventDispatcher, _logger, cancellationToken);
+        try
+        {
+            await DomainEventDispatchLoop.RunAsync(this, DomainEventDispatcher, _logger, cancellationToken);
+        }
+        catch
+        {
+            // The events were taken off their aggregates before dispatch; a later save would persist the changes without
+            // them. Abandon the whole save instead: nothing was written, and nothing can be half-applied later.
+            ChangeTracker.Clear();
+            throw;
+        }
 
         try
         {
@@ -283,7 +322,7 @@ public abstract class SharedKernelDbContext : DbContext
         // Configured retry, not CreateExecutionStrategy().RetriesOnFailure: inside a running strategy (the unit of
         // work's transaction) EF suspends nested strategies, which would report no retry here.
         if (this.GetService<IDbContextOptions>()
-                .FindExtension<PostgreSQLConventionsOptionsExtension>()?.MaxRetryCount is not > 0)
+                .FindExtension<PostgresConventionsOptionsExtension>()?.MaxRetryCount is not > 0)
         {
             return false;
         }

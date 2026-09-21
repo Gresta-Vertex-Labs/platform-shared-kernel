@@ -79,7 +79,7 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
     // -----------------------------------------------------------------------
     // P-558 / A32: pgvector through the SHARED, DI-registered data source. The ADO-level UseVector()
     // must be applied to the data source AddSharedKernelNpgsql builds (NpgsqlPersistenceOptions.UseVector);
-    // UsePostgreSQL(sp) then turns on the EF Core mapping automatically.
+    // UsePostgres(sp) then turns on the EF Core mapping automatically.
     // -----------------------------------------------------------------------
 
     private async Task CreateVectorExtensionAsync()
@@ -101,9 +101,9 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
         var services = new ServiceCollection();
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(ConnectionString, useVector: true));
         // A hand-built registration over the shared data source (the path a design-time factory or another
-        // package takes): the public UsePostgreSQL(sp) plus PersistenceContextDependencies.Create().
+        // package takes): the public UsePostgres(sp) plus PersistenceContextDependencies.Create().
         services.AddSingleton(PersistenceContextDependencies.Create());
-        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp));
+        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgres(sp));
 
         await using var provider = services.BuildServiceProvider();
 
@@ -125,12 +125,12 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public void UsePostgreSQL_VectorRequested_ButSharedDataSourceBuiltWithoutIt_FailsWithGuidance()
+    public void UsePostgres_VectorRequested_ButSharedDataSourceBuiltWithoutIt_FailsWithGuidance()
     {
         var services = new ServiceCollection();
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(ConnectionString, useVector: false));
         services.AddSingleton(PersistenceContextDependencies.Create());
-        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp, o => o.UseVector = true));
+        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgres(sp, o => o.UseVector = true));
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();

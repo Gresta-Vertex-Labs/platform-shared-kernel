@@ -45,6 +45,8 @@
       P-558/W2: AddSharedKernelPostgres reads ConnectionStrings:{name} and binds SharedKernel:Persistence sections.
     -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- The design-time factory (PostgresDesignTimeDbContextFactory) reads appsettings.json. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
   </ItemGroup>
   <ItemGroup>
     <!-- Allows the nested test project to access internal members for diagnostics and white-box

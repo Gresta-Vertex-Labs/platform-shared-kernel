@@ -75,12 +75,12 @@ public sealed class ClassifierTestDbContext : SharedKernelDbContext
 }
 
 /// <summary>
-/// <see cref="PostgreSqlDbUpdateExceptionClassifier"/> against real PostgreSQL constraint
+/// <see cref="PostgresDbUpdateExceptionClassifier"/> against real PostgreSQL constraint
 /// violations: a unique-index violation becomes <see cref="ConflictException"/>, an insert/update
 /// foreign-key violation becomes <see cref="ValidationException"/>, and a delete blocked by a
 /// dependent row becomes <see cref="ConflictException"/>.
 /// </summary>
-public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsyncLifetime
+public sealed class PostgresDbUpdateExceptionClassifierIntegrationTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainerFixture _fixture = new();
 
@@ -91,13 +91,13 @@ public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsy
     private async Task<ClassifierTestDbContext> CreateContextAsync()
     {
         var builder = new DbContextOptionsBuilder<ClassifierTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(_fixture.ConnectionString));
+        builder.UsePostgres(TestNpgsqlDataSources.Get(_fixture.ConnectionString));
         var options = builder.Options;
 
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
         var audit = PersistenceContextDependencies.Create(actorContext, clock);
-        var classifiers = new IDbUpdateExceptionClassifier[] { new PostgreSqlDbUpdateExceptionClassifier() };
+        var classifiers = new IDbUpdateExceptionClassifier[] { new PostgresDbUpdateExceptionClassifier() };
 
         var ctx = new ClassifierTestDbContext(options, audit);
         await ctx.Database.EnsureCreatedAsync();

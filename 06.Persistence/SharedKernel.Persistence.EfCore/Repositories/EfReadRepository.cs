@@ -157,6 +157,7 @@ public class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId
         PagingGuard.EnsureKeysetPageable(spec, nameof(ListKeysetAsync));
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(keySelector);
+        EnsureKeyNotNullable(keySelector);
 
         var keyAccessor = RepositoryExpressions<TAggregate, TId>.KeyAccessor(keySelector);
         var after = KeysetCursor.Decode<TKey, TId>(page);
@@ -226,6 +227,7 @@ public class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId
         PagingGuard.EnsureKeysetPageable(spec, nameof(ListKeysetProjectedAsync));
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(keySelector);
+        EnsureKeyNotNullable(keySelector);
 
         var after = KeysetCursor.Decode<TKey, TId>(page);
         var rowSelector = BuildKeysetRowSelector(spec.Selector, keySelector);
@@ -255,6 +257,35 @@ public class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId
             nameof(StreamProjectedAsync),
             Evaluator.GetProjectedQuery(DbContext.Set<TAggregate>().AsNoTracking(), spec).AsAsyncEnumerable(),
             cancellationToken);
+
+    // A seek predicate over a nullable key (key > @after) never matches a NULL, so rows with a NULL key would be
+    // skipped silently. Refused instead, from the model (a nullable column) or the key type (Nullable<T>).
+    private void EnsureKeyNotNullable<TKey>(Expression<Func<TAggregate, TKey>> keySelector)
+    {
+        var path = MemberPath.TryGet(keySelector) ?? keySelector.ToString();
+        var nullable = Nullable.GetUnderlyingType(typeof(TKey)) is not null
+            || (MemberPath.TryGetSegments(keySelector) is { } segments && FindProperty(segments) is { IsNullable: true });
+
+        if (nullable)
+        {
+            throw new InvalidOperationException(
+                $"The keyset key '{path}' of '{typeof(TAggregate).Name}' is nullable. Keyset paging compares the key with "
+                + "the cursor, which never matches NULL, so rows with a NULL key would be skipped. Page by a required "
+                + "column (the identity is always added as the tiebreak), or coalesce the key to a non-null value.");
+        }
+    }
+
+    private Microsoft.EntityFrameworkCore.Metadata.IReadOnlyProperty? FindProperty(IReadOnlyList<string> segments)
+    {
+        Microsoft.EntityFrameworkCore.Metadata.IReadOnlyTypeBase? current = DbContext.Model.FindEntityType(typeof(TAggregate));
+        for (var i = 0; current is not null && i < segments.Count - 1; i++)
+        {
+            current = (Microsoft.EntityFrameworkCore.Metadata.IReadOnlyTypeBase?)current.FindComplexProperty(segments[i])?.ComplexType
+                ?? (current as Microsoft.EntityFrameworkCore.Metadata.IReadOnlyEntityType)?.FindNavigation(segments[i])?.TargetEntityType;
+        }
+
+        return current?.FindProperty(segments[^1]);
+    }
 
     // e => new KeysetRow { Item = selector(e), Key = key(e), Id = e.Id }, over one parameter.
     private static Expression<Func<TAggregate, KeysetRow<TResult, TKey, TId>>> BuildKeysetRowSelector<TResult, TKey>(

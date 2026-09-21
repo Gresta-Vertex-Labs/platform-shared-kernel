@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Vectors;
 /// creates the pgvector extension automatically.
 /// </summary>
 /// <remarks>
-/// Added to the convention set only when <c>UsePostgreSQL(..., useVector: true)</c> is
+/// Added to the convention set only when <c>UsePostgres(..., useVector: true)</c> is
 /// used — pgvector support is opt-in, so a service that never maps a vector column never gets an
 /// unnecessary <c>CREATE EXTENSION</c> statement in its migrations.
 /// </remarks>

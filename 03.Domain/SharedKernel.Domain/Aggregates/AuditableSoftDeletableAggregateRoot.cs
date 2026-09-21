@@ -86,7 +86,9 @@ public abstract class AuditableSoftDeletableAggregateRoot<TId> : AggregateRoot<T
     /// The deleted state is already set when it runs and stays set if it throws. It is not called when the
     /// persistence layer soft-deletes a removed aggregate.
     /// </remarks>
-    protected abstract void OnDelete();
+    protected virtual void OnDelete()
+    {
+    }
 
     /// <summary>
     /// Reverses a soft delete: clears <see cref="IsDeleted"/>, <see cref="DeletedOn"/> and

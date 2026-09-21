@@ -48,13 +48,16 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     private readonly StartupOptions _options;
     private readonly IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps;
     private readonly ILogger _logger;
+    private readonly PersistenceStartupSignal? _startupSignal;
 
     public MigrationAndSeedHostedService(
         IServiceProvider serviceProvider,
         StartupOptions options,
         IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> seedSteps,
-        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null)
+        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null,
+        PersistenceStartupSignal? startupSignal = null)
     {
+        _startupSignal = startupSignal;
         _serviceProvider = serviceProvider;
         _options = options;
         _seedSteps = seedSteps;
@@ -131,10 +134,17 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
             }
 
             PersistenceLog.MigrationAndSeedCompleted(_logger, contextTypeName);
+            _startupSignal?.Complete(typeof(TContext));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _startupSignal?.Cancel(typeof(TContext));
+            throw;
         }
         catch (Exception ex)
         {
-            PersistenceLog.MigrationAndSeedFailed(_logger, ex, contextTypeName);
+            PersistenceLog.MigrationAndSeedFailed(_logger, contextTypeName, ex.GetType().Name);
+            _startupSignal?.Fail(typeof(TContext), ex);
             throw;
         }
         finally

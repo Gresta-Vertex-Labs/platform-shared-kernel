@@ -201,7 +201,7 @@ internal sealed class ThenByOnlySpec : Specification<TestAggregate>
     public ThenByOnlySpec()
     {
         // ThenBy without a primary OrderBy — should be silently ignored
-        ApplyThenBy(e => e.Name!, descending: false);
+        ApplyThenBy(e => e.Name!);
     }
 }
 

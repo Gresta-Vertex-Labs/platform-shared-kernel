@@ -83,8 +83,8 @@ public sealed class NamingCompletenessTestDbContext : DbContext
 }
 
 /// <summary>
-/// snake_case naming (<c>EFCore.NamingConventions</c>, applied by <c>UsePostgreSQL()</c>) plus the 63-byte
-/// <see cref="SharedKernel.Persistence.EfCore.Conventions.PostgreSqlIdentifierLengthConvention"/>
+/// snake_case naming (<c>EFCore.NamingConventions</c>, applied by <c>UsePostgres()</c>) plus the 63-byte
+/// <see cref="SharedKernel.Persistence.EfCore.Conventions.PostgresIdentifierLengthConvention"/>
 /// completeness: primary/alternate keys, check constraints, indexes, and foreign keys all get renamed,
 /// and any identifier exceeding PostgreSQL's 63-byte limit is truncated with a stable, uniquifying
 /// hash suffix. Pure model-building — no live database connection needed.
@@ -94,7 +94,7 @@ public sealed class PostgreSqlNamingConventionCompletenessTests
     private static NamingCompletenessTestDbContext CreateContext()
     {
         var builder = new DbContextOptionsBuilder<NamingCompletenessTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get("Host=localhost;Database=naming_completeness_test;Username=test;Password=test"));
+        builder.UsePostgres(TestNpgsqlDataSources.Get("Host=localhost;Database=naming_completeness_test;Username=test;Password=test"));
         return new NamingCompletenessTestDbContext(builder.Options);
     }
 
@@ -131,7 +131,7 @@ public sealed class PostgreSqlNamingConventionCompletenessTests
 
         // Check constraints are design-time-only metadata, stripped from the read-optimized
         // runtime model ctx.Model returns — the design-time model is the one a migration is
-        // actually generated from, and the one XminConcurrencyTokenConvention/PostgreSqlIdentifierLengthConvention
+        // actually generated from, and the one XminConcurrencyTokenConvention/PostgresIdentifierLengthConvention
         // (both IModelFinalizingConvention) run against.
         var designTimeModel = ctx.GetService<IDesignTimeModel>().Model;
         var entityType = designTimeModel.FindEntityType(typeof(NamingParentEntity))!;

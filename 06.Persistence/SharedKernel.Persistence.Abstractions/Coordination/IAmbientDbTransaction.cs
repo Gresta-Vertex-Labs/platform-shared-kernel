@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Data.Common;
 
 namespace SharedKernel.Persistence.Abstractions.Coordination;
@@ -20,7 +21,9 @@ namespace SharedKernel.Persistence.Abstractions.Coordination;
 /// active for the current DI scope — a Dapper command service used outside such a scope opens and
 /// manages its own connection instead.
 /// </para>
+/// <para>Infrastructure seam between the persistence packages; not for application code.</para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IAmbientDbTransaction
 {
     /// <summary>

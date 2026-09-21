@@ -172,7 +172,7 @@ public class SpecificationCompositionTests
         public DescOrderSpec()
         {
             ApplyOrderByDescending(p => p.Price);
-            ApplyThenBy(p => p.Name, descending: false);
+            ApplyThenBy(p => p.Name);
         }
     }
 

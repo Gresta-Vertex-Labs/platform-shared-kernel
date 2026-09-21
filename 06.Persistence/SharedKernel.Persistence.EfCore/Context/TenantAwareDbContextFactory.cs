@@ -57,28 +57,43 @@ internal sealed class TenantAwareDbContextFactory<TContext>(
 /// </code>
 /// <para>The caller disposes the context. A dispatcher passed here receives the context's domain events.</para>
 /// </remarks>
+#pragma warning disable RS0026 // The dispatcher overload takes it as a required parameter, so the argument count selects the overload.
 public interface ICallerDbContextFactory<TContext>
     where TContext : SharedKernelDbContext
 {
-    /// <summary>Creates a context acting as <paramref name="caller"/>.</summary>
+    /// <summary>
+    /// Creates a context acting as <paramref name="caller"/>, without a domain-event dispatcher (pending events are
+    /// discarded with a warning; pass one to the other overload when the work raises events).
+    /// </summary>
+    /// <param name="caller">The identity (and tenant) the context attributes and filters by.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A new (or pooled) context the caller must dispose.</returns>
+    Task<TContext> CreateDbContextAsync(IRequestContext caller, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a context acting as <paramref name="caller"/>, with an explicit domain-event dispatcher.</summary>
     /// <param name="caller">The identity (and tenant) the context attributes and filters by.</param>
     /// <param name="domainEventDispatcher">Receives domain events before each save; <see langword="null"/> discards them with a warning.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A new (or pooled) context the caller must dispose.</returns>
     Task<TContext> CreateDbContextAsync(
         IRequestContext caller,
-        IDomainEventDispatcher? domainEventDispatcher = null,
+        IDomainEventDispatcher? domainEventDispatcher,
         CancellationToken cancellationToken = default);
 }
+#pragma warning restore RS0026
 
 /// <summary>Default <see cref="ICallerDbContextFactory{TContext}"/> over the registration's inner factory.</summary>
 internal sealed class CallerDbContextFactory<TContext>(IDbContextFactory<TContext> inner) : ICallerDbContextFactory<TContext>
     where TContext : SharedKernelDbContext
 {
     /// <inheritdoc />
+    public Task<TContext> CreateDbContextAsync(IRequestContext caller, CancellationToken cancellationToken = default) =>
+        CreateDbContextAsync(caller, domainEventDispatcher: null, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<TContext> CreateDbContextAsync(
         IRequestContext caller,
-        IDomainEventDispatcher? domainEventDispatcher = null,
+        IDomainEventDispatcher? domainEventDispatcher,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(caller);

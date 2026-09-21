@@ -1,3 +1,4 @@
+using System.ComponentModel;
 namespace SharedKernel.Persistence.Abstractions.Coordination;
 
 /// <summary>
@@ -23,7 +24,9 @@ namespace SharedKernel.Persistence.Abstractions.Coordination;
 /// implementation, or gate startup entirely on a single migration Job/init container, to close this
 /// gap.
 /// </para>
+/// <para>Infrastructure seam between the persistence packages; not for application code.</para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMigrationLock
 {
     /// <summary>

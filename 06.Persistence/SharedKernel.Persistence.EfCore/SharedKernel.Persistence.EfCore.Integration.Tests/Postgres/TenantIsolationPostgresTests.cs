@@ -7,6 +7,7 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 
@@ -323,7 +324,7 @@ public sealed class TenantIsolationPostgresTests
         // criteria-less bulk mutation — using it here isolates the assertion to the SetProperty(TenantId)
         // rejection specifically, not the separate "no criteria" rejection.
         var act = () => repo.ExecuteUpdateAsync(
-            new SharedKernel.Persistence.EfCore.Repositories.AllRowsSpecification<PgOrderAggregate>(),
+            new SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<PgOrderAggregate>(),
             s => s.SetProperty(o => o.TenantId, Guid.NewGuid()));
 
         await act.Should().ThrowAsync<SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException>(
@@ -351,7 +352,7 @@ public sealed class TenantIsolationPostgresTests
         // protected-name comparisons and moved the rows into another tenant. A selector the
         // inspector cannot name must be rejected outright, not assumed harmless.
         var act = () => repo.ExecuteUpdateAsync(
-            new SharedKernel.Persistence.EfCore.Repositories.AllRowsSpecification<PgOrderAggregate>(),
+            new SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<PgOrderAggregate>(),
             s => s.SetProperty(o => EF.Property<Guid>(o, "TenantId"), Guid.NewGuid()));
 
         await act.Should().ThrowAsync<SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException>(

@@ -84,12 +84,21 @@ public interface IRepository<TAggregate, TId> : IReadRepository<TAggregate, TId>
     /// written. Calling it is harmless.
     /// </para>
     /// <para>
-    /// <b>Detached aggregate</b> (deserialized, or loaded in another scope): it is <em>attached as modified</em>,
-    /// so <strong>every</strong> column is written, and its child entities are attached too (new ones, with an
-    /// unset key, as added). The creation audit columns are never overwritten. Prefer loading and changing a
-    /// tracked aggregate; attach only when the whole aggregate state is authoritative.
+    /// <b>Detached aggregate</b> (deserialized, or loaded in another scope) whose version is a column of the
+    /// aggregate itself: it is <em>attached as modified</em>, so <strong>every</strong> column is written, and its
+    /// child entities are attached too (new ones, with an unset key, as added). The creation audit columns are
+    /// never overwritten. Prefer loading and changing a tracked aggregate; attach only when the whole aggregate
+    /// state is authoritative.
+    /// </para>
+    /// <para>
+    /// <b>Detached aggregate whose version the database keeps</b> (PostgreSQL's <c>xmin</c>, the default for every
+    /// aggregate root): the version the client based its change on cannot be read from the object, so this
+    /// overload throws <see cref="InvalidOperationException"/>. Use
+    /// <see cref="UpdateAsync(TAggregate, EntityVersion, CancellationToken)"/> with the version the client last read
+    /// (its <c>If-Match</c>), or load the aggregate in this scope and change it.
     /// </para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">The aggregate is detached and its version is kept by the database.</exception>
     Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -97,24 +106,22 @@ public interface IRepository<TAggregate, TId> : IReadRepository<TAggregate, TId>
     /// (optimistic concurrency for HTTP <c>If-Match</c> / ETag).
     /// </summary>
     /// <param name="aggregate">The aggregate, tracked or detached (see <see cref="UpdateAsync(TAggregate, CancellationToken)"/>).</param>
-    /// <param name="expectedVersion">
-    /// The version the client last read: the aggregate's PostgreSQL <c>xmin</c> row version, as sent in the
-    /// ETag.
-    /// </param>
+    /// <param name="expectedVersion">The version the client last read (its <c>ETag</c>).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A completed task; the version is checked when the unit of work saves.</returns>
     /// <exception cref="InvalidOperationException">The aggregate's model has no row-version concurrency token.</exception>
     /// <remarks>
-    /// The save issues <c>UPDATE … WHERE id = @id AND xmin = @expectedVersion</c>; when another writer changed the
-    /// row in between, no row matches and the save fails with a conflict (HTTP 409/412) instead of overwriting
-    /// that change.
+    /// The save issues <c>UPDATE … WHERE id = @id AND version = @expectedVersion</c>; when another writer changed
+    /// the row in between, no row matches and the save fails with a conflict (HTTP 409/412) instead of overwriting
+    /// that change. A tracked, unchanged aggregate loaded at another version fails immediately.
     /// </remarks>
-    Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default);
+    Task UpdateAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>Stages aggregates for update; see <see cref="UpdateAsync(TAggregate, CancellationToken)"/>.</summary>
     /// <param name="aggregates">The aggregates. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
+    /// <exception cref="InvalidOperationException">An aggregate is detached and its version is kept by the database.</exception>
     Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -124,15 +131,31 @@ public interface IRepository<TAggregate, TId> : IReadRepository<TAggregate, TId>
     /// <param name="aggregate">The aggregate. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The aggregate is detached and its version is kept by the database; use
+    /// <see cref="DeleteAsync(TAggregate, EntityVersion, CancellationToken)"/>.
+    /// </exception>
     /// <remarks>
     /// A soft delete performed here raises no domain event. When other parts of the system must react, delete
     /// through the aggregate's own domain method instead.
     /// </remarks>
     Task DeleteAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 
-    /// <summary>Stages aggregates for deletion; see <see cref="DeleteAsync"/>.</summary>
+    /// <summary>
+    /// Stages an aggregate for deletion only if its stored version is still <paramref name="expectedVersion"/>;
+    /// see <see cref="DeleteAsync(TAggregate, CancellationToken)"/>.
+    /// </summary>
+    /// <param name="aggregate">The aggregate, tracked or detached.</param>
+    /// <param name="expectedVersion">The version the client last read (its <c>If-Match</c>).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; the version is checked when the unit of work saves.</returns>
+    /// <exception cref="InvalidOperationException">The aggregate's model has no row-version concurrency token.</exception>
+    Task DeleteAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default);
+
+    /// <summary>Stages aggregates for deletion; see <see cref="DeleteAsync(TAggregate, CancellationToken)"/>.</summary>
     /// <param name="aggregates">The aggregates. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
+    /// <exception cref="InvalidOperationException">An aggregate is detached and its version is kept by the database.</exception>
     Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default);
 }

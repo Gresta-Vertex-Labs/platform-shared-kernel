@@ -29,9 +29,11 @@ namespace SharedKernel.Application.Behaviors.Transaction;
 /// dropped, so a retried attempt never runs them twice.
 /// </para>
 /// <para>
-/// A nested command (<see cref="ICommandScope.IsNested"/>), or any command dispatched while a
-/// transaction is already active, calls <c>next()</c> directly and joins the outer transaction —
-/// only the outermost command commits.
+/// A command dispatched while a transaction is already active joins it through
+/// <c>ExecuteInTransactionAsync</c> — only the outermost command commits, and a joined command that
+/// fails (a failed <c>Result</c> or an exception) marks the transaction rollback-only, so its staged
+/// changes never commit with the outer command's. A nested command
+/// (<see cref="ICommandScope.IsNested"/>) with no active transaction calls <c>next()</c> directly.
 /// </para>
 /// </remarks>
 public sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitOfWork, ICommandScope commandScope)
@@ -44,7 +46,13 @@ public sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitOfW
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        if (commandScope.IsNested || unitOfWork.IsTransactionActive)
+        if (unitOfWork.IsTransactionActive)
+        {
+            // Joins: a failure marks the transaction rollback-only instead of committing with the outer command.
+            return await unitOfWork.ExecuteInTransactionAsync(_ => next(), cancellationToken).ConfigureAwait(false);
+        }
+
+        if (commandScope.IsNested)
             return await next().ConfigureAwait(false);
 
         // Callbacks queued on this command's frame before the transaction starts (by an outer

@@ -55,7 +55,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         _adminConnectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
         var adminOptions = new DbContextOptionsBuilder<RlsTestDbContext>();
-        adminOptions.UsePostgreSQL(TestNpgsqlDataSources.Get(_adminConnectionString), o => o.MaxRetryCount = 0);
+        adminOptions.UsePostgres(TestNpgsqlDataSources.Get(_adminConnectionString), o => o.MaxRetryCount = 0);
         await using (var adminContext = new RlsTestDbContext(adminOptions.Options, Dependencies()))
             await adminContext.Database.EnsureCreatedAsync();
 

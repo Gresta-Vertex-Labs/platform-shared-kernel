@@ -300,7 +300,7 @@ public sealed class OrdersOfCustomer : Specification<Order>
         AddCriteria(order => order.CustomerId == customerId); // combined with AND
         AddInclude(order => order.Lines); // continue a path with .ThenInclude(line => line.Nav)
         ApplyOrderByDescending(order => order.CreatedOn);
-        ApplyThenBy(order => order.Id, descending: true);
+        ApplyThenByDescending(order => order.Id);
     }
 }
 
@@ -463,6 +463,9 @@ public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
 | Already deleted | Changes nothing and raises no second event |
 | Blank actor | Throws `DomainException` |
 | Entity (no clock) | `MarkAsDeleted(deletedBy, deletedOn)` takes the owning aggregate's time, which must be UTC |
+| Restore | `Restore()` clears `IsDeleted`, `DeletedOn` and `DeletedBy`, then calls `OnRestore`; load the aggregate with a specification that includes deleted rows first |
+
+`OnDelete` and `OnRestore` do nothing unless overridden; override them only to raise an event.
 
 ### Business rules
 

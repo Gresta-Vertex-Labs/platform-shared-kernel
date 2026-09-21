@@ -9,13 +9,15 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// </summary>
 public static class DbContextDiagnosticsExtensions
 {
+    private static readonly TimeSpan DefaultReadinessTimeout = TimeSpan.FromSeconds(5);
+
     /// <summary>
     /// Probes database connectivity via <see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.CanConnectAsync"/>.
     /// </summary>
     /// <param name="context">The DB context to probe.</param>
     /// <param name="timeout">
     /// The maximum time the probe is allowed to run before it is abandoned and reported unhealthy.
-    /// Defaults to <see cref="DbConnectionFactoryDiagnosticsExtensions.DefaultTimeout"/> when omitted.
+    /// Defaults to 5 seconds when omitted.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
@@ -47,7 +49,7 @@ public static class DbContextDiagnosticsExtensions
         var stopwatch = Stopwatch.StartNew();
         var provider = context.Database.ProviderName ?? "unknown";
 
-        using var timeoutCts = new CancellationTokenSource(timeout ?? DbConnectionFactoryDiagnosticsExtensions.DefaultTimeout);
+        using var timeoutCts = new CancellationTokenSource(timeout ?? DefaultReadinessTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         try

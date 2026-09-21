@@ -1,7 +1,7 @@
 namespace SharedKernel.Persistence.EfCore.Options;
 
 /// <summary>
-/// Options for the platform's PostgreSQL provider setup (<c>UsePostgreSQL(...)</c>, or
+/// Options for the platform's PostgreSQL provider setup (<c>UsePostgres(...)</c>, or
 /// <c>ConfigureProvider(...)</c> on the <c>AddSharedKernelPostgres</c> builder).
 /// </summary>
 /// <remarks>
@@ -16,7 +16,7 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// which re-runs the whole delegate on a retry. Set <see cref="MaxRetryCount"/> to 0 to turn retry off.
 /// </para>
 /// </remarks>
-public sealed class PostgreSqlProviderOptions
+public sealed class PostgresProviderOptions
 {
     /// <summary>
     /// Gets or sets whether <c>Pgvector.Vector</c> columns are mapped and the <c>vector</c> extension is added

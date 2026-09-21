@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Seeding;
 
 namespace SharedKernel.ServiceDefaults.HealthChecks;
 
@@ -17,7 +18,7 @@ namespace SharedKernel.ServiceDefaults.HealthChecks;
 /// 13.ServiceDefaults" rule.
 /// </remarks>
 /// <typeparam name="TContext">The <see cref="SharedKernelDbContext"/> subclass to probe.</typeparam>
-internal sealed class DatabaseReadinessHealthCheck<TContext>(TContext dbContext) : IHealthCheck
+internal sealed class DatabaseReadinessHealthCheck<TContext>(TContext dbContext, IPersistenceStartup? persistenceStartup = null) : IHealthCheck
     where TContext : SharedKernelDbContext
 {
     /// <inheritdoc/>
@@ -25,6 +26,10 @@ internal sealed class DatabaseReadinessHealthCheck<TContext>(TContext dbContext)
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        // A database whose startup migrations have not finished is not ready to serve this service.
+        if (persistenceStartup is { IsCompleted: false })
+            return HealthCheckResult.Unhealthy("Startup migrations and seeders have not completed.");
+
         var readiness = await dbContext.CheckReadinessAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var data = new Dictionary<string, object>

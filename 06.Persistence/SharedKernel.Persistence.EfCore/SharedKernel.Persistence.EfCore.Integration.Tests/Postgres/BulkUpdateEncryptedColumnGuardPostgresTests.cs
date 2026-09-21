@@ -41,7 +41,7 @@ public sealed class BulkUpdateEncryptedColumnGuardPostgresTests
     private EncryptedFieldTestDbContext CreateContext()
     {
         var builder = new DbContextOptionsBuilder<EncryptedFieldTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString));
+        builder.UsePostgres(TestNpgsqlDataSources.Get(ConnectionString));
         var options = builder.Options;
         var actor = new FakeAuditActorContext("bulk-encrypted-guard-test");
 

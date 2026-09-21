@@ -17,13 +17,31 @@ internal sealed class AuditSealerHostedService(
     AuditCheckpointWriter checkpoints,
     IClock clock,
     IOptions<AuditLedgerOptions> options,
-    ILogger<AuditSealerHostedService> logger) : BackgroundService
+    ILogger<AuditSealerHostedService> logger,
+    SharedKernel.Persistence.EfCore.Seeding.IPersistenceStartup? persistenceStartup = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var sealer = options.Value.Sealer;
         if (!sealer.Enabled)
             return;
+
+        // The ledger tables may be created by the startup migrations: never seal before they have run.
+        if (persistenceStartup is not null)
+        {
+            try
+            {
+                await persistenceStartup.WaitAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception)
+            {
+                return; // Startup migration failed; the host reports it and stops.
+            }
+        }
 
         AuditingLog.SealerStarted(logger, sealer.Interval, sealer.BatchSize);
 

@@ -114,7 +114,7 @@ public sealed class VectorNearestNeighborIntegrationTests : IAsyncLifetime
         var builder = new DbContextOptionsBuilder<VectorNearestNeighborTestDbContext>();
         // Pgvector support is now opt-in; this test genuinely maps a Pgvector.Vector
         // column, so it must opt in.
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString, useVector: true), o => o.UseVector = true);
+        builder.UsePostgres(TestNpgsqlDataSources.Get(ConnectionString, useVector: true), o => o.UseVector = true);
         var options = builder.Options;
 
         var ctx = new VectorNearestNeighborTestDbContext(options);

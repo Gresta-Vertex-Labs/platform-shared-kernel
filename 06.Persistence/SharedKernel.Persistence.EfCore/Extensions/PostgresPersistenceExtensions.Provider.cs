@@ -15,13 +15,13 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>UsePostgreSQL</c> configures Npgsql with everything this platform always wants:
+/// <c>UsePostgres</c> configures Npgsql with everything this platform always wants:
 /// </para>
 /// <list type="bullet">
 /// <item><description>snake_case table, column, key, index and constraint names (<c>EFCore.NamingConventions</c>), kept within PostgreSQL's 63-byte identifier limit;</description></item>
 /// <item><description>the <c>xmin</c> system column as the concurrency token of every aggregate root and every <c>IHasConcurrency</c> entity;</description></item>
-/// <item><description>Npgsql's retrying execution strategy, <strong>on by default</strong> (<see cref="PostgreSqlProviderOptions.MaxRetryCount"/> 0 turns it off);</description></item>
-/// <item><description>optional pgvector support (<see cref="PostgreSqlProviderOptions.UseVector"/>).</description></item>
+/// <item><description>Npgsql's retrying execution strategy, <strong>on by default</strong> (<see cref="PostgresProviderOptions.MaxRetryCount"/> 0 turns it off);</description></item>
+/// <item><description>optional pgvector support (<see cref="PostgresProviderOptions.UseVector"/>).</description></item>
 /// </list>
 /// <para>
 /// SQLSTATE exception classification (unique violation → Conflict, foreign key → Validation or Conflict,...)
@@ -31,10 +31,10 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// </para>
 /// </remarks>
 #pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters.
-// The two UsePostgreSQL overloads take IServiceProvider or NpgsqlDataSource as their first required parameter:
+// The two UsePostgres overloads take IServiceProvider or NpgsqlDataSource as their first required parameter:
 // unrelated types, so the argument already selects the overload and the optional trailing parameter cannot
 // make a call ambiguous.
-public static class PostgreSQLPersistenceExtensions
+public static partial class PostgresPersistenceExtensions
 {
     /// <summary>
     /// Configures <paramref name="optionsBuilder"/> for PostgreSQL over the shared, DI-registered
@@ -54,21 +54,21 @@ public static class PostgreSQLPersistenceExtensions
     /// <example>
     /// <code>
     /// services.AddSharedKernelNpgsql(configuration);
-    /// services.AddDbContextFactory&lt;ReportingContext&gt;((sp, options) =&gt; options.UsePostgreSQL(sp));
+    /// services.AddDbContextFactory&lt;ReportingContext&gt;((sp, options) =&gt; options.UsePostgres(sp));
     /// </code>
     /// </example>
-    public static DbContextOptionsBuilder UsePostgreSQL(
+    public static DbContextOptionsBuilder UsePostgres(
         this DbContextOptionsBuilder optionsBuilder,
         IServiceProvider serviceProvider,
-        Action<PostgreSqlProviderOptions>? configure = null)
-        => optionsBuilder.UsePostgreSQL(serviceProvider, dataSourceName: null, configure);
+        Action<PostgresProviderOptions>? configure = null)
+        => optionsBuilder.UsePostgres(serviceProvider, dataSourceName: null, configure);
 
     // dataSourceName: null for the default (unkeyed) data source, else the key of a named one.
-    internal static DbContextOptionsBuilder UsePostgreSQL(
+    internal static DbContextOptionsBuilder UsePostgres(
         this DbContextOptionsBuilder optionsBuilder,
         IServiceProvider serviceProvider,
         string? dataSourceName,
-        Action<PostgreSqlProviderOptions>? configure)
+        Action<PostgresProviderOptions>? configure)
     {
         ArgumentNullException.ThrowIfNull(optionsBuilder);
         ArgumentNullException.ThrowIfNull(serviceProvider);
@@ -79,7 +79,7 @@ public static class PostgreSQLPersistenceExtensions
             ?? throw new InvalidOperationException(
                 $"No '{nameof(NpgsqlDataSource)}' is registered. Register the context with "
                     + "'AddSharedKernelPostgres<TContext>(name)' (or call 'services.AddSharedKernelNpgsql(configuration)') before "
-                    + $"'{nameof(UsePostgreSQL)}(DbContextOptionsBuilder, IServiceProvider,...)'.");
+                    + $"'{nameof(UsePostgres)}(DbContextOptionsBuilder, IServiceProvider,...)'.");
 
         var providerOptions = BuildOptions(configure);
 
@@ -96,12 +96,12 @@ public static class PostgreSQLPersistenceExtensions
         else if (dataSourceIsShared && providerOptions.UseVector)
         {
             throw new InvalidOperationException(
-                "pgvector was requested through 'UsePostgreSQL(sp, o => o.UseVector = true)' but the shared "
+                "pgvector was requested through 'UsePostgres(sp, o => o.UseVector = true)' but the shared "
                     + "NpgsqlDataSource was built without it, so Vector values could not be read or written. Set "
                     + $"'{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.UseVector)}' to true.");
         }
 
-        return optionsBuilder.UsePostgreSQLCore(dataSource, providerOptions);
+        return optionsBuilder.UsePostgresCore(dataSource, providerOptions);
     }
 
     /// <summary>
@@ -110,25 +110,25 @@ public static class PostgreSQLPersistenceExtensions
     /// <param name="optionsBuilder">The EF Core options builder.</param>
     /// <param name="dataSource">
     /// The data source. Keep one per database for the process lifetime; a data source per context would open
-    /// a connection pool per context. When <see cref="PostgreSqlProviderOptions.UseVector"/> is set, build it
+    /// a connection pool per context. When <see cref="PostgresProviderOptions.UseVector"/> is set, build it
     /// with <c>dataSourceBuilder.UseVector()</c>.
     /// </param>
     /// <param name="configure">Optional provider settings (retry, pgvector).</param>
     /// <returns>The same <paramref name="optionsBuilder"/>.</returns>
-    public static DbContextOptionsBuilder UsePostgreSQL(
+    public static DbContextOptionsBuilder UsePostgres(
         this DbContextOptionsBuilder optionsBuilder,
         NpgsqlDataSource dataSource,
-        Action<PostgreSqlProviderOptions>? configure = null)
+        Action<PostgresProviderOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(optionsBuilder);
         ArgumentNullException.ThrowIfNull(dataSource);
 
-        return optionsBuilder.UsePostgreSQLCore(dataSource, BuildOptions(configure));
+        return optionsBuilder.UsePostgresCore(dataSource, BuildOptions(configure));
     }
 
-    private static PostgreSqlProviderOptions BuildOptions(Action<PostgreSqlProviderOptions>? configure)
+    private static PostgresProviderOptions BuildOptions(Action<PostgresProviderOptions>? configure)
     {
-        var options = new PostgreSqlProviderOptions();
+        var options = new PostgresProviderOptions();
         configure?.Invoke(options);
 
         ArgumentOutOfRangeException.ThrowIfNegative(options.MaxRetryCount, nameof(options.MaxRetryCount));
@@ -137,10 +137,10 @@ public static class PostgreSQLPersistenceExtensions
         return options;
     }
 
-    private static DbContextOptionsBuilder UsePostgreSQLCore(
+    private static DbContextOptionsBuilder UsePostgresCore(
         this DbContextOptionsBuilder optionsBuilder,
         NpgsqlDataSource dataSource,
-        PostgreSqlProviderOptions options)
+        PostgresProviderOptions options)
     {
         optionsBuilder.UseNpgsql(dataSource, npgsql =>
         {
@@ -162,7 +162,7 @@ public static class PostgreSQLPersistenceExtensions
         // extension annotation through an IConventionSetPlugin — idempotent (AddOrUpdateExtension replaces any
         // earlier registration of the same extension type).
         ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(
-            new PostgreSQLConventionsOptionsExtension(
+            new PostgresConventionsOptionsExtension(
                 options.UseVector,
                 options.MaxRetryCount > 0 ? options.MaxRetryCount : null));
 

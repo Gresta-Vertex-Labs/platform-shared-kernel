@@ -111,7 +111,7 @@ public sealed class SpecificationBuilderTests
 
     private sealed class ThenByFirst : Specification<Order>
     {
-        public ThenByFirst() => ApplyThenBy(o => o.Id, descending: false);
+        public ThenByFirst() => ApplyThenBy(o => o.Id);
     }
 
     [Fact]

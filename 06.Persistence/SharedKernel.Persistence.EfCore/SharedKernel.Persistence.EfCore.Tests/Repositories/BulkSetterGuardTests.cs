@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Repositories;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 

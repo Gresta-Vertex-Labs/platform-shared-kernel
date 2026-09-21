@@ -4,13 +4,12 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Interceptors;
 
 namespace SharedKernel.Persistence.EfCore.Concurrency;
 
 /// <summary>
 /// Turns every <see cref="DbUpdateConcurrencyException"/> into a typed exception: a <see cref="ConflictException"/>,
-/// or a <see cref="ForbiddenException"/> only when the targeted row provably belongs to another tenant.
+/// whether the row changed, was deleted or belongs to another tenant.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,7 +20,9 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 /// </para>
 /// <list type="bullet">
 /// <item><description>the row exists and its <c>TenantId</c> differs from the one the write assumed — a detached
-/// entity carrying another tenant's key — proven violation: <see cref="ForbiddenException"/>, counted and logged;</description></item>
+/// entity carrying another tenant's key — proven violation: logged and counted as a tenant-isolation violation, but
+/// answered with the same <see cref="ConflictException"/> (no version) as a deleted row, so the response never reveals
+/// that the id exists in another tenant;</description></item>
 /// <item><description>otherwise (the row changed, or was deleted, or is invisible under row-level security):
 /// <see cref="ConflictException"/> with the row's current version attached when it still exists.</description></item>
 /// </list>
@@ -94,9 +95,9 @@ internal static class ConcurrencyConflictTranslator
                 PersistenceMeter.TenantIsolationViolations.Add(1,
                     new KeyValuePair<string, object?>(PersistenceTagKeys.AggregateType, entityTypeName));
 
-                return new ForbiddenException(
-                    TenantIsolationErrors.Build(entityTypeName, "written outside the current tenant for"),
-                    exception);
+                // Answered exactly like a row that does not exist: a different answer (403 vs 409) would let a caller probe
+                // which ids exist in other tenants. The violation is visible only in the log and the metric.
+                return ToConflict(entry, current: null, exception, logger);
             }
         }
 

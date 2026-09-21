@@ -35,15 +35,15 @@ namespace SharedKernel.Persistence.EfCore.Exceptions;
 /// objects, and <see cref="Error"/> has no metadata bag to carry it.
 /// </para>
 /// </remarks>
-internal sealed class PostgreSqlDbUpdateExceptionClassifier : IDbUpdateExceptionClassifier
+internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionClassifier
 {
-    private readonly ILogger<PostgreSqlDbUpdateExceptionClassifier> _logger;
+    private readonly ILogger<PostgresDbUpdateExceptionClassifier> _logger;
 
     /// <summary>Initialises the classifier.</summary>
     /// <param name="logger">Logger for the classified constraint; <see cref="NullLogger{T}"/> when omitted.</param>
-    public PostgreSqlDbUpdateExceptionClassifier(ILogger<PostgreSqlDbUpdateExceptionClassifier>? logger = null)
+    public PostgresDbUpdateExceptionClassifier(ILogger<PostgresDbUpdateExceptionClassifier>? logger = null)
     {
-        _logger = logger ?? NullLogger<PostgreSqlDbUpdateExceptionClassifier>.Instance;
+        _logger = logger ?? NullLogger<PostgresDbUpdateExceptionClassifier>.Instance;
     }
 
     /// <inheritdoc />

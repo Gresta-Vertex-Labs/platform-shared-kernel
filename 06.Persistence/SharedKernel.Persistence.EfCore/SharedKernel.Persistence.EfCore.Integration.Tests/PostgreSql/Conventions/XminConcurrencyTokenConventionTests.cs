@@ -29,7 +29,7 @@ public sealed class XminConcurrencyTokenConventionTests
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
         // A syntactically valid Npgsql connection string that is never actually opened — model
         // building is a local, in-memory compilation step independent of connectivity.
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get("Host=localhost;Database=xmin_metadata_test;Username=test;Password=test"));
+        builder.UsePostgres(TestNpgsqlDataSources.Get("Host=localhost;Database=xmin_metadata_test;Username=test;Password=test"));
         var options = builder.Options;
 
         var actorContext = new FakeAuditActorContext();

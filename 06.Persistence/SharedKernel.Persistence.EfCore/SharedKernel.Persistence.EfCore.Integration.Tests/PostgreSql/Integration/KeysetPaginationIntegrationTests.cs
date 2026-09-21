@@ -108,7 +108,7 @@ public sealed class KeysetPaginationIntegrationTests
     private static KeysetPgDbContext CreateContext(string connectionString)
     {
         var builder = new DbContextOptionsBuilder<KeysetPgDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString));
+        builder.UsePostgres(TestNpgsqlDataSources.Get(connectionString));
         var options = builder.Options;
 
         var actorContext = new FakeAuditActorContext();

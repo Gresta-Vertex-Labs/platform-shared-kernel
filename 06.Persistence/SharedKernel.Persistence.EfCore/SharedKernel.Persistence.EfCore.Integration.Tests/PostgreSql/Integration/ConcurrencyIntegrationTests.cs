@@ -82,7 +82,7 @@ public sealed class ConcurrencyTestDbContext : SharedKernelDbContext
 /// T-38 successor: proves the genuine, working PostgreSQL optimistic
 /// concurrency mechanism — <c>XminConcurrencyTokenConvention</c> binding
 /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency.RowVersion"/> to the real
-/// <c>xmin</c> system column, auto-wired by <c>UsePostgreSQL()</c> — end to end against a real
+/// <c>xmin</c> system column, auto-wired by <c>UsePostgres()</c> — end to end against a real
 /// PostgreSQL Testcontainer.
 /// </summary>
 /// <remarks>
@@ -111,12 +111,12 @@ public sealed class ConcurrencyIntegrationTests
 
     private static ConcurrencyTestDbContext CreateContext(string connectionString)
     {
-        // UsePostgreSQL() returns the non-generic DbContextOptionsBuilder (it operates on the
+        // UsePostgres() returns the non-generic DbContextOptionsBuilder (it operates on the
         // shared base type so it composes with both generic and non-generic builders) — call it
         // as a statement against the generic builder instance, then read.Options off that same
         // generic instance to get a properly-typed DbContextOptions<ConcurrencyTestDbContext>.
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString));
+        builder.UsePostgres(TestNpgsqlDataSources.Get(connectionString));
         var options = builder.Options;
 
         var actorContext = new FakeAuditActorContext();

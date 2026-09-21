@@ -6,12 +6,12 @@ namespace SharedKernel.Testing.Persistence;
 
 /// <summary>
 /// One cached <see cref="NpgsqlDataSource"/> per connection string for tests that configure EF Core directly
-/// (<c>options.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))</c>) instead of through
+/// (<c>options.UsePostgres(TestNpgsqlDataSources.Get(connectionString))</c>) instead of through
 /// <c>AddSharedKernelNpgsql(configuration)</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>UsePostgreSQL</c> takes a data source, not a connection string, because a data source owns a connection
+/// <c>UsePostgres</c> takes a data source, not a connection string, because a data source owns a connection
 /// pool: creating one per <c>DbContext</c> would open a pool per context. Tests build many contexts against the
 /// same few databases, so this caches one data source per (connection string, pgvector) pair for the lifetime
 /// of the test process. The data sources are never disposed; the process exit closes their connections.

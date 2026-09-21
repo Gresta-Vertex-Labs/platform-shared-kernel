@@ -5,15 +5,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
 /// <summary>
-/// <see cref="IDbContextOptionsExtension"/> that registers <see cref="PostgreSQLConventionSetPlugin"/>
+/// <see cref="IDbContextOptionsExtension"/> that registers <see cref="PostgresConventionSetPlugin"/>
 /// into EF Core's internal service provider, so the 63-byte identifier-length convention,
 /// <see cref="XminConcurrencyTokenConvention"/>, and (opt-in) the pgvector extension annotation are
 /// applied automatically to every model built for a <c>DbContext</c> configured via
-/// <c>UsePostgreSQL()</c> — no manual <c>ConfigureConventions</c> override required.
+/// <c>UsePostgres()</c> — no manual <c>ConfigureConventions</c> override required.
 /// </summary>
-internal sealed class PostgreSQLConventionsOptionsExtension : IDbContextOptionsExtension
+internal sealed class PostgresConventionsOptionsExtension : IDbContextOptionsExtension
 {
-    /// <summary>Initialises a new <see cref="PostgreSQLConventionsOptionsExtension"/>.</summary>
+    /// <summary>Initialises a new <see cref="PostgresConventionsOptionsExtension"/>.</summary>
     /// <param name="useVector">
     /// Whether pgvector support (<c>VectorExtensionConvention</c>) was opted into. Included in the
     /// internal-service-provider cache key so a context without vectors never reuses a cached service
@@ -23,7 +23,7 @@ internal sealed class PostgreSQLConventionsOptionsExtension : IDbContextOptionsE
     /// The configured retry count, or <see langword="null"/> when retry is off. Informational only (retry-exhaustion
     /// logging); it changes no service, so it is not part of the cache key.
     /// </param>
-    public PostgreSQLConventionsOptionsExtension(bool useVector = false, int? maxRetryCount = null)
+    public PostgresConventionsOptionsExtension(bool useVector = false, int? maxRetryCount = null)
     {
         UseVector = useVector;
         MaxRetryCount = maxRetryCount;
@@ -41,7 +41,7 @@ internal sealed class PostgreSQLConventionsOptionsExtension : IDbContextOptionsE
 
     /// <inheritdoc />
     public void ApplyServices(IServiceCollection services) =>
-        services.AddSingleton<IConventionSetPlugin>(new PostgreSQLConventionSetPlugin(UseVector));
+        services.AddSingleton<IConventionSetPlugin>(new PostgresConventionSetPlugin(UseVector));
 
     /// <inheritdoc />
     public void Validate(IDbContextOptions options)
@@ -51,7 +51,7 @@ internal sealed class PostgreSQLConventionsOptionsExtension : IDbContextOptionsE
 
     private sealed class ExtensionInfo(IDbContextOptionsExtension extension) : DbContextOptionsExtensionInfo(extension)
     {
-        private PostgreSQLConventionsOptionsExtension TypedExtension => (PostgreSQLConventionsOptionsExtension)Extension;
+        private PostgresConventionsOptionsExtension TypedExtension => (PostgresConventionsOptionsExtension)Extension;
 
         public override bool IsDatabaseProvider => false;
 

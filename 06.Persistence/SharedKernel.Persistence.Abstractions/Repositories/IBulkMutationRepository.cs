@@ -1,7 +1,7 @@
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 
-namespace SharedKernel.Persistence.EfCore.Repositories;
+namespace SharedKernel.Persistence.Abstractions.Repositories;
 
 /// <summary>
 /// Set-based changes over every row matching a specification, each one server-side SQL statement that loads

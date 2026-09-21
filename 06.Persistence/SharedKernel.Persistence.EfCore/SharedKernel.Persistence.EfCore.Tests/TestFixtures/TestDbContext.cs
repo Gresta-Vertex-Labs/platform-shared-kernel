@@ -124,9 +124,7 @@ public sealed class TenantedTestDbContext : TenantedDbContext
     {
         // Apply only this context's entity configurations without the full assembly scan.
         // We do NOT call base.OnModelCreating to avoid picking up configs from other test contexts.
-        // ApplyTenantFilters installs the expression-tree tenant filter after entity configs.
         modelBuilder.ApplyConfiguration(new TenantedTestAggregateConfig());
-        ApplyTenantFilters(modelBuilder);
     }
 }
 
@@ -163,7 +161,6 @@ public sealed class SoftDeletableTenantedDbContext : TenantedDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new SoftDeletableTenantedAggregateConfig());
-        ApplyTenantFilters(modelBuilder);
     }
 }
 

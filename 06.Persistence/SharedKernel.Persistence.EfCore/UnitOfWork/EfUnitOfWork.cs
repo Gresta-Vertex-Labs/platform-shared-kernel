@@ -9,18 +9,24 @@ using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
 /// <summary>
-/// The unit of work of one specific context. Inject it when a service registers more than one context;
-/// otherwise inject the plain <see cref="IUnitOfWork"/>, which resolves to the first registered context.
+/// The unit of work of one specific context. Inject it when a service registers more than one context and
+/// wants to start the transaction on a particular one; otherwise inject the plain <see cref="IUnitOfWork"/>,
+/// which resolves to the first registered context.
 /// </summary>
-/// <typeparam name="TContext">The context this unit of work commits.</typeparam>
+/// <typeparam name="TContext">The context this unit of work starts transactions on.</typeparam>
 /// <remarks>
+/// <para>
+/// Every unit of work of a scope shares one transaction: whichever starts it, every context of the scope that
+/// reaches the same database joins it and is saved before the commit (see <see cref="IUnitOfWork"/>).
+/// </para>
+/// <para>
 /// Also resolvable as a keyed <see cref="IUnitOfWork"/> whose key is <c>typeof(TContext)</c>:
 /// <c>[FromKeyedServices(typeof(OrderDbContext))] IUnitOfWork unitOfWork</c>.
+/// </para>
 /// </remarks>
 public interface IUnitOfWork<TContext> : IUnitOfWork
     where TContext : SharedKernelDbContext
@@ -34,16 +40,17 @@ public interface IUnitOfWork<TContext> : IUnitOfWork
 /// <para>
 /// <strong>Transactions run inside the execution strategy.</strong> <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},IsolationLevel?,CancellationToken)"/>
 /// runs the whole delegate per attempt, so the default Npgsql retry and explicit transactions coexist: a
-/// transient failure replays the delegate. An attempt begins the transaction, publishes it on
-/// <see cref="IAmbientDbTransaction"/> (Dapper and the audit writer enlist), runs the operation, saves (the
-/// context dispatches domain events first), runs the <see cref="OnBeforeCommit"/> callbacks (saving again if
-/// they staged changes) and commits. A failed <c>Result</c> or an exception rolls back and clears the change
-/// tracker.
+/// transient failure replays the delegate. An attempt begins the transaction on this context, moves every other
+/// context of the scope on the same database onto it, publishes it on <see cref="IAmbientDbTransaction"/> (Dapper
+/// and the audit writer enlist), runs the operation, saves every context with changes (each dispatches its domain
+/// events first), runs the <see cref="OnBeforeCommit"/> callbacks (saving again if they staged changes) and
+/// commits. A failed <c>Result</c> or an exception rolls back and clears the change trackers.
 /// </para>
 /// <para>
-/// <strong>Retry safety:</strong> the tracker is cleared before each retried attempt, never before the first.
+/// <strong>Retry safety:</strong> the trackers are cleared before each retried attempt, never before the first.
 /// Under a retrying strategy, changes staged before the call would be lost on a retry, so the call refuses to
-/// start in that case.
+/// start in that case. A <c>COMMIT</c> that fails without a server response is never retried
+/// (<see cref="CommitOutcomeUnknownException"/>).
 /// </para>
 /// </remarks>
 #pragma warning disable RS0026 // Mirrors IUnitOfWork's overload set.
@@ -52,36 +59,33 @@ internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
 {
     private readonly TContext _dbContext;
     private readonly ILogger _logger;
-    private readonly AmbientDbTransactionAccessor? _ambientTransactionAccessor;
-    private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
-    private IDbContextTransaction? _transaction;
+    private readonly UnitOfWorkCoordinator _coordinator;
 
     public EfUnitOfWork(
         TContext dbContext,
         ILogger<EfUnitOfWork<TContext>>? logger = null,
-        IAmbientDbTransaction? ambientTransaction = null)
+        IAmbientDbTransaction? ambientTransaction = null,
+        UnitOfWorkCoordinator? coordinator = null)
+        : this(dbContext, (ILogger?)logger ?? NullLogger.Instance, ambientTransaction, coordinator)
+    {
+    }
+
+    internal EfUnitOfWork(TContext dbContext, ILogger logger, IAmbientDbTransaction? ambientTransaction, UnitOfWorkCoordinator? coordinator = null)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
         _dbContext = dbContext;
-        _logger = (ILogger?)logger ?? NullLogger.Instance;
-        _ambientTransactionAccessor = ambientTransaction as AmbientDbTransactionAccessor;
-    }
-
-    /// <inheritdoc />
-    internal EfUnitOfWork(TContext dbContext, ILogger logger, IAmbientDbTransaction? ambientTransaction)
-    {
-        _dbContext = dbContext;
         _logger = logger;
-        _ambientTransactionAccessor = ambientTransaction as AmbientDbTransactionAccessor;
+        _coordinator = coordinator ?? new UnitOfWorkCoordinator(ambientTransaction as AmbientDbTransactionAccessor);
+        _coordinator.Track(dbContext);
     }
 
     /// <inheritdoc />
-    public bool IsTransactionActive => _transaction is not null;
+    public bool IsTransactionActive => _coordinator.IsActive;
 
     /// <inheritdoc />
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        WithRetryExhaustionLoggingAsync(() => _dbContext.SaveChangesAsync(cancellationToken), ConfiguredAttemptCount);
+        WithRetryExhaustionLoggingAsync(() => _coordinator.SaveChangesAsync(_dbContext, cancellationToken), ConfiguredAttemptCount);
 
     /// <inheritdoc />
     public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
@@ -112,129 +116,26 @@ internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
         => ExecuteInTransactionAsync(operation, isolationLevel: null, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<TResult> ExecuteInTransactionAsync<TResult>(
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
         Func<CancellationToken, Task<TResult>> operation,
         IsolationLevel? isolationLevel,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
 
-        if (IsTransactionActive)
-            return await JoinAsync(operation, cancellationToken);
-
-        var strategy = _dbContext.Database.CreateExecutionStrategy();
-
-        if (strategy.RetriesOnFailure && _dbContext.ChangeTracker.HasChanges())
-        {
-            throw new InvalidOperationException(
-                "ExecuteInTransactionAsync was called with changes already staged on the DbContext while a " +
-                "retrying execution strategy is configured. A retried attempt starts from a cleared change " +
-                "tracker, so those changes would be committed on the first attempt but silently lost on a " +
-                "retry. Stage every change inside the operation delegate, or call SaveChangesAsync first.");
-        }
-
-        var attempt = 0;
-
-        return await WithRetryExhaustionLoggingAsync(() => strategy.ExecuteAsync(
-            cancellationToken,
-            async token =>
-            {
-                if (attempt++ > 0)
-                    _dbContext.ChangeTracker.Clear();
-
-                return await RunAttemptAsync(operation, isolationLevel, token);
-            }),
-            () => attempt);
+        return _coordinator.IsActive
+            ? _coordinator.ExecuteInTransactionAsync(_dbContext, operation, isolationLevel, cancellationToken)
+            : WithRetryExhaustionLoggingAsync(
+                () => _coordinator.ExecuteInTransactionAsync(_dbContext, operation, isolationLevel, cancellationToken),
+                ConfiguredAttemptCount);
     }
 
     /// <inheritdoc />
-    public void OnBeforeCommit(Func<CancellationToken, Task> callback)
-    {
-        ArgumentNullException.ThrowIfNull(callback);
-
-        if (!IsTransactionActive)
-        {
-            throw new InvalidOperationException(
-                "OnBeforeCommit can only be called while ExecuteInTransactionAsync is running on this unit of work.");
-        }
-
-        _beforeCommit.Add(callback);
-    }
-
-    private async Task<TResult> RunAttemptAsync<TResult>(
-        Func<CancellationToken, Task<TResult>> operation,
-        IsolationLevel? isolationLevel,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = isolationLevel.HasValue
-            ? await _dbContext.Database.BeginTransactionAsync(isolationLevel.Value, cancellationToken)
-            : await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        _transaction = transaction;
-        _beforeCommit.Clear();
-        PublishAmbientTransaction(transaction);
-
-        try
-        {
-            var result = await operation(cancellationToken);
-
-            if (result is IHasSuccessFlag { IsSuccess: false })
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                _dbContext.ChangeTracker.Clear();
-                return result;
-            }
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            // Indexed loop: a callback may queue another callback.
-            for (var i = 0; i < _beforeCommit.Count; i++)
-                await _beforeCommit[i](cancellationToken);
-
-            if (_dbContext.ChangeTracker.HasChanges())
-                await _dbContext.SaveChangesAsync(cancellationToken);
-
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch
-        {
-            _dbContext.ChangeTracker.Clear();
-            throw;
-        }
-        finally
-        {
-            _transaction = null;
-            _beforeCommit.Clear();
-            ClearAmbientTransaction();
-        }
-    }
-
-    private async Task<TResult> JoinAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
-    {
-        var result = await operation(cancellationToken);
-
-        if (result is not IHasSuccessFlag { IsSuccess: false })
-            await SaveChangesAsync(cancellationToken);
-
-        return result;
-    }
-
-    private void PublishAmbientTransaction(IDbContextTransaction transaction)
-    {
-        if (_ambientTransactionAccessor is not null)
-            _ambientTransactionAccessor.Current = (_dbContext.Database.GetDbConnection(), transaction.GetDbTransaction());
-    }
-
-    private void ClearAmbientTransaction()
-    {
-        if (_ambientTransactionAccessor is not null)
-            _ambientTransactionAccessor.Current = null;
-    }
+    public void OnBeforeCommit(Func<CancellationToken, Task> callback) => _coordinator.OnBeforeCommit(callback);
 
     private int ConfiguredAttemptCount()
         => (_dbContext.GetService<IDbContextOptions>()
-            .FindExtension<PostgreSQLConventionsOptionsExtension>()?.MaxRetryCount ?? 0) + 1;
+            .FindExtension<PostgresConventionsOptionsExtension>()?.MaxRetryCount ?? 0) + 1;
 
     // Only RetryLimitExceededException: a concurrency conflict or any other non-transient failure is never
     // retried, so a broader catch would misreport it as a retry exhaustion.
@@ -268,10 +169,11 @@ internal sealed class EfUnitOfWork
         TContext context,
         SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null,
         ILogger? logger = null,
-        IAmbientDbTransaction? ambientTransaction = null)
+        IAmbientDbTransaction? ambientTransaction = null,
+        UnitOfWorkCoordinator? coordinator = null)
         where TContext : SharedKernelDbContext
     {
         context.AttachLease(context.RequestContext, dispatcher, context.CrossTenantScope);
-        return new EfUnitOfWork<TContext>(context, logger ?? NullLogger.Instance, ambientTransaction);
+        return new EfUnitOfWork<TContext>(context, logger ?? NullLogger.Instance, ambientTransaction, coordinator);
     }
 }

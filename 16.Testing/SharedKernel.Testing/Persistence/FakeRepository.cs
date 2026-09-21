@@ -29,7 +29,7 @@ namespace SharedKernel.Testing.Persistence;
 /// <b>Differences, by design.</b> Writes apply immediately (there is no change tracker to stage them), so tracked
 /// and untracked reads return the same instances. <see cref="AddAsync"/> fails fast on a duplicate key and
 /// <see cref="UpdateAsync(TAggregate, CancellationToken)"/> on a missing one, to surface test-authoring bugs.
-/// <see cref="DeleteAsync"/> always removes. The expected-version overload of <c>UpdateAsync</c> cannot check a
+/// <see cref="DeleteAsync(TAggregate, CancellationToken)"/> always removes. The expected-version overload of <c>UpdateAsync</c> cannot check a
 /// row version and behaves like the plain overload. Includes and split queries are no-ops.
 /// </para>
 /// </remarks>
@@ -261,7 +261,7 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
 
     /// <inheritdoc />
     /// <remarks>The fake has no row versions; this behaves like the plain overload.</remarks>
-    public Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default) =>
+    public Task UpdateAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default) =>
         UpdateAsync(aggregate, cancellationToken);
 
     /// <inheritdoc />
@@ -283,6 +283,11 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         _items.TryRemove(_idSelector(aggregate), out _);
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    /// <remarks>The fake has no row versions; this behaves like the plain overload.</remarks>
+    public Task DeleteAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default) =>
+        DeleteAsync(aggregate, cancellationToken);
 
     /// <inheritdoc />
     public async Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)

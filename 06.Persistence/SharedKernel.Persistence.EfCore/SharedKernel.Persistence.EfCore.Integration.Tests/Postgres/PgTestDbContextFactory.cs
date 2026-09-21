@@ -21,9 +21,9 @@ internal static class PgTestDbContextFactory
         TimeSpan? maxRetryDelay = null)
     {
         var builder = new DbContextOptionsBuilder<PgTestDbContext>();
-        // Retry is on by default in UsePostgreSQL; these direct-construction tests keep it off unless a
+        // Retry is on by default in UsePostgres; these direct-construction tests keep it off unless a
         // test asks for a retry count.
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o =>
+        builder.UsePostgres(TestNpgsqlDataSources.Get(connectionString), o =>
         {
             o.MaxRetryCount = maxRetryCount ?? 0;
             if (maxRetryDelay is { } delay)
@@ -68,7 +68,7 @@ internal static class PgTestDbContextFactory
                 modelConventionFactories: null,
                 modelConfigurators: null,
                 optionsExtensions: null,
-                exceptionClassifiers ?? [new PostgreSqlDbUpdateExceptionClassifier()],
+                exceptionClassifiers ?? [new PostgresDbUpdateExceptionClassifier()],
                 keyGenerator: null,
                 loggerFactory: null));
         // Actor identity from actorContext, tenant from tenantContext — the two roles the former

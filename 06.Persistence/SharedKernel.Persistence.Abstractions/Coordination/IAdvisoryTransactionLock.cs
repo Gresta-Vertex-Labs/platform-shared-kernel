@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Data.Common;
 
 namespace SharedKernel.Persistence.Abstractions.Coordination;
@@ -23,7 +24,9 @@ namespace SharedKernel.Persistence.Abstractions.Coordination;
 /// this interface's shape follows that primitive rather than inventing a release protocol PostgreSQL
 /// does not need.
 /// </para>
+/// <para>Infrastructure seam between the persistence packages; not for application code.</para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IAdvisoryTransactionLock
 {
     /// <summary>

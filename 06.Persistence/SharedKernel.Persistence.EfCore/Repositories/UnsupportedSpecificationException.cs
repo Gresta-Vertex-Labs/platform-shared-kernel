@@ -1,5 +1,6 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 

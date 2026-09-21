@@ -25,7 +25,12 @@ public sealed class WithDeletedSpecification<TAggregate> : Specification<TAggreg
             ApplyOrderByDescending(inner.OrderByDescending);
 
         foreach (var (keySelector, descending) in inner.ThenBys)
-            ApplyThenBy(keySelector, descending);
+        {
+            if (descending)
+                ApplyThenByDescending(keySelector);
+            else
+                ApplyThenBy(keySelector);
+        }
 
         if (inner.Skip is int skip && inner.Take is int take)
             ApplyPaging(skip, take);

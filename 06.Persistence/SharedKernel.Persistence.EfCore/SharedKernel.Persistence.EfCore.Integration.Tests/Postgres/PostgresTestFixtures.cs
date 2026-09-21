@@ -292,6 +292,5 @@ public sealed class PgTestDbContext : TenantedDbContext
         modelBuilder.ApplyConfiguration(new PgOrderAggregateConfig());
         modelBuilder.ApplyConfiguration(new PgOrderTagConfig());
         modelBuilder.ApplyConfiguration(new PgHardDeleteAggregateConfig());
-        ApplyTenantFilters(modelBuilder);
     }
 }

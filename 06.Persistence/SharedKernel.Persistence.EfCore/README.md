@@ -118,7 +118,7 @@ for a separate read context with its own connection name.
 ## Hand-built contexts (design-time factories, tools, tests)
 
 ```csharp
-var options = new DbContextOptionsBuilder<OrderDbContext>().UsePostgreSQL(dataSource).Options;
+var options = new DbContextOptionsBuilder<OrderDbContext>().UsePostgres(dataSource).Options;
 await using var db = new OrderDbContext(options, PersistenceContextDependencies.Create());
 ```
 

@@ -21,6 +21,7 @@ using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 
@@ -179,7 +180,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
         await using var provider = await OrdersAsync(NewDatabase());
         var id = EntryOrderId.New();
 
-        uint afterInsert;
+        EntityVersion afterInsert;
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<EntryOrderContext>();
@@ -189,7 +190,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
             afterInsert = ConcurrencyVersion.Get(db, order);
         }
 
-        afterInsert.Should().BeGreaterThan(0u, "the shadow xmin token is read back after the insert");
+        afterInsert.Should().NotBe(EntityVersion.None, "the shadow xmin token is read back after the insert");
 
         await using (var scope = provider.CreateAsyncScope())
         {
@@ -209,7 +210,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
         await using var provider = await OrdersAsync(NewDatabase());
         var id = EntryOrderId.New();
 
-        uint original;
+        EntityVersion original;
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<EntryOrderContext>();
@@ -219,7 +220,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
             original = ConcurrencyVersion.Get(db, order);
         }
 
-        uint current;
+        EntityVersion current;
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<EntryOrderContext>();

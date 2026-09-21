@@ -8,7 +8,7 @@ namespace SharedKernel.Persistence.EfCore.Vectors;
 /// EF Core fluent extension methods for configuring pgvector columns and indexes on PostgreSQL.
 /// </summary>
 /// <remarks>
-/// pgvector support is opt-in — see <c>PostgreSQLPersistenceExtensions.UsePostgreSQL</c>'s
+/// pgvector support is opt-in — see <c>PostgresPersistenceExtensions.UsePostgres</c>'s
 /// <c>useVector</c> parameter, which both enables Npgsql's <c>vector</c> CLR-type mapping and
 /// registers the <c>CREATE EXTENSION IF NOT EXISTS vector</c> model annotation automatically. Calling
 /// <see cref="HasVectorColumn{TEntity}"/> without opting in produces a column EF Core cannot

@@ -22,7 +22,7 @@ namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integrati
 
 // ---------------------------------------------------------------------------
 // Proves EfUnitOfWork.ExecuteInTransactionAsync works end to end against real PostgreSQL with
-// Npgsql retry-on-failure genuinely enabled (UsePostgreSQL(..., o => o.MaxRetryCount = ...)) — retry and
+// Npgsql retry-on-failure genuinely enabled (UsePostgres(..., o => o.MaxRetryCount = ...)) — retry and
 // transactions coexist (P-558; there is no handle-based BeginTransactionAsync any more).
 // ---------------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ public sealed class TransientFaultRetryIntegrationTests
         string connectionString, params DbCommandInterceptor[] interceptors)
     {
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o =>
+        builder.UsePostgres(TestNpgsqlDataSources.Get(connectionString), o =>
         {
             o.MaxRetryCount = 3;
             o.MaxRetryDelay = TimeSpan.FromMilliseconds(200);
@@ -272,7 +272,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
     private ServiceProvider BuildDiProvider(
         TransientFaultInjectionInterceptor? faultInjector = null,
-        Action<PostgreSqlProviderOptions>? configure = null)
+        Action<PostgresProviderOptions>? configure = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:retry"] = ConnectionString })

@@ -1,10 +1,8 @@
-using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Extensibility;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
@@ -45,19 +43,11 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// <see cref="SharedKernelDbContext.DisposeAsync"/> — the hook EF Core 10's pool return passes through.
 /// </para>
 /// <para>
-/// <strong>Filter implementation:</strong> the global filter lambda is built using expression trees
-/// (<c>Expression.Parameter</c>, <c>Expression.Property</c>, <c>Expression.Constant</c>,
-/// <c>Expression.Equal</c>, <c>Expression.Lambda</c>) via the non-generic
-/// <c>modelBuilder.Entity(clrType).HasQueryFilter(key, lambda)</c> overload. The filter binds through
-/// <c>Expression.Constant(this, GetType())</c> → <see cref="CurrentTenantId"/> — a captured "this
-/// DbContext instance" constant, rebound by EF Core's
-/// query-filter compilation to whichever instance is EXECUTING the query, never the instance whose
-/// <see cref="OnModelCreating"/> built the (process-wide-cached) model.
-/// </para>
-/// <para>
-/// <strong>Root types only:</strong> a TPH-derived (non-root) entity type shares
-/// its base type's table and cannot carry its own query filter — only entity types with
-/// <c>BaseType == null</c> are considered.
+/// <strong>Every entity type is tenant data.</strong> The filter and the write guard apply to every
+/// <see cref="IHasTenant"/> entity type, children of aggregates included, and the model build fails for a
+/// non-owned entity type that is neither <see cref="IHasTenant"/> nor declared tenant-shared
+/// (<see cref="TenantSharedAttribute"/>, <c>IsTenantShared()</c>). An added entity whose <c>TenantId</c> is unset gets
+/// the caller's tenant. A TPH-derived type shares its root's filter.
 /// </para>
 /// <para>
 /// Multi-tenant services must extend this class instead of <see cref="SharedKernelDbContext"/>.
@@ -74,11 +64,6 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// </remarks>
 public abstract class TenantedDbContext : SharedKernelDbContext
 {
-    // Model-build-time-only reflection lookup for the public CurrentTenantId property declared on
-    // this class — never invoked in a query hot path.
-    private static readonly System.Reflection.PropertyInfo CurrentTenantIdPropertyInfo =
-        typeof(TenantedDbContext).GetProperty(nameof(CurrentTenantId))!;
-
     /// <summary>
     /// Initialises a new <see cref="TenantedDbContext"/>.
     /// </summary>
@@ -103,111 +88,19 @@ public abstract class TenantedDbContext : SharedKernelDbContext
     public Guid? CurrentTenantId => RequestContext.TenantId;
 
     /// <summary>
-    /// Applies the tenant global query filter in addition to the base configurations.
+    /// Adds the tenant-isolation convention after the base conventions: the named tenant filter and the
+    /// <c>TenantId</c> concurrency token on every <see cref="IHasTenant"/> root type, and a model error for any
+    /// other non-owned entity type not declared tenant-shared (<see cref="TenantSharedAttribute"/> or
+    /// <c>IsTenantShared()</c>).
     /// </summary>
-    /// <param name="modelBuilder">The builder used to construct the model for this context.</param>
+    /// <param name="configurationBuilder">The convention builder.</param>
     /// <remarks>
-    /// Downstream contexts that override this method must call
-    /// <c>base.OnModelCreating(modelBuilder)</c> first to ensure all conventions and tenant
-    /// filters are applied. Subclasses that perform their own entity configuration without an
-    /// assembly scan should call <c>base.OnModelCreating(modelBuilder)</c> to install tenant
-    /// filters, then manually apply only their own configurations.
+    /// The convention runs when the model is finalized, after every <c>OnModelCreating</c> configuration, so an
+    /// entity type configured after <c>base.OnModelCreating</c> is covered too.
     /// </remarks>
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        base.OnModelCreating(modelBuilder);
-        ApplyTenantFilters(modelBuilder);
-    }
-
-    /// <summary>
-    /// Installs the expression-tree tenant query filter on all root <see cref="IHasTenant"/> entity
-    /// types currently registered in the model. Call this after all entity configurations are applied.
-    /// </summary>
-    /// <param name="modelBuilder">The builder used to construct the model for this context.</param>
-    /// <remarks>
-    /// <para>
-    /// Subclasses that bypass the assembly-scan path in <c>OnModelCreating</c> should call this
-    /// method explicitly after applying their entity configurations to ensure tenant isolation is
-    /// preserved.
-    /// </para>
-    /// <para>
-    /// <strong>Write-side protection:</strong> in addition to the query filter, this method marks
-    /// <c>TenantId</c> as an EF Core concurrency token on every entity type it visits — see
-    /// <see cref="ApplyTenantConcurrencyToken"/>.
-    /// </para>
-    /// </remarks>
-    protected void ApplyTenantFilters(ModelBuilder modelBuilder)
-    {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (entityType.BaseType is not null)
-                continue; // TPH-derived type — shares its root's filter.
-
-            if (!typeof(IHasTenant).IsAssignableFrom(entityType.ClrType))
-                continue;
-
-            ApplyTenantFilterExpression(modelBuilder, entityType.ClrType);
-            ApplyTenantConcurrencyToken(modelBuilder, entityType.ClrType);
-        }
-    }
-
-    // A detached IHasTenant entity re-attached via Update()/Remove() (EfRepository.
-    // MarkAsModifiedIfDetached) is written with a WHERE clause naming only its primary key — TenantId
-    // plays no part in it. The tenant write guard already rejects any entry whose IN-MEMORY
-    // TenantId differs from the caller's current tenant, but that check cannot see which tenant the
-    // TARGETED ROW actually belongs to: a caller who builds a detached stub carrying their OWN
-    // (legitimate) TenantId and a VICTIM's primary key passes that check, and an unconditional
-    // Update()/Remove() would then silently rewrite or delete the victim's row, because the physical
-    // UPDATE/DELETE statement never mentions TenantId at all.
-    //
-    // Marking TenantId a concurrency token closes this: EF Core adds it to the UPDATE/DELETE WHERE
-    // clause, compared against the OriginalValue captured on this entry. For a genuinely tracked
-    // entity (loaded through the tenant query filter) OriginalValue already equals the row's real
-    // TenantId, so this is a no-op. For a freshly-attached DETACHED entry, EF Core has no source for
-    // "original" other than the value already on the object — the SAME value
-    // tenant write guard already required to equal the caller's current tenant. The WHERE
-    // clause therefore becomes "Id = <target> AND TenantId = <caller's own tenant>": a victim row
-    // belonging to a DIFFERENT tenant matches zero rows, and EF Core raises
-    // DbUpdateConcurrencyException instead of silently succeeding — translated by
-    // the concurrency translator, which reads the row, sees it belongs to another tenant (proven) and
-    // raises the same tenant-isolation Forbidden error the write guard raises proactively.
-    private static void ApplyTenantConcurrencyToken(ModelBuilder modelBuilder, Type clrType) =>
-        modelBuilder.Entity(clrType).Property(nameof(IHasTenant.TenantId)).IsConcurrencyToken();
-
-    // Builds a lambda: e => this.CurrentTenantId.HasValue && e.TenantId == this.CurrentTenantId
-    // using expression trees, where "this" is a captured DbContext-instance constant that EF Core
-    // rebinds to whichever instance is executing the query. The HasValue guard makes the
-    // fail-closed "no tenant resolved" behavior explicit rather than relying on a Guid==Guid?
-    // comparison's implicit false-on-null.
-    private void ApplyTenantFilterExpression(ModelBuilder modelBuilder, Type clrType)
-    {
-        // Parameter: e
-        var param = Expression.Parameter(clrType, "e");
-
-        // e.TenantId
-        var tenantIdProperty = Expression.Property(param, nameof(IHasTenant.TenantId));
-
-        // this — a captured "this DbContext instance" constant. EF Core's query-filter compilation
-        // recognizes a ConstantExpression whose Value is the DbContext instance the model was built
-        // from and rebinds it, per query execution, to the CURRENT executing instance.
-        var thisConst = Expression.Constant(this, GetType());
-
-        // this.CurrentTenantId (Guid?)
-        var tenantIdAccess = Expression.Property(thisConst, CurrentTenantIdPropertyInfo);
-
-        // this.CurrentTenantId.HasValue
-        var hasValue = Expression.Property(tenantIdAccess, nameof(Nullable<Guid>.HasValue));
-
-        // e.TenantId == this.CurrentTenantId (Guid promoted to Guid? for the comparison)
-        var equalExpr = Expression.Equal(Expression.Convert(tenantIdProperty, typeof(Guid?)), tenantIdAccess);
-
-        // this.CurrentTenantId.HasValue && e.TenantId == this.CurrentTenantId
-        var guarded = Expression.AndAlso(hasValue, equalExpr);
-
-        // e =>...
-        var lambda = Expression.Lambda(guarded, param);
-
-        // Apply via non-generic overload, named "Tenant" — no reflection on entity type needed.
-        modelBuilder.Entity(clrType).HasQueryFilter(PersistenceFilterNames.Tenant, lambda);
+        base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.Conventions.Add(_ => new TenantIsolationConvention(this));
     }
 }

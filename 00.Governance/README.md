@@ -864,7 +864,7 @@ Set one primary sort direction per specification constructor.
 
 A specification has one primary sort. `Specification<T>` throws `InvalidOperationException` when a constructor applies a second one, so a constructor calling both `ApplyOrderBy` and `ApplyOrderByDescending` fails the first time the specification is created, typically at request time. This rule reports it at compile time instead.
 
-Secondary sorts belong in `ApplyThenBy(selector, descending)` or `ApplyThenByDescending(selector)`.
+Secondary sorts belong in `ApplyThenBy(selector)` or `ApplyThenByDescending(selector)`.
 
 #### What it flags
 
@@ -901,7 +901,7 @@ public sealed class ActiveOrdersSpec : Specification<Order>
     {
         AddCriteria(o => o.IsActive);
         ApplyOrderByDescending(o => o.Total);
-        ApplyThenBy(o => o.CreatedAt, descending: false);
+        ApplyThenBy(o => o.CreatedAt);
     }
 }
 ```

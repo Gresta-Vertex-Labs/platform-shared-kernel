@@ -103,11 +103,15 @@ public class EfRepository<TAggregate, TId>
     public virtual Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        return Traced(nameof(UpdateAsync), () => AttachIfDetached(aggregate));
+        return Traced(nameof(UpdateAsync), () =>
+        {
+            ThrowIfDetachedWithoutVersion(aggregate, "UpdateAsync(aggregate, expectedVersion)");
+            AttachIfDetached(aggregate);
+        });
     }
 
     /// <inheritdoc />
-    public virtual Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default)
+    public virtual Task UpdateAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
 
@@ -115,7 +119,7 @@ public class EfRepository<TAggregate, TId>
         {
             AttachIfDetached(aggregate);
 
-            // The UPDATE's WHERE clause compares the xmin token's ORIGINAL value; an unchanged entity already loaded
+            // The UPDATE's WHERE clause compares the version token's ORIGINAL value; an unchanged entity already loaded
             // at another version fails immediately. Either way the conflict carries the current version.
             ConcurrencyVersion.SetExpected(DbContext, aggregate, expectedVersion);
         });
@@ -127,7 +131,11 @@ public class EfRepository<TAggregate, TId>
         ArgumentNullException.ThrowIfNull(aggregates);
         return Traced(nameof(UpdateRangeAsync), () =>
         {
-            foreach (var aggregate in aggregates)
+            var list = aggregates as IReadOnlyList<TAggregate> ?? aggregates.ToList();
+            foreach (var aggregate in list)
+                ThrowIfDetachedWithoutVersion(aggregate, "UpdateAsync(aggregate, expectedVersion) for each aggregate");
+
+            foreach (var aggregate in list)
                 AttachIfDetached(aggregate);
         });
     }
@@ -136,15 +144,38 @@ public class EfRepository<TAggregate, TId>
     public virtual Task DeleteAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        return Traced(nameof(DeleteAsync), () => DbContext.Set<TAggregate>().Remove(aggregate));
+        return Traced(nameof(DeleteAsync), () =>
+        {
+            ThrowIfDetachedWithoutVersion(aggregate, "DeleteAsync(aggregate, expectedVersion)");
+            DbContext.Set<TAggregate>().Remove(aggregate);
+        });
+    }
+
+    /// <inheritdoc />
+    public virtual Task DeleteAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+        return Traced(nameof(DeleteAsync), () =>
+        {
+            DbContext.Set<TAggregate>().Remove(aggregate);
+            ConcurrencyVersion.SetExpected(DbContext, aggregate, expectedVersion);
+        });
     }
 
     /// <inheritdoc />
     public virtual Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregates);
-        return Traced(nameof(DeleteRangeAsync), () => DbContext.Set<TAggregate>().RemoveRange(aggregates));
+        return Traced(nameof(DeleteRangeAsync), () =>
+        {
+            var list = aggregates as IReadOnlyList<TAggregate> ?? aggregates.ToList();
+            foreach (var aggregate in list)
+                ThrowIfDetachedWithoutVersion(aggregate, "DeleteAsync(aggregate, expectedVersion) for each aggregate");
+
+            DbContext.Set<TAggregate>().RemoveRange(list);
+        });
     }
+
 
     /// <inheritdoc />
     public virtual Task<int> ExecuteUpdateAsync(
@@ -166,7 +197,7 @@ public class EfRepository<TAggregate, TId>
         var extra = stampModified ? ModifiedSetters(DbContext.Clock.UtcNow, DbContext.CurrentActorId) : null;
 
         return RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(ExecuteUpdateAsync), () =>
-            BulkQuery(spec).ExecuteUpdateAsync(recorded.ToEfSetters(extra), cancellationToken));
+            BulkQuery(spec).ExecuteUpdateAsync(EfBulkUpdateSetters.ToEfSetters(recorded, extra), cancellationToken));
     }
 
     /// <inheritdoc />
@@ -220,6 +251,19 @@ public class EfRepository<TAggregate, TId>
     {
         if (DbContext.Entry(aggregate).State == EntityState.Detached)
             DbContext.Set<TAggregate>().Update(aggregate);
+    }
+
+    // A detached aggregate whose version only the database knows (the shadow xmin) carries no original version: attaching
+    // it would compare against 0 and always conflict. The caller must supply the version it based the change on.
+    private void ThrowIfDetachedWithoutVersion(TAggregate aggregate, string alternative)
+    {
+        if (DbContext.Entry(aggregate).State != EntityState.Detached || !ConcurrencyVersion.IsKeptByDatabase(EntityType))
+            return;
+
+        throw new InvalidOperationException(
+            $"'{typeof(TAggregate).Name}' is not tracked by this context and its version is kept by the database (xmin), "
+            + "so the version this change is based on is unknown. Call " + alternative + " with the version the client "
+            + "last read (its ETag / If-Match), or load the aggregate in this scope and change the tracked instance.");
     }
 
     private IEntityType EntityType =>

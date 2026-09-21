@@ -23,7 +23,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// are not touched: a sequence name is also its lookup key for <c>UseSequence(name)</c>.
 /// </para>
 /// </remarks>
-internal sealed class PostgreSqlIdentifierLengthConvention : IModelFinalizingConvention
+internal sealed class PostgresIdentifierLengthConvention : IModelFinalizingConvention
 {
     private const int MaxIdentifierBytes = 63;
 

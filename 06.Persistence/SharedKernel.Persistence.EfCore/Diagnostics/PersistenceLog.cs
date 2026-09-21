@@ -67,8 +67,8 @@ internal static partial class PersistenceLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 4,
         Level = LogLevel.Warning,
-        Message = "Migration and seed startup sequence failed for context '{ContextType}'.")]
-    internal static partial void MigrationAndSeedFailed(ILogger logger, Exception exception, string contextType);
+        Message = "Migration and seed startup sequence failed for context '{ContextType}' ({ExceptionType}); the exception is reported by the host.")]
+    internal static partial void MigrationAndSeedFailed(ILogger logger, string contextType, string exceptionType);
 
     /// <summary>
     /// Logged immediately after the PostgreSQL advisory lock is acquired. Never logs the lock key
@@ -142,4 +142,18 @@ internal static partial class PersistenceLog
         string errorCode,
         string constraintName,
         string tableName);
+
+    /// <summary>A context resolved in the scope cannot share the unit of work's transaction; it is refused at commit if it holds changes.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 20,
+        Level = LogLevel.Debug,
+        Message = "Context '{ContextType}' cannot join the transaction of '{OwnerType}': {Reason}. Its changes are refused at commit.")]
+    internal static partial void ContextCannotJoinTransaction(ILogger logger, string contextType, string ownerType, string reason);
+
+    /// <summary>The outermost operation succeeded but joined work failed, so the transaction was rolled back.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 21,
+        Level = LogLevel.Warning,
+        Message = "The transaction of '{ContextType}' was rolled back: work that joined it failed.")]
+    internal static partial void RolledBackAfterJoinedFailure(ILogger logger, string contextType);
 }

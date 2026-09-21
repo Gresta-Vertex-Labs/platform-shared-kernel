@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Data.Common;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
@@ -18,7 +19,9 @@ namespace SharedKernel.Persistence.Abstractions.Context;
 /// nothing, and RLS itself guards against application bugs (a forgotten tenant filter), not against SQL
 /// injection by a caller able to run arbitrary SQL as the application role.
 /// </para>
+/// <para>Infrastructure seam between the persistence packages; not for application code.</para>
 /// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface ITenantSessionBinder
 {
     /// <summary>

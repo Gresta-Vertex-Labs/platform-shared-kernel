@@ -1,6 +1,6 @@
 using SharedKernel.Domain.Specifications;
 
-namespace SharedKernel.Persistence.EfCore.Repositories;
+namespace SharedKernel.Persistence.Abstractions.Repositories;
 
 /// <summary>
 /// An explicit, deliberately-named opt-in for a bulk mutation (<see cref="IBulkMutationRepository{TAggregate,TId}.ExecuteUpdateAsync"/>/
@@ -9,7 +9,7 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// </summary>
 /// <typeparam name="T">The aggregate type the bulk mutation targets.</typeparam>
 /// <remarks>
-/// <see cref="BulkSpecificationGuard.Validate{T}"/> rejects any bulk mutation
+/// The bulk repository rejects any bulk mutation
 /// specification with a <see langword="null"/> <see cref="ISpecification{T}.Criteria"/> UNLESS it is
 /// (or derives from) this type — a criteria-less bulk statement is almost always an accidental
 /// "forgot the WHERE clause" bug, so it must be an unmistakable, deliberate choice at the call site

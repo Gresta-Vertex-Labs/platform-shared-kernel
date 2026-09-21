@@ -12,6 +12,7 @@ using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
 
@@ -30,13 +31,13 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
     private ConcurrencyTestDbContext CreateContext(IClock? clock = null)
     {
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString));
+        builder.UsePostgres(TestNpgsqlDataSources.Get(ConnectionString));
         clock ??= new FakeClock();
 
         return new ConcurrencyTestDbContext(builder.Options, PersistenceContextDependencies.Create(requestContext: new FakeAuditActorContext(), clock: clock));
     }
 
-    private async Task<(ConcurrentPgId Id, uint Version)> SeedAsync(string name)
+    private async Task<(ConcurrentPgId Id, EntityVersion Version)> SeedAsync(string name)
     {
         var id = ConcurrentPgId.New();
         await using var context = CreateContext();
@@ -44,7 +45,7 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         var aggregate = new ConcurrentPgAggregate(id, name, new SystemClock());
         context.Aggregates.Add(aggregate);
         await context.SaveChangesAsync();
-        return (id, BinaryPrimitives.ReadUInt32BigEndian(aggregate.RowVersion));
+        return (id, EntityVersion.FromRowVersion(BinaryPrimitives.ReadUInt32BigEndian(aggregate.RowVersion)));
     }
 
     [Fact]
@@ -102,7 +103,7 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         {
             var repo = new EfRepository<ConcurrentPgAggregate, ConcurrentPgId>(context);
             snapshot.Rename("Detached edit");
-            await repo.UpdateAsync(snapshot, BinaryPrimitives.ReadUInt32BigEndian(snapshot.RowVersion));
+            await repo.UpdateAsync(snapshot, EntityVersion.FromRowVersion(BinaryPrimitives.ReadUInt32BigEndian(snapshot.RowVersion)));
 
             await FluentActions.Awaiting(() => context.SaveChangesAsync()).Should().ThrowAsync<ConflictException>();
         }

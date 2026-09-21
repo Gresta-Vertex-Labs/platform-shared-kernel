@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 
 /// <summary>
 /// Binds PostgreSQL's <c>xmin</c> system column as the optimistic-concurrency token of every aggregate root and
-/// of every other entity implementing <see cref="IHasConcurrency"/>. Registered by <c>UsePostgreSQL()</c>.
+/// of every other entity implementing <see cref="IHasConcurrency"/>. Registered by <c>UsePostgres()</c>.
 /// </summary>
 /// <remarks>
 /// <para>

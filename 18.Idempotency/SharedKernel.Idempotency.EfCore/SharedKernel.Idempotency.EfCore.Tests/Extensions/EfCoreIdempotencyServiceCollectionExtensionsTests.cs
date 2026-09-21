@@ -65,11 +65,11 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
     [Fact]
     public void AddSharedKernelEfCoreIdempotency_RunsTheStoreWithoutRetry_EvenOverTheRetryingPlatformDefault()
     {
-        // UsePostgreSQL turns retry on by default; the store makes single atomic statements and leaves retry to
+        // UsePostgres turns retry on by default; the store makes single atomic statements and leaves retry to
         // its caller, so an unreachable store fails fast (fail-open or fail-closed) instead of backing off.
         var services = new ServiceCollection();
         services.AddClock();
-        services.AddSharedKernelEfCoreIdempotency(options => options.UsePostgreSQL(
+        services.AddSharedKernelEfCoreIdempotency(options => options.UsePostgres(
             SharedKernel.Testing.Persistence.TestNpgsqlDataSources.Get(ConnectionString)));
         services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
 

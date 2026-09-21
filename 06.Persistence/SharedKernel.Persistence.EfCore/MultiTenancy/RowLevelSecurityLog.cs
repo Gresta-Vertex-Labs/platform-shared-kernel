@@ -18,4 +18,11 @@ internal static partial class RowLevelSecurityLog
         Level = LogLevel.Information,
         Message = "Context '{ContextType}' switched to the cross-tenant database role for an active cross-tenant scope.")]
     public static partial void CrossTenantConnectionUsed(this ILogger logger, string contextType);
+
+    /// <summary>Logged by the startup coverage check for each tenant table row-level security does not protect.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 351,
+        Level = LogLevel.Warning,
+        Message = "Row-level security is enabled for '{ContextType}', but tenant table {Finding}.")]
+    public static partial void TenantTableNotProtected(ILogger logger, string contextType, string finding);
 }

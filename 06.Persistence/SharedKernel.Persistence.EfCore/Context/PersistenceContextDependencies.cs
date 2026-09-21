@@ -100,7 +100,7 @@ public sealed class PersistenceContextDependencies
             modelConventionFactories: null,
             modelConfigurators: null,
             optionsExtensions: null,
-            exceptionClassifiers: [new PostgreSqlDbUpdateExceptionClassifier()],
+            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier()],
             keyGenerator: null,
             loggerFactory);
 
@@ -146,10 +146,11 @@ public sealed class PersistenceContextDependencies
     /// <param name="optionsBuilder">The options builder to mutate.</param>
     internal void ApplyTo(DbContextOptionsBuilder optionsBuilder)
     {
-        var interceptors = new List<IInterceptor>(AdditionalInterceptors.Count + 2)
+        var interceptors = new List<IInterceptor>(AdditionalInterceptors.Count + 3)
         {
             PersistenceSaveChangesInterceptor.Instance,
             DomainClockMaterializationInterceptor.FromContext,
+            ProtectedColumnUpdateGuard.Instance,
         };
         interceptors.AddRange(AdditionalInterceptors);
 

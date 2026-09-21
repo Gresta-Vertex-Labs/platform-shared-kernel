@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
 namespace SharedKernel.Persistence.EfCore.Migrations;
@@ -99,9 +102,86 @@ public static class RowLevelSecurityMigrationBuilderExtensions
         return migrationBuilder;
     }
 
+    /// <summary>
+    /// Enables row-level security with the tenant policy on <em>every</em> tenant table of <paramref name="model"/> —
+    /// each table of an <c>IHasTenant</c> entity type that holds its tenant column, children of aggregates included.
+    /// </summary>
+    /// <param name="migrationBuilder">The migration builder.</param>
+    /// <param name="model">The model the migration creates, typically the migration's own <c>TargetModel</c>.</param>
+    /// <param name="crossTenantRole">Optional role exempt from the policy; see <see cref="EnableTenantRowLevelSecurity"/>.</param>
+    /// <returns>The same <paramref name="migrationBuilder"/>.</returns>
+    /// <remarks>
+    /// <code>
+    /// protected override void Up(MigrationBuilder migrationBuilder)
+    /// {
+    ///     // ... CreateTable calls ...
+    ///     migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel!);
+    /// }
+    /// </code>
+    /// Call it again in a later migration that adds tenant tables, after dropping the policies of the tables it
+    /// already covered, or use the per-table <see cref="EnableTenantRowLevelSecurity"/> for the new tables only. A
+    /// table of a derived type that does not hold the tenant column itself (table-per-type) is skipped: its rows are
+    /// reached through the base table.
+    /// </remarks>
+    public static MigrationBuilder EnableTenantRowLevelSecurityForModel(
+        this MigrationBuilder migrationBuilder,
+        IReadOnlyModel model,
+        string? crossTenantRole = null)
+    {
+        ArgumentNullException.ThrowIfNull(migrationBuilder);
+        ArgumentNullException.ThrowIfNull(model);
+
+        foreach (var (table, schema, column) in TenantTables(model))
+            migrationBuilder.EnableTenantRowLevelSecurity(table, column, schema, crossTenantRole);
+
+        return migrationBuilder;
+    }
+
+    /// <summary>The <c>Down</c> counterpart of <see cref="EnableTenantRowLevelSecurityForModel"/>.</summary>
+    /// <param name="migrationBuilder">The migration builder.</param>
+    /// <param name="model">The same model passed to <see cref="EnableTenantRowLevelSecurityForModel"/>.</param>
+    /// <returns>The same <paramref name="migrationBuilder"/>.</returns>
+    public static MigrationBuilder DisableTenantRowLevelSecurityForModel(this MigrationBuilder migrationBuilder, IReadOnlyModel model)
+    {
+        ArgumentNullException.ThrowIfNull(migrationBuilder);
+        ArgumentNullException.ThrowIfNull(model);
+
+        foreach (var (table, schema, _) in TenantTables(model))
+            migrationBuilder.DisableTenantRowLevelSecurity(table, schema);
+
+        return migrationBuilder;
+    }
+
+    /// <summary>The tables of <paramref name="model"/> that hold a tenant column, each once, in model order.</summary>
+    internal static IReadOnlyList<(string Table, string? Schema, string TenantColumn)> TenantTables(IReadOnlyModel model)
+    {
+        var tables = new List<(string Table, string? Schema, string TenantColumn)>();
+        foreach (var entityType in model.GetEntityTypes())
+        {
+            if (entityType.IsOwned() || !typeof(IHasTenant).IsAssignableFrom(entityType.ClrType)
+                || entityType.GetTableName() is not { } table)
+            {
+                continue;
+            }
+
+            var schema = entityType.GetSchema();
+            var column = entityType.FindProperty(nameof(IHasTenant.TenantId))
+                ?.GetColumnName(StoreObjectIdentifier.Table(table, schema));
+
+            if (column is not null && !tables.Exists(t => t.Table == table && t.Schema == schema))
+                tables.Add((table, schema, column));
+        }
+
+        return tables;
+    }
+
+    /// <summary>The name of the tenant policy <see cref="EnableTenantRowLevelSecurity"/> creates on <paramref name="table"/>.</summary>
+    internal static string TenantPolicyName(string table) =>
+        Conventions.PostgresIdentifierLengthConvention.Truncate(table + TenantPolicySuffix);
+
     // PostgreSQL silently truncates an identifier longer than 63 bytes; a long table name would otherwise create
     // a policy whose name the Down migration (and a second table sharing the prefix) could not match. The same
     // deterministic truncate-and-hash the model uses keeps it within the limit and stable across regenerations.
     private static string PolicyName(string table, string suffix) =>
-        PostgresIdentifier.Quote(Conventions.PostgreSqlIdentifierLengthConvention.Truncate(table + suffix));
+        PostgresIdentifier.Quote(Conventions.PostgresIdentifierLengthConvention.Truncate(table + suffix));
 }

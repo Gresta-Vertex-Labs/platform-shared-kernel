@@ -13,7 +13,7 @@ using SharedKernel.Testing.Persistence;
 namespace SharedKernel.Persistence.EfCore.Tests.PostgreSql.Conventions;
 
 /// <summary>
-/// Proves snake_case naming (<c>EFCore.NamingConventions</c>, applied by <c>UsePostgreSQL()</c>)
+/// Proves snake_case naming (<c>EFCore.NamingConventions</c>, applied by <c>UsePostgres()</c>)
 /// reaches into an EF Core 10 complex type's own scalar properties (e.g. a <see cref="Money"/>
 /// property's <c>Amount</c>/<c>Currency</c> sub-columns), not just an entity's own top-level
 /// properties. Model-building only — no live connection is opened, so no Testcontainer is required:
@@ -80,7 +80,7 @@ public sealed class MoneyNamingConventionTests
         // Arrange — a syntactically valid but unreachable connection string; model building never
         // opens a connection.
         var optionsBuilder = new DbContextOptionsBuilder<NamingTestDbContext>();
-        optionsBuilder.UsePostgreSQL(TestNpgsqlDataSources.Get("Host=localhost;Port=1;Database=unreachable;Username=x;Password=x"));
+        optionsBuilder.UsePostgres(TestNpgsqlDataSources.Get("Host=localhost;Port=1;Database=unreachable;Username=x;Password=x"));
         var options = optionsBuilder.Options;
 
         var actorContext = new FakeAuditActorContext("actor");

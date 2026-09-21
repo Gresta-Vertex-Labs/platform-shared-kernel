@@ -48,7 +48,7 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
     private static IdempotencyDbContext CreateContext(string connectionString)
     {
         var optionsBuilder = new DbContextOptionsBuilder<IdempotencyDbContext>();
-        optionsBuilder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString));
+        optionsBuilder.UsePostgres(TestNpgsqlDataSources.Get(connectionString));
         return new IdempotencyDbContext(optionsBuilder.Options);
     }
 

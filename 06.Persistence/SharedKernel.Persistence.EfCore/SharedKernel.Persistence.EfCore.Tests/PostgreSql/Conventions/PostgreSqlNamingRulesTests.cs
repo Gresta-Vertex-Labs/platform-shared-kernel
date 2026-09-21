@@ -35,7 +35,7 @@ public sealed class PostgreSqlNamingRulesTests
     private static NamingRulesDbContext CreateContext()
     {
         var builder = new DbContextOptionsBuilder<NamingRulesDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get("Host=localhost;Database=naming_rules_test;Username=test;Password=test"));
+        builder.UsePostgres(TestNpgsqlDataSources.Get("Host=localhost;Database=naming_rules_test;Username=test;Password=test"));
         return new NamingRulesDbContext(builder.Options);
     }
 
@@ -79,7 +79,7 @@ public sealed class PostgreSqlNamingRulesTests
     [InlineData("exactly_sixty_three_bytes_long_identifier_padded_out_to_63_xxxx")]
     public void Truncate_LeavesNamesWithinTheLimitUnchanged(string name)
     {
-        PostgreSqlIdentifierLengthConvention.Truncate(name).Should().Be(name);
+        PostgresIdentifierLengthConvention.Truncate(name).Should().Be(name);
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public sealed class PostgreSqlNamingRulesTests
     {
         var prefix = new string('a', 70);
 
-        var first = PostgreSqlIdentifierLengthConvention.Truncate(prefix + "_first");
-        var second = PostgreSqlIdentifierLengthConvention.Truncate(prefix + "_second");
+        var first = PostgresIdentifierLengthConvention.Truncate(prefix + "_first");
+        var second = PostgresIdentifierLengthConvention.Truncate(prefix + "_second");
 
         first.Should().NotBe(second);
         System.Text.Encoding.UTF8.GetByteCount(first).Should().Be(63);
@@ -100,7 +100,7 @@ public sealed class PostgreSqlNamingRulesTests
     {
         var name = new string('a', 53) + "ğğğğğğğğğğ";
 
-        var truncated = PostgreSqlIdentifierLengthConvention.Truncate(name);
+        var truncated = PostgresIdentifierLengthConvention.Truncate(name);
 
         System.Text.Encoding.UTF8.GetByteCount(truncated).Should().BeLessThanOrEqualTo(63);
         truncated.Should().NotContain("�");
@@ -141,7 +141,7 @@ public sealed class OwnedSharedTableKeyColumnConventionTests
     public void OwnedTypeKey_InOwnersTable_MapsToTheOwnersKeyColumn()
     {
         var builder = new DbContextOptionsBuilder<OwnedKeyDbContext>();
-        builder.UsePostgreSQL(TestNpgsqlDataSources.Get("Host=localhost;Database=owned_key_test;Username=test;Password=test"));
+        builder.UsePostgres(TestNpgsqlDataSources.Get("Host=localhost;Database=owned_key_test;Username=test;Password=test"));
         using var ctx = new OwnedKeyDbContext(builder.Options);
 
         var owned = ctx.Model.FindEntityType(typeof(OwnedKeyAddress))!;

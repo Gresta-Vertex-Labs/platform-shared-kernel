@@ -38,6 +38,8 @@ public sealed class CrossTenantScope : ICrossTenantScope
     /// <summary>Initialises a new, inactive <see cref="CrossTenantScope"/>.</summary>
     /// <param name="requestContext">The caller that enters the bypass.</param>
     /// <param name="logger">Optional logger for the entry record.</param>
+    /// <remarks>The container creates one per scope (<c>AddSharedKernelCrossTenantScope</c>); construct one yourself only in tests.</remarks>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public CrossTenantScope(IRequestContext requestContext, ILogger<CrossTenantScope>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(requestContext);

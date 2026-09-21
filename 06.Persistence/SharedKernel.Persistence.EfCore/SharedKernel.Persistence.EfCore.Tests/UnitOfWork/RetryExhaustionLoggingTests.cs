@@ -36,11 +36,11 @@ public sealed class RetryExhaustionLoggingTests
                 .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
                 .AddInterceptors(faultInjector);
 
-        // What UsePostgreSQL records for retry-exhaustion logging (the configured retry count).
+        // What UsePostgres records for retry-exhaustion logging (the configured retry count).
         if (configuredMaxRetryCount is not null)
         {
             ((Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(
-                new SharedKernel.Persistence.EfCore.Conventions.PostgreSQLConventionsOptionsExtension(useVector: false, maxRetryCount: configuredMaxRetryCount));
+                new SharedKernel.Persistence.EfCore.Conventions.PostgresConventionsOptionsExtension(useVector: false, maxRetryCount: configuredMaxRetryCount));
         }
 
         var options = optionsBuilder.Options;
@@ -74,7 +74,7 @@ public sealed class RetryExhaustionLoggingTests
 
         var record = inMemoryLogger.Records.ShouldHaveLogged(new EventId(6008), LogLevel.Warning);
         record.TryGetProperty("AttemptCount", out var attemptCount).Should().BeTrue();
-        attemptCount.Should().Be(1); // no UsePostgreSQL retry configuration on the context — documented fallback
+        attemptCount.Should().Be(1); // no UsePostgres retry configuration on the context — documented fallback
     }
 
     [Fact]

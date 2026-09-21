@@ -79,7 +79,7 @@ public sealed class TestOrdersOrderedByRankThenCustomerSpecification : Specifica
         else
             ApplyOrderBy(o => o.Rank);
 
-        ApplyThenBy(o => o.Customer, descending: false);
+        ApplyThenBy(o => o.Customer);
     }
 }
 

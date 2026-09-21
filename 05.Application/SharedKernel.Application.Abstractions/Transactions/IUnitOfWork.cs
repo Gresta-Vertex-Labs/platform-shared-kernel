@@ -24,8 +24,23 @@ namespace SharedKernel.Application.Transactions;
 /// </para>
 /// <para>
 /// <strong>Nesting.</strong> Calling an <c>ExecuteInTransactionAsync</c> overload while a transaction
-/// is already active joins it: the operation runs, its changes are saved, and the outermost call
-/// commits or rolls back everything together.
+/// is already active joins it — also through the unit of work of another context of the same
+/// service: the operation runs, its changes are saved, and the outermost call commits or rolls back
+/// everything together. A joined operation that fails (returns a failed <c>Result</c> or throws) marks
+/// the transaction <em>rollback-only</em>: nothing commits, and an outermost operation that still
+/// completes successfully gets a <see cref="TransactionRolledBackException"/>.
+/// </para>
+/// <para>
+/// <strong>Several contexts.</strong> The transaction covers every context of the service resolved in
+/// the same scope that reaches the same database: they share its connection and transaction, and every
+/// one with changes is saved before the commit. A context on another database cannot join; if it holds
+/// changes when the transaction commits, the commit is refused (rolled back) with an
+/// <see cref="InvalidOperationException"/> instead of leaving those changes unsaved.
+/// </para>
+/// <para>
+/// <strong>Ambiguous commit.</strong> When the <c>COMMIT</c> itself fails without a response (connection
+/// loss, timeout), the outcome is unknown: the call throws <see cref="CommitOutcomeUnknownException"/>
+/// and is never retried.
 /// </para>
 /// </remarks>
 #pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters.
@@ -46,7 +61,8 @@ public interface IUnitOfWork
     /// <returns>The number of state entries written.</returns>
     /// <remarks>
     /// Inside an active transaction the changes are written within it and committed with it;
-    /// outside one, the save is its own implicit transaction.
+    /// outside one, the save is its own transaction — covering every context of the scope that has
+    /// changes, so a change staged through another context's repository is never left behind.
     /// </remarks>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
@@ -92,8 +108,8 @@ public interface IUnitOfWork
     /// failure is returned. Any other result commits.
     /// </para>
     /// <para>
-    /// Joining an active transaction: a failure result is returned without saving, and the outermost
-    /// call decides the fate of the transaction.
+    /// Joining an active transaction: a failure result is returned without saving and marks the
+    /// transaction rollback-only, so the outermost call rolls everything back.
     /// </para>
     /// </remarks>
     Task<TResult> ExecuteInTransactionAsync<TResult>(

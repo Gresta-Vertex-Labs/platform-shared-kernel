@@ -33,6 +33,8 @@ SharedKernel.Domain.Abstractions.ISoftDeletable.IsDeleted.get -> bool
 SharedKernel.Domain.Abstractions.IStronglyTypedId<TValue>
 SharedKernel.Domain.Abstractions.IStronglyTypedId<TValue>.Value.get -> TValue
 SharedKernel.Domain.Abstractions.IValueObject
+SharedKernel.Domain.Abstractions.TenantSharedAttribute
+SharedKernel.Domain.Abstractions.TenantSharedAttribute.TenantSharedAttribute() -> void
 SharedKernel.Domain.Aggregates.AggregateRoot<TId>
 SharedKernel.Domain.Aggregates.AggregateRoot<TId>.AggregateRoot() -> void
 SharedKernel.Domain.Aggregates.AggregateRoot<TId>.AggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
@@ -60,6 +62,7 @@ SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.IsDelete
 SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.MarkAsDeleted(string! deletedBy) -> void
 SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.ModifiedBy.get -> string?
 SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.ModifiedOn.get -> System.DateTimeOffset?
+SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.Restore() -> void
 SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>
 SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.FullAuditableAggregateRoot() -> void
 SharedKernel.Domain.Aggregates.FullAuditableAggregateRoot<TId>.FullAuditableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
@@ -70,6 +73,7 @@ SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.DeletedBy.get -> 
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.DeletedOn.get -> System.DateTimeOffset?
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.IsDeleted.get -> bool
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.MarkAsDeleted(string! deletedBy) -> void
+SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.Restore() -> void
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot() -> void
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>
@@ -229,8 +233,12 @@ SharedKernel.Domain.Policies.PolicyExtensions
 SharedKernel.Domain.Specifications.AllSpecification<T>
 SharedKernel.Domain.Specifications.AllSpecification<T>.AllSpecification() -> void
 SharedKernel.Domain.Specifications.AndSpecification<T>
+SharedKernel.Domain.Specifications.AndSpecification<T>.AndSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> void
 SharedKernel.Domain.Specifications.EmptySpecification<T>
 SharedKernel.Domain.Specifications.EmptySpecification<T>.EmptySpecification() -> void
+SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, TProperty>
+SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>
+SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<T, TResult>!>!
 SharedKernel.Domain.Specifications.ISpecification<T>
 SharedKernel.Domain.Specifications.ISpecification<T>.AsSplitQuery.get -> bool
 SharedKernel.Domain.Specifications.ISpecification<T>.Criteria.get -> System.Linq.Expressions.Expression<System.Func<T, bool>!>?
@@ -243,17 +251,28 @@ SharedKernel.Domain.Specifications.ISpecification<T>.Skip.get -> int?
 SharedKernel.Domain.Specifications.ISpecification<T>.StringIncludes.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Domain.Specifications.ISpecification<T>.Take.get -> int?
 SharedKernel.Domain.Specifications.ISpecification<T>.ThenBys.get -> System.Collections.Generic.IReadOnlyList<(System.Linq.Expressions.Expression<System.Func<T, object!>!>! KeySelector, bool Descending)>!
+SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>
+SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions
 SharedKernel.Domain.Specifications.NotSpecification<T>
+SharedKernel.Domain.Specifications.NotSpecification<T>.NotSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> void
 SharedKernel.Domain.Specifications.OrSpecification<T>
+SharedKernel.Domain.Specifications.OrSpecification<T>.OrSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> void
+SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>
+SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.ApplySelector(System.Linq.Expressions.Expression<System.Func<T, TResult>!>! selector) -> void
+SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.ProjectionSpecification() -> void
+SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<T, TResult>!>!
+SharedKernel.Domain.Specifications.Spec
 SharedKernel.Domain.Specifications.Specification<T>
 SharedKernel.Domain.Specifications.Specification<T>.AddCriteria(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> void
+SharedKernel.Domain.Specifications.Specification<T>.AddInclude<TProperty>(System.Linq.Expressions.Expression<System.Func<T, TProperty>!>! include) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
 SharedKernel.Domain.Specifications.Specification<T>.AddStringInclude(string! path) -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplyDistinct() -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplyOrderBy(System.Linq.Expressions.Expression<System.Func<T, object!>!>! orderBy) -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplyOrderByDescending(System.Linq.Expressions.Expression<System.Func<T, object!>!>! orderByDescending) -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplyPaging(int skip, int take) -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplySplitQuery() -> void
-SharedKernel.Domain.Specifications.Specification<T>.ApplyThenBy(System.Linq.Expressions.Expression<System.Func<T, object!>!>! keySelector, bool descending) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyTake(int take) -> void
+SharedKernel.Domain.Specifications.Specification<T>.ApplyThenBy(System.Linq.Expressions.Expression<System.Func<T, object!>!>! keySelector) -> void
 SharedKernel.Domain.Specifications.Specification<T>.ApplyThenByDescending(System.Linq.Expressions.Expression<System.Func<T, object!>!>! keySelector) -> void
 SharedKernel.Domain.Specifications.Specification<T>.AsSplitQuery.get -> bool
 SharedKernel.Domain.Specifications.Specification<T>.Criteria.get -> System.Linq.Expressions.Expression<System.Func<T, bool>!>?
@@ -269,6 +288,21 @@ SharedKernel.Domain.Specifications.Specification<T>.Specification() -> void
 SharedKernel.Domain.Specifications.Specification<T>.StringIncludes.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Domain.Specifications.Specification<T>.Take.get -> int?
 SharedKernel.Domain.Specifications.Specification<T>.ThenBys.get -> System.Collections.Generic.IReadOnlyList<(System.Linq.Expressions.Expression<System.Func<T, object!>!>! KeySelector, bool Descending)>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.AsSplitQuery() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Distinct() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Include(string! path) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Include<TProperty>(System.Linq.Expressions.Expression<System.Func<T, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.IncludeDeleted() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.IsSatisfiedBy(T entity) -> bool
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.OrderBy<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.OrderByDescending<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Select<TResult>(System.Linq.Expressions.Expression<System.Func<T, TResult>!>! selector) -> SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Skip(int count) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Take(int count) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.ThenBy<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.ThenByDescending<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
+SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Where(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
 SharedKernel.Domain.Specifications.SpecificationExtensions
 SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>
 SharedKernel.Domain.StronglyTypedIds.Serialization.StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>.StronglyTypedIdJsonConverter() -> void
@@ -286,8 +320,6 @@ SharedKernel.Domain.ValueObjects.ValueObject
 SharedKernel.Domain.ValueObjects.ValueObject.EnsureValid() -> void
 SharedKernel.Domain.ValueObjects.ValueObject.Equals(SharedKernel.Domain.ValueObjects.ValueObject? other) -> bool
 SharedKernel.Domain.ValueObjects.ValueObject.ValueObject() -> void
-abstract SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.OnDelete() -> void
-abstract SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.OnDelete() -> void
 abstract SharedKernel.Domain.Events.DomainEvent.<Clone>$() -> SharedKernel.Domain.Events.DomainEvent!
 abstract SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.<Clone>$() -> SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>!
 abstract SharedKernel.Domain.ValueObjects.ValueObject.GetEqualityComponents() -> System.Collections.Generic.IEnumerable<object?>!
@@ -365,7 +397,13 @@ static SharedKernel.Domain.Policies.PolicyExtensions.And<T>(this SharedKernel.Do
 static SharedKernel.Domain.Policies.PolicyExtensions.Not<T>(this SharedKernel.Domain.Policies.IPolicy<T>! policy, string! explanation) -> SharedKernel.Domain.Policies.NotPolicy<T>!
 static SharedKernel.Domain.Policies.PolicyExtensions.Or<T>(this SharedKernel.Domain.Policies.IPolicy<T>! left, SharedKernel.Domain.Policies.IPolicy<T>! right) -> SharedKernel.Domain.Policies.OrPolicy<T>!
 static SharedKernel.Domain.Policies.PolicyExtensions.ToRule<T>(this SharedKernel.Domain.Policies.IPolicy<T>! policy, T subject, string! code) -> SharedKernel.Domain.BusinessRules.IBusinessRule!
+static SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions.ThenInclude<T, TPrevious, TProperty>(this SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, System.Collections.Generic.IEnumerable<TPrevious>!>! builder, System.Linq.Expressions.Expression<System.Func<TPrevious, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
+static SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions.ThenInclude<T, TPrevious, TProperty>(this SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, TPrevious>! builder, System.Linq.Expressions.Expression<System.Func<TPrevious, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
+static SharedKernel.Domain.Specifications.Spec.For<T>() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
 static SharedKernel.Domain.Specifications.Specification<T>.Create(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> SharedKernel.Domain.Specifications.Specification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.And<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> SharedKernel.Domain.Specifications.AndSpecification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.Not<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> SharedKernel.Domain.Specifications.NotSpecification<T>!
+static SharedKernel.Domain.Specifications.SpecificationExtensions.Or<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> SharedKernel.Domain.Specifications.OrSpecification<T>!
 static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.explicit operator TValue(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>! id) -> TValue
 static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator !=(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? left, SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? right) -> bool
 static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator ==(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? left, SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? right) -> bool
@@ -374,6 +412,10 @@ static SharedKernel.Domain.ValueObjects.ValueObject.CheckRule(SharedKernel.Domai
 static SharedKernel.Domain.ValueObjects.ValueObject.TryCreate<T>(System.Func<T>! factory) -> SharedKernel.Primitives.Results.ValidationResult<T>!
 static SharedKernel.Domain.ValueObjects.ValueObject.operator !=(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool
 static SharedKernel.Domain.ValueObjects.ValueObject.operator ==(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool
+virtual SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.OnDelete() -> void
+virtual SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.OnRestore() -> void
+virtual SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.OnDelete() -> void
+virtual SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.OnRestore() -> void
 virtual SharedKernel.Domain.Events.DomainEvent.EqualityContract.get -> System.Type!
 virtual SharedKernel.Domain.Events.DomainEvent.Equals(SharedKernel.Domain.Events.DomainEvent? other) -> bool
 virtual SharedKernel.Domain.Events.DomainEvent.PrintMembers(System.Text.StringBuilder! builder) -> bool
@@ -381,43 +423,3 @@ virtual SharedKernel.Domain.Events.DomainEvent<TPayload>.Equals(SharedKernel.Dom
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.EqualityContract.get -> System.Type!
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Equals(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? other) -> bool
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.PrintMembers(System.Text.StringBuilder! builder) -> bool
-SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.Restore() -> void
-SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.Restore() -> void
-SharedKernel.Domain.Specifications.AndSpecification<T>.AndSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> void
-SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, TProperty>
-SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>
-SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<T, TResult>!>!
-SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>
-SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions
-SharedKernel.Domain.Specifications.NotSpecification<T>.NotSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> void
-SharedKernel.Domain.Specifications.OrSpecification<T>.OrSpecification(SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> void
-SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>
-SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.ApplySelector(System.Linq.Expressions.Expression<System.Func<T, TResult>!>! selector) -> void
-SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.ProjectionSpecification() -> void
-SharedKernel.Domain.Specifications.ProjectionSpecification<T, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<T, TResult>!>!
-SharedKernel.Domain.Specifications.Spec
-SharedKernel.Domain.Specifications.Specification<T>.AddInclude<TProperty>(System.Linq.Expressions.Expression<System.Func<T, TProperty>!>! include) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
-SharedKernel.Domain.Specifications.Specification<T>.ApplyTake(int take) -> void
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.AsSplitQuery() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Distinct() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Include(string! path) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Include<TProperty>(System.Linq.Expressions.Expression<System.Func<T, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.IncludeDeleted() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.IsSatisfiedBy(T entity) -> bool
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.OrderBy<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.OrderByDescending<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Select<TResult>(System.Linq.Expressions.Expression<System.Func<T, TResult>!>! selector) -> SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Skip(int count) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Take(int count) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.ThenBy<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.ThenByDescending<TKey>(System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-SharedKernel.Domain.Specifications.SpecificationBuilder<T>.Where(System.Linq.Expressions.Expression<System.Func<T, bool>!>! criteria) -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-static SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions.ThenInclude<T, TPrevious, TProperty>(this SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, System.Collections.Generic.IEnumerable<TPrevious>!>! builder, System.Linq.Expressions.Expression<System.Func<TPrevious, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
-static SharedKernel.Domain.Specifications.IncludableSpecificationBuilderExtensions.ThenInclude<T, TPrevious, TProperty>(this SharedKernel.Domain.Specifications.IIncludableSpecificationBuilder<T, TPrevious>! builder, System.Linq.Expressions.Expression<System.Func<TPrevious, TProperty>!>! navigation) -> SharedKernel.Domain.Specifications.IncludableSpecificationBuilder<T, TProperty>!
-static SharedKernel.Domain.Specifications.Spec.For<T>() -> SharedKernel.Domain.Specifications.SpecificationBuilder<T>!
-static SharedKernel.Domain.Specifications.SpecificationExtensions.And<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> SharedKernel.Domain.Specifications.AndSpecification<T>!
-static SharedKernel.Domain.Specifications.SpecificationExtensions.Not<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> SharedKernel.Domain.Specifications.NotSpecification<T>!
-static SharedKernel.Domain.Specifications.SpecificationExtensions.Or<T>(this SharedKernel.Domain.Specifications.ISpecification<T>! left, SharedKernel.Domain.Specifications.ISpecification<T>! right) -> SharedKernel.Domain.Specifications.OrSpecification<T>!
-virtual SharedKernel.Domain.Aggregates.AuditableSoftDeletableAggregateRoot<TId>.OnRestore() -> void
-virtual SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.OnRestore() -> void
