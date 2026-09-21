@@ -1,23 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Dapper micro-ORM read-side helpers for SharedKernel: StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService base (single/multi-mapping queries, QueryMultipleAsync), and AddSharedKernelDapper DI extension.</Description>
-    <PackageTags>persistence;dapper;micro-orm;read-model;shared-kernel</PackageTags>
+    <Description>Dapper on PostgreSQL for SharedKernel: IDbSessionFactory (connection + transaction enlisted in the unit of work, tenant bound for row-level security, read-only and cross-tenant data sources), generic type handlers (SmartEnum, StronglyTypedId, jsonb via JsonTypeInfo, pgvector) and AddSharedKernelDapper.</Description>
+    <PackageTags>persistence;dapper;micro-orm;postgresql;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
-      P-557/W1: references Abstractions only, for IDbConnectionFactory. The former PostgreSQL
-      reference (for NpgsqlConnectionFactory) is gone — that type moved to the new
-      SharedKernel.Persistence.Npgsql package, and this package never needs a compile-time
-      reference to it: a consuming service registers IDbConnectionFactory itself (via
-      SharedKernel.Persistence.Npgsql's AddSharedKernelNpgsql(), or any other implementation) and
-      this package's DapperReadService only ever depends on the Abstractions-level interface.
-      Does NOT reference SharedKernel.Persistence.EfCore.
+      P-558/W2-N: references SharedKernel.Persistence.Npgsql (keyed read-only/cross-tenant data sources,
+      the row-level security options, the tenant binder and PostgresErrorMapping) and, through it,
+      SharedKernel.Persistence.Abstractions. Never references SharedKernel.Persistence.EfCore.
     -->
-    <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
-    <!-- Options-bound configuration (ISectionBoundOptions/AddValidatedOptions) — 01.Core, within the
-         06.Persistence -> 01-05 layering ceiling. -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -31,5 +25,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Persistence.Dapper.Tests" />
   </ItemGroup>
 </Project>

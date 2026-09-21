@@ -1,7 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Application.Context;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.Options;
+using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Persistence.Dapper.TypeHandlers;
 
 namespace SharedKernel.Persistence.Dapper.Extensions;
@@ -10,76 +14,60 @@ namespace SharedKernel.Persistence.Dapper.Extensions;
 /// DI extension methods for the SharedKernel Dapper persistence layer.
 /// </summary>
 #pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters.
-// The parameterless-registration overload and the IConfiguration-bound overload differ in their
-// second required parameter's presence/type (none vs. a mandatory IConfiguration) — a caller's own
-// argument list already selects the correct overload; there is no shared call shape across the two
-// for a trailing optional parameter to ever disambiguate incorrectly.
+// The overloads differ in their required second parameter (none vs. IConfiguration).
 public static class DapperPersistenceExtensions
 {
     /// <summary>
-    /// Registers this platform's Dapper type handlers plus any handlers <paramref name="configure"/>
-    /// adds, once per process, under a lock (see <see cref="DapperTypeHandlers.Apply"/>).
+    /// Registers <see cref="IDbSessionFactory"/> and applies <see cref="DapperConfiguration"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">
-    /// Optional. Registers one or more caller-supplied
-    /// <see cref="Dapper.SqlMapper.ITypeHandler"/> implementations, e.g.:
-    /// <code>
-    /// services.AddSharedKernelDapper(b =&gt; b
-    ///     .AddTypeHandler&lt;OrderId, OrderIdTypeHandler&gt;()
-    ///     .AddTypeHandler&lt;OrderStatus, OrderStatusTypeHandler&gt;());
-    /// </code>
-    /// </param>
-    /// <param name="enableSnakeCaseMapping">
-    /// See <see cref="DapperTypeHandlers.Apply"/>'s own remarks — sets Dapper's process-wide
-    /// <see cref="global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores"/>. Defaults to
-    /// <see langword="true"/>.
-    /// </param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
+    /// <param name="configure">Type handlers and name matching, e.g. <c>b =&gt; b.AddStronglyTypedId&lt;OrderId, Guid&gt;()</c>.</param>
+    /// <returns>The same <paramref name="services"/>.</returns>
     /// <remarks>
-    /// <c>IDbConnectionFactory</c> is NOT registered by this extension — it is registered by
-    /// <c>AddSharedKernelNpgsql</c>. Consuming services must call
-    /// both extensions at startup:
-    /// <code>
-    /// services.AddSharedKernelNpgsql(builder.Configuration);
-    /// services.AddSharedKernelDapper(b =&gt; b.AddTypeHandler&lt;OrderId, OrderIdTypeHandler&gt;());
-    /// </code>
+    /// <para>
+    /// Needs the connection registrations of <c>AddSharedKernelNpgsql(configuration)</c>. So that a
+    /// Dapper-only service works without EF Core, this also registers — unless already registered — an
+    /// anonymous <see cref="IRequestContext"/> (no tenant; register the real one, e.g.
+    /// <c>AddSharedKernelRequestContext()</c>, in any order) and the default <see cref="ICrossTenantScope"/>.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelDapper(
         this IServiceCollection services,
-        Action<DapperTypeHandlerBuilder>? configure = null,
-        bool enableSnakeCaseMapping = true)
+        Action<DapperConfigurationBuilder>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        DapperTypeHandlers.Apply(configure, enableSnakeCaseMapping);
-
-        return services;
+        services.AddOptions<DapperPersistenceOptions>();
+        return AddCore(services, configure);
     }
 
     /// <summary>
-    /// Registers this platform's Dapper type handlers (see the primary overload) plus
-    /// <see cref="DapperPersistenceOptions"/>, bound and validated from
-    /// <see cref="DapperPersistenceOptions.SectionName"/>.
+    /// Registers <see cref="IDbSessionFactory"/> (see the primary overload) with
+    /// <see cref="DapperPersistenceOptions"/> bound and validated from <see cref="DapperPersistenceOptions.SectionName"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configuration">
-    /// The root configuration to resolve <see cref="DapperPersistenceOptions.SectionName"/> against.
-    /// </param>
+    /// <param name="configuration">The root configuration.</param>
     /// <param name="configure">See the primary overload.</param>
-    /// <param name="enableSnakeCaseMapping">See the primary overload.</param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
+    /// <returns>The same <paramref name="services"/>.</returns>
     public static IServiceCollection AddSharedKernelDapper(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<DapperTypeHandlerBuilder>? configure = null,
-        bool enableSnakeCaseMapping = true)
+        Action<DapperConfigurationBuilder>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddValidatedOptions<DapperPersistenceOptions>(configuration);
-        DapperTypeHandlers.Apply(configure, enableSnakeCaseMapping);
+        return AddCore(services, configure);
+    }
+
+    private static IServiceCollection AddCore(IServiceCollection services, Action<DapperConfigurationBuilder>? configure)
+    {
+        DapperConfiguration.Apply(configure);
+
+        services.TryAddScoped<IDbSessionFactory, DbSessionFactory>();
+        services.TryAddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
+        services.TryAddSingleton<ICrossTenantScope, CrossTenantScope>();
 
         return services;
     }

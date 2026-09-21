@@ -1,80 +1,62 @@
-using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
+using SharedKernel.Persistence.Npgsql.Options;
 
 namespace SharedKernel.Persistence.EfCore.Extensions;
 
 /// <summary>
-/// Opt-in PostgreSQL row-level-security (RLS) extension method for <see cref="EfCorePersistenceBuilder{TContext}"/>.
+/// Opt-in PostgreSQL row-level security (RLS) for <see cref="EfCorePersistenceBuilder{TContext}"/>.
 /// </summary>
 public static class EfCorePersistenceBuilderRowLevelSecurityExtensions
 {
     /// <summary>
-    /// Opts in to binding the current tenant — and the <see cref="ICrossTenantScope"/> escape clause —
-    /// to every connection <typeparamref name="TContext"/> opens, so a matching PostgreSQL row-level
-    /// security policy (see <c>RowLevelSecurityMigrationBuilderExtensions.EnableTenantRowLevelSecurity</c>)
-    /// enforces tenant isolation at the database level, independently of this platform's own
-    /// application-level tenant query filter and write guard.
+    /// Binds the caller's tenant to every command of <typeparamref name="TContext"/>, transaction-locally,
+    /// so the tenant policies created by <c>EnableTenantRowLevelSecurity</c> enforce isolation in the
+    /// database, independently of the application's own tenant filter.
     /// </summary>
+    /// <typeparam name="TContext">The context type.</typeparam>
     /// <param name="builder">The persistence builder.</param>
-    /// <returns>The same builder for further chaining.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown at <see cref="EfCorePersistenceBuilder{TContext}.Build"/> time when no
-    /// <see cref="ITenantSessionBinder"/> is registered — call <c>services.AddSharedKernelNpgsql(...)</c>
-    /// first.
-    /// </exception>
+    /// <returns>The same builder.</returns>
     /// <remarks>
     /// <para>
-    /// Constrained to <see cref="TenantedDbContext"/> at compile time — row-level security is
-    /// inherently a multi-tenant capability, so a single-tenant <c>SharedKernelDbContext</c> cannot opt
-    /// in.
+    /// Also switches on <c>SharedKernel:Persistence:Npgsql:RowLevelSecurity:Enabled</c>, which rejects
+    /// <c>Multiplexing</c>/<c>No Reset On Close</c> connection strings, makes Dapper sessions bind the
+    /// tenant too, and checks at startup that the application role is not a superuser, has no
+    /// <c>BYPASSRLS</c> and owns no protected table.
     /// </para>
     /// <para>
-    /// Deliberately does NOT require <see cref="EfCorePersistenceBuilder{TContext}.WithMultiTenancy"/>
-    /// to also have been called. <see cref="TenantedDbContext"/>'s own EF-level tenant query filter is
-    /// always installed regardless of that call (only its write guard interceptor is conditional on
-    /// it) — a service that opts in to only <c>.WithRowLevelSecurity()</c> still gets EF-level read
-    /// filtering plus database-level read <em>and</em> write enforcement (a PostgreSQL policy with no
-    /// explicit <c>WITH CHECK</c> clause reuses its <c>USING</c> expression for INSERT/UPDATE too), a
-    /// coherent, secure configuration on its own. Calling both is still recommended as defense in depth
-    /// — <see cref="EfCorePersistenceBuilder{TContext}.WithMultiTenancy"/>'s application-level write
-    /// guard rejects a cross-tenant write with a typed exception before it ever reaches the database;
-    /// row-level security alone surfaces the same rejection as a raw provider exception.
+    /// <strong>What it guards against.</strong> Application bugs — a query that forgets the tenant filter, an
+    /// <c>IgnoreQueryFilters()</c>, raw SQL. It does not stop SQL injection: injected SQL runs as the
+    /// application role and can bind any tenant id it likes. Keep parameterized SQL.
     /// </para>
     /// <para>
-    /// Pairs with <see cref="RowLevelSecurityConnectionInterceptor"/> (connection-scoped bind/reset)
-    /// and <see cref="RowLevelSecurityCommandInterceptor"/> (per-command re-bind inside an explicit
-    /// transaction — see its own remarks for why the connection-scoped bind alone is not exact once a
-    /// connection lease spans more than one statement) and requires the RLS migration helper to
-    /// actually have been applied to each protected table — this method only wires the
-    /// application-side half.
+    /// Works behind PgBouncer in transaction mode: nothing is bound for the session. Cross-tenant work uses
+    /// a separate role; see <see cref="RowLevelSecurityDatabaseFacadeExtensions.UseCrossTenantConnection"/>.
     /// </para>
     /// </remarks>
     public static EfCorePersistenceBuilder<TContext> WithRowLevelSecurity<TContext>(
         this EfCorePersistenceBuilder<TContext> builder)
-        where TContext : TenantedDbContext
+        where TContext : SharedKernelDbContext
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Services.TryAddSingleton<RowLevelSecurityConnectionInterceptor>();
         builder.Services.TryAddSingleton<RowLevelSecurityCommandInterceptor>();
-        builder.Services.AddSingleton<IPersistenceOptionsExtension, RowLevelSecurityOptionsContributor>();
-
-        builder.AddBuildAction(() =>
-        {
-            if (!builder.Services.Any(sd => sd.ServiceType == typeof(ITenantSessionBinder)))
-            {
-                throw new InvalidOperationException(
-                    "'.WithRowLevelSecurity()' requires an 'ITenantSessionBinder' already registered. " +
-                    "Call 'services.AddSharedKernelNpgsql(...)' before " +
-                    "'services.AddSharedKernelEfCore<TContext>(...)....WithRowLevelSecurity()'.");
-            }
-        });
+        builder.Services.TryAddSingleton<RowLevelSecurityTransactionInterceptor>();
+        builder.Services.TryAddSingleton<RowLevelSecuritySaveChangesInterceptor>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPersistenceOptionsExtension, RowLevelSecurityOptionsContributor>());
+        builder.Services.PostConfigure<NpgsqlPersistenceOptions>(options => options.RowLevelSecurity.Enabled = true);
 
         return builder;
     }
+
+    /// <summary>
+    /// Whether <see cref="WithRowLevelSecurity{TContext}"/> was called on <paramref name="services"/> — i.e. the
+    /// database itself enforces tenant isolation on every statement.
+    /// </summary>
+    internal static bool IsRowLevelSecurityEnabled(IServiceCollection services) =>
+        services.Any(descriptor => descriptor.ImplementationType == typeof(RowLevelSecurityOptionsContributor));
 }

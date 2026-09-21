@@ -189,7 +189,7 @@ public sealed class PersistenceLayeringRulesTests
     [Fact]
     public void Dapper_NeverReferencesEfCore()
     {
-        typeof(SharedKernel.Persistence.Dapper.ReadModels.DapperReadService).Assembly
+        typeof(SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name!)
             .Should().NotContain(name =>
@@ -230,7 +230,7 @@ public sealed class PersistenceLayeringRulesTests
         yield return [typeof(SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.Dapper.ReadModels.DapperReadService).Assembly];
+        yield return [typeof(SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory).Assembly];
     }
 
     /// <summary>

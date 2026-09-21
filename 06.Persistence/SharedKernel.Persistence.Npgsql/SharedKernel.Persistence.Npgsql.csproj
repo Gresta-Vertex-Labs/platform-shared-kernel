@@ -25,6 +25,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- P-558/W2-N: the row-level security startup check is an IHostedService; IHostEnvironment relaxes the TLS rule in Development. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
@@ -36,5 +38,6 @@
          consumers only through NpgsqlAdvisoryMigrationLock/NpgsqlAdvisoryTransactionLock — this grant
          lets the Tests project exercise it directly. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.Npgsql.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.Dapper.Tests" />
   </ItemGroup>
 </Project>

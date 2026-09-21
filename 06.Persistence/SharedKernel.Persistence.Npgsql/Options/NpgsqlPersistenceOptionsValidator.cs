@@ -1,34 +1,96 @@
 using global::Npgsql;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace SharedKernel.Persistence.Npgsql.Options;
 
 /// <summary>
-/// Validates <see cref="NpgsqlPersistenceOptions"/> beyond what Data Annotations can express —
-/// specifically, that a downgraded <see cref="NpgsqlPersistenceOptions.SslMode"/> is always paired
-/// with an explicit <see cref="NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode"/> opt-down.
+/// Validates <see cref="NpgsqlPersistenceOptions"/> at host startup: a connection string is present and
+/// parses, every connection string's TLS mode is acceptable, and row-level security is not combined with
+/// connection settings that defeat it.
 /// </summary>
 /// <remarks>
-/// Registered alongside the Data Annotations validator by
-/// <c>AddSharedKernelNpgsql(IServiceCollection, IConfiguration,...)</c> via
-/// <c>AddValidatedOptions&lt;NpgsqlPersistenceOptions, NpgsqlPersistenceOptionsValidator&gt;(...,
-/// validateDataAnnotations: true)</c>.
+/// A TLS mode below <c>VerifyFull</c> is accepted for a loopback host, in the <c>Development</c>
+/// environment, or with <see cref="NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode"/>. With
+/// row-level security enabled, <c>Multiplexing</c> and <c>No Reset On Close</c> are rejected on the
+/// application connection strings (default and read-only).
 /// </remarks>
 public sealed class NpgsqlPersistenceOptionsValidator : IValidateOptions<NpgsqlPersistenceOptions>
 {
+    private readonly IHostEnvironment? _hostEnvironment;
+
+    /// <summary>Initialises a new <see cref="NpgsqlPersistenceOptionsValidator"/>.</summary>
+    /// <param name="hostEnvironment">
+    /// Optional. When it reports <c>Development</c>, a TLS downgrade needs no acknowledgement.
+    /// </param>
+    public NpgsqlPersistenceOptionsValidator(IHostEnvironment? hostEnvironment = null)
+    {
+        _hostEnvironment = hostEnvironment;
+    }
+
     /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, NpgsqlPersistenceOptions options)
     {
-        if (options.SslMode < SslMode.VerifyFull && !options.AcknowledgeInsecureSslMode)
+        ArgumentNullException.ThrowIfNull(options);
+
+        List<string> failures = [];
+
+        if (string.IsNullOrWhiteSpace(options.ConnectionString))
         {
-            return ValidateOptionsResult.Fail(
-                $"{nameof(NpgsqlPersistenceOptions.SslMode)} is '{options.SslMode}', below the "
-                    + $"secure default of '{SslMode.VerifyFull}'. Set "
-                    + $"{nameof(NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode)} to true to "
-                    + "explicitly acknowledge this downgrade (e.g. for local development against a "
-                    + "database with no verifiable TLS certificate).");
+            failures.Add(options.ConnectionStringName is { Length: > 0 } connectionStringName
+                ? $"No connection string was found: '{nameof(NpgsqlPersistenceOptions.ConnectionString)}' is empty and "
+                    + $"'ConnectionStrings:{connectionStringName}' is not configured."
+                : $"No connection string was found: set '{nameof(NpgsqlPersistenceOptions.ConnectionString)}' or "
+                    + $"'{nameof(NpgsqlPersistenceOptions.ConnectionStringName)}'.");
+            return ValidateOptionsResult.Fail(failures);
         }
 
-        return ValidateOptionsResult.Success;
+        ValidateConnectionString(options, nameof(NpgsqlPersistenceOptions.ConnectionString), options.ConnectionString, checkRowLevelSecurity: true, failures);
+        ValidateConnectionString(options, nameof(NpgsqlPersistenceOptions.ReadOnlyConnectionString), options.ReadOnlyConnectionString, checkRowLevelSecurity: true, failures);
+        ValidateConnectionString(options, nameof(NpgsqlPersistenceOptions.MigrationConnectionString), options.MigrationConnectionString, checkRowLevelSecurity: false, failures);
+        ValidateConnectionString(options, "RowLevelSecurity:CrossTenantConnectionString", options.RowLevelSecurity.CrossTenantConnectionString, checkRowLevelSecurity: false, failures);
+
+        return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private void ValidateConnectionString(
+        NpgsqlPersistenceOptions options,
+        string settingName,
+        string? connectionString,
+        bool checkRowLevelSecurity,
+        List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return;
+
+        try
+        {
+            _ = new NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException)
+        {
+            // The exception text can echo parts of the connection string, so it is not included.
+            failures.Add($"'{settingName}' is not a valid PostgreSQL connection string.");
+            return;
+        }
+
+        var sslMode = NpgsqlConnectionStringPolicy.EffectiveSslMode(options, connectionString);
+        if (sslMode < SslMode.VerifyFull
+            && !options.AcknowledgeInsecureSslMode
+            && !NpgsqlConnectionStringPolicy.IsLoopback(connectionString)
+            && _hostEnvironment?.IsDevelopment() != true)
+        {
+            failures.Add(
+                $"'{settingName}' uses SSL mode '{sslMode}', below the secure default '{SslMode.VerifyFull}', for a "
+                    + "host that is not on this machine. Install the server's root certificate and keep "
+                    + $"'{SslMode.VerifyFull}', or set '{nameof(NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode)}' "
+                    + "to true to accept the downgrade.");
+        }
+
+        if (checkRowLevelSecurity && options.RowLevelSecurity.Enabled)
+        {
+            foreach (var incompatibility in NpgsqlConnectionStringPolicy.RowLevelSecurityIncompatibilities(connectionString))
+                failures.Add($"Row-level security is enabled but '{settingName}' is incompatible: {incompatibility}");
+        }
     }
 }

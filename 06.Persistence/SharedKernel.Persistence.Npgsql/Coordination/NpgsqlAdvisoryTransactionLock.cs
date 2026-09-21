@@ -1,54 +1,41 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Coordination;
 
 namespace SharedKernel.Persistence.Npgsql.Coordination;
 
 /// <summary>
-/// PostgreSQL implementation of <see cref="IAdvisoryTransactionLock"/> using a transaction-scoped
-/// advisory lock (<c>pg_advisory_xact_lock</c>) — released automatically by PostgreSQL itself when
-/// <paramref name="transaction"/> commits or rolls back.
+/// PostgreSQL implementation of <see cref="IAdvisoryTransactionLock"/>: <c>pg_advisory_xact_lock</c>,
+/// released by PostgreSQL itself when the transaction commits or rolls back.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>pg_advisory_xact_lock</c> (unlike <c>pg_advisory_lock</c>, the session-level form
-/// <c>NpgsqlAdvisoryMigrationLock</c> uses) BLOCKS until the lock is available and needs no separate
-/// release call — the correct primitive for "serialize concurrent appenders to the same audit chain for
-/// the life of one already-open transaction," see <see cref="IAdvisoryTransactionLock"/>'s remarks for
-/// the full comparison.
+/// The lock name is hashed with <see cref="AdvisoryLockKeys.ToKey"/> as given; pass a namespaced name
+/// (e.g. <see cref="AdvisoryLockKeys.Audit"/>).
 /// </para>
 /// <para>
-/// Derives its <c>bigint</c> lock key via <see cref="AdvisoryLockKeyHasher"/>, shared with
-/// <c>NpgsqlAdvisoryMigrationLock</c> — a session-level lock and a transaction-level lock occupy the
-/// SAME <c>pg_locks</c> advisory keyspace, so both must compute the identical key for the same logical
-/// resource name.
-/// </para>
-/// <para>
-/// <strong>Self-deadlock hazard this class cannot see, and <paramref name="timeout"/>-less callers
-/// remain exposed to:</strong> two acquirers contending for the SAME <paramref name="lockKey"/> on two
-/// DIFFERENT, already-open transactions never form the cycle PostgreSQL's own deadlock detector looks
-/// for when the FIRST holder's connection is idle-in-transaction awaiting application code (rather than
-/// itself blocked on a database wait) — the detector sees no cycle, and the second acquirer can wait
-/// forever. Passing <c>timeout</c> to <see cref="AcquireAsync"/> is this class's own, structural bound
-/// against that shape; a caller that omits it keeps today's unbounded-wait behaviour exactly, and must
-/// supply its own bound some other way (e.g. its own <c>lock_timeout</c> session setting) if it needs one.
+/// <strong>Bounded wait.</strong> With a timeout, the transaction's <c>lock_timeout</c> is set for the
+/// acquisition only and restored to its previous value afterwards, so later statements of the same
+/// transaction keep their own timeout. A sub-millisecond timeout is rounded up to 1 ms
+/// (<c>lock_timeout = 0</c> would mean "wait forever"). A timed-out acquisition raises SQLSTATE 55P03,
+/// which aborts the transaction; it surfaces as <see cref="TimeoutException"/>.
 /// </para>
 /// </remarks>
 public sealed class NpgsqlAdvisoryTransactionLock : IAdvisoryTransactionLock
 {
+    // Reads the previous value before replacing it: the MATERIALIZED CTE is evaluated first.
+    private const string SetTimeoutSql =
+        "WITH previous AS MATERIALIZED (SELECT current_setting('lock_timeout') AS value) "
+        + "SELECT previous.value, set_config('lock_timeout', @timeout, true) FROM previous";
+
+    // One round trip: acquire, then restore. PostgreSQL skips the restore when the acquisition fails.
+    private const string AcquireAndRestoreSql =
+        "SELECT pg_advisory_xact_lock(@key); SELECT set_config('lock_timeout', @previous, true)";
+
+    private const string AcquireSql = "SELECT pg_advisory_xact_lock(@key)";
+
     /// <inheritdoc />
-    /// <remarks>
-    /// When <paramref name="timeout"/> is supplied, binds PostgreSQL's <c>lock_timeout</c> GUC
-    /// transaction-locally (<c>SELECT set_config('lock_timeout', ..., true)</c> — the same
-    /// parameterized <c>set_config</c> shape <c>NpgsqlTenantSessionBinder</c> uses, never a literal
-    /// interpolated into <c>SET LOCAL</c>, which cannot be parameterized at all) immediately before
-    /// attempting to acquire the lock, then translates the resulting <c>55P03</c>
-    /// (<c>lock_not_available</c>) <see cref="PostgresException"/> into a <see cref="TimeoutException"/>.
-    /// This is independent of, and composes with, any <c>lock_timeout</c> a caller already set on the
-    /// same connection for its own purposes — this method's own binding simply overwrites it for the
-    /// duration of the acquisition attempt, transaction-locally, exactly like every other transaction-
-    /// scoped <c>set_config</c> call in this codebase.
-    /// </remarks>
     public async Task AcquireAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -60,54 +47,71 @@ public sealed class NpgsqlAdvisoryTransactionLock : IAdvisoryTransactionLock
         ArgumentNullException.ThrowIfNull(transaction);
         ArgumentException.ThrowIfNullOrWhiteSpace(lockKey);
 
-        if (timeout is { } requestedTimeout && requestedTimeout <= TimeSpan.Zero)
+        if (timeout is { } requested && requested <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(timeout), requestedTimeout,
-                "A zero or negative timeout would set PostgreSQL's 'lock_timeout' to 0, which means " +
-                    "'wait forever' — the opposite of what a bounded wait is asking for. Pass null " +
-                    "for an unbounded wait, or a positive duration for a real bound.");
+                nameof(timeout), requested,
+                "A timeout must be positive; pass null to wait without a bound.");
         }
 
-        if (timeout is { } boundedWait)
-            await BindLockTimeoutAsync(connection, transaction, boundedWait, cancellationToken).ConfigureAwait(false);
+        var key = AdvisoryLockKeys.ToKey(lockKey);
 
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT pg_advisory_xact_lock($1)";
+        if (timeout is not { } boundedWait)
+        {
+            await using var acquire = CreateCommand(connection, transaction, AcquireSql, ("key", key));
+            await acquire.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
-        // Deliberately anonymous (no ParameterName set) — Npgsql interprets "$1" in the SQL text as
-        // "the first parameter added, positionally," the same pattern NpgsqlAdvisoryMigrationLock's
-        // own working pg_try_advisory_lock($1) call uses. Explicitly naming it "$1" (a real, earlier
-        // version of this method) makes Npgsql treat it as a NAMED parameter that never matches the
-        // positional placeholder, producing "bind message supplies 0 parameters, but prepared
-        // statement requires 1" — caught by the Postgres-backed test suite, not by inspection.
-        var parameter = command.CreateParameter();
-        parameter.Value = AdvisoryLockKeyHasher.Compute(lockKey);
-        command.Parameters.Add(parameter);
+        var previous = await SetLockTimeoutAsync(connection, transaction, boundedWait, cancellationToken).ConfigureAwait(false);
 
+        await using var command = CreateCommand(
+            connection, transaction, AcquireAndRestoreSql, ("key", key), ("previous", previous));
         try
         {
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (timeout is not null && ex.SqlState == PostgresErrorCodes.LockNotAvailable)
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.LockNotAvailable)
         {
             throw new TimeoutException(
-                $"Could not acquire the advisory transaction lock '{lockKey}' within {timeout}.", ex);
+                $"Could not acquire the advisory transaction lock '{lockKey}' within {boundedWait}.", ex);
         }
     }
 
-    private static async Task BindLockTimeoutAsync(
+    /// <summary>The <c>lock_timeout</c> value for <paramref name="timeout"/>, never below 1 ms.</summary>
+    internal static string ToLockTimeout(TimeSpan timeout)
+    {
+        var milliseconds = Math.Max(1L, (long)Math.Ceiling(timeout.TotalMilliseconds));
+        milliseconds = Math.Min(milliseconds, int.MaxValue);
+        return milliseconds.ToString(CultureInfo.InvariantCulture) + "ms";
+    }
+
+    private static async Task<string> SetLockTimeoutAsync(
         DbConnection connection, DbTransaction transaction, TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction, SetTimeoutSql, ("timeout", ToLockTimeout(timeout)));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return reader.GetString(0);
+    }
+
+    // Named parameters: the acquire-and-restore command holds two statements, which positional
+    // placeholders cannot span.
+    private static DbCommand CreateCommand(
+        DbConnection connection, DbTransaction transaction, string sql, params (string Name, object Value)[] values)
+    {
+        var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT set_config('lock_timeout', $1, true)";
+        command.CommandText = sql;
 
-        var parameter = command.CreateParameter();
-        parameter.Value = $"{(int)timeout.TotalMilliseconds}ms";
-        command.Parameters.Add(parameter);
+        foreach (var (name, value) in values)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return command;
     }
 }

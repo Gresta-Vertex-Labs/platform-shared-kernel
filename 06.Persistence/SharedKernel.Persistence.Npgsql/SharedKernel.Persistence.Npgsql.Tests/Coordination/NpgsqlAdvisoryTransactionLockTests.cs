@@ -227,4 +227,92 @@ public sealed class NpgsqlAdvisoryTransactionLockTests : IAsyncLifetime
         await act.Should().NotThrowAsync("the earlier holder already committed, releasing the key");
         await transactionC.CommitAsync();
     }
+
+    // A30: the bounded wait used to leave lock_timeout set for the rest of the transaction.
+    [Fact]
+    public async Task AcquireAsync_WithTimeout_RestoresTheTransactionsPreviousLockTimeout()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await ExecuteAsync(connection, transaction, "SET LOCAL lock_timeout = '7s'");
+
+        await new NpgsqlAdvisoryTransactionLock().AcquireAsync(
+            connection, transaction, "xact-lock-restore", TimeSpan.FromMilliseconds(250));
+
+        (await ScalarAsync(connection, transaction, "SHOW lock_timeout")).Should().Be("7s");
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
+    public async Task AcquireAsync_WithTimeout_NoPreviousValue_RestoresTheServerDefault()
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        var before = await ScalarAsync(connection, null, "SHOW lock_timeout");
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await new NpgsqlAdvisoryTransactionLock().AcquireAsync(
+            connection, transaction, "xact-lock-restore-default", TimeSpan.FromSeconds(3));
+
+        (await ScalarAsync(connection, transaction, "SHOW lock_timeout")).Should().Be(before);
+        await transaction.CommitAsync();
+    }
+
+    [Theory]
+    [InlineData(0.2, "1ms")]
+    [InlineData(1, "1ms")]
+    [InlineData(1.5, "2ms")]
+    [InlineData(2500, "2500ms")]
+    public void ToLockTimeout_NeverRoundsToZero(double milliseconds, string expected)
+    {
+        NpgsqlAdvisoryTransactionLock.ToLockTimeout(TimeSpan.FromMilliseconds(milliseconds)).Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_SubMillisecondTimeout_OnAHeldLock_TimesOutInsteadOfWaitingForever()
+    {
+        const string lockKey = "xact-lock-sub-ms";
+        var advisoryLock = new NpgsqlAdvisoryTransactionLock();
+
+        await using var holderConnection = await _dataSource!.OpenConnectionAsync();
+        await using var holder = await holderConnection.BeginTransactionAsync();
+        await advisoryLock.AcquireAsync(holderConnection, holder, lockKey);
+
+        await using var waiterConnection = await _dataSource!.OpenConnectionAsync();
+        await using var waiter = await waiterConnection.BeginTransactionAsync();
+        var act = async () => await advisoryLock.AcquireAsync(
+            waiterConnection, waiter, lockKey, TimeSpan.FromTicks(1_000)); // 0.1 ms
+
+        await act.Should().ThrowAsync<TimeoutException>().WaitAsync(TimeSpan.FromSeconds(10));
+        await holder.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task AcquireAsync_HashesTheNameAsGiven_SoANamespacedAuditLockUsesItsNamespacedKey()
+    {
+        var lockName = AdvisoryLockKeys.Audit("chain-a");
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await new NpgsqlAdvisoryTransactionLock().AcquireAsync(connection, transaction, lockName);
+
+        var held = await ScalarAsync(
+            connection, transaction,
+            $"SELECT count(*)::text FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() "
+                + $"AND ((classid::bigint << 32) | objid::bigint) = {AdvisoryLockKeys.ToKey(lockName)}");
+        held.Should().Be("1");
+        await transaction.CommitAsync();
+    }
+
+    private static async Task ExecuteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> ScalarAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        return (string?)await command.ExecuteScalarAsync();
+    }
 }

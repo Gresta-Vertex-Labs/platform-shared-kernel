@@ -30,5 +30,6 @@
          depends only on Abstractions) — this test project talks to a real PostgreSQL
          Testcontainer via Dapper, so it references Npgsql directly for NpgsqlDataSource. -->
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 </Project>

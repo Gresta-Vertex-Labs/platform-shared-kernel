@@ -4,47 +4,47 @@ SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions
 SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.DapperPersistenceOptions() -> void
 SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.DefaultCommandTimeoutSeconds.get -> int?
 SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.DefaultCommandTimeoutSeconds.set -> void
-SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService
-SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService.DapperCommandService(SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! connectionFactory, SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction? ambientTransaction = null, SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions? options = null) -> void
-SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService.ExecuteAsync(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService.ExecuteScalarAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService.IsEnlistedInAmbientTransaction.get -> bool
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.ConnectionFactory.get -> SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.DapperReadService(SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! connectionFactory, SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions? options = null) -> void
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.ExecuteScalarAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryAsync<TFirst, TSecond, TReturn>(string! sql, System.Func<TFirst, TSecond, TReturn>! map, object? parameters = null, string! splitOn = "Id", int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TReturn>!>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryAsync<TFirst, TSecond, TThird, TReturn>(string! sql, System.Func<TFirst, TSecond, TThird, TReturn>! map, object? parameters = null, string! splitOn = "Id", int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TReturn>!>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, Dapper.CommandFlags flags = Dapper.CommandFlags.Buffered, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TResult>!>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryFirstOrDefaultAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryMultipleAsync<TResult>(string! sql, System.Func<Dapper.SqlMapper.GridReader!, System.Threading.Tasks.Task<TResult>!>! readFunc, object? parameters = null, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QuerySingleOrDefaultAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.DapperReadService.QueryUnbufferedAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService.ExecuteAsync(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService.ExecuteScalarAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService.IsEnlistedInAmbientTransaction.get -> bool
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService.TenantSafeDapperCommandService(SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! connectionFactory, SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder! tenantSessionBinder, SharedKernel.Application.Context.IRequestContext! tenantContext, SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope, SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction? ambientTransaction = null, SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions? options = null, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperCommandService!>? logger = null) -> void
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperReadService
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperReadService.QueryAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TResult>!>!
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperReadService.QuerySingleOrDefaultAsync<TResult>(string! sql, object? parameters, int? commandTimeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
-SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperReadService.TenantSafeDapperReadService(SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! connectionFactory, SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder! tenantSessionBinder, SharedKernel.Application.Context.IRequestContext! tenantContext, SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope, SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions? options = null, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Dapper.ReadModels.TenantSafeDapperReadService!>? logger = null) -> void
-SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder
-SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder.AddTypeHandler<T, THandler>() -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder!
-SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder.AddTypeHandler<T>(Dapper.SqlMapper.ITypeHandler! handler) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder!
-SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder.DapperTypeHandlerBuilder() -> void
-SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlers
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.DbSessionOptions() -> void
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.EnlistInAmbientTransaction.get -> bool
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.EnlistInAmbientTransaction.init -> void
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.IsolationLevel.get -> System.Data.IsolationLevel
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.IsolationLevel.init -> void
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.ReadOnly.get -> bool
+SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions.ReadOnly.init -> void
+SharedKernel.Persistence.Dapper.Sessions.IDbSession
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.Command(string! sql, object? parameters = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Dapper.CommandDefinition
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.CommitAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.Connection.get -> System.Data.Common.DbConnection!
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.IsEnlisted.get -> bool
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.IsReadOnly.get -> bool
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.RequireTenantId() -> System.Guid
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.TenantId.get -> System.Guid?
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.Transaction.get -> System.Data.Common.DbTransaction!
+SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory
+SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory.OpenAsync(SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Dapper.Sessions.IDbSession!>!
+SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory.OpenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Dapper.Sessions.IDbSession!>!
+SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory.OpenReadOnlyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Dapper.Sessions.IDbSession!>!
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfiguration
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddJsonb<T>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddSmartEnum<TEnum, TValue>() -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddStronglyTypedId<TId, TValue>(System.Func<TValue, TId!>? factory = null) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddTypeHandler<T>(Dapper.SqlMapper.TypeHandler<T>! handler) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
+SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.MatchNamesWithUnderscores(bool enabled) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
+SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>
+SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.JsonbTypeHandler(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> void
 SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>
 SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.SmartEnumTypeHandler() -> void
-SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>
-SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>.StronglyTypedIdTypeHandler() -> void
-abstract SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>.FromValue(TValue value) -> TStronglyTypedId!
+SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>
+SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.StronglyTypedIdTypeHandler(System.Func<TValue, TId!>? factory = null) -> void
+override SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.Parse(object! value) -> T?
+override SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.SetValue(System.Data.IDbDataParameter! parameter, T? value) -> void
 override SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.Parse(object! value) -> TEnum!
 override SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.SetValue(System.Data.IDbDataParameter! parameter, TEnum? value) -> void
-override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>.Parse(object! value) -> TStronglyTypedId!
-override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>.SetValue(System.Data.IDbDataParameter! parameter, TStronglyTypedId? value) -> void
-static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder!>? configure = null, bool enableSnakeCaseMapping = true) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder!>? configure = null, bool enableSnakeCaseMapping = true) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.Parse(object! value) -> TId!
+override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.SetValue(System.Data.IDbDataParameter! parameter, TId? value) -> void
+static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.SectionName.get -> string!
-static SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlers.Apply(System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlerBuilder!>? configure = null, bool enableSnakeCaseMapping = true) -> void
-static SharedKernel.Persistence.Dapper.TypeHandlers.DapperTypeHandlers.Register() -> void
+static SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfiguration.Apply(System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> void

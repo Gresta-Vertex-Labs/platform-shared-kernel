@@ -112,9 +112,7 @@ SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActive.get -> b
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope.IsActive.get -> bool
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindConnectionAsync(System.Data.Common.DbConnection! connection, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.ResetConnectionAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Coordination.IAdvisoryTransactionLock
 SharedKernel.Persistence.Abstractions.Coordination.IAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction
