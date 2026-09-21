@@ -63,6 +63,11 @@
     -->
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <!--
+      Audit ledger fakes (P-558): FakeAuditTrailWriter/FakeAuditQueryService produce and read the ledger's
+      AuditRecord and implement IAuditQueryService, whose contracts moved into this package.
+    -->
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <!--
       Communication test doubles (S-10, P-186): MockServiceEndpointResolver (IServiceEndpointResolver).
       SCOPE LOCK: never reference SharedKernel.Communication.Rest, .Grpc, or .GraphQL from this package.
     -->

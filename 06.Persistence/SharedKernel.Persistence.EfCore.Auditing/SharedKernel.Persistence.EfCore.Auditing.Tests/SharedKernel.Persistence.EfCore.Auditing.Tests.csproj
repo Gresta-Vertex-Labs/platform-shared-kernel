@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -6,15 +6,11 @@
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.Auditing.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!--
-      P-557/W6: real PostgreSQL (Testcontainers) is this project's primary target now â€” chain
-      append/verification correctness (sequence contiguity, clock skew, tamper/gap/truncation
-      detection, transaction semantics) can only be genuinely proven against a real database, not
-      SQLite/InMemory. SharedKernel.Persistence.EfCore (real xmin, real UsePostgreSQL()) and
-      .Npgsql (NpgsqlAdvisoryTransactionLock, AddSharedKernelNpgsql) are both referenced.
+      Real PostgreSQL (Testcontainers) is the primary target: the ledger is PostgreSQL-only (xid horizon,
+      advisory locks, NULLS NOT DISTINCT, triggers). EfCore backs the unit-of-work integration tests.
     -->
     <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
-    <!-- .AddAsymmetricSigning() for the checkpoint-signing integration tests. -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -29,16 +25,11 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="NSubstitute" />
     <PackageReference Include="Testcontainers.PostgreSql" />
-    <!--
-      P-557/W6: SQLite backs WithAuditTrailBuilderTests' pure-DI-wiring model scaffolding only (no
-      audit-record storage semantics are asserted against it â€” see that file's remarks); the base
-      Microsoft.Extensions.Configuration package (transitively via .Json, already centrally pinned)
-      supplies ConfigurationBuilder.AddInMemoryCollection for those same tests' AuditChainOptions
-      configuration.
-    -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The byte-level spec is verified against the vectors it publishes. -->
+    <None Include="..\AUDIT-FORMAT.md" Link="AUDIT-FORMAT.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

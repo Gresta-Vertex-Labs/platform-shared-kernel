@@ -1,55 +1,94 @@
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
 
 /// <summary>
-/// The <see cref="System.Diagnostics.Metrics.Meter"/> for <c>SharedKernel.Persistence.EfCore.Auditing</c>.
+/// The telemetry names of <c>SharedKernel.Persistence.EfCore.Auditing</c>: one <see cref="Meter"/> and one
+/// <see cref="ActivitySource"/>, both named <see cref="MeterName"/>.
 /// </summary>
 /// <remarks>
-/// A dedicated meter, mirroring <c>SharedKernel.Persistence.EfCore.Diagnostics.PersistenceMeter</c>'s
-/// shape — public instrument-name constants so <c>13.ServiceDefaults</c>'s <c>WithPersistenceTelemetry</c>
-/// can reference this meter by name without a compile-time reference to this package.
+/// Public constants so a host can register them (<c>AddMeter</c>/<c>AddSource</c>) without referencing
+/// this package's internals.
 /// </remarks>
 public static class AuditingMeter
 {
-    /// <summary>The meter's name, as registered with OpenTelemetry.</summary>
+    /// <summary>The meter name, as registered with OpenTelemetry.</summary>
     public const string MeterName = "SharedKernel.Persistence.EfCore.Auditing";
 
-    /// <summary>Histogram name: <c>IAuditTrailWriter.RecordAsync</c>'s duration, milliseconds.</summary>
+    /// <summary>The activity source name (seal passes, checkpoint emission, chain verification).</summary>
+    public const string ActivitySourceName = MeterName;
+
+    /// <summary>Histogram: duration of a request-path append, milliseconds.</summary>
     public const string AppendDurationInstrument = "audit.append.duration";
 
-    /// <summary>Counter name: a <c>RecordAsync</c> call that returned an existing record instead of appending (idempotency-key retry-safety).</summary>
+    /// <summary>Counter: appends that returned the record already stored under the same idempotency key.</summary>
     public const string IdempotentDuplicateInstrument = "audit.append.idempotent_duplicates";
 
-    /// <summary>Counter name: a <c>RecordAsync</c> attempt that lost a sequence race and retried.</summary>
-    public const string SequenceConflictRetryInstrument = "audit.append.sequence_conflicts";
+    /// <summary>Counter: records sealed into their chains.</summary>
+    public const string SealedRecordsInstrument = "audit.seal.records";
 
-    /// <summary>Counter name: a chain-verification call (<c>VerifyFullChainAsync</c>/<c>VerifyChainFromCheckpointAsync</c>) that found a break.</summary>
+    /// <summary>Histogram: duration of a sealing pass that sealed at least one record, milliseconds.</summary>
+    public const string SealDurationInstrument = "audit.seal.duration";
+
+    /// <summary>Histogram: age of the oldest record sealed by a pass (write-to-seal lag), seconds.</summary>
+    public const string SealLagInstrument = "audit.seal.lag";
+
+    /// <summary>Counter: verifications that did not report intact, tagged with <see cref="FailureKindTag"/>.</summary>
     public const string ChainVerificationFailureInstrument = "audit.chain.verification_failures";
+
+    /// <summary>Counter: checkpoints signed and stored.</summary>
+    public const string CheckpointsEmittedInstrument = "audit.checkpoint.emitted";
+
+    /// <summary>Counter: payloads erased.</summary>
+    public const string PayloadsErasedInstrument = "audit.payload.erased";
+
+    /// <summary>The tag carrying the <see cref="AuditVerificationFailureKind"/> on <see cref="ChainVerificationFailureInstrument"/>.</summary>
+    public const string FailureKindTag = "audit.failure_kind";
+
+    internal static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 
     private static readonly Meter Meter = new(MeterName);
 
     private static readonly Histogram<double> AppendDuration =
-        Meter.CreateHistogram<double>(AppendDurationInstrument, unit: "ms", description: "Duration of IAuditTrailWriter.RecordAsync, milliseconds.");
+        Meter.CreateHistogram<double>(AppendDurationInstrument, unit: "ms", description: "Duration of a request-path audit append.");
 
     private static readonly Counter<long> IdempotentDuplicates =
-        Meter.CreateCounter<long>(IdempotentDuplicateInstrument, description: "RecordAsync calls that returned an already-persisted record instead of appending.");
+        Meter.CreateCounter<long>(IdempotentDuplicateInstrument, description: "Appends answered with the record already stored under the same idempotency key.");
 
-    private static readonly Counter<long> SequenceConflictRetries =
-        Meter.CreateCounter<long>(SequenceConflictRetryInstrument, description: "RecordAsync attempts that lost a per-chain sequence race and retried.");
+    private static readonly Counter<long> SealedRecords =
+        Meter.CreateCounter<long>(SealedRecordsInstrument, description: "Audit records sealed into their chains.");
 
-    private static readonly Counter<long> ChainVerificationFailures =
-        Meter.CreateCounter<long>(ChainVerificationFailureInstrument, description: "Chain-verification calls that reported a broken chain.");
+    private static readonly Histogram<double> SealDuration =
+        Meter.CreateHistogram<double>(SealDurationInstrument, unit: "ms", description: "Duration of a sealing pass.");
 
-    /// <summary>Records the duration of a completed <c>RecordAsync</c> call.</summary>
-    public static void RecordAppendDuration(double milliseconds) => AppendDuration.Record(milliseconds);
+    private static readonly Histogram<double> SealLag =
+        Meter.CreateHistogram<double>(SealLagInstrument, unit: "s", description: "Age of the oldest record sealed by a pass.");
 
-    /// <summary>Increments the idempotent-duplicate counter.</summary>
-    public static void RecordIdempotentDuplicate() => IdempotentDuplicates.Add(1);
+    private static readonly Counter<long> VerificationFailures =
+        Meter.CreateCounter<long>(ChainVerificationFailureInstrument, description: "Verifications that did not report intact.");
 
-    /// <summary>Increments the sequence-conflict-retry counter.</summary>
-    public static void RecordSequenceConflictRetry() => SequenceConflictRetries.Add(1);
+    private static readonly Counter<long> CheckpointsEmitted =
+        Meter.CreateCounter<long>(CheckpointsEmittedInstrument, description: "Checkpoints signed and stored.");
 
-    /// <summary>Increments the chain-verification-failure counter.</summary>
-    public static void RecordChainVerificationFailure() => ChainVerificationFailures.Add(1);
+    private static readonly Counter<long> PayloadsErased =
+        Meter.CreateCounter<long>(PayloadsErasedInstrument, description: "Audit payloads erased.");
+
+    internal static void RecordAppendDuration(double milliseconds) => AppendDuration.Record(milliseconds);
+
+    internal static void RecordIdempotentDuplicate() => IdempotentDuplicates.Add(1);
+
+    internal static void RecordSealPass(int sealedCount, double milliseconds, double oldestAgeSeconds)
+    {
+        SealedRecords.Add(sealedCount);
+        SealDuration.Record(milliseconds);
+        SealLag.Record(Math.Max(0, oldestAgeSeconds));
+    }
+
+    internal static void RecordVerificationFailure(AuditVerificationFailureKind kind) =>
+        VerificationFailures.Add(1, new KeyValuePair<string, object?>(FailureKindTag, kind.ToString()));
+
+    internal static void RecordCheckpointEmitted() => CheckpointsEmitted.Add(1);
+
+    internal static void RecordPayloadsErased(int count) => PayloadsErased.Add(count);
 }
