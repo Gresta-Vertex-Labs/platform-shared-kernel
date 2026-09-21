@@ -6,7 +6,6 @@ using SharedKernel.Domain.Entities;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -189,20 +188,20 @@ public sealed class PgHardDeleteAggregate : TenantedAuditableAggregateRoot<PgHar
     public void RaiseRemovedEvent() => RaiseDomainEvent(ts => new PgHardDeleteAggregateRemovedEvent { OccurredOn = ts });
 }
 
-public sealed class PgHardDeleteAggregateConfig : EntityTypeConfigurationBase<PgHardDeleteAggregate, PgHardDeleteId>
+public sealed class PgHardDeleteAggregateConfig : IEntityTypeConfiguration<PgHardDeleteAggregate>
 {
-    public override void Configure(EntityTypeBuilder<PgHardDeleteAggregate> builder)
+    public void Configure(EntityTypeBuilder<PgHardDeleteAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
 
-public sealed class PgOrderAggregateConfig : EntityTypeConfigurationBase<PgOrderAggregate, PgOrderId>
+public sealed class PgOrderAggregateConfig : IEntityTypeConfiguration<PgOrderAggregate>
 {
-    public override void Configure(EntityTypeBuilder<PgOrderAggregate> builder)
+    public void Configure(EntityTypeBuilder<PgOrderAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
 
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.Property(e => e.Code).HasMaxLength(64).IsRequired();

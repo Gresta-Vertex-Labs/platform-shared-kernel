@@ -25,11 +25,11 @@ public static class AuditLedgerServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the audit ledger: the request-path writer (<see cref="IAuditTrailWriter"/> and
-    /// <see cref="EfAuditTrailWriter"/>), <see cref="IAuditQueryService"/>, <see cref="IAuditCheckpointService"/>,
+    /// its PostgreSQL implementation), <see cref="IAuditQueryService"/>, <see cref="IAuditCheckpointService"/>,
     /// <see cref="IAuditLedgerMaintenance"/>, <see cref="IAuditSealingProbe"/>, the background sealer, the
     /// startup self-check, and — unless registered earlier — the default <see cref="IAuditRecordAuthenticator"/>
-    /// (<see cref="KeyringAuditRecordAuthenticator"/>) and <see cref="IAuditCheckpointSink"/>
-    /// (<see cref="TableAuditCheckpointSink"/>). <see cref="AuditLedgerOptions"/> is validated at startup.
+    /// (the configured HMAC keyring) and <see cref="IAuditCheckpointSink"/>
+    /// (the <c>audit_checkpoints</c> table). <see cref="AuditLedgerOptions"/> is validated at startup.
     /// Calling it again is a no-op.
     /// </summary>
     /// <param name="services">The service collection.</param>

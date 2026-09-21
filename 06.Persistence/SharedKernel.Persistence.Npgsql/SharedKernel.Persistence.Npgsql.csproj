@@ -39,5 +39,6 @@
          lets the Tests project exercise it directly. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.Npgsql.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Persistence.Dapper.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Integration.Tests" />
   </ItemGroup>
 </Project>

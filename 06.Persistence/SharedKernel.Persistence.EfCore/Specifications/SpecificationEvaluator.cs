@@ -27,7 +27,7 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// </para>
 /// <para>Stateless; register it as a singleton.</para>
 /// </remarks>
-public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
+internal sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     where T : class
 {
     /// <inheritdoc />

@@ -25,7 +25,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <see cref="Context.SharedKernelDbContext"/> knowing encryption exists.
 /// </para>
 /// </remarks>
-public interface IPersistenceOptionsExtension
+internal interface IPersistenceOptionsExtension
 {
     /// <summary>Applies this extension's mutation to <paramref name="optionsBuilder"/>.</summary>
     void Apply(DbContextOptionsBuilder optionsBuilder);

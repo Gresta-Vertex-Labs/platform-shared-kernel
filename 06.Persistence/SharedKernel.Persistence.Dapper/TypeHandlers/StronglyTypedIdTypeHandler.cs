@@ -18,7 +18,7 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// constructor of <c>record OrderId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value)</c>) is compiled once
 /// into a delegate at registration.
 /// </remarks>
-public sealed class StronglyTypedIdTypeHandler<TId, TValue> : SqlMapper.TypeHandler<TId>
+internal sealed class StronglyTypedIdTypeHandler<TId, TValue> : SqlMapper.TypeHandler<TId>
     where TId : StronglyTypedId<TValue>
     where TValue : notnull
 {

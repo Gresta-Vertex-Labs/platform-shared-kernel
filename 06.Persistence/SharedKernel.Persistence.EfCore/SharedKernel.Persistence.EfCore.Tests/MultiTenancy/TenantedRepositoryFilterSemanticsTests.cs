@@ -11,8 +11,8 @@ namespace SharedKernel.Persistence.EfCore.Tests.MultiTenancy;
 // Concrete TenantedRepository implementations for tests
 // ---------------------------------------------------------------------------
 
-internal sealed class SdTenantedRepo(SoftDeletableTenantedDbContext ctx, ICrossTenantScope crossTenantScope)
-    : TenantedRepository<SoftDeletableTenantedAggregate, TenantedTestId>(ctx, crossTenantScope);
+internal sealed class SdTenantedRepo(SoftDeletableTenantedDbContext ctx)
+    : TenantedRepository<SoftDeletableTenantedAggregate, TenantedTestId>(ctx);
 
 // ---------------------------------------------------------------------------
 // T-28 — TenantedRepository soft-delete filter semantics
@@ -30,8 +30,8 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         // Arrange
         var tenantId = Guid.NewGuid();
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
-        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
-        var repo = new SdTenantedRepo(ctx, crossTenantScope);
+        var crossTenantScope = ctx.CrossTenantScope;
+        var repo = new SdTenantedRepo(ctx);
 
         var id = TenantedTestId.New();
         var entity = new SoftDeletableTenantedAggregate(id, "ToSoftDelete", tenantId, new SystemClock());
@@ -62,8 +62,8 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     {
         var tenantId = Guid.NewGuid();
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
-        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
-        var repo = new SdTenantedRepo(ctx, crossTenantScope);
+        var crossTenantScope = ctx.CrossTenantScope;
+        var repo = new SdTenantedRepo(ctx);
 
         var id = TenantedTestId.New();
         var entity = new SoftDeletableTenantedAggregate(id, "IncludeDeleted", tenantId, new SystemClock());
@@ -95,8 +95,8 @@ public sealed class TenantedRepositoryFilterSemanticsTests
         var tenantB = Guid.NewGuid();
 
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantA);
-        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
-        var repo = new SdTenantedRepo(ctx, crossTenantScope);
+        var crossTenantScope = ctx.CrossTenantScope;
+        var repo = new SdTenantedRepo(ctx);
         using var scope1 = crossTenantScope.Enter("test");
 
         var id = TenantedTestId.New();

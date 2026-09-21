@@ -72,7 +72,7 @@ public sealed class UnitOfWorkIntegrationTests(PostgreSqlContainerFixture fixtur
         services.AddSharedKernelPostgres<LedgerTestDbContext>(configuration, "ledger", p => p
             .UseDataSource(TestNpgsqlDataSources.Get(cs))
             .ConfigureDbContext((_, o) => o.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .UseAuditTrail(configuration));
+            .UseAuditTrail());
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using var scope = provider.CreateAsyncScope();

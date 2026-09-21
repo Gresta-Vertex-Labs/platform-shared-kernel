@@ -12,7 +12,7 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// <typeparam name="TEnum">The SmartEnum type.</typeparam>
 /// <typeparam name="TValue">Its underlying value type.</typeparam>
 /// <remarks>Register with <c>DapperConfigurationBuilder.AddSmartEnum&lt;TEnum, TValue&gt;()</c>.</remarks>
-public sealed class SmartEnumTypeHandler<TEnum, TValue> : SqlMapper.TypeHandler<TEnum>
+internal sealed class SmartEnumTypeHandler<TEnum, TValue> : SqlMapper.TypeHandler<TEnum>
     where TEnum : SmartEnum<TEnum, TValue>
     where TValue : IEquatable<TValue>
 {

@@ -25,11 +25,9 @@ internal static class PgTestDbContextFactory
         // test asks for a retry count.
         builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o =>
         {
-            o.Retry.Enabled = maxRetryCount is not null;
-            if (maxRetryCount is { } count)
-                o.Retry.MaxRetryCount = count;
+            o.MaxRetryCount = maxRetryCount ?? 0;
             if (maxRetryDelay is { } delay)
-                o.Retry.MaxRetryDelay = delay;
+                o.MaxRetryDelay = delay;
         });
 
         // Provider-level (DbCommandInterceptor etc.) fault-injection interceptors — never

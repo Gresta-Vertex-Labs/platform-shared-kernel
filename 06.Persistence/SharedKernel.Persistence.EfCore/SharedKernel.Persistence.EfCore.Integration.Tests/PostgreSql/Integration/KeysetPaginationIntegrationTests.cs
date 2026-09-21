@@ -6,7 +6,6 @@ using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Testing.Clocks;
@@ -45,14 +44,14 @@ public sealed class KeysetPgAggregate : AggregateRoot<KeysetPgId>
         CreatedOn = createdOn;
     }
 
-    protected KeysetPgAggregate() { } // ORM path
+    private KeysetPgAggregate() { } // ORM path
 }
 
-public sealed class KeysetPgAggregateConfig : EntityTypeConfigurationBase<KeysetPgAggregate, KeysetPgId>
+public sealed class KeysetPgAggregateConfig : IEntityTypeConfiguration<KeysetPgAggregate>
 {
-    public override void Configure(EntityTypeBuilder<KeysetPgAggregate> builder)
+    public void Configure(EntityTypeBuilder<KeysetPgAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.Property(e => e.CreatedOn).IsRequired();
     }

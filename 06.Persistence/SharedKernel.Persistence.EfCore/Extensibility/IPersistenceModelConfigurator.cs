@@ -15,7 +15,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// Replaces the previous single-purpose <c>AuditTrailFeatureMarker</c> DI-marker-type mechanism with
 /// a general-purpose one any future opt-in capability can reuse.
 /// </remarks>
-public interface IPersistenceModelConfigurator
+internal interface IPersistenceModelConfigurator
 {
     /// <summary>Applies this configurator's entity configuration(s) to <paramref name="modelBuilder"/>.</summary>
     /// <param name="modelBuilder">The builder used to construct the model for the current context.</param>

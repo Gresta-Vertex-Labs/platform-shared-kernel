@@ -2,6 +2,7 @@ using System.Data.Common;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -21,7 +22,7 @@ namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integrati
 
 // ---------------------------------------------------------------------------
 // Proves EfUnitOfWork.ExecuteInTransactionAsync works end to end against real PostgreSQL with
-// Npgsql retry-on-failure genuinely enabled (UsePostgreSQL(..., o => o.Retry...)) — retry and
+// Npgsql retry-on-failure genuinely enabled (UsePostgreSQL(..., o => o.MaxRetryCount = ...)) — retry and
 // transactions coexist (P-558; there is no handle-based BeginTransactionAsync any more).
 // ---------------------------------------------------------------------------
 
@@ -114,8 +115,8 @@ public sealed class TransientFaultRetryIntegrationTests
         var builder = new DbContextOptionsBuilder<ConcurrencyTestDbContext>();
         builder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o =>
         {
-            o.Retry.MaxRetryCount = 3;
-            o.Retry.MaxRetryDelay = TimeSpan.FromMilliseconds(200);
+            o.MaxRetryCount = 3;
+            o.MaxRetryDelay = TimeSpan.FromMilliseconds(200);
         });
         if (interceptors.Length > 0)
             builder.AddInterceptors(interceptors);
@@ -265,7 +266,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
 
     // -------------------------------------------------------------------------
-    // P-558 — retry is ON BY DEFAULT through the DI path (AddSharedKernelNpgsql + UsePostgreSQL(sp)), and
+    // P-558 — retry is ON BY DEFAULT through the entry point (AddSharedKernelPostgres), and
     // IUnitOfWork.ExecuteInTransactionAsync replays the whole unit of work on a transient failure.
     // -------------------------------------------------------------------------
 
@@ -273,30 +274,29 @@ public sealed class TransientFaultRetryIntegrationTests
         TransientFaultInjectionInterceptor? faultInjector = null,
         Action<PostgreSqlProviderOptions>? configure = null)
     {
-        var configuration = TestNpgsqlConfiguration.Create(ConnectionString);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:retry"] = ConnectionString })
+            .Build();
 
         var services = new ServiceCollection();
         services.AddInMemoryLoggerFactory();
-        services.AddSharedKernelNpgsql(configuration);
-        services
-            .AddSharedKernelEfCore<ConcurrencyTestDbContext>((sp, opts) =>
+        services.AddSharedKernelPostgres<ConcurrencyTestDbContext>(configuration, "retry", p => p
+            .ConfigureProvider(o =>
             {
-                opts.UsePostgreSQL(sp, o =>
-                {
-                    o.Retry.MaxRetryDelay = TimeSpan.FromMilliseconds(200);
-                    configure?.Invoke(o);
-                });
-
+                o.MaxRetryDelay = TimeSpan.FromMilliseconds(200);
+                configure?.Invoke(o);
+            })
+            .ConfigureDbContext((_, opts) =>
+            {
                 if (faultInjector is not null)
                     opts.AddInterceptors(faultInjector);
-            })
-            .Build();
+            }));
 
         return services.BuildServiceProvider();
     }
 
     [Fact]
-    public async Task UsePostgreSQL_ViaDataSourceFromDi_EnablesRetryingExecutionStrategyByDefault()
+    public async Task AddSharedKernelPostgres_EnablesRetryingExecutionStrategyByDefault()
     {
         await using var provider = BuildDiProvider();
         await using var scope = provider.CreateAsyncScope();
@@ -307,9 +307,9 @@ public sealed class TransientFaultRetryIntegrationTests
     }
 
     [Fact]
-    public async Task UsePostgreSQL_RetryDisabled_UsesNonRetryingExecutionStrategy()
+    public async Task AddSharedKernelPostgres_RetryDisabled_UsesNonRetryingExecutionStrategy()
     {
-        await using var provider = BuildDiProvider(configure: o => o.Retry.Enabled = false);
+        await using var provider = BuildDiProvider(configure: o => o.MaxRetryCount = 0);
         await using var scope = provider.CreateAsyncScope();
         var ctx = scope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
 
@@ -356,7 +356,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
         // Always fails — genuine retry-limit exhaustion after the configured MaxRetryCount (3).
         var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: int.MaxValue);
-        await using var provider = BuildDiProvider(faultInjector, o => o.Retry.MaxRetryCount = 3);
+        await using var provider = BuildDiProvider(faultInjector, o => o.MaxRetryCount = 3);
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
 
         await using var scope = provider.CreateAsyncScope();

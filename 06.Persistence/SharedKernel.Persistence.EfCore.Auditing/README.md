@@ -25,7 +25,7 @@ services.AddSharedKernelCryptography(configuration)   // IHmacSigner (+ .AddAsym
     .AddAsymmetricSigning();
 services.AddSharedKernelNpgsql(configuration);          // IDbConnectionFactory
 services.AddSharedKernelEfCore<OrderDbContext>(o => o.UsePostgreSQL(sp))
-    .UseAuditTrail(configuration)                       // or WithAuditTrail(configuration)
+    .UseAuditTrail()                                    // binds SharedKernel:Persistence:Auditing from the same configuration
     .Build();
 ```
 

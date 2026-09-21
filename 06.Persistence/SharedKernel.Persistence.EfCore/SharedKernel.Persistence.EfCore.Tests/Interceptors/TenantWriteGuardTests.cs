@@ -11,7 +11,7 @@ using SharedKernel.Testing.Persistence;
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
 /// <summary>
-/// <see cref="TenantWriteGuardInterceptor"/> had NO dedicated unit
+/// The tenant write guard (formerly <c>TenantWriteGuardInterceptor</c>, now part of the merged save pipeline) had NO dedicated unit
 /// test coverage before this suite (confirmed by search — only exercised indirectly through
 /// pooling/bulk-mutation tests). This closes that gap and covers the exact defect the real-PostgreSQL
 /// suite found: <c>SoftDeleteInterceptor</c> setting <c>entry.State</c> DIRECTLY to
@@ -20,10 +20,10 @@ namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 /// a false-positive "TenantId was changed" rejection on every soft-delete of a tenanted entity. The
 /// fix compares actual current-vs-original VALUES instead of the unreliable <c>IsModified</c> flag.
 /// </summary>
-public sealed class TenantWriteGuardInterceptorTests
+public sealed class TenantWriteGuardTests
 {
     private static TenantedTestDbContext CreateContext(
-        SqliteConnection connection, Guid tenantId, out CrossTenantScope crossTenantScope)
+        SqliteConnection connection, Guid tenantId, out ICrossTenantScope crossTenantScope)
     {
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connection)
@@ -31,12 +31,12 @@ public sealed class TenantWriteGuardInterceptorTests
             .Options;
 
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
-        crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
 
         var ctx = new TenantedTestDbContext(
             options,
             PersistenceContextDependencies.Create(actorContext, new SystemClock()));
         ctx.RefreshRequestContext(actorContext);
+        crossTenantScope = ctx.CrossTenantScope;
         return ctx;
     }
 
@@ -82,12 +82,12 @@ public sealed class TenantWriteGuardInterceptorTests
 
         var tenantId = Guid.NewGuid();
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
-        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
 
         using var ctx = new SoftDeletableTenantedDbContext(
             options,
             PersistenceContextDependencies.Create(actorContext, new SystemClock()));
         ctx.RefreshRequestContext(actorContext);
+        var crossTenantScope = ctx.CrossTenantScope;
         await ctx.Database.EnsureCreatedAsync();
 
         var entity = new SoftDeletableTenantedAggregate(TenantedTestId.New(), "ToDelete", tenantId, new SystemClock());

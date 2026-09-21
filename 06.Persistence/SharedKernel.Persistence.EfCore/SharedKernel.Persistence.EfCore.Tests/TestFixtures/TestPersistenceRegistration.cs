@@ -54,9 +54,7 @@ internal sealed class TestEfCoreBuilder<TContext>(
 
     public TestEfCoreBuilder<TContext> WithServiceName(string serviceName) => Configure(b => b.UseServiceName(serviceName));
 
-    public TestEfCoreBuilder<TContext> WithCommandTimeout(int seconds) => Configure(b => b.UseCommandTimeout(TimeSpan.FromSeconds(seconds)));
-
-    public TestEfCoreBuilder<TContext> WithCompiledModel(IModel model) => Configure(b => b.UseCompiledModel(model));
+    public TestEfCoreBuilder<TContext> WithCompiledModel(IModel model) => Configure(b => b.ConfigureDbContext((_, o) => o.UseModel(model)));
 
     public TestEfCoreBuilder<TContext> WithDbContextPooling(int poolSize = 1024) => Configure(b => b.UseDbContextPooling(poolSize));
 

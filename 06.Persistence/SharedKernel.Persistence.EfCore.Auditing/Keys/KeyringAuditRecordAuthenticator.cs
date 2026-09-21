@@ -14,7 +14,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// records sealed under it must verify. After a suspected compromise of the old key, also run
 /// <see cref="IAuditLedgerMaintenance.SealAllChainsAsync"/>.
 /// </remarks>
-public sealed class KeyringAuditRecordAuthenticator : IAuditRecordAuthenticator
+internal sealed class KeyringAuditRecordAuthenticator : IAuditRecordAuthenticator
 {
     private readonly IHmacSigner _signer;
     private readonly Dictionary<string, (AuditKeyDescriptor Descriptor, byte[] Material)> _keys;

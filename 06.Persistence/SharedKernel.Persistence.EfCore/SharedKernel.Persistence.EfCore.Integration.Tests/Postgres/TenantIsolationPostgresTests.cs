@@ -29,11 +29,8 @@ public sealed class TenantIsolationPostgresTests
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
     // Every test in this suite proves write-side tenant isolation, so TenantWriteGuardInterceptor is
-    // always wired in — mirroring how WithMultiTenancy() always adds it in production. Callers that
-    // also need a repository-level ICrossTenantScope pass the SAME instance so Enter() on the
-    // repository's scope is visible to the guard interceptor's own scope check (ICrossTenantScope is
-    // AsyncLocal-backed PER INSTANCE, not process-wide — two different instances never share state).
-    private PgTestDbContext CreateContext(Guid tenantId, string actorId = "actor", ICrossTenantScope? crossTenantScope = null) =>
+    // always wired in. The context's own CrossTenantScope is the one its repositories and the guard observe.
+    private PgTestDbContext CreateContext(Guid tenantId, string actorId = "actor") =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext(actorId),
@@ -190,7 +187,7 @@ public sealed class TenantIsolationPostgresTests
         }
 
         await using var ctx = CreateContext(tenantA);
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+        var repo = new PgOrderRepository(ctx);
         var updated = await repo.ExecuteUpdateAsync(
             new PgOrdersByCodePrefixSpecification(prefix), s => s.SetProperty(o => o.Name, "BulkRenamed"));
 
@@ -223,7 +220,7 @@ public sealed class TenantIsolationPostgresTests
         }
 
         await using var ctx = CreateContext(tenantA);
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+        var repo = new PgOrderRepository(ctx);
         var deleted = await repo.ExecuteDeleteAsync(new PgOrdersByCodePrefixSpecification(prefix));
 
         deleted.Should().Be(1, "the bulk ExecuteDelete must only remove Tenant A's own row, never Tenant B's");
@@ -318,7 +315,7 @@ public sealed class TenantIsolationPostgresTests
         ctx.Orders.Add(NewOrder(tenantA, $"bulk-settenant-{Guid.NewGuid():N}"));
         await ctx.SaveChangesAsync();
 
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+        var repo = new PgOrderRepository(ctx);
 
         // A bulk ExecuteUpdate that tries to move rows to a DIFFERENT tenant via SetProperty must be
         // rejected at the guard level — before any SQL is even issued — never silently executed.
@@ -345,7 +342,7 @@ public sealed class TenantIsolationPostgresTests
         ctx.Orders.Add(NewOrder(tenantA, $"bulk-efprop-{Guid.NewGuid():N}"));
         await ctx.SaveChangesAsync();
 
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+        var repo = new PgOrderRepository(ctx);
 
         // Same attack as the sibling test above, but naming the column through EF.Property's STRING
         // overload instead of a direct member access. UpdateSettersInspector cannot resolve that
@@ -463,7 +460,7 @@ public sealed class TenantIsolationPostgresTests
         // Without an active scope: rejected.
         await using (var ctxA1 = CreateContext(tenantA))
         {
-            var repo1 = new PgOrderRepository(ctxA1, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+            var repo1 = new PgOrderRepository(ctxA1);
             var act = () => repo1.GetByIdForTenantAsync(orderId, tenantB);
             await act.Should().ThrowAsync<InvalidOperationException>(
                 "cross-tenant lookup must be rejected with no active ICrossTenantScope");
@@ -472,8 +469,8 @@ public sealed class TenantIsolationPostgresTests
         // With an EXPLICIT, entered scope: succeeds and reads the other tenant's row.
         await using (var ctxA2 = CreateContext(tenantA))
         {
-            var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
-            var repo2 = new PgOrderRepository(ctxA2, crossTenantScope);
+            var crossTenantScope = ctxA2.CrossTenantScope;
+            var repo2 = new PgOrderRepository(ctxA2);
 
             using (crossTenantScope.Enter("test"))
             {

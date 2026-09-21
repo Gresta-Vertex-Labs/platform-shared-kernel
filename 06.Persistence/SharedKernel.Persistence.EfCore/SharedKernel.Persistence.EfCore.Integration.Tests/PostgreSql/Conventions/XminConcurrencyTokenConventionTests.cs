@@ -77,7 +77,7 @@ public sealed class XminConcurrencyTokenConventionTests
 
         property!.GetColumnName().Should().NotBe("row_version",
             "the snake_case default must be overridden by the explicit xmin binding");
-        property.GetColumnName().Should().Be("xmin");
+        property!.GetColumnName().Should().Be("xmin");
     }
 
     [Fact]

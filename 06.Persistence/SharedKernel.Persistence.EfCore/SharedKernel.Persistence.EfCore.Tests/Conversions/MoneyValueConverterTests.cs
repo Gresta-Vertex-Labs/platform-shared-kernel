@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Domain.Monetary;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Conversions;
@@ -38,7 +37,7 @@ internal sealed class ProductTestAggregate : AggregateRoot<MoneyConversionTestId
         Price = price;
     }
 
-    protected ProductTestAggregate() { } // ORM path
+    private ProductTestAggregate() { } // ORM path
 
     public void Reprice(Money newPrice) => Price = newPrice;
 
@@ -46,11 +45,11 @@ internal sealed class ProductTestAggregate : AggregateRoot<MoneyConversionTestId
 }
 
 internal sealed class ProductTestAggregateConfig
-    : EntityTypeConfigurationBase<ProductTestAggregate, MoneyConversionTestId>
+    : IEntityTypeConfiguration<ProductTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<ProductTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<ProductTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.Money(e => e.Price, amountColumnName: "price_amount", currencyColumnName: "price_currency");
         builder.Money(
@@ -78,15 +77,15 @@ internal sealed class AccountTestAggregate : AggregateRoot<MoneyConversionTestId
         PreferredCurrency = preferredCurrency;
     }
 
-    protected AccountTestAggregate() { } // ORM path
+    private AccountTestAggregate() { } // ORM path
 }
 
 internal sealed class AccountTestAggregateConfig
-    : EntityTypeConfigurationBase<AccountTestAggregate, MoneyConversionTestId>
+    : IEntityTypeConfiguration<AccountTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<AccountTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<AccountTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.Property(e => e.PreferredCurrency).HasMaxLength(3);
     }

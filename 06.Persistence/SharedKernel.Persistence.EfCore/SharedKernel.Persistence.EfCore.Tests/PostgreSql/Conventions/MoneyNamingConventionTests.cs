@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -41,11 +40,11 @@ public sealed class MoneyNamingConventionTests
         private NamingTestAggregate() { } // ORM path
     }
 
-    public sealed class NamingTestAggregateConfig : EntityTypeConfigurationBase<NamingTestAggregate, NamingTestId>
+    public sealed class NamingTestAggregateConfig : IEntityTypeConfiguration<NamingTestAggregate>
     {
-        public override void Configure(EntityTypeBuilder<NamingTestAggregate> builder)
+        public void Configure(EntityTypeBuilder<NamingTestAggregate> builder)
         {
-            base.Configure(builder);
+            builder.HasKey("Id");
 
             // Deliberately no amountColumnName/currencyColumnName override — proves the naming
             // convention, not an explicit column name, produced the final snake_case names.

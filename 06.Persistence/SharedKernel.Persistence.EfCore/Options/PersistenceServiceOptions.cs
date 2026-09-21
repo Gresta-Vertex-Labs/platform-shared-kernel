@@ -24,7 +24,7 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// <c>configuration.GetSection(PersistenceServiceOptions.SectionName)</c> call site keeps compiling.
 /// </para>
 /// </remarks>
-public sealed class PersistenceServiceOptions : ISectionBoundOptions
+internal sealed class PersistenceServiceOptions : ISectionBoundOptions
 {
     /// <summary>
     /// The configuration section path this type binds from —

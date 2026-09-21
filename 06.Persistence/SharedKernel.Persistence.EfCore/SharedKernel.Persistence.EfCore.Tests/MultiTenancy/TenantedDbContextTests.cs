@@ -46,7 +46,7 @@ public sealed class TenantedDbContextTests
         var id2 = TenantedTestId.New();
         ctx1.TenantedAggregates.Add(new TenantedTestAggregate(id1, "T1Entity", tenant1, new SystemClock()));
         ctx1.TenantedAggregates.Add(new TenantedTestAggregate(id2, "T2Entity", tenant2, new SystemClock()));
-        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+        using (ctx1.CrossTenantScope.Enter("seed two tenants"))
             await ctx1.SaveChangesAsync();
 
         // Act — query with tenant2 filter
@@ -85,7 +85,7 @@ public sealed class TenantedDbContextTests
         await using var ctxSeed = BuildTenantedContext(optionsSeed, seedActorContext, clock);
         ctxSeed.Database.EnsureCreated();
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(TenantedTestId.New(), "SeedEntity", tenant, new SystemClock()));
-        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+        using (ctxSeed.CrossTenantScope.Enter("seed two tenants"))
             await ctxSeed.SaveChangesAsync();
 
         // Act — query with no tenant resolved at all.
@@ -110,7 +110,7 @@ public sealed class TenantedDbContextTests
 
         await using var ctx = BuildTenantedContext(options, actorContext, clock);
         ctx.Database.EnsureCreated();
-        var repo = new TenantedTestAggregateRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
+        var repo = new TenantedTestAggregateRepository(ctx);
 
         var act = async () => await repo.GetByIdForTenantAsync(TenantedTestId.New(), Guid.NewGuid());
 
@@ -145,12 +145,12 @@ public sealed class TenantedDbContextTests
         var id2 = TenantedTestId.New();
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(TenantedTestId.New(), "T1", tenant1, new SystemClock()));
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(id2, "T2", tenant2, new SystemClock()));
-        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+        using (ctxSeed.CrossTenantScope.Enter("seed two tenants"))
             await ctxSeed.SaveChangesAsync();
 
         await using var ctxAdmin = BuildTenantedContext(optionsAdmin, actorContext1, clock);
-        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
-        var repo = new TenantedTestAggregateRepository(ctxAdmin, crossTenantScope);
+        var crossTenantScope = ctxAdmin.CrossTenantScope;
+        var repo = new TenantedTestAggregateRepository(ctxAdmin);
 
         // Act — admin path, under an explicit cross-tenant scope, bypasses the filter to fetch
         // tenant2's entity.
@@ -186,5 +186,5 @@ public sealed class TenantedDbContextTests
 // Concrete tenanted repository for tests
 // ---------------------------------------------------------------------------
 
-internal sealed class TenantedTestAggregateRepository(TenantedTestDbContext ctx, ICrossTenantScope crossTenantScope)
-    : SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TenantedTestAggregate, TenantedTestId>(ctx, crossTenantScope);
+internal sealed class TenantedTestAggregateRepository(TenantedTestDbContext ctx)
+    : SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TenantedTestAggregate, TenantedTestId>(ctx);

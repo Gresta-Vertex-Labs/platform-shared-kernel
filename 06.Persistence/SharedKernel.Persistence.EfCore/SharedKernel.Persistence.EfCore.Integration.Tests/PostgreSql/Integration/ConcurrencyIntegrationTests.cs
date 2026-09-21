@@ -7,7 +7,6 @@ using NSubstitute;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Testing.Clocks;
@@ -38,18 +37,18 @@ public sealed class ConcurrentPgAggregate : FullAuditableAggregateRoot<Concurren
         Name = name;
     }
 
-    protected ConcurrentPgAggregate() { } // ORM path
+    private ConcurrentPgAggregate() { } // ORM path
 
     protected override void OnDelete() { }
 
     public void Rename(string name) => Name = name;
 }
 
-public sealed class ConcurrentPgAggregateConfig : EntityTypeConfigurationBase<ConcurrentPgAggregate, ConcurrentPgId>
+public sealed class ConcurrentPgAggregateConfig : IEntityTypeConfiguration<ConcurrentPgAggregate>
 {
-    public override void Configure(EntityTypeBuilder<ConcurrentPgAggregate> builder)
+    public void Configure(EntityTypeBuilder<ConcurrentPgAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }

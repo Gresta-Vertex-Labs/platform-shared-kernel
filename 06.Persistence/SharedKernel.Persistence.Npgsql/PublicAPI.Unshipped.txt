@@ -1,18 +1,6 @@
 #nullable enable
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.NpgsqlConnectionFactory(Npgsql.NpgsqlDataSource! dataSource) -> void
 SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.NpgsqlTenantSessionBinder() -> void
 SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.AcquireAsync(string! lockKey, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.NpgsqlAdvisoryMigrationLock(Npgsql.NpgsqlDataSource! dataSource, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock!>? logger = null) -> void
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.NpgsqlAdvisoryTransactionLock() -> void
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.MissingReference = 1 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.ReferencedByDependent = 2 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
@@ -53,9 +41,6 @@ SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeou
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeoutMilliseconds.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.UseVector.get -> bool
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.UseVector.set -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.NpgsqlPersistenceOptionsValidator(Microsoft.Extensions.Hosting.IHostEnvironment? hostEnvironment = null) -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.Validate(string? name, SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions
 SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.CrossTenantConnectionString.get -> string?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.CrossTenantConnectionString.set -> void
@@ -68,14 +53,6 @@ SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Disabled = 2 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Fail = 0 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
 SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Warn = 1 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.BypassesRowLevelSecurity.get -> bool
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.IsSubjectToRowLevelSecurity.get -> bool
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.IsSuperuser.get -> bool
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.OwnedRowLevelSecurityTables.get -> System.Collections.Generic.IReadOnlyList<string!>!
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.Problems.get -> System.Collections.Generic.IReadOnlyList<string!>!
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport.RoleName.get -> string!
-SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivileges
 SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.CrossTenant = "SharedKernel.Persistence.Npgsql.CrossTenant" -> string!
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.Migration = "SharedKernel.Persistence.Npgsql.Migration" -> string!
@@ -107,6 +84,5 @@ static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.Ad
 static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! connectionStringName, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string! name, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SectionName.get -> string!
-static SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivileges.CheckAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Npgsql.RowLevelSecurity.RowLevelSecurityPrivilegeReport!>!
 static SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql.BindStatement(System.Guid? tenantId) -> string!
 static SharedKernel.Persistence.Npgsql.RowLevelSecurity.TenantSessionSql.PolicyPredicate(string! quotedTenantColumn) -> string!

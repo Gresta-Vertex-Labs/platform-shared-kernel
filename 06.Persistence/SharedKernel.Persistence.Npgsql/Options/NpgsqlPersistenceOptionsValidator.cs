@@ -15,7 +15,7 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 /// row-level security enabled, <c>Multiplexing</c> and <c>No Reset On Close</c> are rejected on the
 /// application connection strings (default and read-only).
 /// </remarks>
-public sealed class NpgsqlPersistenceOptionsValidator : IValidateOptions<NpgsqlPersistenceOptions>
+internal sealed class NpgsqlPersistenceOptionsValidator : IValidateOptions<NpgsqlPersistenceOptions>
 {
     private readonly IHostEnvironment? _hostEnvironment;
 

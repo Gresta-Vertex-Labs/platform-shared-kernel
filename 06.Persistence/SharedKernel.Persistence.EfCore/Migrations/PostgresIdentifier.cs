@@ -15,6 +15,9 @@ namespace SharedKernel.Persistence.EfCore.Migrations;
 /// </remarks>
 internal static partial class PostgresIdentifier
 {
+    /// <summary>PostgreSQL's identifier limit (NAMEDATALEN - 1), in bytes.</summary>
+    internal const int MaxIdentifierBytes = 63;
+
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex SimpleIdentifierPattern { get; }
 
@@ -35,6 +38,14 @@ internal static partial class PostgresIdentifier
                 $"'{identifier}' is not a simple PostgreSQL identifier (letters, digits, underscore, "
                     + "not starting with a digit). Quote/escape it yourself before calling this "
                     + "helper if a non-simple identifier is genuinely required.",
+                nameof(identifier));
+        }
+
+        // PostgreSQL silently truncates a longer name, so DDL would target a different object than the caller named.
+        if (System.Text.Encoding.UTF8.GetByteCount(identifier) > MaxIdentifierBytes)
+        {
+            throw new ArgumentException(
+                $"'{identifier}' is longer than PostgreSQL's {MaxIdentifierBytes}-byte identifier limit.",
                 nameof(identifier));
         }
 

@@ -14,7 +14,7 @@ namespace SharedKernel.Persistence.Npgsql.Context;
 /// tenant binds the empty string, which the policy predicate of <see cref="TenantSessionSql"/> treats as
 /// "no rows".
 /// </remarks>
-public sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
+internal sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
 {
     // Positional parameter: an explicitly named "$1" parameter does not bind to the positional
     // placeholder in Npgsql and fails with 08P01.

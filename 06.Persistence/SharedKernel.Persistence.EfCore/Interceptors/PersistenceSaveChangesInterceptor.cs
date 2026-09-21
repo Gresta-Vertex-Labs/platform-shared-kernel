@@ -106,7 +106,7 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
             TouchAggregateRoots(entries, index);
             StampAudit(entries, actor, now);
 
-            if (context is TenantedDbContext tenanted && !CrossTenantScope.IsActiveInCurrentFlow)
+            if (context is TenantedDbContext tenanted && !tenanted.CrossTenantScope.IsActive)
                 GuardTenant(entries, tenanted.CurrentTenantId);
         }
         finally

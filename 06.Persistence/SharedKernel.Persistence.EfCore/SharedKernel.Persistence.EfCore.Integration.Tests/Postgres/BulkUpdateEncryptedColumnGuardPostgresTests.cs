@@ -6,7 +6,6 @@ using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -129,14 +128,14 @@ public sealed class EncryptedFieldAggregate : AggregateRoot<EncryptedFieldId>
         PlainLabel = "unset";
     }
 
-    protected EncryptedFieldAggregate() { } // ORM path
+    private EncryptedFieldAggregate() { } // ORM path
 }
 
-public sealed class EncryptedFieldAggregateConfig : EntityTypeConfigurationBase<EncryptedFieldAggregate, EncryptedFieldId>
+public sealed class EncryptedFieldAggregateConfig : IEntityTypeConfiguration<EncryptedFieldAggregate>
 {
-    public override void Configure(EntityTypeBuilder<EncryptedFieldAggregate> builder)
+    public void Configure(EntityTypeBuilder<EncryptedFieldAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.ToTable("bulk_encrypted_guard_item");
 
         // The same bare annotations SharedKernel.Persistence.EfCore.Encryption's real .Encrypt(...)

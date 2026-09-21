@@ -20,31 +20,31 @@ public static class AuditingMeter
     public const string ActivitySourceName = MeterName;
 
     /// <summary>Histogram: duration of a request-path append, milliseconds.</summary>
-    public const string AppendDurationInstrument = "audit.append.duration";
+    internal const string AppendDurationInstrument = "audit.append.duration";
 
     /// <summary>Counter: appends that returned the record already stored under the same idempotency key.</summary>
-    public const string IdempotentDuplicateInstrument = "audit.append.idempotent_duplicates";
+    internal const string IdempotentDuplicateInstrument = "audit.append.idempotent_duplicates";
 
     /// <summary>Counter: records sealed into their chains.</summary>
-    public const string SealedRecordsInstrument = "audit.seal.records";
+    internal const string SealedRecordsInstrument = "audit.seal.records";
 
     /// <summary>Histogram: duration of a sealing pass that sealed at least one record, milliseconds.</summary>
-    public const string SealDurationInstrument = "audit.seal.duration";
+    internal const string SealDurationInstrument = "audit.seal.duration";
 
     /// <summary>Histogram: age of the oldest record sealed by a pass (write-to-seal lag), seconds.</summary>
-    public const string SealLagInstrument = "audit.seal.lag";
+    internal const string SealLagInstrument = "audit.seal.lag";
 
     /// <summary>Counter: verifications that did not report intact, tagged with <see cref="FailureKindTag"/>.</summary>
-    public const string ChainVerificationFailureInstrument = "audit.chain.verification_failures";
+    internal const string ChainVerificationFailureInstrument = "audit.chain.verification_failures";
 
     /// <summary>Counter: checkpoints signed and stored.</summary>
-    public const string CheckpointsEmittedInstrument = "audit.checkpoint.emitted";
+    internal const string CheckpointsEmittedInstrument = "audit.checkpoint.emitted";
 
     /// <summary>Counter: payloads erased.</summary>
-    public const string PayloadsErasedInstrument = "audit.payload.erased";
+    internal const string PayloadsErasedInstrument = "audit.payload.erased";
 
     /// <summary>The tag carrying the <see cref="AuditVerificationFailureKind"/> on <see cref="ChainVerificationFailureInstrument"/>.</summary>
-    public const string FailureKindTag = "audit.failure_kind";
+    internal const string FailureKindTag = "audit.failure_kind";
 
     internal static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 

@@ -61,7 +61,6 @@ SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.GetHashCode() -> int
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.ToString() -> string!
-static SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActiveInCurrentFlow.get -> bool
 static SharedKernel.Persistence.Abstractions.Context.CrossTenantScopeServiceCollectionExtensions.AddSharedKernelCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool

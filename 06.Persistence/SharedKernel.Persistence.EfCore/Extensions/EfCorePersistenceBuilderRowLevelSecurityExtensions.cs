@@ -10,7 +10,7 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// <summary>
 /// Opt-in PostgreSQL row-level security (RLS) for <see cref="EfCorePersistenceBuilder{TContext}"/>.
 /// </summary>
-public static class EfCorePersistenceBuilderRowLevelSecurityExtensions
+internal static class EfCorePersistenceBuilderRowLevelSecurityExtensions
 {
     /// <summary>
     /// Binds the caller's tenant to every command of <typeparamref name="TContext"/>, transaction-locally,

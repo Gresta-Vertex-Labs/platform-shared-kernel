@@ -13,7 +13,7 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// </summary>
 /// <typeparam name="T">The mapped type.</typeparam>
 /// <remarks>Register with <c>DapperConfigurationBuilder.AddJsonb(MyJsonContext.Default.Address)</c>.</remarks>
-public sealed class JsonbTypeHandler<T> : SqlMapper.TypeHandler<T>
+internal sealed class JsonbTypeHandler<T> : SqlMapper.TypeHandler<T>
 {
     private readonly JsonTypeInfo<T> _typeInfo;
 

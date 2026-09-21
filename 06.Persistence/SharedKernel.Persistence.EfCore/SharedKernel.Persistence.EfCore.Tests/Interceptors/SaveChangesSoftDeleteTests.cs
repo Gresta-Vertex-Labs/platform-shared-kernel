@@ -6,7 +6,7 @@ using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
-public sealed class SoftDeleteInterceptorTests
+public sealed class SaveChangesSoftDeleteTests
 {
     [Fact]
     public async Task SaveChanges_DeletedSoftDeletableEntity_ChangesStateToModified()

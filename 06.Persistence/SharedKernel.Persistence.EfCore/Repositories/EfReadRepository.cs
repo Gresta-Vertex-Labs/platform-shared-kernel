@@ -33,8 +33,13 @@ public class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId
 {
     /// <summary>Initializes a new read repository over <paramref name="dbContext"/>.</summary>
     /// <param name="dbContext">The context that maps <typeparamref name="TAggregate"/>.</param>
-    /// <param name="evaluator">The specification evaluator; <see cref="SpecificationEvaluator{T}"/> when <see langword="null"/>.</param>
-    public EfReadRepository(SharedKernelDbContext dbContext, ISpecificationEvaluator<TAggregate>? evaluator = null)
+    public EfReadRepository(SharedKernelDbContext dbContext)
+        : this(dbContext, evaluator: null)
+    {
+    }
+
+    /// <summary>Test seam: a repository over an explicit specification evaluator.</summary>
+    internal EfReadRepository(SharedKernelDbContext dbContext, ISpecificationEvaluator<TAggregate>? evaluator)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         DbContext = dbContext;
@@ -45,7 +50,7 @@ public class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId
     protected SharedKernelDbContext DbContext { get; }
 
     /// <summary>Gets the specification evaluator.</summary>
-    protected ISpecificationEvaluator<TAggregate> Evaluator { get; }
+    internal ISpecificationEvaluator<TAggregate> Evaluator { get; }
 
     /// <summary>
     /// Returns the query that loads a <em>complete</em> aggregate, used by <c>GetByIdAsync</c> and

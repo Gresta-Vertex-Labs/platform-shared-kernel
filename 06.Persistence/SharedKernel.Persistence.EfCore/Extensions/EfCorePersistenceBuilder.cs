@@ -1,8 +1,6 @@
-using System.ComponentModel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -49,8 +47,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private Action<IServiceProvider, NpgsqlDataSourceBuilder>? _configureDataSource;
     private NpgsqlDataSource? _dataSource;
     private Action<IServiceProvider, DbContextOptionsBuilder>? _providerOverride;
-    private IModel? _compiledModel;
-    private TimeSpan? _commandTimeout;
     private bool _pooling;
     private int _poolSize = 1024;
     private string? _serviceName;
@@ -65,12 +61,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
         ConnectionName = connectionName;
     }
 
-    /// <summary>The service collection the registration writes to (for capability packages' extension methods).</summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public IServiceCollection Services { get; }
+    /// <summary>The service collection the registration writes to (for the capability packages' extension methods).</summary>
+    internal IServiceCollection Services { get; }
 
     /// <summary>The connection name: <c>ConnectionStrings:{name}</c> and <c>SharedKernel:Persistence:{name}</c>.</summary>
-    public string ConnectionName { get; }
+    internal string ConnectionName { get; }
 
     /// <summary>Whether multi-tenancy was requested with <c>UseMultiTenancy()</c>.</summary>
     internal bool MultiTenancyRequested { get; set; }
@@ -113,33 +108,16 @@ public sealed class EfCorePersistenceBuilder<TContext>
         return this;
     }
 
-    /// <summary>Adds EF Core options (warnings, logging, ...), applied after the platform's PostgreSQL setup.</summary>
+    /// <summary>
+    /// Adds EF Core options (warnings, logging, a compiled model with <c>options.UseModel(...)</c>, ...), applied after
+    /// the platform's PostgreSQL setup. The command timeout belongs in the connection string (<c>Command Timeout=30</c>).
+    /// </summary>
     /// <param name="configure">Receives the root service provider and the options builder.</param>
     /// <returns>This builder.</returns>
     public EfCorePersistenceBuilder<TContext> ConfigureDbContext(Action<IServiceProvider, DbContextOptionsBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
         _dbContextConfigurations.Add(configure);
-        return this;
-    }
-
-    /// <summary>Uses a compiled model (<c>dotnet ef dbcontext optimize</c>) for faster startup.</summary>
-    /// <param name="compiledModel">The compiled model.</param>
-    /// <returns>This builder.</returns>
-    public EfCorePersistenceBuilder<TContext> UseCompiledModel(IModel compiledModel)
-    {
-        ArgumentNullException.ThrowIfNull(compiledModel);
-        _compiledModel = compiledModel;
-        return this;
-    }
-
-    /// <summary>Sets the command timeout of every command the context issues.</summary>
-    /// <param name="timeout">A positive timeout.</param>
-    /// <returns>This builder.</returns>
-    public EfCorePersistenceBuilder<TContext> UseCommandTimeout(TimeSpan timeout)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
-        _commandTimeout = timeout;
         return this;
     }
 
@@ -179,20 +157,19 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>Applies pending migrations at startup, serialized across replicas by the migration lock.</summary>
+    /// <param name="lockTimeout">
+    /// How long startup migration and seeding wait for the cross-replica lock. Default 2 minutes.
+    /// </param>
     /// <returns>This builder.</returns>
-    public EfCorePersistenceBuilder<TContext> MigrateOnStartup()
+    public EfCorePersistenceBuilder<TContext> MigrateOnStartup(TimeSpan? lockTimeout = null)
     {
-        _migrateOnStartup = true;
-        return this;
-    }
+        if (lockTimeout is { } timeout)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero, nameof(lockTimeout));
+            _startupLockTimeout = timeout;
+        }
 
-    /// <summary>How long startup migration/seeding waits for the cross-replica lock. Default 2 minutes.</summary>
-    /// <param name="timeout">A positive timeout.</param>
-    /// <returns>This builder.</returns>
-    public EfCorePersistenceBuilder<TContext> UseStartupLockTimeout(TimeSpan timeout)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
-        _startupLockTimeout = timeout;
+        _migrateOnStartup = true;
         return this;
     }
 
@@ -263,16 +240,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
             foreach (var configure in _dbContextConfigurations)
                 configure(sp, options);
-
-            if (_compiledModel is not null)
-                options.UseModel(_compiledModel);
-
-            if (_commandTimeout is { } timeout
-                && options.Options.Extensions.OfType<RelationalOptionsExtension>().FirstOrDefault() is { } relational)
-            {
-                ((IDbContextOptionsBuilderInfrastructure)options).AddOrUpdateExtension(
-                    relational.WithCommandTimeout((int)Math.Ceiling(timeout.TotalSeconds)));
-            }
         }
 
         // The inner (pooled or plain) factory is a singleton: every constructor dependency of a context is one.
@@ -296,7 +263,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
         services.AddScoped<IDbContextFactory<TContext>>(sp => new TenantAwareDbContextFactory<TContext>(
             sp.GetRequiredKeyedService<IDbContextFactory<TContext>>(InnerFactoryKey.Instance),
             sp.GetRequiredService<IRequestContext>(),
-            sp.GetService<IDomainEventDispatcher>()));
+            sp.GetService<IDomainEventDispatcher>(),
+            sp.GetRequiredService<ICrossTenantScope>()));
         services.AddSingleton<ICallerDbContextFactory<TContext>>(sp => new CallerDbContextFactory<TContext>(
             sp.GetRequiredKeyedService<IDbContextFactory<TContext>>(InnerFactoryKey.Instance)));
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<TContext>>().CreateDbContext());

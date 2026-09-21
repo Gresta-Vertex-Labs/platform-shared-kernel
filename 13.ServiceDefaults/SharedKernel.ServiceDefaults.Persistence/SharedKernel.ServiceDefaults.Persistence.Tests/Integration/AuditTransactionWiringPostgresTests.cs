@@ -96,7 +96,7 @@ public sealed class AuditTransactionWiringPostgresTests
         services.AddSharedKernelPostgres<AuditWiringTestDbContext>(configuration, "audit-wiring", p => p
             // Test-harness-only: every test builds its own fresh DbContext model.
             .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithAuditTrail(configuration));
+            .UseAuditTrail());
 
         // No bridge: EfUnitOfWork and EfAuditTrailWriter implement the shared IUnitOfWork and
         // IAuditTrailWriter (SharedKernel.Application.Abstractions) the behaviors consume directly.

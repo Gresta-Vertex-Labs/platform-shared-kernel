@@ -42,7 +42,7 @@ public interface IBulkMutationRepository<TAggregate, TId>
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of rows updated.</returns>
-    /// <exception cref="UnsupportedSpecificationException">
+    /// <exception cref="SharedKernel.Core.Exceptions.SharedKernelException">(a validation error, code <c>Persistence.BulkMutation.UnsupportedSpecification</c>):
     /// The specification has an unsupported shape, or a setter targets something other than a mapped property
     /// or a protected column: the key, a concurrency token, <c>TenantId</c>, the creation audit columns, or an
     /// encrypted column (which would be written as plaintext).
@@ -59,7 +59,7 @@ public interface IBulkMutationRepository<TAggregate, TId>
     /// <param name="spec">The rows to delete.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of rows deleted; rows already soft-deleted are left as they are and not counted.</returns>
-    /// <exception cref="UnsupportedSpecificationException">The specification has an unsupported shape.</exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.SharedKernelException">The specification has an unsupported shape (a validation error, code <c>Persistence.BulkMutation.UnsupportedSpecification</c>).</exception>
     Task<int> ExecuteDeleteAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -71,7 +71,7 @@ public interface IBulkMutationRepository<TAggregate, TId>
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of rows removed.</returns>
-    /// <exception cref="UnsupportedSpecificationException">The specification has an unsupported shape.</exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.SharedKernelException">The specification has an unsupported shape (a validation error, code <c>Persistence.BulkMutation.UnsupportedSpecification</c>).</exception>
     /// <remarks>Irreversible. Use it for retention jobs and data-subject erasure.</remarks>
     Task<int> ExecutePurgeAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
 }

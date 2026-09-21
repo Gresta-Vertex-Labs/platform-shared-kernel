@@ -9,7 +9,7 @@ using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
-public sealed class ConcurrencyInterceptorTests
+public sealed class ConcurrencyConflictTranslationTests
 {
     // Replaces the previous non-functional
     // `interceptor.Should().NotBeNull()` placeholder assertion with a real, provider-neutral proof.

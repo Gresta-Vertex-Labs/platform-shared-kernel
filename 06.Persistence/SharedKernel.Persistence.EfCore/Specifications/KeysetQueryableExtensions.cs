@@ -20,7 +20,7 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// is compared on its underlying value, so its value converter applies.
 /// </para>
 /// </remarks>
-public static class KeysetQueryableExtensions
+internal static class KeysetQueryableExtensions
 {
     /// <summary>
     /// Orders <paramref name="source"/> by <paramref name="keySelector"/> then <paramref name="idSelector"/>,

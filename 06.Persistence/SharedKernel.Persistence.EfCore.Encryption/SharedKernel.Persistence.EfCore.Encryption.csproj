@@ -26,4 +26,16 @@
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
+  <!--
+    P-558/W3a: this package uses SharedKernel.Persistence.EfCore internals (InternalsVisibleTo), so its nuspec
+    pins that dependency to exactly this build's version ([x.y.z]) instead of NuGet's default minimum (>= x.y.z):
+    a newer EfCore with changed internals can never be combined with this package.
+  -->
+  <Target Name="PinEfCoreDependencyToExactVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'SharedKernel.Persistence.EfCore'">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
 </Project>

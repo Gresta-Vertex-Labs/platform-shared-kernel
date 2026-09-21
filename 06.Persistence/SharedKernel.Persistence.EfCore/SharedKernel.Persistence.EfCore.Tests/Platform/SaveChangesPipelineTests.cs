@@ -407,7 +407,7 @@ public sealed class SaveChangesPipelineTests : IDisposable
         var dispatched = new List<IDomainEvent>();
         await using var context = Orders();
         var second = new PipelineOrder(PipelineOrderId.New(), "second", new FakeClock(T0));
-        context.AttachLease(context.RequestContext, new CascadingDispatcher(dispatched, second));
+        context.AttachLease(context.RequestContext, new CascadingDispatcher(dispatched, second), context.CrossTenantScope);
 
         var first = new PipelineOrder(PipelineOrderId.New(), "first", new FakeClock(T0));
         first.Ship();

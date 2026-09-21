@@ -30,7 +30,7 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 public static class ConcurrencyVersion
 {
     /// <summary>The <see cref="Exception.Data"/> key the current row version is stored under on a conflict.</summary>
-    public const string CurrentVersionDataKey = "SharedKernel.Persistence.CurrentVersion";
+    internal const string CurrentVersionDataKey = "SharedKernel.Persistence.CurrentVersion";
 
     /// <summary>The error code of every concurrency conflict raised by a SharedKernel context.</summary>
     public const string ConflictErrorCode = "persistence.concurrency_conflict";

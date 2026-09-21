@@ -22,7 +22,7 @@ namespace SharedKernel.Persistence.Npgsql.Coordination;
 /// which aborts the transaction; it surfaces as <see cref="TimeoutException"/>.
 /// </para>
 /// </remarks>
-public sealed class NpgsqlAdvisoryTransactionLock : IAdvisoryTransactionLock
+internal sealed class NpgsqlAdvisoryTransactionLock : IAdvisoryTransactionLock
 {
     // Reads the previous value before replacing it: the MATERIALIZED CTE is evaluated first.
     private const string SetTimeoutSql =

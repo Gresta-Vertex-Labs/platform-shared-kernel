@@ -1,44 +1,26 @@
 #nullable enable
 SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion
-SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>
-SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>.EntityTypeConfigurationBase() -> void
 SharedKernel.Persistence.EfCore.Context.ICallerDbContextFactory<TContext>
 SharedKernel.Persistence.EfCore.Context.ICallerDbContextFactory<TContext>.CreateDbContextAsync(SharedKernel.Application.Context.IRequestContext! caller, SharedKernel.Domain.Abstractions.IDomainEventDispatcher? domainEventDispatcher = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TContext!>!
 SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies
 SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext
+SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.CrossTenantScope.get -> SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope!
 SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.RequestContext.get -> SharedKernel.Application.Context.IRequestContext!
 SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SharedKernelDbContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> void
 SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions
-SharedKernel.Persistence.EfCore.Conversions.StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
-SharedKernel.Persistence.EfCore.Conversions.StronglyTypedIdValueConverter<TStronglyTypedId, TValue>.StronglyTypedIdValueConverter() -> void
 SharedKernel.Persistence.EfCore.Diagnostics.DbContextDiagnosticsExtensions
 SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames
-SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier
-SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier.TryClassify(Microsoft.EntityFrameworkCore.DbUpdateException! exception) -> System.Exception?
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConfigurator
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConfigurator.Configure(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConventionFactory
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceModelConventionFactory.CreateConvention(Microsoft.EntityFrameworkCore.DbContext! context, Microsoft.EntityFrameworkCore.DbContextOptions! options) -> Microsoft.EntityFrameworkCore.Metadata.Conventions.IConvention!
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceOptionsExtension
-SharedKernel.Persistence.EfCore.Extensibility.IPersistenceOptionsExtension.Apply(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
-SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.AddInterceptor<TInterceptor>() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.AddSeeder<TSeeder>() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.ConfigureDataSource(System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>! configure) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.ConfigureDbContext(System.Action<System.IServiceProvider!, Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configure) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.ConfigureProvider(System.Action<SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions!>! configure) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.ConnectionName.get -> string!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.MigrateOnStartup() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseCommandTimeout(System.TimeSpan timeout) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseCompiledModel(Microsoft.EntityFrameworkCore.Metadata.IModel! compiledModel) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
+SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.MigrateOnStartup(System.TimeSpan? lockTimeout = null) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseDataSource(Npgsql.NpgsqlDataSource! dataSource) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseDbContextPooling(int poolSize = 1024) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseServiceName(string! serviceName) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseStartupLockTimeout(System.TimeSpan timeout) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext>.UseUuidV7Keys() -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
-SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilderRowLevelSecurityExtensions
 SharedKernel.Persistence.EfCore.Extensions.PostgreSQLPersistenceExtensions
 SharedKernel.Persistence.EfCore.Extensions.PostgresPersistenceExtensions
 SharedKernel.Persistence.EfCore.Jsonb.JsonbEntityTypeBuilderExtensions
@@ -49,25 +31,16 @@ SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.ApplyTenantFilter
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.CurrentTenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.TenantedDbContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> void
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>
-SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.TenantedRepository(SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext! dbContext, SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope! crossTenantScope) -> void
-SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions
-SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions.PersistenceServiceOptions() -> void
-SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions.ServiceName.get -> string!
-SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions.ServiceName.set -> void
+SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.TenantedRepository(SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext! dbContext) -> void
 SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions
+SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.AdditionalTransientErrorCodes.get -> System.Collections.Generic.ICollection<string!>!
+SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.MaxRetryCount.get -> int
+SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.MaxRetryCount.set -> void
+SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.MaxRetryDelay.get -> System.TimeSpan
+SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.MaxRetryDelay.set -> void
 SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.PostgreSqlProviderOptions() -> void
-SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.Retry.get -> SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions!
 SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.UseVector.get -> bool
 SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions.UseVector.set -> void
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.AdditionalTransientErrorCodes.get -> System.Collections.Generic.ICollection<string!>!
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.Enabled.get -> bool
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.Enabled.set -> void
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.MaxRetryCount.get -> int
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.MaxRetryCount.set -> void
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.MaxRetryDelay.get -> System.TimeSpan
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.MaxRetryDelay.set -> void
-SharedKernel.Persistence.EfCore.Options.PostgreSqlRetryOptions.PostgreSqlRetryOptions() -> void
 SharedKernel.Persistence.EfCore.Repositories.AllRowsSpecification<T>
 SharedKernel.Persistence.EfCore.Repositories.AllRowsSpecification<T>.AllRowsSpecification() -> void
 SharedKernel.Persistence.EfCore.Repositories.BulkUpdateSetters<TAggregate>
@@ -75,27 +48,16 @@ SharedKernel.Persistence.EfCore.Repositories.BulkUpdateSetters<TAggregate>.SetPr
 SharedKernel.Persistence.EfCore.Repositories.BulkUpdateSetters<TAggregate>.SetProperty<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, TProperty value) -> SharedKernel.Persistence.EfCore.Repositories.BulkUpdateSetters<TAggregate!>!
 SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>
 SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.DbContext.get -> SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext!
-SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.EfReadRepository(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<TAggregate!>? evaluator = null) -> void
-SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.Evaluator.get -> SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<TAggregate!>!
+SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.EfReadRepository(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext) -> void
 SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.Query(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec) -> System.Linq.IQueryable<TAggregate!>!
 SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>
-SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.EfRepository(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext, SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<TAggregate!>? evaluator = null) -> void
+SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.EfRepository(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! dbContext) -> void
 SharedKernel.Persistence.EfCore.Repositories.IBulkMutationRepository<TAggregate, TId>
 SharedKernel.Persistence.EfCore.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteDeleteAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Persistence.EfCore.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecutePurgeAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Persistence.EfCore.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteUpdateAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Action<SharedKernel.Persistence.EfCore.Repositories.BulkUpdateSetters<TAggregate!>!>! setters, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException
-SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException.UnsupportedSpecificationException(string! reason) -> void
 SharedKernel.Persistence.EfCore.Seeding.IDataSeeder<TContext>
 SharedKernel.Persistence.EfCore.Seeding.IDataSeeder<TContext>.SeedAsync(TContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<T>
-SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<T>.GetProjectedQuery<TResult>(System.Linq.IQueryable<T>! inputQuery, SharedKernel.Domain.Specifications.IProjectionSpecification<T, TResult>! spec) -> System.Linq.IQueryable<TResult>!
-SharedKernel.Persistence.EfCore.Specifications.ISpecificationEvaluator<T>.GetQuery(System.Linq.IQueryable<T>! inputQuery, SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> System.Linq.IQueryable<T>!
-SharedKernel.Persistence.EfCore.Specifications.KeysetQueryableExtensions
-SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>
-SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.GetProjectedQuery<TResult>(System.Linq.IQueryable<T!>! inputQuery, SharedKernel.Domain.Specifications.IProjectionSpecification<T!, TResult>! spec) -> System.Linq.IQueryable<TResult>!
-SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.GetQuery(System.Linq.IQueryable<T!>! inputQuery, SharedKernel.Domain.Specifications.ISpecification<T!>! spec) -> System.Linq.IQueryable<T!>!
-SharedKernel.Persistence.EfCore.Specifications.SpecificationEvaluator<T>.SpecificationEvaluator() -> void
 SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<TContext>
 SharedKernel.Persistence.EfCore.Vectors.VectorDistanceMetric
 SharedKernel.Persistence.EfCore.Vectors.VectorDistanceMetric.Cosine = 0 -> SharedKernel.Persistence.EfCore.Vectors.VectorDistanceMetric
@@ -108,11 +70,8 @@ SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod.Hnsw = 0 -> SharedKern
 SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod.IvfFlat = 1 -> SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod
 SharedKernel.Persistence.EfCore.Vectors.VectorOrderingExpressions
 const SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.ConflictErrorCode = "persistence.concurrency_conflict" -> string!
-const SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.CurrentVersionDataKey = "SharedKernel.Persistence.CurrentVersion" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.SoftDelete = "SoftDelete" -> string!
 const SharedKernel.Persistence.EfCore.Diagnostics.PersistenceFilterNames.Tenant = "Tenant" -> string!
-const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.Encrypt = "SharedKernel:Persistence:Encrypt" -> string!
-const SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.EncryptApplied = "SharedKernel:Persistence:Encrypt:Applied" -> string!
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.ConfigureConventions(Microsoft.EntityFrameworkCore.ModelConfigurationBuilder! configurationBuilder) -> void
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.Dispose() -> void
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.DisposeAsync() -> System.Threading.Tasks.ValueTask
@@ -122,13 +81,10 @@ override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SaveChang
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SaveChangesAsync(bool acceptAllChangesOnSuccess, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 override SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext.OnModelCreating(Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> void
 static SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.Get(Microsoft.EntityFrameworkCore.DbContext! context, object! entity) -> uint
-static SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.SetExpected(Microsoft.EntityFrameworkCore.DbContext! context, object! entity, uint expectedVersion) -> void
 static SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.TryGetCurrentVersion(System.Exception! exception, out uint currentVersion) -> bool
 static SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies.Create(SharedKernel.Application.Context.IRequestContext? requestContext = null, SharedKernel.Primitives.Clocks.IClock? clock = null, SharedKernel.Domain.Abstractions.IDomainEventDispatcher? domainEventDispatcher = null, string! serviceName = "system", System.Collections.Generic.IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor!>? additionalInterceptors = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies!
 static SharedKernel.Persistence.EfCore.Conversions.MoneyEntityTypeBuilderExtensions.Money<TEntity>(this Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder, System.Linq.Expressions.Expression<System.Func<TEntity!, SharedKernel.Domain.Monetary.Money?>!>! propertyExpression, bool required = true, int precision = 19, int scale = 4, string? amountColumnName = null, string? currencyColumnName = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!
 static SharedKernel.Persistence.EfCore.Diagnostics.DbContextDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext! context, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
-static SharedKernel.Persistence.EfCore.Extensibility.PersistenceModelAnnotationNames.GetPropertiesIncludingComplex(Microsoft.EntityFrameworkCore.Metadata.IReadOnlyTypeBase! type) -> System.Collections.Generic.IEnumerable<(System.Collections.Generic.IReadOnlyList<Microsoft.EntityFrameworkCore.Metadata.IReadOnlyComplexProperty!>! ComplexPath, Microsoft.EntityFrameworkCore.Metadata.IReadOnlyProperty! Property)>!
-static SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilderRowLevelSecurityExtensions.WithRowLevelSecurity<TContext>(this SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>! builder) -> SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!
 static SharedKernel.Persistence.EfCore.Extensions.PostgreSQLPersistenceExtensions.UsePostgreSQL(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder, Npgsql.NpgsqlDataSource! dataSource, System.Action<SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions!>? configure = null) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!
 static SharedKernel.Persistence.EfCore.Extensions.PostgreSQLPersistenceExtensions.UsePostgreSQL(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder, System.IServiceProvider! serviceProvider, System.Action<SharedKernel.Persistence.EfCore.Options.PostgreSqlProviderOptions!>? configure = null) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!
 static SharedKernel.Persistence.EfCore.Extensions.PostgresPersistenceExtensions.AddSharedKernelPostgres<TContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! connectionName, System.Action<SharedKernel.Persistence.EfCore.Extensions.EfCorePersistenceBuilder<TContext!>!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
@@ -139,13 +95,10 @@ static SharedKernel.Persistence.EfCore.Jsonb.JsonbEntityTypeBuilderExtensions.Ha
 static SharedKernel.Persistence.EfCore.Migrations.RowLevelSecurityMigrationBuilderExtensions.DisableTenantRowLevelSecurity(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string! table, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
 static SharedKernel.Persistence.EfCore.Migrations.RowLevelSecurityMigrationBuilderExtensions.EnableTenantRowLevelSecurity(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string! table, string! tenantColumn = "tenant_id", string? schema = null, string? crossTenantRole = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
 static SharedKernel.Persistence.EfCore.MultiTenancy.RowLevelSecurityDatabaseFacadeExtensions.UseCrossTenantConnection(this Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade! database) -> void
-static SharedKernel.Persistence.EfCore.Options.PersistenceServiceOptions.SectionName.get -> string!
-static SharedKernel.Persistence.EfCore.Specifications.KeysetQueryableExtensions.ToKeysetPage<T, TKey, TId>(this System.Linq.IQueryable<T>! source, System.Linq.Expressions.Expression<System.Func<T, TKey>!>! keySelector, System.Linq.Expressions.Expression<System.Func<T, TId>!>! idSelector, SharedKernel.Contracts.Pagination.CursorPosition<TKey, TId>? after, bool descending, int limit) -> System.Linq.IQueryable<T>!
 static SharedKernel.Persistence.EfCore.Vectors.VectorEntityTypeBuilderExtensions.HasHalfVectorColumn<TEntity>(this Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder, System.Linq.Expressions.Expression<System.Func<TEntity!, Pgvector.Vector!>!>! propertyExpression, int dimensions) -> Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!
 static SharedKernel.Persistence.EfCore.Vectors.VectorEntityTypeBuilderExtensions.HasVectorColumn<TEntity>(this Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder, System.Linq.Expressions.Expression<System.Func<TEntity!, Pgvector.Vector!>!>! propertyExpression, int dimensions) -> Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!
 static SharedKernel.Persistence.EfCore.Vectors.VectorEntityTypeBuilderExtensions.HasVectorIndex<TEntity>(this Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder, System.Linq.Expressions.Expression<System.Func<TEntity!, object?>!>! propertyExpression, SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod method, SharedKernel.Persistence.EfCore.Vectors.VectorDistanceMetric metric, string? indexName = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!
 static SharedKernel.Persistence.EfCore.Vectors.VectorOrderingExpressions.ByDistance<TAggregate>(System.Linq.Expressions.Expression<System.Func<TAggregate, Pgvector.Vector!>!>! vectorSelector, Pgvector.Vector! queryVector, SharedKernel.Persistence.EfCore.Vectors.VectorDistanceMetric metric) -> System.Linq.Expressions.Expression<System.Func<TAggregate, object!>!>!
-virtual SharedKernel.Persistence.EfCore.Configurations.EntityTypeConfigurationBase<TEntity, TId>.Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>! builder) -> void
 virtual SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.ShouldApplyConfiguration(System.Type! configurationType) -> bool
 virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantIncludingDeletedAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
@@ -179,3 +132,4 @@ virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TI
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateAsync(TAggregate! aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateAsync(TAggregate! aggregate, uint expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate!>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.SetExpected(Microsoft.EntityFrameworkCore.DbContext! context, object! entity, uint expectedVersion) -> void

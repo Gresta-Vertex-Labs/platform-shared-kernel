@@ -77,8 +77,7 @@ public static class RepositoryContractCompletenessRules
             .MeetCustomRule(
                 new HasRequiredMethodPredicate(
                     interfaceNamePrefix: "IReadRepository",
-                    requiredMethodName: "GetByIdAsync",
-                    excludeReadRepository: false));
+                    requiredMethodName: "GetByIdAsync"));
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that every type in <paramref name="assembly"/> that
@@ -126,6 +125,5 @@ public static class RepositoryContractCompletenessRules
             .MeetCustomRule(
                 new HasRequiredMethodPredicate(
                     interfaceNamePrefix: "IReadRepository",
-                    requiredMethodName: "GetByIdsAsync",
-                    excludeReadRepository: false));
+                    requiredMethodName: "GetByIdsAsync"));
 }

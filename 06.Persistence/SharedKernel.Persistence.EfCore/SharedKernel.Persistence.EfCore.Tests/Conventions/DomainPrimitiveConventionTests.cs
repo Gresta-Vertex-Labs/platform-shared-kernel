@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Conversions;
@@ -112,11 +111,11 @@ internal sealed class ValueObjectConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class EntityWithValueObjectConfig : EntityTypeConfigurationBase<EntityWithValueObject, ConventionTestId>
+internal sealed class EntityWithValueObjectConfig : IEntityTypeConfiguration<EntityWithValueObject>
 {
-    public override void Configure(EntityTypeBuilder<EntityWithValueObject> builder)
+    public void Configure(EntityTypeBuilder<EntityWithValueObject> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         // Price (MoneyValueObject) — ValueObjectOwnershipBuilder.Apply() will auto-configure a complex type.
     }
@@ -140,11 +139,11 @@ internal sealed class SimpleConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class SimpleConventionEntityConfig : EntityTypeConfigurationBase<SimpleConventionEntity, ConventionTestId>
+internal sealed class SimpleConventionEntityConfig : IEntityTypeConfiguration<SimpleConventionEntity>
 {
-    public override void Configure(EntityTypeBuilder<SimpleConventionEntity> builder)
+    public void Configure(EntityTypeBuilder<SimpleConventionEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
@@ -167,11 +166,11 @@ internal sealed class FullAuditConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class FullAuditConventionEntityConfig : EntityTypeConfigurationBase<FullAuditConventionEntity, ConventionTestId>
+internal sealed class FullAuditConventionEntityConfig : IEntityTypeConfiguration<FullAuditConventionEntity>
 {
-    public override void Configure(EntityTypeBuilder<FullAuditConventionEntity> builder)
+    public void Configure(EntityTypeBuilder<FullAuditConventionEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }

@@ -13,28 +13,28 @@ public static class EncryptionMeter
     public const string Name = "SharedKernel.Persistence.EfCore.Encryption";
 
     /// <summary>Counter: failed encryptions, tagged <c>reason</c>.</summary>
-    public const string EncryptFailuresTotal = "persistence.encryption.encrypt_failures";
+    internal const string EncryptFailuresTotal = "persistence.encryption.encrypt_failures";
 
     /// <summary>
     /// Counter: failed decryptions, tagged <c>reason</c> (<c>malformed_payload</c>, <c>unknown_key</c>,
     /// <c>decryption_failed</c>, <c>tenant_key_shredded</c>).
     /// </summary>
-    public const string DecryptFailuresTotal = "persistence.encryption.decrypt_failures";
+    internal const string DecryptFailuresTotal = "persistence.encryption.decrypt_failures";
 
     /// <summary>
     /// Counter: values the maintenance job wrote, tagged <c>operation</c> (<c>re_encrypt</c>,
     /// <c>encrypt_plaintext</c>, <c>recompute_blind_index</c>).
     /// </summary>
-    public const string MaintenanceRowsWrittenTotal = "persistence.encryption.maintenance_rows_written";
+    internal const string MaintenanceRowsWrittenTotal = "persistence.encryption.maintenance_rows_written";
 
     /// <summary>
     /// Counter: values the maintenance job could not process, tagged <c>reason</c> (<c>concurrent_write</c>,
     /// <c>plaintext</c>, <c>undecryptable</c>, <c>shredded</c>).
     /// </summary>
-    public const string MaintenanceRowsSkippedTotal = "persistence.encryption.maintenance_rows_skipped";
+    internal const string MaintenanceRowsSkippedTotal = "persistence.encryption.maintenance_rows_skipped";
 
     /// <summary>Counter: tenant data keys shredded.</summary>
-    public const string TenantKeysShreddedTotal = "persistence.encryption.tenant_keys_shredded";
+    internal const string TenantKeysShreddedTotal = "persistence.encryption.tenant_keys_shredded";
 
     private static readonly Meter Instance = new(Name, "1.0");
 

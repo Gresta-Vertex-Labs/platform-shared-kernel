@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.EfCore.Context;
@@ -164,6 +165,29 @@ public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsy
     }
 
     [Fact]
+    public async Task SaveChanges_ForeignKeyViolationOnReferencedKeyUpdate_ThrowsConflictException()
+    {
+        // PostgreSQL reports the REFERENCING table for every 23503; changing a referenced key that dependents still
+        // point at is a conflict (the same change succeeds once they are gone), not invalid input.
+        await using var ctx = await CreateContextAsync();
+        var parent = new ClassifierParent { Code = "KEY-1" };
+        ctx.Parents.Add(parent);
+        await ctx.SaveChangesAsync();
+
+        var parentTable = ctx.Model.FindEntityType(typeof(ClassifierParent))!.GetTableName();
+        var createReferencingTable =
+            "CREATE TABLE classifier_code_refs (id serial PRIMARY KEY, parent_code text NOT NULL REFERENCES \""
+            + parentTable + "\" (code)); INSERT INTO classifier_code_refs (parent_code) VALUES ('KEY-1');";
+        await ctx.Database.ExecuteSqlRawAsync(createReferencingTable);
+
+        parent.Code = "KEY-2";
+        var act = async () => await ctx.SaveChangesAsync();
+
+        (await act.Should().ThrowAsync<ConflictException>())
+            .Which.Error.Code.Should().Be("persistence.postgresql.foreign_key_dependent_exists");
+    }
+
+    [Fact]
     public async Task SaveChanges_ClassifiedException_KeepsTheDbUpdateExceptionAsInner()
     {
         await using var ctx = await CreateContextAsync();
@@ -230,12 +254,13 @@ public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsy
     [Fact]
     public async Task SaveChanges_ThroughDiRegistration_ClassifierIsAlwaysRegistered()
     {
-        // No explicit classifier anywhere: AddSharedKernelEfCore(...).Build() registers it itself.
-        var services = new ServiceCollection();
-        services
-            .AddSharedKernelEfCore<ClassifierTestDbContext>(o =>
-                o.UsePostgreSQL(TestNpgsqlDataSources.Get(_fixture.ConnectionString)))
+        // No explicit classifier anywhere: AddSharedKernelPostgres registers it itself.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:classifier"] = _fixture.ConnectionString })
             .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelPostgres<ClassifierTestDbContext>(configuration, "classifier");
 
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();

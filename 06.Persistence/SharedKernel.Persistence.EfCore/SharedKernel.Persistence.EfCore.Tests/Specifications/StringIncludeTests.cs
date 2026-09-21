@@ -6,7 +6,6 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Specifications;
@@ -43,7 +42,7 @@ public sealed class ChildEntity
         ParentId = parentId;
     }
 
-    protected ChildEntity() { }
+    private ChildEntity() { }
 }
 
 public sealed class ParentEntity : AggregateRoot<ParentId>
@@ -56,15 +55,15 @@ public sealed class ParentEntity : AggregateRoot<ParentId>
         Title = title;
     }
 
-    protected ParentEntity() { }
+    private ParentEntity() { }
 }
 
 // Entity configurations
-public sealed class ParentEntityConfig : EntityTypeConfigurationBase<ParentEntity, ParentId>
+public sealed class ParentEntityConfig : IEntityTypeConfiguration<ParentEntity>
 {
-    public override void Configure(EntityTypeBuilder<ParentEntity> builder)
+    public void Configure(EntityTypeBuilder<ParentEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         builder.HasMany(e => e.Children)
             .WithOne()

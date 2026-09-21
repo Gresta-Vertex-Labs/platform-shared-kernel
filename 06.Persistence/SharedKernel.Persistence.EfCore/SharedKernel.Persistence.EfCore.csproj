@@ -52,11 +52,16 @@
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Integration.Tests" />
     <!--
-      P-557/W1: the sibling Encryption/Auditing packages contribute to this context purely through
-      the public IPersistenceModelConventionFactory/IPersistenceModelConfigurator/
-      IPersistenceOptionsExtension extensibility interfaces and the builder's public surface — no
-      InternalsVisibleTo grant is needed for either sibling.
+      P-558/W3a: the sibling capability packages plug into the context through internal extension points
+      (model-convention factories, options extensions, the encryption annotation names, the builder's service
+      collection, the service-name options) that no consuming service implements. They are internal so the
+      public surface is only what a microservice names. Both siblings pin this package to their own exact
+      version in their nuspec (see their csproj), so the internal contract can never be mixed across versions.
     -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing" />
+    <!-- A test interceptor that must run after the encryption interceptor plugs in the same way. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

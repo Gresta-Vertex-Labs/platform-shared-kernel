@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Application.Context;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 
 namespace SharedKernel.Persistence.EfCore.Context;
 
@@ -18,14 +19,15 @@ namespace SharedKernel.Persistence.EfCore.Context;
 internal sealed class TenantAwareDbContextFactory<TContext>(
     IDbContextFactory<TContext> inner,
     IRequestContext requestContext,
-    IDomainEventDispatcher? domainEventDispatcher) : IDbContextFactory<TContext>
+    IDomainEventDispatcher? domainEventDispatcher,
+    ICrossTenantScope crossTenantScope) : IDbContextFactory<TContext>
     where TContext : SharedKernelDbContext
 {
     /// <inheritdoc />
     public TContext CreateDbContext()
     {
         var context = inner.CreateDbContext();
-        context.AttachLease(requestContext, domainEventDispatcher);
+        context.AttachLease(requestContext, domainEventDispatcher, crossTenantScope);
         return context;
     }
 
@@ -34,7 +36,7 @@ internal sealed class TenantAwareDbContextFactory<TContext>(
     {
         // The inner factory's own async method: the pooled factory leases asynchronously.
         var context = await inner.CreateDbContextAsync(cancellationToken);
-        context.AttachLease(requestContext, domainEventDispatcher);
+        context.AttachLease(requestContext, domainEventDispatcher, crossTenantScope);
         return context;
     }
 }
@@ -82,7 +84,7 @@ internal sealed class CallerDbContextFactory<TContext>(IDbContextFactory<TContex
         ArgumentNullException.ThrowIfNull(caller);
 
         var context = await inner.CreateDbContextAsync(cancellationToken);
-        context.AttachLease(caller, domainEventDispatcher);
+        context.AttachLease(caller, domainEventDispatcher, crossTenantScope: null);
         return context;
     }
 }

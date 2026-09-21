@@ -14,7 +14,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// disable the table's triggers can rewrite checkpoints too (the signatures still cannot be forged without
 /// the signing key). For stronger guarantees register a sink that writes to object-locked (WORM) storage.
 /// </remarks>
-public sealed class TableAuditCheckpointSink : IAuditCheckpointSink
+internal sealed class TableAuditCheckpointSink : IAuditCheckpointSink
 {
     private readonly IDbConnectionFactory _connectionFactory;
 

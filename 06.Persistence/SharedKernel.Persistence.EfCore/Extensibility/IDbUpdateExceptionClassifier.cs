@@ -29,7 +29,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <c>try/catch</c>) can turn into a <c>Result</c> instead of an unhandled 500.
 /// </para>
 /// </remarks>
-public interface IDbUpdateExceptionClassifier
+internal interface IDbUpdateExceptionClassifier
 {
     /// <summary>
     /// Attempts to classify <paramref name="exception"/>.

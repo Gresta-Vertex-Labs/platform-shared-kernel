@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace SharedKernel.Persistence.EfCore.Extensibility;
 
-public static partial class PersistenceModelAnnotationNames
+internal static partial class PersistenceModelAnnotationNames
 {
     /// <summary>
     /// Enumerates every scalar property of <paramref name="type"/>, including the properties reachable through

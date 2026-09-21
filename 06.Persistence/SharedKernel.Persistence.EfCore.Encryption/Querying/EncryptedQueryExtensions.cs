@@ -20,6 +20,12 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// A blind index is tenant-bound: it finds rows of one tenant at a time. For a tenanted entity without a caller
 /// tenant (a cross-tenant job), pass <c>tenantId</c> explicitly.
 /// </para>
+/// <para>
+/// <strong>Not a specification criterion.</strong> A specification is built without a context, but the blind index
+/// can only be computed with the context's keys, the property's model annotations and the caller's tenant, so there
+/// is no <c>Spec.For&lt;T&gt;().Where(...)</c> form. Filter the query here (the <see cref="IQueryable{T}"/> overload
+/// composes with anything else), or resolve the id with this method first and pass it to a specification.
+/// </para>
 /// </remarks>
 public static class EncryptedQueryExtensions
 {

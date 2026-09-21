@@ -24,7 +24,7 @@ namespace SharedKernel.Persistence.EfCore.Seeding;
 /// <para>
 /// <strong>Locking.</strong> The whole sequence runs under the registered <see cref="IMigrationLock"/> (the
 /// Npgsql advisory lock), waiting up to <see cref="StartupOptions.LockTimeout"/> (default 2 minutes, set with
-/// <c>UseStartupLockTimeout</c>). Without a lock the sequence still runs and an Error is logged. Since EF Core 9,
+/// <c>MigrateOnStartup(lockTimeout)</c>). Without a lock the sequence still runs and an Error is logged. Since EF Core 9,
 /// <c>Database.MigrateAsync</c> also takes its own database lock (Npgsql: an advisory lock held for the
 /// migration), so two replicas never apply the same migration twice even without this lock; what this lock adds
 /// is that seeders never run against a half-migrated schema and never run concurrently with each other. The two
@@ -111,9 +111,8 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
 
                 if (tenanted)
                 {
-                    var crossTenantScope = new CrossTenantScope(
-                        seeder, scope.ServiceProvider.GetService<ILogger<CrossTenantScope>>());
-                    using (crossTenantScope.Enter($"startup seeder {seederTypeName} for {contextTypeName}"))
+                    // The context's own scope, attributed to the seeder (created by ICallerDbContextFactory).
+                    using (context.CrossTenantScope.Enter($"startup seeder {seederTypeName} for {contextTypeName}"))
                     {
                         // Under row-level security the application role only sees the bound tenant: a seeder that
                         // writes across tenants runs on the cross-tenant role's connection.
@@ -173,7 +172,7 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         unpooled.Freeze(); // the platform interceptors are already in the options; OnConfiguring must not add them twice
 
         var context = ActivatorUtilities.CreateInstance<TContext>(services, unpooled);
-        context.AttachLease(caller, dispatcher);
+        context.AttachLease(caller, dispatcher, crossTenantScope: null);
         return context;
     }
 

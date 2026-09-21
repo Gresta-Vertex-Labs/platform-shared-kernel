@@ -6,8 +6,8 @@ using SharedKernel.Persistence.EfCore.Specifications;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 
-internal sealed class PgOrderRepository(PgTestDbContext ctx, ICrossTenantScope crossTenantScope)
-    : TenantedRepository<PgOrderAggregate, PgOrderId>(ctx, crossTenantScope);
+internal sealed class PgOrderRepository(PgTestDbContext ctx)
+    : TenantedRepository<PgOrderAggregate, PgOrderId>(ctx);
 
 internal sealed class PgOrderReadRepository(PgTestDbContext ctx)
     : EfReadRepository<PgOrderAggregate, PgOrderId>(ctx, new SpecificationEvaluator<PgOrderAggregate>());

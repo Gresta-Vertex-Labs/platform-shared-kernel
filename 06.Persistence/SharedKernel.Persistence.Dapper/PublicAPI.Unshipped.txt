@@ -32,18 +32,6 @@ SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddSmart
 SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddStronglyTypedId<TId, TValue>(System.Func<TValue, TId!>? factory = null) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
 SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.AddTypeHandler<T>(Dapper.SqlMapper.TypeHandler<T>! handler) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
 SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder.MatchNamesWithUnderscores(bool enabled) -> SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!
-SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>
-SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.JsonbTypeHandler(System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> void
-SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>
-SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.SmartEnumTypeHandler() -> void
-SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>
-SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.StronglyTypedIdTypeHandler(System.Func<TValue, TId!>? factory = null) -> void
-override SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.Parse(object! value) -> T?
-override SharedKernel.Persistence.Dapper.TypeHandlers.JsonbTypeHandler<T>.SetValue(System.Data.IDbDataParameter! parameter, T? value) -> void
-override SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.Parse(object! value) -> TEnum!
-override SharedKernel.Persistence.Dapper.TypeHandlers.SmartEnumTypeHandler<TEnum, TValue>.SetValue(System.Data.IDbDataParameter! parameter, TEnum? value) -> void
-override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.Parse(object! value) -> TId!
-override SharedKernel.Persistence.Dapper.TypeHandlers.StronglyTypedIdTypeHandler<TId, TValue>.SetValue(System.Data.IDbDataParameter! parameter, TId? value) -> void
 static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Dapper.Extensions.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.SectionName.get -> string!

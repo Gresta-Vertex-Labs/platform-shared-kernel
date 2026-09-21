@@ -25,7 +25,7 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// Permissions are checked with <see cref="IUserContext.HasPermission"/> (ordinal).
 /// </para>
 /// </remarks>
-public sealed class SecurityRequestContext : IRequestContext
+internal sealed class SecurityRequestContext : IRequestContext
 {
     private readonly IUserContext _userContext;
     private readonly ITenantProvider _tenantProvider;

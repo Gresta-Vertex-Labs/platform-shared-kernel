@@ -67,7 +67,7 @@ Multi-host / read replicas: a connection string with several hosts (`Host=primar
 
 ## Row-level security
 
-`WithRowLevelSecurity()` on the EF Core builder (or `RowLevelSecurity:Enabled` for a Dapper-only service) binds the caller's tenant to every transaction; the policy from `EnableTenantRowLevelSecurity` (EF Core migrations) is a single predicate, `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, for `USING` and `WITH CHECK`, and uses the tenant index. No tenant bound means no rows.
+`UseMultiTenancy(rowLevelSecurity: true)` on the EF Core builder (or `RowLevelSecurity:Enabled` for a Dapper-only service) binds the caller's tenant to every transaction; the policy from `EnableTenantRowLevelSecurity` (EF Core migrations) is a single predicate, `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, for `USING` and `WITH CHECK`, and uses the tenant index. No tenant bound means no rows.
 
 RLS protects against application bugs (a missing filter, `IgnoreQueryFilters()`, a hand-written query). It does not stop SQL injection: injected SQL runs as the application role and can bind any tenant. Keep SQL parameterized.
 

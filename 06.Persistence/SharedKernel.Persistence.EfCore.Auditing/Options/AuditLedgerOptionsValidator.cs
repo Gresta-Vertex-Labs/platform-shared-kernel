@@ -6,7 +6,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// Validates <see cref="AuditLedgerOptions"/> at startup: a well-formed keyring whose current key is the
 /// newest, distinct key orders, and sane sealer settings.
 /// </summary>
-public sealed class AuditLedgerOptionsValidator : IValidateOptions<AuditLedgerOptions>
+internal sealed class AuditLedgerOptionsValidator : IValidateOptions<AuditLedgerOptions>
 {
     /// <summary>The minimum decoded length of a sealing key, in bytes.</summary>
     public const int MinimumKeyLengthBytes = 32;
@@ -48,7 +48,7 @@ public sealed class AuditLedgerOptionsValidator : IValidateOptions<AuditLedgerOp
             failures.Add(
                 $"{nameof(AuditLedgerOptions.Keys)} is empty. Configure at least one sealing key " +
                 $"({AuditLedgerOptions.SectionName}:{nameof(AuditLedgerOptions.Keys)}:<id>:{nameof(AuditKeyOptions.Material)}) " +
-                $"or register a custom {nameof(IAuditRecordAuthenticator)} before WithAuditTrail().");
+                $"or register a custom {nameof(IAuditRecordAuthenticator)} before UseAuditTrail().");
             return;
         }
 

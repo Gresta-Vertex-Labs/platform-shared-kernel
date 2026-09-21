@@ -10,8 +10,7 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 /// <remarks>
 /// <para>
 /// Bound from <c>SharedKernel:Persistence:Npgsql</c> (or a caller-supplied section for a second, keyed
-/// database) by <c>AddSharedKernelNpgsql</c> and validated at host startup by
-/// <see cref="NpgsqlPersistenceOptionsValidator"/>.
+/// database) by <c>AddSharedKernelNpgsql</c> and validated at host startup.
 /// </para>
 /// <para>
 /// <strong>Connection string.</strong> <see cref="ConnectionString"/>, or — when that is empty —

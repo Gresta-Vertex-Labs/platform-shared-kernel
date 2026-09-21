@@ -42,20 +42,14 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
     where TAggregate : class, IAggregateRoot<TId>, IHasTenant
     where TId : notnull
 {
-    private readonly ICrossTenantScope _crossTenantScope;
-
     /// <summary>
-    /// Initialises a new <see cref="TenantedRepository{TAggregate, TId}"/>.
+    /// Initialises a new <see cref="TenantedRepository{TAggregate, TId}"/>. The cross-tenant methods consult the
+    /// context's <see cref="Context.SharedKernelDbContext.CrossTenantScope"/> (the scope's own bypass).
     /// </summary>
     /// <param name="dbContext">The scoped tenanted DB context.</param>
-    /// <param name="crossTenantScope">
-    /// The current logical call's cross-tenant bypass scope, consulted by
-    /// <see cref="GetByIdForTenantAsync"/> and <see cref="GetByIdForTenantIncludingDeletedAsync"/>.
-    /// </param>
-    protected TenantedRepository(TenantedDbContext dbContext, ICrossTenantScope crossTenantScope)
+    protected TenantedRepository(TenantedDbContext dbContext)
         : base(dbContext)
     {
-        _crossTenantScope = crossTenantScope;
     }
 
     /// <summary>
@@ -175,7 +169,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
 
     private void RequireActiveCrossTenantScope(string methodName)
     {
-        if (!_crossTenantScope.IsActive)
+        if (!DbContext.CrossTenantScope.IsActive)
         {
             throw new InvalidOperationException(
                 $"'{methodName}' bypasses tenant isolation and requires an active " +

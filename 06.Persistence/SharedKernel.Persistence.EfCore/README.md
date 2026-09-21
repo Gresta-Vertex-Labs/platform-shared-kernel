@@ -32,7 +32,7 @@ What the one call gives you:
 | Area | Behavior |
 |---|---|
 | Connection | The shared `NpgsqlDataSource` for `ConnectionStrings:{name}` (further settings in `SharedKernel:Persistence:{name}`), one per connection name, also used by Dapper. TLS `VerifyFull`; an `SSL Mode` written in the connection string is honored; a local host (or Development) may run without TLS. |
-| Provider | snake_case names, retry on transient failures (on by default — `p.ConfigureProvider(o => o.Retry.Enabled = false)` to turn off), SQLSTATE classification (unique → `ConflictException`, foreign key → `ValidationException`/`ConflictException`, ...). |
+| Provider | snake_case names, retry on transient failures (on by default — `p.ConfigureProvider(o => o.MaxRetryCount = 0)` turns it off), SQLSTATE classification (unique → `ConflictException`, foreign key → `ValidationException`/`ConflictException`, ...). |
 | Conventions | Every `StronglyTypedId<T>` reachable from the context's `DbSet`s is mapped; `Money` is a two-column complex type; audit, soft-delete, tenant and version columns are configured from the interfaces an entity implements (no base configuration class). `CreatedBy`/`CreatedOn` are written once and never updated. Every aggregate root gets PostgreSQL's `xmin` as its concurrency token. |
 | Save pipeline | One interceptor, one change-detection pass: soft delete (children kept), aggregate-root touch (an owned or required-FK child change updates the root row and checks its version), audit stamps, tenant write guard. |
 | Domain events | Dispatched before every asynchronous save, whichever code calls it (`IUnitOfWork`, a seeder, a factory user). A synchronous `SaveChanges` with pending events and a dispatcher throws. Without an `IDomainEventDispatcher` the events are discarded with a warning (startup also warns). |
@@ -46,17 +46,15 @@ What the one call gives you:
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .ConfigureProvider(o => o.UseVector = true)                    // retry, pgvector
     .ConfigureDataSource((sp, ds) => ds.MapEnum<OrderStatus>())    // Npgsql data-source builder
-    .ConfigureDbContext((sp, o) => o.EnableSensitiveDataLogging()) // extra EF Core options
+    .ConfigureDbContext((sp, o) => o.UseModel(OrderDbContextModel.Instance)) // extra EF Core options (compiled model, ...)
     .UseDbContextPooling()
-    .UseCommandTimeout(TimeSpan.FromSeconds(30))
     .UseServiceName("orders-api")      // actor for writes without a user (default: SharedKernel:Persistence:ServiceName, else "system")
     .UseUuidV7Keys()                   // generate unset Guid / StronglyTypedId<Guid> keys with IIdGenerator (UUID v7)
-    .MigrateOnStartup()
-    .AddSeeder<ReferenceDataSeeder>()
-    .UseStartupLockTimeout(TimeSpan.FromMinutes(5)));
+    .MigrateOnStartup(lockTimeout: TimeSpan.FromMinutes(5))   // cross-replica lock wait, default 2 minutes
+    .AddSeeder<ReferenceDataSeeder>());
 ```
 
-Capability packages add their own options to the same builder: `.UseAuditTrail(configuration)`
+The command timeout is the connection string's `Command Timeout`. Capability packages add their own options to the same builder: `.UseAuditTrail()`
 (`SharedKernel.Persistence.EfCore.Auditing`) and `.UseFieldEncryption(...)` (`SharedKernel.Persistence.EfCore.Encryption`).
 
 ## Optimistic concurrency with ETag / If-Match
@@ -98,13 +96,18 @@ using (crossTenantScope.Enter("monthly revenue report"))   // reason required; a
 }
 ```
 
+The bypass belongs to the dependency-injection scope (the request or job), not to the calling method: entered
+anywhere — including inside an awaited helper — it is honoured by every repository, context and Dapper session of
+that scope until the handle is disposed, and never by another scope. A context from `ICallerDbContextFactory` carries
+its own bypass, attributed to the explicit caller: `using (db.CrossTenantScope.Enter("reason")) { ... }`.
+
 Seeders on a `TenantedDbContext` run inside a cross-tenant scope as the caller `seeder:{Type}`; they still
 see the tenant query filter, so existence checks use `IgnoreQueryFilters([PersistenceFilterNames.Tenant])`.
 
 ## Migrations and seeding
 
 `MigrateOnStartup()` and seeders run once per replica set under the Npgsql advisory migration lock (default wait
-2 minutes, `UseStartupLockTimeout`). EF Core 9+ `Migrate()` also takes its own database lock, so a migration is
+2 minutes, `MigrateOnStartup(lockTimeout)`). EF Core 9+ `Migrate()` also takes its own database lock, so a migration is
 never applied twice; the platform lock additionally keeps seeders off a half-migrated schema.
 
 ## Read replicas

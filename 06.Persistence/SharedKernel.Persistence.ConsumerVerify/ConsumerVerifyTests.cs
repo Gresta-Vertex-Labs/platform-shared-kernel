@@ -148,7 +148,7 @@ public sealed class ConsumerVerifyTests
 
         services.AddSharedKernelPostgres<OrdersDbContext>(configuration, "orders", p => p
             .UseMultiTenancy(rowLevelSecurity: true)
-            .UseAuditTrail(configuration)
+            .UseAuditTrail()
             .UseFieldEncryption());
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -229,7 +229,7 @@ public sealed class ConsumerVerifyTests
             services.AddSingleton<IRequestContext>(new SystemRequestContext([], "consumer-verify", tenant));
             services.AddSharedKernelPostgres<OrdersDbContext>(configuration, "orders", p => p
                 .UseMultiTenancy(rowLevelSecurity: true)
-                .UseAuditTrail(configuration)
+                .UseAuditTrail()
                 .UseFieldEncryption());
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         }

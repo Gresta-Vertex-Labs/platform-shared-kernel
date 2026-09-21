@@ -91,6 +91,18 @@ internal sealed class PostgreSqlDbUpdateExceptionClassifier : IDbUpdateException
         IReadOnlyList<EntityEntry> entries,
         PostgresException postgresException)
     {
+        // PostgreSQL reports the referencing (dependent) table for both directions of a 23503, so the table alone
+        // cannot tell "the new row points at nothing" from "the changed row is still pointed at". The violated
+        // constraint names the foreign key; the tracked changes on each side of it decide.
+        if (FindForeignKey(entries, postgresException.ConstraintName) is { } foreignKey)
+        {
+            if (entries.Any(e => IsDependentWrite(e, foreignKey)))
+                return ForeignKeyViolationKind.MissingReference;
+
+            if (entries.Any(e => IsPrincipalKeyChange(e, foreignKey)))
+                return ForeignKeyViolationKind.ReferencedByDependent;
+        }
+
         var sawDeleted = false;
         var sawWrite = false;
 
@@ -113,8 +125,42 @@ internal sealed class PostgreSqlDbUpdateExceptionClassifier : IDbUpdateException
         if (sawDeleted)
             return ForeignKeyViolationKind.ReferencedByDependent;
 
+        // PostgreSQL names the referencing table; a write that went to another table changed the referenced key
+        // (e.g. a unique column a database-only foreign key points at), so the dependents still exist.
+        if (sawWrite && !string.IsNullOrEmpty(postgresException.TableName))
+            return ForeignKeyViolationKind.ReferencedByDependent;
+
         return sawWrite ? ForeignKeyViolationKind.MissingReference : ForeignKeyViolationKind.Unknown;
     }
+
+    private static IForeignKey? FindForeignKey(IReadOnlyList<EntityEntry> entries, string? constraintName)
+    {
+        if (entries.Count == 0 || string.IsNullOrEmpty(constraintName))
+            return null;
+
+        foreach (var entityType in entries[0].Context.Model.GetEntityTypes())
+        {
+            foreach (var foreignKey in entityType.GetDeclaredForeignKeys())
+            {
+                if (string.Equals(foreignKey.GetConstraintName(), constraintName, StringComparison.Ordinal))
+                    return foreignKey;
+            }
+        }
+
+        return null;
+    }
+
+    // A new dependent row, or a dependent whose foreign-key value changed: the reference it now holds is missing.
+    private static bool IsDependentWrite(EntityEntry entry, IForeignKey foreignKey) =>
+        foreignKey.DeclaringEntityType.IsAssignableFrom(entry.Metadata)
+        && (entry.State == EntityState.Added
+            || (entry.State == EntityState.Modified && foreignKey.Properties.Any(p => entry.Property(p.Name).IsModified)));
+
+    // A deleted principal, or a principal whose referenced key changed: dependents still point at the old value.
+    private static bool IsPrincipalKeyChange(EntityEntry entry, IForeignKey foreignKey) =>
+        foreignKey.PrincipalEntityType.IsAssignableFrom(entry.Metadata)
+        && (entry.State == EntityState.Deleted
+            || (entry.State == EntityState.Modified && foreignKey.PrincipalKey.Properties.Any(p => entry.Property(p.Name).IsModified)));
 
     private static bool MapsToTable(IEntityType entityType, string? tableName, string? schemaName)
     {

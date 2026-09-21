@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Interception;
 using SharedKernel.Persistence.Npgsql.Connections;
 
@@ -55,7 +56,10 @@ internal sealed class MaintenanceSession : IAsyncDisposable
         string reason,
         CancellationToken cancellationToken)
     {
-        var scope = services.GetService<ICrossTenantScope>()?.Enter(reason);
+        // The context's own bypass (the resolving scope's, or the explicit caller's): stays active for the whole
+        // operation because the state lives on the scope instance, not in this method's async flow.
+        var scope = (context as SharedKernelDbContext)?.CrossTenantScope.Enter(reason)
+            ?? services.GetService<ICrossTenantScope>()?.Enter(reason);
         try
         {
             var dataSource = runtime.Settings.MaintenanceDataSourceFactory?.Invoke(services)

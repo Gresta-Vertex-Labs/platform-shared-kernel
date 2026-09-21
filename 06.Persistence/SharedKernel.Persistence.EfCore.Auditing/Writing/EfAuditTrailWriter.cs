@@ -39,7 +39,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// authenticated system identity or inside an active cross-tenant scope (A16).
 /// </para>
 /// </remarks>
-public sealed class EfAuditTrailWriter : IAuditTrailWriter
+internal sealed class EfAuditTrailWriter : IAuditTrailWriter
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAmbientDbTransaction _ambientTransaction;

@@ -6,7 +6,7 @@ using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
-public sealed class AuditInterceptorTests
+public sealed class SaveChangesAuditStampingTests
 {
     [Fact]
     public async Task SaveChanges_OnAddedEntity_SetsCreatedByAndCreatedOn()

@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 /// role must be none of these. Run by <c>AddSharedKernelNpgsql</c> at startup when row-level security is
 /// enabled; callable directly, e.g. from a deployment smoke test.
 /// </remarks>
-public static class RowLevelSecurityPrivileges
+internal static class RowLevelSecurityPrivileges
 {
     private const string CheckSql = """
         SELECT r.rolname,
@@ -53,7 +53,7 @@ public static class RowLevelSecurityPrivileges
 }
 
 /// <summary>What <see cref="RowLevelSecurityPrivileges.CheckAsync"/> found about a role.</summary>
-public sealed class RowLevelSecurityPrivilegeReport
+internal sealed class RowLevelSecurityPrivilegeReport
 {
     internal RowLevelSecurityPrivilegeReport(
         string roleName,

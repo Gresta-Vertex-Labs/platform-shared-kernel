@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Context;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Diagnostics;
@@ -62,6 +63,7 @@ public abstract class SharedKernelDbContext : DbContext
         _logger = dependencies.LoggerFactory.CreateLogger(GetType());
         RequestContext = dependencies.InitialRequestContext;
         DomainEventDispatcher = dependencies.DefaultDomainEventDispatcher;
+        CrossTenantScope = NewCrossTenantScope(RequestContext);
     }
 
     /// <summary>
@@ -74,6 +76,14 @@ public abstract class SharedKernelDbContext : DbContext
     /// the constructor, which keeps pooling safe. Reset to <see cref="AnonymousRequestContext"/> on dispose.
     /// </remarks>
     public IRequestContext RequestContext { get; private set; }
+
+    /// <summary>
+    /// Gets the cross-tenant bypass this context honours: the resolving scope's <see cref="ICrossTenantScope"/>
+    /// or, for a context created through <see cref="ICallerDbContextFactory{TContext}"/>, one of its own attributed
+    /// to that caller (<c>using (db.CrossTenantScope.Enter(reason)) { ... }</c>). The tenant write guard and
+    /// row-level security read it on every save and command.
+    /// </summary>
+    public ICrossTenantScope CrossTenantScope { get; private set; }
 
     /// <summary>The dispatcher that receives domain events before each save, or <see langword="null"/>.</summary>
     internal IDomainEventDispatcher? DomainEventDispatcher { get; private set; }
@@ -88,16 +98,27 @@ public abstract class SharedKernelDbContext : DbContext
     /// <summary>The clock for audit stamps and materialized aggregates.</summary>
     internal IClock Clock => _dependencies.Clock;
 
-    /// <summary>Attaches the caller and the domain-event dispatcher for the current lease.</summary>
-    internal void AttachLease(IRequestContext requestContext, IDomainEventDispatcher? domainEventDispatcher)
+    /// <summary>
+    /// Attaches the caller, the domain-event dispatcher and the cross-tenant scope for the current lease. Without a
+    /// scope the context gets a new, inactive one of its own, attributed to the caller.
+    /// </summary>
+    internal void AttachLease(
+        IRequestContext requestContext, IDomainEventDispatcher? domainEventDispatcher, ICrossTenantScope? crossTenantScope)
     {
         RequestContext = requestContext ?? AnonymousRequestContext.Instance;
         DomainEventDispatcher = domainEventDispatcher;
+        CrossTenantScope = crossTenantScope ?? NewCrossTenantScope(RequestContext);
     }
 
-    /// <summary>Replaces the caller only (tests and internal seeding).</summary>
-    internal void RefreshRequestContext(IRequestContext requestContext) =>
+    /// <summary>Replaces the caller and gives the context a new, inactive cross-tenant scope for it (tests).</summary>
+    internal void RefreshRequestContext(IRequestContext requestContext)
+    {
         RequestContext = requestContext ?? AnonymousRequestContext.Instance;
+        CrossTenantScope = NewCrossTenantScope(RequestContext);
+    }
+
+    private CrossTenantScope NewCrossTenantScope(IRequestContext requestContext) =>
+        new(requestContext, _dependencies.LoggerFactory.CreateLogger<CrossTenantScope>());
 
     /// <inheritdoc />
     /// <remarks>Resets the caller and dispatcher first, so a pooled instance never carries them into its next lease.</remarks>
@@ -119,6 +140,7 @@ public abstract class SharedKernelDbContext : DbContext
     {
         RequestContext = AnonymousRequestContext.Instance;
         DomainEventDispatcher = _dependencies.DefaultDomainEventDispatcher;
+        CrossTenantScope = NewCrossTenantScope(RequestContext);
     }
 
     /// <inheritdoc />

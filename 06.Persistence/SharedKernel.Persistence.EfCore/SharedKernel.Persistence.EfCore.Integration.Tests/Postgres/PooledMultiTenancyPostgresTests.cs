@@ -2,6 +2,7 @@ using SharedKernel.Application.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Core.Exceptions;
@@ -45,11 +46,13 @@ public sealed class PooledMultiTenancyPostgresTests
         services.AddScoped<MutableTestTenantContext>();
         services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<MutableTestTenantContext>());
 
-        services
-            .AddSharedKernelEfCore<PgTestDbContext>(opts => opts.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString)))
-            .WithMultiTenancy()
-            .WithDbContextPooling(poolSize: poolSize)
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:pooled"] = ConnectionString })
             .Build();
+        services.AddSharedKernelPostgres<PgTestDbContext>(configuration, "pooled", p => p
+            .UseMultiTenancy()
+            .UseDbContextPooling(poolSize));
 
         // ValidateScopes/ValidateOnBuild — the same technique that proved the pooling+actor fix
         // (DbContextPoolingTests) and the pooling+multitenancy wiring fix (this wave) never resolves
@@ -164,13 +167,10 @@ public sealed class PooledMultiTenancyPostgresTests
         backgroundScope.ServiceProvider.GetRequiredService<MutableTestTenantContext>().TenantId = readerTenant;
         var bgCtx = backgroundScope.ServiceProvider.GetRequiredService<PgTestDbContext>();
         var crossTenantScope = backgroundScope.ServiceProvider.GetRequiredService<ICrossTenantScope>();
-        var repo = new PgOrderRepository(bgCtx, crossTenantScope);
+        var repo = new PgOrderRepository(bgCtx);
 
-        // Enter() is a CrossTenantScope-concrete-class member, not on the ICrossTenantScope
-        // interface (which deliberately exposes only the read side, IsActive) — the default
-        // registration's concrete type, so this cast always succeeds unless a consumer registered
-        // its own ICrossTenantScope implementation, which this test does not.
-        using (((SharedKernel.Persistence.Abstractions.Context.CrossTenantScope)crossTenantScope).Enter("test"))
+        // The scope's own bypass: the context and the repository observe the same instance.
+        using (crossTenantScope.Enter("test"))
         {
             var found = await repo.GetByIdForTenantAsync(orderId, ownerTenant);
             found.Should().NotBeNull("an explicitly entered ICrossTenantScope must allow a pooled background scope to read another tenant's row");

@@ -100,7 +100,7 @@ internal sealed class RowLevelSecurityCommandInterceptor : DbCommandInterceptor
             ?? throw new InvalidOperationException("The command has no connection.");
 
         var onCrossTenantConnection = RowLevelSecurityConnections.IsCrossTenant(connection);
-        var scopeActive = CrossTenantScope.IsActiveInCurrentFlow;
+        var scopeActive = (context as SharedKernelDbContext)?.CrossTenantScope.IsActive == true;
 
         if (scopeActive && !onCrossTenantConnection)
         {

@@ -23,6 +23,7 @@ namespace SharedKernel.Persistence.Dapper.Sessions;
 /// </description></item>
 /// </list>
 /// </remarks>
+#pragma warning disable RS0026 // The options overload is selected by its required DbSessionOptions; the token stays optional and last.
 public interface IDbSessionFactory
 {
     /// <summary>Opens a read-write session.</summary>
@@ -45,6 +46,7 @@ public interface IDbSessionFactory
     /// <returns>The open session.</returns>
     Task<IDbSession> OpenAsync(DbSessionOptions options, CancellationToken cancellationToken = default);
 }
+#pragma warning restore RS0026
 
 /// <summary>Options of <see cref="IDbSessionFactory.OpenAsync(DbSessionOptions, CancellationToken)"/>.</summary>
 public sealed class DbSessionOptions

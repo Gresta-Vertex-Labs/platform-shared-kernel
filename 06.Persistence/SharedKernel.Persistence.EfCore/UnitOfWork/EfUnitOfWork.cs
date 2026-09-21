@@ -271,7 +271,7 @@ internal sealed class EfUnitOfWork
         IAmbientDbTransaction? ambientTransaction = null)
         where TContext : SharedKernelDbContext
     {
-        context.AttachLease(context.RequestContext, dispatcher);
+        context.AttachLease(context.RequestContext, dispatcher, context.CrossTenantScope);
         return new EfUnitOfWork<TContext>(context, logger ?? NullLogger.Instance, ambientTransaction);
     }
 }

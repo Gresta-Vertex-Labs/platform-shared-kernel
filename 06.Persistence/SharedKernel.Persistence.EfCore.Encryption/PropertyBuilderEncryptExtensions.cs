@@ -16,7 +16,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 public static partial class PropertyBuilderEncryptExtensions
 {
     /// <summary>The longest purpose, in UTF-8 bytes.</summary>
-    public const int MaxPurposeLength = 200;
+    internal const int MaxPurposeLength = 200;
 
     [GeneratedRegex(@"^[a-z0-9_]+(\.[a-z0-9_]+)*$")]
     private static partial Regex PurposePattern { get; }

@@ -27,7 +27,7 @@ namespace SharedKernel.Persistence.Npgsql.Coordination;
 /// timeout elapses.
 /// </para>
 /// </remarks>
-public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
+internal sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 

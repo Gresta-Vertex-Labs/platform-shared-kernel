@@ -17,29 +17,27 @@ namespace SharedKernel.Persistence.Abstractions.Context;
 /// </code>
 /// </para>
 /// <para>
-/// <strong>Flow, not instance.</strong> The active state belongs to the current logical call flow
-/// (<see cref="System.Threading.AsyncLocal{T}"/>), not to the instance that entered it: every
-/// <see cref="ICrossTenantScope"/> in the same flow reports the same <see cref="IsActive"/>. Enter and
-/// dispose in the same method (a <see langword="using"/> block); a scope entered inside a called
-/// <see langword="async"/> method does not flow back to its caller.
+/// <strong>Scope, not call flow.</strong> The active state belongs to the dependency-injection scope (the
+/// request, message or job): the container creates one instance per scope and every component of that scope
+/// — repositories, the EF Core context, Dapper sessions, the audit services — observes it. An entry made
+/// anywhere, including inside an awaited helper method, stays active for the whole scope until its handle is
+/// disposed, and is never visible to another scope. Concurrent work inside one scope shares the bypass.
 /// </para>
 /// <para>
-/// <strong>Enforcement:</strong> honored by the EF Core tenant write guard, the specification evaluator's
-/// cross-tenant query gate, <c>TenantedRepository.GetByIdForTenantAsync</c>, the tenant-safe Dapper
-/// services, the audit query service and, when enabled, PostgreSQL row-level security binding. Outside
+/// <strong>Enforcement:</strong> honored by the EF Core tenant write guard, <c>TenantedRepository.GetByIdForTenantAsync</c>,
+/// the Dapper sessions, the audit query service and, when enabled, PostgreSQL row-level security. Outside
 /// an active scope each of these fails closed.
 /// </para>
 /// <para>
 /// <strong>Registration:</strong> scoped, because the actor comes from the scope's <c>IRequestContext</c>.
-/// <c>AddSharedKernelPostgres</c> registers it; a Dapper-only service calls
-/// <c>services.AddSharedKernelCrossTenantScope()</c>. Singleton infrastructure that only needs to know
-/// whether a bypass is active reads <see cref="CrossTenantScope.IsActiveInCurrentFlow"/> instead of
-/// injecting this scoped service.
+/// <c>AddSharedKernelPostgres</c> and <c>AddSharedKernelDapper</c> register it; any other service calls
+/// <c>services.AddSharedKernelCrossTenantScope()</c>. A context created through <c>ICallerDbContextFactory</c>
+/// (no request scope) carries its own, attributed to that explicit caller: <c>db.CrossTenantScope.Enter(reason)</c>.
 /// </para>
 /// </remarks>
 public interface ICrossTenantScope
 {
-    /// <summary>Gets whether a cross-tenant bypass is active for the current logical call flow.</summary>
+    /// <summary>Gets whether a cross-tenant bypass is active in this scope.</summary>
     bool IsActive { get; }
 
     /// <summary>Activates the cross-tenant bypass until the returned handle is disposed.</summary>

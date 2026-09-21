@@ -99,5 +99,9 @@ public static class RowLevelSecurityMigrationBuilderExtensions
         return migrationBuilder;
     }
 
-    private static string PolicyName(string table, string suffix) => PostgresIdentifier.Quote(table + suffix);
+    // PostgreSQL silently truncates an identifier longer than 63 bytes; a long table name would otherwise create
+    // a policy whose name the Down migration (and a second table sharing the prefix) could not match. The same
+    // deterministic truncate-and-hash the model uses keeps it within the limit and stable across regenerations.
+    private static string PolicyName(string table, string suffix) =>
+        PostgresIdentifier.Quote(Conventions.PostgreSqlIdentifierLengthConvention.Truncate(table + suffix));
 }

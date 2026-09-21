@@ -6,7 +6,6 @@ using Microsoft.Extensions.Hosting;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -352,14 +351,14 @@ internal sealed class SeedItem : AggregateRoot<SeedItemId>
         Name = name;
     }
 
-    protected SeedItem() { }
+    private SeedItem() { }
 }
 
-internal sealed class SeedItemConfig : EntityTypeConfigurationBase<SeedItem, SeedItemId>
+internal sealed class SeedItemConfig : IEntityTypeConfiguration<SeedItem>
 {
-    public override void Configure(EntityTypeBuilder<SeedItem> builder)
+    public void Configure(EntityTypeBuilder<SeedItem> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.ToTable("seed_items");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }

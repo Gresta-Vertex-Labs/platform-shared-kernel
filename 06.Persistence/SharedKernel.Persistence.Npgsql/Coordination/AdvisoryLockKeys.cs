@@ -21,7 +21,7 @@ namespace SharedKernel.Persistence.Npgsql.Coordination;
 /// </remarks>
 public static class AdvisoryLockKeys
 {
-    /// <summary>Namespace of startup-migration locks (<see cref="NpgsqlAdvisoryMigrationLock"/> adds it automatically).</summary>
+    /// <summary>Namespace of startup-migration locks (the registered <c>IMigrationLock</c> adds it automatically).</summary>
     public const string MigrationNamespace = "sk:migration:";
 
     /// <summary>Namespace of audit-ledger locks (e.g. the sealer's leader election).</summary>

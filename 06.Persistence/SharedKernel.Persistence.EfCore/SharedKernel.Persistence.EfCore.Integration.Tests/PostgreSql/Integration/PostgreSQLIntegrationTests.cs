@@ -100,9 +100,10 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(ConnectionString, useVector: true));
-        services
-            .AddSharedKernelEfCore<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-            .Build();
+        // A hand-built registration over the shared data source (the path a design-time factory or another
+        // package takes): the public UsePostgreSQL(sp) plus PersistenceContextDependencies.Create().
+        services.AddSingleton(PersistenceContextDependencies.Create());
+        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp));
 
         await using var provider = services.BuildServiceProvider();
 
@@ -128,9 +129,8 @@ public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(ConnectionString, useVector: false));
-        services
-            .AddSharedKernelEfCore<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp, o => o.UseVector = true))
-            .Build();
+        services.AddSingleton(PersistenceContextDependencies.Create());
+        services.AddDbContext<VectorDiTestDbContext>((sp, options) => options.UsePostgreSQL(sp, o => o.UseVector = true));
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();

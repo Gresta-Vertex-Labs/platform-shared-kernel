@@ -31,7 +31,7 @@ namespace SharedKernel.Persistence.EfCore.Conversions;
 /// hand-written mapping.
 /// </para>
 /// </remarks>
-public sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
+internal sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
     : ValueConverter<TStronglyTypedId, TValue>
     where TStronglyTypedId : StronglyTypedId<TValue>
     where TValue : notnull

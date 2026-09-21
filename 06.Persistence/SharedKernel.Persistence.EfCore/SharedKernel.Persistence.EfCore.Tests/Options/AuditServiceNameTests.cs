@@ -2,14 +2,14 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
-namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
+namespace SharedKernel.Persistence.EfCore.Tests.Options;
 
 /// <summary>
 /// Tests verifying that an anonymous caller (<c>AnonymousRequestContext</c>, the default) is attributed to
 /// <c>PersistenceServiceOptions.ServiceName</c> — the unauthenticated audit fallback
 /// (the fallback lives in <c>AuditInterceptor</c>, which reads the service name from its options).
 /// </summary>
-public sealed class AuditInterceptorServiceNameTests
+public sealed class AuditServiceNameTests
 {
     [Fact]
     public async Task Unauthenticated_AuditValue_Uses_ServiceName()

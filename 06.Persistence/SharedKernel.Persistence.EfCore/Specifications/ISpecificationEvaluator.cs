@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// (write side) to the returned query.
 /// </para>
 /// </remarks>
-public interface ISpecificationEvaluator<T>
+internal interface ISpecificationEvaluator<T>
 {
     /// <summary>Applies <paramref name="spec"/> to <paramref name="inputQuery"/>.</summary>
     /// <param name="inputQuery">The base query, typically <c>DbContext.Set&lt;T&gt;()</c>.</param>

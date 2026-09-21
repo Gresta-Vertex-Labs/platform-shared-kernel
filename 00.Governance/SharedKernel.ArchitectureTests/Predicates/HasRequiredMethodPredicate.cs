@@ -20,14 +20,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// as passing unconditionally — the predicate self-scopes.
 /// </para>
 /// <para>
-/// <strong>Prefix collision note:</strong> when using the prefix <c>"IRepository"</c>,
-/// the predicate will also match <c>"IReadRepository"</c>-implementing types because
-/// <c>"IReadRepository"</c> starts with <c>"IRepository"</c>. Callers that need to
-/// distinguish write-side from read-side must use the longer prefix <c>"IReadRepository"</c>
-/// for the read-side rule and rely on the longer prefix not matching write-side types. For
-/// the write-side rule, the implementation explicitly excludes <c>"IReadRepository"</c>
-/// implementors — see <see cref="Rules.RepositoryContractCompletenessRules"/> for the
-/// exact scoping.
+/// <strong>Prefix matching:</strong> ordinal <c>StartsWith</c> on the interface's simple name, so
+/// <c>"IReadRepository"</c> and <c>"IRepository"</c> select disjoint interface sets.
 /// </para>
 /// <para>
 /// <strong>Failure message:</strong>
@@ -42,7 +36,6 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
 {
     private readonly string _interfaceNamePrefix;
     private readonly string _requiredMethodName;
-    private readonly bool _excludeReadRepository;
 
     /// <summary>
     /// Initialises a new instance of <see cref="HasRequiredMethodPredicate"/>.
@@ -55,20 +48,12 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
     /// The exact method name that must be present in <see cref="TypeDefinition.Methods"/>
     /// (e.g., <c>"ExistsAsync"</c> or <c>"GetByIdsAsync"</c>).
     /// </param>
-    /// <param name="excludeReadRepository">
-    /// When <see langword="true"/>, types that implement an <c>IReadRepository</c>-prefixed
-    /// interface are excluded from the scope even if they also implement an
-    /// <c>IRepository</c>-prefixed interface. Set to <see langword="true"/> when using the
-    /// <c>"IRepository"</c> prefix to target write-side repositories only.
-    /// </param>
     public HasRequiredMethodPredicate(
         string interfaceNamePrefix,
-        string requiredMethodName,
-        bool excludeReadRepository = false)
+        string requiredMethodName)
     {
         _interfaceNamePrefix = interfaceNamePrefix;
         _requiredMethodName = requiredMethodName;
-        _excludeReadRepository = excludeReadRepository;
     }
 
     /// <summary>
@@ -127,13 +112,6 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
         foreach (var iface in type.Interfaces)
         {
             var ifaceName = iface.InterfaceType.Name;
-
-            // Optionally exclude IReadRepository implementors from write-side check.
-            if (_excludeReadRepository
-                && ifaceName.StartsWith("IReadRepository", System.StringComparison.Ordinal))
-            {
-                return false;
-            }
 
             if (ifaceName.StartsWith(_interfaceNamePrefix, System.StringComparison.Ordinal))
                 matchesPrefix = true;

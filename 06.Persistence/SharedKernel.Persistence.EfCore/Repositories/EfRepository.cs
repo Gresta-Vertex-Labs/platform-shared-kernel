@@ -30,6 +30,7 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// promises; every other read member is always untracked.
 /// </para>
 /// </remarks>
+#pragma warning disable RS0026 // Mirrors IRepository: the expected-version UpdateAsync overload keeps the optional token last.
 public class EfRepository<TAggregate, TId>
     : EfReadRepository<TAggregate, TId>, IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>
     where TAggregate : class, IAggregateRoot<TId>
@@ -37,8 +38,13 @@ public class EfRepository<TAggregate, TId>
 {
     /// <summary>Initializes a new repository over <paramref name="dbContext"/>.</summary>
     /// <param name="dbContext">The context that maps <typeparamref name="TAggregate"/>.</param>
-    /// <param name="evaluator">The specification evaluator; <see cref="SpecificationEvaluator{T}"/> when <see langword="null"/>.</param>
-    public EfRepository(SharedKernelDbContext dbContext, ISpecificationEvaluator<TAggregate>? evaluator = null)
+    public EfRepository(SharedKernelDbContext dbContext)
+        : base(dbContext)
+    {
+    }
+
+    /// <summary>Test seam: a repository over an explicit specification evaluator.</summary>
+    internal EfRepository(SharedKernelDbContext dbContext, ISpecificationEvaluator<TAggregate>? evaluator)
         : base(dbContext, evaluator)
     {
     }
@@ -250,3 +256,4 @@ public class EfRepository<TAggregate, TId>
             return Task.CompletedTask;
         });
 }
+#pragma warning restore RS0026

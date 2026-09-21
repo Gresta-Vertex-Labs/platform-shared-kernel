@@ -20,7 +20,7 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// <list type="bullet">
 /// <item><description>snake_case table, column, key, index and constraint names (<c>EFCore.NamingConventions</c>), kept within PostgreSQL's 63-byte identifier limit;</description></item>
 /// <item><description>the <c>xmin</c> system column as the concurrency token of every aggregate root and every <c>IHasConcurrency</c> entity;</description></item>
-/// <item><description>Npgsql's retrying execution strategy, <strong>on by default</strong> (see <see cref="PostgreSqlRetryOptions"/>);</description></item>
+/// <item><description>Npgsql's retrying execution strategy, <strong>on by default</strong> (<see cref="PostgreSqlProviderOptions.MaxRetryCount"/> 0 turns it off);</description></item>
 /// <item><description>optional pgvector support (<see cref="PostgreSqlProviderOptions.UseVector"/>).</description></item>
 /// </list>
 /// <para>
@@ -131,11 +131,8 @@ public static class PostgreSQLPersistenceExtensions
         var options = new PostgreSqlProviderOptions();
         configure?.Invoke(options);
 
-        if (options.Retry.Enabled)
-        {
-            ArgumentOutOfRangeException.ThrowIfNegative(options.Retry.MaxRetryCount, "Retry.MaxRetryCount");
-            ArgumentOutOfRangeException.ThrowIfLessThan(options.Retry.MaxRetryDelay, TimeSpan.Zero, "Retry.MaxRetryDelay");
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(options.MaxRetryCount, nameof(options.MaxRetryCount));
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxRetryDelay, TimeSpan.Zero, nameof(options.MaxRetryDelay));
 
         return options;
     }
@@ -150,12 +147,12 @@ public static class PostgreSQLPersistenceExtensions
             if (options.UseVector)
                 npgsql.UseVector();
 
-            if (options.Retry.Enabled)
+            if (options.MaxRetryCount > 0)
             {
                 npgsql.EnableRetryOnFailure(
-                    options.Retry.MaxRetryCount,
-                    options.Retry.MaxRetryDelay,
-                    options.Retry.AdditionalTransientErrorCodes.ToArray());
+                    options.MaxRetryCount,
+                    options.MaxRetryDelay,
+                    options.AdditionalTransientErrorCodes.ToArray());
             }
         });
 
@@ -167,7 +164,7 @@ public static class PostgreSQLPersistenceExtensions
         ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(
             new PostgreSQLConventionsOptionsExtension(
                 options.UseVector,
-                options.Retry.Enabled ? options.Retry.MaxRetryCount : null));
+                options.MaxRetryCount > 0 ? options.MaxRetryCount : null));
 
         return optionsBuilder;
     }

@@ -102,7 +102,7 @@ public static class EncryptionHost
         {
             builder
                 .UseDataSource(TestNpgsqlDataSources.Get(connectionString))
-                .ConfigureProvider(o => o.Retry.Enabled = false)
+                .ConfigureProvider(o => o.MaxRetryCount = 0)
                 .ConfigureDbContext((_, options) => options.ConfigureWarnings(
                     w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)));
 

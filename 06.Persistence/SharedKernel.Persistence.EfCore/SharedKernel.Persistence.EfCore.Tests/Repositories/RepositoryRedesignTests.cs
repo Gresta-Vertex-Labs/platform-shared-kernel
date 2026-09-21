@@ -9,7 +9,6 @@ using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -108,21 +107,21 @@ public sealed class ShopInvoice : AggregateRoot<ShopInvoiceId>
     public List<ShopInvoiceLine> Lines { get; private set; } = [];
 }
 
-public sealed class ShopOrderConfig : EntityTypeConfigurationBase<ShopOrder, ShopOrderId>
+public sealed class ShopOrderConfig : IEntityTypeConfiguration<ShopOrder>
 {
-    public override void Configure(EntityTypeBuilder<ShopOrder> builder)
+    public void Configure(EntityTypeBuilder<ShopOrder> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(100).IsRequired();
         builder.HasMany(e => e.Lines).WithOne().HasForeignKey("OrderId").IsRequired();
     }
 }
 
-public sealed class ShopInvoiceConfig : EntityTypeConfigurationBase<ShopInvoice, ShopInvoiceId>
+public sealed class ShopInvoiceConfig : IEntityTypeConfiguration<ShopInvoice>
 {
-    public override void Configure(EntityTypeBuilder<ShopInvoice> builder)
+    public void Configure(EntityTypeBuilder<ShopInvoice> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.HasMany(e => e.Lines).WithOne().HasForeignKey("InvoiceId").IsRequired();
         builder.Navigation(e => e.Lines).AutoInclude();
     }

@@ -10,7 +10,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// This is the only coupling between <c>SharedKernel.Persistence.EfCore</c> and any opt-in capability package: a
 /// shared constant, never a shared type. See <see cref="Conventions.EncryptAnnotationRegisteredGuardConvention"/>.
 /// </remarks>
-public static partial class PersistenceModelAnnotationNames
+internal static partial class PersistenceModelAnnotationNames
 {
     /// <summary>
     /// The annotation key <c>PropertyBuilderEncryptExtensions.Encrypt</c> (in

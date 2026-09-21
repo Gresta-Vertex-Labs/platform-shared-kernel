@@ -55,7 +55,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         _adminConnectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
         var adminOptions = new DbContextOptionsBuilder<RlsTestDbContext>();
-        adminOptions.UsePostgreSQL(TestNpgsqlDataSources.Get(_adminConnectionString), o => o.Retry.Enabled = false);
+        adminOptions.UsePostgreSQL(TestNpgsqlDataSources.Get(_adminConnectionString), o => o.MaxRetryCount = 0);
         await using (var adminContext = new RlsTestDbContext(adminOptions.Options, Dependencies()))
             await adminContext.Database.EnsureCreatedAsync();
 
@@ -529,7 +529,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         services.AddSharedKernelPostgres<RlsTestDbContext>(new ConfigurationBuilder().Build(), "rls", p =>
         {
             p.UseDataSource(TestNpgsqlDataSources.Get(connectionString))
-                .ConfigureProvider(o => o.Retry.Enabled = false)
+                .ConfigureProvider(o => o.MaxRetryCount = 0)
                 .UseMultiTenancy(rowLevelSecurity: true);
             configure?.Invoke(p);
 

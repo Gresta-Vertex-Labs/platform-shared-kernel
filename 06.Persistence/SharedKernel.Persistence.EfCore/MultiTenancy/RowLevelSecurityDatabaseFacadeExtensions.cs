@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.Npgsql.Connections;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
@@ -59,7 +60,7 @@ public static class RowLevelSecurityDatabaseFacadeExtensions
             ?? throw new InvalidOperationException(
                 "The context has no application service provider, so the cross-tenant data source cannot be resolved.");
 
-        if (!CrossTenantScope.IsActiveInCurrentFlow)
+        if ((context as SharedKernelDbContext)?.CrossTenantScope.IsActive != true)
             throw new InvalidOperationException("UseCrossTenantConnection requires an active cross-tenant scope.");
 
         var dataSource = services.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.CrossTenant)

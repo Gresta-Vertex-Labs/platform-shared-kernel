@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
@@ -53,47 +52,47 @@ public sealed class TestDbContext : SharedKernelDbContext
 // Entity configurations
 // ---------------------------------------------------------------------------
 
-public sealed class TestAggregateConfig : EntityTypeConfigurationBase<TestAggregate, TestId>
+public sealed class TestAggregateConfig : IEntityTypeConfiguration<TestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<TestAggregate> builder)
+    public void Configure(EntityTypeBuilder<TestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
 
-public sealed class AuditableTestAggregateConfig : EntityTypeConfigurationBase<AuditableTestAggregate, TestId>
+public sealed class AuditableTestAggregateConfig : IEntityTypeConfiguration<AuditableTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<AuditableTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<AuditableTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
 
-public sealed class HardDeleteAggregateConfig : EntityTypeConfigurationBase<HardDeleteAggregate, TestId>
+public sealed class HardDeleteAggregateConfig : IEntityTypeConfiguration<HardDeleteAggregate>
 {
-    public override void Configure(EntityTypeBuilder<HardDeleteAggregate> builder)
+    public void Configure(EntityTypeBuilder<HardDeleteAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
     }
 }
 
-public sealed class ConcurrentTestAggregateConfig : EntityTypeConfigurationBase<ConcurrentTestAggregate, TestId>
+public sealed class ConcurrentTestAggregateConfig : IEntityTypeConfiguration<ConcurrentTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<ConcurrentTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<ConcurrentTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
 
-public sealed class KeysetTestAggregateConfig : EntityTypeConfigurationBase<KeysetTestAggregate, TestId>
+public sealed class KeysetTestAggregateConfig : IEntityTypeConfiguration<KeysetTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<KeysetTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<KeysetTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.Property(e => e.SequenceNumber).IsRequired();
     }
@@ -131,11 +130,11 @@ public sealed class TenantedTestDbContext : TenantedDbContext
     }
 }
 
-public sealed class TenantedTestAggregateConfig : EntityTypeConfigurationBase<TenantedTestAggregate, TenantedTestId>
+public sealed class TenantedTestAggregateConfig : IEntityTypeConfiguration<TenantedTestAggregate>
 {
-    public override void Configure(EntityTypeBuilder<TenantedTestAggregate> builder)
+    public void Configure(EntityTypeBuilder<TenantedTestAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
@@ -169,11 +168,11 @@ public sealed class SoftDeletableTenantedDbContext : TenantedDbContext
 }
 
 public sealed class SoftDeletableTenantedAggregateConfig
-    : EntityTypeConfigurationBase<SoftDeletableTenantedAggregate, TenantedTestId>
+    : IEntityTypeConfiguration<SoftDeletableTenantedAggregate>
 {
-    public override void Configure(EntityTypeBuilder<SoftDeletableTenantedAggregate> builder)
+    public void Configure(EntityTypeBuilder<SoftDeletableTenantedAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }

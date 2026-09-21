@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// opted into) is simply never registered — there is no "opted out" signal on this interface itself.
 /// </para>
 /// </remarks>
-public interface IPersistenceModelConventionFactory
+internal interface IPersistenceModelConventionFactory
 {
     /// <summary>
     /// Creates the convention to add to the model being built for <paramref name="context"/>.

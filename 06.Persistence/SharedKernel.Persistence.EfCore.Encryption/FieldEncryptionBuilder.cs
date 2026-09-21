@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Data.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,9 +25,8 @@ public sealed class FieldEncryptionBuilder
         _settings = settings;
     }
 
-    /// <summary>The service collection, for extension methods.</summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public IServiceCollection Services { get; }
+    /// <summary>The service collection the registration writes to.</summary>
+    internal IServiceCollection Services { get; }
 
     /// <summary>
     /// Reads encryption keys from <c>SharedKernel:Persistence:Encryption:Keys</c> (<c>CurrentKeyId</c> and a base64
