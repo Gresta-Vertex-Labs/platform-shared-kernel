@@ -64,6 +64,8 @@
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing" />
     <!-- A test interceptor that must run after the encryption interceptor plugs in the same way. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption.Tests" />
+    <!-- The audit hosted services' startup-ordering tests drive the startup signal directly. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

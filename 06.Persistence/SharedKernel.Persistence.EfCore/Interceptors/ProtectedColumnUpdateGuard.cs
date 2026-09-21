@@ -72,13 +72,13 @@ internal sealed class ProtectedColumnUpdateGuard : IQueryExpressionInterceptor
         var clrType = entityType.ClrType;
         string? reason = null;
 
-        if (property.IsConcurrencyToken)
-            reason = "it is a concurrency token; setting it would forge the row version";
-        else if (isRootMember && typeof(IHasTenant).IsAssignableFrom(clrType) && property.Name == nameof(IHasTenant.TenantId))
+        if (isRootMember && typeof(IHasTenant).IsAssignableFrom(clrType) && property.Name == nameof(IHasTenant.TenantId))
             reason = "it would move rows to another tenant without the tenant write guard";
         else if (isRootMember && typeof(IHasCreatedAudit).IsAssignableFrom(clrType)
             && property.Name is nameof(IHasCreatedAudit.CreatedBy) or nameof(IHasCreatedAudit.CreatedOn))
             reason = "creation provenance is immutable";
+        else if (property.IsConcurrencyToken)
+            reason = "it is a concurrency token; setting it would forge the row version";
 
         if (reason is not null)
         {

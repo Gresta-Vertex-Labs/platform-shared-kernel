@@ -21,7 +21,7 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// <strong>Configuration:</strong> the connection string comes from <c>ConnectionStrings:{name}</c> (the Aspire and
 /// Testcontainers convention) unless <c>SharedKernel:Persistence:{name}:ConnectionString</c> sets it; every other
 /// <c>NpgsqlPersistenceOptions</c> setting (timeouts, <c>UseVector</c>, <c>SslMode</c>, ...) is read from
-/// <c>SharedKernel:Persistence:{name}</c> (for the default data source also from <c>SharedKernel:Persistence:Npgsql</c>).
+/// <c>SharedKernel:Persistence:{name}</c>.
 /// </para>
 /// <para>
 /// <strong>TLS and validation</strong> are <c>SharedKernel.Persistence.Npgsql</c>'s single implementation
@@ -71,10 +71,8 @@ internal static class PostgresDataSources
             var alreadyRegistered = services.Any(sd => sd.ServiceType == typeof(NpgsqlDataSource) && !sd.IsKeyedService);
             if (!alreadyRegistered)
             {
+                // Reads ConnectionStrings:{name} and SharedKernel:Persistence:{name} itself.
                 services.AddSharedKernelNpgsql(configuration!, name, configureDataSource);
-
-                // The per-connection section overlays the package-wide one (bound first by AddSharedKernelNpgsql).
-                services.AddOptions<NpgsqlPersistenceOptions>().Bind(section);
             }
         }
         else

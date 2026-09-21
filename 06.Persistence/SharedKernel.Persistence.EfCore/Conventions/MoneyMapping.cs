@@ -21,47 +21,36 @@ internal static class MoneyMapping
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes().ToList())
         {
-            if (entityType.HasSharedClrType)
+            if (entityType.HasSharedClrType || entityType.IsOwned())
                 continue;
 
             foreach (var property in DeclaredMoneyProperties(entityType))
             {
-                if (entityType.FindComplexProperty(property.Name) is { } existing)
-                {
-                    ApplyDefaultPrecision(existing);
-                    continue;
-                }
-
-                if (entityType.FindMember(property.Name) is not null
-                    || ((IConventionEntityType)entityType).IsIgnored(property.Name))
+                var existing = entityType.FindComplexProperty(property.Name);
+                if (existing is null
+                    && (entityType.FindMember(property.Name) is not null
+                        || ((IConventionEntityType)entityType).IsIgnored(property.Name)))
                 {
                     continue;
                 }
 
-                var required = Nullability.Create(property).ReadState != NullabilityState.Nullable;
-                var complex = entityType.IsOwned()
-                    ? null
-                    : modelBuilder.Entity(entityType.ClrType).ComplexProperty(typeof(Money), property.Name);
+                // EF Core discovers a Money property as a complex type (it is declared complex before discovery) but not
+                // its get-only members, so the complex type could not be materialized; declare them, keeping every
+                // setting an explicit builder.Money(...) call made.
+                var complex = modelBuilder.Entity(entityType.ClrType).ComplexProperty(typeof(Money), property.Name);
+                if (existing is null)
+                    complex.IsRequired(Nullability.Create(property).ReadState != NullabilityState.Nullable);
 
-                if (complex is not null)
-                    Configure(complex, required);
+                var amount = complex.Property(nameof(Money.Amount));
+                if (amount.Metadata.GetPrecision() is null)
+                    amount.HasPrecision(MoneyEntityTypeBuilderExtensions.DefaultPrecision, MoneyEntityTypeBuilderExtensions.DefaultScale);
+
+                var currency = complex.Property(nameof(Money.Currency));
+                if (currency.Metadata.GetValueConverter() is null && currency.Metadata.GetProviderClrType() is null)
+                    currency.HasConversion<CurrencyValueConverter>();
+                if (currency.Metadata.GetMaxLength() is null)
+                    currency.HasMaxLength(3).IsFixedLength();
             }
-        }
-    }
-
-    private static void Configure(ComplexPropertyBuilder complex, bool required)
-    {
-        complex.IsRequired(required);
-        complex.Property(nameof(Money.Amount)).HasPrecision(MoneyEntityTypeBuilderExtensions.DefaultPrecision, MoneyEntityTypeBuilderExtensions.DefaultScale);
-        complex.Property(nameof(Money.Currency)).HasConversion<CurrencyValueConverter>().HasMaxLength(3).IsFixedLength();
-    }
-
-    private static void ApplyDefaultPrecision(IMutableComplexProperty complexProperty)
-    {
-        if (complexProperty.ComplexType.FindProperty(nameof(Money.Amount)) is { } amount && amount.GetPrecision() is null)
-        {
-            amount.SetPrecision(MoneyEntityTypeBuilderExtensions.DefaultPrecision);
-            amount.SetScale(MoneyEntityTypeBuilderExtensions.DefaultScale);
         }
     }
 

@@ -30,6 +30,8 @@ internal sealed class FakeUnitOfWork(List<string>? sequence = null) : IUnitOfWor
 
     public bool IsTransactionActive => _depth > 0;
 
+    public bool RollbackOnly { get; private set; }
+
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SaveChangesCallCount++;
@@ -61,13 +63,28 @@ internal sealed class FakeUnitOfWork(List<string>? sequence = null) : IUnitOfWor
         CancellationToken cancellationToken = default)
     {
         if (IsTransactionActive)
-            return await operation(cancellationToken);
+        {
+            // Joined, like the real unit of work: a failure marks the transaction rollback-only.
+            try
+            {
+                var joined = await operation(cancellationToken);
+                if (joined is IHasSuccessFlag { IsSuccess: false })
+                    RollbackOnly = true;
+                return joined;
+            }
+            catch
+            {
+                RollbackOnly = true;
+                throw;
+            }
+        }
 
         while (true)
         {
             AttemptCount++;
             _beforeCommit.Clear();
             _depth++;
+            RollbackOnly = false;
             sequence?.Add("transaction.begin");
 
             try
@@ -78,6 +95,12 @@ internal sealed class FakeUnitOfWork(List<string>? sequence = null) : IUnitOfWor
                 {
                     Rollback();
                     return result;
+                }
+
+                if (RollbackOnly)
+                {
+                    Rollback();
+                    throw new TransactionRolledBackException();
                 }
 
                 await SaveChangesAsync(cancellationToken);

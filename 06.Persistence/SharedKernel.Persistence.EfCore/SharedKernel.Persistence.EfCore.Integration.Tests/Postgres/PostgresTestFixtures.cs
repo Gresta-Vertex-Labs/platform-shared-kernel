@@ -145,9 +145,12 @@ public sealed class PgOrderAggregate : TenantedFullAuditableAggregateRoot<PgOrde
 /// <see cref="PgOrderAggregate"/> — the FK-violation classification proof inserts one referencing a
 /// non-existent order id.
 /// </summary>
-public sealed class PgOrderTag : Entity<PgOrderTagId>
+public sealed class PgOrderTag : Entity<PgOrderTagId>, SharedKernel.Domain.Abstractions.IHasTenant
 {
     public PgOrderId OrderId { get; private set; } = null!;
+
+    // Tenant data like its order (every entity of a TenantedDbContext is); stamped from the caller when added.
+    public Guid TenantId { get; private set; }
     public string Label { get; private set; } = string.Empty;
 
     public PgOrderTag(PgOrderTagId id, PgOrderId orderId, string label) : base(id)

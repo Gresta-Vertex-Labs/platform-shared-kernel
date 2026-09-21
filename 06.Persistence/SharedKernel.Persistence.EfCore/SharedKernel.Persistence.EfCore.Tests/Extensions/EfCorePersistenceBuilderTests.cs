@@ -180,7 +180,7 @@ public sealed class EfCorePersistenceBuilderTests
         actorCtx.Should().NotBeNull();
         actorCtx.Should().BeSameAs(AnonymousRequestContext.Instance);
         actorCtx!.UserId.Should().BeNull();
-        actorCtx.ActorKind.Should().Be(ActorKind.System);
+        actorCtx.ActorKind.Should().Be(ActorKind.Anonymous);
     }
 
     [Fact]

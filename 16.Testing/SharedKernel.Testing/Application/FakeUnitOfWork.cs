@@ -60,6 +60,8 @@ public sealed class FakeUnitOfWork : IUnitOfWork
     /// <inheritdoc />
     public bool IsTransactionActive => _depth > 0;
 
+    private bool _rollbackOnly;
+
     /// <inheritdoc />
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -110,9 +112,23 @@ public sealed class FakeUnitOfWork : IUnitOfWork
 
         if (IsTransactionActive)
         {
-            var joined = await operation(cancellationToken);
-            if (joined is not IHasSuccessFlag { IsSuccess: false })
+            // Joined, like the real unit of work: a failure marks the transaction rollback-only.
+            TResult joined;
+            try
+            {
+                joined = await operation(cancellationToken);
+            }
+            catch
+            {
+                _rollbackOnly = true;
+                throw;
+            }
+
+            if (joined is IHasSuccessFlag { IsSuccess: false })
+                _rollbackOnly = true;
+            else
                 await SaveChangesAsync(cancellationToken);
+
             return joined;
         }
 
@@ -121,6 +137,7 @@ public sealed class FakeUnitOfWork : IUnitOfWork
             TransactionCount++;
             _beforeCommit.Clear();
             _depth++;
+            _rollbackOnly = false;
 
             try
             {
@@ -130,6 +147,12 @@ public sealed class FakeUnitOfWork : IUnitOfWork
                 {
                     Rollback();
                     return result;
+                }
+
+                if (_rollbackOnly)
+                {
+                    Rollback();
+                    throw new TransactionRolledBackException();
                 }
 
                 await SaveChangesAsync(cancellationToken);

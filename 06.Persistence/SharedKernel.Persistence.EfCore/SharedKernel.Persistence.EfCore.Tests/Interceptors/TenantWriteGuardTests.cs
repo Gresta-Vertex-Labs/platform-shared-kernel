@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -131,9 +132,10 @@ public sealed class TenantWriteGuardTests
         ctxAttacker.TenantedAggregates.Update(stub);
 
         var act = () => ctxAttacker.SaveChangesAsync();
-        await act.Should().ThrowAsync<ForbiddenException>(
+        var conflict = (await act.Should().ThrowAsync<ConflictException>(
             "a detached stub carrying the attacker's own tenant id but the victim's primary key must " +
-                "still be rejected — the in-memory guard check alone cannot see this shape");
+                "still be rejected — answered like a missing row, so the response reveals nothing about another tenant")).Which;
+        ConcurrencyVersion.TryGetCurrentVersion(conflict, out _).Should().BeFalse("no version of another tenant's row is disclosed");
 
         using var ctxVerify = CreateContext(connection, victimTenant, out _);
         var stillThere = await ctxVerify.TenantedAggregates.FirstAsync(e => e.Id == victim.Id);
@@ -164,9 +166,9 @@ public sealed class TenantWriteGuardTests
         ctxAttacker.TenantedAggregates.Remove(stub);
 
         var act = () => ctxAttacker.SaveChangesAsync();
-        await act.Should().ThrowAsync<ForbiddenException>(
+        await act.Should().ThrowAsync<ConflictException>(
             "a detached delete carrying the attacker's own tenant id but the victim's primary key " +
-                "must still be rejected");
+                "must still be rejected, with the same answer as for a row that does not exist");
 
         using var ctxVerify = CreateContext(connection, victimTenant, out _);
         var stillCount = await ctxVerify.TenantedAggregates.CountAsync(e => e.Id == victim.Id);

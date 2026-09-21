@@ -53,11 +53,11 @@ public interface IRequestContext
     /// <summary>Gets the kind of actor the current caller is.</summary>
     /// <remarks>
     /// Defaults to <see cref="Context.ActorKind.User"/> for an authenticated caller and
-    /// <see cref="Context.ActorKind.System"/> otherwise. An implementation that can tell a machine
+    /// <see cref="Context.ActorKind.Anonymous"/> otherwise. An implementation that can tell a machine
     /// caller (client credentials, API key, mTLS) apart from a human reports
     /// <see cref="Context.ActorKind.Service"/> for it.
     /// </remarks>
-    ActorKind ActorKind => IsAuthenticated ? ActorKind.User : ActorKind.System;
+    ActorKind ActorKind => IsAuthenticated ? ActorKind.User : ActorKind.Anonymous;
 
     /// <summary>Gets the OAuth2 client id the caller authenticated through, if known.</summary>
     string? ClientId => null;

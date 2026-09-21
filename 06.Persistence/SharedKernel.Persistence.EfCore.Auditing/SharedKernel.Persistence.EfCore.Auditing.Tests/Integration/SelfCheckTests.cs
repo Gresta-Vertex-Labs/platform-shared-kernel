@@ -121,7 +121,8 @@ public sealed class SelfCheckTests(PostgreSqlContainerFixture fixture)
             Microsoft.Extensions.Options.Options.Create(new AuditLedgerOptions { SelfCheck = mode }),
             NullLogger<AuditLedgerSelfCheckHostedService>.Instance);
 
-        var start = () => service.StartAsync(CancellationToken.None);
+        // Runs once every hosted service has started (after startup migrations), not in StartAsync.
+        var start = () => service.StartedAsync(CancellationToken.None);
 
         if (throws)
             await start.Should().ThrowAsync<InvalidOperationException>().WithMessage("*self-check failed*");

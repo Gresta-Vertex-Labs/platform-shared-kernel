@@ -44,11 +44,11 @@ public sealed class FakeRequestContext : IRequestContext
     /// <summary>Gets or sets the kind of actor the caller is.</summary>
     /// <remarks>
     /// Defaults to <see cref="Context.ActorKind.User"/> while <see cref="IsAuthenticated"/> is
-    /// <see langword="true"/> and <see cref="Context.ActorKind.System"/> otherwise, until set explicitly.
+    /// <see langword="true"/> and <see cref="Context.ActorKind.Anonymous"/> otherwise, until set explicitly.
     /// </remarks>
     public ActorKind ActorKind
     {
-        get => _actorKind ?? (IsAuthenticated ? ActorKind.User : ActorKind.System);
+        get => _actorKind ?? (IsAuthenticated ? ActorKind.User : ActorKind.Anonymous);
         set => _actorKind = value;
     }
 

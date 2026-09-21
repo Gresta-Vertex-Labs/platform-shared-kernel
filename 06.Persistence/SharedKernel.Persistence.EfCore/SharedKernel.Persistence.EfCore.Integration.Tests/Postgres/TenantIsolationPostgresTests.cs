@@ -400,7 +400,8 @@ public sealed class TenantIsolationPostgresTests
         ctxA.Orders.Update(stub);
 
         var act = () => ctxA.SaveChangesAsync();
-        await act.Should().ThrowAsync<ForbiddenException>(
+        // Rejected with the same Conflict a missing row gets (S8): the answer never reveals the id exists elsewhere.
+        await act.Should().ThrowAsync<ConflictException>(
             "a detached stub claiming the attacker's own tenant id but the victim's primary key must " +
                 "still be rejected, not silently rewrite the victim's row");
 
@@ -434,9 +435,9 @@ public sealed class TenantIsolationPostgresTests
         ctxA.Orders.Remove(stub);
 
         var act = () => ctxA.SaveChangesAsync();
-        await act.Should().ThrowAsync<ForbiddenException>(
+        await act.Should().ThrowAsync<ConflictException>(
             "a detached delete claiming the attacker's own tenant id but the victim's primary key " +
-                "must still be rejected");
+                "must still be rejected, answered like a missing row");
 
         await using var verifyB = CreateContext(tenantB);
         (await verifyB.Orders.CountAsync(o => o.Id == victimId)).Should().Be(1, "the victim's row must survive");

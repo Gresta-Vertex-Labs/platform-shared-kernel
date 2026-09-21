@@ -28,10 +28,10 @@ public sealed class AnonymousRequestContext : IRequestContext
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Always <see cref="Context.ActorKind.System"/>: with no caller identity, a persisted change is
-    /// attributed to the service itself.
+    /// Always <see cref="Context.ActorKind.Anonymous"/>: nobody was identified. Persisted audit columns still name
+    /// the service (its configured name), but the caller is never presented as the platform's own work.
     /// </remarks>
-    public ActorKind ActorKind => ActorKind.System;
+    public ActorKind ActorKind => ActorKind.Anonymous;
 
     /// <inheritdoc/>
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)

@@ -22,7 +22,7 @@ internal static class EfCorePersistenceBuilderRowLevelSecurityExtensions
     /// <returns>The same builder.</returns>
     /// <remarks>
     /// <para>
-    /// Also switches on <c>SharedKernel:Persistence:Npgsql:RowLevelSecurity:Enabled</c>, which rejects
+    /// Also switches on <c>SharedKernel:Persistence:{name}:RowLevelSecurity:Enabled</c>, which rejects
     /// <c>Multiplexing</c>/<c>No Reset On Close</c> connection strings, makes Dapper sessions bind the
     /// tenant too, and checks at startup that the application role is not a superuser, has no
     /// <c>BYPASSRLS</c> and owns no protected table.

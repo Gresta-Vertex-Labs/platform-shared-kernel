@@ -33,6 +33,7 @@ public sealed class Customer : IHasTenant
 }
 
 /// <summary>Non-tenanted, integer key assigned by the client.</summary>
+[SharedKernel.Domain.Abstractions.TenantShared]
 public sealed class Document
 {
     public int Id { get; set; }

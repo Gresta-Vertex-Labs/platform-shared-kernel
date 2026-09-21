@@ -443,3 +443,47 @@ internal sealed class IdempotentSeedTestSeeder : IDataSeeder<SeedTestDbContext>
         }
     }
 }
+
+public sealed class PersistenceStartupSignalRegistrationTests
+{
+    // ---- F1 (wave 3b): the persistence startup signal ----
+
+    [Fact]
+    public async Task StartupSignal_CompletesOnlyAfterTheStartupSeedersRan()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new List<string>());
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
+                opts.UseSqlite(connectionString).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+                    .AddSeeder<TrackingSeeder>()
+                        .Build();
+
+        await using var provider = services.BuildServiceProvider();
+        await using (var scope = provider.CreateAsyncScope())
+            scope.ServiceProvider.GetRequiredService<SeedTestDbContext>().Database.EnsureCreated();
+
+        var startup = provider.GetRequiredService<IPersistenceStartup>();
+        startup.IsCompleted.Should().BeFalse("the seeder has not run yet");
+        var waiting = startup.WaitAsync();
+
+        await provider.GetServices<IHostedService>().OfType<MigrationAndSeedHostedService<SeedTestDbContext>>().Single()
+            .StartAsync(CancellationToken.None);
+
+        await waiting;
+        startup.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public void StartupSignal_IsCompleteAtOnce_WhenNothingRunsAtStartup()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+                .Build();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IPersistenceStartup>().IsCompleted.Should().BeTrue();
+    }
+}

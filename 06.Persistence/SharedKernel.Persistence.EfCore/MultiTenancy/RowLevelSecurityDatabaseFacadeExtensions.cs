@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// Row-level security limits the application database role to the bound tenant, whatever the application
 /// asks for. Work across tenants therefore runs as a separate role — one with <c>BYPASSRLS</c>, or one
 /// named by a role-specific policy (<c>EnableTenantRowLevelSecurity(..., crossTenantRole: ...)</c>) —
-/// connected with its own credentials (<c>SharedKernel:Persistence:Npgsql:RowLevelSecurity:CrossTenantConnectionString</c>).
+/// connected with its own credentials (<c>SharedKernel:Persistence:{name}:RowLevelSecurity:CrossTenantConnectionString</c>, <c>{name}</c> being the connection name).
 /// </para>
 /// <code>
 /// using (crossTenantScope.Enter("monthly billing export"))
@@ -66,7 +66,7 @@ public static class RowLevelSecurityDatabaseFacadeExtensions
         var dataSource = services.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.CrossTenant)
             ?? throw new InvalidOperationException(
                 "No cross-tenant data source is configured. Set "
-                    + "'SharedKernel:Persistence:Npgsql:RowLevelSecurity:CrossTenantConnectionString' to a role "
+                    + "'SharedKernel:Persistence:{connection name}:RowLevelSecurity:CrossTenantConnectionString' to a role "
                     + "that is exempt from the tenant policy.");
 
         var current = database.GetDbConnection();

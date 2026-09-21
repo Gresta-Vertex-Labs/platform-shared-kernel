@@ -21,7 +21,7 @@ public sealed class ActorAttributionTests
 
     [Theory]
     [InlineData(true, ActorKind.User)]
-    [InlineData(false, ActorKind.System)]
+    [InlineData(false, ActorKind.Anonymous)]
     public void ActorKind_DefaultsFromIsAuthenticated(bool isAuthenticated, ActorKind expected)
     {
         IRequestContext context = new MinimalContext(isAuthenticated);
@@ -40,11 +40,11 @@ public sealed class ActorAttributionTests
     }
 
     [Fact]
-    public void Anonymous_IsAttributedToTheSystem_WithNoTenant()
+    public void Anonymous_IsAttributedToNobody_NeverToTheSystem_WithNoTenant()
     {
         IRequestContext context = AnonymousRequestContext.Instance;
 
-        context.ActorKind.Should().Be(ActorKind.System);
+        context.ActorKind.Should().Be(ActorKind.Anonymous);
         context.TenantId.Should().BeNull("an unresolved tenant must fail closed");
     }
 

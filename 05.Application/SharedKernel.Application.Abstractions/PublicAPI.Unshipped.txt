@@ -70,3 +70,4 @@ SharedKernel.Application.Transactions.CommitOutcomeUnknownException
 SharedKernel.Application.Transactions.CommitOutcomeUnknownException.CommitOutcomeUnknownException(System.Exception! innerException) -> void
 SharedKernel.Application.Transactions.TransactionRolledBackException
 SharedKernel.Application.Transactions.TransactionRolledBackException.TransactionRolledBackException() -> void
+SharedKernel.Application.Context.ActorKind.Anonymous = 3 -> SharedKernel.Application.Context.ActorKind

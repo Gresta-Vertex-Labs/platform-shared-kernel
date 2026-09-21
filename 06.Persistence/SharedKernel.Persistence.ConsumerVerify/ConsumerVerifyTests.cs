@@ -284,7 +284,7 @@ public sealed class ConsumerVerifyTests
             Assert.DoesNotContain("ada@example.com", (string)(await command.ExecuteScalarAsync())!);
 
         // Read back decrypted, with its version (ETag); a stale If-Match is a conflict carrying the current version.
-        uint version;
+        EntityVersion version;
         await using (var scope = servicesA.CreateAsyncScope())
         {
             var repository = scope.ServiceProvider.GetRequiredService<IRepository<Order, OrderId>>();
@@ -293,7 +293,7 @@ public sealed class ConsumerVerifyTests
             version = ConcurrencyVersion.Get(scope.ServiceProvider.GetRequiredService<OrdersDbContext>(), order);
 
             order.Total = 50m;
-            await repository.UpdateAsync(order, version + 1);
+            await repository.UpdateAsync(order, EntityVersion.Parse($"W/\"{version.ToRowVersion() + 1}\"")); // a stale If-Match header
             await Assert.ThrowsAsync<ConflictException>(() => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync());
         }
 

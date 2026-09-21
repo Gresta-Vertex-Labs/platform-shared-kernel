@@ -648,6 +648,9 @@ internal sealed class RlsTestDbContext(
         : TenantedDbContext(options, dependencies)
 {
     public DbSet<RlsOrder> Orders => Set<RlsOrder>();
+
+    // Only its own entity: the assembly holds configurations of unrelated, non-tenant test contexts.
+    protected override bool ShouldApplyConfiguration(Type configurationType) => configurationType == typeof(RlsOrderConfig);
 }
 
 internal sealed class MutableTenantContext : IRequestContext

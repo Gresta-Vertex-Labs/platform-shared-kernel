@@ -43,6 +43,7 @@ internal sealed class UnitOfWorkCoordinator
     private readonly AmbientDbTransactionAccessor? _ambient;
     private readonly ILogger _logger;
     private ActiveTransaction? _active;
+    private IReadOnlyList<SharedKernelDbContext> _lastEnlisted = [];
 
     public UnitOfWorkCoordinator(AmbientDbTransactionAccessor? ambient = null, ILogger<UnitOfWorkCoordinator>? logger = null)
     {
@@ -96,7 +97,10 @@ internal sealed class UnitOfWorkCoordinator
 
         var strategy = owner.Database.CreateExecutionStrategy();
 
-        if (strategy.RetriesOnFailure && _contexts.FirstOrDefault(c => c.ChangeTracker.HasChanges()) is { } staged)
+        var ownerConnection = owner.Database.GetDbConnection();
+        if (strategy.RetriesOnFailure
+            && _contexts.FirstOrDefault(c => c.ChangeTracker.HasChanges()
+                && (ReferenceEquals(c, owner) || CannotJoinReason(c.Database, ownerConnection) is null)) is { } staged)
         {
             throw new InvalidOperationException(
                 $"ExecuteInTransactionAsync was called with changes already staged on '{staged.GetType().Name}' while a " +
@@ -131,7 +135,12 @@ internal sealed class UnitOfWorkCoordinator
         if (_active is { } active)
             return await active.SaveAllAsync(cancellationToken).ConfigureAwait(false);
 
-        var others = _contexts.Where(c => !ReferenceEquals(c, owner) && c.ChangeTracker.HasChanges()).ToList();
+        // A context on another database keeps its own unit of work: only contexts that can share the owner's
+        // connection are saved with it.
+        var ownerConnection = owner.Database.GetDbConnection();
+        var others = _contexts
+            .Where(c => !ReferenceEquals(c, owner) && c.ChangeTracker.HasChanges() && CannotJoinReason(c.Database, ownerConnection) is null)
+            .ToList();
         if (others.Count == 0)
             return await owner.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -150,7 +159,6 @@ internal sealed class UnitOfWorkCoordinator
                     try
                     {
                         var total = await attempt.SaveAllAsync(token, acceptAllChanges: false).ConfigureAwait(false);
-                        attempt.EnsureUncoordinatedContextsHaveNoChanges();
 
                         commitSent = true;
                         await CommitAsync(transaction, token).ConfigureAwait(false);
@@ -168,7 +176,8 @@ internal sealed class UnitOfWorkCoordinator
                 }
             }).ConfigureAwait(false);
 
-        foreach (var context in _contexts)
+        owner.ChangeTracker.AcceptAllChanges();
+        foreach (var context in others)
             context.ChangeTracker.AcceptAllChanges();
 
         return written;
@@ -321,6 +330,7 @@ internal sealed class UnitOfWorkCoordinator
 
     private void End(ActiveTransaction active)
     {
+        _lastEnlisted = active.Enlisted;
         active.Release();
 
         if (_ambient is not null)
@@ -330,9 +340,11 @@ internal sealed class UnitOfWorkCoordinator
             _active = null;
     }
 
+    // Clears the contexts that took part in the transaction (the running one, else the last one) — never a context on
+    // another database, whose changes were not part of it.
     private void ClearTrackers()
     {
-        foreach (var context in _contexts)
+        foreach (var context in (IEnumerable<SharedKernelDbContext>?)_active?.Enlisted ?? _lastEnlisted)
         {
             try
             {
@@ -343,6 +355,25 @@ internal sealed class UnitOfWorkCoordinator
                 // A context disposed before its scope ended has nothing left to clear.
             }
         }
+    }
+
+    // Why a context cannot share <paramref name="connection"/> (and its transaction), or null when it can.
+    private static string? CannotJoinReason(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, DbConnection connection)
+    {
+        if (database.CurrentTransaction is not null)
+            return "it runs a transaction of its own";
+
+        var own = database.GetDbConnection();
+        if (ReferenceEquals(own, connection))
+            return null;
+
+        if (!SameDatabase(own, connection))
+            return "it connects to another database or as another role";
+
+        if (own.State != ConnectionState.Closed)
+            return "its own connection is open";
+
+        return null;
     }
 
     // Two connections reach the same database, as the same user, on the same side of the cross-tenant switch.
@@ -379,6 +410,8 @@ internal sealed class UnitOfWorkCoordinator
         private readonly List<SharedKernelDbContext> _enlisted = [owner];
         private readonly List<SharedKernelDbContext> _uncoordinated = [];
 
+        public IReadOnlyList<SharedKernelDbContext> Enlisted => _enlisted;
+
         public DbTransaction DbTransaction { get; } = dbTransaction;
 
         public List<Func<CancellationToken, Task>> BeforeCommit { get; } = [];
@@ -393,7 +426,7 @@ internal sealed class UnitOfWorkCoordinator
                 return;
 
             var database = context.Database;
-            var reason = CannotJoinReason(database);
+            var reason = CannotJoinReason(database, connection);
             if (reason is not null)
             {
                 _uncoordinated.Add(context);
@@ -404,21 +437,6 @@ internal sealed class UnitOfWorkCoordinator
             database.SetDbConnection(connection, contextOwnsConnection: false);
             database.UseTransaction(DbTransaction);
             _enlisted.Add(context);
-        }
-
-        private string? CannotJoinReason(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database)
-        {
-            if (database.CurrentTransaction is not null)
-                return "it runs a transaction of its own";
-
-            var own = database.GetDbConnection();
-            if (!SameDatabase(own, connection))
-                return "it connects to another database or as another role";
-
-            if (own.State != ConnectionState.Closed)
-                return "its own connection is open";
-
-            return null;
         }
 
         public async Task<int> SaveAllAsync(CancellationToken cancellationToken, bool acceptAllChanges = true)

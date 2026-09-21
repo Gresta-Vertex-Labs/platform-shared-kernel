@@ -98,7 +98,7 @@ public static partial class PostgresPersistenceExtensions
             throw new InvalidOperationException(
                 "pgvector was requested through 'UsePostgres(sp, o => o.UseVector = true)' but the shared "
                     + "NpgsqlDataSource was built without it, so Vector values could not be read or written. Set "
-                    + $"'{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.UseVector)}' to true.");
+                    + $"'SharedKernel:Persistence:{dataSourceName ?? "{connection name}"}:{nameof(NpgsqlPersistenceOptions.UseVector)}' to true.");
         }
 
         return optionsBuilder.UsePostgresCore(dataSource, providerOptions);

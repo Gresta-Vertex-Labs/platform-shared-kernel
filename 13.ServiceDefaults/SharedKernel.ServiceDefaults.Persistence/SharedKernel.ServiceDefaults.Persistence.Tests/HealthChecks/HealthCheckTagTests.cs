@@ -32,7 +32,7 @@ public sealed class HealthCheckTagTests
         services.AddHealthChecks().AddDapperDatabaseReadinessCheck();
 
         var registrations = GetRegistrations(services);
-        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Database);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.DapperDatabase);
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Db, registration.Tags);

@@ -127,4 +127,26 @@ public sealed class TransactionBehaviorTests
         unitOfWork.CommitCount.Should().Be(1);
         sequence.Should().Equal("transaction.begin", "transaction.savechanges", "transaction.commit");
     }
+
+    [Fact]
+    public async Task Handle_JoinedCommandFails_MarksTheTransactionRollbackOnly_SoTheOuterCommitsNothing()
+    {
+        var sequence = new List<string>();
+        var unitOfWork = new FakeUnitOfWork(sequence);
+        var outer = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var nested = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(isNested: true));
+
+        var act = () => outer.Handle(new TestCommand(), async () =>
+        {
+            var inner = await nested.Handle(
+                new TestCommand(), () => Task.FromResult(Result.Failure(Error.BusinessRule("rule", "denied"))), CancellationToken.None);
+            inner.IsFailure.Should().BeTrue();
+            unitOfWork.RollbackOnly.Should().BeTrue("a failed nested command must never commit with the outer one");
+            return Result.Success(); // the outer handler ignores the nested failure
+        }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<SharedKernel.Application.Transactions.TransactionRolledBackException>();
+        unitOfWork.CommitCount.Should().Be(0);
+        sequence.Should().Equal("transaction.begin", "transaction.rollback");
+    }
 }
