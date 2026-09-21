@@ -8,7 +8,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <summary>
 /// Wires every pre-existing <c>06.Persistence</c> <see cref="System.Diagnostics.ActivitySource"/>/
 /// <see cref="System.Diagnostics.Metrics.Meter"/> name — owned and emitted by
-/// <c>SharedKernel.Persistence.EfCore</c>, <c>.Dapper</c>, <c>.EfCore.Encryption</c>, and
+/// <c>SharedKernel.Persistence.EfCore</c>, <c>.EfCore.Encryption</c>, and
 /// <c>.EfCore.Auditing</c> — plus Npgsql's own well-known instrumentation names, into the host's
 /// <c>TracerProvider</c>/<c>MeterProvider</c>.
 /// </summary>
@@ -21,7 +21,6 @@ public static class PersistenceTelemetryExtensions
     // explicitly; renaming one without updating this file silently stops that source/meter exporting).
 
     private const string EfCoreInstrumentationName = "SharedKernel.Persistence";
-    private const string DapperInstrumentationName = "SharedKernel.Persistence.Dapper";
     private const string EncryptionMeterInstrumentationName = "SharedKernel.Persistence.EfCore.Encryption";
     private const string AuditingMeterInstrumentationName = "SharedKernel.Persistence.EfCore.Auditing";
 
@@ -35,8 +34,8 @@ public static class PersistenceTelemetryExtensions
 
     /// <summary>
     /// Adds every <c>06.Persistence</c>-owned <see cref="System.Diagnostics.ActivitySource"/> name
-    /// (<c>SharedKernel.Persistence.EfCore</c>'s repository-operation spans, <c>.Dapper</c>'s
-    /// query/command spans) plus <c>"Npgsql"</c> to the host's <c>TracerProvider</c>, and every
+    /// (<c>SharedKernel.Persistence.EfCore</c>'s repository-operation spans, <c>.EfCore.Auditing</c>'s
+    /// ledger spans) plus <c>"Npgsql"</c> to the host's <c>TracerProvider</c> (Dapper emits no spans of its own), and every
     /// <c>06.Persistence</c>-owned <see cref="System.Diagnostics.Metrics.Meter"/> name
     /// (<c>SharedKernel.Persistence.EfCore</c>'s concurrency/tenant-isolation counters,
     /// <c>.EfCore.Encryption</c>'s encrypt/decrypt/rotation counters, <c>.EfCore.Auditing</c>'s
@@ -49,7 +48,7 @@ public static class PersistenceTelemetryExtensions
     /// <c>13.ServiceDefaults</c> does not create any of these sources/meters — each is created and
     /// owned entirely within its named <c>06.Persistence</c> package
     /// (<c>SharedKernel.Persistence.EfCore.Diagnostics.PersistenceActivitySource</c>/<c>.PersistenceMeter</c>,
-    /// <c>SharedKernel.Persistence.Dapper.Diagnostics.DapperActivitySource</c>,
+    /// <c>SharedKernel.Persistence.EfCore.Auditing</c>'s ActivitySource,
     /// <c>SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter</c>,
     /// <c>SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter</c>). This method only
     /// registers the already-existing source/meter names with the host's
@@ -85,7 +84,7 @@ public static class PersistenceTelemetryExtensions
             .AddOpenTelemetry()
             .WithTracing(tracing => tracing
                 .AddSource(EfCoreInstrumentationName)
-                .AddSource(DapperInstrumentationName)
+                .AddSource(AuditingMeterInstrumentationName)
                 .AddSource(NpgsqlInstrumentationName))
             .WithMetrics(metrics => metrics
                 .AddMeter(EfCoreInstrumentationName)

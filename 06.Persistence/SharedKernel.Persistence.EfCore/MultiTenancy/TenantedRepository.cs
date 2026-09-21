@@ -33,7 +33,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// <para>
 /// <strong>Auditable escape hatch required:</strong> both cross-tenant methods now
 /// throw <see cref="InvalidOperationException"/> unless called with an active
-/// <see cref="ICrossTenantScope"/> (<c>crossTenantScope.Enter()</c>) — bypassing tenant isolation is
+/// <see cref="ICrossTenantScope"/> (<c>crossTenantScope.Enter(reason)</c>) — bypassing tenant isolation is
 /// only ever legal as a deliberate, attributable act, never an ambient capability every tenanted
 /// repository has by default.
 /// </para>
@@ -179,8 +179,8 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
         {
             throw new InvalidOperationException(
                 $"'{methodName}' bypasses tenant isolation and requires an active " +
-                $"'{nameof(ICrossTenantScope)}'. Call 'crossTenantScope.Enter()' (typically " +
-                $"'using var _ = crossTenantScope.Enter();') around this call to make the bypass " +
+                $"'{nameof(ICrossTenantScope)}'. Call 'crossTenantScope.Enter(reason)' (typically " +
+                $"'using var _ = crossTenantScope.Enter(reason);') around this call to make the bypass " +
                 "explicit and attributable.");
         }
     }

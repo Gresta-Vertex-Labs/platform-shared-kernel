@@ -170,7 +170,7 @@ public sealed class PooledMultiTenancyPostgresTests
         // interface (which deliberately exposes only the read side, IsActive) — the default
         // registration's concrete type, so this cast always succeeds unless a consumer registered
         // its own ICrossTenantScope implementation, which this test does not.
-        using (((SharedKernel.Persistence.Abstractions.Context.CrossTenantScope)crossTenantScope).Enter())
+        using (((SharedKernel.Persistence.Abstractions.Context.CrossTenantScope)crossTenantScope).Enter("test"))
         {
             var found = await repo.GetByIdForTenantAsync(orderId, ownerTenant);
             found.Should().NotBeNull("an explicitly entered ICrossTenantScope must allow a pooled background scope to read another tenant's row");

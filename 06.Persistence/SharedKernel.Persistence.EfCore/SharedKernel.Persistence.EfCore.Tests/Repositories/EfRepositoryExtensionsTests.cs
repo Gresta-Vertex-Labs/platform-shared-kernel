@@ -345,7 +345,7 @@ public sealed class DomainEventDispatchTests
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatched = new List<IDomainEvent>();
         var dispatcher = new CaptureDispatcher(dispatched);
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "EventTest", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -361,7 +361,7 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_WithoutDispatcher_ClearsEventsWithoutDispatch()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "NoDispatch", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -383,7 +383,7 @@ public sealed class DomainEventDispatchTests
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatchCounts = new List<int>();
         var dispatcher = new CountingDispatcher(dispatchCounts);
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "DoubleDispatch", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -413,7 +413,7 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_DispatchFailure_NothingIsCommitted()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx, new ThrowingDispatcher());
+        var uow = EfUnitOfWork.For(ctx, new ThrowingDispatcher());
 
         var id = TestId.New();
         var aggregate = new AuditableTestAggregate(id, "DispatchFail", new SystemClock());
@@ -442,7 +442,7 @@ public sealed class DomainEventDispatchTests
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatched = new List<IDomainEvent>();
-        var uow = new EfUnitOfWork(ctx, new CaptureDispatcher(dispatched));
+        var uow = EfUnitOfWork.For(ctx, new CaptureDispatcher(dispatched));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "ToHardDelete", new SystemClock());
         ctx.AuditableAggregates.Add(aggregate);

@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integration;
@@ -36,11 +35,9 @@ public sealed class XminConcurrencyTokenConventionTests
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        return new ConcurrencyTestDbContext(options, audit);
     }
 
     [Fact]

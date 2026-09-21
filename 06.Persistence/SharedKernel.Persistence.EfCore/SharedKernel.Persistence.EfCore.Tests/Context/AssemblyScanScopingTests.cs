@@ -3,18 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Context;
 
-// Two SharedKernelDbContext subclasses declared in the SAME test assembly, each
-// relying entirely on the BASE OnModelCreating's now-scoped ApplyConfigurationsFromAssembly — neither
-// overrides OnModelCreating at all, unlike SharedKernel.Persistence.EfCore.Tests.TestFixtures.TestDbContext/
-// TenantedTestDbContext, which predate this fix and still opt out manually (that workaround is left in
-// place; it is still correct, just no longer the only way to avoid the bleed). Proves a
-// IEntityTypeConfiguration<T> for an entity type only the OTHER context exposes never reaches this
-// context's model, purely from ApplyConfigurationsFromAssembly's own predicate — no manual filtering.
+// A7: SharedKernelDbContext applies every IEntityTypeConfiguration in its assembly (plain scan) and offers
+// ShouldApplyConfiguration as the opt-in filter. The contexts below share this test assembly with dozens of
+// other configurations, so each filters to its own: the documented pattern for several contexts per assembly.
 
 /// <summary>Entity exposed only by <see cref="ScopeWidgetDbContext"/>.</summary>
 public sealed class ScopeWidget
@@ -55,6 +50,8 @@ public sealed class ScopeWidgetDbContext(DbContextOptions<ScopeWidgetDbContext> 
     : SharedKernelDbContext(options, dependencies)
 {
     public DbSet<ScopeWidget> Widgets => Set<ScopeWidget>();
+
+    protected override bool ShouldApplyConfiguration(Type configurationType) => configurationType == typeof(ScopeWidgetConfig);
 }
 
 /// <summary>Exposes only <see cref="ScopeGadget"/> — no override of <c>OnModelCreating</c> at all.</summary>
@@ -62,6 +59,8 @@ public sealed class ScopeGadgetDbContext(DbContextOptions<ScopeGadgetDbContext> 
     : SharedKernelDbContext(options, dependencies)
 {
     public DbSet<ScopeGadget> Gadgets => Set<ScopeGadget>();
+
+    protected override bool ShouldApplyConfiguration(Type configurationType) => configurationType == typeof(ScopeGadgetConfig);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +116,9 @@ public sealed class ScopeParentDbContext(DbContextOptions<ScopeParentDbContext> 
     : SharedKernelDbContext(options, dependencies)
 {
     public DbSet<ScopeParentWithChild> Parents => Set<ScopeParentWithChild>();
+
+    protected override bool ShouldApplyConfiguration(Type configurationType) =>
+        configurationType == typeof(ScopeParentWithChildConfig) || configurationType == typeof(ScopeNavigationChildConfig);
 }
 
 public sealed class AssemblyScanScopingTests
@@ -125,8 +127,7 @@ public sealed class AssemblyScanScopingTests
     {
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        return new PersistenceContextDependencies(
-            new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor());
+        return PersistenceContextDependencies.Create(actorContext, clock);
     }
 
     private static DbContextOptions<TContext> BuildOptions<TContext>()
@@ -218,5 +219,32 @@ public sealed class AssemblyScanScopingTests
         detailProperty!.GetMaxLength().Should().Be(
             789, "ScopeNavigationChildConfig must actually run, not merely leave the child present " +
                 "in the model with EF's bare conventional defaults");
+    }
+}
+
+/// <summary>A7(a): a context with NO DbSet still gets every configuration its filter accepts.</summary>
+public sealed class ScopeNoDbSetDbContext(DbContextOptions<ScopeNoDbSetDbContext> options, PersistenceContextDependencies dependencies)
+    : SharedKernelDbContext(options, dependencies)
+{
+    protected override bool ShouldApplyConfiguration(Type configurationType) =>
+        configurationType == typeof(ScopeWidgetConfig) || configurationType == typeof(ScopeGadgetConfig);
+}
+
+public sealed class PlainAssemblyScanTests
+{
+    [Fact]
+    public void ContextWithoutDbSets_AppliesTheConfigurationsOfItsAssembly()
+    {
+        // Regression A7(a): the former scoped predicate cached "exposed types" before any configuration ran, so a
+        // context with no DbSet<T> applied no configuration at all.
+        using var ctx = new ScopeNoDbSetDbContext(
+            new DbContextOptionsBuilder<ScopeNoDbSetDbContext>()
+                .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
+                .Options,
+            PersistenceContextDependencies.Create());
+
+        ctx.Model.FindEntityType(typeof(ScopeWidget))!.FindProperty(nameof(ScopeWidget.Name))!.GetMaxLength().Should().Be(123);
+        ctx.Model.FindEntityType(typeof(ScopeGadget))!.FindProperty(nameof(ScopeGadget.Label))!.GetMaxLength().Should().Be(456);
     }
 }

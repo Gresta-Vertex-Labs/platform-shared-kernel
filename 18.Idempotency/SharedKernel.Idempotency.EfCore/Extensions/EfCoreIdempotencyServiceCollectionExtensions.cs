@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.EfCore.Context;
+using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.KeyStore;
 using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
@@ -62,7 +63,11 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
 
-        services.AddDbContext<IdempotencyDbContext>(configureDbContext);
+        services.AddDbContext<IdempotencyDbContext>(options =>
+        {
+            configureDbContext(options);
+            IdempotencyDbContextOptions.DisableRetry(options);
+        });
 
         services
             .AddOptions<EfCoreIdempotencyOptions>()

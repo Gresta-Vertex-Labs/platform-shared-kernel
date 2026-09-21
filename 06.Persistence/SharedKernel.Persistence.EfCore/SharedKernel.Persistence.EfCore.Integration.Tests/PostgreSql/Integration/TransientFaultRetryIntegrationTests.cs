@@ -8,7 +8,6 @@ using Npgsql;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
@@ -125,11 +124,9 @@ public sealed class TransientFaultRetryIntegrationTests
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        return new ConcurrencyTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        return new ConcurrencyTestDbContext(options, audit);
     }
 
     [Fact]
@@ -138,7 +135,7 @@ public sealed class TransientFaultRetryIntegrationTests
         // Arrange
         await using var ctx = CreateRetryEnabledContext(ConnectionString);
         await ctx.Database.EnsureCreatedAsync();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var id = ConcurrentPgId.New();
 
@@ -215,8 +212,9 @@ public sealed class TransientFaultRetryIntegrationTests
 
         Func<Task> act = () => ctx.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<DbUpdateException>(
-            "a genuine unique-constraint violation is not transient and must propagate immediately, not be retried away");
+        (await act.Should().ThrowAsync<SharedKernel.Core.Exceptions.ConflictException>(
+            "a genuine unique-constraint violation is not transient: it propagates immediately (classified), not retried away"))
+            .WithInnerException<DbUpdateException>();
     }
 
     // -------------------------------------------------------------------------
@@ -235,7 +233,7 @@ public sealed class TransientFaultRetryIntegrationTests
 
         var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: 1);
         await using var ctx = CreateRetryEnabledContext(ConnectionString, faultInjector);
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var id = ConcurrentPgId.New();
         // The entity is constructed ONCE, outside the delegate — the delegate itself only adds it

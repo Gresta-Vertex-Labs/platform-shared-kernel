@@ -10,7 +10,6 @@ using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -121,7 +120,6 @@ public sealed class SplitQueryDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<SplitAggId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -200,11 +198,9 @@ public sealed class AsSplitQueryMultiStatementTests
             .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new SplitQueryDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new SplitQueryDbContext(options, audit);
         ctx.Database.OpenConnection();
         ctx.Database.EnsureCreated();
 

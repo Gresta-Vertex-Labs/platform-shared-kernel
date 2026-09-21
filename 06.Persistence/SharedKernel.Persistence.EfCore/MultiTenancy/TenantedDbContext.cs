@@ -5,7 +5,6 @@ using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
@@ -29,7 +28,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// <para>
 /// <strong>Fail-closed sentinel:</strong> when <see cref="CurrentTenantId"/> resolves
 /// <see langword="null"/> (no tenant resolved), the filter matches zero rows and
-/// <c>TenantWriteGuardInterceptor</c> rejects every tenant-scoped write. With no
+/// the tenant write guard rejects every tenant-scoped write. With no
 /// <c>IRequestContext</c> registered, the builder's default is <c>AnonymousRequestContext</c> —
 /// no tenant — so a service that forgets to wire identity reads and writes nothing.
 /// </para>
@@ -66,7 +65,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// </para>
 /// <para>
 /// <strong>Cross-tenant access:</strong> admin or migration paths that need to bypass the filter
-/// must enter an <see cref="ICrossTenantScope"/> explicitly (<c>ICrossTenantScope.Enter()</c>), then
+/// must enter an <see cref="ICrossTenantScope"/> explicitly (<c>ICrossTenantScope.Enter(reason)</c>), then
 /// call <c>.IgnoreQueryFilters([PersistenceFilterNames.Tenant])</c> — never a bare
 /// <c>.IgnoreQueryFilters()</c>, which would also drop the soft-delete filter — or use
 /// <c>TenantedRepository&lt;T,TId&gt;.GetByIdForTenantAsync</c>, which now enforces the same
@@ -97,7 +96,7 @@ public abstract class TenantedDbContext : SharedKernelDbContext
     }
 
     /// <summary>
-    /// Gets the tenant the tenant global query filter and <c>TenantWriteGuardInterceptor</c> scope to:
+    /// Gets the tenant the tenant global query filter and the tenant write guard scope to:
     /// <see cref="SharedKernelDbContext.RequestContext"/>'s <c>TenantId</c>, or <see langword="null"/>
     /// when no tenant is resolved (fail closed).
     /// </summary>
@@ -154,7 +153,7 @@ public abstract class TenantedDbContext : SharedKernelDbContext
 
     // A detached IHasTenant entity re-attached via Update()/Remove() (EfRepository.
     // MarkAsModifiedIfDetached) is written with a WHERE clause naming only its primary key — TenantId
-    // plays no part in it. TenantWriteGuardInterceptor already rejects any entry whose IN-MEMORY
+    // plays no part in it. The tenant write guard already rejects any entry whose IN-MEMORY
     // TenantId differs from the caller's current tenant, but that check cannot see which tenant the
     // TARGETED ROW actually belongs to: a caller who builds a detached stub carrying their OWN
     // (legitimate) TenantId and a VICTIM's primary key passes that check, and an unconditional
@@ -166,12 +165,12 @@ public abstract class TenantedDbContext : SharedKernelDbContext
     // entity (loaded through the tenant query filter) OriginalValue already equals the row's real
     // TenantId, so this is a no-op. For a freshly-attached DETACHED entry, EF Core has no source for
     // "original" other than the value already on the object — the SAME value
-    // TenantWriteGuardInterceptor already required to equal the caller's current tenant. The WHERE
+    // tenant write guard already required to equal the caller's current tenant. The WHERE
     // clause therefore becomes "Id = <target> AND TenantId = <caller's own tenant>": a victim row
     // belonging to a DIFFERENT tenant matches zero rows, and EF Core raises
     // DbUpdateConcurrencyException instead of silently succeeding — translated by
-    // ConcurrencyInterceptor.TryTranslate into the same tenant-isolation Forbidden error
-    // TenantWriteGuardInterceptor raises proactively.
+    // the concurrency translator, which reads the row, sees it belongs to another tenant (proven) and
+    // raises the same tenant-isolation Forbidden error the write guard raises proactively.
     private static void ApplyTenantConcurrencyToken(ModelBuilder modelBuilder, Type clrType) =>
         modelBuilder.Entity(clrType).Property(nameof(IHasTenant.TenantId)).IsConcurrencyToken();
 

@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Application.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Persistence;
@@ -13,7 +12,7 @@ namespace SharedKernel.Testing.Persistence;
 /// <remarks>
 /// <para>
 /// Wires a fixed <see cref="IRequestContext"/> (<c>Persistence/FakeAuditActorContext</c>, actor id
-/// <c>"test-user"</c>) so <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c> attribute changes without
+/// <c>"test-user"</c>) so audit and soft-delete stamps attribute changes without
 /// a real identity source, and a deterministic <see cref="FakeClock"/> (fixed snapshot, never real
 /// time) for stable interceptor timestamps.
 /// </para>
@@ -26,12 +25,7 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
     /// </summary>
     /// <param name="options">EF Core context options — typically built via <see cref="BuildOptions"/>.</param>
     protected TestSharedKernelDbContext(DbContextOptions options)
-        : base(
-            options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(TestActor, new FakeClock()),
-                new SoftDeleteInterceptor(new FakeClock()),
-                new ConcurrencyInterceptor()))
+        : base(options, PersistenceContextDependencies.Create(TestActor, new FakeClock()))
     {
         // EF Core's internal per-context service provider does not expose the constructor-supplied
         // DbContextOptions as a resolvable service for standalone (non-DI-hosted) contexts, so

@@ -7,7 +7,6 @@ using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -67,8 +66,6 @@ public sealed class MoneyNamingConventionTests
 
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
         {
-            configurationBuilder.ConfigureStronglyTypedId<NamingTestId, Guid>();
-            configurationBuilder.ConfigureMoney();
             base.ConfigureConventions(configurationBuilder);
         }
 
@@ -91,10 +88,7 @@ public sealed class MoneyNamingConventionTests
         var clock = new SystemClock();
         using var ctx = new NamingTestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContext, clock));
 
         // Act — reading Model triggers finalization; no database round trip occurs.
         var entityType = ctx.Model.FindEntityType(typeof(NamingTestAggregate))!;

@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
@@ -26,7 +25,7 @@ public sealed class EfUnitOfWorkTransactionTests
     [Fact]
     public void EfUnitOfWork_ImplementsTheSharedContract_AndTheContractHasNoEfCoreDependency()
     {
-        typeof(IUnitOfWork).IsAssignableFrom(typeof(EfUnitOfWork)).Should().BeTrue();
+        typeof(IUnitOfWork).IsAssignableFrom(typeof(EfUnitOfWork<TestDbContext>)).Should().BeTrue();
         typeof(IUnitOfWork).Assembly.GetReferencedAssemblies()
             .Should().NotContain(r => r.Name!.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
     }
@@ -35,7 +34,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task ExecuteInTransaction_Commits_AndSavesWithoutAnExplicitSave()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var id = TestId.New();
 
         await uow.ExecuteInTransactionAsync(async token =>
@@ -53,7 +52,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task ExecuteInTransaction_Generic_ReturnsTheOperationResult()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var value = await uow.ExecuteInTransactionAsync(_ => Task.FromResult(42));
 
@@ -64,7 +63,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task ExecuteInTransaction_OperationThrows_RollsBack_AndClearsTheChangeTracker()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var id = TestId.New();
 
         var act = () => uow.ExecuteInTransactionAsync(async token =>
@@ -83,7 +82,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task ExecuteInTransaction_FailedResult_RollsBack_SkipsCallbacks_AndReturnsTheFailure()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var id = TestId.New();
         var callbackRan = false;
 
@@ -108,7 +107,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task OnBeforeCommit_RunsAfterTheSave_InsideTheTransaction_AndItsChangesCommit()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var businessId = TestId.New();
         var callbackId = TestId.New();
 
@@ -133,7 +132,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task OnBeforeCommit_Throws_RollsBackEverything()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var id = TestId.New();
 
         var act = () => uow.ExecuteInTransactionAsync(async token =>
@@ -150,7 +149,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public void OnBeforeCommit_OutsideATransaction_Throws()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var act = () => uow.OnBeforeCommit(_ => Task.CompletedTask);
 
@@ -161,7 +160,7 @@ public sealed class EfUnitOfWorkTransactionTests
     public async Task NestedExecuteInTransaction_JoinsTheOuterTransaction()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var id = TestId.New();
 
         var act = () => uow.ExecuteInTransactionAsync(async token =>
@@ -183,7 +182,7 @@ public sealed class EfUnitOfWorkTransactionTests
         await using var ctx = CreateRetryingContext(new FaultInjectingInterceptor(failuresBeforeSuccess: 1));
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.EnsureCreatedAsync();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         var attempts = 0;
         var callbackRuns = 0;
 
@@ -212,7 +211,7 @@ public sealed class EfUnitOfWorkTransactionTests
         await using var ctx = CreateRetryingContext(new FaultInjectingInterceptor(failuresBeforeSuccess: 0));
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.EnsureCreatedAsync();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "staged outside" });
 
         var act = () => uow.ExecuteInTransactionAsync(_ => Task.CompletedTask);
@@ -230,10 +229,10 @@ public sealed class EfUnitOfWorkTransactionTests
             .Options;
 
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var audit = new AuditInterceptor(TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid()), clock);
+        var audit = PersistenceContextDependencies.Create(TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid()), clock);
 
         return new RetryDiagListenerTestDbContext(
             options,
-            new PersistenceContextDependencies(audit, new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
+            audit);
     }
 }

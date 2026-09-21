@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -21,29 +22,16 @@ public sealed class EfUnitOfWorkSingleConstructorTests
     [Fact]
     public void EfUnitOfWork_Has_Exactly_OnePublicConstructor()
     {
-        // Hard rule: exactly one public constructor; second constructor creates DI ambiguity.
-        var constructors = typeof(EfUnitOfWork).GetConstructors();
-        constructors.Should().HaveCount(1,
-            "EfUnitOfWork must have exactly one public constructor. " +
-            "A second constructor causes the DI container to silently select the shorter one, " +
-            "bypassing the IDomainEventDispatcher parameter.");
+        // Hard rule: exactly one public constructor; a second one creates DI ambiguity.
+        typeof(EfUnitOfWork<TestDbContext>).GetConstructors().Should().HaveCount(1);
     }
 
     [Fact]
-    public void EfUnitOfWork_SingleConstructor_HasNullableDispatcherParameter()
+    public void EfUnitOfWork_TakesNoDispatcher_TheContextDispatchesItsOwnEvents()
     {
-        var ctor = typeof(EfUnitOfWork).GetConstructors().Single();
-        var dispatcherParam = ctor.GetParameters()
-            .FirstOrDefault(p => p.ParameterType == typeof(IDomainEventDispatcher));
-
-        dispatcherParam.Should().NotBeNull(
-            "EfUnitOfWork's single constructor must have an IDomainEventDispatcher? parameter");
-
-        // The parameter must be optional (has a default value of null).
-        dispatcherParam!.IsOptional.Should().BeTrue(
-            "IDomainEventDispatcher? must be an optional parameter so DI resolves null when not registered");
-        dispatcherParam.DefaultValue.Should().BeNull(
-            "The default value must be null — resolves to no-op path when dispatcher is not registered");
+        // A24: dispatch moved into SharedKernelDbContext.SaveChangesAsync, so every save path dispatches.
+        var ctor = typeof(EfUnitOfWork<TestDbContext>).GetConstructors().Single();
+        ctor.GetParameters().Should().NotContain(p => p.ParameterType == typeof(IDomainEventDispatcher));
     }
 
     [Fact]
@@ -59,7 +47,7 @@ public sealed class EfUnitOfWorkSingleConstructorTests
                 .Returns(Task.CompletedTask);
 
         // Create EfUnitOfWork via the single constructor — dispatcher provided.
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var id = TestId.New();
         var aggregate = new AuditableTestAggregate(id, "DispatchTest", new SystemClock());
@@ -83,7 +71,7 @@ public sealed class EfUnitOfWorkSingleConstructorTests
     {
         // Arrange — no dispatcher registered; pass null via the nullable optional parameter.
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx, dispatcher: null);
+        var uow = EfUnitOfWork.For(ctx, dispatcher: null);
 
         var id = TestId.New();
         var aggregate = new AuditableTestAggregate(id, "NoDispatchTest", new SystemClock());
@@ -102,8 +90,6 @@ public sealed class EfUnitOfWorkSingleConstructorTests
     public async Task EfUnitOfWork_DI_Resolves_WithDispatcher_Via_ServiceCollection()
     {
         // Arrange
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-
         var dispatcher = Substitute.For<IDomainEventDispatcher>();
         dispatcher.DispatchAsync(
             Arg.Any<IReadOnlyList<IDomainEvent>>(),
@@ -111,14 +97,17 @@ public sealed class EfUnitOfWorkSingleConstructorTests
                 .Returns(Task.CompletedTask);
 
         var services = new ServiceCollection();
-        services.AddSingleton<SharedKernelDbContext>(ctx); // register as base type for EfUnitOfWork
         services.AddSingleton<IDomainEventDispatcher>(dispatcher);
-        services.AddTransient<EfUnitOfWork>();
+        services.AddSharedKernelEfCore<TestDbContext>(o => o.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")).Build();
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        await ctx.Database.OpenConnectionAsync();
+        await ctx.Database.EnsureCreatedAsync();
 
-        // Act — DI resolves EfUnitOfWork with the dispatcher via the single constructor.
-        var uow = provider.GetRequiredService<EfUnitOfWork>();
+        // Act — the registered dispatcher is attached to the context the scope hands out.
+        var uow = scope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<TestDbContext>>();
 
         var id = TestId.New();
         var aggregate = new AuditableTestAggregate(id, "DI_Dispatch", new SystemClock());

@@ -1,29 +1,35 @@
 using System.Diagnostics.Metrics;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Testing.Logging;
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.Abstractions.Tests.Context;
 
 /// <summary>
-/// <see cref="CrossTenantScope"/>: activation/deactivation semantics, nested-call composition, and
-/// the <c>"SharedKernel.Persistence"</c> meter counter every <c>Enter(string?)</c> call records.
+/// <see cref="CrossTenantScope"/>: flow-wide activation (A23), mandatory reason, actor captured from the request
+/// context, logging and metering of every entry.
 /// </summary>
 public sealed class CrossTenantScopeTests
 {
+    private static CrossTenantScope NewScope(string actor = "admin-1", InMemoryLogger<CrossTenantScope>? logger = null) =>
+        new(new FakeAuditActorContext(actor), logger);
+
     [Fact]
     public void IsActive_Initially_False()
     {
-        var scope = new CrossTenantScope();
-
-        scope.IsActive.Should().BeFalse();
+        NewScope().IsActive.Should().BeFalse();
+        CrossTenantScope.IsActiveInCurrentFlow.Should().BeFalse();
     }
 
     [Fact]
     public void Enter_ActivatesScope_UntilDisposed()
     {
-        var scope = new CrossTenantScope();
+        var scope = NewScope();
 
-        using (scope.Enter("admin-1"))
+        using (scope.Enter("report"))
         {
             scope.IsActive.Should().BeTrue();
         }
@@ -32,89 +38,117 @@ public sealed class CrossTenantScopeTests
     }
 
     [Fact]
+    public void Enter_OnOneInstance_IsObservedByEveryOtherInstanceInTheFlow()
+    {
+        // A23: the former per-instance counter made a separately constructed scope a silent no-op.
+        var entering = NewScope();
+        var observer = NewScope("someone-else");
+
+        using (entering.Enter("migration"))
+        {
+            observer.IsActive.Should().BeTrue();
+            CrossTenantScope.IsActiveInCurrentFlow.Should().BeTrue();
+        }
+
+        observer.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
     public void Enter_Nested_OnlyDeactivatesOnceEveryEntryDisposed()
     {
-        var scope = new CrossTenantScope();
+        var scope = NewScope();
 
-        var outer = scope.Enter("outer-actor");
-        var inner = scope.Enter("inner-actor");
-
-        scope.IsActive.Should().BeTrue();
+        var outer = scope.Enter("outer");
+        var inner = scope.Enter("inner");
 
         inner.Dispose();
         scope.IsActive.Should().BeTrue("the outer entry is still active");
 
         outer.Dispose();
-        scope.IsActive.Should().BeFalse("every entry has now been disposed");
+        scope.IsActive.Should().BeFalse();
     }
 
     [Fact]
     public void Enter_DisposedTwice_IsIdempotent()
     {
-        var scope = new CrossTenantScope();
-        var handle = scope.Enter();
+        var scope = NewScope();
+        var outer = scope.Enter("outer");
+        var handle = scope.Enter("inner");
 
         handle.Dispose();
-        var act = handle.Dispose;
+        handle.Dispose();
 
-        act.Should().NotThrow();
+        scope.IsActive.Should().BeTrue("a second dispose must not release the outer entry");
+        outer.Dispose();
         scope.IsActive.Should().BeFalse();
     }
 
-    [Fact]
-    public void Enter_WithActorId_RecordsMeterCounterTaggedWithThatActor()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Enter_WithoutReason_Throws(string reason)
     {
-        var scope = new CrossTenantScope();
-        var recorded = new List<(long Value, string? ActorId)>();
+        var act = () => NewScope().Enter(reason);
 
-        using var listener = CreateListener(recorded);
-
-        using (scope.Enter("data-migration-job"))
-        {
-        }
-
-        recorded.Should().ContainSingle(m => m.Value == 1 && m.ActorId == "data-migration-job");
+        act.Should().Throw<ArgumentException>();
+        CrossTenantScope.IsActiveInCurrentFlow.Should().BeFalse();
     }
 
     [Fact]
-    public void Enter_WithNoActorId_RecordsUnknownTag()
+    public void Enter_LogsActorAndReason()
     {
-        var scope = new CrossTenantScope();
-        var recorded = new List<(long Value, string? ActorId)>();
+        var logger = new InMemoryLogger<CrossTenantScope>();
 
-        using var listener = CreateListener(recorded);
-
-        using (scope.Enter())
+        using (NewScope("data-migration-job", logger).Enter("backfill invoices"))
         {
         }
 
-        recorded.Should().ContainSingle(m => m.Value == 1 && m.ActorId == "unknown");
+        var record = logger.Records.Should().ContainSingle().Subject;
+        record.EventId.Id.Should().Be(6150);
+        record.Message.Should().Contain("data-migration-job").And.Contain("backfill invoices");
     }
 
     [Fact]
-    public void Enter_CalledTwice_RecordsTwoSeparateEntries()
+    public void Enter_CalledTwice_RecordsTwoEntriesTaggedWithActorKind()
     {
-        // Every call site is an independent, attributable decision to bypass isolation — a
-        // re-entrant call must not be silently folded into the first, or an admin path that enters
-        // the scope from two different call sites in the same logical operation would undercount.
-        var scope = new CrossTenantScope();
-        var recorded = new List<(long Value, string? ActorId)>();
-
+        var recorded = new List<(long Value, string? ActorKind)>();
         using var listener = CreateListener(recorded);
 
-        using (scope.Enter("actor-a"))
-        using (scope.Enter("actor-b"))
+        var scope = NewScope("meter-actor-unique");
+        using (scope.Enter("a"))
+        using (scope.Enter("b"))
         {
         }
 
-        recorded.Should().HaveCount(2);
-        recorded.Should().Contain(m => m.ActorId == "actor-a");
-        recorded.Should().Contain(m => m.ActorId == "actor-b");
+        lock (recorded)
+            recorded.Count(m => m.ActorKind == nameof(ActorKind.User)).Should().BeGreaterThanOrEqualTo(2);
     }
 
-    // Subscribes to every Counter<long> published under the "SharedKernel.Persistence" meter name and
-    // appends each recorded measurement (plus its actor-id tag) to `into`.
-    private static MeterListener CreateListener(List<(long Value, string? ActorId)> into)
+    [Fact]
+    public void AddSharedKernelCrossTenantScope_RegistersScopedScopeAndAnonymousDefault()
+    {
+        var services = new ServiceCollection().AddSharedKernelCrossTenantScope();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().Should().BeOfType<CrossTenantScope>();
+        scope.ServiceProvider.GetRequiredService<IRequestContext>().Should().BeSameAs(AnonymousRequestContext.Instance);
+    }
+
+    [Fact]
+    public void AddSharedKernelCrossTenantScope_KeepsAnExistingRequestContext()
+    {
+        var existing = new FakeAuditActorContext("svc");
+        var services = new ServiceCollection();
+        services.AddSingleton<IRequestContext>(existing);
+        services.AddSharedKernelCrossTenantScope();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IRequestContext>().Should().BeSameAs(existing);
+    }
+
+    private static MeterListener CreateListener(List<(long Value, string? ActorKind)> into)
     {
         var listener = new MeterListener
         {
@@ -130,14 +164,15 @@ public sealed class CrossTenantScopeTests
 
         listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
         {
-            string? actorId = null;
+            string? actorKind = null;
             foreach (var tag in tags)
             {
-                if (tag.Key == "persistence.actor_id")
-                    actorId = tag.Value as string;
+                if (tag.Key == "persistence.actor_kind")
+                    actorKind = tag.Value as string;
             }
 
-            into.Add((measurement, actorId));
+            lock (into)
+                into.Add((measurement, actorKind));
         });
 
         listener.Start();

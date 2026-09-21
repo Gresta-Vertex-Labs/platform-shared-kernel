@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -59,18 +59,20 @@ internal static class PgTestDbContextFactory
         var options = BuildOptions(connectionString, maxRetryCount, providerLevelInterceptors, maxRetryDelay);
         clock ??= new SystemClock();
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
-
         var ctx = new PgTestDbContext(
             options,
             new PersistenceContextDependencies(
-                audit,
-                softDelete,
-                concurrency,
+                clock,
+                actorContext,
+                serviceName: "system",
+                defaultDomainEventDispatcher: null,
                 additionalInterceptors,
-                exceptionClassifiers: exceptionClassifiers));
+                modelConventionFactories: null,
+                modelConfigurators: null,
+                optionsExtensions: null,
+                exceptionClassifiers ?? [new PostgreSqlDbUpdateExceptionClassifier()],
+                keyGenerator: null,
+                loggerFactory: null));
         // Actor identity from actorContext, tenant from tenantContext — the two roles the former
         // ICurrentActorContext/ICurrentTenantContext pair played, now one IRequestContext.
         ctx.RefreshRequestContext(ReferenceEquals(actorContext, tenantContext)

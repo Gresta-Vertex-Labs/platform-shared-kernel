@@ -1461,34 +1461,39 @@ The `sql` argument passed to a `SharedKernel.Persistence.Dapper` query/command m
 
 #### Why it matters
 
-Every query/command method on `DapperReadService`/`DapperCommandService`, and every Dapper `SqlMapper` extension method, takes its SQL as a plain `string` parameter named `sql`. Nothing in the type system stops a caller from building that string with `$"...{value}..."` or string concatenation instead of a parameterized placeholder — the code compiles identically either way, and the difference only shows up as a SQL-injection vulnerability at runtime, against whichever value reaches the interpolated hole. `06.Persistence/CLAUDE.md`'s "parameterized queries only" rule was prose with no compiler enforcement behind it until this analyzer.
+`IDbSession.Command(sql, ...)` (the Dapper session of `SharedKernel.Persistence.Dapper`) and every Dapper `SqlMapper` extension method take their SQL as a plain `string` parameter named `sql`. Nothing in the type system stops a caller from building that string with `$"...{value}..."` or string concatenation instead of a parameterized placeholder — the code compiles identically either way, and the difference only shows up as a SQL-injection vulnerability at runtime, against whichever value reaches the interpolated hole. `06.Persistence/CLAUDE.md`'s "parameterized queries only" rule was prose with no compiler enforcement behind it until this analyzer.
 
 #### What it flags
 
 - An interpolated string passed as the `sql` argument of a matching method — always flagged, since an interpolated string is never a compile-time constant.
 - Any other `sql` argument expression the compiler cannot prove is a compile-time constant (`SemanticModel.GetConstantValue` returns no value) — a plain local variable built earlier by concatenation, a method call, a field that is not `const`, and so on.
-- Matched call sites: an invocation whose target method declares a `string sql` parameter, on `SharedKernel.Persistence.Dapper.ReadModels.DapperReadService`, `SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService` (including through a subclass), or `Dapper.SqlMapper` itself (a caller that bypasses the base classes and calls Dapper directly).
+- Matched call sites: an invocation whose target method declares a `string sql` parameter, on `SharedKernel.Persistence.Dapper.Sessions.IDbSession` or a type implementing it, or on `Dapper.SqlMapper` itself (raw Dapper calls on the session's connection).
 
 #### What it does not flag
 
 - A string literal, a `const` field or local, or a concatenation of only such constants passed as `sql` — the exact case a parameterized query's fixed SQL text is written as.
-- A call to an unrelated method that happens to have a `string sql` parameter but is not declared on `DapperReadService`/`DapperCommandService`/`Dapper.SqlMapper`.
+- A call to an unrelated method that happens to have a `string sql` parameter but is not declared on an `IDbSession` type or `Dapper.SqlMapper`.
 - Every other argument to a matched method (the `parameters` argument is meant to carry caller-supplied values — that is the whole point of a parameterized query).
 
 #### Example
 
 ```csharp
-using SharedKernel.Persistence.Dapper.ReadModels;
+using Dapper;
+using SharedKernel.Persistence.Dapper.Sessions;
 
-public sealed class OrderReadService(IDbConnectionFactory factory) : DapperReadService(factory)
+public sealed class OrderQueries(IDbSessionFactory sessions)
 {
-    public Task<IReadOnlyList<OrderRow>> FindByStatusAsync(string status, CancellationToken ct) =>
-        // Flagged: SK0042 — string interpolation builds the SQL text itself
-        QueryAsync<OrderRow>($"SELECT * FROM orders WHERE status = '{status}'", null, ct: ct);
+    public async Task<IEnumerable<OrderRow>> FindByStatusAsync(string status, CancellationToken ct)
+    {
+        await using var session = await sessions.OpenReadOnlyAsync(ct);
 
-    public Task<IReadOnlyList<OrderRow>> FindByStatusFixedAsync(string status, CancellationToken ct) =>
+        // Flagged: SK0042 — string interpolation builds the SQL text itself
+        // session.Command($"SELECT * FROM orders WHERE status = '{status}'", cancellationToken: ct)
+
         // Compliant — fixed SQL text, the value flows through a real parameter
-        QueryAsync<OrderRow>("SELECT * FROM orders WHERE status = @status", new { status }, ct: ct);
+        return await session.Connection.QueryAsync<OrderRow>(
+            session.Command("SELECT * FROM orders WHERE status = @status", new { status }, ct));
+    }
 }
 ```
 

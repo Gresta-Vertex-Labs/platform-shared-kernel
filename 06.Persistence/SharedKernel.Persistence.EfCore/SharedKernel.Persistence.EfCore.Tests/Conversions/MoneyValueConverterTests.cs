@@ -9,7 +9,6 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 
@@ -111,8 +110,6 @@ internal sealed class MoneyTestDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<MoneyConversionTestId, Guid>();
-        configurationBuilder.ConfigureMoney();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -147,8 +144,7 @@ public sealed class MoneyValueConverterTests
 
         var ctx = new MoneyTestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(clock), new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContext, clock));
         ctx.Database.EnsureCreated();
         return ctx;
     }

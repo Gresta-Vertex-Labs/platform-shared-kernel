@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// <para>
 /// <strong>Never a raw <c>ILogger.LogX(...)</c> call anywhere in this domain</strong> — every
 /// production log statement is one of the source-generated partial methods below.
-/// <see cref="EncryptionRotationBatchProcessed"/>/<see cref="EncryptionRotationCompleted"/> never
+/// The encryption rotation logs (now in the Encryption package) never
 /// log a key byte, a Base64-encoded key string, or any column plaintext/ciphertext value — only
 /// counts and already-non-secret version-tag strings (e.g. <c>"v1"</c>).
 /// </para>
@@ -27,7 +27,7 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 internal static partial class PersistenceLog
 {
     /// <summary>
-    /// Logged by <c>ConcurrencyInterceptor.TryTranslate</c> immediately before it returns the
+    /// Logged by the concurrency-conflict translator immediately before it returns the
     /// translated <see cref="SharedKernel.Core.Exceptions.ConflictException"/> — never logs the row
     /// payload, only the conflicting entry's CLR type name.
     /// </summary>

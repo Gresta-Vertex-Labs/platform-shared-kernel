@@ -46,7 +46,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// cost.
 /// </para>
 /// </remarks>
-public sealed class SoftDeleteQueryFilterConvention : IModelFinalizingConvention
+internal sealed class SoftDeleteQueryFilterConvention : IModelFinalizingConvention
 {
     /// <inheritdoc />
     public void ProcessModelFinalizing(

@@ -50,7 +50,7 @@ public sealed class TransactionRetryPostgresTests
             await setup.Database.EnsureCreatedAsync();
 
         await using var ctx = CreateContext(tenantId, maxRetryCount: 5, faultInjector);
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         await uow.ExecuteInTransactionAsync(async token =>
         {
@@ -81,7 +81,7 @@ public sealed class TransactionRetryPostgresTests
             await setup.Database.EnsureCreatedAsync();
 
         await using var ctx = CreateContext(tenantId, maxRetryCount: 1, faultInjector);
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var act = () => uow.ExecuteInTransactionAsync(async token =>
         {

@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Testing.Clocks;
@@ -96,12 +95,10 @@ public sealed class PostgreSqlDbUpdateExceptionClassifierIntegrationTests : IAsy
 
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
         var classifiers = new IDbUpdateExceptionClassifier[] { new PostgreSqlDbUpdateExceptionClassifier() };
 
-        var ctx = new ClassifierTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency, exceptionClassifiers: classifiers));
+        var ctx = new ClassifierTestDbContext(options, audit);
         await ctx.Database.EnsureCreatedAsync();
         return ctx;
     }
