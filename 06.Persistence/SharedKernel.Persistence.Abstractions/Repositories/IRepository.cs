@@ -2,134 +2,137 @@ using SharedKernel.Application.Transactions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 
+#pragma warning disable RS0026 // UpdateAsync has an expected-version overload; both keep the optional token last.
+
 namespace SharedKernel.Persistence.Abstractions.Repositories;
 
 /// <summary>
-/// Write-side repository contract for a DDD aggregate root.
-/// Provides the minimal command surface: fetch by identity, add, update, delete, and bulk variants.
+/// Write-side repository for an aggregate root: loads aggregates <strong>with change tracking</strong> so their
+/// changes are saved, and stages inserts, updates and deletes for the unit of work.
 /// </summary>
-/// <typeparam name="TAggregate">
-/// The aggregate root type. Must implement <see cref="IAggregateRoot{TId}"/>.
-/// </typeparam>
-/// <typeparam name="TId">
-/// The aggregate's identity type. Must be non-null.
-/// </typeparam>
+/// <typeparam name="TAggregate">The aggregate root type.</typeparam>
+/// <typeparam name="TId">The aggregate's identity type.</typeparam>
 /// <remarks>
 /// <para>
-/// This interface is intentionally write-only — it does not expose <see cref="System.Linq.IQueryable{T}"/>,
-/// raw SQL, or any query surface. All reads are handled by <see cref="IReadRepository{TAggregate,TId}"/>.
+/// <b>Registration.</b> Registered automatically for every aggregate root the service's DbContexts map; inject
+/// <c>IRepository&lt;Order, OrderId&gt;</c> without writing a class.
 /// </para>
 /// <para>
-/// Mutations staged via <c>AddAsync</c>, <c>UpdateAsync</c>, <c>DeleteAsync</c>, and their range
-/// counterparts are not persisted until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
-/// Never call <c>DbContext.SaveChangesAsync</c> directly — that is a hard violation of the
-/// save-boundary rule.
+/// <b>Tracked and untracked members.</b> <see cref="GetByIdAsync"/>, <see cref="FirstOrDefaultAsync"/> and
+/// <see cref="ListAsync"/> are redeclared here and return <em>tracked</em> aggregates: change them through their
+/// domain methods and call <see cref="IUnitOfWork.SaveChangesAsync"/>, no <c>UpdateAsync</c> needed. Every other
+/// member inherited from <see cref="IReadRepository{TAggregate, TId}"/> (counts, projections, pages, streams)
+/// stays untracked. Called through an <see cref="IReadRepository{TAggregate, TId}"/> reference, the same object
+/// answers untracked.
+/// </para>
+/// <para>
+/// <b>Saving.</b> Nothing here writes to the database; changes are persisted by
+/// <see cref="IUnitOfWork.SaveChangesAsync"/> or inside <c>IUnitOfWork.ExecuteInTransactionAsync</c>.
 /// </para>
 /// </remarks>
-public interface IRepository<TAggregate, TId>
+public interface IRepository<TAggregate, TId> : IReadRepository<TAggregate, TId>
     where TAggregate : IAggregateRoot<TId>
     where TId : notnull
 {
     /// <summary>
-    /// Retrieves a single aggregate matching the specification for write-path mutation, or
-    /// <see langword="null"/> when no match exists.
+    /// Returns the tracked aggregate with the given identity, or <see langword="null"/> when there is none.
     /// </summary>
-    /// <param name="spec">The specification that expresses the fetch predicate.</param>
+    /// <param name="id">The aggregate's identity.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A tracked aggregate matching the specification, or <see langword="null"/>.</returns>
+    /// <returns>The complete aggregate, tracked; or <see langword="null"/>.</returns>
+    /// <remarks>Loads the whole aggregate, like <see cref="IReadRepository{TAggregate, TId}.GetByIdAsync"/>.</remarks>
+    new Task<TAggregate?> GetByIdAsync(TId id, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the first tracked aggregate matching <paramref name="spec"/>, or <see langword="null"/>.</summary>
+    /// <param name="spec">
+    /// The query. To load a soft-deleted aggregate (for example to restore it), set
+    /// <see cref="ISpecification{T}.IncludeDeleted"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The first match, tracked; or <see langword="null"/>.</returns>
+    new Task<TAggregate?> FirstOrDefaultAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns every aggregate matching <paramref name="spec"/>, tracked, for a change to all of them.</summary>
+    /// <param name="spec">The query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matches, tracked.</returns>
     /// <remarks>
-    /// <para>
-    /// Returns a <strong>tracked</strong> entity by default — the spec's own <c>AsNoTracking</c>
-    /// flag is honored. Write-side callers should leave <c>AsNoTracking</c> unset so that subsequent
-    /// mutations are detected by EF change tracking without requiring an explicit <c>.Update()</c>.
-    /// </para>
-    /// <para>
-    /// <see cref="System.Linq.IQueryable{T}"/> is never returned to the caller — the fetch predicate
-    /// is expressed entirely through <see cref="ISpecification{TAggregate}"/>.
-    /// </para>
+    /// Every returned aggregate stays in the change tracker until the scope ends. For a set-based change that
+    /// needs no domain logic, use the bulk repository instead.
     /// </remarks>
-    Task<TAggregate?> GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
+    new Task<IReadOnlyList<TAggregate>> ListAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves an aggregate by its unique identity, or <see langword="null"/> when not found.
-    /// </summary>
-    /// <param name="id">The aggregate's unique identifier.</param>
+    /// <summary>Stages a new aggregate for insertion.</summary>
+    /// <param name="aggregate">The aggregate to insert. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The aggregate root, or <see langword="null"/> if no match exists.</returns>
-    Task<TAggregate?> GetByIdAsync(TId id, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Returns <see langword="true"/> when an aggregate with the given identity exists in the store.
-    /// </summary>
-    /// <param name="id">The aggregate's unique identifier to check.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// <see langword="true"/> if a record exists; otherwise <see langword="false"/>.
-    /// </returns>
-    /// <remarks>
-    /// Issues an <c>EXISTS</c>/<c>ANY</c> check — never materialises the aggregate.
-    /// O(1) at the database.
-    /// </remarks>
-    Task<bool> ExistsAsync(TId id, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Stages a new aggregate for insertion during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
-    /// </summary>
-    /// <param name="aggregate">The aggregate to insert.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
     Task AddAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Stages multiple aggregates for insertion during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
-    /// </summary>
+    /// <summary>Stages new aggregates for insertion.</summary>
     /// <param name="aggregates">The aggregates to insert. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <remarks>
-    /// Staging semantics are identical to <see cref="AddAsync"/> — rows are not written to the
-    /// database until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
-    /// </remarks>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
     Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Stages an existing aggregate for update during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
-    /// </summary>
-    /// <param name="aggregate">The aggregate to update.</param>
+    /// <summary>Stages an aggregate for update.</summary>
+    /// <param name="aggregate">The aggregate. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Tracked aggregate</b> (loaded through this repository): nothing to do; only the changed columns are
+    /// written. Calling it is harmless.
+    /// </para>
+    /// <para>
+    /// <b>Detached aggregate</b> (deserialized, or loaded in another scope): it is <em>attached as modified</em>,
+    /// so <strong>every</strong> column is written, and its child entities are attached too (new ones, with an
+    /// unset key, as added). The creation audit columns are never overwritten. Prefer loading and changing a
+    /// tracked aggregate; attach only when the whole aggregate state is authoritative.
+    /// </para>
+    /// </remarks>
     Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Stages multiple existing aggregates for update during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
+    /// Stages an aggregate for update only if its stored version is still <paramref name="expectedVersion"/>
+    /// (optimistic concurrency for HTTP <c>If-Match</c> / ETag).
     /// </summary>
-    /// <param name="aggregates">The aggregates to update. Must not be <see langword="null"/>.</param>
+    /// <param name="aggregate">The aggregate, tracked or detached (see <see cref="UpdateAsync(TAggregate, CancellationToken)"/>).</param>
+    /// <param name="expectedVersion">
+    /// The version the client last read: the aggregate's PostgreSQL <c>xmin</c> row version, as sent in the
+    /// ETag.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; the version is checked when the unit of work saves.</returns>
+    /// <exception cref="InvalidOperationException">The aggregate's model has no row-version concurrency token.</exception>
     /// <remarks>
-    /// Staging semantics are identical to <see cref="UpdateAsync"/> — mutations are not persisted
-    /// until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
+    /// The save issues <c>UPDATE … WHERE id = @id AND xmin = @expectedVersion</c>; when another writer changed the
+    /// row in between, no row matches and the save fails with a conflict (HTTP 409/412) instead of overwriting
+    /// that change.
     /// </remarks>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
+    Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default);
+
+    /// <summary>Stages aggregates for update; see <see cref="UpdateAsync(TAggregate, CancellationToken)"/>.</summary>
+    /// <param name="aggregates">The aggregates. Must not be <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
     Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Stages an aggregate for deletion during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
-    /// For <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> aggregates, the
-    /// persistence layer converts this to a soft-delete mutation rather than a physical row removal.
+    /// Stages an aggregate for deletion. A soft-deletable aggregate is marked deleted and kept; any other is
+    /// removed.
     /// </summary>
-    /// <param name="aggregate">The aggregate to delete.</param>
+    /// <param name="aggregate">The aggregate. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
+    /// <remarks>
+    /// A soft delete performed here raises no domain event. When other parts of the system must react, delete
+    /// through the aggregate's own domain method instead.
+    /// </remarks>
     Task DeleteAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Stages multiple aggregates for deletion during the next <see cref="IUnitOfWork.SaveChangesAsync"/> call.
-    /// For <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> aggregates, the
-    /// persistence layer converts each delete to a soft-delete mutation.
-    /// </summary>
-    /// <param name="aggregates">The aggregates to delete. Must not be <see langword="null"/>.</param>
+    /// <summary>Stages aggregates for deletion; see <see cref="DeleteAsync"/>.</summary>
+    /// <param name="aggregates">The aggregates. Must not be <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <remarks>
-    /// Staging semantics are identical to <see cref="DeleteAsync"/> — rows are not removed (or soft-deleted)
-    /// until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
-    /// </remarks>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
+    /// <returns>A completed task; nothing is written until the unit of work saves.</returns>
     Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default);
 }

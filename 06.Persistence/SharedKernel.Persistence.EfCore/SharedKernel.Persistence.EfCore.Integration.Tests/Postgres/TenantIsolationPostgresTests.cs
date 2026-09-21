@@ -1,3 +1,4 @@
+using SharedKernel.Domain.Specifications;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -155,24 +156,14 @@ public sealed class TenantIsolationPostgresTests
         var readRepoA = new PgOrderReadRepository(readCtxA);
 
         var allIdsSeenByA = new List<PgOrderId>();
-        DateTimeOffset? afterKey = null;
-        object? afterId = null;
-        bool hasMore;
+        string? cursor = null;
         do
         {
             var page = await readRepoA.ListKeysetAsync(
-                new PgOrdersByCreatedOnKeysetSpecification(afterKey, afterId, take: 50, includeDeleted: true));
+                Spec.For<PgOrderAggregate>().IncludeDeleted(), CursorPageRequest.Create(cursor, limit: 50).Value, o => o.CreatedOn);
             allIdsSeenByA.AddRange(page.Items.Select(o => o.Id));
-            if (page.NextCursor is null) { hasMore = false; }
-            else
-            {
-                var decoded = PageCursor.Decode<DateTimeOffset, PgOrderId>(page.NextCursor);
-                decoded.IsSuccess.Should().BeTrue();
-                afterKey = decoded.Value.Key;
-                afterId = decoded.Value.Id;
-                hasMore = page.HasMore;
-            }
-        } while (hasMore);
+            cursor = page.NextCursor;
+        } while (cursor is not null);
 
         allIdsSeenByA.Should().Contain(deletedAId).And.NotContain(deletedBId,
             "an IncludeDeleted keyset walk must stay inside the owning tenant, never leak another tenant's soft-deleted rows");

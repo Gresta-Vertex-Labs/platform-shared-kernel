@@ -1,89 +1,52 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using SharedKernel.Contracts.Pagination;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
+using SharedKernel.Domain.StronglyTypedIds.Serialization;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.Abstractions.Specifications;
 
 namespace SharedKernel.Testing.Persistence;
 
 /// <summary>
-/// In-memory fake implementation of both <see cref="IRepository{TAggregate, TId}"/> and
-/// <see cref="IReadRepository{TAggregate, TId}"/> (<c>06.Persistence</c>) for use in unit tests.
+/// In-memory fake of <see cref="IRepository{TAggregate, TId}"/> (and therefore
+/// <see cref="IReadRepository{TAggregate, TId}"/>) for unit tests.
 /// </summary>
-/// <typeparam name="TAggregate">The aggregate root type. Must implement <see cref="IAggregateRoot{TId}"/>.</typeparam>
-/// <typeparam name="TId">The aggregate's identity type. Must be non-null.</typeparam>
+/// <typeparam name="TAggregate">The aggregate root type.</typeparam>
+/// <typeparam name="TId">The aggregate's identity type.</typeparam>
 /// <remarks>
 /// <para>
-/// A SINGLE type implements BOTH <see cref="IRepository{TAggregate, TId}"/> and
-/// <see cref="IReadRepository{TAggregate, TId}"/> — a deliberate divergence from production's
-/// <c>EfRepository</c>/<c>EfReadRepository</c> two-class split. That split exists to support
-/// read-replica routing (WO-053/P-338), a distinction meaningless for a single in-memory collection.
-/// Collapsing both interfaces into one type guarantees trivial, correct read-after-write consistency
-/// with no shared-store wiring needed.
+/// <b>Fidelity.</b> Specifications are evaluated in memory with the production rules: soft-deleted aggregates are
+/// hidden unless the specification includes them, Distinct before ordering, Skip/Take last and only with a primary
+/// sort, call-site paging (<see cref="ListPagedAsync"/>/<see cref="ListKeysetAsync{TKey}"/>) rejects a
+/// specification that pages or (keyset) orders itself, and keyset cursors are encoded exactly as production encodes
+/// them, so a cursor from this fake decodes against the real repository.
 /// </para>
 /// <para>
-/// The constructor requires a caller-supplied <paramref name="idSelector"/> because
-/// <see cref="IAggregateRoot{TId}"/> exposes no <c>.Id</c> member at all — <see cref="IEntity{TId}"/>
-/// is a zero-member marker interface. Production solves this identical problem via a compiled
-/// <c>Expression.Property("Id")</c> tree per closed generic type; this fake takes the simpler
-/// caller-supplied-delegate route instead, mirroring <see cref="FakeDbConnectionFactory"/>'s own
-/// "caller-supplied delegate over hand-rolled substitute" precedent.
-/// </para>
-/// <para>
-/// Every write is applied IMMEDIATELY — there is no <c>ChangeTracker</c>-style staging the way real
-/// EF Core stages mutations until <c>SaveChangesAsync</c> is called. <see cref="FakeUnitOfWork"/> (the
-/// <c>06.Persistence</c>-shaped one, in this same namespace) is fully INDEPENDENT of this type, with
-/// no constructor coupling — a test asserting "the handler called <c>SaveChangesAsync</c> exactly
-/// once" asserts on <c>FakeUnitOfWork.SaveChangesCallCount</c> directly.
-/// </para>
-/// <para>
-/// <b>Write-semantics asymmetry, by design:</b> <see cref="AddAsync"/> throws
-/// <see cref="InvalidOperationException"/> on a duplicate derived key — a FAIL-FAST choice, catching a
-/// test-authoring bug (adding the same aggregate twice) immediately rather than faithfully deferring
-/// the eventual real unique-constraint violation to a phantom later <c>SaveChangesAsync</c> this fake
-/// does not model. <see cref="UpdateAsync"/> throws
-/// <see cref="System.Collections.Generic.KeyNotFoundException"/> on a missing derived key rather than
-/// silently upserting — a silent upsert would mask a genuine "this aggregate was never
-/// <see cref="AddAsync"/>-ed" test bug. <see cref="DeleteAsync"/>, by contrast, is ALWAYS a hard
-/// removal AND idempotent (a missing key is a silent no-op, matching this package's universal
-/// idempotent-delete convention) — see its own remarks for why it never flips
-/// <see cref="ISoftDeletable.IsDeleted"/> in place instead of removing the row outright. Three
-/// different failure postures for three different mistakes: Add/Update both fail loudly because a
-/// silent auto-correction would hide a real test-authoring error, while Delete succeeds silently
-/// because "delete something already gone" is not, on its own, evidence of a bug.
-/// </para>
-/// <para>
-/// <b>Scope lock:</b> <c>IRestorableRepository&lt;TAggregate, TId&gt;</c> — a sibling interface
-/// dispatched to <c>06.Persistence</c> in the SAME work order (WO-053/P-337) — is deliberately NOT
-/// implemented by this type. Extending this fake to additionally implement
-/// <c>IRestorableRepository&lt;TAggregate, TId&gt;</c> is a natural, additive future follow-up once a
-/// concrete consumer needs it — not undertaken here, since P-335's own acceptance criteria name only
-/// <see cref="IRepository{TAggregate, TId}"/>/<see cref="IReadRepository{TAggregate, TId}"/>. RE-VERIFIED
-/// at Docs-phase implementation time (2026-08-04): <c>06.Persistence</c>'s
-/// <c>Repositories/IRestorableRepository.cs</c> (a single <c>RestoreAsync(TAggregate, CancellationToken)</c>
-/// member) is now compiled, shipped code — not merely ratified prose — confirming this scope lock is
-/// still a deliberate, active omission rather than a stale note describing a since-vanished interface.
+/// <b>Differences, by design.</b> Writes apply immediately (there is no change tracker to stage them), so tracked
+/// and untracked reads return the same instances. <see cref="AddAsync"/> fails fast on a duplicate key and
+/// <see cref="UpdateAsync(TAggregate, CancellationToken)"/> on a missing one, to surface test-authoring bugs.
+/// <see cref="DeleteAsync"/> always removes. The expected-version overload of <c>UpdateAsync</c> cannot check a
+/// row version and behaves like the plain overload. Includes and split queries are no-ops.
 /// </para>
 /// </remarks>
-public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TId>, IReadRepository<TAggregate, TId>
+public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TId>
     where TAggregate : IAggregateRoot<TId>
     where TId : notnull
 {
+    private static readonly JsonSerializerOptions CursorOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new StronglyTypedIdJsonConverterFactory() },
+    };
+
     private readonly ConcurrentDictionary<TId, TAggregate> _items = new();
     private readonly Func<TAggregate, TId> _idSelector;
 
-    /// <summary>
-    /// Initialises a new <see cref="FakeRepository{TAggregate, TId}"/>.
-    /// </summary>
-    /// <param name="idSelector">
-    /// Derives an aggregate's identity value. Mandatory — <see cref="IAggregateRoot{TId}"/> exposes no
-    /// <c>.Id</c> member, so this fake cannot derive a key from a bare <typeparamref name="TAggregate"/>
-    /// any other way. Used only by the write-side members that receive a bare aggregate; every
-    /// read-side member either receives <typeparamref name="TId"/> directly or drives ordering/paging
-    /// entirely from the specification's own already-compiled expressions.
-    /// </param>
+    /// <summary>Initializes a new fake repository.</summary>
+    /// <param name="idSelector">Derives an aggregate's identity, typically <c>a =&gt; a.Id</c>.</param>
     /// <param name="seed">Optional initial aggregates, applied via <see cref="Seed"/>.</param>
     public FakeRepository(Func<TAggregate, TId> idSelector, IEnumerable<TAggregate>? seed = null)
     {
@@ -94,63 +57,174 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
             Seed(seed);
     }
 
-    /// <summary>Gets a live, read-through snapshot of every aggregate currently stored, keyed by identity.</summary>
+    /// <summary>Gets a live view of every stored aggregate, soft-deleted ones included, keyed by identity.</summary>
     public IReadOnlyDictionary<TId, TAggregate> Items => _items;
 
     /// <summary>
-    /// Gets or sets whether the six write-side mutating members (<see cref="AddAsync"/>,
-    /// <see cref="UpdateAsync"/>, <see cref="DeleteAsync"/>, <see cref="AddRangeAsync"/>,
-    /// <see cref="UpdateRangeAsync"/>, <see cref="DeleteRangeAsync"/>) should throw
-    /// <see cref="InvalidOperationException"/> instead of performing the operation. The three
-    /// pure-lookup members (<see cref="GetByIdAsync"/>, <see cref="ExistsAsync"/>,
-    /// <see cref="GetBySpecAsync"/>) and every read-side member are never gated by this flag.
-    /// <see cref="Seed"/> and <see cref="Reset"/> bypass it entirely.
+    /// Gets or sets whether the write members throw <see cref="InvalidOperationException"/> instead of acting.
+    /// Reads, <see cref="Seed"/> and <see cref="Reset"/> are never affected.
     /// </summary>
     public bool SimulateFailure { get; set; }
 
-    // ----- IRepository<TAggregate, TId> (write side) -----
+    // ----- reads -----
 
     /// <inheritdoc />
-    /// <remarks>Never soft-delete-filtered — a direct dictionary lookup by key.</remarks>
-    public Task<TAggregate?> GetByIdAsync(TId id, CancellationToken ct = default)
+    public Task<TAggregate?> GetByIdAsync(TId id, CancellationToken cancellationToken = default)
     {
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(_items.TryGetValue(id, out var value) ? value : default);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_items.TryGetValue(id, out var value) && !IsSoftDeleted(value) ? value : default);
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Shared with <see cref="IReadRepository{TAggregate, TId}.GetBySpecAsync"/> — a single
-    /// implementation satisfies both interfaces since their signatures are identical.
-    /// </remarks>
-    public Task<TAggregate?> GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
+    public Task<IReadOnlyList<TAggregate>> GetByIdsAsync(IEnumerable<TId> ids, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(ApplySpecification(spec).FirstOrDefault());
+        ArgumentNullException.ThrowIfNull(ids);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = new List<TAggregate>();
+        foreach (var id in ids)
+        {
+            if (_items.TryGetValue(id, out var value) && !IsSoftDeleted(value))
+                result.Add(value);
+        }
+
+        return Task.FromResult<IReadOnlyList<TAggregate>>(result);
     }
 
     /// <inheritdoc />
-    /// <remarks>Never soft-delete-filtered — a direct dictionary lookup by key.</remarks>
-    public Task<bool> ExistsAsync(TId id, CancellationToken ct = default)
+    public Task<bool> ExistsAsync(TId id, CancellationToken cancellationToken = default)
     {
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(_items.ContainsKey(id));
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_items.TryGetValue(id, out var value) && !IsSoftDeleted(value));
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Fails FAST on a duplicate derived key rather than silently overwriting — see the class-level
-    /// "Write-semantics asymmetry" remarks above for the full rationale.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="SimulateFailure"/> is <see langword="true"/>, or when an aggregate with
-    /// the same derived key already exists.
-    /// </exception>
-    public Task AddAsync(TAggregate aggregate, CancellationToken ct = default)
+    public Task<TAggregate?> FirstOrDefaultAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Apply(spec).FirstOrDefault());
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TAggregate>> ListAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<TAggregate>>(Apply(spec).ToList());
+    }
+
+    /// <inheritdoc />
+    public Task<long> CountAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(FilterAndOrder(spec).LongCount());
+    }
+
+    /// <inheritdoc />
+    public Task<bool> AnyAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Apply(spec).Any());
+    }
+
+    /// <inheritdoc />
+    public Task<PagedList<TAggregate>> ListPagedAsync(
+        ISpecification<TAggregate> spec,
+        PageRequest page,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Page(spec, page, item => item));
+    }
+
+    /// <inheritdoc />
+    public Task<CursorPagedList<TAggregate>> ListKeysetAsync<TKey>(
+        ISpecification<TAggregate> spec,
+        CursorPageRequest page,
+        Expression<Func<TAggregate, TKey>> keySelector,
+        bool descending = false,
+        CancellationToken cancellationToken = default)
+        where TKey : notnull
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Keyset(spec, page, keySelector, descending, item => item));
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<TAggregate> StreamAsync(
+        ISpecification<TAggregate> spec,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var item in Apply(spec).ToList())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+            await Task.Yield();
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<TResult?> FirstOrDefaultProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Apply(spec).Select(spec.Selector.Compile()).FirstOrDefault());
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<TResult>>(Apply(spec).Select(spec.Selector.Compile()).ToList());
+    }
+
+    /// <inheritdoc />
+    public Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        PageRequest page,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Page(spec, page, spec.Selector.Compile()));
+    }
+
+    /// <inheritdoc />
+    public Task<CursorPagedList<TResult>> ListKeysetProjectedAsync<TKey, TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CursorPageRequest page,
+        Expression<Func<TAggregate, TKey>> keySelector,
+        bool descending = false,
+        CancellationToken cancellationToken = default)
+        where TKey : notnull
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Keyset(spec, page, keySelector, descending, spec.Selector.Compile()));
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var selector = spec.Selector.Compile();
+        foreach (var item in Apply(spec).Select(selector).ToList())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+            await Task.Yield();
+        }
+    }
+
+    // ----- writes -----
+
+    /// <inheritdoc />
+    /// <exception cref="InvalidOperationException">Simulating failure, or the key already exists.</exception>
+    public Task AddAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        ct.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         ThrowIfSimulatingFailure();
 
         var key = _idSelector(aggregate);
@@ -161,29 +235,20 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
-    /// <remarks>Applies <see cref="AddAsync"/>'s semantics per item, sequentially and non-atomically.</remarks>
-    public async Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
+    public async Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregates);
         foreach (var aggregate in aggregates)
-        {
-            ct.ThrowIfCancellationRequested();
-            await AddAsync(aggregate, ct).ConfigureAwait(false);
-        }
+            await AddAsync(aggregate, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Throws rather than silently upserting on a missing derived key — a silent upsert would mask a
-    /// genuine "this aggregate was never <see cref="AddAsync"/>-ed" test bug. See the class-level
-    /// "Write-semantics asymmetry" remarks above for the full rationale.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">Thrown when <see cref="SimulateFailure"/> is <see langword="true"/>.</exception>
-    /// <exception cref="System.Collections.Generic.KeyNotFoundException">Thrown when no aggregate with the derived key exists.</exception>
-    public Task UpdateAsync(TAggregate aggregate, CancellationToken ct = default)
+    /// <exception cref="InvalidOperationException">Simulating failure.</exception>
+    /// <exception cref="System.Collections.Generic.KeyNotFoundException">No aggregate with the key exists.</exception>
+    public Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        ct.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         ThrowIfSimulatingFailure();
 
         var key = _idSelector(aggregate);
@@ -195,29 +260,24 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
-    /// <remarks>Applies <see cref="UpdateAsync"/>'s semantics per item, sequentially and non-atomically.</remarks>
-    public async Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
+    /// <remarks>The fake has no row versions; this behaves like the plain overload.</remarks>
+    public Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default) =>
+        UpdateAsync(aggregate, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregates);
         foreach (var aggregate in aggregates)
-        {
-            ct.ThrowIfCancellationRequested();
-            await UpdateAsync(aggregate, ct).ConfigureAwait(false);
-        }
+            await UpdateAsync(aggregate, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// ALWAYS a hard removal, even when <typeparamref name="TAggregate"/> implements
-    /// <see cref="ISoftDeletable"/> — this fake never flips <c>IsDeleted</c> in place, since that
-    /// property has <c>private set</c> in production and is populated exclusively via EF Core's
-    /// <c>ChangeTracker</c>. Idempotent — a missing key is a silent no-op.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">Thrown when <see cref="SimulateFailure"/> is <see langword="true"/>.</exception>
-    public Task DeleteAsync(TAggregate aggregate, CancellationToken ct = default)
+    /// <remarks>Always removes the aggregate, soft-deletable or not; a missing key is a no-op.</remarks>
+    public Task DeleteAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        ct.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         ThrowIfSimulatingFailure();
 
         _items.TryRemove(_idSelector(aggregate), out _);
@@ -225,304 +285,17 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
-    /// <remarks>Applies <see cref="DeleteAsync"/>'s semantics per item, sequentially and non-atomically.</remarks>
-    public async Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
+    public async Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregates);
         foreach (var aggregate in aggregates)
-        {
-            ct.ThrowIfCancellationRequested();
-            await DeleteAsync(aggregate, ct).ConfigureAwait(false);
-        }
+            await DeleteAsync(aggregate, cancellationToken).ConfigureAwait(false);
     }
 
-    // ----- IReadRepository<TAggregate, TId> (read side) -----
+    // ----- test setup -----
 
-    /// <inheritdoc />
-    public Task<IReadOnlyList<TAggregate>> ListAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-        IReadOnlyList<TAggregate> result = ApplySpecification(spec).ToList();
-        return Task.FromResult(result);
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Reuses the IDENTICAL pipeline <see cref="ListAsync"/> uses, including <c>Skip</c>/<c>Take</c>
-    /// if set on <paramref name="spec"/> — no special-casing, mirroring
-    /// <c>ISpecificationEvaluator&lt;T&gt;.GetQuery</c>'s own method-agnostic real behavior.
-    /// </remarks>
-    public Task<long> CountAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-        // P-557/W2: a count is always the count of every matching row, ignoring Skip/Take — use the
-        // un-paged pipeline (ApplyFilterOrderDistinct), not ApplySpecification.
-        return Task.FromResult(ApplyFilterOrderDistinct(spec).LongCount());
-    }
-
-    /// <inheritdoc />
-    /// <remarks>Reuses the identical pipeline <see cref="ListAsync"/> uses — see <see cref="CountAsync"/>.</remarks>
-    public Task<bool> AnyAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(ApplySpecification(spec).Any());
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Direct per-id dictionary lookups — never soft-delete-filtered, mirroring production's own
-    /// raw-<c>Contains</c>-predicate shape (which likewise bypasses the specification pipeline). A
-    /// missing id produces no entry; result order is not guaranteed.
-    /// </remarks>
-    public Task<IReadOnlyList<TAggregate>> GetByIdsAsync(IEnumerable<TId> ids, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(ids);
-        ct.ThrowIfCancellationRequested();
-
-        var result = new List<TAggregate>();
-        foreach (var id in ids)
-        {
-            if (_items.TryGetValue(id, out var value))
-                result.Add(value);
-        }
-
-        return Task.FromResult<IReadOnlyList<TAggregate>>(result);
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Produces IDENTICAL results to <see cref="GetByIdsAsync"/>, chunked mechanically into groups of
-    /// <paramref name="chunkSize"/> — a purely additive, opt-in sibling.
-    /// </remarks>
-    public async Task<IReadOnlyList<TAggregate>> GetByIdsChunkedAsync(
-        IEnumerable<TId> ids,
-        int chunkSize,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(ids);
-        if (chunkSize < 1)
-            throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, "chunkSize must be at least 1.");
-
-        ct.ThrowIfCancellationRequested();
-
-        var result = new List<TAggregate>();
-        foreach (var chunk in ids.Chunk(chunkSize))
-        {
-            ct.ThrowIfCancellationRequested();
-            var chunkResult = await GetByIdsAsync(chunk, ct).ConfigureAwait(false);
-            result.AddRange(chunkResult);
-        }
-
-        return result;
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// <c>page</c>/<c>pageSize</c> are derived exactly as <c>EfReadRepository</c> derives them: from a
-    /// <c>PagedSpecification&lt;T&gt;</c>'s own <c>Page</c>/<c>PageSize</c> when they still match its
-    /// <c>Skip</c>/<c>Take</c>, otherwise from <c>Skip</c>/<c>Take</c>, or a single page when <c>Take</c> is unset.
-    /// <c>totalCount</c> comes from a second, un-paged pass through the filter/order/distinct steps
-    /// only (steps 0-1/3-5) — never Skip/Take.
-    /// </remarks>
-    public Task<PagedList<TAggregate>> ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-
-        long totalCount = ApplyFilterOrderDistinct(spec).LongCount();
-        var items = ApplySpecification(spec).ToList();
-
-        return Task.FromResult(CreatePage(items, spec, totalCount));
-    }
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
-        IProjectionSpecification<TAggregate, TResult> spec,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-
-        var selector = spec.Selector.Compile();
-        IReadOnlyList<TResult> result = ApplySpecification(spec).Select(selector).ToList();
-        return Task.FromResult(result);
-    }
-
-    /// <inheritdoc />
-    public Task<TResult?> GetBySpecProjectedAsync<TResult>(
-        IProjectionSpecification<TAggregate, TResult> spec,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-
-        var selector = spec.Selector.Compile();
-        return Task.FromResult(ApplySpecification(spec).Select(selector).FirstOrDefault());
-    }
-
-    /// <inheritdoc />
-    /// <remarks>Same page/pageSize/totalCount derivation as <see cref="ListPagedAsync"/>, with the projection applied last.</remarks>
-    public Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
-        IProjectionSpecification<TAggregate, TResult> spec,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-
-        long totalCount = ApplyFilterOrderDistinct(spec).LongCount();
-        var selector = spec.Selector.Compile();
-        var items = ApplySpecification(spec).Select(selector).ToList();
-
-        return Task.FromResult(CreatePage(items, spec, totalCount));
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// A genuine cancellable async iterator — the result is eagerly materialized first (there is no
-    /// lazy DB source to stream from), then yielded lazily with a per-item cancellation check,
-    /// mirroring <c>Storage/InMemoryFileStorage.ListAsync</c>'s established shape.
-    /// </remarks>
-    public async IAsyncEnumerable<TAggregate> StreamAsync(
-        ISpecification<TAggregate> spec,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-
-        var items = ApplySpecification(spec).ToList();
-        foreach (var item in items)
-        {
-            ct.ThrowIfCancellationRequested();
-            yield return item;
-            await Task.Yield();
-        }
-    }
-
-    /// <inheritdoc />
-    /// <remarks>Same shape as <see cref="StreamAsync"/>, with the projection applied before yielding.</remarks>
-    public async IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
-        IProjectionSpecification<TAggregate, TResult> spec,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-
-        var selector = spec.Selector.Compile();
-        var items = ApplySpecification(spec).Select(selector).ToList();
-        foreach (var item in items)
-        {
-            ct.ThrowIfCancellationRequested();
-            yield return item;
-            await Task.Yield();
-        }
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// <para>
-    /// Applies the filter/order/distinct steps (0-1, 3-5), then a cursor seek: when
-    /// <c>spec.AfterKey</c> is <see langword="null"/> (first page), every sorted item is kept;
-    /// otherwise, items at-or-before the cursor are skipped via a comparison that mirrors the
-    /// ACTUAL composed sort order <see cref="KeysetSpecification{T, TKey}"/> produces (primary key
-    /// per <c>spec.Descending</c>, id tiebreak always ascending, per the base type's own
-    /// <c>ApplyThenBy(idSelector, descending: false)</c>).
-    /// </para>
-    /// <para>
-    /// Over-fetches by one row (<c>Take + 1</c>) to compute <c>HasMore</c> without a second round
-    /// trip; the extra lookahead row is trimmed before <c>NextAfterKey</c>/<c>NextAfterId</c> are
-    /// derived from the trimmed page's own last item. Assumes the id shape implements
-    /// <see cref="IComparable"/> (true for every <typeparamref name="TId"/> shape used on this
-    /// platform — <see cref="Guid"/>/<see cref="int"/>/<see cref="long"/>/<see cref="string"/>).
-    /// </para>
-    /// </remarks>
-    public Task<CursorPagedList<TAggregate>> ListKeysetAsync<TKey>(
-        KeysetSpecification<TAggregate, TKey> spec,
-        CancellationToken ct = default)
-        where TKey : struct, IComparable<TKey>
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ct.ThrowIfCancellationRequested();
-
-        var page = ComputeKeysetPage(spec);
-        return Task.FromResult(CursorPagedList<TAggregate>.FromLookahead(
-            page, spec.Take!.Value, last => BuildCursor(spec, last)));
-    }
-
-    /// <inheritdoc />
-    /// <remarks>Same seek pipeline as <see cref="ListKeysetAsync{TKey}"/>, with the projection applied last.</remarks>
-    public Task<CursorPagedList<TResult>> ListKeysetProjectedAsync<TKey, TResult>(
-        KeysetSpecification<TAggregate, TKey> spec,
-        System.Linq.Expressions.Expression<Func<TAggregate, TResult>> selector,
-        CancellationToken ct = default)
-        where TKey : struct, IComparable<TKey>
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-        ArgumentNullException.ThrowIfNull(selector);
-        ct.ThrowIfCancellationRequested();
-
-        var page = ComputeKeysetPage(spec);
-        var cursorPage = CursorPagedList<TAggregate>.FromLookahead(
-            page, spec.Take!.Value, last => BuildCursor(spec, last));
-
-        var compiledSelector = selector.Compile();
-        return Task.FromResult(cursorPage.Map(compiledSelector));
-    }
-
-    // Shared seek-pagination lookahead fetch (Take + 1 rows) for ListKeysetAsync/ListKeysetProjectedAsync.
-    private List<TAggregate> ComputeKeysetPage<TKey>(KeysetSpecification<TAggregate, TKey> spec)
-        where TKey : struct, IComparable<TKey>
-    {
-        var sorted = ApplyFilterOrderDistinct(spec).ToList();
-
-        var keySelector = (spec.OrderBy ?? spec.OrderByDescending)!.Compile();
-        var idSelector = spec.ThenBys[0].KeySelector.Compile();
-
-        IEnumerable<TAggregate> afterCursor = sorted;
-        if (spec.AfterKey is { } afterKey)
-        {
-            var afterId = spec.AfterId;
-            afterCursor = sorted.SkipWhile(item =>
-            {
-                var itemKey = (TKey)keySelector(item);
-                var primaryRank = itemKey.CompareTo(afterKey);
-                if (spec.Descending)
-                    primaryRank = -primaryRank;
-
-                if (primaryRank != 0)
-                    return primaryRank < 0;
-
-                // Primary keys equal — break the tie via id. KeysetSpecification<T,TKey> always
-                // applies the id ThenBy ascending (descending: false), regardless of the primary
-                // sort direction, so the tiebreak comparison never flips.
-                return Comparer<object>.Default.Compare(idSelector(item), afterId) <= 0;
-            });
-        }
-
-        var take = spec.Take!.Value;
-        return afterCursor.Take(take + 1).ToList();
-    }
-
-    private static string BuildCursor<TKey>(KeysetSpecification<TAggregate, TKey> spec, TAggregate last)
-        where TKey : struct, IComparable<TKey>
-    {
-        var keySelector = (spec.OrderBy ?? spec.OrderByDescending)!.Compile();
-        var idSelector = spec.ThenBys[0].KeySelector.Compile();
-
-        var key = (TKey)keySelector(last);
-        var id = idSelector(last);
-
-        return PageCursor.Encode(key, id);
-    }
-
-    // ----- Test-setup / introspection -----
-
-    /// <summary>
-    /// Bulk-populates the backing store via the constructor's <c>idSelector</c>, bypassing
-    /// <see cref="SimulateFailure"/> and the <see cref="AddAsync"/>-throws-on-duplicate guard. Test
-    /// SETUP, not code under test — overwrites an existing entry sharing the same derived key.
-    /// </summary>
-    /// <param name="aggregates">The aggregates to seed.</param>
+    /// <summary>Stores <paramref name="aggregates"/> directly, overwriting equal keys; ignores <see cref="SimulateFailure"/>.</summary>
+    /// <param name="aggregates">The aggregates to store.</param>
     public void Seed(IEnumerable<TAggregate> aggregates)
     {
         ArgumentNullException.ThrowIfNull(aggregates);
@@ -530,13 +303,10 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
             _items[_idSelector(aggregate)] = aggregate;
     }
 
-    /// <summary>
-    /// Clears the backing store only. Does NOT reset <see cref="SimulateFailure"/> — a test
-    /// controlling both independently is never surprised by an implicit reset of one.
-    /// </summary>
+    /// <summary>Clears the store; <see cref="SimulateFailure"/> is left unchanged.</summary>
     public void Reset() => _items.Clear();
 
-    // ----- Shared in-memory specification-evaluation pipeline -----
+    // ----- in-memory evaluation -----
 
     private void ThrowIfSimulatingFailure()
     {
@@ -544,53 +314,25 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
             throw new InvalidOperationException("FakeRepository was configured to simulate failure.");
     }
 
-    /// <summary>
-    /// Applies steps 0-1 (soft-delete filter, criteria), 3-4 (ordering), and 5 (distinct) of the
-    /// canonical specification-evaluator pipeline — everything except paging (step 7). Shared by
-    /// every read-side member, including the total-count pass for paged queries.
-    /// </summary>
-    /// <remarks>
-    /// Step -1 (<c>TagWith</c>), steps 2/2b/2c (Includes/StringIncludes/AsSplitQuery), and step 6
-    /// (AsNoTracking) are all deliberate, DOCUMENTED in-memory no-ops of the real
-    /// <c>06.Persistence</c> pipeline — named explicitly here (and in the inline comments below) so a
-    /// reader never mistakes their absence from this method for an oversight rather than a considered
-    /// simplification with no in-memory equivalent.
-    /// </remarks>
-    private IEnumerable<TAggregate> ApplyFilterOrderDistinct(ISpecification<TAggregate> spec)
+    private static bool IsSoftDeleted(TAggregate item) => item is ISoftDeletable { IsDeleted: true };
+
+    // Soft-delete filter, criteria, Distinct, ordering: everything but Skip/Take.
+    private IEnumerable<TAggregate> FilterAndOrder(ISpecification<TAggregate> spec)
     {
-        // Step -1 (TagWith) is a deliberate in-memory no-op — an in-memory LINQ query has no SQL
-        // query-tagging concept for a diagnostic comment to attach to.
+        ArgumentNullException.ThrowIfNull(spec);
+
         IEnumerable<TAggregate> query = _items.Values;
 
-        // Step 0: soft-delete filter — a runtime `is` check, never a generic constraint.
         if (!spec.IncludeDeleted)
-            query = query.Where(item => item is not ISoftDeletable { IsDeleted: true });
+            query = query.Where(item => !IsSoftDeleted(item));
 
-        // Step 1: criteria — null Criteria matches all entities.
         if (spec.Criteria is not null)
             query = query.Where(spec.Criteria.Compile());
 
-        // Steps 2/2b/2c (Includes/StringIncludes/AsSplitQuery) are deliberate in-memory no-ops —
-        // there is no ORM query plan or Cartesian-join concept; seeded aggregates already carry
-        // whatever graph the test constructed.
-
-        // Steps 3-4: primary ordering, then secondary ThenBys — ThenBys are ignored without a
-        // primary sort, matching well-behaved repository semantics documented on ISpecification<T>.
-        query = ApplyOrdering(query, spec);
-
-        // Step 5: distinct.
         if (spec.IsDistinct)
             query = query.Distinct();
 
-        // Step 6 (AsNoTracking) is a deliberate in-memory no-op — there is no ChangeTracker concept.
-
-        return query;
-    }
-
-    private static IEnumerable<TAggregate> ApplyOrdering(IEnumerable<TAggregate> query, ISpecification<TAggregate> spec)
-    {
         IOrderedEnumerable<TAggregate>? ordered = null;
-
         if (spec.OrderBy is not null)
             ordered = query.OrderBy(spec.OrderBy.Compile());
         else if (spec.OrderByDescending is not null)
@@ -608,14 +350,12 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         return ordered;
     }
 
-    /// <summary>
-    /// Applies the full pipeline (<see cref="ApplyFilterOrderDistinct"/> plus step 7, Skip/Take —
-    /// ALWAYS last). Used by every member except <see cref="ListKeysetAsync{TKey}"/>, which applies
-    /// its own seek-based paging instead of Skip/Take.
-    /// </summary>
-    private IEnumerable<TAggregate> ApplySpecification(ISpecification<TAggregate> spec)
+    private IEnumerable<TAggregate> Apply(ISpecification<TAggregate> spec)
     {
-        var query = ApplyFilterOrderDistinct(spec);
+        var query = FilterAndOrder(spec);
+
+        if ((spec.Skip.HasValue || spec.Take.HasValue) && spec.OrderBy is null && spec.OrderByDescending is null)
+            throw new InvalidOperationException($"'{spec.GetType().Name}' declares Skip/Take but no primary sort.");
 
         if (spec.Skip is { } skip)
             query = query.Skip(skip);
@@ -626,38 +366,82 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         return query;
     }
 
-    // Mirrors EfReadRepository<TAggregate, TId>.CreatePage exactly, so a paged result from this fake has the same
-    // page, page size and total as the real repository would report for the same specification.
-    private static PagedList<TItem> CreatePage<TItem>(List<TItem> items, ISpecification<TAggregate> spec, long totalCount)
+    private PagedList<TItem> Page<TItem>(ISpecification<TAggregate> spec, PageRequest page, Func<TAggregate, TItem> map)
     {
-        var (page, pageSize) = ExtractPageInfo(spec, items.Count);
+        ArgumentNullException.ThrowIfNull(page);
+        EnsureNotSelfPaged(spec);
 
-        if (items.Count > pageSize)
-        {
-            throw new InvalidOperationException(
-                $"The specification returned {items.Count} rows for a page of size {pageSize}. " +
-                "The specification's Take must be the page window.");
-        }
+        if (spec.OrderBy is null && spec.OrderByDescending is null)
+            throw new InvalidOperationException($"'{spec.GetType().Name}' has no primary sort; offset pages would be unstable.");
 
-        return PagedList<TItem>.Create(items, page, pageSize, totalCount);
+        var all = FilterAndOrder(spec).ToList();
+        var items = all.Skip(page.Offset).Take(page.PageSize).Select(map).ToList();
+        return PagedList<TItem>.Create(items, page, all.Count);
     }
 
-    // A PagedSpecification<T> supplies its own Page/PageSize when they still match its Skip/Take (a subclass may
-    // have replaced them with ApplyPaging). Otherwise the page is inferred from Skip/Take, rounding a Skip that is
-    // not a multiple of Take down to the page it starts in. A specification with no Take returns every matching
-    // row, so the whole result is reported as a single page.
-    private static (int Page, int PageSize) ExtractPageInfo(ISpecification<TAggregate> spec, int itemCount)
+    private CursorPagedList<TItem> Keyset<TKey, TItem>(
+        ISpecification<TAggregate> spec,
+        CursorPageRequest page,
+        Expression<Func<TAggregate, TKey>> keySelector,
+        bool descending,
+        Func<TAggregate, TItem> map)
+        where TKey : notnull
     {
-        if (spec is PagedSpecification<TAggregate> paged
-            && spec.Take == paged.PageSize
-            && spec.Skip == ((long)paged.Page - 1) * paged.PageSize)
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(keySelector);
+        EnsureNotSelfPaged(spec);
+
+        if (spec.OrderBy is not null || spec.OrderByDescending is not null)
+            throw new InvalidOperationException($"'{spec.GetType().Name}' declares an ordering; keyset pages order by the key and identity.");
+
+        var key = keySelector.Compile();
+        var direction = descending ? -1 : 1;
+
+        int Compare(TKey leftKey, TId leftId, TKey rightKey, TId rightId)
         {
-            return (paged.Page, paged.PageSize);
+            var byKey = Comparer<object>.Default.Compare(Unwrap(leftKey), Unwrap(rightKey));
+            return direction * (byKey != 0 ? byKey : Comparer<object>.Default.Compare(Unwrap(leftId), Unwrap(rightId)));
         }
 
-        if (spec.Take is { } take)
-            return (((spec.Skip ?? 0) / take) + 1, take);
+        var rows = FilterAndOrder(spec).Select(item => (Item: item, Key: key(item), Id: _idSelector(item))).ToList();
+        rows.Sort((a, b) => Compare(a.Key, a.Id, b.Key, b.Id));
 
-        return (1, Math.Max(itemCount, 1));
+        if (page.Cursor is not null)
+        {
+            var decoded = PageCursor.Decode<TKey, TId>(page.Cursor, CursorOptions);
+            if (decoded.IsFailure)
+                throw new ValidationException(decoded.Error);
+
+            var after = decoded.Value;
+            rows = rows.Where(r => Compare(r.Key, r.Id, after.Key, after.Id) > 0).ToList();
+        }
+
+        var lookahead = rows.Take(page.Limit + 1).ToList();
+        var cursorPage = CursorPagedList<(TAggregate Item, TKey Key, TId Id)>.FromLookahead(
+            lookahead, page.Limit, last => PageCursor.Encode(last.Key, last.Id, CursorOptions));
+
+        return cursorPage.Map(row => map(row.Item));
+    }
+
+    private static void EnsureNotSelfPaged(ISpecification<TAggregate> spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        if (spec.Skip.HasValue || spec.Take.HasValue)
+            throw new InvalidOperationException($"'{spec.GetType().Name}' declares Skip/Take; page with the page request instead.");
+    }
+
+    // A strongly-typed identifier compares by its underlying value.
+    private static object? Unwrap(object? value)
+    {
+        if (value is null)
+            return null;
+
+        foreach (var contract in value.GetType().GetInterfaces())
+        {
+            if (contract.IsGenericType && contract.GetGenericTypeDefinition() == typeof(IStronglyTypedId<>))
+                return contract.GetProperty(nameof(IStronglyTypedId<int>.Value))!.GetValue(value);
+        }
+
+        return value;
     }
 }

@@ -1,7 +1,6 @@
 using System.Linq.Expressions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -133,20 +132,3 @@ public sealed class TestOrdersCustomerProjectionSpecification
     public Expression<Func<TestSoftDeletableOrder, string>> Selector { get; }
 }
 
-/// <summary>Cursor/seek-pagination specification ordered by Rank, mirroring 03.Domain's own ActiveOrdersKeysetSpec example.</summary>
-public sealed class TestOrdersByRankKeysetSpecification : KeysetSpecification<TestSoftDeletableOrder, int>
-{
-    public TestOrdersByRankKeysetSpecification(int? afterKey, object? afterId, bool descending, int take)
-        : base(o => o.Rank, o => o.Id, afterKey, afterId, descending, take) { }
-}
-
-/// <summary>Cursor/seek-pagination specification composed with a Customer-name filter.</summary>
-public sealed class TestOrdersByRankKeysetWithCriteriaSpecification : KeysetSpecification<TestSoftDeletableOrder, int>
-{
-    public TestOrdersByRankKeysetWithCriteriaSpecification(
-        int? afterKey, object? afterId, bool descending, int take, string customer)
-        : base(o => o.Rank, o => o.Id, afterKey, afterId, descending, take)
-    {
-        AddCriteria(o => o.Customer == customer);
-    }
-}

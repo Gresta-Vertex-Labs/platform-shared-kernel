@@ -5,7 +5,7 @@ namespace SharedKernel.Testing.SelfTests.Persistence;
 
 /// <summary>
 /// Proves <see cref="FakeRepository{TAggregate, TId}"/>'s shared in-memory specification pipeline
-/// via <c>GetBySpecAsync</c>/<c>ListAsync</c>/<c>CountAsync</c>/<c>AnyAsync</c> — criteria filtering,
+/// via <c>FirstOrDefaultAsync</c>/<c>ListAsync</c>/<c>CountAsync</c>/<c>AnyAsync</c> — criteria filtering,
 /// OrderBy→ThenBy precedence, IsDistinct, Skip/Take-applied-last, the soft-delete round trip, and
 /// CountAsync/AnyAsync reusing the identical pipeline (including Skip/Take, per D-168's own
 /// "no special-casing" claim).
@@ -46,7 +46,7 @@ public sealed class FakeRepositorySpecificationPipelineTests
     {
         var repo = new FakeRepository<TestSoftDeletableOrder, Guid>(o => o.Id, [NewOrder("A", 0)]);
 
-        Assert.Null(await repo.GetBySpecAsync(new TestOrdersByCustomerSpecification("NoMatch")));
+        Assert.Null(await repo.FirstOrDefaultAsync(new TestOrdersByCustomerSpecification("NoMatch")));
     }
 
     // ----- OrderBy -> ThenBys precedence -----

@@ -33,12 +33,3 @@ internal sealed class PgOrdersByCodePrefixSpecification : Specification<PgOrderA
     }
 }
 
-internal sealed class PgOrdersByCreatedOnKeysetSpecification : KeysetSpecification<PgOrderAggregate, DateTimeOffset>
-{
-    public PgOrdersByCreatedOnKeysetSpecification(DateTimeOffset? afterKey, object? afterId, int take, bool includeDeleted = false)
-        : base(o => o.CreatedOn, o => o.Id, afterKey, afterId, descending: false, take)
-    {
-        if (includeDeleted)
-            IncludeSoftDeleted();
-    }
-}

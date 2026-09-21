@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 using SharedKernel.Domain.Specifications;
-using SharedKernel.Persistence.Abstractions.Specifications;
 
 namespace SharedKernel.Testing.Persistence;
 

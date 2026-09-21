@@ -22,7 +22,7 @@ namespace SharedKernel.Persistence.EfCore.Integration.Tests.PostgreSql.Integrati
 
 // ---------------------------------------------------------------------------
 // Proves keyset (cursor/seek) pagination with a DateTimeOffset sort key — the
-// documented, canonical KeysetSpecification<T,TKey> shape (see its own <example>) — genuinely
+// call-site keyset API (ListKeysetAsync with a CursorPageRequest and a key selector) — genuinely
 // works against real PostgreSQL. SQLite's EF Core provider cannot ORDER BY a DateTimeOffset column
 // at all (a provider limitation, proven separately in SharedKernel.Persistence.EfCore.Tests using a
 // `long` sort key instead), so this is the only place the platform's actual intended usage shape is
@@ -87,14 +87,6 @@ internal sealed class KeysetPgReadRepository(KeysetPgDbContext ctx)
 {
 }
 
-internal sealed class KeysetPgByCreatedOnSpec : KeysetSpecification<KeysetPgAggregate, DateTimeOffset>
-{
-    public KeysetPgByCreatedOnSpec(DateTimeOffset? afterKey, object? afterId, int take)
-        : base(a => a.CreatedOn, a => a.Id, afterKey, afterId, descending: false, take)
-    {
-    }
-}
-
 /// <remarks>
 /// Shares the <see cref="PostgreSqlContainerFixture"/> registered by
 /// <see cref="PostgreSqlTestCollection"/> instead of starting its own dedicated container — see
@@ -154,35 +146,20 @@ public sealed class KeysetPaginationIntegrationTests
         var repo = new KeysetPgReadRepository(ctx);
 
         var allItems = new List<string>();
-        DateTimeOffset? afterKey = null;
-        object? afterId = null;
-        bool hasMore;
+        string? cursor = null;
         var pageCount = 0;
 
-        // Act — walk every page via the returned cursor, using a genuine DateTimeOffset sort key
-        // against real PostgreSQL (not SQLite, which cannot ORDER BY DateTimeOffset at all).
+        // Act — walk every page via the returned cursor, using a genuine DateTimeOffset sort key and a
+        // strongly-typed identity tiebreak against real PostgreSQL.
         do
         {
-            var spec = new KeysetPgByCreatedOnSpec(afterKey, afterId, take: 2);
-            var page = await repo.ListKeysetAsync(spec);
+            var page = await repo.ListKeysetAsync(
+                Spec.For<KeysetPgAggregate>(), CursorPageRequest.Create(cursor, limit: 2).Value, a => a.CreatedOn);
 
             allItems.AddRange(page.Items.Select(i => i.Name));
-            if (page.NextCursor is null)
-            {
-                afterKey = null;
-                afterId = null;
-            }
-            else
-            {
-                var decoded = PageCursor.Decode<DateTimeOffset, KeysetPgId>(page.NextCursor);
-                decoded.IsSuccess.Should().BeTrue();
-                afterKey = decoded.Value.Key;
-                afterId = decoded.Value.Id;
-            }
-
-            hasMore = page.HasMore;
+            cursor = page.NextCursor;
             pageCount++;
-        } while (hasMore && pageCount < 10);
+        } while (cursor is not null && pageCount < 10);
 
         // Assert
         allItems.Should().ContainInOrder("Item0", "Item1", "Item2", "Item3", "Item4");

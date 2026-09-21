@@ -7,7 +7,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;

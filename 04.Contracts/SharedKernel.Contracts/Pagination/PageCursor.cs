@@ -14,8 +14,8 @@ namespace SharedKernel.Contracts.Pagination;
 /// <para>
 /// <b>Usage.</b> After reading a page ordered by (key, id), encode the last item's key and id as
 /// <see cref="CursorPagedList{T}.NextCursor"/>. On the next request, decode the cursor and pass the key and id to
-/// the keyset query, such as <c>KeysetSpecification</c> in <c>SharedKernel.Domain</c> as its <c>afterKey</c> and
-/// <c>afterId</c>.
+/// the keyset query (a repository's <c>ListKeysetAsync</c> in <c>SharedKernel.Persistence</c> takes the cursor
+/// request directly and decodes it).
 /// </para>
 /// <para>
 /// <b>Format.</b> <c>v1.</c> followed by the base64url encoding of a two-element JSON array

@@ -81,9 +81,13 @@ internal sealed class OrderByDescendingSpec : Specification<TestAggregate>
 
 internal sealed class ThenBySpec : Specification<TestAggregate>
 {
-    // Deliberately omits ApplyOrderBy/ApplyOrderByDescending so the guard's "ThenBys" check
-    // (rather than its "Ordering" check) is the one that fires.
-    public ThenBySpec() => ApplyThenBy(e => e.Id.Value, descending: false);
+    // A secondary key needs a primary sort (ThenBy without OrderBy throws since P-558), so the
+    // guard reports the ordering as a whole.
+    public ThenBySpec()
+    {
+        ApplyOrderBy(e => e.Name!);
+        ApplyThenBy(e => e.Id.Value, descending: false);
+    }
 }
 
 internal sealed class SkipTakeSpec : Specification<TestAggregate>
@@ -122,9 +126,13 @@ public sealed class BulkMutationRepositoryTests
     }
 
     [Fact]
-    public async Task ExecuteDeleteAsync_PhysicallyRemovesMatchedRows_EvenForSoftDeletable()
+    public async Task ExecuteDeleteAsync_SoftDeletable_SoftDeletesAndStampsDeletionAudit()
     {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        // A5 regression: ExecuteDeleteAsync used to hard-delete ISoftDeletable aggregates.
+        var now = new DateTimeOffset(2026, 9, 21, 12, 0, 0, TimeSpan.Zero);
+        var userId = Guid.NewGuid();
+        using var ctx = TestDbContextFactory.CreateTestDbContextWithActor(
+            TestDbContextFactory.CreateAuthenticatedActorContext(userId), TestDbContextFactory.CreateClock(now));
         var repo = new BulkAuditableRepository(ctx);
         ctx.AuditableAggregates.AddRange(
             new AuditableTestAggregate(TestId.New(), "DeleteMe", new SystemClock()),
@@ -136,15 +144,80 @@ public sealed class BulkMutationRepositoryTests
         var affected = await repo.ExecuteDeleteAsync(new AuditableNameEqualsSpec("DeleteMe"));
 
         affected.Should().Be(2);
+        (await ctx.AuditableAggregates.Where(e => e.Name == "DeleteMe").ToListAsync()).Should().BeEmpty();
 
-        // Physical delete — not even visible with IgnoreQueryFilters.
-        var remaining = await ctx.AuditableAggregates.IgnoreQueryFilters().ToListAsync();
-        remaining.Should().HaveCount(1);
-        remaining[0].Name.Should().Be("Keep");
+        var rows = await ctx.AuditableAggregates.IgnoreQueryFilters().AsNoTracking().ToListAsync();
+        rows.Should().HaveCount(3, "a soft delete keeps the rows");
+        rows.Where(e => e.Name == "DeleteMe").Should().OnlyContain(e =>
+            e.IsDeleted && e.DeletedOn == now && e.DeletedBy == userId.ToString("D")
+            && e.ModifiedOn == now && e.ModifiedBy == userId.ToString("D"));
+        rows.Single(e => e.Name == "Keep").IsDeleted.Should().BeFalse();
+
+        // Idempotent: already-deleted rows are not counted or re-stamped.
+        (await repo.ExecuteDeleteAsync(new AuditableNameEqualsSpec("DeleteMe", includeDeleted: true))).Should().Be(0);
     }
 
     [Fact]
-    public async Task ExecuteUpdateAsync_DoesNotInvokeAuditInterceptor_UnlessExplicitlySet()
+    public async Task ExecutePurgeAsync_PhysicallyRemovesMatchedRows_EvenForSoftDeletable()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkAuditableRepository(ctx);
+        ctx.AuditableAggregates.AddRange(
+            new AuditableTestAggregate(TestId.New(), "DeleteMe", new SystemClock()),
+            new AuditableTestAggregate(TestId.New(), "Keep", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        (await repo.ExecuteDeleteAsync(new AuditableNameEqualsSpec("DeleteMe"))).Should().Be(1);
+        var purged = await repo.ExecutePurgeAsync(new AuditableNameEqualsSpec("DeleteMe", includeDeleted: true));
+
+        purged.Should().Be(1);
+        var remaining = await ctx.AuditableAggregates.IgnoreQueryFilters().ToListAsync();
+        remaining.Should().ContainSingle().Which.Name.Should().Be("Keep");
+    }
+
+    [Fact]
+    public async Task ExecuteDeleteAsync_NotSoftDeletable_RemovesRows()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkTestRepository(ctx);
+        ctx.TestAggregates.AddRange(
+            new TestAggregate(TestId.New(), "DeleteMe", new SystemClock()),
+            new TestAggregate(TestId.New(), "Keep", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        (await repo.ExecuteDeleteAsync(new NameEqualsSpec("DeleteMe"))).Should().Be(1);
+        (await ctx.TestAggregates.IgnoreQueryFilters().ToListAsync()).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_StampsModifiedAudit()
+    {
+        // A5 regression: bulk updates never stamped ModifiedOn/ModifiedBy.
+        var now = new DateTimeOffset(2026, 9, 21, 12, 0, 0, TimeSpan.Zero);
+        var userId = Guid.NewGuid();
+        using var ctx = TestDbContextFactory.CreateTestDbContextWithActor(
+            TestDbContextFactory.CreateAuthenticatedActorContext(userId), TestDbContextFactory.CreateClock(now));
+        var repo = new BulkAuditableRepository(ctx);
+        var id = TestId.New();
+        ctx.AuditableAggregates.Add(new AuditableTestAggregate(id, "Original", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var affected = await repo.ExecuteUpdateAsync(
+            new AuditableNameEqualsSpec("Original"),
+            setters => setters.SetProperty(e => e.Name, "BulkUpdated"));
+
+        affected.Should().Be(1);
+        var row = await ctx.AuditableAggregates.AsNoTracking().SingleAsync(e => e.Id == id);
+        row.Name.Should().Be("BulkUpdated");
+        row.ModifiedOn.Should().Be(now);
+        row.ModifiedBy.Should().Be(userId.ToString("D"));
+    }
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_ExplicitModifiedSetter_WinsOverTheAutomaticOne()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var repo = new BulkAuditableRepository(ctx);
@@ -153,23 +226,11 @@ public sealed class BulkMutationRepositoryTests
         await ctx.SaveChangesAsync();
         ctx.ChangeTracker.Clear();
 
-        var beforeModifiedOn = (await ctx.AuditableAggregates
-            .IgnoreQueryFilters()
-            .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id)).ModifiedOn;
-
-        var affected = await repo.ExecuteUpdateAsync(
+        await repo.ExecuteUpdateAsync(
             new AuditableNameEqualsSpec("Original"),
-            setters => setters.SetProperty(e => e.Name, "BulkUpdated"));
+            setters => setters.SetProperty(e => e.ModifiedBy, "migration-42"));
 
-        affected.Should().Be(1);
-
-        var afterModifiedOn = (await ctx.AuditableAggregates
-            .IgnoreQueryFilters()
-            .Select(e => new { e.Id, e.ModifiedOn })
-            .FirstAsync(e => e.Id == id)).ModifiedOn;
-
-        afterModifiedOn.Should().Be(beforeModifiedOn, "AuditInterceptor must not run for bulk mutations");
+        (await ctx.AuditableAggregates.AsNoTracking().SingleAsync(e => e.Id == id)).ModifiedBy.Should().Be("migration-42");
     }
 
     [Fact]
@@ -263,12 +324,11 @@ public sealed class BulkMutationRepositoryTests
         visibleAfterRestore.Should().HaveCount(2);
         visibleAfterRestore.Should().OnlyContain(e => !e.IsDeleted && e.DeletedOn == null && e.DeletedBy == null);
 
-        // Bypasses SaveChangesAsync/the three platform interceptors/domain events — ModifiedOn is
-        // untouched by either bulk call, exactly like every other IBulkMutationRepository call.
+        // Every bulk update stamps ModifiedOn.
         var finalModifiedOn = (await ctx.AuditableAggregates
             .Select(e => new { e.Id, e.ModifiedOn })
                 .FirstAsync(e => e.Id == id1)).ModifiedOn;
-        finalModifiedOn.Should().Be(originalModifiedOn, "bulk mutations must bypass AuditInterceptor entirely");
+        finalModifiedOn.Should().NotBe(originalModifiedOn);
     }
 }
 
@@ -345,7 +405,7 @@ public sealed class BulkSpecificationGuardTests
             setters => setters.SetProperty(e => e.Name, "X"));
 
         var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
-        exception.Which.Message.Should().Contain("ThenBys");
+        exception.Which.Message.Should().Contain("Ordering");
     }
 
     [Fact]
