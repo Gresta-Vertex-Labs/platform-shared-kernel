@@ -46,7 +46,7 @@ public sealed class DomainEventDispatchPostgresTests
         await setup.Database.EnsureCreatedAsync();
 
         await using var ctx = CreateContext(tenantId);
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var entity = new PgHardDeleteAggregate(id, tenantId, "ToHardDelete", new SharedKernel.Primitives.Clocks.SystemClock());
         ctx.HardDeleteAggregates.Add(entity);
@@ -79,7 +79,7 @@ public sealed class DomainEventDispatchPostgresTests
         await setup.Database.EnsureCreatedAsync();
 
         await using var ctx = CreateContext(tenantId);
-        var uow = new EfUnitOfWork(ctx, dispatcher: null);
+        var uow = EfUnitOfWork.For(ctx, dispatcher: null);
 
         var entity = new PgHardDeleteAggregate(id, tenantId, "NoDispatcher", new SharedKernel.Primitives.Clocks.SystemClock());
         ctx.HardDeleteAggregates.Add(entity);

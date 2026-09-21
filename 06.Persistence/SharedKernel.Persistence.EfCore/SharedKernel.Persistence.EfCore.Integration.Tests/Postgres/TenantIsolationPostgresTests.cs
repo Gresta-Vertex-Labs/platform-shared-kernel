@@ -4,7 +4,6 @@ using Npgsql;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
@@ -38,7 +37,7 @@ public sealed class TenantIsolationPostgresTests
             ConnectionString,
             new FakeAuditActorContext(actorId),
             new FakeAuditActorContext(actorId, tenantId),
-            additionalInterceptors: [new TenantWriteGuardInterceptor(crossTenantScope ?? new CrossTenantScope())]);
+            additionalInterceptors: null);
 
     private static PgOrderAggregate NewOrder(Guid tenantId, string code) =>
         new(PgOrderId.New(), tenantId, $"Order-{code}", code, "Main St", "Springfield", new SharedKernel.Primitives.Clocks.SystemClock());
@@ -200,7 +199,7 @@ public sealed class TenantIsolationPostgresTests
         }
 
         await using var ctx = CreateContext(tenantA);
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope());
+        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
         var updated = await repo.ExecuteUpdateAsync(
             new PgOrdersByCodePrefixSpecification(prefix), s => s.SetProperty(o => o.Name, "BulkRenamed"));
 
@@ -233,7 +232,7 @@ public sealed class TenantIsolationPostgresTests
         }
 
         await using var ctx = CreateContext(tenantA);
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope());
+        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
         var deleted = await repo.ExecuteDeleteAsync(new PgOrdersByCodePrefixSpecification(prefix));
 
         deleted.Should().Be(1, "the bulk ExecuteDelete must only remove Tenant A's own row, never Tenant B's");
@@ -328,7 +327,7 @@ public sealed class TenantIsolationPostgresTests
         ctx.Orders.Add(NewOrder(tenantA, $"bulk-settenant-{Guid.NewGuid():N}"));
         await ctx.SaveChangesAsync();
 
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope());
+        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         // A bulk ExecuteUpdate that tries to move rows to a DIFFERENT tenant via SetProperty must be
         // rejected at the guard level — before any SQL is even issued — never silently executed.
@@ -355,7 +354,7 @@ public sealed class TenantIsolationPostgresTests
         ctx.Orders.Add(NewOrder(tenantA, $"bulk-efprop-{Guid.NewGuid():N}"));
         await ctx.SaveChangesAsync();
 
-        var repo = new PgOrderRepository(ctx, new CrossTenantScope());
+        var repo = new PgOrderRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         // Same attack as the sibling test above, but naming the column through EF.Property's STRING
         // overload instead of a direct member access. UpdateSettersInspector cannot resolve that
@@ -412,7 +411,7 @@ public sealed class TenantIsolationPostgresTests
         ctxA.Orders.Update(stub);
 
         var act = () => ctxA.SaveChangesAsync();
-        await act.Should().ThrowAsync<ConflictException>(
+        await act.Should().ThrowAsync<ForbiddenException>(
             "a detached stub claiming the attacker's own tenant id but the victim's primary key must " +
                 "still be rejected, not silently rewrite the victim's row");
 
@@ -425,8 +424,8 @@ public sealed class TenantIsolationPostgresTests
     public async Task CrossTenantDelete_AttackerTenantClaimedWithVictimPrimaryKey_Rejected()
     {
         // Same inverted shape as above, for the delete path (Attach()+Remove()) — see the sibling
-        // update test's remarks for why PgOrderAggregate's own RowVersion means this surfaces as
-        // ConflictException here, never ForbiddenException.
+        // A4: the row exists and belongs to another tenant, so the concurrency failure is a PROVEN
+        // tenant-isolation violation (ForbiddenException); an ordinary race stays a ConflictException.
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
 
@@ -446,7 +445,7 @@ public sealed class TenantIsolationPostgresTests
         ctxA.Orders.Remove(stub);
 
         var act = () => ctxA.SaveChangesAsync();
-        await act.Should().ThrowAsync<ConflictException>(
+        await act.Should().ThrowAsync<ForbiddenException>(
             "a detached delete claiming the attacker's own tenant id but the victim's primary key " +
                 "must still be rejected");
 
@@ -473,7 +472,7 @@ public sealed class TenantIsolationPostgresTests
         // Without an active scope: rejected.
         await using (var ctxA1 = CreateContext(tenantA))
         {
-            var repo1 = new PgOrderRepository(ctxA1, new CrossTenantScope());
+            var repo1 = new PgOrderRepository(ctxA1, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
             var act = () => repo1.GetByIdForTenantAsync(orderId, tenantB);
             await act.Should().ThrowAsync<InvalidOperationException>(
                 "cross-tenant lookup must be rejected with no active ICrossTenantScope");
@@ -482,10 +481,10 @@ public sealed class TenantIsolationPostgresTests
         // With an EXPLICIT, entered scope: succeeds and reads the other tenant's row.
         await using (var ctxA2 = CreateContext(tenantA))
         {
-            var crossTenantScope = new CrossTenantScope();
+            var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
             var repo2 = new PgOrderRepository(ctxA2, crossTenantScope);
 
-            using (crossTenantScope.Enter())
+            using (crossTenantScope.Enter("test"))
             {
                 var found = await repo2.GetByIdForTenantAsync(orderId, tenantB);
                 found.Should().NotBeNull("an explicitly entered ICrossTenantScope must allow the cross-tenant read");

@@ -10,7 +10,6 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Primitives.Clocks;
 
@@ -284,10 +283,6 @@ public sealed class PgTestDbContext : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<PgOrderId, Guid>();
-        configurationBuilder.ConfigureStronglyTypedId<PgOrderTagId, Guid>();
-        configurationBuilder.ConfigureStronglyTypedId<PgHardDeleteId, Guid>();
-        configurationBuilder.ConfigureMoney();
         base.ConfigureConventions(configurationBuilder);
     }
 

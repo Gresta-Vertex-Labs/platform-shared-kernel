@@ -57,6 +57,14 @@ public sealed class WithAuditTrailBuilderTests
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
+    // P-558/W2-E1: the wiring tests never open a connection; AddSharedKernelPostgres only needs a connection string.
+    private static readonly IConfiguration WiringConfiguration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:audit-wiring"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
+        })
+        .Build();
+
     private static ServiceProvider BuildServices(
         Action<IServiceCollection>? extra = null,
         bool withAuditTrail = true,
@@ -76,14 +84,11 @@ public sealed class WithAuditTrailBuilderTests
 
         extra?.Invoke(services);
 
-        var builder = services.AddSharedKernelEfCore<AuditWiringTestDbContext>(options =>
-            options.UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
-
-        if (withAuditTrail)
-            builder.WithAuditTrail(BuildConfiguration(hmacKeyBase64));
-
-        builder.Build();
+        services.AddSharedKernelPostgres<AuditWiringTestDbContext>(WiringConfiguration, "audit-wiring", builder =>
+        {
+            if (withAuditTrail)
+                builder.WithAuditTrail(BuildConfiguration(hmacKeyBase64));
+        });
 
         return services.BuildServiceProvider();
     }
@@ -245,12 +250,9 @@ public sealed class WithAuditTrailBuilderTests
             () => throw new InvalidOperationException("Not invoked by any DI-wiring-only test.")));
         services.AddSingleton(Substitute.For<IAmbientDbTransaction>());
 
-        var builder = services.AddSharedKernelEfCore<AuditWiringTestDbContext>(options =>
-            options.UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
-
         var configuration = BuildConfiguration();
-        builder.WithAuditTrail(configuration).WithAuditTrail(configuration).Build();
+        services.AddSharedKernelPostgres<AuditWiringTestDbContext>(WiringConfiguration, "audit-wiring", builder =>
+            builder.WithAuditTrail(configuration).WithAuditTrail(configuration));
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -276,11 +278,8 @@ public sealed class WithAuditTrailBuilderTests
         services.AddSingleton(Substitute.For<IAmbientDbTransaction>());
         services.AddSingleton(Substitute.For<IAsymmetricSignatureService>());
 
-        var builder = services.AddSharedKernelEfCore<AuditWiringTestDbContext>(options =>
-            options.UseSqlite("DataSource=:memory:")
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
-
-        builder.WithAuditTrail(BuildConfiguration()).WithAuditChainCheckpoints("checkpoint-key").Build();
+        services.AddSharedKernelPostgres<AuditWiringTestDbContext>(WiringConfiguration, "audit-wiring", builder =>
+            builder.WithAuditTrail(BuildConfiguration()).WithAuditChainCheckpoints("checkpoint-key"));
 
         using var provider = services.BuildServiceProvider();
         provider.GetService<IAuditCheckpointService>().Should().NotBeNull()

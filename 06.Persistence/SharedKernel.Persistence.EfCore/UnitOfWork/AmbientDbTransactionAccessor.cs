@@ -10,7 +10,7 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// </summary>
 /// <remarks>
 /// Registered scoped by
-/// <c>EfCorePersistenceBuilder.Build()</c> — one instance per DI scope, shared
+/// <c>AddSharedKernelPostgres</c> — one instance per DI scope, shared
 /// between the EF Core transaction machinery (which sets <see cref="Current"/>) and any Dapper
 /// command service resolving <see cref="IAmbientDbTransaction"/> to enlist in the same transaction.
 /// </remarks>

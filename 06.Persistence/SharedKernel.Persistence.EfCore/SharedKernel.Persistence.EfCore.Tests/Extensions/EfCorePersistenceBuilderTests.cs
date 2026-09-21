@@ -28,99 +28,65 @@ public sealed class EfCorePersistenceBuilderTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning));
 
     [Fact]
-    public void Build_CalledTwice_ForTheSameContextType_ThrowsInvalidOperationException()
+    public void Register_SameContextTypeTwice_Throws()
     {
-        // Idempotency guard: RekeyLastRegistrationAsInner re-keys the LAST IDbContextFactory<TContext>
-        // registration into a private, keyed slot. A second Build() call for the same TContext — direct
-        // repeat call, or a second, independently-constructed AddSharedKernelEfCore<TContext>(...)
-        // builder — would re-key the ALREADY-WRAPPING TenantAwareDbContextFactory<TContext> a second
-        // time, producing a factory that resolves itself and stack-overflows the first time anything
-        // asks for it. This must be rejected loudly instead.
         var services = new ServiceCollection();
-
         services.AddSharedKernelEfCore<TestDbContext>(SqliteOptions()).Build();
 
         var act = () => services.AddSharedKernelEfCore<TestDbContext>(SqliteOptions()).Build();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*was already called*")
-                .Which.Message.Should().Contain(nameof(TestDbContext));
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already registered*");
     }
 
     [Fact]
-    public void Build_CalledTwice_ForTheSameContextType_NeverStackOverflowsResolvingTheFactory()
+    public void Register_TwoContexts_EachGetsItsOwnUnitOfWork_UnkeyedIsTheFirst()
     {
-        // Regression proof for the failure mode the guard above exists to prevent: without the guard,
-        // a second Build() call would re-key an already-keyed registration, and resolving
-        // IDbContextFactory<TestDbContext> afterward would recurse into a StackOverflowException
-        // (unrecoverable — the process would crash, not throw a catchable exception). Proving the
-        // guard actually fires (the test above) is what keeps this scenario from ever being reached;
-        // this test only re-confirms the first Build() call alone still resolves cleanly.
+        // Multiple contexts per service: the former "second TContext throws" guard is gone.
         var services = new ServiceCollection();
         services.AddSharedKernelEfCore<TestDbContext>(SqliteOptions()).Build();
+        services.AddSharedKernelEfCore<StringIncludeDbContext>(SqliteOptions()).Build();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         using var scope = provider.CreateScope();
+        var sp = scope.ServiceProvider;
 
-        var act = () => scope.ServiceProvider.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<TestDbContext>>();
+        sp.GetRequiredService<IUnitOfWork>().Should().BeOfType<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork<TestDbContext>>();
+        sp.GetRequiredService<SharedKernelDbContext>().Should().BeOfType<TestDbContext>();
 
-        act.Should().NotThrow();
+        sp.GetRequiredService<SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<StringIncludeDbContext>>()
+            .Should().BeOfType<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork<StringIncludeDbContext>>();
+        sp.GetRequiredKeyedService<IUnitOfWork>(typeof(StringIncludeDbContext))
+            .Should().BeSameAs(sp.GetRequiredService<SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<StringIncludeDbContext>>());
+        sp.GetRequiredKeyedService<SharedKernelDbContext>(typeof(StringIncludeDbContext))
+            .Should().BeSameAs(sp.GetRequiredService<StringIncludeDbContext>());
+        sp.GetRequiredKeyedService<IUnitOfWork>(typeof(TestDbContext))
+            .Should().BeSameAs(sp.GetRequiredService<IUnitOfWork>());
     }
 
     [Fact]
-    public void Build_TwoDifferentContextTypes_SecondCallThrowsInvalidOperationException()
+    public async Task Register_TwoContexts_EachUnitOfWorkCommitsItsOwnContext()
     {
-        // Multi-context guard: EfUnitOfWork resolves the unkeyed SharedKernelDbContext/IUnitOfWork
-        // services. Two different TContext types sharing one IServiceCollection must never both
-        // register them, or the second Build() call would silently win the unkeyed slot and every
-        // IUnitOfWork/SharedKernelDbContext consumer would bind to whichever context registered last,
-        // regardless of which repository/context it actually intended to commit through.
         var services = new ServiceCollection();
+        var first = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        var second = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        services.AddSharedKernelEfCore<TestDbContext>(o => o.UseSqlite(first)).Build();
+        services.AddSharedKernelEfCore<StringIncludeDbContext>(o => o.UseSqlite(second)).Build();
 
-        services.AddSharedKernelEfCore<TestDbContext>(SqliteOptions()).Build();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var testDb = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var otherDb = scope.ServiceProvider.GetRequiredService<StringIncludeDbContext>();
+        await testDb.Database.OpenConnectionAsync();
+        await testDb.Database.EnsureCreatedAsync();
+        await otherDb.Database.OpenConnectionAsync();
+        await otherDb.Database.EnsureCreatedAsync();
 
-        var act = () => services.AddSharedKernelEfCore<StringIncludeDbContext>(SqliteOptions()).Build();
+        testDb.TestAggregates.Add(new TestAggregate(TestId.New(), "first", new SharedKernel.Primitives.Clocks.SystemClock()));
+        await scope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<StringIncludeDbContext>>().SaveChangesAsync();
+        testDb.ChangeTracker.HasChanges().Should().BeTrue("the other context's unit of work must not commit this context");
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*unkeyed*")
-                .Which.Message.Should().Contain(nameof(StringIncludeDbContext));
-    }
-
-    [Fact]
-    public void Build_TwoDifferentContextTypes_FirstContextsUnitOfWorkStillResolvesToItself()
-    {
-        // Positive counterpart of the guard above: a single-context registration's IUnitOfWork must
-        // resolve to THAT context, proving the guard is not merely rejecting every multi-Build()
-        // scenario indiscriminately — only the actually-unsafe second registration.
-        var services = new ServiceCollection();
-        services.AddSharedKernelEfCore<TestDbContext>(SqliteOptions()).Build();
-
-        var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-
-        var sharedKernelContext = scope.ServiceProvider.GetRequiredService<SharedKernelDbContext>();
-
-        sharedKernelContext.Should().BeOfType<TestDbContext>();
-    }
-
-    [Fact]
-    public void Build_WithMultiTenancy_ButNonTenantedContext_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act
-        var act = () =>
-            services
-                .AddSharedKernelEfCore<TestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithMultiTenancy()
-                            .Build();
-
-        // Assert
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*WithMultiTenancy*")
-                .Which.Message.Should().Contain("TenantedDbContext");
+        await scope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.EfCore.UnitOfWork.IUnitOfWork<TestDbContext>>().SaveChangesAsync();
+        testDb.ChangeTracker.HasChanges().Should().BeFalse();
     }
 
     [Fact]
@@ -139,7 +105,7 @@ public sealed class EfCorePersistenceBuilderTests
         using var scope = provider.CreateScope();
 
         // Assert
-        scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Should().BeOfType<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
+        scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Should().BeOfType<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork<TestDbContext>>();
         scope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction>()
             .Current.Should().BeNull("no transaction is open outside ExecuteInTransactionAsync");
     }

@@ -5,7 +5,7 @@ using SharedKernel.Persistence.EfCore.Vectors;
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
 /// <summary>
-/// EF Core <see cref="IConventionSetPlugin"/> that adds <see cref="XminConcurrencyTokenConvention"/>, <see cref="OwnedSharedTableKeyColumnConvention"/>,
+/// EF Core <see cref="IConventionSetPlugin"/> that adds <see cref="OwnedSharedTableKeyColumnConvention"/>,
 /// <see cref="PostgreSqlIdentifierLengthConvention"/> and (opt-in) <see cref="VectorExtensionConvention"/> to every
 /// model built for a <c>DbContext</c> configured via <c>UsePostgreSQL()</c>.
 /// </summary>
@@ -19,7 +19,8 @@ internal sealed class PostgreSQLConventionSetPlugin(bool useVector) : IConventio
     /// <inheritdoc />
     public ConventionSet ModifyConventions(ConventionSet conventionSet)
     {
-        conventionSet.ModelFinalizingConventions.Add(new XminConcurrencyTokenConvention());
+        // First: before EF Core's table-sharing convention, which copies the token to owned types sharing the table.
+        conventionSet.ModelFinalizingConventions.Insert(0, new XminConcurrencyTokenConvention());
 
         if (useVector)
             conventionSet.ModelFinalizingConventions.Add(new VectorExtensionConvention());

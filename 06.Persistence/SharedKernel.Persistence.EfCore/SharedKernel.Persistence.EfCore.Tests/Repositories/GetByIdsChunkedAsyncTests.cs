@@ -2,7 +2,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -49,11 +48,9 @@ public sealed class GetByIdsChunkedAsyncTests
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 
-        var audit = new AuditInterceptor(userContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(userContext, clock);
 
-        var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new TestDbContext(options, audit);
         ctx.Database.EnsureCreated();
         return (ctx, counter);
     }

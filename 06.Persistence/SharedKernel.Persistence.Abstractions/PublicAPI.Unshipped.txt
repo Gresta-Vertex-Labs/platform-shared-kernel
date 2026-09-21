@@ -106,10 +106,12 @@ SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.VerifyFullChai
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope() -> void
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string? actorId = null) -> System.IDisposable!
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Application.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>? logger = null) -> void
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActive.get -> bool
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScopeServiceCollectionExtensions
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope
+SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope.IsActive.get -> bool
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -187,6 +189,8 @@ static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResu
 static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
 static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
+static SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActiveInCurrentFlow.get -> bool
+static SharedKernel.Persistence.Abstractions.Context.CrossTenantScopeServiceCollectionExtensions.AddSharedKernelCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! factory, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!

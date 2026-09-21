@@ -3,7 +3,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
 
@@ -51,10 +50,7 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
     {
         var actor = new FakeAuditActorContext("encrypt-guard-test");
         var clock = new SystemClock();
-        return new PersistenceContextDependencies(
-            new AuditInterceptor(actor, clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor());
+        return PersistenceContextDependencies.Create(actor, clock);
     }
 
     private static DbContextOptions<TContext> BuildSqliteOptions<TContext>(SqliteConnection connection)

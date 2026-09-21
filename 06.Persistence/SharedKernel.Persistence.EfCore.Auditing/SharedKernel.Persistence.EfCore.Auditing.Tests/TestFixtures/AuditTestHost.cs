@@ -38,7 +38,7 @@ internal static class AuditTestHost
         // Registered under BOTH the interface and the concrete type (same singleton instance) — a
         // test needs the concrete CrossTenantScope.Enter() capability, never exposed on the
         // read-only ICrossTenantScope interface itself (see its own remarks).
-        services.AddSingleton<CrossTenantScope>();
+        services.AddSingleton(sp => new CrossTenantScope(sp.GetRequiredService<IRequestContext>()));
         services.AddSingleton<ICrossTenantScope>(sp => sp.GetRequiredService<CrossTenantScope>());
 
         services.AddSingleton<IHmacSigner, HmacSha256Signer>();
@@ -67,18 +67,16 @@ internal static class AuditTestHost
 
         configureServices?.Invoke(services);
 
-        var builder = services.AddSharedKernelEfCore<AuditChainTestDbContext>(options => options
-            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
-                // Test-harness-only: every test builds its own fresh DbContext model, so a single test
-                // PROCESS running many test methods legitimately builds many internal EF service
-                // providers — never a concern for a real host, which composes the container once.
-                    .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-                        .WithAuditTrail(configuration);
+        services.AddSharedKernelPostgres<AuditChainTestDbContext>(configuration, "audit-tests", builder =>
+        {
+            builder
+                .UseDataSource(TestNpgsqlDataSources.Get(connectionString))
+                // Test-harness-only: every test builds its own fresh DbContext model.
+                .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
+                .WithAuditTrail(configuration);
 
-
-        configureBuilder?.Invoke(builder);
-
-        builder.Build();
+            configureBuilder?.Invoke(builder);
+        });
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

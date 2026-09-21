@@ -344,13 +344,12 @@ public sealed class EncryptionCoreIntegrationTests
         services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
 
         services
-            .AddSharedKernelEfCore<EncryptionTestDbContext>(options => options
-                .UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_pooled_tenants")))
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithMultiTenancy()
-            .WithDbContextPooling(poolSize: 2)
-            .WithEncryption()
-            .Build();
+            .AddSharedKernelPostgres<EncryptionTestDbContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "encryption-tests", p => p
+                .UseDataSource(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_pooled_tenants")))
+                .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+                .UseMultiTenancy()
+                .UseDbContextPooling(poolSize: 2)
+                .WithEncryption());
 
         await using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
@@ -412,9 +411,10 @@ public sealed class EncryptionCoreIntegrationTests
         services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
         services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
 
-        services.AddSharedKernelEfCore<EncryptionTestDbContext>(options => options.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_not_registered"))).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithMultiTenancy()
-                .Build(); //.WithEncryption() never called.
+        services.AddSharedKernelPostgres<EncryptionTestDbContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "encryption-tests", p => p
+            .UseDataSource(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_not_registered")))
+            .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .UseMultiTenancy()); //.WithEncryption() never called.
 
         await using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using var scope = sp.CreateAsyncScope();

@@ -10,7 +10,6 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Primitives.Clocks;
@@ -49,10 +48,7 @@ public sealed class BulkUpdateEncryptedColumnGuardPostgresTests
 
         return new EncryptedFieldTestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actor, new SystemClock()),
-                new SoftDeleteInterceptor(new SystemClock()),
-                new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actor, new SystemClock()));
     }
 
     [Fact]
@@ -167,7 +163,6 @@ public sealed class EncryptedFieldTestDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<EncryptedFieldId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 

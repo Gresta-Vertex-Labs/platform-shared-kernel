@@ -13,10 +13,10 @@ namespace SharedKernel.Persistence.EfCore.Conversions;
 public static class MoneyEntityTypeBuilderExtensions
 {
     /// <summary>The default column precision: 19 total digits.</summary>
-    public const int DefaultPrecision = 19;
+    internal const int DefaultPrecision = 19;
 
     /// <summary>The default column scale: 4 digits after the decimal point.</summary>
-    public const int DefaultScale = 4;
+    internal const int DefaultScale = 4;
 
     /// <summary>
     /// Configures a <see cref="Money"/>-typed property identified by <paramref name="propertyExpression"/>
@@ -61,15 +61,11 @@ public static class MoneyEntityTypeBuilderExtensions
     /// read instead of being silently re-rounded.
     /// </para>
     /// <para>
-    /// <strong>REQUIRES <see cref="ModelConfigurationBuilderExtensions.ConfigureMoney"/> to have been
-    /// called from the owning <c>DbContext</c>'s <c>ConfigureConventions</c> override</strong> — it
-    /// pre-declares <see cref="Money"/> as a complex type before EF Core's early navigation/entity-type
-    /// discovery walks it (which runs before <c>OnModelCreating</c>'s body, and therefore before this
-    /// method ever runs). Calling <c>.Money(...)</c> without first calling <c>ConfigureMoney()</c>
-    /// causes model building to fail the same way it always has for any undeclared complex/owned type.
+    /// Every <c>SharedKernelDbContext</c> already declares <see cref="Money"/> as a complex type (and its currency
+    /// conversion) before model discovery; this method only overrides precision, scale, requiredness or column names.
     /// </para>
     /// <para>
-    /// A <see cref="Money"/> property MUST always be configured explicitly through this method — it is
+    /// A <see cref="Money"/> property needs this method only to change the defaults — it is
     /// deliberately excluded from <see cref="Conventions.ValueObjectOwnershipBuilder"/>'s generic
     /// <see cref="SharedKernel.Domain.Abstractions.IValueObject"/> scan, which has no basis to guess a
     /// column's precision/scale.

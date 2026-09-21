@@ -138,7 +138,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     {
         var factory = new NpgsqlConnectionFactory(NpgsqlDataSource.Create(_writerConnectionString));
         var tenantContext = new FakeAuditActorContext { TenantId = null };
-        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var act = async () => await service.UpdateDescriptionAsync(_tenantARowId, "should-never-apply", CancellationToken.None);
 
@@ -150,7 +150,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     {
         var factory = new NpgsqlConnectionFactory(NpgsqlDataSource.Create(_writerConnectionString));
         var tenantContext = new FakeAuditActorContext(tenantId: TenantA);
-        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var affected = await service.UpdateDescriptionAsync(_tenantARowId, "A-updated-by-owner", CancellationToken.None);
 
@@ -162,7 +162,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     {
         var factory = new NpgsqlConnectionFactory(NpgsqlDataSource.Create(_writerConnectionString));
         var tenantContext = new FakeAuditActorContext(tenantId: TenantA);
-        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var affected = await service.UpdateDescriptionAsync(_tenantBRowId, "hacked-from-tenant-a", CancellationToken.None);
 
@@ -184,7 +184,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     {
         var factory = new NpgsqlConnectionFactory(NpgsqlDataSource.Create(_writerConnectionString));
         var tenantContext = new FakeAuditActorContext(tenantId: TenantA);
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
         var service = new TenantOrderCommandService(factory, new NpgsqlTenantSessionBinder(), tenantContext, crossTenantScope);
 
         int affected;
@@ -208,15 +208,15 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
         services.AddSingleton<IRequestContext>(new FakeAuditActorContext(tenantId: TenantA));
 
         // Registered under BOTH the interface (what TenantSafeDapperCommandService's constructor
-        // resolves) and the concrete type (so the test itself can call .Enter(), which is
+        // resolves) and the concrete type (so the test itself can call .Enter("integration test"), which is
         // deliberately not part of the ICrossTenantScope interface — see that interface's remarks).
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
         services.AddSingleton(crossTenantScope);
         services.AddSingleton<ICrossTenantScope>(crossTenantScope);
 
         services
-            .AddSharedKernelEfCore<EnlistedTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-            .Build();
+            .AddSharedKernelPostgres<EnlistedTestDbContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "dapper-tests")
+            ;
 
         services.AddScoped<TenantOrderCommandService>();
 

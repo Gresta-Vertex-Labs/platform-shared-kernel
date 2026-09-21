@@ -47,12 +47,9 @@ public sealed class RetryExhaustionLoggingTests
 
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
-        var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(userContext, clock);
 
-        var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new RetryDiagListenerTestDbContext(options, audit);
         return (ctx, faultInjector);
     }
 
@@ -67,8 +64,7 @@ public sealed class RetryExhaustionLoggingTests
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
-        var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger);
+        var uow = SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.For(ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         Func<Task> act = () => uow.SaveChangesAsync();
@@ -92,8 +88,7 @@ public sealed class RetryExhaustionLoggingTests
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
-        var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger);
+        var uow = SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.For(ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         Func<Task> act = () => uow.SaveChangesAsync();
@@ -123,19 +118,15 @@ public sealed class RetryExhaustionLoggingTests
 
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var audit = new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(
-            userContext, clock);
-        var softDelete = new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(clock);
-        var concurrency = new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(userContext, clock);
 
-        await using var ctx = new RetryDiagListenerTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        await using var ctx = new RetryDiagListenerTestDbContext(options, audit);
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.EnsureCreatedAsync();
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
-        var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger);
+        var uow = SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.For(ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         var affected = await uow.SaveChangesAsync();
@@ -156,8 +147,7 @@ public sealed class RetryExhaustionLoggingTests
 
         var inMemoryLogger =
             new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
-        var tuow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger);
+        var tuow = SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork.For(ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act — the operation delegate always faults on its INSERT, forcing exhaustion.
         Func<Task> act = () => tuow.ExecuteInTransactionAsync(async token =>

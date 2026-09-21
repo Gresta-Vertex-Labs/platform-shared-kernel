@@ -61,7 +61,7 @@ public sealed class FakeAuditQueryService : IAuditQueryService
     {
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));
         _tenantContext = tenantContext ?? new FakeAuditActorContext();
-        _crossTenantScope = crossTenantScope ?? new CrossTenantScope();
+        _crossTenantScope = crossTenantScope ?? new CrossTenantScope(_tenantContext);
     }
 
     /// <inheritdoc />

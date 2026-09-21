@@ -41,6 +41,18 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
             }
         }
 
+        namespace SharedKernel.Persistence.Dapper.Sessions
+        {
+            using System.Threading;
+
+            public interface IDbSession
+            {
+                object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default);
+            }
+        }
+
+        // Consumer-written helpers over a session: every method with a 'sql' parameter on a type that implements
+        // IDbSession is a matched call site (the former DapperReadService/DapperCommandService were deleted).
         namespace SharedKernel.Persistence.Dapper.ReadModels
         {
             using System.Collections.Generic;
@@ -48,18 +60,24 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
             using System.Threading.Tasks;
             using SharedKernel.Persistence.Abstractions.Connections;
 
-            public abstract class DapperReadService
+            public abstract class DapperReadService : SharedKernel.Persistence.Dapper.Sessions.IDbSession
             {
                 protected DapperReadService(IDbConnectionFactory factory) { }
+
+                public object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default) =>
+                    throw new System.NotImplementedException();
 
                 protected Task<IReadOnlyList<TResult>> QueryAsync<TResult>(
                     string sql, object? parameters, int? commandTimeout = null, CancellationToken ct = default) =>
                     throw new System.NotImplementedException();
             }
 
-            public abstract class DapperCommandService
+            public abstract class DapperCommandService : SharedKernel.Persistence.Dapper.Sessions.IDbSession
             {
                 protected DapperCommandService(IDbConnectionFactory factory) { }
+
+                public object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default) =>
+                    throw new System.NotImplementedException();
 
                 protected Task<int> ExecuteAsync(
                     string sql, object? parameters, int? commandTimeout = null, CancellationToken ct = default) =>
@@ -91,6 +109,31 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
 
                         public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
                             QueryAsync<int>({|SK0042:$"SELECT id FROM orders WHERE status = '{status}'"|}, null);
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>A non-constant sql passed to <c>IDbSession.Command</c> is flagged.</summary>
+    [Fact]
+    public async Task FirePath_DbSessionCommand_InterpolatedSql_Reports()
+    {
+        var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
+        {
+            TestCode = DapperStubs + """
+                namespace Fixture
+                {
+                    using SharedKernel.Persistence.Dapper.Sessions;
+
+                    public sealed class OrderQueries
+                    {
+                        public object Find(IDbSession session, string status) =>
+                            session.Command({|SK0042:$"SELECT id FROM orders WHERE status = '{status}'"|});
+
+                        public object FindSafely(IDbSession session, string status) =>
+                            session.Command("SELECT id FROM orders WHERE status = @status", new { status });
                     }
                 }
                 """,

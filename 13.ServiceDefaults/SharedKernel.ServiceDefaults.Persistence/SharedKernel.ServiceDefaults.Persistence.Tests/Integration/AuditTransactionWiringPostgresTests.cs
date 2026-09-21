@@ -89,15 +89,11 @@ public sealed class AuditTransactionWiringPostgresTests
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configurationValues).Build();
 
-        services.AddSharedKernelNpgsql(configuration);
-
-        var builder = services.AddSharedKernelEfCore<AuditWiringTestDbContext>(options => options
-            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
-                // Test-harness-only: every test builds its own fresh DbContext model.
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithAuditTrail(configuration);
-
-        builder.Build();
+        // The one-line composition: data source, EF Core, unit of work, audit trail.
+        services.AddSharedKernelPostgres<AuditWiringTestDbContext>(configuration, "audit-wiring", p => p
+            // Test-harness-only: every test builds its own fresh DbContext model.
+            .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithAuditTrail(configuration));
 
         // No bridge: EfUnitOfWork and EfAuditTrailWriter implement the shared IUnitOfWork and
         // IAuditTrailWriter (SharedKernel.Application.Abstractions) the behaviors consume directly.

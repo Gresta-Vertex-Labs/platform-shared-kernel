@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.EfCore.Exceptions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Always registered by <c>AddSharedKernelEfCore&lt;TContext&gt;(...).Build()</c>, first in the classifier
+/// Always registered by <c>AddSharedKernelPostgres</c> (and included by <c>PersistenceContextDependencies.Create</c>), first in the classifier
 /// list; there is no registration path without it.
 /// </para>
 /// <para>

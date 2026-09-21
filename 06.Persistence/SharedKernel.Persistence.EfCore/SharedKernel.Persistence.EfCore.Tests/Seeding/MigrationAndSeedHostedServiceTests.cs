@@ -10,7 +10,6 @@ using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Primitives.Clocks;
 
@@ -380,7 +379,6 @@ internal sealed class SeedTestDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<SeedItemId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 

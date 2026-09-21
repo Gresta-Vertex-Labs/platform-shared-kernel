@@ -14,7 +14,6 @@ using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.Npgsql.Context;
 using SharedKernel.Persistence.EfCore.Migrations;
@@ -76,10 +75,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
         var clock = new SharedKernel.Primitives.Clocks.SystemClock();
         await using (var adminCtx = new RlsTestDbContext(
             adminOptions,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actor, clock),
-                new SoftDeleteInterceptor(clock),
-                new ConcurrencyInterceptor())))
+            PersistenceContextDependencies.Create(actor, clock)))
         {
             await adminCtx.Database.EnsureCreatedAsync();
         }
@@ -283,7 +279,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
         using var scope = provider.CreateScope();
         var ctx = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             var rows = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
 
@@ -304,7 +300,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
         using var scope = provider.CreateScope();
         var ctx = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             var rowsInside = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
             rowsInside.Should().HaveCount(3);
@@ -342,7 +338,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
 
         await using var transaction = await ctx.Database.BeginTransactionAsync();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             var rows = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
 
@@ -368,7 +364,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
 
         await using var transaction = await ctx.Database.BeginTransactionAsync();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             var rowsInsideScope = await ctx.Orders.IgnoreQueryFilters([PersistenceFilterNames.Tenant]).ToListAsync();
             rowsInsideScope.Should().HaveCount(3);
@@ -400,7 +396,7 @@ public sealed class RowLevelSecurityConnectionInterceptorIntegrationTests : IAsy
 
         await using var transaction = await ctx.Database.BeginTransactionAsync();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             ctx.Orders.Add(new RlsOrder { Id = Guid.NewGuid(), TenantId = TenantB, Description = "permitted-inside-scope" });
             await ctx.SaveChangesAsync();

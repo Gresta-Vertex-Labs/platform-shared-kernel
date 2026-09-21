@@ -5,7 +5,6 @@ using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -34,7 +33,6 @@ public sealed class TestDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<TestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -120,7 +118,6 @@ public sealed class TenantedTestDbContext : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<TenantedTestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -161,7 +158,6 @@ public sealed class SoftDeletableTenantedDbContext : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<TenantedTestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 

@@ -51,7 +51,6 @@ public sealed class DuplicatePurposeDbContext : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<DuplicatePurposeAggregateId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 

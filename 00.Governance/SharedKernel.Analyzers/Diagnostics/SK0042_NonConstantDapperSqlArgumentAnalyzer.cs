@@ -9,14 +9,12 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <summary>
 /// SK0042 — Fires when a non-constant expression (string interpolation, concatenation, or any other
 /// expression the compiler cannot prove is a compile-time constant) is passed as the <c>sql</c>
-/// argument to a <c>SharedKernel.Persistence.Dapper.ReadModels.DapperReadService</c>/
-/// <c>DapperCommandService</c> query or command method, or to a raw Dapper <c>SqlMapper</c> extension
+/// argument to a <c>SharedKernel.Persistence.Dapper.Sessions.IDbSession.Command</c> (or a type implementing <c>IDbSession</c>), or to a raw Dapper <c>SqlMapper</c> extension
 /// method.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>The gap.</strong> Every query/command method on <c>DapperReadService</c>/
-/// <c>DapperCommandService</c>, and every Dapper <c>SqlMapper</c> extension method
+/// <strong>The gap.</strong> <c>IDbSession.Command(sql, ...)</c> and every Dapper <c>SqlMapper</c> extension method
 /// (<c>QueryAsync</c>, <c>ExecuteAsync</c>, ...), takes its SQL as a plain <see cref="string"/>
 /// parameter named <c>sql</c>. Nothing in the C# type system stops a caller from building that
 /// string with <c>$"...{userInput}..."</c> or <c>"..." + userInput</c> instead of a parameterized
@@ -38,11 +36,9 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// <strong>Matched call sites.</strong> Any invocation whose target method declares a
 /// <see langword="string"/> parameter literally named <c>sql</c>, where the containing type is
-/// <c>SharedKernel.Persistence.Dapper.ReadModels.DapperReadService</c>,
-/// <c>SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService</c> (including an inherited
-/// call through a subclass — the target method symbol resolves to the base declaration either way),
-/// or <c>Dapper.SqlMapper</c> itself (the raw extension methods, for a caller that bypasses the base
-/// classes and calls Dapper directly against an <c>IDbConnection</c>/<c>DbConnection</c>).
+/// <c>SharedKernel.Persistence.Dapper.Sessions.IDbSession</c> or a type implementing it (the session's
+/// <c>Command(sql, ...)</c>), or <c>Dapper.SqlMapper</c> itself (the raw extension methods called on the
+/// session's connection).
 /// </para>
 /// <para>
 /// <b>Suppression:</b> use <c>#pragma warning disable SK0042</c> immediately around the call, with an
@@ -57,8 +53,7 @@ public sealed class NonConstantDapperSqlArgumentAnalyzer : AnalyzerBase
 {
     private const string DiagnosticId = "SK0042";
     private const string SqlParameterName = "sql";
-    private const string DapperReadServiceTypeName = "SharedKernel.Persistence.Dapper.ReadModels.DapperReadService";
-    private const string DapperCommandServiceTypeName = "SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService";
+    private const string DbSessionTypeName = "SharedKernel.Persistence.Dapper.Sessions.IDbSession";
     private const string SqlMapperTypeName = "Dapper.SqlMapper";
 
     /// <summary>The diagnostic descriptor for SK0042.</summary>
@@ -126,8 +121,14 @@ public sealed class NonConstantDapperSqlArgumentAnalyzer : AnalyzerBase
         for (var type = containingType; type is not null; type = type.BaseType)
         {
             var displayName = type.ToDisplayString();
-            if (displayName is DapperReadServiceTypeName or DapperCommandServiceTypeName or SqlMapperTypeName)
+            if (displayName is DbSessionTypeName or SqlMapperTypeName)
                 return true;
+
+            foreach (var implemented in type.Interfaces)
+            {
+                if (implemented.ToDisplayString() == DbSessionTypeName)
+                    return true;
+            }
         }
 
         return false;

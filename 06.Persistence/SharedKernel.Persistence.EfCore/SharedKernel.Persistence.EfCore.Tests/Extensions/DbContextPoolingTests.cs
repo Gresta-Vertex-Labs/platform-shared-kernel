@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -303,10 +302,7 @@ public sealed class DbContextPoolingTests
         var actorContextA = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantAId);
         using (var ctxA = new SoftDeletableTenantedDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContextA, new SystemClock()),
-            new SoftDeleteInterceptor(new SystemClock()),
-            new ConcurrencyInterceptor())))
+            PersistenceContextDependencies.Create(actorContextA, new SystemClock())))
         {
             ctxA.RefreshRequestContext(actorContextA);
             await ctxA.Database.EnsureCreatedAsync();
@@ -320,10 +316,7 @@ public sealed class DbContextPoolingTests
         var actorContextB = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantBId);
         using var ctxB = new SoftDeletableTenantedDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContextB, new SystemClock()),
-            new SoftDeleteInterceptor(new SystemClock()),
-            new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContextB, new SystemClock()));
         ctxB.RefreshRequestContext(actorContextB);
 
         ctxB.SdAggregates.Add(new SoftDeletableTenantedAggregate(

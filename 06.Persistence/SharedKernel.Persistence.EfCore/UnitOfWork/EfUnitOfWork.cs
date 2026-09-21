@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Transactions;
-using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
@@ -15,69 +14,65 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
 /// <summary>
-/// EF Core implementation of the shared <see cref="IUnitOfWork"/> — the single commit boundary, always
-/// registered by <c>EfCorePersistenceBuilder.Build()</c>.
+/// The unit of work of one specific context. Inject it when a service registers more than one context;
+/// otherwise inject the plain <see cref="IUnitOfWork"/>, which resolves to the first registered context.
+/// </summary>
+/// <typeparam name="TContext">The context this unit of work commits.</typeparam>
+/// <remarks>
+/// Also resolvable as a keyed <see cref="IUnitOfWork"/> whose key is <c>typeof(TContext)</c>:
+/// <c>[FromKeyedServices(typeof(OrderDbContext))] IUnitOfWork unitOfWork</c>.
+/// </remarks>
+public interface IUnitOfWork<TContext> : IUnitOfWork
+    where TContext : SharedKernelDbContext
+{
+}
+
+/// <summary>
+/// EF Core implementation of <see cref="IUnitOfWork"/> for one context — the single commit boundary.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>One implementation.</strong> The former <c>EfUnitOfWork</c>/<c>EfTransactionalUnitOfWork</c>
-/// pair and the handle-based <c>BeginTransactionAsync</c> are gone. Every transaction runs through
-/// <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},IsolationLevel?,CancellationToken)"/>,
-/// inside <c>IExecutionStrategy.ExecuteAsync</c>, so a retrying execution strategy (Npgsql transient
-/// fault retry) and explicit transactions coexist: a transient failure replays the whole delegate.
+/// <strong>Transactions run inside the execution strategy.</strong> <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},IsolationLevel?,CancellationToken)"/>
+/// runs the whole delegate per attempt, so the default Npgsql retry and explicit transactions coexist: a
+/// transient failure replays the delegate. An attempt begins the transaction, publishes it on
+/// <see cref="IAmbientDbTransaction"/> (Dapper and the audit writer enlist), runs the operation, saves (the
+/// context dispatches domain events first), runs the <see cref="OnBeforeCommit"/> callbacks (saving again if
+/// they staged changes) and commits. A failed <c>Result</c> or an exception rolls back and clears the change
+/// tracker.
 /// </para>
 /// <para>
-/// <strong>An attempt:</strong> begin the transaction and publish it on <see cref="IAmbientDbTransaction"/>
-/// (so a Dapper command service or the audit-trail writer can enlist), run the operation, dispatch
-/// domain events and save, run every <see cref="OnBeforeCommit"/> callback (saving again if a callback
-/// staged EF changes), commit. A failed <c>Result</c> returned by the operation, or an exception, rolls
-/// back and clears the change tracker, so nothing the operation staged can be saved later by accident.
-/// </para>
-/// <para>
-/// <strong>Retry safety:</strong> the change tracker is cleared before every retried attempt (never
-/// before the first — changes staged before the call are saved with it). Under a retrying strategy,
-/// changes already staged when the call starts would be lost on a retry, so the call refuses to start
-/// and throws <see cref="InvalidOperationException"/> instead.
-/// </para>
-/// <para>
-/// <strong>Domain event dispatch</strong> happens before every physical save — see
-/// <see cref="DomainEventDispatchLoop"/>. <c>IDomainEventDispatcher</c> is optional; when none is
-/// registered events are cleared but not dispatched.
-/// </para>
-/// <para>
-/// <strong>Single constructor rule:</strong> exactly one public constructor, with the optional
-/// dependencies as defaulted parameters — a second, shorter constructor could be selected by DI and
-/// silently skip the dispatcher.
+/// <strong>Retry safety:</strong> the tracker is cleared before each retried attempt, never before the first.
+/// Under a retrying strategy, changes staged before the call would be lost on a retry, so the call refuses to
+/// start in that case.
 /// </para>
 /// </remarks>
-#pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters — mirrors IUnitOfWork's overload set; see its rationale.
-public sealed class EfUnitOfWork : IUnitOfWork
+#pragma warning disable RS0026 // Mirrors IUnitOfWork's overload set.
+internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
+    where TContext : SharedKernelDbContext
 {
-    private readonly SharedKernelDbContext _dbContext;
-    private readonly IDomainEventDispatcher? _dispatcher;
-    private readonly ILogger<EfUnitOfWork> _logger;
+    private readonly TContext _dbContext;
+    private readonly ILogger _logger;
     private readonly AmbientDbTransactionAccessor? _ambientTransactionAccessor;
     private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
     private IDbContextTransaction? _transaction;
 
-    /// <summary>Initialises a new <see cref="EfUnitOfWork"/>.</summary>
-    /// <param name="dbContext">The scoped shared-kernel DB context.</param>
-    /// <param name="dispatcher">Optional domain-event dispatcher; <see langword="null"/> when none is registered.</param>
-    /// <param name="logger">Optional logger for <c>TransientRetryExhausted</c> (EventId 6008).</param>
-    /// <param name="ambientTransaction">
-    /// The scoped <see cref="IAmbientDbTransaction"/> this unit of work publishes its open transaction on.
-    /// </param>
     public EfUnitOfWork(
-        SharedKernelDbContext dbContext,
-        IDomainEventDispatcher? dispatcher = null,
-        ILogger<EfUnitOfWork>? logger = null,
+        TContext dbContext,
+        ILogger<EfUnitOfWork<TContext>>? logger = null,
         IAmbientDbTransaction? ambientTransaction = null)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
         _dbContext = dbContext;
-        _dispatcher = dispatcher;
-        _logger = logger ?? NullLogger<EfUnitOfWork>.Instance;
+        _logger = (ILogger?)logger ?? NullLogger.Instance;
+        _ambientTransactionAccessor = ambientTransaction as AmbientDbTransactionAccessor;
+    }
+
+    /// <inheritdoc />
+    internal EfUnitOfWork(TContext dbContext, ILogger logger, IAmbientDbTransaction? ambientTransaction)
+    {
+        _dbContext = dbContext;
+        _logger = logger;
         _ambientTransactionAccessor = ambientTransaction as AmbientDbTransactionAccessor;
     }
 
@@ -85,18 +80,11 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public bool IsTransactionActive => _transaction is not null;
 
     /// <inheritdoc />
-    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
-        return await WithRetryExhaustionLoggingAsync(
-            () => _dbContext.SaveChangesAsync(cancellationToken),
-            ConfiguredAttemptCount);
-    }
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        WithRetryExhaustionLoggingAsync(() => _dbContext.SaveChangesAsync(cancellationToken), ConfiguredAttemptCount);
 
     /// <inheritdoc />
-    public Task ExecuteInTransactionAsync(
-        Func<CancellationToken, Task> operation,
-        CancellationToken cancellationToken = default)
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
         => ExecuteInTransactionAsync(operation, isolationLevel: null, cancellationToken);
 
     /// <inheritdoc />
@@ -151,8 +139,6 @@ public sealed class EfUnitOfWork : IUnitOfWork
             cancellationToken,
             async token =>
             {
-                // A retried attempt must not inherit what the failed one staged (duplicated inserts,
-                // double-dispatched events, stale state).
                 if (attempt++ > 0)
                     _dbContext.ChangeTracker.Clear();
 
@@ -199,26 +185,20 @@ public sealed class EfUnitOfWork : IUnitOfWork
                 return result;
             }
 
-            await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            // Indexed loop: a callback may itself queue another callback.
+            // Indexed loop: a callback may queue another callback.
             for (var i = 0; i < _beforeCommit.Count; i++)
                 await _beforeCommit[i](cancellationToken);
 
             if (_dbContext.ChangeTracker.HasChanges())
-            {
-                await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
                 await _dbContext.SaveChangesAsync(cancellationToken);
-            }
 
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
         catch
         {
-            // The transaction rolls back when disposed without a commit; nothing staged may survive
-            // into a later SaveChanges on this scope.
             _dbContext.ChangeTracker.Clear();
             throw;
         }
@@ -230,10 +210,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
         }
     }
 
-    // Called inside an active transaction: run, save, and let the outermost call decide the outcome.
-    private async Task<TResult> JoinAsync<TResult>(
-        Func<CancellationToken, Task<TResult>> operation,
-        CancellationToken cancellationToken)
+    private async Task<TResult> JoinAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
     {
         var result = await operation(cancellationToken);
 
@@ -255,15 +232,12 @@ public sealed class EfUnitOfWork : IUnitOfWork
             _ambientTransactionAccessor.Current = null;
     }
 
-    // Attempts a plain SaveChanges makes before EF Core gives up: the configured retries plus the first try.
     private int ConfiguredAttemptCount()
         => (_dbContext.GetService<IDbContextOptions>()
             .FindExtension<PostgreSQLConventionsOptionsExtension>()?.MaxRetryCount ?? 0) + 1;
 
-    // Catching RetryLimitExceededException specifically — never a broad catch gated on
-    // RetriesOnFailure — because a DbUpdateConcurrencyException (or any other non-transient failure)
-    // is never retried and never wrapped, so a broader catch would misreport every concurrency
-    // conflict as a retry exhaustion.
+    // Only RetryLimitExceededException: a concurrency conflict or any other non-transient failure is never
+    // retried, so a broader catch would misreport it as a retry exhaustion.
     private async Task<TResult> WithRetryExhaustionLoggingAsync<TResult>(Func<Task<TResult>> operation, Func<int> attemptCount)
     {
         try
@@ -278,3 +252,26 @@ public sealed class EfUnitOfWork : IUnitOfWork
     }
 }
 #pragma warning restore RS0026
+
+/// <summary>Non-generic construction helper for code that holds a context of a statically unknown type (tests, tools).</summary>
+internal sealed class EfUnitOfWork
+{
+    private EfUnitOfWork()
+    {
+    }
+
+    /// <summary>
+    /// Creates the unit of work of <paramref name="context"/>, attaching <paramref name="dispatcher"/> to the
+    /// context (domain events are dispatched by the context itself before each save).
+    /// </summary>
+    public static EfUnitOfWork<TContext> For<TContext>(
+        TContext context,
+        SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null,
+        ILogger? logger = null,
+        IAmbientDbTransaction? ambientTransaction = null)
+        where TContext : SharedKernelDbContext
+    {
+        context.AttachLease(context.RequestContext, dispatcher);
+        return new EfUnitOfWork<TContext>(context, logger ?? NullLogger.Instance, ambientTransaction);
+    }
+}

@@ -137,7 +137,7 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
     {
         var factory = new NpgsqlConnectionFactory(_readerDataSource!);
         var tenantContext = new FakeAuditActorContext(tenantId: TenantA);
-        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var rows = await service.GetAllOrdersAsync(CancellationToken.None);
 
@@ -150,7 +150,7 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
     {
         var factory = new NpgsqlConnectionFactory(_readerDataSource!);
         var tenantContext = new FakeAuditActorContext(tenantId: TenantB);
-        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var rows = await service.GetAllOrdersAsync(CancellationToken.None);
 
@@ -163,7 +163,7 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
     {
         var factory = new NpgsqlConnectionFactory(_readerDataSource!);
         var tenantContext = new FakeAuditActorContext { TenantId = null };
-        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope());
+        var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var act = async () => await service.GetAllOrdersAsync(CancellationToken.None);
 
@@ -178,10 +178,10 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
         // fail-closed "no rows" outcome.
         var factory = new NpgsqlConnectionFactory(_readerDataSource!);
         var tenantContext = new FakeAuditActorContext { TenantId = null };
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
         var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, crossTenantScope);
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("integration test"))
         {
             var rows = await service.GetAllOrdersAsync(CancellationToken.None);
 
@@ -198,10 +198,10 @@ public sealed class TenantSafeDapperReadServiceIntegrationTests : IAsyncLifetime
         // again exactly as the non-cross-tenant tests above prove.
         var factory = new NpgsqlConnectionFactory(_readerDataSource!);
         var tenantContext = new FakeAuditActorContext(tenantId: TenantA);
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
         var service = new TenantOrderReadService(factory, new NpgsqlTenantSessionBinder(), tenantContext, crossTenantScope);
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("integration test"))
         {
             var rowsInside = await service.GetAllOrdersAsync(CancellationToken.None);
             rowsInside.Should().HaveCount(3);

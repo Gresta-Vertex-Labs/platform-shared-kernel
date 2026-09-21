@@ -58,17 +58,12 @@ public static class EncryptionTestHost
 
         configureServices?.Invoke(services);
 
-        services.AddSharedKernelEfCore<TContext>(options => options
-            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
-            // Test-harness-only: every test builds its own fresh EncryptionInterceptor instance (a
-            // materialization interceptor, part of EF Core's internal model-service-provider cache
-            // key by design), so a single test PROCESS running many test methods legitimately builds
-            // many such internal providers — never a concern for a real host, which calls
-            //.WithEncryption() exactly once for the application's lifetime.
-            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithMultiTenancy()
-            .WithEncryption(o => o.AllowUnencryptedValues = allowUnencryptedValues)
-            .Build();
+        services.AddSharedKernelPostgres<TContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "encryption-tests", p => p
+            .UseDataSource(TestNpgsqlDataSources.Get(connectionString))
+            // Test-harness-only: every test builds its own fresh EncryptionInterceptor instance, so a single test
+            // process legitimately builds many internal EF service providers.
+            .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(o => o.AllowUnencryptedValues = allowUnencryptedValues));
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

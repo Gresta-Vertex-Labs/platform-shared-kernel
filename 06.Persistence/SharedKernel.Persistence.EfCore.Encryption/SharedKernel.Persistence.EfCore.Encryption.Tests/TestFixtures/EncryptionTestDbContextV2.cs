@@ -37,8 +37,6 @@ public sealed class EncryptionTestDbContextV2 : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<EncCustomerId, Guid>();
-        configurationBuilder.ConfigureStronglyTypedId<EncAaaOrderId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 

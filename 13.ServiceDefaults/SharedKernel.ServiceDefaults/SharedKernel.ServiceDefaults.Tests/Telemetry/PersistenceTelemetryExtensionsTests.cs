@@ -101,7 +101,7 @@ public sealed class PersistenceTelemetryExtensionsTests
     }
 
     [Fact]
-    public void WithPersistenceTelemetry_SpanFromDapperActivitySource_IsCaptured()
+    public void WithPersistenceTelemetry_SpanFromAuditingActivitySource_IsCaptured()
     {
         var captured = new List<Activity>();
 
@@ -109,8 +109,8 @@ public sealed class PersistenceTelemetryExtensionsTests
         builder.WithPersistenceTelemetry();
 
         // Same capture idiom as the EfCore source test above, proving
-        // AddSource("SharedKernel.Persistence.Dapper") — SharedKernel.Persistence.Dapper.Diagnostics
-        //.DapperActivitySource's real production name/version — also flows through the built
+        // AddSource("SharedKernel.Persistence.EfCore.Auditing") — the audit ledger's ActivitySource
+        // name — also flows through the built
         // TracerProvider.
         builder.Services
             .AddOpenTelemetry()
@@ -119,13 +119,13 @@ public sealed class PersistenceTelemetryExtensionsTests
         using var provider = builder.Services.BuildServiceProvider();
         using var tracerProvider = provider.GetRequiredService<TracerProvider>();
 
-        using var dapperActivitySource = new ActivitySource("SharedKernel.Persistence.Dapper", "1.0");
-        using (var activity = dapperActivitySource.StartActivity("Dapper.Query", ActivityKind.Client))
+        using var auditingActivitySource = new ActivitySource("SharedKernel.Persistence.EfCore.Auditing", "1.0");
+        using (var activity = auditingActivitySource.StartActivity("Audit.Seal", ActivityKind.Internal))
         {
             activity?.SetTag("db.system", "postgresql");
         }
 
-        Assert.Contains(captured, a => a.OperationName == "Dapper.Query");
+        Assert.Contains(captured, a => a.OperationName == "Audit.Seal");
     }
 
     [Fact]

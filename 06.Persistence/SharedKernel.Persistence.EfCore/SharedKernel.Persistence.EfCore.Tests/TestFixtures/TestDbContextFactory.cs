@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
@@ -54,11 +53,9 @@ internal static class TestDbContextFactory
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var audit = new AuditInterceptor(actorContext, clock, serviceName is null ? null : ServiceOptions(serviceName));
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock, serviceName: serviceName ?? "system");
 
-        var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new TestDbContext(options, audit);
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -76,11 +73,9 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new TenantedTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new TenantedTestDbContext(options, audit);
         ctx.RefreshRequestContext(actorContext);
         ctx.Database.EnsureCreated();
         return ctx;
@@ -104,11 +99,9 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new SoftDeletableTenantedDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new SoftDeletableTenantedDbContext(options, audit);
         ctx.RefreshRequestContext(actorContext);
         ctx.Database.EnsureCreated();
         return ctx;

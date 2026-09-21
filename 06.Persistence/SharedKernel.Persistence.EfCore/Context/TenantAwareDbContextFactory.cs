@@ -1,60 +1,88 @@
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Application.Context;
+using SharedKernel.Domain.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Context;
 
 /// <summary>
-/// Scoped <see cref="IDbContextFactory{TContext}"/> decorator that attaches the CURRENT DI scope's
-/// <see cref="IRequestContext"/> — caller identity and tenant — to every instance it hands out,
-/// whether the inner factory constructs a fresh instance or leases a reused one from a pool.
+/// The public, <b>scoped</b> <see cref="IDbContextFactory{TContext}"/>: attaches the resolving scope's caller
+/// (<see cref="IRequestContext"/>) and domain-event dispatcher to every context it hands out, fresh or pooled.
 /// </summary>
-/// <typeparam name="TContext">The concrete <see cref="SharedKernelDbContext"/> subclass.</typeparam>
+/// <typeparam name="TContext">The concrete context.</typeparam>
 /// <remarks>
-/// <para>
-/// This is the ONE place every path that can produce a <typeparamref name="TContext"/> instance funnels
-/// through: <c>EfCorePersistenceBuilder&lt;TContext&gt;.Build()</c> registers this type — SCOPED — as
-/// the public, unkeyed <see cref="IDbContextFactory{TContext}"/>, wrapping the real (pooled or
-/// non-pooled) factory it registers under a private key. Direct <typeparamref name="TContext"/>
-/// injection resolves this factory too, so both shapes get identical per-scope attachment.
-/// </para>
-/// <para>
-/// A background worker that wants a specific identity creates its own scope, makes that scope's
-/// <see cref="IRequestContext"/> report it (for example a <see cref="SystemRequestContext"/>), then
-/// resolves <see cref="IDbContextFactory{TContext}"/> from it. A scope with nothing registered gets the
-/// builder's fail-closed <see cref="AnonymousRequestContext"/>: no tenant, so it reads and writes no
-/// tenant-scoped row.
-/// </para>
+/// Every way of getting a <typeparamref name="TContext"/> from the container goes through this factory (direct
+/// injection of <typeparamref name="TContext"/> included). It is scoped on purpose: the identity belongs to the
+/// scope. A singleton (a hosted service) creates a scope and resolves the factory from it, or injects the
+/// singleton <see cref="ICallerDbContextFactory{TContext}"/> and passes the caller explicitly.
 /// </remarks>
-internal sealed class TenantAwareDbContextFactory<TContext> : IDbContextFactory<TContext>
+internal sealed class TenantAwareDbContextFactory<TContext>(
+    IDbContextFactory<TContext> inner,
+    IRequestContext requestContext,
+    IDomainEventDispatcher? domainEventDispatcher) : IDbContextFactory<TContext>
     where TContext : SharedKernelDbContext
 {
-    private readonly IDbContextFactory<TContext> _inner;
-    private readonly IRequestContext _requestContext;
-
-    /// <summary>Initialises a new <see cref="TenantAwareDbContextFactory{TContext}"/>.</summary>
-    /// <param name="inner">The real (pooled or non-pooled) factory this decorator wraps.</param>
-    /// <param name="requestContext">The current scope's <see cref="IRequestContext"/>.</param>
-    public TenantAwareDbContextFactory(IDbContextFactory<TContext> inner, IRequestContext requestContext)
-    {
-        _inner = inner;
-        _requestContext = requestContext;
-    }
-
     /// <inheritdoc />
     public TContext CreateDbContext()
     {
-        var context = _inner.CreateDbContext();
-        context.RefreshRequestContext(_requestContext);
+        var context = inner.CreateDbContext();
+        context.AttachLease(requestContext, domainEventDispatcher);
         return context;
     }
 
     /// <inheritdoc />
     public async Task<TContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
     {
-        // Deliberately the INNER factory's own CreateDbContextAsync — PooledDbContextFactory overrides
-        // it with a genuine async pool lease.
-        var context = await _inner.CreateDbContextAsync(cancellationToken);
-        context.RefreshRequestContext(_requestContext);
+        // The inner factory's own async method: the pooled factory leases asynchronously.
+        var context = await inner.CreateDbContextAsync(cancellationToken);
+        context.AttachLease(requestContext, domainEventDispatcher);
+        return context;
+    }
+}
+
+/// <summary>
+/// A <b>singleton-safe</b> context factory for code without a request scope — hosted services, scheduled jobs,
+/// workflow activities — that takes the caller explicitly instead of capturing a scoped identity.
+/// </summary>
+/// <typeparam name="TContext">The concrete context.</typeparam>
+/// <remarks>
+/// <para>
+/// The standard <see cref="IDbContextFactory{TContext}"/> is scoped and attaches the identity of the scope it
+/// was resolved from; injecting it into a singleton would capture one scope's caller forever (or fail scope
+/// validation). This factory has no identity of its own:
+/// </para>
+/// <code>
+/// await using var db = await factory.CreateDbContextAsync(new SystemRequestContext([], "nightly-billing"), ct);
+/// </code>
+/// <para>The caller disposes the context. A dispatcher passed here receives the context's domain events.</para>
+/// </remarks>
+public interface ICallerDbContextFactory<TContext>
+    where TContext : SharedKernelDbContext
+{
+    /// <summary>Creates a context acting as <paramref name="caller"/>.</summary>
+    /// <param name="caller">The identity (and tenant) the context attributes and filters by.</param>
+    /// <param name="domainEventDispatcher">Receives domain events before each save; <see langword="null"/> discards them with a warning.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A new (or pooled) context the caller must dispose.</returns>
+    Task<TContext> CreateDbContextAsync(
+        IRequestContext caller,
+        IDomainEventDispatcher? domainEventDispatcher = null,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Default <see cref="ICallerDbContextFactory{TContext}"/> over the registration's inner factory.</summary>
+internal sealed class CallerDbContextFactory<TContext>(IDbContextFactory<TContext> inner) : ICallerDbContextFactory<TContext>
+    where TContext : SharedKernelDbContext
+{
+    /// <inheritdoc />
+    public async Task<TContext> CreateDbContextAsync(
+        IRequestContext caller,
+        IDomainEventDispatcher? domainEventDispatcher = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(caller);
+
+        var context = await inner.CreateDbContextAsync(cancellationToken);
+        context.AttachLease(caller, domainEventDispatcher);
         return context;
     }
 }

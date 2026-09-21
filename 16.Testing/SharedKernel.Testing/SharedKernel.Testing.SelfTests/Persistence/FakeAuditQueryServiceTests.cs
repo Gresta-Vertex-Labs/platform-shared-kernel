@@ -160,10 +160,10 @@ public sealed class FakeAuditQueryServiceTests
         var writerA = new FakeAuditTrailWriter(new FakeAuditActorContext(tenantId: Guid.NewGuid()));
         var recordA = await writerA.RecordAsync(Entry("Order", "order-1"));
 
-        var scope = new CrossTenantScope();
+        var scope = new CrossTenantScope(new FakeAuditActorContext("admin"));
         var query = new FakeAuditQueryService(writerA, crossTenantScope: scope);
 
-        using (scope.Enter())
+        using (scope.Enter("cross-tenant audit read"))
         {
             var result = await query.GetResourceHistoryAcrossTenantsAsync(
                 "Order", "order-1", afterId: null, descending: false, take: 10);

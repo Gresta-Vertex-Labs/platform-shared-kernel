@@ -55,12 +55,11 @@ public sealed class EncryptionOwnedTypeShadowKeyGuardTests
         services.AddSingleton<IEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
         services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
 
-        services.AddSharedKernelEfCore<ShadowKeyGuardDbContext>(options => options
-            .UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_shadow_key_guard")))
-            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .WithMultiTenancy()
-            .WithEncryption()
-            .Build();
+        services.AddSharedKernelPostgres<ShadowKeyGuardDbContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "encryption-tests", p => p
+            .UseDataSource(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_shadow_key_guard")))
+            .ConfigureDbContext((_, options) => options.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .UseMultiTenancy()
+            .WithEncryption());
 
         await using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using var scope = sp.CreateAsyncScope();

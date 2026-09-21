@@ -3,7 +3,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -47,7 +46,8 @@ public sealed class TenantedDbContextTests
         var id2 = TenantedTestId.New();
         ctx1.TenantedAggregates.Add(new TenantedTestAggregate(id1, "T1Entity", tenant1, new SystemClock()));
         ctx1.TenantedAggregates.Add(new TenantedTestAggregate(id2, "T2Entity", tenant2, new SystemClock()));
-        await ctx1.SaveChangesAsync();
+        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+            await ctx1.SaveChangesAsync();
 
         // Act — query with tenant2 filter
         await using var ctx2 = BuildTenantedContext(options2, actorContext2, clock);
@@ -85,7 +85,8 @@ public sealed class TenantedDbContextTests
         await using var ctxSeed = BuildTenantedContext(optionsSeed, seedActorContext, clock);
         ctxSeed.Database.EnsureCreated();
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(TenantedTestId.New(), "SeedEntity", tenant, new SystemClock()));
-        await ctxSeed.SaveChangesAsync();
+        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+            await ctxSeed.SaveChangesAsync();
 
         // Act — query with no tenant resolved at all.
         await using var ctxQuery = BuildTenantedContext(optionsQuery, noTenantActorContext, clock);
@@ -109,7 +110,7 @@ public sealed class TenantedDbContextTests
 
         await using var ctx = BuildTenantedContext(options, actorContext, clock);
         ctx.Database.EnsureCreated();
-        var repo = new TenantedTestAggregateRepository(ctx, new CrossTenantScope());
+        var repo = new TenantedTestAggregateRepository(ctx, new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance));
 
         var act = async () => await repo.GetByIdForTenantAsync(TenantedTestId.New(), Guid.NewGuid());
 
@@ -144,16 +145,17 @@ public sealed class TenantedDbContextTests
         var id2 = TenantedTestId.New();
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(TenantedTestId.New(), "T1", tenant1, new SystemClock()));
         ctxSeed.TenantedAggregates.Add(new TenantedTestAggregate(id2, "T2", tenant2, new SystemClock()));
-        await ctxSeed.SaveChangesAsync();
+        using (new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance).Enter("seed two tenants"))
+            await ctxSeed.SaveChangesAsync();
 
         await using var ctxAdmin = BuildTenantedContext(optionsAdmin, actorContext1, clock);
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
         var repo = new TenantedTestAggregateRepository(ctxAdmin, crossTenantScope);
 
         // Act — admin path, under an explicit cross-tenant scope, bypasses the filter to fetch
         // tenant2's entity.
         TenantedTestAggregate? found;
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             found = await repo.GetByIdForTenantAsync(id2, tenant2);
         }
@@ -173,10 +175,8 @@ public sealed class TenantedDbContextTests
         FakeAuditActorContext actorContext,
         IClock clock)
     {
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDel = new SoftDeleteInterceptor(clock);
-        var conc = new ConcurrencyInterceptor();
-        var ctx = new TenantedTestDbContext(options, new PersistenceContextDependencies(audit, softDel, conc));
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
+        var ctx = new TenantedTestDbContext(options, audit);
         ctx.RefreshRequestContext(actorContext);
         return ctx;
     }

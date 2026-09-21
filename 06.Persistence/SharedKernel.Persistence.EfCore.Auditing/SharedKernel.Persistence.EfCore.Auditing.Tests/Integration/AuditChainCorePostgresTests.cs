@@ -371,7 +371,7 @@ public sealed class AuditChainCorePostgresTests
         var crossTenantScope = readerScope.ServiceProvider.GetRequiredService<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope>();
         var queryService = readerScope.ServiceProvider.GetRequiredService<IAuditQueryService>();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("cross-tenant audit read"))
         {
             var result = await queryService.GetResourceHistoryAcrossTenantsAsync(
                 "SharedResource", "shared-1", afterId: null, descending: false, take: 10);

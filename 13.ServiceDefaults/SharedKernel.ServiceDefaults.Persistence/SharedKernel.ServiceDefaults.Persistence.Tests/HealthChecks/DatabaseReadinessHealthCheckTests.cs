@@ -6,7 +6,6 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -36,10 +35,7 @@ public sealed class DatabaseReadinessHealthCheckTests
                 .Options;
         using var context = new TestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(new FakeAuditActorContext(), new FakeClock()),
-            new SoftDeleteInterceptor(new FakeClock()),
-            new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(new FakeAuditActorContext(), new FakeClock()));
 
         var healthCheck = new DatabaseReadinessHealthCheck<TestDbContext>(context);
 
@@ -58,10 +54,7 @@ public sealed class DatabaseReadinessHealthCheckTests
 
         var context = new TestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(new FakeAuditActorContext(), new FakeClock()),
-            new SoftDeleteInterceptor(new FakeClock()),
-            new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(new FakeAuditActorContext(), new FakeClock()));
 
         context.Database.EnsureCreated();
         return context;

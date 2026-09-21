@@ -32,7 +32,7 @@ namespace SharedKernel.Persistence.EfCore.Conversions;
 /// half-formed value.
 /// </para>
 /// </remarks>
-public sealed class CurrencyValueConverter : ValueConverter<Currency, string>
+internal sealed class CurrencyValueConverter : ValueConverter<Currency, string>
 {
     /// <summary>
     /// Initialises a new instance of the converter.

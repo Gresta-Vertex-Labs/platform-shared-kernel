@@ -82,8 +82,8 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
 
         services
-            .AddSharedKernelEfCore<CommandServiceTestDbContext>((sp, options) => options.UsePostgreSQL(sp))
-            .Build();
+            .AddSharedKernelPostgres<CommandServiceTestDbContext>(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), "dapper-tests")
+            ;
 
         services.AddScoped<LogTableCommandService>();
 

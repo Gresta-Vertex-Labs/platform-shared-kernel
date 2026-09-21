@@ -19,21 +19,21 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// consumer (or any other) reference an instrument by name without re-declaring the string.
 /// </para>
 /// </remarks>
-public static class PersistenceMeter
+internal static class PersistenceMeter
 {
     /// <summary>The shared <see cref="Meter"/> name for this domain.</summary>
     public const string Name = "SharedKernel.Persistence";
 
     /// <summary>
     /// Counter name: the number of <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>
-    /// occurrences <c>ConcurrencyInterceptor</c> translated into a typed
+    /// occurrences the save pipeline translated into a typed
     /// <see cref="SharedKernel.Core.Exceptions.ConflictException"/>. Tagged with
     /// <see cref="PersistenceTagKeys.AggregateType"/>.
     /// </summary>
     public const string ConcurrencyConflictsTotal = "persistence.concurrency_conflicts";
 
     /// <summary>
-    /// Counter name: the number of writes <c>TenantWriteGuardInterceptor</c> rejected for crossing
+    /// Counter name: the number of writes the tenant write guard rejected (or the database proved) for crossing
     /// tenant isolation. Tagged with <see cref="PersistenceTagKeys.AggregateType"/>.
     /// </summary>
     public const string TenantIsolationViolationsTotal = "persistence.tenant_isolation_violations";
@@ -44,10 +44,10 @@ public static class PersistenceMeter
     /// <summary>See <see cref="ConcurrencyConflictsTotal"/>.</summary>
     internal static readonly Counter<long> ConcurrencyConflicts =
         Instance.CreateCounter<long>(ConcurrencyConflictsTotal, unit: "{conflict}",
-            description: "Concurrency conflicts translated by ConcurrencyInterceptor.");
+            description: "Concurrency conflicts translated into ConflictException.");
 
     /// <summary>See <see cref="TenantIsolationViolationsTotal"/>.</summary>
     internal static readonly Counter<long> TenantIsolationViolations =
         Instance.CreateCounter<long>(TenantIsolationViolationsTotal, unit: "{violation}",
-            description: "Writes rejected by TenantWriteGuardInterceptor for crossing tenant isolation.");
+            description: "Writes rejected for crossing tenant isolation.");
 }

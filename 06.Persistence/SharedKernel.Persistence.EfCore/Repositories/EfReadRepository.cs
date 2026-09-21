@@ -8,7 +8,6 @@ using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.ReadReplica;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -59,7 +58,6 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     protected SharedKernelDbContext DbContext { get; }
 
     private readonly ISpecificationEvaluator<TAggregate> _evaluator;
-    private readonly IReadReplicaContextAccessor<SharedKernelDbContext>? _replicaAccessor;
 
     /// <summary>
     /// Initialises a new <see cref="EfReadRepository{TAggregate, TId}"/>.
@@ -71,39 +69,16 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// implementation works — no downcast to the concrete <c>SpecificationEvaluator&lt;T&gt;</c>
     /// type is performed.
     /// </param>
-    /// <param name="replicaAccessor">
-    /// Optional read-replica routing accessor. Resolved by DI only when
-    /// <c>EfCorePersistenceBuilder{TContext}.WithReadReplica(...)</c> was called — otherwise
-    /// <see langword="null"/>, in which case every read method targets <see cref="DbContext"/>
-    /// directly, exactly as before this parameter existed. Purely additive — every existing
-    /// <see cref="EfReadRepository{TAggregate, TId}"/> subclass continues to compile and behave
-    /// identically without passing anything new.
-    /// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE THIS IS NON-NULL — a
-    /// handler that writes then immediately reads through this repository in the same logical
-    /// operation MAY OBSERVE STALE DATA under replication lag. A read issued while an EF Core
-    /// transaction is active on <see cref="DbContext"/> is NEVER routed to the replica.
-    /// </param>
     protected EfReadRepository(
         SharedKernelDbContext dbContext,
-        ISpecificationEvaluator<TAggregate> evaluator,
-        IReadReplicaContextAccessor<SharedKernelDbContext>? replicaAccessor = null)
+        ISpecificationEvaluator<TAggregate> evaluator)
     {
         DbContext = dbContext;
         _evaluator = evaluator;
-        _replicaAccessor = replicaAccessor;
     }
 
-    /// <summary>
-    /// The context every read method executes against — <see cref="DbContext"/> itself, or a
-    /// read-replica context when read-replica routing is enabled and no transaction is active.
-    /// </summary>
-    /// <remarks>
-    /// Resolved AFRESH on every access, never cached at the property-read call site — transaction
-    /// state can legitimately change between two read calls issued against the same injected
-    /// repository instance.
-    /// </remarks>
-    private SharedKernelDbContext EffectiveContext =>
-        _replicaAccessor?.GetEffectiveContext(DbContext) ?? DbContext;
+    // Read-replica routing was deleted (P-558/W2-E1, A26); every read targets DbContext.
+    private SharedKernelDbContext EffectiveContext => DbContext;
 
     /// <inheritdoc />
     public virtual Task<TAggregate?> GetBySpecAsync(

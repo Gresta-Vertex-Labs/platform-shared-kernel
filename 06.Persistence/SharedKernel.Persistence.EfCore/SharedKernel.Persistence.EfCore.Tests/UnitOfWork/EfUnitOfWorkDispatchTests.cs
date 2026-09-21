@@ -28,7 +28,7 @@ public sealed class EfUnitOfWorkDispatchTests
     {
         // Arrange
         var (ctx, dispatcher) = CreateContextWithDispatcher();
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
         var dispatchedBeforeCommit = false;
 
         // Act
@@ -57,7 +57,7 @@ public sealed class EfUnitOfWorkDispatchTests
     {
         // Arrange
         var (ctx, dispatcher) = CreateContextWithDispatcher();
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var entity = new AuditableTestAggregate(TestId.New(), "Event Test", new SystemClock());
         entity.RaiseTestEvent();
@@ -77,7 +77,7 @@ public sealed class EfUnitOfWorkDispatchTests
         // exception thrown after a save inside the operation, which cannot retract a dispatch that
         // already fired (see DomainEventDispatchLoop's remarks).
         var (ctx, dispatcher) = CreateContextWithDispatcher();
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var result = await uow.ExecuteInTransactionAsync(_ =>
         {
@@ -96,7 +96,7 @@ public sealed class EfUnitOfWorkDispatchTests
     {
         // Arrange — no dispatcher (null)
         var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx, null);
+        var uow = EfUnitOfWork.For(ctx, null);
 
         var entity = new AuditableTestAggregate(TestId.New(), "Clear Test", new SystemClock());
         entity.RaiseTestEvent();

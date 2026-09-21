@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <para>
 /// <see cref="Context.SharedKernelDbContext"/> already translates
 /// <see cref="DbUpdateConcurrencyException"/> for <c>IHasConcurrency</c> entities via
-/// <c>ConcurrencyInterceptor</c> — that translation is unconditional and provider-neutral (a
+/// the context itself — that translation is unconditional and provider-neutral (a
 /// concurrency token mismatch means the same thing on every relational provider). A unique-index or
 /// foreign-key violation, by contrast, is signalled differently per provider (PostgreSQL's SQLSTATE
 /// <c>23505</c>/<c>23503</c>, SQL Server's error numbers,...), so
@@ -37,7 +37,7 @@ public interface IDbUpdateExceptionClassifier
     /// <param name="exception">
     /// The exception observed at the <c>SaveChanges</c>/<c>SaveChangesAsync</c> call boundary. Never
     /// a <see cref="DbUpdateConcurrencyException"/> — those are exclusively
-    /// <c>ConcurrencyInterceptor</c>'s concern and are never offered to a classifier.
+    /// the context's own concern and are never offered to a classifier.
     /// </param>
     /// <returns>
     /// A typed <c>SharedKernel.Core.Exceptions</c> exception to throw instead of

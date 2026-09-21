@@ -111,28 +111,6 @@ public sealed class ConcurrencyAndClassificationPostgresTests
     }
 
     [Fact]
-    public async Task UniqueViolation_NoClassifierRegistered_PropagatesRawDbUpdateException()
-    {
-        var tenantId = Guid.NewGuid();
-        var sharedCode = $"unique-noclassifier-{Guid.NewGuid():N}";
-
-        await using var setup = CreateContext(tenantId);
-        await setup.Database.EnsureCreatedAsync();
-
-        await using var ctx = CreateContext(tenantId);
-        ctx.Orders.Add(new PgOrderAggregate(PgOrderId.New(), tenantId, "First", sharedCode, "St", "City", new SharedKernel.Primitives.Clocks.SystemClock()));
-        await ctx.SaveChangesAsync();
-
-        ctx.Orders.Add(new PgOrderAggregate(PgOrderId.New(), tenantId, "Second", sharedCode, "St", "City", new SharedKernel.Primitives.Clocks.SystemClock()));
-        var act = () => ctx.SaveChangesAsync();
-
-        var thrown = await act.Should().ThrowAsync<DbUpdateException>(
-            "with no IDbUpdateExceptionClassifier registered, a unique violation must propagate as the raw DbUpdateException, unclassified");
-        thrown.Which.InnerException.Should().BeOfType<PostgresException>()
-            .Which.SqlState.Should().Be(TestPostgresSqlStateClassifier.UniqueViolationSqlState);
-    }
-
-    [Fact]
     public async Task UniqueViolation_WithClassifierRegistered_TranslatesToTypedException()
     {
         var tenantId = Guid.NewGuid();

@@ -66,7 +66,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// <see cref="Conversions.MoneyEntityTypeBuilderExtensions.Money{TEntity}"/>, never by this generic
 /// scan: precision/scale are column choices this utility has no basis to guess, and every
 /// <see cref="Money"/> property must be pre-declared complex via
-/// <see cref="Conversions.ModelConfigurationBuilderExtensions.ConfigureMoney"/> in
+/// the platform's automatic <c>Money</c> mapping in
 /// <c>ConfigureConventions</c> regardless. A <see cref="Money"/> member nested inside another value
 /// object hits the same nested-value-object wall described above and is rejected the same way.
 /// </para>
@@ -104,7 +104,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// <see cref="IValueObject"/> properties are present in the model.
 /// </para>
 /// </remarks>
-public static class ValueObjectOwnershipBuilder
+internal static class ValueObjectOwnershipBuilder
 {
     /// <summary>
     /// Scans all non-owned entity types in the current model and automatically configures a complex

@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -32,15 +31,11 @@ public sealed class TenantWriteGuardInterceptorTests
             .Options;
 
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
-        crossTenantScope = new CrossTenantScope();
+        crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
 
         var ctx = new TenantedTestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, new SystemClock()),
-            new SoftDeleteInterceptor(new SystemClock()),
-            new ConcurrencyInterceptor(),
-            [new TenantWriteGuardInterceptor(crossTenantScope)]));
+            PersistenceContextDependencies.Create(actorContext, new SystemClock()));
         ctx.RefreshRequestContext(actorContext);
         return ctx;
     }
@@ -87,15 +82,11 @@ public sealed class TenantWriteGuardInterceptorTests
 
         var tenantId = Guid.NewGuid();
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(SharedKernel.Application.Context.AnonymousRequestContext.Instance);
 
         using var ctx = new SoftDeletableTenantedDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, new SystemClock()),
-            new SoftDeleteInterceptor(new SystemClock()),
-            new ConcurrencyInterceptor(),
-            [new TenantWriteGuardInterceptor(crossTenantScope)]));
+            PersistenceContextDependencies.Create(actorContext, new SystemClock()));
         ctx.RefreshRequestContext(actorContext);
         await ctx.Database.EnsureCreatedAsync();
 
@@ -193,7 +184,7 @@ public sealed class TenantWriteGuardInterceptorTests
         using var ctx = CreateContext(connection, tenantA, out var crossTenantScope);
         await ctx.Database.EnsureCreatedAsync();
 
-        using (crossTenantScope.Enter())
+        using (crossTenantScope.Enter("test"))
         {
             // Bound to Tenant A, but the entity claims Tenant B — normally rejected, but the
             // explicit bypass is active.

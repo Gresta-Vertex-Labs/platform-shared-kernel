@@ -9,7 +9,6 @@ using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 using SharedKernel.Persistence.EfCore.Repositories;
@@ -72,7 +71,6 @@ public sealed class KeysetPgDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<KeysetPgId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -125,11 +123,9 @@ public sealed class KeysetPaginationIntegrationTests
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        return new KeysetPgDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        return new KeysetPgDbContext(options, audit);
     }
 
     [Fact]

@@ -1,134 +1,109 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Context;
+using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Conventions;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Persistence.EfCore.UnitOfWork;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Context;
 
 /// <summary>
-/// Abstract EF Core DbContext base for all SharedKernel-derived data contexts.
+/// Base class of every SharedKernel EF Core context. PostgreSQL-first: registered with
+/// <c>AddSharedKernelPostgres&lt;TContext&gt;(...)</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Interceptor registration:</strong> the constructor registers exactly four
-/// always-on <c>ISaveChangesInterceptor</c> instances — <see cref="AuditInterceptor"/>,
-/// <see cref="SoftDeleteInterceptor"/>, <see cref="ConcurrencyInterceptor"/>, and
-/// <see cref="AggregateRootTouchInterceptor"/> — via <c>DbContextOptionsBuilder.AddInterceptors</c>.
-/// No <c>OutboxInterceptor</c> is registered here; the outbox infrastructure is MassTransit's
-/// concern at the <c>07.Messaging</c> layer. <see cref="Interceptors.TenantWriteGuardInterceptor"/> is
-/// NOT unconditional — it is registered as an additional interceptor only for multi-tenant services,
-/// by <c>EfCorePersistenceBuilder.WithMultiTenancy()</c>. All of this wiring is reached through the
-/// single required <see cref="PersistenceContextDependencies"/> constructor parameter — see that
-/// type's own remarks for why it replaced nine individually named constructor parameters.
+/// <strong>What the base does for every derived context</strong>, with no configuration class and no base
+/// entity configuration:
 /// </para>
+/// <list type="bullet">
+/// <item><description>applies every <c>IEntityTypeConfiguration&lt;T&gt;</c> in the context's assembly
+/// (<see cref="ShouldApplyConfiguration"/> filters them when several contexts share an assembly);</description></item>
+/// <item><description>maps every <c>StronglyTypedId&lt;T&gt;</c> reachable from the context's <c>DbSet</c>s,
+/// and <c>Money</c> as a two-column complex type;</description></item>
+/// <item><description>configures audit, soft-delete and tenant columns by the interfaces an entity implements
+/// (<c>CreatedBy</c>/<c>CreatedOn</c> are written once and never updated afterwards), the named soft-delete
+/// query filter and, on PostgreSQL, the <c>xmin</c> concurrency token of every aggregate root;</description></item>
+/// <item><description>stamps audit fields, turns deletes of soft-deletable entities into soft deletes, marks an
+/// aggregate root modified when a child changed, and (for a <see cref="MultiTenancy.TenantedDbContext"/>)
+/// rejects writes outside the current tenant — in one interceptor, with one change-detection pass;</description></item>
+/// <item><description>dispatches domain events raised by tracked aggregates before every asynchronous save,
+/// whichever code path calls it;</description></item>
+/// <item><description>turns every optimistic-concurrency failure into a <c>ConflictException</c> and PostgreSQL
+/// constraint errors into typed exceptions.</description></item>
+/// </list>
 /// <para>
-/// <strong>Extensibility:</strong> this class holds no compile-time reference to any
-/// opt-in capability (field-level encryption, the audit trail). Sibling packages contribute to the
-/// model and to <c>DbContextOptionsBuilder</c> through collections bundled into
-/// <see cref="PersistenceContextDependencies"/>: <see cref="IPersistenceModelConventionFactory"/>
-/// (model-finalizing convention contributions), <see cref="IPersistenceModelConfigurator"/> (extra
-/// entity configurations, applied in <see cref="OnModelCreating"/>), and
-/// <see cref="IPersistenceOptionsExtension"/> (<see cref="DbContextOptionsBuilder"/> mutations,
-/// applied in <see cref="OnConfiguring"/> via <see cref="PersistenceContextDependencies.ApplyTo"/>). A
-/// capability package registers its own implementation of whichever of these it needs — this class
-/// never enumerates capabilities by name.
-/// </para>
-/// <para>
-/// <strong>Model building:</strong> <see cref="OnModelCreating"/> calls
-/// <see cref="ModelBuilder.ApplyConfigurationsFromAssembly"/> for the calling (concrete) context's
-/// assembly, automatically discovering all <c>IEntityTypeConfiguration&lt;T&gt;</c> implementations,
-/// then applies every registered <see cref="IPersistenceModelConfigurator"/>.
-/// Downstream contexts must call <c>base.OnModelCreating(modelBuilder)</c> first if they override
-/// this method.
-/// </para>
-/// <para>
-/// <strong>Save boundary:</strong> <see cref="SaveChangesAsync(CancellationToken)"/> is the
-/// delegate used by <c>EfUnitOfWork</c>. Never call it directly from application or domain code —
-/// always go through <c>IUnitOfWork.SaveChangesAsync</c>.
-/// </para>
-/// <para>
-/// Concrete downstream contexts extend this base and add their <c>DbSet&lt;T&gt;</c> properties.
-/// Multi-tenant contexts extend <see cref="SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext"/>
-/// instead.
+/// A derived context declares exactly one constructor and forwards both parameters:
+/// <c>MyContext(DbContextOptions&lt;MyContext&gt; options, PersistenceContextDependencies dependencies) : base(options, dependencies)</c>.
+/// A context that overrides <see cref="OnModelCreating"/> or <see cref="ConfigureConventions"/> calls the base first.
 /// </para>
 /// </remarks>
 public abstract class SharedKernelDbContext : DbContext
 {
     private readonly PersistenceContextDependencies _dependencies;
-    private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Metadata.Conventions.IConvention> _additionalModelConventions;
+    private readonly DbContextOptions _options;
+    private readonly ILogger _logger;
 
-    /// <summary>
-    /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the platform's always-on
-    /// interceptors plus every capability <paramref name="dependencies"/> carries.
-    /// </summary>
-    /// <param name="options">EF Core context options supplied by the DI container.</param>
-    /// <param name="dependencies">
-    /// Every interceptor/convention/configurator/options-extension/exception-classifier dependency this
-    /// context needs, bundled into one required parameter. A derived context MUST declare exactly
-    /// <c>MyContext(DbContextOptions&lt;MyContext&gt; options, PersistenceContextDependencies dependencies)
-    /// : base(options, dependencies)</c> and forward both parameters unchanged — see
-    /// <see cref="PersistenceContextDependencies"/>'s own remarks for why a shorter, hand-written
-    /// constructor is unsafe.
-    /// </param>
+    /// <summary>Initialises the context.</summary>
+    /// <param name="options">EF Core options supplied by the registration.</param>
+    /// <param name="dependencies">Platform dependencies supplied by the registration (or <see cref="PersistenceContextDependencies.Create"/>).</param>
     protected SharedKernelDbContext(DbContextOptions options, PersistenceContextDependencies dependencies)
         : base(options)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
 
         _dependencies = dependencies;
-        _additionalModelConventions = dependencies.ModelConventionFactories
-            .Select(factory => factory.CreateConvention(this, options))
-            .ToList();
-
-        // Starts from the request context AuditInterceptor was constructed with — the current DI
-        // scope's IRequestContext under the default (non-pooled) registration, the fail-closed
-        // AnonymousRequestContext for a pooled slot. Every supported way of obtaining an instance
-        // (TenantAwareDbContextFactory) attaches the current scope's context before handing it out.
-        RequestContext = dependencies.AuditInterceptor.RequestContext;
+        _options = options;
+        _logger = dependencies.LoggerFactory.CreateLogger(GetType());
+        RequestContext = dependencies.InitialRequestContext;
+        DomainEventDispatcher = dependencies.DefaultDomainEventDispatcher;
     }
 
     /// <summary>
-    /// Gets the caller this context attributes changes to (audit columns, soft-delete stamps) and, for
-    /// a <see cref="MultiTenancy.TenantedDbContext"/>, filters tenant data by.
+    /// Gets the caller this context attributes changes to and, for a
+    /// <see cref="MultiTenancy.TenantedDbContext"/>, filters tenant data by.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Attached per DI-scope lease by <c>TenantAwareDbContextFactory&lt;TContext&gt;</c> — never
-    /// resolved through this class's constructor, which is what keeps pooling safe: a pooled
-    /// instance's constructor runs once per pool slot, not once per lease. The interceptors read this
-    /// property live off the executing context. Reset to <see cref="AnonymousRequestContext"/> on
-    /// <see cref="Dispose"/>/<see cref="DisposeAsync"/>.
-    /// </para>
+    /// Attached each time the registration hands the context out (from the resolving scope's
+    /// <see cref="IRequestContext"/>, or the caller passed to <c>ICallerDbContextFactory</c>), never through
+    /// the constructor, which keeps pooling safe. Reset to <see cref="AnonymousRequestContext"/> on dispose.
     /// </remarks>
     public IRequestContext RequestContext { get; private set; }
 
-    /// <summary>
-    /// Gets the identifier written to <c>CreatedBy</c>/<c>ModifiedBy</c>/<c>DeletedBy</c>: the
-    /// caller's <see cref="IRequestContext.UserId"/>, or the configured service name
-    /// (<c>PersistenceServiceOptions.ServiceName</c>) when there is none.
-    /// </summary>
-    internal string CurrentActorId =>
-        RequestContext.UserId is { Length: > 0 } userId ? userId : _dependencies.AuditInterceptor.ServiceName;
+    /// <summary>The dispatcher that receives domain events before each save, or <see langword="null"/>.</summary>
+    internal IDomainEventDispatcher? DomainEventDispatcher { get; private set; }
 
-    /// <summary>Replaces <see cref="RequestContext"/> with <paramref name="requestContext"/>.</summary>
-    /// <param name="requestContext">The current scope's <see cref="IRequestContext"/>.</param>
-    /// <remarks>
-    /// <see langword="internal"/> — called only by this assembly's own registrations
-    /// (<c>TenantAwareDbContextFactory</c>, the read-replica accessor). Not a public extensibility seam.
-    /// </remarks>
+    /// <summary>The platform dependencies this context was built with.</summary>
+    internal PersistenceContextDependencies Dependencies => _dependencies;
+
+    /// <summary>The actor written to audit columns: the caller's user id, else the configured service name.</summary>
+    internal string CurrentActorId =>
+        RequestContext.UserId is { Length: > 0 } userId ? userId : _dependencies.ServiceName;
+
+    /// <summary>The clock for audit stamps and materialized aggregates.</summary>
+    internal IClock Clock => _dependencies.Clock;
+
+    /// <summary>Attaches the caller and the domain-event dispatcher for the current lease.</summary>
+    internal void AttachLease(IRequestContext requestContext, IDomainEventDispatcher? domainEventDispatcher)
+    {
+        RequestContext = requestContext ?? AnonymousRequestContext.Instance;
+        DomainEventDispatcher = domainEventDispatcher;
+    }
+
+    /// <summary>Replaces the caller only (tests and internal seeding).</summary>
     internal void RefreshRequestContext(IRequestContext requestContext) =>
         RequestContext = requestContext ?? AnonymousRequestContext.Instance;
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Resets <see cref="RequestContext"/> to the fail-closed <see cref="AnonymousRequestContext"/>
-    /// before disposing — the hook a pooled instance passes through when it returns to the pool, so a
-    /// later lease can never observe the previous caller.
-    /// </remarks>
+    /// <remarks>Resets the caller and dispatcher first, so a pooled instance never carries them into its next lease.</remarks>
     public override void Dispose()
     {
-        RequestContext = AnonymousRequestContext.Instance;
+        ResetLease();
         base.Dispose();
     }
 
@@ -136,33 +111,20 @@ public abstract class SharedKernelDbContext : DbContext
     /// <remarks>See <see cref="Dispose"/>.</remarks>
     public override async ValueTask DisposeAsync()
     {
-        RequestContext = AnonymousRequestContext.Instance;
+        ResetLease();
         await base.DisposeAsync();
     }
 
-    /// <summary>Gets the clock this context's audit interceptor uses, attached to every aggregate it materializes.</summary>
-    /// <seealso cref="DomainClockMaterializationInterceptor"/>
-    internal SharedKernel.Primitives.Clocks.IClock Clock => _dependencies.AuditInterceptor.Clock;
+    private void ResetLease()
+    {
+        RequestContext = AnonymousRequestContext.Instance;
+        DomainEventDispatcher = _dependencies.DefaultDomainEventDispatcher;
+    }
 
     /// <inheritdoc />
     /// <remarks>
-    /// <strong>Pooling guard:</strong> when <c>optionsBuilder.Options.IsFrozen</c> is
-    /// <see langword="true"/> — which EF Core sets for every instance constructed via
-    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>'s
-    /// <c>AddPooledDbContextFactory&lt;TContext&gt;</c> registration, confirmed empirically to be
-    /// <see langword="true"/> even on the very FIRST pool-miss construction — any attempt to mutate
-    /// <paramref name="optionsBuilder"/> here throws <see cref="InvalidOperationException"/>
-    /// ("'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is
-    /// enabled.") the first time the context's internal services are built (e.g., on
-    /// <c>SaveChangesAsync</c> or <c>EnsureCreatedAsync</c>), not immediately at the mutation call
-    /// site itself. <see cref="EfCorePersistenceBuilder{TContext}.WithDbContextPooling"/>'s pooled
-    /// registration therefore calls the SAME <see cref="PersistenceContextDependencies.ApplyTo"/>
-    /// this method calls, directly against the pool's own <c>optionsAction</c> — BEFORE freezing —
-    /// so this method correctly does nothing extra for a pooled context; for a non-pooled context
-    /// (<c>Options.IsFrozen == false</c>), this method performs the wiring exactly as before. Calling
-    /// the identical method from both paths (rather than two independently-maintained copies of the
-    /// same interceptor/options-extension wiring) is what makes the two paths structurally incapable
-    /// of drifting apart.
+    /// Adds the platform interceptors and capability contributions. A pooled context's options are frozen
+    /// before this runs, so the pooled factory applies the same contributions itself.
     /// </remarks>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -173,166 +135,156 @@ public abstract class SharedKernelDbContext : DbContext
     }
 
     /// <summary>
-    /// Applies every <c>IEntityTypeConfiguration&lt;T&gt;</c> in the concrete context's assembly whose
-    /// entity type this context actually exposes, then every registered
-    /// <see cref="IPersistenceModelConfigurator"/>.
+    /// Decides whether an <c>IEntityTypeConfiguration&lt;T&gt;</c> found in this context's assembly is applied.
+    /// Returns <see langword="true"/> for every configuration.
     /// </summary>
-    /// <param name="modelBuilder">The builder used to construct the model for this context.</param>
+    /// <param name="configurationType">The configuration class found by the assembly scan.</param>
+    /// <returns><see langword="true"/> to apply it.</returns>
     /// <remarks>
-    /// <para>
-    /// Downstream contexts that override this method must call
-    /// <c>base.OnModelCreating(modelBuilder)</c> first to ensure configurations are applied.
-    /// </para>
-    /// <para>
-    /// <strong>Scoped assembly scan:</strong> <c>ApplyConfigurationsFromAssembly</c> is called
-    /// with a predicate that only lets a discovered <c>IEntityTypeConfiguration&lt;T&gt;</c> through
-    /// when <c>T</c> is a type this context actually reaches — either one of its own public
-    /// <c>DbSet&lt;T&gt;</c> properties, a type EF Core's own navigation-discovery has ALREADY added to
-    /// the model by the time this method runs (a child entity type reachable only through a navigation
-    /// from a <c>DbSet&lt;T&gt;</c> root — <c>DbSet&lt;T&gt;</c> auto-discovery and the convention
-    /// pipeline that follows a root type's own navigations both run before <c>OnModelCreating</c>'s
-    /// body starts, so <c>modelBuilder.Model.GetEntityTypes()</c> already lists such a child here), or
-    /// <see cref="AdditionalConfiguredEntityTypes"/> (a true manual escape hatch — a type reachable
-    /// neither way, e.g. one this context configures via an explicit <c>ComplexProperty</c>/<c>OwnsOne</c>
-    /// call inside <c>OnModelCreating</c> itself, after this predicate has already run). When two or
-    /// more <c>SharedKernelDbContext</c> subclasses live in the SAME assembly (a multi-context service),
-    /// a configuration for an entity type only the OTHER context reaches is never applied to this one —
-    /// preserving the bleed fix the scoped scan exists for, while no longer dropping a navigation-only
-    /// child's own configuration (including a <c>.Encrypt(...)</c> annotation — silently losing that one
-    /// is a silent-plaintext hazard, not merely a missing column length). A candidate type that does not
-    /// implement <c>IEntityTypeConfiguration&lt;T&gt;</c> at all (an unrelated type the scan also
-    /// visits) is let through unfiltered — <c>ApplyConfigurationsFromAssembly</c> already ignores it
-    /// internally, so the predicate has nothing meaningful to decide for it.
-    /// </para>
+    /// Override it when two or more contexts live in the same assembly: applying a configuration adds its
+    /// entity type to the model, so without a filter every context would contain every entity. Filter by
+    /// namespace or by a marker, not by "types this context already exposes" — that set is incomplete while
+    /// the model is being built and silently drops configurations (including <c>.Encrypt()</c>).
     /// </remarks>
+    protected virtual bool ShouldApplyConfiguration(Type configurationType) => true;
+
+    /// <inheritdoc />
+    /// <remarks>Derived contexts call <c>base.OnModelCreating(modelBuilder)</c> first.</remarks>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(
-            GetType().Assembly, candidateType => IsConfigurationEntityTypeExposed(candidateType, modelBuilder));
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        // Opt-in capabilities (e.g. the audit trail) apply extra configurations that live
-        // in THEIR OWN assembly, not the downstream concrete context's — the assembly scan above
-        // never discovers them. See IPersistenceModelConfigurator.
+        modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly, ShouldApplyConfiguration);
+
         foreach (var configurator in _dependencies.ModelConfigurators)
             configurator.Configure(modelBuilder);
+
+        if (_dependencies.KeyGenerator is not null)
+            ClientKeyGeneration.Apply(modelBuilder);
 
         base.OnModelCreating(modelBuilder);
     }
 
-    /// <summary>
-    /// Entity types this context configures beyond what its own public <c>DbSet&lt;T&gt;</c>
-    /// properties, and EF Core's own navigation discovery from them, already expose — a TRUE manual
-    /// escape hatch for a type reachable neither way (e.g. one this context itself only reaches via an
-    /// explicit <c>ComplexProperty</c>/<c>OwnsOne</c> call made later, inside <c>OnModelCreating</c>).
-    /// Empty by default.
-    /// </summary>
+    /// <inheritdoc />
     /// <remarks>
-    /// The explicit opt-in half of <see cref="OnModelCreating"/>'s scoped assembly scan — a
-    /// context that needs a configuration applied for a type neither a <c>DbSet&lt;T&gt;</c> nor a
-    /// navigation from one already reaches overrides this property instead of losing the scan's scoping
-    /// altogether. Most navigation-reachable child entity types need NO entry here at all — see
-    /// <see cref="OnModelCreating"/>'s own remarks for why.
+    /// Registers the platform conventions: strongly-typed id and <c>Money</c> mappings, audit/soft-delete/tenant
+    /// column rules, the soft-delete query filter, capability conventions, and last the guard that fails the
+    /// model build when an <c>.Encrypt()</c> annotation was left unhandled. Derived contexts call the base first.
     /// </remarks>
-    protected virtual IEnumerable<Type> AdditionalConfiguredEntityTypes => [];
-
-    // Predicate for ApplyConfigurationsFromAssembly: true for any candidate type that either
-    // does not implement IEntityTypeConfiguration<T> at all (EF Core ignores it either way — nothing
-    // for this predicate to meaningfully decide) or does, and T is exposed by this context's own
-    // DbSet<T> properties, a type EF Core's navigation discovery already reached from one of them, or
-    // AdditionalConfiguredEntityTypes.
-    private bool IsConfigurationEntityTypeExposed(Type candidateType, ModelBuilder modelBuilder)
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        var configuredEntityType = candidateType
-            .GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEntityTypeConfiguration<>))
-            .Select(i => i.GetGenericArguments()[0])
-            .FirstOrDefault();
+        ArgumentNullException.ThrowIfNull(configurationBuilder);
 
-        if (configuredEntityType is null)
-            return true;
+        DomainTypeMappings.Apply(configurationBuilder, GetType());
 
-        return ExposedEntityTypes(modelBuilder).Contains(configuredEntityType);
+        configurationBuilder.Conventions.Add(_ => new SoftDeleteQueryFilterConvention());
+        configurationBuilder.Conventions.Add(_ => new DomainColumnConvention());
+
+        // Created here, not in the constructor: this runs once per model build, the constructor once per instance.
+        foreach (var factory in _dependencies.ModelConventionFactories)
+        {
+            var convention = factory.CreateConvention(this, _options);
+            configurationBuilder.Conventions.Add(_ => convention);
+        }
+
+        configurationBuilder.Conventions.Add(_ => new EncryptAnnotationRegisteredGuardConvention());
+
+        base.ConfigureConventions(configurationBuilder);
     }
-
-    private HashSet<Type>? _exposedEntityTypesCache;
-
-    // Reads the model's ALREADY-DISCOVERED entity types directly — EF Core's own authoritative
-    // navigation-discovery convention, not a hand-rolled reflection walk over CLR properties that would
-    // have to independently reinvent which navigations EF Core itself would traverse (collections vs.
-    // references, owned vs. regular, ignored properties, and so on). Cached per context INSTANCE, never
-    // per TYPE: unlike the DbSet-only set this replaced, "what the model currently contains" can only
-    // be read once conventions have actually run for this specific ModelBuilder.
-    private HashSet<Type> ExposedEntityTypes(ModelBuilder modelBuilder) =>
-        _exposedEntityTypesCache ??= modelBuilder.Model.GetEntityTypes()
-            .Select(e => e.ClrType)
-            .Concat(AdditionalConfiguredEntityTypes)
-            .ToHashSet();
 
     /// <inheritdoc />
     /// <remarks>
     /// <para>
-    /// <strong>Concurrency-conflict translation:</strong> wraps the base
-    /// save call so <see cref="ConcurrencyInterceptor.TryTranslate"/> can convert a
-    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> affecting an
-    /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency"/> entity into a
-    /// <see cref="SharedKernel.Core.Exceptions.ConflictException"/>. This is the actual enforcement
-    /// point for that translation — EF Core 10 does not allow
-    /// <c>ISaveChangesInterceptor.SaveChangesFailed</c>/<c>SaveChangesFailedAsync</c> to replace the
-    /// exception propagating from <c>SaveChanges</c> (confirmed empirically; see
-    /// <see cref="ConcurrencyInterceptor"/>'s class remarks for the full story). The exception
-    /// filter (<c>when (... is { } conflict)</c>) means a non-matching exception is never caught
-    /// here at all — it propagates with its original stack trace fully intact, identical to
-    /// today's behavior for every exception this translation does not apply to.
+    /// Synchronous saves cannot dispatch domain events (dispatch is asynchronous). When tracked aggregates hold
+    /// events and a dispatcher is attached this throws <see cref="InvalidOperationException"/>: use
+    /// <c>SaveChangesAsync</c>. Without a dispatcher the events are discarded with a warning.
     /// </para>
     /// <para>
-    /// <strong>DbUpdateException classification:</strong> a non-concurrency
-    /// <see cref="DbUpdateException"/> (a unique-constraint or foreign-key violation,...) is offered
-    /// to every registered <see cref="IDbUpdateExceptionClassifier"/>, in registration order; the
-    /// first non-<see langword="null"/> result replaces it. See
-    /// <see cref="IDbUpdateExceptionClassifier"/>.
+    /// A concurrency failure becomes a <c>ConflictException</c> (or <c>ForbiddenException</c> when the row
+    /// provably belongs to another tenant); other database errors are offered to the registered classifiers.
     /// </para>
     /// </remarks>
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        if (DomainEventDispatcher is not null && DomainEventDispatchLoop.HasPendingEvents(this))
+        {
+            throw new InvalidOperationException(
+                "Tracked aggregates have pending domain events, which can only be dispatched asynchronously. " +
+                "Call SaveChangesAsync (or IUnitOfWork.SaveChangesAsync) instead of SaveChanges.");
+        }
+
+        DomainEventDispatchLoop.DiscardWithoutDispatcher(this, _logger);
+
         try
         {
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
-        catch (DbUpdateConcurrencyException ex) when (_dependencies.ConcurrencyInterceptor.TryTranslate(ex) is { } translated)
+        catch (DbUpdateConcurrencyException ex)
         {
-            throw translated;
+            throw ConcurrencyConflictTranslator.Translate(this, ex, _logger);
         }
-        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException && TryClassify(ex) is { } classified)
+        catch (DbUpdateException ex) when (TryClassify(ex) is { } classified)
         {
             throw classified;
         }
     }
 
     /// <inheritdoc />
-    /// <remarks>See <see cref="SaveChanges(bool)"/> for the concurrency-conflict and
-    /// <see cref="DbUpdateException"/> classification this override performs.</remarks>
+    /// <remarks>
+    /// Dispatches domain events until none are pending (a handler may raise more, or change more tracked
+    /// entities), then saves everything as one unit. Handlers therefore run before the commit: they must only
+    /// change data in this context; external effects belong after the commit (<c>ICommandScope.OnCompleted</c>)
+    /// or in an outbox. See <see cref="SaveChanges(bool)"/> for exception translation.
+    /// </remarks>
     public override async Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        await DomainEventDispatchLoop.RunAsync(this, DomainEventDispatcher, _logger, cancellationToken);
+
         try
         {
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex) when (_dependencies.ConcurrencyInterceptor.TryTranslate(ex) is { } translated)
+        catch (DbUpdateConcurrencyException ex)
         {
-            throw translated;
+            throw await ConcurrencyConflictTranslator.TranslateAsync(this, ex, _logger, cancellationToken);
         }
-        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException && TryClassify(ex) is { } classified)
+        catch (DbUpdateException ex) when (TryClassify(ex) is { } classified)
         {
             throw classified;
         }
     }
 
-    // Offers a non-concurrency DbUpdateException to every registered IDbUpdateExceptionClassifier,
-    // in registration order, returning the first non-null translation.
+    private bool IsRetriedByExecutionStrategy(DbUpdateException exception)
+    {
+        // Configured retry, not CreateExecutionStrategy().RetriesOnFailure: inside a running strategy (the unit of
+        // work's transaction) EF suspends nested strategies, which would report no retry here.
+        if (this.GetService<IDbContextOptions>()
+                .FindExtension<PostgreSQLConventionsOptionsExtension>()?.MaxRetryCount is not > 0)
+        {
+            return false;
+        }
+
+        for (var inner = exception.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is global::Npgsql.NpgsqlException { IsTransient: true })
+                return true;
+        }
+
+        return false;
+    }
+
     private Exception? TryClassify(DbUpdateException exception)
     {
+        if (exception is DbUpdateConcurrencyException)
+            return null;
+
+        // A transient failure the execution strategy will retry must reach it unwrapped: the strategy only
+        // recognizes the provider exception, so classifying it here would turn every retry into a failure.
+        if (IsRetriedByExecutionStrategy(exception))
+            return null;
+
         foreach (var classifier in _dependencies.ExceptionClassifiers)
         {
             if (classifier.TryClassify(exception) is { } classified)
@@ -341,19 +293,5 @@ public abstract class SharedKernelDbContext : DbContext
 
         return null;
     }
-
-    /// <inheritdoc />
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-        configurationBuilder.Conventions.Add(_ => new SoftDeleteQueryFilterConvention());
-
-        foreach (var convention in _additionalModelConventions)
-            configurationBuilder.Conventions.Add(_ => convention);
-
-        // Always last: fails the model build loudly if a '.Encrypt(...)' annotation survived every
-        // IPersistenceModelConventionFactory contribution above unconsumed — see the convention's own remarks.
-        configurationBuilder.Conventions.Add(_ => new EncryptAnnotationRegisteredGuardConvention());
-
-        base.ConfigureConventions(configurationBuilder);
-    }
 }
+

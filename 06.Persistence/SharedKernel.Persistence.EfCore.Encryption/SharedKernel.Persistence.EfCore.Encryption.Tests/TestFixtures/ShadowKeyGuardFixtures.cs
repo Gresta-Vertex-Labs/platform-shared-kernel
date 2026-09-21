@@ -59,7 +59,6 @@ public sealed class ShadowKeyGuardDbContext : TenantedDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ShadowKeyAggregateId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
