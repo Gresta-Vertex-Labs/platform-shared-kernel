@@ -545,7 +545,7 @@ SearchSort   (readonly record struct)
     .Descending(string field)                                                  → SearchSort
 
     NOTE (DELIBERATE DUPLICATION): 03.Domain models ordering too. 09.Search may reference only 01.Core
-          and 04.Contracts, so PagedSpecification<T> / ReadOnlySpecification<T> and 03.Domain's ordering
+          and 04.Contracts, so 03.Domain's specifications (Specification<T>, Spec.For<T>()) and their ordering
           API are behind a layering wall. Do NOT "fix" this by adding a 03.Domain reference.
 
     NOTE (NO RELEVANCE SORT): there is no SortDirection.Relevance and no ScoreSort. An EMPTY Sort

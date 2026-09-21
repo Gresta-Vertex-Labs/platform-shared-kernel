@@ -24,7 +24,7 @@ correctness property: authorization has to precede validation, a commit has to p
 | Error-aware telemetry | Spans, metrics and logs all carry the error type and code, so a dashboard can alert on *what* failed |
 | `AddBehavior(type, stage)` | Your own behavior lands in the canonical order instead of wherever it was registered |
 
-**Dependencies:** `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation`, and
+**Dependencies:** `SharedKernel.Application`, `SharedKernel.Application.Abstractions`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation`, and
 first-party `Microsoft.Extensions.*` packages. **No cache, no Polly, no hosting, no `SharedKernel.Core`** —
 caching behaviors live in the separate
 [`SharedKernel.Application.Behaviors.Caching`](../SharedKernel.Application.Behaviors.Caching/README.md).
@@ -68,10 +68,9 @@ builder.Services.AddSharedKernelApplicationBehaviors()
 Everything else is a deliberate opt-in, because each one needs a seam you have to provide:
 
 ```csharp
-builder.Services.AddScoped<IRequestContext, UserRequestContext>();
-builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EfUnitOfWork>());
+builder.Services.AddSharedKernelRequestContext();                        // IRequestContext (13.ServiceDefaults.Security)
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // IUnitOfWork + IAuditTrailWriter (06.Persistence)
 builder.Services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
-builder.Services.AddScoped<IAuditTrailWriter, EfAuditTrailWriterAdapter>();
 
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
@@ -100,8 +99,9 @@ Five stages, always in this order, regardless of the order you called the `Add�
 | 6 | Query | *(yours, or the caching package's)* | queries | `AddBehavior(…, PipelineStage.Query)` |
 | 7 | Command | command scope | commands | automatic when any command behavior is on |
 | 8 | Command | `IdempotencyBehavior` | commands implementing `IIdempotentRequest` | `AddIdempotencyBehavior()` |
-| 9 | Command | `TransactionBehavior` | commands | `AddTransactionBehavior()` |
-| 10 | Command | `AuditingBehavior` | commands implementing `IAuditableRequest<T>` | `AddAuditingBehavior()` |
+| 9 | Command | `AuditingBehavior` (outer half: failures, after rollback) | commands implementing `IAuditableRequest<T>` | `AddAuditingBehavior()` |
+| 10 | Command | `TransactionBehavior` (the rest runs inside `ExecuteInTransactionAsync`) | commands | `AddTransactionBehavior()` |
+| 10b | Command | inner auditing half (`Succeeded`, queued on `OnBeforeCommit`) | commands implementing `IAuditableRequest<T>` | `AddAuditingBehavior()` |
 | 11 | Command | *(yours, or `CacheInvalidationBehavior`)* | commands | `AddBehavior(…, PipelineStage.Command)` |
 
 Tracing is outermost so every log line below it carries the trace id. **Authorization precedes validation**
@@ -120,8 +120,8 @@ sequenceDiagram
     participant Valid as Validation
     participant Scope as Command scope
     participant Idem as Idempotency
-    participant Tx as Transaction
     participant Audit as Auditing
+    participant Tx as Transaction
     participant Handler
 
     Caller->>Tracing: Send(command)
@@ -130,19 +130,20 @@ sequenceDiagram
     Authz->>Valid: permissions satisfied
     Valid->>Scope: no validation errors
     Scope->>Idem: scope entered, depth 1
-    Idem->>Tx: key reserved, token issued
-    Tx->>Audit: (commit happens on the way back)
-    Audit->>Handler: (audit is written on the way back)
-    Handler-->>Audit: Result.Success
-    Audit-->>Tx: audit entry recorded
-    Tx-->>Idem: SaveChangesAsync committed
+    Idem->>Audit: key reserved, token issued
+    Audit->>Tx: (records a failure on the way back, after rollback)
+    Tx->>Handler: ExecuteInTransactionAsync — the rest runs inside the transaction
+    Handler-->>Tx: Result.Success (the Succeeded audit entry is queued on OnBeforeCommit)
+    Tx-->>Audit: saved, audit entry written, committed
+    Audit-->>Idem: nothing to record (success was recorded inside the transaction)
     Idem-->>Scope: key completed with the response
     Note over Scope: OnCompleted callbacks run here, after the commit
     Scope-->>Caller: Result.Success
 ```
 
-Read the arrows down as "before the handler" and up as "after it". The audit write lands **inside** the
-transaction, the idempotency key is completed **after** the commit, and post-commit callbacks run last of all.
+Read the arrows down as "before the handler" and up as "after it". The `Succeeded` audit entry lands
+**inside** the transaction, a `Failed` one after the rollback, the idempotency key is completed **after** the
+commit, and post-commit callbacks run last of all.
 
 ## Which markers do I implement?
 
@@ -273,9 +274,22 @@ A nested command skips this behavior entirely — the outermost command owns the
 
 ### `TransactionBehavior`
 
-Calls `IUnitOfWork.SaveChangesAsync` after the handler returns, **only for the outermost command**, and
-**only when the response is successful**. A failed `Result` commits nothing, so a handler that mutated an
-aggregate before deciding to fail leaves no trace. A thrown exception never reaches the commit.
+Runs the rest of the pipeline and the handler **inside** `IUnitOfWork.ExecuteInTransactionAsync`
+(`SharedKernel.Application.Abstractions`): the unit of work saves what was staged, runs the `OnBeforeCommit`
+callbacks and commits — **only for the outermost command, and only when the response is successful**. A failed
+`Result` rolls back, so a handler that mutated an aggregate before deciding to fail leaves no trace; an
+exception rolls back and propagates.
+
+- **Handlers must be re-runnable.** Under a retrying execution strategy (on by default in `06.Persistence`) a
+  transient failure replays the whole delegate: the unit of work discards what the failed attempt staged and the
+  handler runs again. Load what you need through repositories inside the handler; keep HTTP calls and messages
+  out of it — queue them with `ICommandScope.OnCompleted`, which runs after the commit. Callbacks queued by a
+  discarded attempt are dropped.
+- **A command sent while a transaction is active joins it.** If the joined command fails, the transaction becomes
+  rollback-only: the outer command commits nothing and, if it would have succeeded, gets
+  `TransactionRolledBackException`.
+- **An ambiguous commit is not retried.** `CommitOutcomeUnknownException` means the commit may or may not have
+  happened — re-read (or rely on the idempotency key) before repeating.
 
 ### `AuditingBehavior`
 
@@ -294,11 +308,16 @@ public sealed record UpdateLimitCommand(Guid CustomerId, decimal NewLimit, strin
 ```
 
 An entry is written for **all three outcomes** — success, business failure, and a handler that throws —
-because a rejected high-risk attempt is usually the compliance-relevant event. `AuditEntry.Succeeded` and
-`ErrorCode` carry which it was: the error code on a business failure, the exception type name on a fault. The
-write sits inside the transaction, so a failed audit write blocks the commit. If the audit write itself
-throws while handling an exception, the **original** exception still propagates and the audit failure is
-logged.
+because a rejected high-risk attempt is usually the compliance-relevant event. `AuditEntry.Outcome` and
+`ErrorCode` carry which it was: the error code on a business failure, the exception type name on a fault.
+
+`AddAuditingBehavior()` registers two halves around `TransactionBehavior`. The inner half queues the
+`Succeeded` entry on `IUnitOfWork.OnBeforeCommit`, so it is written in the same transaction as the change it
+attests to and commits or rolls back with it (a failed success write rolls the change back). The outer half,
+outside the transaction, records every failure — a failed `Result`, an exception, or the commit itself failing —
+**after** the rollback, on the writer's own connection. If the audit write throws while handling an exception,
+the **original** exception still propagates and the audit failure is logged. Actor, tenant, time and
+correlation are never in `AuditEntry`: the writer resolves them from `IRequestContext`.
 
 ## What happens when something fails
 
@@ -328,18 +347,18 @@ which records the attempt either way.
 
 ## Seams you must register
 
-Each is a small local interface this package owns, bridged at your composition root to whatever really
-implements it. That is what keeps `05.Application` from referencing persistence, security or a cache.
+Each is a small interface owned by `05.Application` and implemented by infrastructure. That is what keeps
+`05.Application` from referencing persistence, security or a cache.
 
-| Seam | Needed by | Typically bridged to |
-| --- | --- | --- |
-| `IRequestContext` (in `SharedKernel.Application`) | Authorization | `12.Security`'s `IUserContext`/`ITenantProvider`, or the shipped `SystemRequestContext` |
-| `IUnitOfWork` | Transaction | `06.Persistence`'s `EfUnitOfWork`, which implements this interface directly |
-| `IRequestIdempotencyStore` | Idempotency | `18.Idempotency`'s Redis or EF Core store |
-| `IAuditTrailWriter` | Auditing | `06.Persistence`'s append-only, hash-chained audit trail |
+| Seam | Declared in | Needed by | Implemented by |
+| --- | --- | --- | --- |
+| `IRequestContext` | `SharedKernel.Application.Abstractions` | Authorization, caching, auditing | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
+| `IUnitOfWork` | `SharedKernel.Application.Abstractions` | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
+| `IRequestIdempotencyStore` | this package | Idempotency | `18.Idempotency`'s Redis or EF Core store |
+| `IAuditTrailWriter` | `SharedKernel.Application.Abstractions` | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
 
-`IUnitOfWork` here is **not** `06.Persistence`'s same-named interface — it is a one-method local seam, and
-the persistence type satisfies both.
+`06.Persistence` implements the same `IUnitOfWork`/`IAuditTrailWriter`/`IRequestContext` the behaviors consume;
+there is exactly one of each.
 
 ## Nested commands and `ICommandScope`
 

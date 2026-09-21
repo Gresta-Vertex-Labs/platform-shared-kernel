@@ -130,7 +130,7 @@ follow your serializer options (camelCase above, from `JsonSerializerDefaults.We
 | Total count | Yes (costs a `COUNT` query) | No |
 | Cost of a deep page | Grows with depth (`OFFSET`) | Constant (seek on an index) |
 | Rows inserted while paging | Items shift, repeat or are skipped | Stable |
-| Pairs with (`SharedKernel.Domain`) | `PagedSpecification<T>` | `KeysetSpecification<T, TKey>` |
+| Pairs with (`SharedKernel.Persistence`) | `IReadRepository.ListPagedAsync(spec, PageRequest)` | `IReadRepository.ListKeysetAsync(spec, CursorPageRequest, keySelector)` |
 
 ## Walkthrough
 

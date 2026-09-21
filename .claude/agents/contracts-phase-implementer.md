@@ -69,7 +69,7 @@ The exact shapes live in `04.Contracts/CLAUDE.md` (Interface Contracts, Implemen
 **Pagination** (`SharedKernel.Contracts.Pagination`)
 - `PagedList<T>`: `long TotalCount`/`TotalPages`, 1-based `Page`, items snapshotted, value equality by sequence, `Map`, `Empty`, `Create` overloads including `PageRequest`. Enforce only `Items.Count ≤ PageSize`, never against `TotalCount`.
 - `CursorPagedList<T>`: `Items`, `NextCursor`, `HasMore` derived from `NextCursor`, `FromLookahead`, `Map`, `Empty`.
-- `PageRequest`/`CursorPageRequest`: `Create` returns `ValidationResult<T>` with every error (page error first); maximum 1000, equal to `PagedSpecification.MaxPageSize`; an out-of-range max argument throws.
+- `PageRequest`/`CursorPageRequest`: `Create` returns `ValidationResult<T>` with every error (page error first); maximum 1000, the platform's only page-size ceiling (`03.Domain` has none since P-558); an out-of-range max argument throws.
 - `PageCursor`: `Encode`/`Decode` over `CursorPosition<TKey, TId>`, unsigned, versioned `v1.` + base64url JSON. `Decode` returns `Result` and never throws for bad input; a format change goes behind a new prefix while `v1.` stays decodable.
 - Error codes live in `PaginationErrorCodes`; never retype them.
 

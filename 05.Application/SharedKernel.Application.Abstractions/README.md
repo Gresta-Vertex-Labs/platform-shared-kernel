@@ -33,7 +33,12 @@ public sealed class ApproveOrderJob(IUnitOfWork unitOfWork, IRepository<Order, O
   messages out of it.
 - `ExecuteInTransactionAsync<TResult>` rolls back and returns the result unchanged when the result is a
   failed `Result`/`Result<T>` — nothing is saved.
-- Calling it inside an active transaction joins that transaction; only the outermost call commits.
+- Calling it inside an active transaction joins that transaction; only the outermost call commits. With
+  `SharedKernel.Persistence.EfCore` every context of the DI scope shares that one transaction.
+- A joined call that throws or returns a failed result marks the transaction **rollback-only**: nothing
+  commits, and an outermost operation that still returns success gets `TransactionRolledBackException`.
+- A commit that fails without a server response throws `CommitOutcomeUnknownException` and is never
+  replayed — the commit may or may not have happened; re-read (or check the idempotency key) before retrying.
 - `OnBeforeCommit(callback)` queues work inside the active transaction, after the last save and before
   the commit. The audit trail writes its `Succeeded` record there.
 - There is no `BeginTransactionAsync`: a caller-held transaction handle cannot be replayed by a retrying
@@ -41,8 +46,9 @@ public sealed class ApproveOrderJob(IUnitOfWork unitOfWork, IRepository<Order, O
 
 ## The caller
 
-`IRequestContext` exposes `IsAuthenticated`, `UserId`, `TenantId`, `ActorKind`, `ClientId`, `SessionId`,
-`ImpersonatorId` and `HasPermissionAsync`. The last four attribution members have default
+`IRequestContext` exposes `IsAuthenticated`, `UserId`, `TenantId`, `ActorKind` (`User`, `Service`, `System`,
+`Anonymous`), `ClientId`, `SessionId`, `ImpersonatorId` and `HasPermissionAsync`. An unauthenticated caller is
+`Anonymous`, never `System`; background work runs under a `SystemRequestContext`. The last four attribution members have default
 implementations, so an implementation written before they existed keeps compiling.
 
 When nothing is registered, persistence falls back to `AnonymousRequestContext`: unauthenticated, no

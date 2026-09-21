@@ -3056,7 +3056,7 @@ A violation fails the test and names every offending type. Every rule is also an
 |---|---|
 | Layering | Dependencies flow downward only: the domain never reaches persistence or messaging, the application layer depends on abstractions |
 | Domain and contracts purity | No infrastructure, clock access or event handlers in the domain; contracts stay behaviour-free DTOs |
-| Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, transactions go through the abstraction |
+| Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, read repositories never track, the shared unit-of-work/caller/audit contracts exist once, persistence namespaces stay consolidated |
 | Provider topology | Abstractions stay free of vendor SDKs, and sibling provider packages (S3 and OBS, Meilisearch and ElasticSearch) never reference each other |
 | Security and cryptography | No per-request identity captured in a singleton, no raw cipher outside the cryptography package |
 | Host composition and health checks | Dependency checks gate readiness rather than liveness, and upward layering exceptions stay confined to their readiness probes |

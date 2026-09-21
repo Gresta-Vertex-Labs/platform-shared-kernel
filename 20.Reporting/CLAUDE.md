@@ -49,7 +49,7 @@ The two adopted libraries are less ergonomic than the two most popular declined 
 
 That is the complete list, and it is deliberately austere.
 
-**This domain never references `06.Persistence`.** The caller supplies the `IAsyncEnumerable<TRow>`. Composing with `06.Persistence`'s already-shipped `IAsyncEnumerable` streaming reads and `KeysetSpecification<T,TKey>` cursor pagination happens **in consumer code**, not through a reference here. A reference would let this domain grow its own data-access opinions, which is exactly the duplication the streaming contract is designed to avoid.
+**This domain never references `06.Persistence`.** The caller supplies the `IAsyncEnumerable<TRow>`. Composing with `06.Persistence`'s already-shipped `IAsyncEnumerable` streaming reads (`StreamAsync`) and keyset cursor pagination (`ListKeysetAsync`) happens **in consumer code**, not through a reference here. A reference would let this domain grow its own data-access opinions, which is exactly the duplication the streaming contract is designed to avoid.
 
 **No inbound grant exists or is needed.** Unlike `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`/`19.Scheduling`, this domain holds no persistent connection, so there is nothing to probe for readiness. It is a stateless library in the same class as `01.Core.Compression`/`.Cryptography`. **The absence of a `13.ServiceDefaults` readiness phase here is deliberate, not an omission** — this is stated in P-477's acceptance criteria precisely so a future session does not "notice the gap" and add one.
 

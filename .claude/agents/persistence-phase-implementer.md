@@ -15,14 +15,14 @@ You are an elite .NET 10 implementation engineer specialising in the **06.Persis
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **`SharedKernel.Persistence.Abstractions` is zero-ORM.** It may only reference `SharedKernel.Primitives` and `SharedKernel.Domain`. Any ORM type leaking into `.Abstractions` is a hard violation — stop and flag it.
-- **`IUnitOfWork.SaveChangesAsync` is the only permitted save boundary.** `DbContext.SaveChanges[Async]` called anywhere outside `EfUnitOfWork` is a hard violation.
+- **`SharedKernel.Persistence.Abstractions` is zero-ORM.** It references `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` and `SharedKernel.Application.Abstractions` only. Any ORM type leaking into `.Abstractions` is a hard violation — stop and flag it.
+- **The unit of work (`05`'s `IUnitOfWork`, implemented by `EfUnitOfWork` + `UnitOfWorkCoordinator`) owns transactions.** Never begin a transaction on a context directly; `SharedKernelDbContext.SaveChangesAsync` is the one save path (it dispatches domain events).
 - **No `IQueryable<T>` exposure from repositories.** All queries are expressed via `ISpecification<T>`. Any public method returning `IQueryable` is a hard violation.
-- **No messaging concerns** (`IMessageBus`, `IEventPublisher`, MassTransit types) anywhere in this domain — outbox messages are written here; dispatching belongs to `07.Messaging`.
+- **No messaging concerns** (`IMessageBus`, `IEventPublisher`, MassTransit types, outbox types) anywhere in this domain — the outbox belongs to `07.Messaging`.
 - **No domain logic** anywhere in this domain — repositories and services are pure data-access plumbing.
-- **Parameterized SQL only inside `DapperReadService` subclasses.** String interpolation in SQL is a SQL injection vulnerability and a hard violation.
-- **No reflection in type converters or type handlers.** Use the `implicit operator` on `StronglyTypedId<TValue>` and `SmartEnum<TEnum,TValue>.TryFromValue` exclusively.
-- AOT guidance: expression trees on `IQueryable` are AOT-safe; Dapper uses reflection (known, isolate behind `DapperReadService`); STJ source-generated context for outbox serialisation is preferred.
+- **Parameterized SQL only (`IDbSession.Command`, Dapper `SqlMapper`).** String interpolation in SQL is a SQL injection vulnerability and a hard violation.
+- **No per-call reflection in type converters or type handlers.** Use the explicit operator on `StronglyTypedId<TValue>` (compiled once) and `SmartEnum<TEnum,TValue>.TryFromValue`.
+- AOT guidance: expression trees on `IQueryable` are AOT-safe; Dapper uses reflection (known, contained in `SharedKernel.Persistence.Dapper`).
 - All public APIs carry XML doc comments. Internal types: one-line comment only when non-obvious.
 - Naming must be intention-revealing, consistent with the existing codebase, idiomatic .NET 10.
 
@@ -54,47 +54,32 @@ Never implement from memory of rules or prior sessions. Always read the current 
 
 ### Package-Specific Rules
 
-**`SharedKernel.Persistence.Abstractions`**
-- Zero ORM dependencies — `using Microsoft.EntityFrameworkCore` is a hard violation in this project.
-- References only `SharedKernel.Primitives` and `SharedKernel.Domain`.
-- `IRepository<TAggregate, TId>` — write-side only; no `GetBySpec`, no `IQueryable`, no `List`.
-- `IReadRepository<TAggregate, TId>` — read-side only; no `Add`, `Update`, `Delete`.
-- `IUnitOfWork` — single `SaveChangesAsync(CancellationToken)` method; nothing else.
-- `IDbConnectionFactory` — single `CreateConnectionAsync(CancellationToken)` method returning `Task<IDbConnection>`.
-- `OutboxMessage` — sealed record; `Id` defaults to `Guid.NewGuid()` at construction; `ProcessedOn` is nullable.
-- `IOutboxWriter` — single `WriteAsync(IEnumerable<OutboxMessage>, CancellationToken)`.
-- `ISpecificationEvaluator<T>` — single `GetQuery(IQueryable<T>, ISpecification<T>)`.
+> **Updated for P-558 (2026-09-21).** The domain is PostgreSQL-only and has six packages; `06.Persistence/CLAUDE.md`
+> (Packages, Interface Contracts, Implementation Rules → "Invariants") is the authoritative, detailed version. The
+> earlier per-package list here described a design (outbox interceptor, `DapperReadService`, `.PostgreSQL` package,
+> `EntityTypeConfigurationBase`, four interceptors) that no longer exists.
 
-**`SharedKernel.Persistence.EfCore`**
-- References `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, and `Microsoft.EntityFrameworkCore`.
-- Never references `Npgsql` or `Npgsql.EntityFrameworkCore.PostgreSQL` directly.
-- `SharedKernelDbContext` — abstract; registers all interceptors in the constructor; downstream `DbContext` subclasses extend this base.
-- `EfRepository<TAggregate, TId>` — abstract; backed by `DbContext.Set<TAggregate>()`; never exposes `IQueryable`.
-- `EfReadRepository<TAggregate, TId>` — abstract; uses `ISpecificationEvaluator<T>` internally.
-- `EfUnitOfWork` — sealed; delegates to `SharedKernelDbContext.SaveChangesAsync`; this is the **only** permitted save path.
-- `SpecificationEvaluator<T>` — sealed; applies Criteria → Includes → OrderBy/ThenBy → Distinct → AsNoTracking → Paging (paging always last — non-negotiable).
-- `AuditInterceptor` — populates audit fields via EF Core `ChangeTracker` (shadow properties or `CurrentValues[name]`); never calls entity setters directly.
-- `SoftDeleteInterceptor` — converts `Deleted` state to `Modified` for `ISoftDeletable` entities; sets `IsDeleted`, `DeletedOn`, `DeletedBy`.
-- `OutboxInterceptor` — collects via `IHasDomainEvents` (not `IAggregateRoot<TId>`); serialises to `OutboxMessage`; calls `ClearDomainEvents()` **after** successful outbox write within the same transaction; uses STJ with `DomainEventsJsonContext`.
-- `ConcurrencyInterceptor` — catches `DbUpdateConcurrencyException` for `IHasConcurrency` entries; wraps and rethrows as a typed `ConcurrencyException` carrying `Error.Conflict(...)`. Does **not** silently retry.
-- `EntityTypeConfigurationBase<TEntity, TId>` — abstract; configures PK, concurrency token, soft-delete global query filter, and owned audit properties.
-- `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` — sealed; uses `implicit operator TValue` (never `Activator.CreateInstance` or reflection).
+**`SharedKernel.Persistence.Abstractions`** — ORM-free; references `Primitives`, `Domain`, `Contracts`,
+`Application.Abstractions`. Repositories (`IReadRepository` never tracked, `IRepository` always tracked), `EntityVersion`,
+bulk contract, `ICrossTenantScope`, `IDbConnectionFactory`. Never redeclare `IUnitOfWork`/`IRequestContext`/
+`IAuditTrailWriter` — they are `05.Application/SharedKernel.Application.Abstractions`.
 
-**`SharedKernel.Persistence.PostgreSQL`**
-- References `SharedKernel.Persistence.EfCore` and `Npgsql.EntityFrameworkCore.PostgreSQL`.
-- `SnakeCaseNamingConvention` — implements `IModelFinalizingConvention`; applied globally; no `[Column("snake_name")]` data annotations needed.
-- `UsePostgreSQL(DbContextOptionsBuilder, string)` — single call configures Npgsql + SnakeCaseNamingConvention + vector support + JSONB defaults.
-- `AddSharedKernelPostgreSQL(IServiceCollection, string)` — registers `NpgsqlDataSource` and `IDbConnectionFactory` (for Dapper); does **not** register a `DbContext` — consumers call `AddDbContext` separately.
-- JSONB: `JsonbColumnAttribute` + `HasJsonbColumn` extension on `EntityTypeBuilder<T>`.
-- pgvector: `VectorColumnAttribute` + `HasVectorColumn` extension; requires `EnsureVectorExtension()` in migration/startup.
+**`SharedKernel.Persistence.EfCore`** — the PostgreSQL EF Core provider package (references Npgsql EF provider,
+`EFCore.NamingConventions`, Pgvector, `.Npgsql`). One entry point `AddSharedKernelPostgres<TContext>`; one save
+interceptor; conventions instead of configuration base classes; `UnitOfWorkCoordinator` = one transaction per DI scope;
+transaction-local row-level security; identity attached per lease, never through a context constructor.
 
-**`SharedKernel.Persistence.Dapper`**
-- References `SharedKernel.Persistence.Abstractions` and `Dapper`. Never references `Microsoft.EntityFrameworkCore`.
-- `NpgsqlConnectionFactory` — sealed; implements `IDbConnectionFactory`; backed by injected `NpgsqlDataSource`; returns open connections; caller disposes.
-- `StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>` — abstract; concrete handler is one-line per strongly-typed ID type.
-- `SmartEnumTypeHandler<TEnum, TValue>` — abstract; `Parse` uses `SmartEnum<TEnum,TValue>.TryFromValue`; no reflection.
-- `DapperTypeHandlers.Register()` — static; idempotent; call once at startup.
-- `DapperReadService` — abstract; all three protected query methods open and dispose connection per call via `IDbConnectionFactory`; parameterized queries only.
+**`SharedKernel.Persistence.Npgsql`** — no EF Core. Data sources, options/TLS, advisory locks, tenant binding,
+RLS privilege check, SQLSTATE classifier.
+
+**`SharedKernel.Persistence.Dapper`** — no EF Core. `IDbSessionFactory`/`IDbSession`; parameterized SQL only
+(`SK0042`); type handlers via `DapperConfiguration`.
+
+**`SharedKernel.Persistence.EfCore.Auditing`** / **`.EfCore.Encryption`** — sibling capability packages using EfCore
+internals through `InternalsVisibleTo` (exact-version nuspec pin); the ledger is never in an EF model or under RLS;
+encryption is interceptor-based, never a `ValueConverter`.
+
+Test helpers for consumers live in `16.Testing/SharedKernel.Persistence.Testing`.
 
 ### General C# Quality
 - Target `net10.0`. Use primary constructors, collection expressions, `required` members where they improve clarity.
@@ -112,50 +97,30 @@ After all implementation files are written:
 
 ### Test project locations
 ```
-06.Persistence/SharedKernel.Persistence.Abstractions/SharedKernel.Persistence.Abstractions.Tests/
-06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/
-06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.Tests/
-06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/
+06.Persistence/SharedKernel.Persistence.Abstractions/SharedKernel.Persistence.Abstractions.Tests/          (unit lane)
+06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/                      (unit lane, SQLite seam)
+06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Integration.Tests/          (Testcontainers)
+06.Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.Tests/                      (Testcontainers)
+06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/                      (Testcontainers)
+06.Persistence/SharedKernel.Persistence.EfCore.Auditing/SharedKernel.Persistence.EfCore.Auditing.Tests/    (Testcontainers)
+06.Persistence/SharedKernel.Persistence.EfCore.Encryption/SharedKernel.Persistence.EfCore.Encryption.Tests/ (Testcontainers)
+06.Persistence/SharedKernel.Persistence.ConsumerVerify/  (packed packages only — see 06.Persistence/CLAUDE.md Test Rules)
 ```
 
-### Coverage required by package
+### Coverage required
 
-**`SharedKernel.Persistence.Abstractions.Tests/`**
-- `OutboxMessage` construction: `Id` assigned, `ProcessedOn` is null, all properties accessible.
-- `IRepository<T,TId>` / `IReadRepository<T,TId>` / `IUnitOfWork` / `IDbConnectionFactory` / `IOutboxWriter` contract shapes (interface existence, method signatures via reflection-free compilation tests).
-
-**`SharedKernel.Persistence.EfCore.Tests/`** (use SQLite in-memory or `UseInMemoryDatabase` provider — no Testcontainers needed for unit coverage)
-- `SpecificationEvaluator<T>`: criteria filter applied, includes applied, ordering applied, paging applied **after** ordering, `AsNoTracking` applied when spec requests it, distinct applied.
-- `AuditInterceptor`: `CreatedBy`/`CreatedOn` set on `Added` entities; `ModifiedBy`/`ModifiedOn` set on `Modified`; no mutation on `Deleted` state (soft-delete owns that).
-- `SoftDeleteInterceptor`: `Deleted` state converted to `Modified`; `IsDeleted = true`; `DeletedOn` and `DeletedBy` set; soft-deleted records excluded by global query filter.
-- `OutboxInterceptor`: after `SaveChanges`, `OutboxMessage` records written for every raised domain event; `DomainEvents` empty post-save; no outbox write on rolled-back save; outbox and aggregate state consistent.
-- `ConcurrencyInterceptor`: `DbUpdateConcurrencyException` caught and rethrown as typed `ConcurrencyException` with `Error.Conflict(...)`; non-concurrency exceptions not swallowed.
-- `StronglyTypedIdValueConverter`: round-trip — entity-to-DB-value and DB-value-to-entity with a concrete strongly-typed ID.
-- `EfRepository<T,TId>` / `EfReadRepository<T,TId>`: basic CRUD and spec-driven reads with SQLite.
-
-**`SharedKernel.Persistence.PostgreSQL.Tests/`** — **Testcontainers required (real PostgreSQL)**
-- `SnakeCaseNamingConvention`: all table names, column names, index names in `DbContext.Model` are snake_case.
-- JSONB round-trip: entity with JSONB column written and read back with correct deserialized value.
-- pgvector column: `float[]` / `Vector` written and read; nearest-neighbour query if applicable.
-- `UsePostgreSQL` DI extension: `DbContextOptions` configured without throwing; Npgsql provider registered.
-
-**`SharedKernel.Persistence.Dapper.Tests/`** — **Testcontainers required (real PostgreSQL)**
-- `NpgsqlConnectionFactory`: `CreateConnectionAsync` returns an open `IDbConnection`; connection is disposed after call.
-- `StronglyTypedIdTypeHandler`: `SetValue` writes underlying `TValue`; `Parse` reads back correct ID.
-- `SmartEnumTypeHandler`: `SetValue` writes `TValue`; `Parse` returns correct enum member; unknown value throws/returns expected result without reflection.
-- `DapperReadService`: parameterized query returns correct result; `IDbConnectionFactory` called once per operation; connection disposed after each call.
+Follow `06.Persistence/CLAUDE.md` → Test Rules: RLS and tenant-isolation claims through an unprivileged role (never the
+superuser), attack scenarios built as a hostile caller would, concurrency/retry/commit-order claims proven empirically,
+a regression test per fixed finding, README samples compiled by a test.
 
 ### Test tooling
-- `xUnit` as test runner; `NSubstitute` for mocks (interceptors, `IUserContext`, `IClock`, `IOutboxWriter`).
-- Integration tests (PostgreSQL, Dapper): use Testcontainers via `16.Testing/SharedKernel.Testing` helpers.
+- `xUnit` as test runner; `NSubstitute` for mocks (interceptors, `IUserContext`, `IClock`); `SharedKernel.Persistence.Testing` fakes and `PostgresTestServer`/`PostgresTestDatabase` for the role split.
+- Integration tests: Testcontainers via `16.Testing` helpers (`PostgreSqlContainerFixture` wraps `PostgresTestServer`).
 - Never mock `IDbConnection` or `DbContext` in integration tests — use real providers.
 
 ### Run commands
 ```
-dotnet test 06.Persistence/SharedKernel.Persistence.Abstractions/SharedKernel.Persistence.Abstractions.Tests/ --configuration Release
-dotnet test 06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/ --configuration Release
-dotnet test 06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.Tests/ --configuration Release
-dotnet test 06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/ --configuration Release
+dotnet test 06.Persistence/<Package>/<Package>.Tests/ --configuration Release
 ```
 
 Run only the test projects that have new or modified tests this session.

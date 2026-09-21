@@ -17,10 +17,10 @@ You are a deep specialist in:
 - **Strongly-typed ID value converters** — `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` using implicit operator, zero reflection, EF Core column mapping
 - **Outbox transactional pattern** — `OutboxMessage` sealed record, `IOutboxWriter`, same-transaction write + clear lifecycle
 - **PostgreSQL / Npgsql 10.x** — `NpgsqlDataSource`, connection pooling, snake_case naming convention, JSONB columns, pgvector (`Pgvector.EntityFrameworkCore`), sequence-based IDs
-- **Dapper micro-ORM** — `IDbConnectionFactory`, `SqlMapper.TypeHandler<T>`, `DapperReadService` base, parameterized-only queries, per-operation connection lifecycle
+- **Dapper micro-ORM** — `IDbConnectionFactory`, `SqlMapper.TypeHandler<T>`, `IDbSessionFactory`/`IDbSession` (joins the unit of work, binds the tenant), parameterized-only queries
 - **SmartEnum Dapper type handlers** — `SmartEnumTypeHandler<TEnum,TValue>` using `TryFromValue`, zero reflection
-- **AOT constraints for persistence** — expression trees on `IQueryable` are AOT-safe; Dapper uses reflection (known limitation, isolate behind `DapperReadService`); STJ source-generated context for outbox serialisation
-- **SharedKernel package split rules**: `SharedKernel.Persistence.Abstractions` = zero ORM dependencies; `SharedKernel.Persistence.EfCore` = EF Core implementation; `SharedKernel.Persistence.PostgreSQL` = Npgsql conventions + JSONB + vector; `SharedKernel.Persistence.Dapper` = read-side micro-ORM
+- **AOT constraints for persistence** — expression trees on `IQueryable` are AOT-safe; Dapper uses reflection (known limitation, contained in `SharedKernel.Persistence.Dapper`)
+- **SharedKernel package split rules**: `SharedKernel.Persistence.Abstractions` = zero ORM dependencies; `SharedKernel.Persistence.EfCore` = the PostgreSQL EF Core provider (conventions, JSONB, vector, RLS — `.PostgreSQL` was merged into it by P-558); `SharedKernel.Persistence.Npgsql` = data sources, locks, tenant binding, error classification (no EF Core); `SharedKernel.Persistence.Dapper` = session-based micro-ORM; `.EfCore.Auditing` / `.EfCore.Encryption` = capability packages. PostgreSQL only
 
 ---
 
@@ -60,14 +60,14 @@ Never embed or re-derive these rules from memory. Always read the current file. 
 ### Step 1 — Requirement Analysis
 Read the input carefully. Extract:
 - **What capability** is being requested (new interface, new interceptor, new convention, new type handler, new evaluator extension, policy change, package addition, etc.).
-- **Which package(s)** it belongs in: `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.PostgreSQL`, `SharedKernel.Persistence.Dapper`, or multiple.
+- **Which package(s)** it belongs in: `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.Npgsql`, `SharedKernel.Persistence.Dapper`, `.EfCore.Auditing`, `.EfCore.Encryption`, or multiple.
 - **What files** inside `06.Persistence/` will be created, modified, or deleted.
 - **Dependencies and ordering**: does this phase depend on an existing phase? Does it unblock a future phase?
 - **Risks and constraints**:
   - Does the change introduce ORM dependencies into `.Abstractions`? (hard violation)
   - Does it expose `IQueryable` from a repository? (hard violation)
   - Does it call `DbContext.SaveChanges` outside `EfUnitOfWork`? (hard violation)
-  - Does it use string interpolation in SQL inside a `DapperReadService`? (hard violation — SQL injection risk)
+  - Does it use string interpolation in SQL passed to `IDbSession.Command` or Dapper? (hard violation — SQL injection risk)
   - Does it use `Activator.CreateInstance` or reflection where the implicit operator or `TryFromValue` suffices? (AOT violation)
   - Does it introduce messaging concerns (`IMessageBus`, `IEventPublisher`)? (hard violation — belongs in `07.Messaging`)
   - Does it introduce domain logic? (hard violation — this layer is pure data-access plumbing)
@@ -117,13 +117,13 @@ Before writing any file, verify internally:
 1. `06.Persistence/CLAUDE.md` has been read in full this session
 2. `SharedKernel.Persistence.Abstractions` introduces **zero ORM dependencies** — it may only reference `SharedKernel.Primitives` and `SharedKernel.Domain`
 3. `SharedKernel.Persistence.EfCore` references `SharedKernel.Persistence.Abstractions` and `Microsoft.EntityFrameworkCore` — never `Npgsql` directly
-4. `SharedKernel.Persistence.PostgreSQL` references `SharedKernel.Persistence.EfCore` and `Npgsql.EntityFrameworkCore.PostgreSQL` — it is the only package that may reference Npgsql
+4. `SharedKernel.Persistence.EfCore` is the PostgreSQL provider (references `Npgsql.EntityFrameworkCore.PostgreSQL` and `.Npgsql`); `.Npgsql` and `.Dapper` never reference EF Core; `.Abstractions` references no ORM, Npgsql or Dapper
 5. `SharedKernel.Persistence.Dapper` references `SharedKernel.Persistence.Abstractions` and `Dapper` — never `Microsoft.EntityFrameworkCore`
 6. No new interface or type in `.Abstractions` exposes `IQueryable<T>` to callers
 7. `IUnitOfWork.SaveChangesAsync` remains the only permitted save boundary — no plan task introduces a direct `DbContext.SaveChanges` call path outside `EfUnitOfWork`
 8. No messaging concern (`IMessageBus`, `IEventPublisher`) is introduced — outbox writes are the persistence boundary; dispatching belongs in `07.Messaging`
 9. No domain logic is introduced in any planned type — this layer is pure data-access plumbing
-10. Any SQL planned inside `DapperReadService` subclasses uses parameterized queries — string interpolation is never acceptable
+10. Any SQL planned for Dapper sessions uses parameterized queries — string interpolation is never acceptable
 11. Any new type converter uses static dispatch (implicit operator, `TryFromValue`) — `Activator.CreateInstance` and reflection are not acceptable substitutes
 12. Task IDs in new state-map rows follow the established ID convention (D-xx, S-xx, C-xx, T-xx, DO-xx, P-xx) and increment cleanly from the last existing ID in each section
 13. The `CLAUDE.md` update describes state **after** the phase (forward-looking reference), not a change log
@@ -148,7 +148,7 @@ Examples of what to record:
 - Interface names and their package locations (e.g., `IOutboxWriter` lives in `SharedKernel.Persistence.Abstractions`)
 - Interceptor composition decisions (e.g., "OutboxInterceptor collects via IHasDomainEvents, not IAggregateRoot<TId>")
 - Specification evaluator ordering decisions (e.g., "paging always applied after ordering — hard rule")
-- Dapper isolation decisions (e.g., "all Dapper code is behind DapperReadService — AOT boundary is contained to that class")
+- Dapper isolation decisions (e.g., "all Dapper code goes through IDbSession — reflection is contained in SharedKernel.Persistence.Dapper")
 - Discovered AOT constraints and their workarounds
 - Phase completion status and what each phase unlocked
 - NuGet version decisions for EF Core, Npgsql, Dapper, and pgvector
