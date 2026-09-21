@@ -1,95 +1,115 @@
 # SharedKernel.Persistence.Abstractions
 
-Zero-ORM persistence contracts for Platform.SharedKernel microservices: `IRepository<TAggregate,TId>` (write-side), `IReadRepository<TAggregate,TId>` (read-side), `IUnitOfWork` / `ITransactionalUnitOfWork`, and `IDbConnectionFactory`. **Zero ORM dependencies** — references only `SharedKernel.Primitives`, `SharedKernel.Domain`, and `SharedKernel.Contracts` (for `PagedList<T>`/`CursorPagedList<T>`). No `IQueryable<T>` is ever exposed — every query is expressed via `ISpecification<T>` (from `03.Domain`). Implemented by `SharedKernel.Persistence.EfCore`, which also declares `ISpecificationEvaluator<T>` — the queryable-pipeline translation contract stays out of this zero-ORM package because it is expressed in terms of `IQueryable<T>`.
+ORM-free persistence contracts for SharedKernel services: repositories, the opaque entity version, bulk mutations,
+the cross-tenant scope and the connection factory. Application code depends on these interfaces only;
+`SharedKernel.Persistence.EfCore` implements the repositories, `SharedKernel.Persistence.Npgsql` the connection
+factory.
 
-Application and domain code should depend on this package's interfaces only — never a concrete ORM type.
+No EF Core, Npgsql or Dapper dependency — it references `SharedKernel.Primitives`, `SharedKernel.Domain`
+(specifications), `SharedKernel.Contracts` (paging types) and `SharedKernel.Application.Abstractions`.
 
-## Included types
+The unit of work (`IUnitOfWork`), the caller (`IRequestContext`) and the audit writer (`IAuditTrailWriter`) are not
+here: they live in `SharedKernel.Application.Abstractions`, shared with the MediatR pipeline, and the persistence
+packages implement them directly.
 
-- `IRepository<TAggregate,TId>` — write-side: `GetByIdAsync`, `GetBySpecAsync`, `AddAsync`, `UpdateAsync`, `DeleteAsync`, `ExistsAsync`, plus bulk `*RangeAsync` siblings
-- `IReadRepository<TAggregate,TId>` — read-side: `ListAsync`, `CountAsync`, `AnyAsync`, `GetByIdsAsync`/`GetByIdsChunkedAsync`, `ListPagedAsync`, projection reads (`ListProjectedAsync`, `GetBySpecProjectedAsync`, `ListPagedProjectedAsync`), streaming reads (`StreamAsync`, `StreamProjectedAsync<TResult>`), and keyset/cursor pagination (`ListKeysetAsync<TKey>`)
-- `IUnitOfWork` — the single `SaveChangesAsync(CancellationToken)` save boundary
-- `ITransactionalUnitOfWork` — extends `IUnitOfWork` with `BeginTransactionAsync`/`ExecuteInTransactionAsync` for explicit, retry-safe multi-repository transactions
-- `IDbConnectionFactory` — raw `DbConnection` source for Dapper and readiness probes (a concrete `System.Data.Common.DbConnection`, not the `IDbConnection` interface, so callers can `await using` it), plus `CheckReadinessAsync`
-- `ByIdSpecification<TAggregate,TId>` — supporting specification type; keyset/cursor reads return `04.Contracts`'s `CursorPagedList<TAggregate>` directly, with no Abstractions-local result type of its own
-
-## Install
-
-```xml
-<ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
-```
-
-Or, once published, reference the NuGet package `SharedKernel.Persistence.Abstractions` directly, plus a provider package (`SharedKernel.Persistence.EfCore`) to actually resolve an implementation — this package ships no DI extensions and no implementation.
-
-## Design principles
-
-- **Zero-ORM.** No `using Microsoft.EntityFrameworkCore` anywhere in this package — an ORM reference here is a hard architectural violation.
-- **No `IQueryable<T>` leakage.** Every read is expressed via `ISpecification<T>`/`IProjectionSpecification<TAggregate,TResult>` — callers never see a raw queryable.
-- **One save boundary.** `IUnitOfWork.SaveChangesAsync` is the only permitted way to commit — calling a `DbContext.SaveChanges[Async]` equivalent directly, anywhere outside the implementing package's `EfUnitOfWork`, is a hard violation enforced by the owning domain.
-- **`GetByIdsAsync` has no artificial ID-count ceiling.** Against the PostgreSQL implementation this translates to a single `= ANY(@array)` parameter, not a per-value expansion — `GetByIdsChunkedAsync` is an opt-in sibling for callers who deliberately want bounded per-query memory.
-
-## Quick start — write-side repository
+## Repositories
 
 ```csharp
-public sealed class OrderEfRepository(OrderDbContext context)
-    : EfRepository<Order, OrderId>(context);
+using SharedKernel.Persistence.Abstractions.Repositories;
+```
 
-public sealed class CreateOrderHandler(IRepository<Order, OrderId> repository, IUnitOfWork unitOfWork)
+| Contract | Tracking | Members |
+| --- | --- | --- |
+| `IReadRepository<TAggregate, TId>` | never | `GetByIdAsync`, `GetByIdsAsync`, `ExistsAsync`, `FirstOrDefaultAsync(spec)`, `ListAsync(spec)`, `CountAsync(spec)` (`long`), `AnyAsync(spec)`, `ListPagedAsync(spec, PageRequest)`, `ListKeysetAsync(spec, CursorPageRequest, keySelector, descending)`, `StreamAsync(spec)`, and `FirstOrDefaultProjectedAsync`/`ListProjectedAsync`/`ListPagedProjectedAsync`/`ListKeysetProjectedAsync`/`StreamProjectedAsync` for `IProjectionSpecification<TAggregate, TResult>` |
+| `IRepository<TAggregate, TId>` : `IReadRepository` | always | tracked `GetByIdAsync`/`FirstOrDefaultAsync`/`ListAsync`; `AddAsync`, `AddRangeAsync`, `UpdateAsync(aggregate[, expectedVersion])`, `UpdateRangeAsync`, `DeleteAsync(aggregate[, expectedVersion])`, `DeleteRangeAsync` |
+
+With `AddSharedKernelPostgres` both are registered for every aggregate of the model — inject them, no subclass needed.
+`GetByIdAsync` loads the whole aggregate (put extra `Include`s in a repository subclass's `AggregateQuery()`).
+Neither saves: the unit of work (or `TransactionBehavior`) does.
+
+```csharp
+public sealed class RenameCustomerHandler(IRepository<Customer, CustomerId> customers) : ICommandHandler<RenameCustomer>
 {
-    public async Task<Result<OrderId>> Handle(CreateOrderCommand command, CancellationToken ct)
+    public async Task<Result> Handle(RenameCustomer command, CancellationToken ct)
     {
-        var order = Order.Create(command.CustomerId, command.Lines);
-        await repository.AddAsync(order, ct);
-        await unitOfWork.SaveChangesAsync(ct);
-        return order.Id;
+        var customer = await customers.GetByIdAsync(command.Id, ct);
+        if (customer is null) return CustomerErrors.NotFound(command.Id);
+        customer.Rename(command.Name);   // tracked: saved and committed by TransactionBehavior
+        return Result.Success();
     }
 }
 ```
 
-## Quick start — read-side repository with a specification
+### Queries are specifications, paging is at the call site
 
 ```csharp
-public sealed class ActiveOrdersSpec : Specification<Order>
+var spec = Spec.For<Order>()
+    .Where(o => o.Status == OrderStatus.Open)
+    .Include(o => o.Lines).ThenInclude(l => l.Product)
+    .OrderByDescending(o => o.CreatedOn);
+
+PagedList<Order> page = await orders.ListPagedAsync(spec, PageRequest.Create(page: 2, pageSize: 50).Value, ct);
+
+// Keyset (cursor) pages — for large or actively written sets. The spec must not order; the key selector does.
+var open = Spec.For<Order>().Where(o => o.Status == OrderStatus.Open);
+CursorPagedList<Order> first = await orders.ListKeysetAsync(open, CursorPageRequest.Create(null, 50).Value, o => o.CreatedOn, descending: true, ct);
+CursorPagedList<Order> next = await orders.ListKeysetAsync(open, CursorPageRequest.Create(first.NextCursor, 50).Value, o => o.CreatedOn, descending: true, ct);
+```
+
+Specifications (`Specification<T>`, `Spec.For<T>()`, `ProjectionSpecification<T, TResult>`) come from `03.Domain`
+(`SharedKernel.Domain.Specifications`). A specification that pages itself, an offset page without an ordering, a
+keyset spec that orders, or a nullable keyset key throws `InvalidOperationException`; a malformed cursor throws
+`ValidationException` (`pagination.cursor.invalid`).
+
+## Optimistic concurrency: `EntityVersion`
+
+An opaque version (PostgreSQL `xmin`): `ToString()` is the ETag value; `EntityVersion.Parse`/`TryParse` accept
+`"42"` and `W/"42"`. Pass the client's `If-Match` to `UpdateAsync(aggregate, version)` / `DeleteAsync(aggregate,
+version)`; a stale version fails the save with `ConflictException` (`persistence.concurrency_conflict`). A **detached**
+aggregate (deserialized, or loaded in another scope) must use these overloads — it carries no version of its own.
+Reading the current version and the full ETag recipe: EfCore README → "Optimistic concurrency with ETag / If-Match".
+
+## Bulk mutations
+
+`IBulkMutationRepository<TAggregate, TId>` updates or deletes matching rows in one statement, without loading them:
+
+```csharp
+await bulk.ExecuteUpdateAsync(Spec.For<Order>().Where(o => o.Status == OrderStatus.Draft && o.CreatedOn < cutoff),
+    s => s.SetProperty(o => o.Status, OrderStatus.Expired), ct);
+await bulk.ExecuteDeleteAsync(spec, ct);   // soft-deletes ISoftDeletable rows (sets IsDeleted/DeletedOn/DeletedBy)
+await bulk.ExecutePurgeAsync(spec, ct);    // always physical
+```
+
+The spec needs criteria (or `new AllRowsSpecification<T>()` on purpose). Setters targeting the key, a concurrency
+token, `TenantId`, `CreatedBy`/`CreatedOn` or an encrypted column are refused; `ModifiedOn`/`ModifiedBy` are
+stamped unless you set them. Bulk statements skip the save pipeline and domain events.
+
+## Cross-tenant scope
+
+```csharp
+using SharedKernel.Persistence.Abstractions.Context;
+
+using (crossTenantScope.Enter("monthly revenue report"))   // reason required; logged with the caller
 {
-    public ActiveOrdersSpec()
-    {
-        AddCriteria(o => o.Status == OrderStatus.Active);
-        AddOrderBy(o => o.CreatedOn);
-    }
+    // repositories, contexts and Dapper sessions of this DI scope may now read and write every tenant
 }
-
-var activeOrders = await readRepository.ListAsync(new ActiveOrdersSpec(), ct);
 ```
 
-## Keyset (cursor) pagination
+The bypass belongs to the dependency-injection scope (request or job) — entered anywhere in it, including inside an
+awaited helper, it holds until the handle is disposed, and never leaks to another scope. Under row-level security the
+work runs on the cross-tenant database role (see the Npgsql README). `services.AddSharedKernelCrossTenantScope()`
+registers it for services that use neither EF Core nor Dapper registrations (both register it themselves).
 
-`ListKeysetAsync<TKey>` returns `SharedKernel.Contracts.Pagination.CursorPagedList<TAggregate>` — `Items`, an opaque `NextCursor` (`string?`), and `HasMore` (`NextCursor is not null`). Decode a returned cursor back into the specification's `afterKey`/`afterId` via `PageCursor.Decode<TKey, TId>`:
+## Connections
 
-```csharp
-public sealed class OrdersByCreatedOnKeyset(DateTimeOffset? afterKey, object? afterId, int take)
-    : KeysetSpecification<Order, DateTimeOffset>(o => o.CreatedOn, o => o.Id, afterKey, afterId, descending: false, take);
+`IDbConnectionFactory.CreateConnectionAsync()` returns an unopened `DbConnection` (use `await using`);
+`factory.CheckReadinessAsync(timeout)` is the probe `13.ServiceDefaults`' readiness checks wrap. For SQL, prefer
+`SharedKernel.Persistence.Dapper`'s `IDbSessionFactory`, which also joins the unit of work and binds the tenant.
 
-var page = await readRepository.ListKeysetAsync(new OrdersByCreatedOnKeyset(null, null, take: 50), ct);
-if (page.HasMore)
-{
-    var position = PageCursor.Decode<DateTimeOffset, Guid>(page.NextCursor).Value;
-    var next = await readRepository.ListKeysetAsync(
-        new OrdersByCreatedOnKeyset(position.Key, position.Id, take: 50), ct);
-}
-```
-
-## Explicit transactions
-
-```csharp
-await transactionalUnitOfWork.ExecuteInTransactionAsync(async ct =>
-{
-    await orderRepository.AddAsync(order, ct);
-    await transactionalUnitOfWork.SaveChangesAsync(ct);
-}, ct);
-```
-
-`ExecuteInTransactionAsync` is the retry-safe entry point — the delegate may run more than once under a configured retrying execution strategy, so it must be safe to re-run.
+`ITenantSessionBinder`, `IAmbientDbTransaction`, `IMigrationLock` and `IAdvisoryTransactionLock` are infrastructure
+seams between the persistence packages (hidden from IntelliSense); application code does not use them.
 
 ## Package
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [06.Persistence/CLAUDE.md](../CLAUDE.md) for the full interface contracts, implementation rules, and cross-package layering.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — start at the
+[06.Persistence README](../README.md); maintainer rules in [06.Persistence/CLAUDE.md](../CLAUDE.md).
