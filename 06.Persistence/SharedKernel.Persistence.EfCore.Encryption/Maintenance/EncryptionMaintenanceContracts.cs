@@ -69,7 +69,14 @@ public sealed record EncryptionMaintenanceProgress(
 /// <param name="ValuesConcurrentlyModified">Values changed by another writer between read and write; left untouched for the next run.</param>
 /// <param name="PlaintextValues">Values still stored as plaintext.</param>
 /// <param name="UndecryptableValues">Values that did not decrypt: unknown key, altered, or copied from another row or column. Needs investigation.</param>
-/// <param name="ShreddedValues">Values of tenants whose data key was shredded.</param>
+/// <param name="ShreddedValues">
+/// Values under the data key of a shredded tenant: cryptographically erased, unreadable by anyone.
+/// </param>
+/// <param name="ShreddedTenantValuesNotErased">
+/// Values of a shredded tenant that are still under a root key or stored as plaintext. The platform refuses to read
+/// them, but anyone holding the root key (or the database, for plaintext) still can: the tenant's erasure is not complete
+/// until their rows are deleted. Never re-encrypted or re-indexed.
+/// </param>
 /// <param name="StaleBlindIndexes">Blind indexes missing or computed under a version other than the current one (verify mode).</param>
 /// <param name="ValuesByKeyId">
 /// The key each scanned value is encrypted with after the run, by key id; values under tenant data keys are counted
@@ -87,6 +94,7 @@ public sealed record EncryptionMaintenanceReport(
     long PlaintextValues,
     long UndecryptableValues,
     long ShreddedValues,
+    long ShreddedTenantValuesNotErased,
     long StaleBlindIndexes,
     IReadOnlyDictionary<string, long> ValuesByKeyId)
 {
@@ -110,6 +118,13 @@ public sealed record EncryptionMaintenanceReport(
 /// <para>
 /// Registered (scoped) for every context that calls <c>UseFieldEncryption</c>. Run it from a hosted service, a
 /// scheduled job or a workflow activity, never from request handling (SK0303).
+/// </para>
+/// <para>
+/// <strong>Authorization:</strong> a run reads and writes every tenant's rows, so it requires a cross-tenant scope the
+/// caller entered around it (<c>using (crossTenantScope.Enter("key rotation")) { await job.RunAsync(...); }</c>), in a
+/// dependency-injection scope whose <c>IRequestContext</c> identifies the job (for example a
+/// <c>SystemRequestContext</c>), so the entry is attributable. It throws <see cref="InvalidOperationException"/>
+/// otherwise; it never enters the scope itself.
 /// </para>
 /// <para>
 /// Works column by column in primary-key order, in short transactions of <see cref="EncryptionMaintenanceRequest.BatchSize"/>

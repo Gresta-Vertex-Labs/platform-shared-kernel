@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
 using SharedKernel.Persistence.EfCore.Encryption.Configuration;
@@ -80,6 +81,16 @@ internal sealed class FieldEncryptionRuntime(
         }
 
         var side = SideConnection(context);
+
+        // A tenant that was shredded is erased as far as the platform is concerned: a value it still has under a root
+        // key (written before tenant data keys, or left behind by an acknowledged incomplete shred) is refused too.
+        if (tenantId is { } rowTenant && UsesTenantKey(member) && !TenantKeyIds.TryParse(payload.KeyId, out _)
+            && tenantKeys.GetBlocking(rowTenant, side, create: false) is { IsShredded: true })
+        {
+            EncryptionMeter.RecordDecryptFailure("tenant_key_shredded");
+            throw new TenantKeyShreddedException();
+        }
+
         var outcome = cipher.TryDecrypt(
             payload,
             member.Purpose,
@@ -105,6 +116,48 @@ internal sealed class FieldEncryptionRuntime(
                     $"Decryption failed for encrypted property '{member.DisplayName}' (key '{payload.KeyId}'): the " +
                     "value was altered, or copied from another row, column or tenant.");
         }
+    }
+
+    /// <summary>
+    /// Throws <see cref="TenantKeyShreddedException"/> when any of <paramref name="tenantIds"/> was shredded, reading the
+    /// key table in the context's current transaction (and locking the tenants' key rows until it ends) or, without
+    /// one, on a side connection.
+    /// </summary>
+    /// <remarks>
+    /// With a transaction the check and the write are atomic with respect to <c>ShredTenantAsync</c>: a shred that
+    /// committed first is seen, and a shred that starts later waits for this transaction and then clears what it wrote.
+    /// </remarks>
+    public async Task EnsureNotShreddedAsync(DbContext context, IReadOnlyCollection<Guid> tenantIds, CancellationToken cancellationToken)
+    {
+        if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
+        {
+            if ((await tenantKeys.FindShreddedAsync(tenantIds, transaction.Connection!, transaction, cancellationToken).ConfigureAwait(false)).Count > 0)
+                throw new TenantKeyShreddedException();
+            return;
+        }
+
+        var connection = await SideConnection(context)(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            if ((await tenantKeys.FindShreddedAsync(tenantIds, connection, null, cancellationToken).ConfigureAwait(false)).Count > 0)
+                throw new TenantKeyShreddedException();
+        }
+    }
+
+    /// <summary>The synchronous form of <see cref="EnsureNotShreddedAsync"/>.</summary>
+    public void EnsureNotShredded(DbContext context, IReadOnlyCollection<Guid> tenantIds)
+    {
+        if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
+        {
+            if (tenantKeys.FindShredded(tenantIds, transaction.Connection!, transaction).Count > 0)
+                throw new TenantKeyShreddedException();
+            return;
+        }
+
+        var side = SideConnection(context);
+        using var connection = Task.Run(() => side(CancellationToken.None)).GetAwaiter().GetResult();
+        if (tenantKeys.FindShredded(tenantIds, connection, null).Count > 0)
+            throw new TenantKeyShreddedException();
     }
 
     /// <summary>Finds the runtime of the encryption interceptor registered on <paramref name="context"/>.</summary>

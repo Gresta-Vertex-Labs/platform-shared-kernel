@@ -26,15 +26,43 @@ public static class AuditImmutabilityMigrationBuilderExtensions
     /// <summary>
     /// Creates the audit ledger: <c>audit_records</c>, <c>audit_record_payloads</c>,
     /// <c>audit_chain_links</c> and <c>audit_checkpoints</c>, their indexes, and their append-only
-    /// triggers (<see cref="AuditLedgerSchema.CreateScript"/>). Idempotent. Requires PostgreSQL 15+.
+    /// triggers (<see cref="AuditLedgerSchema.CreateScript"/>) — and, when roles are named, exactly the privileges the
+    /// startup self-check expects. Idempotent. Requires PostgreSQL 15+.
     /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
+    /// <param name="runtimeRole">
+    /// The application's database role. When given, every privilege it holds on the ledger tables is revoked first —
+    /// including what <c>ALTER DEFAULT PRIVILEGES</c> granted it (typically <c>UPDATE</c>, <c>DELETE</c>) — and then
+    /// exactly <c>SELECT, INSERT</c> on <c>audit_records</c>, <c>SELECT, INSERT, DELETE</c> on
+    /// <c>audit_record_payloads</c> (DELETE is payload erasure) and <c>SELECT</c> on <c>audit_chain_links</c> and
+    /// <c>audit_checkpoints</c> are granted, plus <c>INSERT</c> on those two unless <paramref name="sealerRole"/> is given.
+    /// </param>
+    /// <param name="sealerRole">
+    /// The sealer's own role (<c>Sealer:DataSourceName</c>), or <see langword="null"/> when the sealer runs as the
+    /// application. When given, it gets <c>SELECT</c> on <c>audit_records</c> and <c>SELECT, INSERT</c> on
+    /// <c>audit_chain_links</c> and <c>audit_checkpoints</c>, and nothing else; the runtime role then cannot forge a seal.
+    /// </param>
     /// <returns>The same <paramref name="migrationBuilder"/>.</returns>
-    public static MigrationBuilder CreateAuditLedgerTable(this MigrationBuilder migrationBuilder)
+    /// <exception cref="ArgumentException">A role name is not a plain identifier, or both roles are the same.</exception>
+    /// <remarks>
+    /// Run the migration as the role that should own the tables — a migration role neither of these roles is a member
+    /// of: the owner can disable the triggers. The roles themselves are created once by an administrator; see the
+    /// <c>SharedKernel.Persistence.Npgsql</c> README for the role script.
+    /// </remarks>
+    public static MigrationBuilder CreateAuditLedgerTable(
+        this MigrationBuilder migrationBuilder,
+        string? runtimeRole = null,
+        string? sealerRole = null)
     {
         ArgumentNullException.ThrowIfNull(migrationBuilder);
 
+        // Validated before any statement is queued, so a bad role name never leaves half a migration.
+        var grants = AuditLedgerSchema.GrantStatements(runtimeRole, sealerRole);
+
         foreach (var statement in AuditLedgerSchema.CreateStatements)
+            migrationBuilder.Sql(statement);
+
+        foreach (var statement in grants)
             migrationBuilder.Sql(statement);
 
         return migrationBuilder;

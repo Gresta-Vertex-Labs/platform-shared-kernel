@@ -21,16 +21,16 @@ public sealed class PostgresExceptionClassifierTests
             constraintName: constraint);
 
     [Theory]
-    [InlineData(PostgresErrorCodes.UniqueViolation, ErrorType.Conflict, PostgreSqlErrorCodes.UniqueViolation, false)]
-    [InlineData(PostgresErrorCodes.NotNullViolation, ErrorType.Validation, PostgreSqlErrorCodes.NotNullViolation, false)]
-    [InlineData(PostgresErrorCodes.CheckViolation, ErrorType.Validation, PostgreSqlErrorCodes.CheckViolation, false)]
-    [InlineData(PostgresErrorCodes.ExclusionViolation, ErrorType.Validation, PostgreSqlErrorCodes.ExclusionViolation, false)]
-    [InlineData(PostgresErrorCodes.StringDataRightTruncation, ErrorType.Validation, PostgreSqlErrorCodes.ValueTooLong, false)]
-    [InlineData(PostgresErrorCodes.SerializationFailure, ErrorType.Conflict, PostgreSqlErrorCodes.TransientConflict, true)]
-    [InlineData(PostgresErrorCodes.DeadlockDetected, ErrorType.Conflict, PostgreSqlErrorCodes.TransientConflict, true)]
-    [InlineData(PostgresErrorCodes.LockNotAvailable, ErrorType.Conflict, PostgreSqlErrorCodes.LockTimeout, true)]
-    [InlineData(PostgresErrorCodes.QueryCanceled, ErrorType.Conflict, PostgreSqlErrorCodes.StatementTimeout, true)]
-    [InlineData(PostgresErrorCodes.InsufficientPrivilege, ErrorType.Forbidden, PostgreSqlErrorCodes.InsufficientPrivilege, false)]
+    [InlineData(PostgresErrorCodes.UniqueViolation, ErrorType.Conflict, PostgresClassifiedErrorCodes.UniqueViolation, false)]
+    [InlineData(PostgresErrorCodes.NotNullViolation, ErrorType.Validation, PostgresClassifiedErrorCodes.NotNullViolation, false)]
+    [InlineData(PostgresErrorCodes.CheckViolation, ErrorType.Validation, PostgresClassifiedErrorCodes.CheckViolation, false)]
+    [InlineData(PostgresErrorCodes.ExclusionViolation, ErrorType.Validation, PostgresClassifiedErrorCodes.ExclusionViolation, false)]
+    [InlineData(PostgresErrorCodes.StringDataRightTruncation, ErrorType.Validation, PostgresClassifiedErrorCodes.ValueTooLong, false)]
+    [InlineData(PostgresErrorCodes.SerializationFailure, ErrorType.Conflict, PostgresClassifiedErrorCodes.TransientConflict, true)]
+    [InlineData(PostgresErrorCodes.DeadlockDetected, ErrorType.Conflict, PostgresClassifiedErrorCodes.TransientConflict, true)]
+    [InlineData(PostgresErrorCodes.LockNotAvailable, ErrorType.Conflict, PostgresClassifiedErrorCodes.LockTimeout, true)]
+    [InlineData(PostgresErrorCodes.QueryCanceled, ErrorType.Conflict, PostgresClassifiedErrorCodes.StatementTimeout, true)]
+    [InlineData(PostgresErrorCodes.InsufficientPrivilege, ErrorType.Forbidden, PostgresClassifiedErrorCodes.InsufficientPrivilege, false)]
     public void Classify_MapsSqlState(string sqlState, ErrorType type, string code, bool transient)
     {
         var classification = PostgresExceptionClassifier.Classify(Exception(sqlState));
@@ -43,9 +43,9 @@ public sealed class PostgresExceptionClassifierTests
     }
 
     [Theory]
-    [InlineData(ForeignKeyViolationKind.MissingReference, ErrorType.Validation, PostgreSqlErrorCodes.ForeignKeyReferenceMissing)]
-    [InlineData(ForeignKeyViolationKind.ReferencedByDependent, ErrorType.Conflict, PostgreSqlErrorCodes.ForeignKeyDependentExists)]
-    [InlineData(ForeignKeyViolationKind.Unknown, ErrorType.Validation, PostgreSqlErrorCodes.ForeignKeyViolation)]
+    [InlineData(ForeignKeyViolationKind.MissingReference, ErrorType.Validation, PostgresClassifiedErrorCodes.ForeignKeyReferenceMissing)]
+    [InlineData(ForeignKeyViolationKind.ReferencedByDependent, ErrorType.Conflict, PostgresClassifiedErrorCodes.ForeignKeyDependentExists)]
+    [InlineData(ForeignKeyViolationKind.Unknown, ErrorType.Validation, PostgresClassifiedErrorCodes.ForeignKeyViolation)]
     public void Classify_ForeignKey_UsesTheCallersKind(ForeignKeyViolationKind kind, ErrorType type, string code)
     {
         var classification = PostgresExceptionClassifier.Classify(Exception(PostgresErrorCodes.ForeignKeyViolation), kind);

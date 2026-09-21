@@ -9,8 +9,13 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Bound from <c>SharedKernel:Persistence:Npgsql</c> (or a caller-supplied section for a second, keyed
-/// database) by <c>AddSharedKernelNpgsql</c> and validated at host startup.
+/// <strong>Where it is read from.</strong> A database registered under a connection name — by
+/// <c>AddSharedKernelPostgres&lt;TContext&gt;("orders")</c> or <c>AddSharedKernelNpgsql(configuration, "orders")</c> —
+/// reads these settings from <c>SharedKernel:Persistence:{name}</c> and its connection string from
+/// <c>ConnectionStrings:{name}</c>. Only the unnamed <c>AddSharedKernelNpgsql(configuration)</c> reads
+/// <see cref="SectionName"/> (<c>SharedKernel:Persistence:Npgsql</c>), connection string included. The sections of
+/// the persistence packages themselves (<c>Encryption</c>, <c>Auditing</c>, <c>Dapper</c>) sit next to the connection
+/// sections, so those names cannot be used as connection names. Validated at host startup.
 /// </para>
 /// <para>
 /// <strong>Connection string.</strong> <see cref="ConnectionString"/>, or — when that is empty —
@@ -36,7 +41,14 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 public sealed class NpgsqlPersistenceOptions : ISectionBoundOptions
 {
     /// <inheritdoc />
+    /// <remarks>The section of the unnamed registration only; a named database reads <c>SharedKernel:Persistence:{name}</c>.</remarks>
     public static string SectionName => "SharedKernel:Persistence:Npgsql";
+
+    /// <summary>The configuration path these options were bound from, for messages. Set by the registration.</summary>
+    internal string SectionPath { get; set; } = SectionName;
+
+    /// <summary>The settings section of the database registered under <paramref name="connectionName"/>.</summary>
+    internal static string SectionFor(string connectionName) => "SharedKernel:Persistence:" + connectionName;
 
     /// <summary>The PostgreSQL connection string. Required unless <see cref="ConnectionStringName"/> resolves one.</summary>
     public string ConnectionString { get; set; } = string.Empty;

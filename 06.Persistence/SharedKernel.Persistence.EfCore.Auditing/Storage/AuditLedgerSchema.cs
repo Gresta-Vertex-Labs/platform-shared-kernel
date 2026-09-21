@@ -166,6 +166,58 @@ public static class AuditLedgerSchema
         return statements;
     }
 
+    /// <summary>
+    /// The privilege statements of <c>CreateAuditLedgerTable(runtimeRole, sealerRole)</c>: revoke everything the roles
+    /// hold on the ledger (default privileges included), then grant exactly what the request path, the sealer and the
+    /// startup self-check expect.
+    /// </summary>
+    internal static IReadOnlyList<string> GrantStatements(string? runtimeRole, string? sealerRole)
+    {
+        List<string> statements = [];
+        var all = string.Join(", ", Tables);
+        var sealerTables = $"{LinksTable}, {CheckpointsTable}";
+
+        if (runtimeRole is not null)
+        {
+            var runtime = RequirePlainRole(runtimeRole, nameof(runtimeRole));
+            statements.Add($"REVOKE ALL ON {all} FROM {runtime};");
+            statements.Add($"GRANT SELECT, INSERT ON {RecordsTable} TO {runtime};");
+            statements.Add($"GRANT SELECT, INSERT, DELETE ON {PayloadsTable} TO {runtime};");
+            statements.Add(sealerRole is null
+                ? $"GRANT SELECT, INSERT ON {sealerTables} TO {runtime};"
+                : $"GRANT SELECT ON {sealerTables} TO {runtime};");
+        }
+
+        if (sealerRole is not null)
+        {
+            var sealer = RequirePlainRole(sealerRole, nameof(sealerRole));
+            if (string.Equals(runtimeRole, sealerRole, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("The sealer role must be a role of its own, not the runtime role.", nameof(sealerRole));
+
+            statements.Add($"REVOKE ALL ON {all} FROM {sealer};");
+            statements.Add($"GRANT SELECT ON {RecordsTable} TO {sealer};");
+            statements.Add($"GRANT SELECT, INSERT ON {sealerTables} TO {sealer};");
+        }
+
+        return statements;
+    }
+
+    // Emitted unquoted, as a role created with CREATE ROLE app_runtime is named (folded to lower case).
+    private static string RequirePlainRole(string role, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(role)
+            || role.Length > 63
+            || !(char.IsAsciiLetter(role[0]) || role[0] == '_')
+            || !role.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+        {
+            throw new ArgumentException(
+                $"'{role}' is not a plain PostgreSQL role name (an ASCII letter or underscore, then letters, digits or underscores; at most 63 characters).",
+                parameterName);
+        }
+
+        return role;
+    }
+
     private static string Join(IEnumerable<string> statements)
     {
         var builder = new StringBuilder();

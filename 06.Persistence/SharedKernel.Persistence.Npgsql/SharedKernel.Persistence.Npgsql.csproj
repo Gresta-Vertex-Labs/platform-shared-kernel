@@ -38,6 +38,13 @@
          consumers only through NpgsqlAdvisoryMigrationLock/NpgsqlAdvisoryTransactionLock — this grant
          lets the Tests project exercise it directly. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.Npgsql.Tests" />
+    <!--
+      P-558/R2: the SQL contract of tenant row-level security (TenantSessionSql: the setting name, the bind statement,
+      the policy predicate) and the catalog reads of the RLS startup checks (RowLevelSecurityCatalog) are internal;
+      SharedKernel.Persistence.EfCore (RLS interceptor, migration helpers, model-driven RLS check) reaches them here.
+      EfCore pins this package to its own exact version in its nuspec, so the internal contract cannot be mixed across versions.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore" />
     <InternalsVisibleTo Include="SharedKernel.Persistence.Dapper.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Integration.Tests" />
   </ItemGroup>

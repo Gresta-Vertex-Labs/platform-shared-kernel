@@ -4,7 +4,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 
 /// <summary>Configuration for field-level encryption, bound from <see cref="SectionName"/>.</summary>
 /// <remarks>
-/// Bound from the host's <c>IConfiguration</c> when one is registered, then adjusted by
+/// Bound from the configuration given to <c>AddSharedKernelPostgres</c> (else the host's <c>IConfiguration</c>), then adjusted by
 /// <c>FieldEncryptionBuilder.Configure(...)</c>, and validated when the host starts. Read once through
 /// <c>IOptions&lt;EncryptionOptions&gt;</c>: a configuration reload never changes a running process's encryption.
 /// </remarks>

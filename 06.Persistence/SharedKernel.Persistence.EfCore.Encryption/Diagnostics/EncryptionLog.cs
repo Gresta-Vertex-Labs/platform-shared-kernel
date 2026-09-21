@@ -61,4 +61,8 @@ internal static partial class EncryptionLog
     [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 521, Level = LogLevel.Warning,
         Message = "Shredded a tenant data key and cleared {BlindIndexValuesCleared} blind-index value(s); the tenant's encrypted values can no longer be decrypted.")]
     internal static partial void TenantKeyShredded(ILogger logger, long blindIndexValuesCleared);
+
+    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 522, Level = LogLevel.Warning,
+        Message = "The shredded tenant still has {RootKeyValues} value(s) under a root key and {PlaintextValues} plaintext value(s) in encrypted columns; they are not erased until their rows are deleted.")]
+    internal static partial void TenantShredIncomplete(ILogger logger, long rootKeyValues, long plaintextValues);
 }

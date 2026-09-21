@@ -11,7 +11,7 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// </summary>
 /// <remarks>
 /// Npgsql itself converts the values; the data source needs pgvector's mapping
-/// (<c>SharedKernel:Persistence:Npgsql:UseVector = true</c>).
+/// (<c>UseVector = true</c> in the database's settings section).
 /// </remarks>
 internal sealed class PassThroughTypeHandler<T> : SqlMapper.TypeHandler<T>
     where T : class

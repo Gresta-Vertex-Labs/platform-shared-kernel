@@ -112,8 +112,9 @@ internal sealed class DbSessionFactory : IDbSessionFactory
             return _services.GetKeyedService<IDbConnectionFactory>(NpgsqlDataSourceKeys.CrossTenant)
                 ?? throw new InvalidOperationException(
                     "A cross-tenant scope is active and row-level security is enabled, but no cross-tenant data "
-                        + "source is configured. Set 'SharedKernel:Persistence:Npgsql:RowLevelSecurity:"
-                        + "CrossTenantConnectionString' to a role that is exempt from the tenant policy.");
+                        + "source is configured. Set 'RowLevelSecurity:CrossTenantConnectionString' in the database's settings "
+                        + "section ('SharedKernel:Persistence:{connection name}', or 'SharedKernel:Persistence:Npgsql' for an "
+                        + "unnamed registration) to a role that is exempt from the tenant policy.");
         }
 
         if (options.ReadOnly && _services.GetKeyedService<IDbConnectionFactory>(NpgsqlDataSourceKeys.ReadOnly) is { } readOnly)
@@ -127,7 +128,7 @@ internal sealed class DbSessionFactory : IDbSessionFactory
         var binder = _services.GetService<ITenantSessionBinder>()
             ?? throw new InvalidOperationException(
                 "Row-level security is enabled but no ITenantSessionBinder is registered. Call "
-                    + "'services.AddSharedKernelNpgsql(configuration)'.");
+                    + "'services.AddSharedKernelNpgsql(configuration, \"<connection name>\")' (AddSharedKernelPostgres does it).");
 
         return binder.BindAsync(connection, transaction, tenantId, cancellationToken);
     }

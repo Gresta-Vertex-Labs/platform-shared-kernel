@@ -158,6 +158,7 @@ public sealed class LedgerHostOptions
     public List<string> AcceptedCheckpointSigningKeyIds { get; } = [];
     public int BatchSize { get; set; } = 500;
     public bool SealerEnabled { get; set; }
+    public string? SealerDataSourceName { get; set; }
     public TimeSpan CheckpointInterval { get; set; } = TimeSpan.FromHours(1);
     public ISigningKeyProvider? SigningKeys { get; set; }
     public Action<IServiceCollection>? ConfigureServices { get; set; }
@@ -197,6 +198,7 @@ public sealed class LedgerHost : IAsyncDisposable
             [$"{AuditLedgerOptions.SectionName}:Sealer:BatchSize"] = options.BatchSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
             [$"{AuditLedgerOptions.SectionName}:SelfCheck"] = "Off",
             [$"{AuditLedgerOptions.SectionName}:CheckpointSigningKeyId"] = options.CheckpointSigningKeyId,
+            [$"{AuditLedgerOptions.SectionName}:Sealer:DataSourceName"] = options.SealerDataSourceName,
         };
         foreach (var (id, key) in options.Keys)
         {

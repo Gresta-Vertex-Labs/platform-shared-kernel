@@ -86,8 +86,8 @@ SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceRepo
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.CheckpointToken.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Completed.get -> bool
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Completed.init -> void
-SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Deconstruct(out SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode Mode, out bool Completed, out string? CheckpointToken, out long RowsScanned, out long ValuesReEncrypted, out long ValuesEncryptedFromPlaintext, out long BlindIndexesRecomputed, out long ValuesConcurrentlyModified, out long PlaintextValues, out long UndecryptableValues, out long ShreddedValues, out long StaleBlindIndexes, out System.Collections.Generic.IReadOnlyDictionary<string!, long>! ValuesByKeyId) -> void
-SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.EncryptionMaintenanceReport(SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode Mode, bool Completed, string? CheckpointToken, long RowsScanned, long ValuesReEncrypted, long ValuesEncryptedFromPlaintext, long BlindIndexesRecomputed, long ValuesConcurrentlyModified, long PlaintextValues, long UndecryptableValues, long ShreddedValues, long StaleBlindIndexes, System.Collections.Generic.IReadOnlyDictionary<string!, long>! ValuesByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Deconstruct(out SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode Mode, out bool Completed, out string? CheckpointToken, out long RowsScanned, out long ValuesReEncrypted, out long ValuesEncryptedFromPlaintext, out long BlindIndexesRecomputed, out long ValuesConcurrentlyModified, out long PlaintextValues, out long UndecryptableValues, out long ShreddedValues, out long ShreddedTenantValuesNotErased, out long StaleBlindIndexes, out System.Collections.Generic.IReadOnlyDictionary<string!, long>! ValuesByKeyId) -> void
+SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.EncryptionMaintenanceReport(SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode Mode, bool Completed, string? CheckpointToken, long RowsScanned, long ValuesReEncrypted, long ValuesEncryptedFromPlaintext, long BlindIndexesRecomputed, long ValuesConcurrentlyModified, long PlaintextValues, long UndecryptableValues, long ShreddedValues, long ShreddedTenantValuesNotErased, long StaleBlindIndexes, System.Collections.Generic.IReadOnlyDictionary<string!, long>! ValuesByKeyId) -> void
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Equals(SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport? other) -> bool
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.IsSafeToRetire(string! keyId) -> bool
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.Mode.get -> SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode
@@ -96,6 +96,8 @@ SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceRepo
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.PlaintextValues.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.RowsScanned.get -> long
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.RowsScanned.init -> void
+SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.ShreddedTenantValuesNotErased.get -> long
+SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.ShreddedTenantValuesNotErased.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.ShreddedValues.get -> long
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.ShreddedValues.init -> void
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.StaleBlindIndexes.get -> long
@@ -128,23 +130,39 @@ SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.EncryptionMigrationBuilderExtensions
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.ITenantEncryptionKeyManager
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.ITenantEncryptionKeyManager.EnsureTenantKeyAsync(System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.EfCore.Encryption.TenantKeys.ITenantEncryptionKeyManager.ShredTenantAsync(System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult!>!
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.ITenantEncryptionKeyManager.ShredTenantAsync(System.Guid tenantId, SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult!>!
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantKeyShreddedException
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantKeyShreddedException.TenantKeyShreddedException() -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.PlaintextValues.get -> long
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.RootKeyValues.get -> long
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.TenantShredIncompleteException(long rootKeyValues, long plaintextValues) -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.<Clone>$() -> SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions!
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.AllowIncompleteErasure.get -> bool
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.AllowIncompleteErasure.init -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.Equals(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? other) -> bool
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.TenantShredOptions() -> void
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.<Clone>$() -> SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult!
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.BlindIndexValuesCleared.get -> long
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.BlindIndexValuesCleared.init -> void
-SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Deconstruct(out System.Guid TenantId, out long BlindIndexValuesCleared) -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Deconstruct(out System.Guid TenantId, out long BlindIndexValuesCleared, out long RootKeyValues, out long PlaintextValues) -> void
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Equals(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult? other) -> bool
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.IsComplete.get -> bool
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.PlaintextValues.get -> long
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.PlaintextValues.init -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.RootKeyValues.get -> long
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.RootKeyValues.init -> void
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantId.get -> System.Guid
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantId.init -> void
-SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantShredResult(System.Guid TenantId, long BlindIndexValuesCleared) -> void
+SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantShredResult(System.Guid TenantId, long BlindIndexValuesCleared, long RootKeyValues, long PlaintextValues) -> void
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Name = "SharedKernel.Persistence.EfCore.Encryption" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.ErrorCode = "Persistence.Encryption.KeyNotFound" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionServiceKeys.KeyRingProbe = "SharedKernel.Persistence.EfCore.Encryption.KeyRing" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.TenantDataKeysLabel = "(tenant data keys)" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantKeyShreddedException.ErrorCode = "Persistence.Encryption.TenantKeyShredded" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.ErrorCode = "Persistence.Encryption.TenantShredIncomplete" -> string!
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.ToString() -> string!
@@ -154,6 +172,9 @@ override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMainte
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceRequest.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceRequest.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceRequest.ToString() -> string!
+override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.Equals(object? obj) -> bool
+override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.GetHashCode() -> int
+override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.ToString() -> string!
 override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.ToString() -> string!
@@ -172,5 +193,7 @@ static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensio
 static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>! builder, SharedKernel.Persistence.EfCore.Encryption.BlindIndexNormalization normalization = SharedKernel.Persistence.EfCore.Encryption.BlindIndexNormalization.None, string? normalizer = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.ComplexTypePropertyBuilder<TProperty>!
 static SharedKernel.Persistence.EfCore.Encryption.PropertyBuilderEncryptExtensions.WithBlindIndex<TProperty>(this Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>! builder, SharedKernel.Persistence.EfCore.Encryption.BlindIndexNormalization normalization = SharedKernel.Persistence.EfCore.Encryption.BlindIndexNormalization.None, string? normalizer = null) -> Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<TProperty>!
 static SharedKernel.Persistence.EfCore.Encryption.TenantKeys.EncryptionMigrationBuilderExtensions.CreateTenantEncryptionKeyTable(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
+static SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.operator !=(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? left, SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? right) -> bool
+static SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions.operator ==(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? left, SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredOptions? right) -> bool
 static SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.operator !=(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult? left, SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult? right) -> bool
 static SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.operator ==(SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult? left, SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult? right) -> bool

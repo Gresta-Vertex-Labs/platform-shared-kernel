@@ -332,7 +332,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Conflict);
-        result.Error.Code.Should().Be(PostgreSqlErrorCodes.UniqueViolation);
+        result.Error.Code.Should().Be(PostgresClassifiedErrorCodes.UniqueViolation);
     }
 
     // ---------------------------------------------------------------- helpers

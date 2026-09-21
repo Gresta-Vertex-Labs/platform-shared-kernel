@@ -38,10 +38,10 @@ internal sealed class NpgsqlPersistenceOptionsValidator : IValidateOptions<Npgsq
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             failures.Add(options.ConnectionStringName is { Length: > 0 } connectionStringName
-                ? $"No connection string was found: '{nameof(NpgsqlPersistenceOptions.ConnectionString)}' is empty and "
-                    + $"'ConnectionStrings:{connectionStringName}' is not configured."
-                : $"No connection string was found: set '{nameof(NpgsqlPersistenceOptions.ConnectionString)}' or "
-                    + $"'{nameof(NpgsqlPersistenceOptions.ConnectionStringName)}'.");
+                ? $"No connection string was found: 'ConnectionStrings:{connectionStringName}' is not configured "
+                    + $"(nor '{options.SectionPath}:{nameof(NpgsqlPersistenceOptions.ConnectionString)}')."
+                : $"No connection string was found: set '{options.SectionPath}:{nameof(NpgsqlPersistenceOptions.ConnectionString)}' or "
+                    + $"'{options.SectionPath}:{nameof(NpgsqlPersistenceOptions.ConnectionStringName)}'.");
             return ValidateOptionsResult.Fail(failures);
         }
 

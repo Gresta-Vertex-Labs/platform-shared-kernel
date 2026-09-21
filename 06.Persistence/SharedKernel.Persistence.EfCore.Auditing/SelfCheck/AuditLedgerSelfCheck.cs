@@ -14,30 +14,63 @@ namespace SharedKernel.Persistence.EfCore.Auditing.SelfCheck;
 /// them (DELETE is expected on the payload table), and every append-only trigger exists with
 /// <c>tgenabled = 'A'</c> (fires even under <c>session_replication_role = replica</c>).
 /// </summary>
-internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactory)
+/// <remarks>
+/// With a separate sealer role (<see cref="AuditSealerOptions.DataSourceName"/>), the runtime role must also hold no
+/// <c>INSERT</c> on the link and checkpoint tables — otherwise the separation protects nothing — and the sealer role is
+/// held to the same ownership and UPDATE/DELETE/TRUNCATE rules.
+/// </remarks>
+internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactory, Sealing.AuditSealerConnectionFactory? sealer = null)
 {
+    /// <summary>The tables only the sealer writes.</summary>
+    private static readonly string[] SealerWrittenTables = [AuditLedgerSchema.LinksTable, AuditLedgerSchema.CheckpointsTable];
+
     public async Task<IReadOnlyList<string>> RunAsync(CancellationToken cancellationToken)
     {
         var findings = new List<string>();
+        var separateSealer = sealer is { IsSeparate: true };
+
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
-        {
-            await using (var role = LedgerDb.CreateCommand(connection, null,
-                "SELECT current_user::text, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"))
-            await using (var reader = await role.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && reader.GetBoolean(1))
-                    findings.Add($"the runtime role '{reader.GetString(0)}' is a superuser and can disable the ledger's triggers.");
-            }
+            await CheckRoleAsync(connection, "runtime role", rejectSealerInserts: separateSealer, checkTriggers: true, findings, cancellationToken).ConfigureAwait(false);
 
-            foreach (var table in AuditLedgerSchema.Tables)
-                await CheckTableAsync(connection, table, findings, cancellationToken).ConfigureAwait(false);
+        if (separateSealer)
+        {
+            var sealerConnection = await sealer!.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using (sealerConnection.ConfigureAwait(false))
+                await CheckRoleAsync(sealerConnection, "sealer role", rejectSealerInserts: false, checkTriggers: false, findings, cancellationToken).ConfigureAwait(false);
         }
 
         return findings;
     }
 
-    private static async Task CheckTableAsync(System.Data.Common.DbConnection connection, string table, List<string> findings, CancellationToken cancellationToken)
+    private static async Task CheckRoleAsync(
+        System.Data.Common.DbConnection connection,
+        string label,
+        bool rejectSealerInserts,
+        bool checkTriggers,
+        List<string> findings,
+        CancellationToken cancellationToken)
+    {
+        await using (var role = LedgerDb.CreateCommand(connection, null,
+            "SELECT current_user::text, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"))
+        await using (var reader = await role.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && reader.GetBoolean(1))
+                findings.Add($"the {label} '{reader.GetString(0)}' is a superuser and can disable the ledger's triggers.");
+        }
+
+        foreach (var table in AuditLedgerSchema.Tables)
+            await CheckTableAsync(connection, table, label, rejectSealerInserts, checkTriggers, findings, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task CheckTableAsync(
+        System.Data.Common.DbConnection connection,
+        string table,
+        string label,
+        bool rejectSealerInserts,
+        bool checkTriggers,
+        List<string> findings,
+        CancellationToken cancellationToken)
     {
         var allowDelete = table == AuditLedgerSchema.PayloadsTable;
         long oid;
@@ -49,7 +82,8 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
                    has_table_privilege(c.oid, 'UPDATE'),
                    has_table_privilege(c.oid, 'DELETE'),
                    has_table_privilege(c.oid, 'TRUNCATE'),
-                   c.relrowsecurity
+                   c.relrowsecurity,
+                   has_table_privilege(c.oid, 'INSERT')
             FROM pg_class c
             WHERE c.oid = to_regclass(@table)
             """))
@@ -58,22 +92,28 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                findings.Add($"table '{table}' does not exist; apply migrationBuilder.CreateAuditLedgerTable().");
+                if (checkTriggers)
+                    findings.Add($"table '{table}' does not exist; apply migrationBuilder.CreateAuditLedgerTable().");
                 return;
             }
 
             oid = reader.GetInt64(0);
             if (reader.GetBoolean(1))
-                findings.Add($"the runtime role owns (or is a member of the owner of) '{table}' and can disable its triggers or drop it.");
+                findings.Add($"the {label} owns (or is a member of the owner of) '{table}' and can disable its triggers or drop it.");
             if (reader.GetBoolean(2))
-                findings.Add($"the runtime role has UPDATE on '{table}'.");
+                findings.Add($"the {label} has UPDATE on '{table}'.");
             if (!allowDelete && reader.GetBoolean(3))
-                findings.Add($"the runtime role has DELETE on '{table}'.");
+                findings.Add($"the {label} has DELETE on '{table}'.");
             if (reader.GetBoolean(4))
-                findings.Add($"the runtime role has TRUNCATE on '{table}'.");
-            if (reader.GetBoolean(5))
+                findings.Add($"the {label} has TRUNCATE on '{table}'.");
+            if (checkTriggers && reader.GetBoolean(5))
                 findings.Add($"row-level security is enabled on '{table}'; the ledger enforces tenant isolation itself and the sealer must see every tenant's rows, so ledger tables must not use RLS.");
+            if (rejectSealerInserts && SealerWrittenTables.Contains(table) && reader.GetBoolean(6))
+                findings.Add($"the {label} has INSERT on '{table}', although a separate sealer role writes it (Sealer:DataSourceName): revoke it, or the runtime role can forge seals.");
         }
+
+        if (!checkTriggers)
+            return;
 
         var present = new Dictionary<string, string>(StringComparer.Ordinal);
         await using (var command = LedgerDb.CreateCommand(connection, null,

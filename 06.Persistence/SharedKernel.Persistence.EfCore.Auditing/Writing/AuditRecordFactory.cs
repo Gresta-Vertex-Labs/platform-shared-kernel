@@ -63,7 +63,10 @@ internal sealed class AuditRecordFactory(
             Outcome = entry.Outcome,
             ErrorCode = entry.ErrorCode,
             ActorId = actorId,
-            ActorKind = Context.ActorKind,
+            // An unauthenticated caller is recorded as Anonymous whatever its context reports (IRequestContext's default
+            // member, and the fail-closed AnonymousRequestContext, report System): an anonymous request must never read
+            // as the platform's own background work (finding S7).
+            ActorKind = Context.IsAuthenticated ? Context.ActorKind : ActorKind.Anonymous,
             ClientId = clientId,
             SessionId = sessionId,
             ImpersonatorId = impersonatorId,

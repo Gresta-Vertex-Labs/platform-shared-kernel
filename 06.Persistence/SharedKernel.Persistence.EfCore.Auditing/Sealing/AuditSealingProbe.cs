@@ -1,3 +1,4 @@
+using System.Data;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 using SharedKernel.Primitives.Clocks;
@@ -5,21 +6,31 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Persistence.EfCore.Auditing.Sealing;
 
 /// <summary>
-/// The default <see cref="IAuditSealingProbe"/>: counts committed records after the sealer's watermark,
-/// a range scan of the <c>(insert_xid, id)</c> index, so it stays cheap on a large ledger.
+/// The default <see cref="IAuditSealingProbe"/>: counts committed records that have no link, scanning the
+/// <c>(insert_xid, id)</c> index from the process's <see cref="AuditSealedFloor"/> with an anti-join on the link
+/// table's primary key.
 /// </summary>
-internal sealed class AuditSealingProbe(IDbConnectionFactory connectionFactory, IClock clock) : IAuditSealingProbe
+/// <remarks>
+/// Never trusts the link table for its bound (finding S5): a forged link cannot make the probe report no backlog. The
+/// probe also advances the floor from what it saw below the transaction-id horizon, so repeated probes of a
+/// process that does not seal stay cheap after the first.
+/// </remarks>
+internal sealed class AuditSealingProbe(IDbConnectionFactory connectionFactory, AuditSealedFloor sealedFloor, IClock clock) : IAuditSealingProbe
 {
-    private const string ProbeSql =
+    private static readonly string FirstUnsealedSql =
+        $"""
+        SELECT r.insert_xid
+        FROM {AuditLedgerSchema.RecordsTable} r
+        WHERE r.insert_xid < @horizon AND {AuditSealingEngine.UnsealedPredicate}
+        ORDER BY r.insert_xid, r.id
+        LIMIT 1
+        """;
+
+    private static readonly string BacklogSql =
         $"""
         SELECT count(*), min(r.occurred_on)
         FROM {AuditLedgerSchema.RecordsTable} r
-        LEFT JOIN LATERAL (
-            SELECT l.record_insert_xid AS x, l.record_id AS id
-            FROM {AuditLedgerSchema.LinksTable} l
-            ORDER BY l.record_insert_xid DESC, l.record_id DESC
-            LIMIT 1) w ON TRUE
-        WHERE w.x IS NULL OR (r.insert_xid, r.id) > (w.x, w.id)
+        WHERE {AuditSealingEngine.UnsealedPredicate}
         """;
 
     public async Task<AuditSealingHealth> ProbeAsync(CancellationToken cancellationToken = default)
@@ -27,7 +38,18 @@ internal sealed class AuditSealingProbe(IDbConnectionFactory connectionFactory, 
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         {
-            await using var command = LedgerDb.CreateCommand(connection, null, ProbeSql);
+            // Learn the floor first: below a horizon read before the scan, the first record without a link bounds it.
+            var horizon = await AuditSealingEngine.ReadHorizonAsync(connection, null, cancellationToken).ConfigureAwait(false);
+            await using (var first = LedgerDb.CreateCommand(connection, null, FirstUnsealedSql))
+            {
+                LedgerDb.Add(first, "@horizon", horizon, DbType.Int64);
+                LedgerDb.Add(first, "@floor", sealedFloor.Value, DbType.Int64);
+                var firstUnsealed = await first.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                sealedFloor.Advance(firstUnsealed is long xid ? xid : horizon);
+            }
+
+            await using var command = LedgerDb.CreateCommand(connection, null, BacklogSql);
+            LedgerDb.Add(command, "@floor", sealedFloor.Value, DbType.Int64);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
 

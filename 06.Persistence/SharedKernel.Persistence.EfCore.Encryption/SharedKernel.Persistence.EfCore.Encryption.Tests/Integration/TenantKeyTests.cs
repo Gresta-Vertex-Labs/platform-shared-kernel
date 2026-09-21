@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
@@ -9,7 +10,7 @@ using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Integration;
 
-/// <summary>Per-tenant data keys and crypto-shredding.</summary>
+/// <summary>Per-tenant data keys and crypto-shredding (findings S2, S3).</summary>
 [Collection("EncryptionPostgres")]
 public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
 {
@@ -52,6 +53,28 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         return await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.AsNoTracking().ToListAsync();
     }
 
+    private static async Task<Customer> ReadOneAsync(ServiceProvider sp, TestRequestContext request, Guid tenant, Guid id)
+    {
+        request.TenantId = tenant;
+        await using var scope = sp.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.AsNoTracking().SingleAsync(c => c.Id == id);
+    }
+
+    /// <summary>Shreds inside a cross-tenant scope entered by the caller, as the API requires.</summary>
+    private static async Task<TenantShredResult> ShredAsync(ServiceProvider sp, Guid tenant, TenantShredOptions? options = null)
+    {
+        await using var scope = sp.CreateAsyncScope();
+        using var crossTenant = scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().Enter("test: erase tenant");
+        return await scope.ServiceProvider.GetRequiredService<ITenantEncryptionKeyManager>().ShredTenantAsync(tenant, options);
+    }
+
+    private static async Task<EncryptionMaintenanceReport> RunAsync(ServiceProvider sp, EncryptionMaintenanceRequest request)
+    {
+        await using var scope = sp.CreateAsyncScope();
+        using var crossTenant = scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().Enter("test: encryption maintenance");
+        return await scope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>().RunAsync(request);
+    }
+
     [Fact]
     public async Task EachTenantsValues_AreEncryptedUnderItsOwnWrappedDataKey()
     {
@@ -90,11 +113,10 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         await AddAsync(sp, request, _tenantA, "a@example.com");
         await AddAsync(sp, request, _tenantB, "b@example.com");
 
-        TenantShredResult result;
-        await using (var scope = sp.CreateAsyncScope())
-            result = await scope.ServiceProvider.GetRequiredService<ITenantEncryptionKeyManager>().ShredTenantAsync(_tenantA);
+        var result = await ShredAsync(sp, _tenantA);
 
         result.BlindIndexValuesCleared.Should().Be(2); // email and iban indexes of tenant A's one row
+        result.IsComplete.Should().BeTrue();
 
         var readA = () => ReadAsync(sp, request, _tenantA);
         await readA.Should().ThrowAsync<TenantKeyShreddedException>();
@@ -113,11 +135,155 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         var readElsewhere = () => ReadAsync(otherProcess, request, _tenantA);
         await readElsewhere.Should().ThrowAsync<TenantKeyShreddedException>();
 
-        await using var verifyScope = sp.CreateAsyncScope();
-        var verify = await verifyScope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>()
-            .RunAsync(new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.VerifyOnly });
+        var verify = await RunAsync(sp, new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.VerifyOnly });
         verify.ShreddedValues.Should().Be(2);
+        verify.ShreddedTenantValuesNotErased.Should().Be(0);
         verify.UndecryptableValues.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ShredTenant_WithoutAnActiveCrossTenantScope_IsRefused_AndChangesNothing()
+    {
+        // Finding S2: shredding used to enter the cross-tenant scope itself.
+        var cs = Cs("enc_t_scope");
+        var request = new TestRequestContext();
+        await using var sp = TenantKeyHost(cs, request);
+        await CreateDatabaseAsync(sp, cs);
+        await AddAsync(sp, request, _tenantA, "a@example.com");
+
+        await using (var scope = sp.CreateAsyncScope())
+        {
+            var act = () => scope.ServiceProvider.GetRequiredService<ITenantEncryptionKeyManager>().ShredTenantAsync(_tenantA);
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active cross-tenant scope*");
+            scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().IsActive.Should().BeFalse();
+        }
+
+        (await ReadAsync(sp, request, _tenantA)).Single().Email.Should().Be("a@example.com");
+        (await EncryptionHost.QueryAsync(cs, "SELECT shredded_at FROM sk_tenant_encryption_keys")).Single()["shredded_at"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ShredTenant_WithValuesStillUnderARootKey_RefusesByDefault_AndReportsThemWhenAllowed()
+    {
+        // Finding S3 (a, b, d): values written before tenant data keys stay under the root key. Destroying the tenant
+        // key does not erase them, so a shred that reported "erased" while they stay readable would be false.
+        var cs = Cs("enc_t_legacy");
+        var request = new TestRequestContext();
+        await using (var rootOnly = EncryptionHost.Build<CustomerDbContext>(cs, request))
+        {
+            await CreateDatabaseAsync(rootOnly, cs);
+            await AddAsync(rootOnly, request, _tenantA, "legacy@example.com");
+        }
+
+        await using var sp = TenantKeyHost(cs, request);
+        await AddAsync(sp, request, _tenantA, "new@example.com"); // under the tenant key
+
+        var refuse = () => ShredAsync(sp, _tenantA);
+        var refused = await refuse.Should().ThrowAsync<TenantShredIncompleteException>();
+        (refused.Which.RootKeyValues, refused.Which.PlaintextValues).Should().Be((2, 0)); // email and iban of the legacy row
+        (await EncryptionHost.QueryAsync(cs, "SELECT shredded_at FROM sk_tenant_encryption_keys")).Single()["shredded_at"]
+            .Should().BeNull("a refused shred changes nothing");
+        (await ReadAsync(sp, request, _tenantA)).Should().HaveCount(2);
+
+        // A plaintext value in an encrypted column is not erased by the shred either.
+        await EncryptionHost.ExecuteAsync(cs, "UPDATE customers SET note = 'plaintext note' WHERE id = (SELECT id FROM customers ORDER BY id LIMIT 1)");
+        var refusedAgain = await refuse.Should().ThrowAsync<TenantShredIncompleteException>();
+        refusedAgain.Which.PlaintextValues.Should().Be(1);
+        await EncryptionHost.ExecuteAsync(cs, "UPDATE customers SET note = NULL");
+
+        var result = await ShredAsync(sp, _tenantA, new TenantShredOptions { AllowIncompleteErasure = true });
+        result.IsComplete.Should().BeFalse();
+        (result.RootKeyValues, result.PlaintextValues).Should().Be((2, 0));
+
+        // (b) The platform refuses the root-key values of a shredded tenant too, in this process and in another.
+        var legacyId = (await EncryptionHost.QueryAsync(cs, "SELECT id, email FROM customers"))
+            .Where(r => EncryptedPayload.TryParse((string)r["email"]!, out var p) && p.KeyId == "v1")
+            .Select(r => (Guid)r["id"]!)
+            .Single();
+        var read = () => ReadOneAsync(sp, request, _tenantA, legacyId);
+        await read.Should().ThrowAsync<TenantKeyShreddedException>();
+        await using (var otherProcess = TenantKeyHost(cs, request))
+        {
+            var readElsewhere = () => ReadOneAsync(otherProcess, request, _tenantA, legacyId);
+            await readElsewhere.Should().ThrowAsync<TenantKeyShreddedException>();
+        }
+
+        // (d) Honest counts: the root-key values are not reported as shredded, and are never re-indexed.
+        var verify = await RunAsync(sp, new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.VerifyOnly });
+        verify.ShreddedValues.Should().Be(2);                // the new row, under the destroyed tenant key
+        verify.ShreddedTenantValuesNotErased.Should().Be(2); // the legacy row, still under v1
+        verify.ValuesByKeyId.Should().ContainKey("v1");
+        verify.UndecryptableValues.Should().Be(0);
+
+        var recompute = await RunAsync(sp, new EncryptionMaintenanceRequest
+        {
+            Mode = EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.RecomputeBlindIndexes,
+            ExpectedCurrentKeyId = "v1",
+        });
+        recompute.BlindIndexesRecomputed.Should().Be(0);
+        recompute.ValuesReEncrypted.Should().Be(0);
+        (await EncryptionHost.QueryAsync(cs, $"SELECT email_blind_index, billing_bank_iban_blind_index FROM customers WHERE tenant_id = '{_tenantA}'"))
+            .SelectMany(r => r.Values).Should().OnlyContain(v => v == null, "a shredded tenant's blind indexes are never recomputed");
+    }
+
+    [Fact]
+    public async Task ShredTenant_InAnotherProcess_StopsThisProcessWriting_ThroughItsCachedKey()
+    {
+        // Finding S3 (c): the writer caches the unwrapped key; before the fix it kept encrypting new values (with fresh
+        // blind indexes) under the destroyed key for up to TenantKeyCacheDuration.
+        var cs = Cs("enc_t_other");
+        var writerRequest = new TestRequestContext();
+        await using var writer = TenantKeyHost(cs, writerRequest);
+        await CreateDatabaseAsync(writer, cs);
+        await AddAsync(writer, writerRequest, _tenantA, "first@example.com"); // caches the key in the writer
+
+        await using var eraser = TenantKeyHost(cs, new TestRequestContext());
+        (await ShredAsync(eraser, _tenantA)).IsComplete.Should().BeTrue();
+
+        // Without an explicit transaction (asynchronous save).
+        var plainSave = () => AddAsync(writer, writerRequest, _tenantA, "second@example.com");
+        await plainSave.Should().ThrowAsync<TenantKeyShreddedException>();
+
+        // Inside a transaction (the unit of work's shape), synchronous save path.
+        writerRequest.TenantId = _tenantA;
+        await using (var scope = writer.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CustomerDbContext>();
+            await using var transaction = await context.Database.BeginTransactionAsync();
+            context.Customers.Add(NewCustomer(_tenantA, "third@example.com"));
+            var save = () => context.SaveChanges();
+            save.Should().Throw<TenantKeyShreddedException>();
+        }
+
+        (await EncryptionHost.QueryAsync(cs, "SELECT count(*) AS n FROM customers")).Single()["n"].Should().Be(1L);
+    }
+
+    [Fact]
+    public async Task ShredTenant_WaitsForAnInFlightWriteTransaction_ThenClearsWhatItWrote()
+    {
+        var cs = Cs("enc_t_race");
+        var writerRequest = new TestRequestContext { TenantId = _tenantA };
+        await using var writer = TenantKeyHost(cs, writerRequest);
+        await CreateDatabaseAsync(writer, cs);
+        await AddAsync(writer, writerRequest, _tenantA, "first@example.com");
+        await using var eraser = TenantKeyHost(cs, new TestRequestContext());
+
+        await using var scope = writer.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<CustomerDbContext>();
+        var transaction = await context.Database.BeginTransactionAsync();
+        context.Customers.Add(NewCustomer(_tenantA, "in-flight@example.com"));
+        await context.SaveChangesAsync(); // holds a share lock on the tenant's key row until the transaction ends
+
+        var shred = ShredAsync(eraser, _tenantA);
+        (await Task.WhenAny(shred, Task.Delay(TimeSpan.FromSeconds(1)))).Should().NotBeSameAs(shred, "the shred waits for the writer");
+
+        await transaction.CommitAsync();
+        await transaction.DisposeAsync();
+        var result = await shred;
+
+        result.BlindIndexValuesCleared.Should().Be(4, "both rows' email and iban indexes, including the in-flight row's");
+        (await EncryptionHost.QueryAsync(cs, "SELECT email_blind_index, billing_bank_iban_blind_index FROM customers"))
+            .SelectMany(r => r.Values).Should().OnlyContain(v => v == null);
     }
 
     [Fact]
@@ -136,18 +302,29 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         }
 
         await using var sp = TenantKeyHost(cs, request);
-        await using (var scope = sp.CreateAsyncScope())
-        {
-            var report = await scope.ServiceProvider.GetRequiredService<IEncryptionRotationJob>()
-                .RunAsync(new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v1" });
-            report.ValuesReEncrypted.Should().Be(2);
-            report.ValuesByKeyId.Should().ContainKey(EncryptionMaintenanceReport.TenantDataKeysLabel).And.ContainKey("v1");
-        }
+        var report = await RunAsync(sp, new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v1" });
+        report.ValuesReEncrypted.Should().Be(2);
+        report.ValuesByKeyId.Should().ContainKey(EncryptionMaintenanceReport.TenantDataKeysLabel).And.ContainKey("v1");
 
         EncryptedPayload.TryParse((string)(await EncryptionHost.QueryAsync(cs, "SELECT email FROM customers")).Single()["email"]!, out var customerPayload);
         customerPayload!.KeyId.Should().StartWith("skt:");
         EncryptedPayload.TryParse((string)(await EncryptionHost.QueryAsync(cs, "SELECT body FROM documents")).Single()["body"]!, out var documentPayload);
         documentPayload!.KeyId.Should().Be("v1");
         (await ReadAsync(sp, request, _tenantA)).Single().Email.Should().Be("a@example.com");
+
+        // After the migration the tenant's erasure is complete.
+        (await ShredAsync(sp, _tenantA)).IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ShredTenant_WithoutTenantDataKeys_IsRefused()
+    {
+        var cs = Cs("enc_t_nokeys");
+        var request = new TestRequestContext();
+        await using var sp = EncryptionHost.Build<CustomerDbContext>(cs, request);
+        await CreateDatabaseAsync(sp, cs);
+
+        var act = () => ShredAsync(sp, _tenantA);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Tenant data keys are not enabled*");
     }
 }

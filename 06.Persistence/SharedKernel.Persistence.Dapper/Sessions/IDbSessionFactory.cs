@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.Dapper.Sessions;
 /// and begins its own transaction.
 /// </description></item>
 /// <item><description>
-/// <strong>Row-level security</strong> (<c>SharedKernel:Persistence:Npgsql:RowLevelSecurity:Enabled</c>): the
+/// <strong>Row-level security</strong> (<c>RowLevelSecurity:Enabled</c> of the database's settings section): the
 /// caller's tenant is bound to the transaction in one statement. Inside an active <c>ICrossTenantScope</c> the
 /// session opens on the cross-tenant role's data source instead (never enlisted).
 /// </description></item>

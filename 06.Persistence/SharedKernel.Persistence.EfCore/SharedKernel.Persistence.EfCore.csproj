@@ -72,4 +72,16 @@
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
+  <!--
+    P-558/R2: this package uses SharedKernel.Persistence.Npgsql internals (InternalsVisibleTo: the row-level security
+    SQL contract TenantSessionSql and the RowLevelSecurityCatalog reads), so its nuspec pins that dependency to exactly
+    this build's version ([x.y.z]) instead of NuGet's default minimum (>= x.y.z).
+  -->
+  <Target Name="PinNpgsqlDependencyToExactVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'SharedKernel.Persistence.Npgsql'">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
 </Project>

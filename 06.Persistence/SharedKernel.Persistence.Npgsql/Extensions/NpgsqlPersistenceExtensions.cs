@@ -32,11 +32,11 @@ public static class NpgsqlPersistenceExtensions
     private const string DefaultDataSourceName = "default";
 
     /// <summary>
-    /// Registers the default database: an options-bound <see cref="NpgsqlDataSource"/> (section
-    /// <see cref="NpgsqlPersistenceOptions.SectionName"/>, validated at startup), <see cref="IDbConnectionFactory"/>,
-    /// <see cref="IMigrationLock"/>, <see cref="IAdvisoryTransactionLock"/>, <see cref="ITenantSessionBinder"/>,
-    /// the keyed secondary data sources of <see cref="NpgsqlDataSourceKeys"/>, and the row-level security
-    /// startup check.
+    /// Registers the default database without a connection name: an options-bound <see cref="NpgsqlDataSource"/>
+    /// (every setting, the connection string included, from <see cref="NpgsqlPersistenceOptions.SectionName"/>,
+    /// validated at startup), <see cref="IDbConnectionFactory"/>, <see cref="IMigrationLock"/>,
+    /// <see cref="IAdvisoryTransactionLock"/>, <see cref="ITenantSessionBinder"/>, the keyed secondary data sources of
+    /// <see cref="NpgsqlDataSourceKeys"/>, and the row-level security startup check.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The root configuration.</param>
@@ -65,23 +65,21 @@ public static class NpgsqlPersistenceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        RegisterOptions(services, configuration.GetSection(NpgsqlPersistenceOptions.SectionName), name: null);
-        services.AddOptions<NpgsqlPersistenceOptions>()
-            .PostConfigure(options => ResolveConnectionString(options, configuration));
-
-        RegisterDefaultDatabase(services, configureDataSource);
-        return services;
+        return RegisterDefault(services, configuration, NpgsqlPersistenceOptions.SectionName, connectionName: null, configureDataSource);
     }
 
     /// <summary>
-    /// Registers the default database (see the primary overload), reading the connection string from
-    /// <c>ConnectionStrings:{<paramref name="connectionStringName"/>}</c> unless
-    /// <see cref="NpgsqlPersistenceOptions.ConnectionString"/> is set.
+    /// Registers the default database under a connection name — the same configuration shape as
+    /// <c>AddSharedKernelPostgres&lt;TContext&gt;(name)</c>: the connection string from
+    /// <c>ConnectionStrings:{<paramref name="connectionStringName"/>}</c> (the .NET Aspire and Testcontainers
+    /// convention) and every other setting from <c>SharedKernel:Persistence:{<paramref name="connectionStringName"/>}</c>
+    /// (see <see cref="NpgsqlPersistenceOptions"/>), where a <c>ConnectionString</c> key overrides
+    /// <c>ConnectionStrings</c>. Registers what the unnamed overload registers.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The root configuration.</param>
-    /// <param name="connectionStringName">The name under <c>ConnectionStrings</c>, e.g. <c>"orders"</c>.</param>
-    /// <param name="configureDataSource">See the primary overload.</param>
+    /// <param name="connectionStringName">The connection name, e.g. <c>"orders"</c>.</param>
+    /// <param name="configureDataSource">See the unnamed overload.</param>
     /// <returns>The same <paramref name="services"/>.</returns>
     public static IServiceCollection AddSharedKernelNpgsql(
         this IServiceCollection services,
@@ -89,11 +87,33 @@ public static class NpgsqlPersistenceExtensions
         string connectionStringName,
         Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionStringName);
 
+        return RegisterDefault(
+            services, configuration, NpgsqlPersistenceOptions.SectionFor(connectionStringName), connectionStringName, configureDataSource);
+    }
+
+    private static IServiceCollection RegisterDefault(
+        IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath,
+        string? connectionName,
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
+    {
+        RegisterOptions(services, configuration.GetSection(sectionPath), name: null);
         services.AddOptions<NpgsqlPersistenceOptions>()
-            .Configure(options => options.ConnectionStringName ??= connectionStringName);
-        return services.AddSharedKernelNpgsql(configuration, configureDataSource);
+            .Configure(options =>
+            {
+                options.SectionPath = sectionPath;
+                if (connectionName is not null)
+                    options.ConnectionStringName ??= connectionName;
+            })
+            .PostConfigure(options => ResolveConnectionString(options, configuration));
+
+        RegisterDefaultDatabase(services, configureDataSource);
+        return services;
     }
 
     /// <summary>
@@ -122,6 +142,7 @@ public static class NpgsqlPersistenceExtensions
 
         RegisterOptions(services, section, name);
         services.AddOptions<NpgsqlPersistenceOptions>(name)
+            .Configure(options => options.SectionPath = section.Path)
             .PostConfigure<IServiceProvider>((options, sp) => ResolveConnectionString(options, sp.GetService<IConfiguration>()));
 
         services.AddKeyedSingleton(name, (sp, key) =>
@@ -251,7 +272,7 @@ public static class NpgsqlPersistenceExtensions
 
         var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
         if (loggerFactory is not null)
-            dataSourceBuilder.UseLoggerFactory(loggerFactory);
+            dataSourceBuilder.UseLoggerFactory(new NpgsqlCommandLogLevel(loggerFactory));
 
         if (sslMode < SslMode.VerifyFull && !NpgsqlConnectionStringPolicy.IsLoopback(connectionString))
         {
