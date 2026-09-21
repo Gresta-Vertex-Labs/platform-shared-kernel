@@ -21,5 +21,7 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Design-time services: scaffolds a migration and a compiled model in the A10 regression tests. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
   </ItemGroup>
 </Project>

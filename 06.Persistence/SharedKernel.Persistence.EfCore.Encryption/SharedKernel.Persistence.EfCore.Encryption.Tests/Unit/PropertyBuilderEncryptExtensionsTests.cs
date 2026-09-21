@@ -1,14 +1,14 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
+using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 
 public sealed class PropertyBuilderEncryptExtensionsTests
 {
-    private static EntityTypeBuilder<EncCustomer> NewBuilder() =>
-        new ModelBuilder().Entity<EncCustomer>();
+    private static EntityTypeBuilder<Customer> NewBuilder() =>
+        new ModelBuilder().Entity<Customer>();
 
     [Theory]
     [InlineData("")]
