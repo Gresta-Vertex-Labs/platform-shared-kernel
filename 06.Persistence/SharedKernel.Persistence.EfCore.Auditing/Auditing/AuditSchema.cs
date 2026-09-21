@@ -13,7 +13,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// column." Pinning explicit, migration-controlled names — the same practice most hand-maintained
 /// ledger/financial schemas already follow — makes the writer's raw SQL and
 /// <see cref="AuditRecordEntityConfiguration"/>'s EF mapping provably agree, independent of whether
-/// <c>SnakeCaseNamingConvention</c> (<c>SharedKernel.Persistence.PostgreSQL</c>) is even in use.
+/// snake_case naming (<c>SharedKernel.Persistence.EfCore</c>'s <c>UsePostgreSQL()</c>) is even in use.
 /// </para>
 /// </remarks>
 internal static class AuditSchema

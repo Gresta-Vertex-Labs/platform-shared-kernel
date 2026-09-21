@@ -15,7 +15,7 @@ public sealed class ConcurrencyInterceptorTests
     // Replaces the previous non-functional
     // `interceptor.Should().NotBeNull()` placeholder assertion with a real, provider-neutral proof.
     // SQLite has no auto-generated concurrency token equivalent to PostgreSQL's `xmin` (that
-    // provider-specific proof lives in SharedKernel.Persistence.PostgreSQL.Tests against a real
+    // provider-specific proof lives in SharedKernel.Persistence.EfCore.Tests against a real
     // Testcontainer), so this test deterministically forces a conflict by tampering with the
     // tracked entity's OriginalValues for the IHasConcurrency.RowVersion property so the UPDATE's
     // WHERE clause never matches the actual row — proving ConcurrencyInterceptor's rethrow
@@ -74,6 +74,6 @@ public sealed class ConcurrencyInterceptorTests
 
     // The real PostgreSQL xmin concurrency-conflict proof (two DbContext
     // instances, genuine xmin auto-update, DbUpdateConcurrencyException surfacing from an actual
-    // provider mismatch) lives in SharedKernel.Persistence.PostgreSQL.Tests against a real
+    // provider mismatch) lives in SharedKernel.Persistence.EfCore.Tests against a real
     // Testcontainer — xmin is an Npgsql-only mechanism, so it cannot be proven here.
 }

@@ -38,6 +38,18 @@ public sealed class ValidationException : SharedKernelException
     {
     }
 
+    /// <summary>
+    /// Initialises a new <see cref="ValidationException"/> for a single failing rule, keeping the exception that
+    /// caused it (for example the database or driver exception behind a foreign-key violation).
+    /// </summary>
+    /// <param name="error">The validation error.</param>
+    /// <param name="innerException">The exception that caused this one.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
+    public ValidationException(Error error, Exception innerException)
+        : this(new[] { error ?? throw new ArgumentNullException(nameof(error)) }, innerException)
+    {
+    }
+
     /// <summary>Initialises a new <see cref="ValidationException"/> for several failing rules.</summary>
     /// <remarks>The errors are copied, so changing the supplied list afterwards does not change the exception.</remarks>
     /// <param name="errors">Every validation error, in the order to report them.</param>
@@ -48,8 +60,8 @@ public sealed class ValidationException : SharedKernelException
     {
     }
 
-    private ValidationException(Error[] errors)
-        : base(BuildMessage(errors), errors[0])
+    private ValidationException(Error[] errors, Exception? innerException = null)
+        : base(BuildMessage(errors), errors[0], innerException)
     {
         Errors = errors;
     }

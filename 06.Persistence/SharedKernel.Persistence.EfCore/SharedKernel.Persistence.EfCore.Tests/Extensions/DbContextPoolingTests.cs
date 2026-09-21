@@ -29,7 +29,7 @@ namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 // remarks). The SQLite-backed wiring/no-throw proof lives here; the authoritative multi-tenant
 // concurrency proof (two concurrent scopes of different tenants sharing one pool, a background scope
 // with no tenant failing closed, and a scope inside an active ICrossTenantScope) lives against REAL
-// PostgreSQL in SharedKernel.Persistence.EfCore.Tests.Postgres — see
+// PostgreSQL in SharedKernel.Persistence.EfCore.Integration.Tests.Postgres — see
 // PooledMultiTenancyPostgresTests.
 // ---------------------------------------------------------------------------
 

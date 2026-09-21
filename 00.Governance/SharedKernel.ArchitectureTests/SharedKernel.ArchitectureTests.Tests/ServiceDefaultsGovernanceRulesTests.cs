@@ -338,7 +338,7 @@ public class ServiceDefaultsGovernanceRulesTests
         var conditionLists = CompositionRootExclusivityRules
             .OnlyAllowedAssembliesMayReferenceConcreteProviders(applicationAssembly);
 
-        var massTransitResult = conditionLists[3].GetResult();
+        var massTransitResult = conditionLists[2].GetResult();
 
         massTransitResult.IsSuccessful.Should().BeFalse(
             because: "OrderConsumerDefinition references SharedKernel.Messaging.MassTransit directly");
@@ -388,7 +388,7 @@ public class ServiceDefaultsGovernanceRulesTests
         var conditionLists = CompositionRootExclusivityRules
             .OnlyAllowedAssembliesMayReferenceConcreteProviders(applicationAssembly);
 
-        var oidcResult = conditionLists[4].GetResult();
+        var oidcResult = conditionLists[3].GetResult();
 
         oidcResult.IsSuccessful.Should().BeFalse(
             because: "TokenValidationHandler references SharedKernel.Security.Oidc directly");

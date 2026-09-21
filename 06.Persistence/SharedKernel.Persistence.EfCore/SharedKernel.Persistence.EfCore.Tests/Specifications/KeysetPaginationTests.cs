@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.EfCore.Tests.Specifications;
 // limitation, not a defect in the seek-predicate algorithm). The mandatory Id tiebreaker is still
 // TestId — a StronglyTypedId<Guid> — so the StronglyTypedId-unwrap fallback in
 // SpecificationEvaluator.BuildOrderingComparison is genuinely exercised. PostgreSQL-specific
-// DateTimeOffset-keyed coverage lives in SharedKernel.Persistence.PostgreSQL.Tests.
+// DateTimeOffset-keyed coverage lives in SharedKernel.Persistence.EfCore.Tests.
 // ---------------------------------------------------------------------------
 
 public sealed class KeysetPaginationTests

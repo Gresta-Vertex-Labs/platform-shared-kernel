@@ -7,18 +7,18 @@
   <ItemGroup>
     <!--
       18.Idempotency layering (root CLAUDE.md / 18.Idempotency/CLAUDE.md): SharedKernel.Idempotency.EfCore
-      may reference 01.Core, 06.Persistence.EfCore/.PostgreSQL only, 05.Application.Behaviors,
+      may reference 01.Core, 06.Persistence.EfCore only, 05.Application.Behaviors,
       07.Messaging.Abstractions. Never 02.Caching — anything.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
-    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- No direct PackageReference to EF Core/Npgsql: both flow transitively via
-         SharedKernel.Persistence.PostgreSQL/.EfCore (S-07). -->
+         SharedKernel.Persistence.EfCore (S-07). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

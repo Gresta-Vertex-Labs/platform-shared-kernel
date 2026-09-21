@@ -13,7 +13,6 @@ using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Persistence.Npgsql.Options;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.TestFixtures;
@@ -69,7 +68,7 @@ internal static class AuditTestHost
         configureServices?.Invoke(services);
 
         var builder = services.AddSharedKernelEfCore<AuditChainTestDbContext>(options => options
-            .UsePostgreSQL(connectionString)
+            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
                 // Test-harness-only: every test builds its own fresh DbContext model, so a single test
                 // PROCESS running many test methods legitimately builds many internal EF service
                 // providers — never a concern for a real host, which composes the container once.

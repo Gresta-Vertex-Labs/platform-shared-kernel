@@ -88,6 +88,31 @@ public sealed class NpgsqlPersistenceOptions : ISectionBoundOptions
     public int? IdleInTransactionSessionTimeoutMilliseconds { get; set; }
 
     /// <summary>
+    /// Enables pgvector's <c>vector</c>/<c>halfvec</c>/<c>sparsevec</c> type mapping on the shared data
+    /// source (Npgsql's ADO-level <c>UseVector()</c>), so <c>Pgvector.Vector</c> values can be read and
+    /// written through EF Core and Dapper alike. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// The EF Core setup (<c>UsePostgreSQL(serviceProvider)</c> in <c>SharedKernel.Persistence.EfCore</c>)
+    /// turns on its own vector mapping automatically when this is <see langword="true"/>, and refuses to
+    /// start when vectors are requested there while this is <see langword="false"/> — the ADO-level
+    /// mapping lives on the data source and cannot be added afterwards.
+    /// </remarks>
+    public bool UseVector { get; set; }
+
+    /// <summary>
+    /// Enables Npgsql's dynamic JSON serialization (<c>EnableDynamicJson()</c>): arbitrary CLR types
+    /// written to and read from <c>json</c>/<c>jsonb</c> parameters and columns through reflection-based
+    /// <c>System.Text.Json</c>. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// Not needed for <c>HasJsonbColumn</c> (which converts through a value converter) or for
+    /// <c>string</c>/<c>JsonDocument</c>/<c>JsonElement</c> values. Turn it on only for a service that maps
+    /// POCOs to JSON columns directly through Npgsql.
+    /// </remarks>
+    public bool EnableDynamicJson { get; set; }
+
+    /// <summary>
     /// The value <c>NpgsqlTenantSessionBinder</c> writes to the <c>app.cross_tenant</c> session
     /// setting for an active <see cref="Abstractions.Context.ICrossTenantScope"/>, and the value a
     /// matching row-level security policy's escape clause must compare against — see

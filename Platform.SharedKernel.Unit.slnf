@@ -59,7 +59,6 @@
       "06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.csproj",
       "06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/SharedKernel.Persistence.EfCore.Tests.csproj",
       "06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.csproj",
-      "06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.csproj",
       "07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/SharedKernel.Messaging.Abstractions.Tests.csproj",
       "07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj",
       "07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj",

@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -7,8 +8,8 @@ using SharedKernel.Application.Transactions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
@@ -55,7 +56,6 @@ public sealed class EfUnitOfWork : IUnitOfWork
     private readonly SharedKernelDbContext _dbContext;
     private readonly IDomainEventDispatcher? _dispatcher;
     private readonly ILogger<EfUnitOfWork> _logger;
-    private readonly TransientFaultRetryOptions? _retryOptions;
     private readonly AmbientDbTransactionAccessor? _ambientTransactionAccessor;
     private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
     private IDbContextTransaction? _transaction;
@@ -64,7 +64,6 @@ public sealed class EfUnitOfWork : IUnitOfWork
     /// <param name="dbContext">The scoped shared-kernel DB context.</param>
     /// <param name="dispatcher">Optional domain-event dispatcher; <see langword="null"/> when none is registered.</param>
     /// <param name="logger">Optional logger for <c>TransientRetryExhausted</c> (EventId 6008).</param>
-    /// <param name="retryOptions">Optional retry options, used only to report the attempt count.</param>
     /// <param name="ambientTransaction">
     /// The scoped <see cref="IAmbientDbTransaction"/> this unit of work publishes its open transaction on.
     /// </param>
@@ -72,7 +71,6 @@ public sealed class EfUnitOfWork : IUnitOfWork
         SharedKernelDbContext dbContext,
         IDomainEventDispatcher? dispatcher = null,
         ILogger<EfUnitOfWork>? logger = null,
-        TransientFaultRetryOptions? retryOptions = null,
         IAmbientDbTransaction? ambientTransaction = null)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
@@ -80,7 +78,6 @@ public sealed class EfUnitOfWork : IUnitOfWork
         _dbContext = dbContext;
         _dispatcher = dispatcher;
         _logger = logger ?? NullLogger<EfUnitOfWork>.Instance;
-        _retryOptions = retryOptions;
         _ambientTransactionAccessor = ambientTransaction as AmbientDbTransactionAccessor;
     }
 
@@ -91,7 +88,9 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
-        return await WithRetryExhaustionLoggingAsync(() => _dbContext.SaveChangesAsync(cancellationToken));
+        return await WithRetryExhaustionLoggingAsync(
+            () => _dbContext.SaveChangesAsync(cancellationToken),
+            ConfiguredAttemptCount);
     }
 
     /// <inheritdoc />
@@ -158,7 +157,8 @@ public sealed class EfUnitOfWork : IUnitOfWork
                     _dbContext.ChangeTracker.Clear();
 
                 return await RunAttemptAsync(operation, isolationLevel, token);
-            }));
+            }),
+            () => attempt);
     }
 
     /// <inheritdoc />
@@ -255,11 +255,16 @@ public sealed class EfUnitOfWork : IUnitOfWork
             _ambientTransactionAccessor.Current = null;
     }
 
+    // Attempts a plain SaveChanges makes before EF Core gives up: the configured retries plus the first try.
+    private int ConfiguredAttemptCount()
+        => (_dbContext.GetService<IDbContextOptions>()
+            .FindExtension<PostgreSQLConventionsOptionsExtension>()?.MaxRetryCount ?? 0) + 1;
+
     // Catching RetryLimitExceededException specifically — never a broad catch gated on
     // RetriesOnFailure — because a DbUpdateConcurrencyException (or any other non-transient failure)
     // is never retried and never wrapped, so a broader catch would misreport every concurrency
     // conflict as a retry exhaustion.
-    private async Task<TResult> WithRetryExhaustionLoggingAsync<TResult>(Func<Task<TResult>> operation)
+    private async Task<TResult> WithRetryExhaustionLoggingAsync<TResult>(Func<Task<TResult>> operation, Func<int> attemptCount)
     {
         try
         {
@@ -267,7 +272,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
         }
         catch (RetryLimitExceededException ex)
         {
-            PersistenceLog.TransientRetryExhausted(_logger, ex, (_retryOptions?.MaxRetryCount ?? 0) + 1);
+            PersistenceLog.TransientRetryExhausted(_logger, ex, attemptCount());
             throw;
         }
     }

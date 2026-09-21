@@ -9,7 +9,7 @@ using Npgsql;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.TestFixtures;
-using SharedKernel.Persistence.PostgreSQL.Migrations;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 

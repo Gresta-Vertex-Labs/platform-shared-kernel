@@ -105,6 +105,8 @@
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Dapper" Version="2.1.79" />
+    <!-- P-558/W1b: snake_case naming for the PostgreSQL EF Core setup (replaces the former hand-rolled convention). Apache-2.0. -->
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="9.4.2" />
     <PackageVersion Include="FluentAssertions" Version="8.10.0" />
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
@@ -212,6 +214,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.1-beta.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
+    <PackageVersion Include="Pgvector" Version="0.3.2" />
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
     <!--
       SharedKernel.Reporting.Pdf (20.Reporting/WO-077, P-480): unconditional MIT, verified directly
@@ -287,7 +290,6 @@
     <PackageVersion Include="SharedKernel.Persistence.EfCore.Auditing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.EfCore.Encryption" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Npgsql" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.Persistence.PostgreSQL" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />

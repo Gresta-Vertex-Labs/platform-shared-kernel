@@ -16,7 +16,7 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// changing, or removing an element of that collection produces an <c>INSERT</c>/<c>UPDATE</c>/<c>DELETE</c>
 /// against the CHILD table only — the aggregate root's own row, and hence its
 /// <see cref="IHasConcurrency.RowVersion"/> (bound to PostgreSQL's <c>xmin</c> by
-/// <c>SharedKernel.Persistence.PostgreSQL</c>), is never touched. Two concurrent requests that each
+/// <c>SharedKernel.Persistence.EfCore</c>), is never touched. Two concurrent requests that each
 /// modify a different line item of the same order would both succeed even though, from the
 /// aggregate's own consistency boundary, they raced on the SAME aggregate — optimistic concurrency
 /// silently does not apply. This interceptor closes that gap for the common case: an owned-type

@@ -23,6 +23,7 @@ SharedKernel.Core.Exceptions.UnauthorizedException.UnauthorizedException(SharedK
 SharedKernel.Core.Exceptions.ValidationException
 SharedKernel.Core.Exceptions.ValidationException.Errors.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!
 SharedKernel.Core.Exceptions.ValidationException.ValidationException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Core.Exceptions.ValidationException.ValidationException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 SharedKernel.Core.Exceptions.ValidationException.ValidationException(System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>! errors) -> void
 SharedKernel.Core.Extensions.DateTimeOffsetExtensions
 SharedKernel.Core.Extensions.EnumerableExtensions

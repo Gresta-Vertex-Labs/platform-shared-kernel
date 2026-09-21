@@ -92,16 +92,8 @@ internal static partial class PersistenceLog
         Message = "Advisory lock released for context '{ContextType}'.")]
     internal static partial void AdvisoryLockReleased(ILogger logger, string contextType);
 
-    /// <summary>
-    /// Logged once per retry attempt by the internal
-    /// <c>PersistenceRetryDiagnosticListener</c>, registered only when
-    /// <c>EfCorePersistenceBuilder.WithTransientFaultRetry()</c> was called.
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 7,
-        Level = LogLevel.Warning,
-        Message = "Transient fault triggered retry attempt {AttemptNumber} for a database operation.")]
-    internal static partial void TransientRetryAttempt(ILogger logger, int attemptNumber);
+    // 6007 (TransientRetryAttempt) was retired with PersistenceRetryDiagnosticListener (P-558): EF Core
+    // itself logs every retry as CoreEventId.ExecutionStrategyRetrying. Do not reuse the id.
 
     /// <summary>
     /// Logged by <c>EfUnitOfWork.SaveChangesAsync</c> / <c>ExecuteInTransactionAsync</c> when a
@@ -134,4 +126,33 @@ internal static partial class PersistenceLog
         Level = LogLevel.Error,
         Message = "No IMigrationLock is registered for context '{ContextType}' — startup migration/seed coordination across replicas is NOT guaranteed.")]
     internal static partial void NoMigrationLockRegistered(ILogger logger, string contextType);
+
+    /// <summary>
+    /// Logged when resetting a connection's row-level-security session bindings before it returns to
+    /// the pool fails. Non-fatal: the connection close itself still proceeds. (Formerly EventId 6500 in
+    /// the retired <c>SharedKernel.Persistence.PostgreSQL</c> package.)
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 9,
+        Level = LogLevel.Warning,
+        Message = "Failed to reset row-level-security session bindings before returning a connection "
+            + "to the pool. The connection close proceeded regardless; if the connection is reused "
+            + "while still bound, the next lease could inherit a stale tenant binding.")]
+    internal static partial void RowLevelSecurityResetFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logged when a failed <c>SaveChanges</c> is classified by its PostgreSQL SQLSTATE. Carries the
+    /// violated constraint and table (internal schema names, never returned to the caller) so a
+    /// classified 409/400 can be traced to the rule that produced it. Never logs the offending value.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 10,
+        Level = LogLevel.Information,
+        Message = "Database error {SqlState} classified as '{ErrorCode}' (constraint '{ConstraintName}', table '{TableName}').")]
+    internal static partial void DatabaseErrorClassified(
+        ILogger logger,
+        string sqlState,
+        string errorCode,
+        string constraintName,
+        string tableName);
 }

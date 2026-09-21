@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.Encryption.csproj" />
-    <ProjectReference Include="..\..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Pgvector.Npgsql;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
@@ -42,14 +43,11 @@ public static class NpgsqlPersistenceExtensions
     /// </param>
     /// <param name="configureDataSource">
     /// Optional hook applied last, after every other configuration step, so a caller can extend the
-    /// <see cref="NpgsqlDataSourceBuilder"/> with capabilities this method does not itself expose
-    /// (e.g. <c>MapEnum&lt;T&gt;</c>, <c>MapComposite&lt;T&gt;</c>, pgvector's <c>UseVector()</c> —
-    /// see <c>SharedKernel.Persistence.PostgreSQL</c>'s opt-in vector support for the recommended way
-    /// to enable that specifically).
-    /// </param>
-    /// <param name="periodicPasswordProvider">
-    /// Optional periodically-refreshed password provider (Entra ID / AWS RDS IAM tokens) — see
-    /// <see cref="NpgsqlPeriodicPasswordProviderOptions"/>.
+    /// <see cref="NpgsqlDataSourceBuilder"/> with capabilities the options do not expose
+    /// (<c>MapEnum&lt;T&gt;</c>, <c>MapComposite&lt;T&gt;</c>, a periodic password provider such as an
+    /// Entra ID or AWS RDS IAM token via <c>UsePeriodicPasswordProvider</c>, Npgsql's OpenTelemetry
+    /// hooks,...). Receives the resolving <see cref="IServiceProvider"/> so the hook can use
+    /// DI-registered services (a token credential, a logger,...).
     /// </param>
     /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
     /// <remarks>
@@ -60,13 +58,13 @@ public static class NpgsqlPersistenceExtensions
     /// </para>
     /// <para>
     /// Downstream services using EF Core call <c>AddSharedKernelEfCore&lt;TContext&gt;((sp, options)
-    /// =&gt; options.UsePostgreSQL(sp))</c> — <c>SharedKernel.Persistence.PostgreSQL</c>'s
+    /// =&gt; options.UsePostgreSQL(sp))</c> — <c>SharedKernel.Persistence.EfCore</c>'s
     /// <c>IServiceProvider</c>-accepting overload resolves the SAME <see cref="NpgsqlDataSource"/>
     /// this method registers, so EF Core and Dapper share one connection pool per database.
     /// </para>
     /// <para>
     /// For a second database in the same service, use the
-    /// <see cref="AddSharedKernelNpgsql(IServiceCollection,IConfigurationSection,string,Action{NpgsqlDataSourceBuilder}?,NpgsqlPeriodicPasswordProviderOptions?)"/>
+    /// <see cref="AddSharedKernelNpgsql(IServiceCollection,IConfigurationSection,string,Action{IServiceProvider,NpgsqlDataSourceBuilder}?)"/>
     /// overload with a distinct section and a <c>name</c> — resolve that instance with
     /// <c>serviceProvider.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(name)</c>/
     /// <c>GetRequiredKeyedService&lt;IDbConnectionFactory&gt;(name)</c>.
@@ -77,14 +75,13 @@ public static class NpgsqlPersistenceExtensions
     public static IServiceCollection AddSharedKernelNpgsql(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource = null,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         RegisterOptions(services, configuration.GetSection(NpgsqlPersistenceOptions.SectionName), name: null);
-        RegisterDefaultDataSource(services, configureDataSource, periodicPasswordProvider);
+        RegisterDefaultDataSource(services, configureDataSource);
 
         services.AddSingleton<IMigrationLock, NpgsqlAdvisoryMigrationLock>();
         services.AddSingleton<ITenantSessionBinder>(sp =>
@@ -108,14 +105,12 @@ public static class NpgsqlPersistenceExtensions
     /// <c>GetRequiredKeyedService&lt;IDbConnectionFactory&gt;(name)</c>.
     /// </param>
     /// <param name="configureDataSource">See the primary overload.</param>
-    /// <param name="periodicPasswordProvider">See the primary overload.</param>
     /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
     public static IServiceCollection AddSharedKernelNpgsql(
         this IServiceCollection services,
         IConfigurationSection section,
         string name,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource = null,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(section);
@@ -127,43 +122,10 @@ public static class NpgsqlPersistenceExtensions
             BuildDataSource(
                 sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>().Get((string)key!),
                 sp,
-                configureDataSource,
-                periodicPasswordProvider));
+                configureDataSource));
 
         services.AddKeyedSingleton<IDbConnectionFactory>(name, (sp, key) =>
             new NpgsqlConnectionFactory(sp.GetRequiredKeyedService<NpgsqlDataSource>(key)));
-
-        return services;
-    }
-
-    /// <summary>
-    /// Registers the shared <see cref="NpgsqlDataSource"/> and <see cref="IDbConnectionFactory"/>
-    /// from a raw connection string, applying only PostgreSQL's own defaults (no
-    /// <see cref="NpgsqlPersistenceOptions"/> validation, no statement/lock timeouts, no SSL-mode
-    /// enforcement beyond whatever the connection string itself specifies).
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="connectionString">The PostgreSQL connection string.</param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
-    /// <remarks>
-    /// Kept for callers that have not yet migrated to configuration-bound options. Prefer
-    /// <see cref="AddSharedKernelNpgsql(IServiceCollection,IConfiguration,Action{NpgsqlDataSourceBuilder}?,NpgsqlPeriodicPasswordProviderOptions?)"/>
-    /// for startup-validated SSL/timeout/password-rotation configuration.
-    /// </remarks>
-    public static IServiceCollection AddSharedKernelNpgsql(
-        this IServiceCollection services,
-        string connectionString)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-
-        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-        dataSourceBuilder.EnableDynamicJson();
-
-        var dataSource = dataSourceBuilder.Build();
-
-        services.AddSingleton(dataSource);
-        services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
 
         return services;
     }
@@ -178,16 +140,14 @@ public static class NpgsqlPersistenceExtensions
 
     private static void RegisterDefaultDataSource(
         IServiceCollection services,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
     {
         services.AddSingleton(sp =>
             BuildDataSource(
                 sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
                     .Get(Microsoft.Extensions.Options.Options.DefaultName),
                 sp,
-                configureDataSource,
-                periodicPasswordProvider));
+                configureDataSource));
 
         services.AddSingleton<IDbConnectionFactory>(sp =>
             new NpgsqlConnectionFactory(sp.GetRequiredService<NpgsqlDataSource>()));
@@ -196,13 +156,12 @@ public static class NpgsqlPersistenceExtensions
     // Builds one NpgsqlDataSource from validated options: forces PersistSecurityInfo=false and the
     // configured SslMode, applies statement_timeout/lock_timeout/idle_in_transaction_session_timeout
     // via the libpq "Options" startup keyword, wires a resolved ILoggerFactory when one is
-    // registered, wires an optional periodic password provider, and finally invokes the caller's own
-    // configureDataSource hook so it can extend the builder further.
+    // registered, applies the opt-in pgvector/dynamic-JSON mappings, and finally invokes the caller's
+    // own configureDataSource hook so it can extend the builder further.
     private static NpgsqlDataSource BuildDataSource(
         NpgsqlPersistenceOptions options,
         IServiceProvider serviceProvider,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
     {
         var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.ConnectionString)
         {
@@ -213,19 +172,18 @@ public static class NpgsqlPersistenceExtensions
         ApplyServerSideTimeouts(connectionStringBuilder, options);
 
         var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder.ConnectionString);
-        dataSourceBuilder.EnableDynamicJson();
+
+        if (options.EnableDynamicJson)
+            dataSourceBuilder.EnableDynamicJson();
+
+        // ADO-level pgvector mapping. EF Core's own UseVector() only maps the CLR type in the EF
+        // model; reading and writing the values still needs the plugin on the data source itself.
+        if (options.UseVector)
+            dataSourceBuilder.UseVector();
 
         var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
         if (loggerFactory is not null)
             dataSourceBuilder.UseLoggerFactory(loggerFactory);
-
-        if (periodicPasswordProvider is not null)
-        {
-            dataSourceBuilder.UsePeriodicPasswordProvider(
-                periodicPasswordProvider.Provider,
-                periodicPasswordProvider.SuccessRefreshInterval,
-                periodicPasswordProvider.FailureRefreshInterval);
-        }
 
         if (options.SslMode < SslMode.VerifyFull && options.AcknowledgeInsecureSslMode)
         {
@@ -235,7 +193,7 @@ public static class NpgsqlPersistenceExtensions
                 options.SslMode.ToString());
         }
 
-        configureDataSource?.Invoke(dataSourceBuilder);
+        configureDataSource?.Invoke(serviceProvider, dataSourceBuilder);
 
         return dataSourceBuilder.Build();
     }

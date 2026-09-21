@@ -24,7 +24,7 @@ namespace SharedKernel.Persistence.Npgsql.Context;
 /// <para>
 /// Pair this with a row-level security policy defined against <c>current_setting('app.tenant_id',
 /// true)</c>/<c>current_setting('app.cross_tenant', true)</c> on every tenant-scoped table — see
-/// <c>SharedKernel.Persistence.PostgreSQL</c>'s RLS migration helper. Binding the session settings
+/// <c>SharedKernel.Persistence.EfCore</c>'s RLS migration helper. Binding the session settings
 /// with no matching policy enforces nothing.
 /// </para>
 /// <para>

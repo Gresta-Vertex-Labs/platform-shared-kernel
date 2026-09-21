@@ -37,7 +37,7 @@ namespace SharedKernel.Persistence.EfCore.Configurations;
 /// auto-populates an arbitrary <c>bytea</c> on <c>UPDATE</c> the way SQL Server's native
 /// <c>rowversion</c> type does, so the token value never changed and concurrent writes never
 /// conflicted. The genuinely-working PostgreSQL mechanism (binding the property to the real
-/// <c>xmin</c> system column) lives entirely in <c>SharedKernel.Persistence.PostgreSQL</c>'s
+/// <c>xmin</c> system column) lives entirely in <c>SharedKernel.Persistence.EfCore</c>'s
 /// <c>XminConcurrencyTokenConvention</c>, which reconfigures the property this method marks.
 /// </para>
 /// <para>
@@ -107,7 +107,7 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
 
     // Marks RowVersion as a provider-neutral concurrency token for IHasConcurrency entities
     // (see the ConfigureConcurrencyToken remarks above for why .IsRowVersion()
-    // was retired). SharedKernel.Persistence.PostgreSQL's XminConcurrencyTokenConvention
+    // was retired). The PostgreSQL setup's XminConcurrencyTokenConvention
     // reconfigures this property to bind to the real xmin system column when UsePostgreSQL()
     // is in effect.
     private static void ConfigureConcurrencyToken(EntityTypeBuilder<TEntity> builder)

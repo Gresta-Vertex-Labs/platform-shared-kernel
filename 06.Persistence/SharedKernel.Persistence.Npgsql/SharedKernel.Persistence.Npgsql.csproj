@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Npgsql-only (no EF Core) PostgreSQL connection infrastructure for SharedKernel: NpgsqlConnectionFactory and the shared NpgsqlDataSource DI registration consumed by both SharedKernel.Persistence.PostgreSQL (EF Core) and SharedKernel.Persistence.Dapper.</Description>
+    <Description>Npgsql-only (no EF Core) PostgreSQL connection infrastructure for SharedKernel: NpgsqlConnectionFactory and the shared NpgsqlDataSource DI registration consumed by both SharedKernel.Persistence.EfCore and SharedKernel.Persistence.Dapper, plus the reusable PostgresException SQLSTATE classifier.</Description>
     <PackageTags>persistence;postgresql;npgsql;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
@@ -19,6 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" />
+    <!-- P-558/W1b: ADO-level pgvector type mapping on the shared data source (NpgsqlPersistenceOptions.UseVector). -->
+    <PackageReference Include="Pgvector" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />

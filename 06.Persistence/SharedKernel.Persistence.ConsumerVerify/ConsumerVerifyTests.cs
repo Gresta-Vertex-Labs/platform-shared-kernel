@@ -28,7 +28,6 @@ using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.Npgsql.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
 
@@ -102,14 +101,15 @@ public sealed class ConsumerVerifyTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void EfCorePackage_NeverReferencesNpgsqlDirectly()
+    public void EfCorePackage_IsThePostgreSqlProvider()
     {
+        // P-558: PostgreSQL-only — the former SharedKernel.Persistence.PostgreSQL package merged into EfCore.
         var references = typeof(SharedKernelDbContext).Assembly.GetReferencedAssemblies()
             .Select(a => a.Name!)
             .ToArray();
 
-        Assert.DoesNotContain(references, name =>
-            name.StartsWith("Npgsql", StringComparison.Ordinal));
+        Assert.Contains("Npgsql.EntityFrameworkCore.PostgreSQL", references);
+        Assert.Contains("SharedKernel.Persistence.Npgsql", references);
     }
 
     [Fact]
@@ -120,7 +120,8 @@ public sealed class ConsumerVerifyTests
             .ToArray();
 
         Assert.DoesNotContain(references, name =>
-            name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
+            name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+            || name.StartsWith("SharedKernel.Persistence.EfCore", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -278,8 +279,9 @@ public sealed class ConsumerVerifyTests
     public void UsePostgreSQL_ConfiguresDbContextOptions_WithoutThrowing()
     {
         var builder = new DbContextOptionsBuilder<ConsumerVerifyDbContext>();
+        using var dataSource = NpgsqlDataSource.Create("Host=localhost;Port=1;Database=consumer_verify;Username=x;Password=x");
 
-        builder.UsePostgreSQL("Host=localhost;Port=1;Database=consumer_verify;Username=x;Password=x");
+        builder.UsePostgreSQL(dataSource, o => o.Retry.Enabled = false);
 
         Assert.True(((DbContextOptionsBuilder)builder).IsConfigured);
     }

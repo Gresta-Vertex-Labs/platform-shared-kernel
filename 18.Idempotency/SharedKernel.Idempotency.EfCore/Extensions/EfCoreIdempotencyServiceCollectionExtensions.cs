@@ -28,7 +28,7 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configureDbContext">
     /// Configures the underlying <see cref="DbContextOptionsBuilder"/> — typically
-    /// <c>options.UsePostgreSQL(connectionString)</c> from <c>SharedKernel.Persistence.PostgreSQL</c>.
+    /// <c>options.UsePostgreSQL(serviceProvider)</c> from <c>SharedKernel.Persistence.EfCore</c>.
     /// </param>
     /// <param name="configureOptions">
     /// Optional delegate to customise <see cref="EfCoreIdempotencyOptions"/>. When

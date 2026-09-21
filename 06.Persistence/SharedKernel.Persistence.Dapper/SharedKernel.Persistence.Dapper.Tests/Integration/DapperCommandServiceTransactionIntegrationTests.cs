@@ -9,8 +9,9 @@ using SharedKernel.Persistence.Dapper.ReadModels;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.Npgsql.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Testing.Containers;
+
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.Dapper.Tests.Integration;
 
@@ -78,7 +79,7 @@ public sealed class DapperCommandServiceTransactionIntegrationTests : IAsyncLife
     private async Task<ServiceProvider> BuildProviderAsync()
     {
         var services = new ServiceCollection();
-        services.AddSharedKernelNpgsql(_fixture.ConnectionString);
+        services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
 
         services
             .AddSharedKernelEfCore<CommandServiceTestDbContext>((sp, options) => options.UsePostgreSQL(sp))

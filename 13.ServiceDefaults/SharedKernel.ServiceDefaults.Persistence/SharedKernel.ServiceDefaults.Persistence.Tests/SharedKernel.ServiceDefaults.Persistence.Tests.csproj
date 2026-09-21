@@ -17,7 +17,7 @@
       mirroring 06.Persistence.EfCore.Auditing.Tests' own reference set for the same reasons.
     -->
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
-    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>

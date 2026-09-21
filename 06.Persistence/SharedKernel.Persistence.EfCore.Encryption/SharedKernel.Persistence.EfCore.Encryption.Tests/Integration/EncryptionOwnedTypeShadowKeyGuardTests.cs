@@ -7,7 +7,6 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
@@ -57,7 +56,7 @@ public sealed class EncryptionOwnedTypeShadowKeyGuardTests
         services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp => sp.GetRequiredService<StaticEncryptionKeyProvider>());
 
         services.AddSharedKernelEfCore<ShadowKeyGuardDbContext>(options => options
-            .UsePostgreSQL(ConnectionString("sk_enc_shadow_key_guard"))
+            .UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_shadow_key_guard")))
             .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMultiTenancy()
             .WithEncryption()

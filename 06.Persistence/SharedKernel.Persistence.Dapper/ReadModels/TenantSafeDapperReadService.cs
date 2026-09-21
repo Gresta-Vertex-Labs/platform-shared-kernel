@@ -26,7 +26,7 @@ namespace SharedKernel.Persistence.Dapper.ReadModels;
 /// <strong>Defense in depth, not the enforcement mechanism.</strong> Binding
 /// (<see cref="ITenantSessionBinder.BindAsync"/>) writes a session-local setting a matching
 /// PostgreSQL row-level security policy reads — see
-/// <c>SharedKernel.Persistence.PostgreSQL</c>'s <c>EnableTenantRowLevelSecurity</c> migration helper.
+/// <c>SharedKernel.Persistence.EfCore</c>'s <c>EnableTenantRowLevelSecurity</c> migration helper.
 /// This class's own WHERE-clause discipline is real but is NOT what makes a WHERE-less query safe —
 /// only the RLS policy is enforced against every possible statement, including a hand-written one
 /// this class did not build. Deploy this class only against a table that also has that policy.

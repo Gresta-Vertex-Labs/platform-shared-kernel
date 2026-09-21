@@ -17,7 +17,6 @@ using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Persistence.Npgsql.Options;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.ServiceDefaults.Persistence.Tests.TestFixtures;
@@ -93,7 +92,7 @@ public sealed class AuditTransactionWiringPostgresTests
         services.AddSharedKernelNpgsql(configuration);
 
         var builder = services.AddSharedKernelEfCore<AuditWiringTestDbContext>(options => options
-            .UsePostgreSQL(connectionString)
+            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
                 // Test-harness-only: every test builds its own fresh DbContext model.
                 .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithAuditTrail(configuration);
@@ -166,7 +165,8 @@ public sealed class AuditTransactionWiringPostgresTests
         {
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
             var act = async () => await sender.Send(new CreateOrderCommand(orderId, tooLongName));
-            await act.Should().ThrowAsync<DbUpdateException>();
+            // 22001 is classified by the always-registered SQLSTATE classifier (P-558).
+            await act.Should().ThrowAsync<SharedKernel.Core.Exceptions.ValidationException>();
         }
 
         await using var verifyScope = provider.CreateAsyncScope();
@@ -180,7 +180,7 @@ public sealed class AuditTransactionWiringPostgresTests
             .ToListAsync();
         auditRecords.Should().ContainSingle("no Succeeded attestation may exist for a write that never landed");
         auditRecords[0].Outcome.Should().Be(AuditOutcome.Failed);
-        auditRecords[0].ErrorCode.Should().Contain(nameof(DbUpdateException));
+        auditRecords[0].ErrorCode.Should().Contain(nameof(SharedKernel.Core.Exceptions.ValidationException));
     }
 
     [Fact]

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
@@ -66,7 +67,7 @@ public static class EfCorePersistenceExtensions
     /// <param name="configureDb">
     /// Action that configures the <see cref="DbContextOptionsBuilder"/>, with access to the resolving
     /// <see cref="IServiceProvider"/>. This is the overload
-    /// <c>SharedKernel.Persistence.PostgreSQL</c>'s data-source-resolving <c>UsePostgreSQL(DbContextOptionsBuilder,
+    /// the data-source-resolving <c>UsePostgreSQL(DbContextOptionsBuilder,
     /// IServiceProvider,...)</c> overload is designed to be called from, so EF Core and Dapper share
     /// exactly one <c>NpgsqlDataSource</c> connection pool per database:
     /// <code>
@@ -96,16 +97,16 @@ public static class EfCorePersistenceExtensions
 /// <para>
 /// Typical single-tenant usage:
 /// <code>
-/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
-/// options.UseNpgsql(connectionString))
+/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;((sp, options) =>
+/// options.UsePostgreSQL(sp))
 ///     .Build();
 /// </code>
 /// </para>
 /// <para>
 /// Multi-tenant usage:
 /// <code>
-/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
-/// options.UseNpgsql(connectionString))
+/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;((sp, options) =>
+/// options.UsePostgreSQL(sp))
 ///     .WithMultiTenancy()
 ///     .Build();
 /// </code>
@@ -131,7 +132,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _dbContextPoolingEnabled;
     private int _poolSize = 1024;
     private IModel? _compiledModel;
-    private TransientFaultRetryOptions? _transientFaultRetryOptions;
     private int? _commandTimeoutSeconds;
     private Action<DbContextOptionsBuilder>? _readReplicaConfigureDb;
     private bool _serviceNameValidationRegistered;
@@ -295,9 +295,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </summary>
     /// <param name="configureReplicaDb">
     /// Action that configures the replica <see cref="DbContextOptionsBuilder"/> (e.g., sets the
-    /// replica connection string via <c>options.UseNpgsql(replicaConnectionString)</c>). Mirrors
+    /// replica data source via <c>options.UsePostgreSQL(replicaDataSource)</c>). Mirrors
     /// <see cref="EfCorePersistenceExtensions.AddSharedKernelEfCore{TContext}"/>'s own
-    /// <c>configureDb</c> parameter shape — this builder itself never references Npgsql.
+    /// <c>configureDb</c> parameter shape.
     /// </param>
     /// <returns>The same builder for further chaining.</returns>
     public EfCorePersistenceBuilder<TContext> WithReadReplica(Action<DbContextOptionsBuilder> configureReplicaDb)
@@ -367,23 +367,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     public EfCorePersistenceBuilder<TContext> WithMigrationsOnStartup()
     {
         _migrationsOnStartup = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a <see cref="TransientFaultRetryOptions"/> singleton for discoverability/observability.
-    /// </summary>
-    /// <param name="maxRetryCount">The maximum number of retry attempts. Defaults to 6.</param>
-    /// <param name="maxRetryDelay">
-    /// The maximum delay between retry attempts. Defaults to <see langword="null"/> (provider default,
-    /// typically 30 seconds).
-    /// </param>
-    /// <returns>The same builder for further chaining.</returns>
-    public EfCorePersistenceBuilder<TContext> WithTransientFaultRetry(
-        int maxRetryCount = 6,
-        TimeSpan? maxRetryDelay = null)
-    {
-        _transientFaultRetryOptions = new TransientFaultRetryOptions(maxRetryCount, maxRetryDelay);
         return this;
     }
 
@@ -540,16 +523,13 @@ public sealed class EfCorePersistenceBuilder<TContext>
         foreach (var action in _buildActions)
             action();
 
-        // Register the discoverability singleton when WithTransientFaultRetry() was called.
-        if (_transientFaultRetryOptions is not null)
+        // SQLSTATE classification (unique → Conflict, foreign key → Validation/Conflict, ...) is part of the
+        // PostgreSQL setup itself, so no registration path can end up without it. Inserted FIRST so it is
+        // consulted before any consumer-supplied classifier, and only once per service collection.
+        if (!_services.Any(sd => sd.ServiceType == typeof(IDbUpdateExceptionClassifier)
+                && sd.ImplementationType == typeof(PostgreSqlDbUpdateExceptionClassifier)))
         {
-            _services.AddSingleton(_transientFaultRetryOptions);
-
-            // The retry-attempt diagnostic listener subscribes to EF Core's own
-            // provider-neutral CoreEventId.ExecutionStrategyRetrying diagnostic event. Registered
-            // as a hosted service so its DiagnosticListener.AllListeners subscription is active for
-            // the app's lifetime — never registered when WithTransientFaultRetry() was not called.
-            _services.AddHostedService<PersistenceRetryDiagnosticListener>();
+            _services.Insert(0, ServiceDescriptor.Singleton<IDbUpdateExceptionClassifier, PostgreSqlDbUpdateExceptionClassifier>());
         }
 
         // Register PersistenceServiceOptions default if not already configured by WithServiceName().
@@ -837,7 +817,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
             || _services.Any(sd =>
                 sd.ServiceType == typeof(IPersistenceOptionsExtension)
                 || sd.ServiceType == typeof(ISaveChangesInterceptor)
-                || sd.ServiceType == typeof(IDbUpdateExceptionClassifier));
+                || (sd.ServiceType == typeof(IDbUpdateExceptionClassifier)
+                    && sd.ImplementationType != typeof(PostgreSqlDbUpdateExceptionClassifier)));
 
         if (hasCapabilitiesToVerify)
         {

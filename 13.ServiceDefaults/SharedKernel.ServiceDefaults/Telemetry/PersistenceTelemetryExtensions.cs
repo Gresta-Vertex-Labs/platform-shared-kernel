@@ -63,7 +63,7 @@ public static class PersistenceTelemetryExtensions
     /// exactly.
     /// </para>
     /// <para>
-    /// <c>SharedKernel.Persistence.PostgreSQL</c> has no <see cref="System.Diagnostics.ActivitySource"/>/
+    /// The PostgreSQL setup in <c>SharedKernel.Persistence.EfCore</c> adds no <see cref="System.Diagnostics.ActivitySource"/>/
     /// <see cref="System.Diagnostics.Metrics.Meter"/> of its own to wire — its conventions/migration
     /// helpers remain build-time/migration-time only, and its one genuinely runtime type
     /// (<c>RowLevelSecurityConnectionInterceptor</c>) only logs, via <c>[LoggerMessage]</c>, which

@@ -5,13 +5,8 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Testing.Logging;
-
-// Reuses the retry-forcing fixtures already defined for PersistenceRetryDiagnosticListenerTests
-// (AlwaysRetryStrategyFactory, FaultInjectingInterceptor, RetryDiagListenerTestDbContext/Item).
-using SharedKernel.Persistence.EfCore.Tests.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
@@ -20,21 +15,17 @@ namespace SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 /// <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>).
 /// </summary>
 /// <remarks>
-/// Tagged into the shared <c>"RetryDiagnostics"</c> xUnit collection — see
-/// <see cref="SharedKernel.Persistence.EfCore.Tests.Diagnostics.PersistenceRetryDiagnosticListenerTests"/>'s
-/// own remarks for why this test class must never run concurrently with that one (both force genuine
-/// EF Core retries via the identical <c>AlwaysRetryStrategyFactory</c>/<c>FaultInjectingInterceptor</c>
-/// technique, and <c>PersistenceRetryDiagnosticListener</c> observes retry events process-wide).
+/// Tagged into the <c>"RetryDiagnostics"</c> xUnit collection so the retry-forcing fixtures never run concurrently.
 /// </remarks>
 [Collection("RetryDiagnostics")]
 public sealed class RetryExhaustionLoggingTests
 {
-    private static (RetryDiagListenerTestDbContext Context, FaultInjectingInterceptor Fault) CreateExhaustingContext()
+    private static (RetryDiagListenerTestDbContext Context, FaultInjectingInterceptor Fault) CreateExhaustingContext(int? configuredMaxRetryCount = null)
     {
         // Always fails — genuine retry-limit exhaustion after AlwaysRetryStrategy's maxRetryCount.
         var faultInjector = new FaultInjectingInterceptor(failuresBeforeSuccess: int.MaxValue);
 
-        var options = new DbContextOptionsBuilder<RetryDiagListenerTestDbContext>()
+        var optionsBuilder = new DbContextOptionsBuilder<RetryDiagListenerTestDbContext>()
             .UseSqlite("DataSource=:memory:")
             // Each context here calls ReplaceService/AddInterceptors with fresh instances,
             // which forces EF to build a new internal service provider per context. Past 20
@@ -43,8 +34,16 @@ public sealed class RetryExhaustionLoggingTests
             // providers are intentional test isolation, so the warning is suppressed here.
                 .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
                 .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
-                .AddInterceptors(faultInjector)
-                .Options;
+                .AddInterceptors(faultInjector);
+
+        // What UsePostgreSQL records for retry-exhaustion logging (the configured retry count).
+        if (configuredMaxRetryCount is not null)
+        {
+            ((Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(
+                new SharedKernel.Persistence.EfCore.Conventions.PostgreSQLConventionsOptionsExtension(useVector: false, maxRetryCount: configuredMaxRetryCount));
+        }
+
+        var options = optionsBuilder.Options;
 
         var userContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -69,7 +68,7 @@ public sealed class RetryExhaustionLoggingTests
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
         var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: null);
+            ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         Func<Task> act = () => uow.SaveChangesAsync();
@@ -79,23 +78,22 @@ public sealed class RetryExhaustionLoggingTests
 
         var record = inMemoryLogger.Records.ShouldHaveLogged(new EventId(6008), LogLevel.Warning);
         record.TryGetProperty("AttemptCount", out var attemptCount).Should().BeTrue();
-        attemptCount.Should().Be(1); // no TransientFaultRetryOptions supplied — documented fallback
+        attemptCount.Should().Be(1); // no UsePostgreSQL retry configuration on the context — documented fallback
     }
 
     [Fact]
     public async Task EfUnitOfWork_SaveChangesAsync_RetryExhausted_LogsWarning_WithConfiguredAttemptCount()
     {
         // Arrange
-        var (ctx, _) = CreateExhaustingContext();
+        var (ctx, _) = CreateExhaustingContext(configuredMaxRetryCount: 5);
         await using var _1 = ctx;
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.EnsureCreatedAsync();
         ctx.Items.Add(new RetryDiagListenerTestItem { Name = "x" });
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
-        var retryOptions = new TransientFaultRetryOptions(MaxRetryCount: 5, MaxRetryDelay: null);
         var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: retryOptions);
+            ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         Func<Task> act = () => uow.SaveChangesAsync();
@@ -137,7 +135,7 @@ public sealed class RetryExhaustionLoggingTests
 
         var inMemoryLogger = new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
         var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: null);
+            ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act
         var affected = await uow.SaveChangesAsync();
@@ -159,7 +157,7 @@ public sealed class RetryExhaustionLoggingTests
         var inMemoryLogger =
             new InMemoryLogger<SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork>();
         var tuow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(
-            ctx, dispatcher: null, logger: inMemoryLogger, retryOptions: null);
+            ctx, dispatcher: null, logger: inMemoryLogger);
 
         // Act — the operation delegate always faults on its INSERT, forcing exhaustion.
         Func<Task> act = () => tuow.ExecuteInTransactionAsync(async token =>

@@ -158,7 +158,7 @@ public static class SharedKernelLayeringRules
             .Should()
             .NotHaveDependencyOn("SharedKernel.Persistence.EfCore")
             .And()
-            .NotHaveDependencyOn("SharedKernel.Persistence.PostgreSQL")
+            .NotHaveDependencyOn("SharedKernel.Persistence.Npgsql")
             .And()
             .NotHaveDependencyOn("SharedKernel.Persistence.Dapper")
             .And()

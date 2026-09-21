@@ -23,7 +23,6 @@
     <PackageReference Include="SharedKernel.Persistence.EfCore.Encryption" />
     <PackageReference Include="SharedKernel.Persistence.Dapper" />
     <PackageReference Include="SharedKernel.Persistence.Npgsql" />
-    <PackageReference Include="SharedKernel.Persistence.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SharedKernel.Cryptography" />

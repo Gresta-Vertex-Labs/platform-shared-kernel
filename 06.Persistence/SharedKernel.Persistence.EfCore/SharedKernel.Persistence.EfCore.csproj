@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>EF Core 10 implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, DbContext pooling, and EfCorePersistenceBuilder. Field-level encryption and the audit trail now ship as separate sibling packages (SharedKernel.Persistence.EfCore.Encryption / .Auditing).</Description>
-    <PackageTags>persistence;efcore;entity-framework;repository;unit-of-work;shared-kernel</PackageTags>
+    <Description>EF Core 10 + PostgreSQL implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, DbContext pooling, EfCorePersistenceBuilder, and the PostgreSQL provider setup (UsePostgreSQL: snake_case naming, xmin concurrency tokens, retry-on-failure by default, SQLSTATE exception classification, JSONB, pgvector, row-level security). Field-level encryption and the audit trail ship as separate sibling packages (SharedKernel.Persistence.EfCore.Encryption / .Auditing).</Description>
+    <PackageTags>persistence;efcore;entity-framework;postgresql;npgsql;jsonb;pgvector;repository;unit-of-work;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
@@ -21,8 +21,15 @@
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <!-- P-557/W2: PersistenceServiceOptions implements ISectionBoundOptions. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!-- P-558/W1b: PostgreSQL-only. The former SharedKernel.Persistence.PostgreSQL package merged into
+         this one; the shared NpgsqlDataSource and the reusable PostgresException classifier live in
+         SharedKernel.Persistence.Npgsql (EF-Core-free, also used by Dapper). -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
+    <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
@@ -53,6 +60,7 @@
     <!-- Allows the nested test project to access internal members for diagnostics and white-box
          testing without expanding the public API surface. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Integration.Tests" />
     <!--
       P-557/W1: the sibling Encryption/Auditing packages contribute to this context purely through
       the public IPersistenceModelConventionFactory/IPersistenceModelConfigurator/

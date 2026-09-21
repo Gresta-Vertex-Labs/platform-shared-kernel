@@ -16,8 +16,7 @@ using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.Npgsql.Context;
 using SharedKernel.Persistence.Npgsql.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Migrations;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
@@ -205,11 +204,7 @@ public sealed class TenantSafeDapperCommandServiceIntegrationTests : IAsyncLifet
     private async Task<ServiceProvider> BuildEnlistedProviderAsync()
     {
         var services = new ServiceCollection();
-        services.AddSharedKernelNpgsql(_writerConnectionString);
-        // The simple string-connection-string overload of AddSharedKernelNpgsql does not register
-        // ITenantSessionBinder (only the IConfiguration-bound overload does, for the default
-        // database) — this test needs it directly, so it is added explicitly here.
-        services.AddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
+        services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_writerConnectionString));
         services.AddSingleton<IRequestContext>(new FakeAuditActorContext(tenantId: TenantA));
 
         // Registered under BOTH the interface (what TenantSafeDapperCommandService's constructor

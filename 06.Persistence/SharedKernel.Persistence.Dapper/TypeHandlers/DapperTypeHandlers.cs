@@ -39,7 +39,7 @@ public static class DapperTypeHandlers
     /// name to a property name (e.g. a <c>tenant_id</c> column binds to a <c>TenantId</c> property
     /// with no <c>AS "TenantId"</c> alias needed) — <see cref="global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores"/>.
     /// Defaults to <see langword="true"/>, matching this platform's snake_case naming convention
-    /// (<c>SharedKernel.Persistence.PostgreSQL</c>'s <c>SnakeCaseNamingConvention</c>) so a raw-SQL
+    /// (the snake_case naming convention <c>SharedKernel.Persistence.EfCore</c>'s <c>UsePostgreSQL()</c> applies) so a raw-SQL
     /// query written against the SAME schema an EF Core context maps needs no manual aliasing.
     /// </param>
     /// <remarks>

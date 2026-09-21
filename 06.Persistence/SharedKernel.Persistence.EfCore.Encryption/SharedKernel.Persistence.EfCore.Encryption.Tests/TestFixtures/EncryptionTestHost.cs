@@ -7,7 +7,6 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
@@ -60,7 +59,7 @@ public static class EncryptionTestHost
         configureServices?.Invoke(services);
 
         services.AddSharedKernelEfCore<TContext>(options => options
-            .UsePostgreSQL(connectionString)
+            .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString))
             // Test-harness-only: every test builds its own fresh EncryptionInterceptor instance (a
             // materialization interceptor, part of EF Core's internal model-service-provider cache
             // key by design), so a single test PROCESS running many test methods legitimately builds

@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <c>23505</c>/<c>23503</c>, SQL Server's error numbers,...), so
 /// <c>SharedKernel.Persistence.EfCore</c> — which must never reference a specific ADO.NET provider —
 /// cannot classify it directly. This interface is the seam: a provider package (e.g.
-/// <c>SharedKernel.Persistence.PostgreSQL</c>) implements it and registers itself, and
+/// <c>SharedKernel.Persistence.EfCore</c>'s own PostgreSQL classifier, always registered first) implements it, and
 /// <see cref="Context.SharedKernelDbContext"/> consults every registered classifier, in registration
 /// order, immediately after the concurrency translation fails to match.
 /// </para>

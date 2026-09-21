@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -6,13 +6,13 @@
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.Auditing.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!--
-      P-557/W6: real PostgreSQL (Testcontainers) is this project's primary target now — chain
+      P-557/W6: real PostgreSQL (Testcontainers) is this project's primary target now â€” chain
       append/verification correctness (sequence contiguity, clock skew, tamper/gap/truncation
       detection, transaction semantics) can only be genuinely proven against a real database, not
-      SQLite/InMemory. SharedKernel.Persistence.PostgreSQL (real xmin, real UsePostgreSQL()) and
+      SQLite/InMemory. SharedKernel.Persistence.EfCore (real xmin, real UsePostgreSQL()) and
       .Npgsql (NpgsqlAdvisoryTransactionLock, AddSharedKernelNpgsql) are both referenced.
     -->
-    <ProjectReference Include="..\..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
     <!-- .AddAsymmetricSigning() for the checkpoint-signing integration tests. -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
@@ -33,7 +33,7 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!--
       P-557/W6: SQLite backs WithAuditTrailBuilderTests' pure-DI-wiring model scaffolding only (no
-      audit-record storage semantics are asserted against it — see that file's remarks); the base
+      audit-record storage semantics are asserted against it â€” see that file's remarks); the base
       Microsoft.Extensions.Configuration package (transitively via .Json, already centrally pinned)
       supplies ConfigurationBuilder.AddInMemoryCollection for those same tests' AuditChainOptions
       configuration.

@@ -17,7 +17,7 @@ using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 // needed here (the tests below never call SaveChangesAsync against a failing operation), only the
 // strategy's RetriesOnFailure=true reporting, so there is no need to join the shared
 // "RetryDiagnostics" xUnit collection those other tests use.
-using SharedKernel.Persistence.EfCore.Tests.Diagnostics;
+using SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
@@ -145,21 +145,27 @@ public sealed class EfCorePersistenceBuilderTests
     }
 
     [Fact]
-    public void Build_TransientFaultRetry_IsCompatibleWithTransactions_DoesNotThrow()
+    public void Build_AlwaysRegistersThePostgreSqlExceptionClassifier_First_AndOnlyOnce()
     {
-        // Arrange — the former retry-vs-transaction Build() guard is gone: every transaction runs
-        // inside the execution strategy (ExecuteInTransactionAsync), so a retrying strategy can replay it.
+        // P-558: SQLSTATE classification is part of the setup itself — there is no path without it.
         var services = new ServiceCollection();
+        services.AddSingleton<SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier, NoOpClassifier>();
 
-        var act = () =>
-            services
-                .AddSharedKernelEfCore<TestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
-                .WithTransientFaultRetry()
-                .Build();
+        services
+            .AddSharedKernelEfCore<TestDbContext>(options =>
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .Build();
 
-        // Assert
-        act.Should().NotThrow();
+        using var provider = services.BuildServiceProvider();
+        var classifiers = provider.GetServices<SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier>().ToList();
+
+        classifiers.Should().HaveCount(2);
+        classifiers[0].Should().BeOfType<SharedKernel.Persistence.EfCore.Exceptions.PostgreSqlDbUpdateExceptionClassifier>();
+    }
+
+    private sealed class NoOpClassifier : SharedKernel.Persistence.EfCore.Extensibility.IDbUpdateExceptionClassifier
+    {
+        public Exception? TryClassify(DbUpdateException exception) => null;
     }
 
     [Fact]

@@ -39,7 +39,7 @@ namespace SharedKernel.Persistence.Abstractions.Context;
 /// <para>
 /// <strong>Defense in depth, not the sole enforcement mechanism.</strong> The actual tenant isolation
 /// guarantee comes from a database-level row-level security policy (see
-/// <c>SharedKernel.Persistence.PostgreSQL</c>'s RLS migration helper) that reads the same session
+/// <c>SharedKernel.Persistence.EfCore</c>'s RLS migration helper) that reads the same session
 /// settings this interface writes. Calling any member here without a matching RLS policy on the
 /// target table binds a session variable that nothing enforces — always pair the two.
 /// </para>

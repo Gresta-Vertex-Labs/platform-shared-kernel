@@ -176,6 +176,41 @@ public sealed class PersistenceLayeringRulesTests
     }
 
     [Fact]
+    public void EfCore_IsThePostgreSqlProvider()
+    {
+        // P-558: PostgreSQL-only. The former SharedKernel.Persistence.PostgreSQL package merged into EfCore,
+        // which now references the Npgsql EF Core provider and the shared SharedKernel.Persistence.Npgsql.
+        typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name)
+            .Should().Contain(["Npgsql.EntityFrameworkCore.PostgreSQL", "SharedKernel.Persistence.Npgsql"]);
+    }
+
+    [Fact]
+    public void Dapper_NeverReferencesEfCore()
+    {
+        typeof(SharedKernel.Persistence.Dapper.ReadModels.DapperReadService).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name!)
+            .Should().NotContain(name =>
+                name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || name.StartsWith("SharedKernel.Persistence.EfCore", StringComparison.Ordinal),
+                because: "Dapper-only services must not pull in EF Core");
+    }
+
+    [Fact]
+    public void Npgsql_NeverReferencesEfCore()
+    {
+        typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name!)
+            .Should().NotContain(name =>
+                name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || name.StartsWith("SharedKernel.Persistence.EfCore", StringComparison.Ordinal),
+                because: "the shared data source and the SQLSTATE classifier serve Dapper as well");
+    }
+
+    [Fact]
     public void PersistenceAbstractions_ReferencesTheSharedApplicationAbstractions()
     {
         typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly
@@ -195,7 +230,6 @@ public sealed class PersistenceLayeringRulesTests
         yield return [typeof(SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.PostgreSQL.Extensions.PostgreSQLPersistenceExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.Dapper.ReadModels.DapperReadService).Assembly];
     }
 

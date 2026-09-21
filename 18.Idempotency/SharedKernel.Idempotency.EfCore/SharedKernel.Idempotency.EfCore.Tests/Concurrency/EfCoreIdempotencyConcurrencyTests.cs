@@ -8,11 +8,13 @@ using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.TenantContext;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
+using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;
 using Xunit;
+
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Idempotency.EfCore.Tests.Concurrency;
 
@@ -46,7 +48,7 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
     private static IdempotencyDbContext CreateContext(string connectionString)
     {
         var optionsBuilder = new DbContextOptionsBuilder<IdempotencyDbContext>();
-        optionsBuilder.UsePostgreSQL(connectionString);
+        optionsBuilder.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString));
         return new IdempotencyDbContext(optionsBuilder.Options);
     }
 

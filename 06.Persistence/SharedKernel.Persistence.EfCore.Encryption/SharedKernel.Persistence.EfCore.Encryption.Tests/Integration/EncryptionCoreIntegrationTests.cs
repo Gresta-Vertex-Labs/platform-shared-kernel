@@ -11,7 +11,6 @@ using SharedKernel.Persistence.EfCore.Encryption.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.TestFixtures;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
@@ -346,7 +345,7 @@ public sealed class EncryptionCoreIntegrationTests
 
         services
             .AddSharedKernelEfCore<EncryptionTestDbContext>(options => options
-                .UsePostgreSQL(ConnectionString("sk_enc_pooled_tenants"))
+                .UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_pooled_tenants")))
                 .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMultiTenancy()
             .WithDbContextPooling(poolSize: 2)
@@ -413,7 +412,7 @@ public sealed class EncryptionCoreIntegrationTests
         services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
         services.AddSingleton<SharedKernel.Application.Context.IRequestContext>(actor);
 
-        services.AddSharedKernelEfCore<EncryptionTestDbContext>(options => options.UsePostgreSQL(ConnectionString("sk_enc_not_registered")).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+        services.AddSharedKernelEfCore<EncryptionTestDbContext>(options => options.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString("sk_enc_not_registered"))).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMultiTenancy()
                 .Build(); //.WithEncryption() never called.
 

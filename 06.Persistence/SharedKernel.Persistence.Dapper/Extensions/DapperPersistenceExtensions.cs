@@ -38,7 +38,7 @@ public static class DapperPersistenceExtensions
     /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
     /// <remarks>
     /// <c>IDbConnectionFactory</c> is NOT registered by this extension — it is registered by
-    /// <c>AddSharedKernelNpgsql</c>/<c>AddSharedKernelPostgreSQL</c>. Consuming services must call
+    /// <c>AddSharedKernelNpgsql</c>. Consuming services must call
     /// both extensions at startup:
     /// <code>
     /// services.AddSharedKernelNpgsql(builder.Configuration);

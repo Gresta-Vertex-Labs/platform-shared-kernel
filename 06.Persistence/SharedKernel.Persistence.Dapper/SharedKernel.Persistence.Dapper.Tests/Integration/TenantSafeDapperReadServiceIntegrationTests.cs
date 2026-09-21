@@ -9,7 +9,7 @@ using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.ReadModels;
 using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.Npgsql.Context;
-using SharedKernel.Persistence.PostgreSQL.Migrations;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
