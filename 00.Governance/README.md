@@ -247,7 +247,7 @@ Multi-tenant EF Core safety, and SQL-injection prevention in the Dapper read/com
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [SK0042](#sk0042-nonconstantdappersqlargument) | A non-constant `sql` argument on a Dapper query/command method | Fixed SQL text, values through parameters |
-| [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that drops the global tenant filter | Call `base.OnModelCreating` or `ApplyTenantFilters` |
+| [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that skips the platform model configuration | Call `base.OnModelCreating` |
 | [SK0202](#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` outside the permitted scope | Keep it inside the persistence layer or a `TenantedRepository` |
 
 #### Messaging
@@ -2698,26 +2698,24 @@ warning SK0039: Type 'OrderPlaced' has an invalid [IntegrationEvent] attribute: 
 
 **Category:** Design · **Default severity:** Warning
 
-An `OnModelCreating` override on a `TenantedDbContext` subclass must call `base.OnModelCreating(...)` or `ApplyTenantFilters(...)`.
+An `OnModelCreating` override on a `TenantedDbContext` subclass must call `base.OnModelCreating(...)`.
 
 #### Why it matters
 
-`TenantedDbContext.OnModelCreating` installs the global EF Core query filter that limits every query to the current tenant's rows. A subclass that overrides the method and never calls the base implementation removes that filter. Nothing fails: queries still run, they just return every tenant's data.
+`SharedKernelDbContext.OnModelCreating` applies the entity type configurations of the context's assembly, the registered model configurators, the `Money` mapping and client-side key generation. A subclass that overrides the method and never calls the base implementation silently drops all of them: the model builds, but no longer matches what the platform's tenant, audit and encryption configuration expects.
 
-This is a silent cross-tenant data leak, and it is easy to introduce when adding entity configuration to a context.
+The tenant query filter itself no longer depends on the base call — a model-finalizing convention installs it on every `IHasTenant` entity type and fails the model build for any entity type that is neither tenant-scoped nor marked `[TenantShared]`. The rule still guards the rest of the platform model configuration.
 
 #### What it flags
 
-- A method named `OnModelCreating` with the `override` modifier, declared in a class whose base list names `TenantedDbContext` (simple-name match, so `TenantedDbContext`, a qualified `SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext`, or a generic form all count). A nested class inside such a class is checked too.
-- The diagnostic is reported on the method name when its body (block or expression body) contains neither of these invocations:
-  - `base.OnModelCreating(...)`
-  - `ApplyTenantFilters(...)`, called by simple name or through any receiver such as `this.ApplyTenantFilters(...)`
+- A method named `OnModelCreating` with the `override` modifier, declared in a class whose base list names `TenantedDbContext` (simple-name match, so `TenantedDbContext`, a qualified `SharedKernel.Persistence.EfCore.Context.TenantedDbContext`, or a generic form all count). A nested class inside such a class is checked too.
+- The diagnostic is reported on the method name when its body (block or expression body) contains no `base.OnModelCreating(...)` invocation.
 
 #### What it does not flag
 
 - Indirect inheritance. Only the class's own base list is inspected, so `OrderDbContext : AppDbContextBase` is not checked even when `AppDbContextBase : TenantedDbContext` is declared in the same file.
 - Overrides without a body (`abstract` or `extern`).
-- Ordering and reachability. The rule only checks that a qualifying call exists somewhere in the body. A call inside an `if` that never runs, or an `ApplyTenantFilters` call placed before your entity configuration, still passes. `ApplyTenantFilters` only covers the `IHasTenant` entity types already in the model when it runs, so call it after your own configuration.
+- Ordering and reachability. The rule only checks that the call exists somewhere in the body. Call it first.
 
 #### Example
 
@@ -2733,7 +2731,7 @@ public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 ```
 
 ```csharp
-// Compliant: the base call applies assembly configurations, then the tenant filter
+// Compliant: the base call applies the platform model configuration first
 public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -2744,31 +2742,19 @@ public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 }
 ```
 
-```csharp
-// Compliant: explicit filter registration after custom configuration
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.ApplyConfiguration(new OrderConfiguration());
-    ApplyTenantFilters(modelBuilder);
-}
-```
-
 #### Diagnostic
 
 ```text
-warning SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query filter will be silently removed
+warning SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' — the platform model configuration (entity configurations, Money mapping, key generation) is silently skipped
 ```
 
 #### Suppressing
 
-Suppress only when the tenant filter is installed by a mechanism the syntax check cannot see, and name that mechanism in the justification:
+Suppress only when the base call is made through a helper the syntax check cannot see, and name that helper in the justification:
 
 ```csharp
-#pragma warning disable SK0201 // Tenant filter installed by TenantFilterConvention, registered in ConfigureConventions
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.ApplyConfigurationsFromAssembly(typeof(OrderDbContext).Assembly);
-}
+#pragma warning disable SK0201 // base.OnModelCreating is called by ConfigureOrderingModel
+protected override void OnModelCreating(ModelBuilder modelBuilder) => ConfigureOrderingModel(modelBuilder);
 #pragma warning restore SK0201
 ```
 

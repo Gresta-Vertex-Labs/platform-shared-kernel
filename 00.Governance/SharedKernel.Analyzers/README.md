@@ -184,7 +184,7 @@ Multi-tenant EF Core safety.
 
 | Rule | Flags | Do this instead |
 |---|---|---|
-| [`SK0201`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0201-tenanteddbcontextonmodelcreatingguard) | A `TenantedDbContext.OnModelCreating` override calling neither `base.OnModelCreating` nor `ApplyTenantFilters` | Call one of them, or the global tenant filter is silently lost |
+| [`SK0201`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0201-tenanteddbcontextonmodelcreatingguard) | A `TenantedDbContext.OnModelCreating` override that does not call `base.OnModelCreating` | Call it first, or the platform model configuration is silently skipped |
 | [`SK0202`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` called outside permitted scope | Keep it inside `SharedKernel.Persistence.EfCore` or a `TenantedRepository` |
 
 ### Messaging

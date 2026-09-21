@@ -1,4 +1,3 @@
-using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +8,7 @@ using SharedKernel.Application.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.Seeding;
+using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
 namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 
@@ -36,14 +36,6 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
     ILogger<RowLevelSecurityCoverageCheck<TContext>>? logger = null) : IHostedLifecycleService
     where TContext : SharedKernelDbContext
 {
-    private const string CoverageSql =
-        """
-        SELECT c.relrowsecurity, c.relforcerowsecurity,
-               EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = @policy)
-        FROM pg_class c
-        WHERE c.oid = to_regclass(@table)
-        """;
-
     private readonly ILogger _logger = (ILogger?)logger ?? NullLogger.Instance;
 
     public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -94,15 +86,19 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
             if (tables.Count == 0)
                 return findings;
 
-            var connection = context.Database.GetDbConnection();
+            var qualified = tables
+                .Select(t => t.Schema is null ? $"\"{t.Table}\"" : $"\"{t.Schema}\".\"{t.Table}\"")
+                .ToList();
             await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                foreach (var (table, schema, _) in tables)
+                var statuses = await RowLevelSecurityCatalog
+                    .GetTableStatusAsync(context.Database.GetDbConnection(), qualified, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var status in statuses)
                 {
-                    var qualified = schema is null ? $"\"{table}\"" : $"\"{schema}\".\"{table}\"";
-                    if (await ReadAsync(connection, qualified, RowLevelSecurityMigrationBuilderExtensions.TenantPolicyName(table), cancellationToken).ConfigureAwait(false) is { } problem)
-                        findings.Add($"'{qualified}' {problem}");
+                    if (Describe(status) is { } problem)
+                        findings.Add($"'{status.Table}' {problem}");
                 }
             }
             finally
@@ -127,31 +123,13 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
         }
     }
 
-    private static async Task<string?> ReadAsync(DbConnection connection, string table, string policy, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = CoverageSql;
-        AddParameter(command, "table", table);
-        AddParameter(command, "policy", policy);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            return "does not exist";
-
-        if (!reader.GetBoolean(0))
-            return "does not have row-level security enabled";
-
-        if (!reader.GetBoolean(1))
-            return "does not force row-level security (the table owner bypasses it)";
-
-        return reader.GetBoolean(2) ? null : $"has no tenant policy '{policy}'";
-    }
-
-    private static void AddParameter(DbCommand command, string name, string value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value;
-        command.Parameters.Add(parameter);
-    }
+    private static string? Describe(RowLevelSecurityTableStatus status) =>
+        status switch
+        {
+            { Exists: false } => "does not exist",
+            { RowSecurityEnabled: false } => "does not have row-level security enabled",
+            { RowSecurityForced: false } => "does not force row-level security (the table owner bypasses it)",
+            { HasTenantPolicy: false } => "has no policy that reads the tenant setting",
+            _ => null,
+        };
 }

@@ -16,7 +16,7 @@ public class SK0201_TenantedDbContextOnModelCreatingAnalyzerTests
 
     /// <summary>
     /// T-73: A <c>TenantedDbContext</c> subclass that overrides <c>OnModelCreating</c>
-    /// without calling <c>base.OnModelCreating</c> or <c>ApplyTenantFilters</c> fires SK0201.
+    /// without calling <c>base.OnModelCreating</c> fires SK0201.
     /// </summary>
     [Fact]
     public async Task FirePath_SubclassOverridesOnModelCreating_WithoutTenantCall_ReportsDiagnostic()
@@ -36,7 +36,7 @@ public class SK0201_TenantedDbContextOnModelCreatingAnalyzerTests
                 {
                     public override void {|SK0201:OnModelCreating|}(ModelBuilder modelBuilder)
                     {
-                        // Deliberately omits base.OnModelCreating and ApplyTenantFilters
+                        // Deliberately omits base.OnModelCreating
                         modelBuilder.ToString();
                     }
                 }
@@ -111,15 +111,16 @@ public class SK0201_TenantedDbContextOnModelCreatingAnalyzerTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-75 — Pass path: subclass calls ApplyTenantFilters explicitly
+    // T-75 — Fire path: a helper call does not replace the base call
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-75: A <c>TenantedDbContext</c> subclass that calls <c>this.ApplyTenantFilters(modelBuilder)</c>
-    /// (instead of <c>base.OnModelCreating</c>) does not trigger SK0201.
+    /// T-75: A <c>TenantedDbContext</c> subclass that calls a filter helper instead of
+    /// <c>base.OnModelCreating</c> still fires SK0201 — the tenant filter now comes from a convention,
+    /// and the base call is what applies the platform model configuration.
     /// </summary>
     [Fact]
-    public async Task PassPath_SubclassCallsApplyTenantFilters_NoDiagnostic()
+    public async Task FirePath_SubclassCallsAHelperInsteadOfBase_ReportsDiagnostic()
     {
         var test = new CSharpAnalyzerTest<TenantedDbContextOnModelCreatingAnalyzer, DefaultVerifier>
         {
@@ -134,7 +135,7 @@ public class SK0201_TenantedDbContextOnModelCreatingAnalyzerTests
 
                 public class ShopDbContext : TenantedDbContext
                 {
-                    public override void OnModelCreating(ModelBuilder modelBuilder)
+                    public override void {|SK0201:OnModelCreating|}(ModelBuilder modelBuilder)
                     {
                         this.ApplyTenantFilters(modelBuilder);
                         modelBuilder.ToString();
@@ -167,38 +168,8 @@ public class SK0201_TenantedDbContextOnModelCreatingAnalyzerTests
                 {
                     public override void OnModelCreating(ModelBuilder modelBuilder)
                     {
-                        // Does not call base or ApplyTenantFilters — but that is fine here
+                        // Does not call base — but that is fine here
                         modelBuilder.ToString();
-                    }
-                }
-                """,
-        };
-        await test.RunAsync();
-    }
-
-    /// <summary>
-    /// Pass path: A simple invocation of <c>ApplyTenantFilters(...)</c> (without explicit
-    /// receiver) satisfies the requirement and suppresses SK0201.
-    /// </summary>
-    [Fact]
-    public async Task PassPath_ApplyTenantFiltersSimpleCall_NoDiagnostic()
-    {
-        var test = new CSharpAnalyzerTest<TenantedDbContextOnModelCreatingAnalyzer, DefaultVerifier>
-        {
-            TestCode = """
-                public class ModelBuilder { }
-
-                public class TenantedDbContext
-                {
-                    public virtual void OnModelCreating(ModelBuilder modelBuilder) { }
-                    protected void ApplyTenantFilters(ModelBuilder mb) { }
-                }
-
-                public class InventoryDbContext : TenantedDbContext
-                {
-                    public override void OnModelCreating(ModelBuilder modelBuilder)
-                    {
-                        ApplyTenantFilters(modelBuilder);
                     }
                 }
                 """,

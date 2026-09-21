@@ -19,6 +19,10 @@ internal static class EfCorePersistenceBuilderRowLevelSecurityExtensions
     /// </summary>
     /// <typeparam name="TContext">The context type.</typeparam>
     /// <param name="builder">The persistence builder.</param>
+    /// <param name="coverageCheck">
+    /// What the startup check does when a tenant table is not protected; <see langword="null"/> = fail, or warn in the
+    /// Development environment.
+    /// </param>
     /// <returns>The same builder.</returns>
     /// <remarks>
     /// <para>
