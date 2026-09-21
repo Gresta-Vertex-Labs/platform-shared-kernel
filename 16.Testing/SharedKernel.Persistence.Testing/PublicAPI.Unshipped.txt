@@ -1,0 +1,140 @@
+#nullable enable
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.FakeAuditTrailWriter() -> void
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.RecordAsync(SharedKernel.Application.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Recorded.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Application.Auditing.AuditEntry!>!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Reset() -> void
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.ShouldHaveAudited(string! action, string! resourceType, string! resourceId) -> SharedKernel.Application.Auditing.AuditEntry!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.get -> bool
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.set -> void
+SharedKernel.Persistence.Testing.FakeCrossTenantScope
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.DenyWith.get -> System.Exception?
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.DenyWith.set -> void
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.Depth.get -> int
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.Enter(string! reason) -> System.IDisposable!
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.EnteredReasons.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.FakeCrossTenantScope() -> void
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.ForceActive.get -> bool
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.ForceActive.set -> void
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.IsActive.get -> bool
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.Reset() -> void
+SharedKernel.Persistence.Testing.FakeCrossTenantScope.ShouldHaveEntered(string! reason) -> void
+SharedKernel.Persistence.Testing.FakeDbConnectionFactory
+SharedKernel.Persistence.Testing.FakeDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
+SharedKernel.Persistence.Testing.FakeDbConnectionFactory.FakeDbConnectionFactory(System.Func<System.Data.Common.DbConnection!>! connectionFactory) -> void
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.AddAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.AddRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.AnyAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.CountAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.DeleteRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ExistsAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.FakeRepository(System.Func<TAggregate, TId>! idSelector, System.Collections.Generic.IEnumerable<TAggregate>? seed = null) -> void
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.FirstOrDefaultAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.FirstOrDefaultProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.GetByIdAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.GetByIdsAsync(System.Collections.Generic.IEnumerable<TId>! ids, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.Items.get -> System.Collections.Generic.IReadOnlyDictionary<TId, TAggregate>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListKeysetAsync<TKey>(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, SharedKernel.Contracts.Pagination.CursorPageRequest! page, System.Linq.Expressions.Expression<System.Func<TAggregate, TKey>!>! keySelector, bool descending = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TAggregate>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListKeysetProjectedAsync<TKey, TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, SharedKernel.Contracts.Pagination.CursorPageRequest! page, System.Linq.Expressions.Expression<System.Func<TAggregate, TKey>!>! keySelector, bool descending = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TResult>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListPagedAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, SharedKernel.Contracts.Pagination.PageRequest! page, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TAggregate>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListPagedProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, SharedKernel.Contracts.Pagination.PageRequest! page, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TResult>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.ListProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TResult>!>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.Reset() -> void
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.Seed(System.Collections.Generic.IEnumerable<TAggregate>! aggregates) -> void
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.SimulateFailure.get -> bool
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.SimulateFailure.set -> void
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.StreamAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TAggregate>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.StreamProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeUnitOfWork
+SharedKernel.Persistence.Testing.FakeUnitOfWork.CommitCount.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Persistence.Testing.FakeUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Persistence.Testing.FakeUnitOfWork.FakeUnitOfWork() -> void
+SharedKernel.Persistence.Testing.FakeUnitOfWork.IsTransactionActive.get -> bool
+SharedKernel.Persistence.Testing.FakeUnitOfWork.OnBeforeCommit(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
+SharedKernel.Persistence.Testing.FakeUnitOfWork.Reset() -> void
+SharedKernel.Persistence.Testing.FakeUnitOfWork.RollbackCount.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SaveChangesCallCount.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SaveChangesResult.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SaveChangesResult.set -> void
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SimulateFailure.get -> bool
+SharedKernel.Persistence.Testing.FakeUnitOfWork.SimulateFailure.set -> void
+SharedKernel.Persistence.Testing.FakeUnitOfWork.TransactionCount.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.TransientFailures.get -> int
+SharedKernel.Persistence.Testing.FakeUnitOfWork.TransientFailures.set -> void
+SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions
+SharedKernel.Persistence.Testing.PostgresTestDatabase
+SharedKernel.Persistence.Testing.PostgresTestDatabase.AdminConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.ApplyMigrationAsync(System.Action<Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!>! migration, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.AuditSealerConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.BuildConfiguration(string! connectionName, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, string?>>? additional = null, bool separateAuditSealer = false) -> Microsoft.Extensions.Configuration.IConfiguration!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.ConfigurationFor(string! connectionName, bool separateAuditSealer = false) -> System.Collections.Generic.IReadOnlyDictionary<string!, string?>!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.CreateAuditLedgerAsync(bool separateAuditSealer = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.CreateSchemaAsync(Microsoft.EntityFrameworkCore.DbContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.CreateTenantEncryptionKeyTableAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.CrossTenantConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SharedKernel.Persistence.Testing.PostgresTestDatabase.EnableRowLevelSecurityAsync(Microsoft.EntityFrameworkCore.DbContext! context, string? crossTenantRole = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.ExecuteAsAdminAsync(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.ExecuteAsMigratorAsync(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.MigratorConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.Name.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestDatabase.RuntimeConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestRoles
+SharedKernel.Persistence.Testing.PostgresTestServer
+SharedKernel.Persistence.Testing.PostgresTestServer.AdminConnectionString.get -> string!
+SharedKernel.Persistence.Testing.PostgresTestServer.CreateDatabaseAsync(string? name = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestDatabase!>!
+SharedKernel.Persistence.Testing.PostgresTestServer.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SharedKernel.Persistence.Testing.TestRequestContext
+SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.ClientId.get -> string?
+SharedKernel.Persistence.Testing.TestRequestContext.ClientId.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Persistence.Testing.TestRequestContext.ImpersonatorId.get -> string?
+SharedKernel.Persistence.Testing.TestRequestContext.ImpersonatorId.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Persistence.Testing.TestRequestContext.IsAuthenticated.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Persistence.Testing.TestRequestContext.Permissions.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.SessionId.get -> string?
+SharedKernel.Persistence.Testing.TestRequestContext.SessionId.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Persistence.Testing.TestRequestContext.TenantId.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.TestRequestContext() -> void
+SharedKernel.Persistence.Testing.TestRequestContext.UserId.get -> string?
+SharedKernel.Persistence.Testing.TestRequestContext.UserId.set -> void
+SharedKernel.Persistence.Testing.TestRequestContext.WithImpersonator(string? impersonatorId) -> SharedKernel.Persistence.Testing.TestRequestContext!
+SharedKernel.Persistence.Testing.TestRequestContext.WithPermissions(params string![]! permissions) -> SharedKernel.Persistence.Testing.TestRequestContext!
+SharedKernel.Persistence.Testing.TestRequestContext.WithSession(string? sessionId) -> SharedKernel.Persistence.Testing.TestRequestContext!
+SharedKernel.Persistence.Testing.TestRequestContext.WithTenant(System.Guid? tenantId) -> SharedKernel.Persistence.Testing.TestRequestContext!
+const SharedKernel.Persistence.Testing.PostgresTestDatabase.AuditSealerDataSourceName = "audit-sealer" -> string!
+const SharedKernel.Persistence.Testing.PostgresTestRoles.AuditSealer = "app_audit_sealer" -> string!
+const SharedKernel.Persistence.Testing.PostgresTestRoles.CrossTenant = "app_cross_tenant" -> string!
+const SharedKernel.Persistence.Testing.PostgresTestRoles.Migrator = "app_migrator" -> string!
+const SharedKernel.Persistence.Testing.PostgresTestRoles.Runtime = "app_runtime" -> string!
+const SharedKernel.Persistence.Testing.PostgresTestServer.DefaultImage = "postgres:16.4" -> string!
+const SharedKernel.Persistence.Testing.TestRequestContext.DefaultUserId = "test-user" -> string!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeAuditTrailWriter(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeAuditTrailWriter!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeCrossTenantScope!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeRepository<TAggregate, TId>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Collections.Generic.IEnumerable<TAggregate>? seed = null) -> SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeUnitOfWork(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeUnitOfWork!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddTestRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Persistence.Testing.TestRequestContext? context = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.PostgresTestServer.FromExistingServer(string! adminConnectionString) -> SharedKernel.Persistence.Testing.PostgresTestServer!
+static SharedKernel.Persistence.Testing.PostgresTestServer.StartAsync(string! image = "postgres:16.4", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestServer!>!
+static SharedKernel.Persistence.Testing.TestRequestContext.Anonymous(System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.ForTenant(System.Guid tenantId, string! userId = "test-user") -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.ForUser(string! userId = "test-user", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.Service(string! clientId, System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.System(string! identity = "system", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+virtual SharedKernel.Persistence.Testing.TestRequestContext.HasPermission(string! permission) -> bool

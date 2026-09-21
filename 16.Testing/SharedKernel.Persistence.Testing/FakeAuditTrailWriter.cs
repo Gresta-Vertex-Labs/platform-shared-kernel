@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using SharedKernel.Application.Auditing;
 
-namespace SharedKernel.Testing.Application;
+namespace SharedKernel.Persistence.Testing;
 
 /// <summary>
 /// In-memory fake implementation of the shared <see cref="IAuditTrailWriter"/>
@@ -9,10 +9,9 @@ namespace SharedKernel.Testing.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>NOT</b> <see cref="SharedKernel.Testing.Persistence.FakeAuditTrailWriter"/> — same interface,
-/// different namespace. This fake records the caller-supplied <see cref="AuditEntry"/> verbatim, with
-/// none of the identity resolution and hash-chaining the persistence fake (and the real EF Core writer)
-/// performs — use it to assert what <c>AuditingBehavior</c> recorded.
+/// Records the caller-supplied <see cref="AuditEntry"/> verbatim, with none of the identity resolution the real
+/// ledger writer performs — use it to assert what a handler or <c>AuditingBehavior</c> recorded. Combine it with
+/// <see cref="FakeUnitOfWork"/> to check that a succeeded entry is written through <c>OnBeforeCommit</c>.
 /// </para>
 /// <para>
 /// Records every call — including when no assertion is ever made — into a thread-safe collection.

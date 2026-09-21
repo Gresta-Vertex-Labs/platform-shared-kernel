@@ -26,6 +26,9 @@ public static class SharedKernelLayeringRules
     private const string SearchNamespace = "SharedKernel.Search";
     private const string TestingNamespace = "SharedKernel.Testing";
 
+    /// <summary>The packable consumer-facing persistence test helpers (16.Testing, P-558): test projects only.</summary>
+    public const string PersistenceTestingNamespace = "SharedKernel.Persistence.Testing";
+
     /// <summary>
     /// 01.Core — references nothing. Core types must not depend on any other SharedKernel domain.
     /// </summary>
@@ -314,7 +317,9 @@ public static class SharedKernelLayeringRules
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .NotHaveDependencyOn(TestingNamespace);
+            .NotHaveDependencyOn(TestingNamespace)
+            .And()
+            .NotHaveDependencyOn(PersistenceTestingNamespace);
 
     /// <summary>
     /// The fifteen forbidden capability-domain namespace terms for

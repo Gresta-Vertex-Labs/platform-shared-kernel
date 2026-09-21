@@ -9,7 +9,7 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds.Serialization;
 using SharedKernel.Persistence.Abstractions.Repositories;
 
-namespace SharedKernel.Testing.Persistence;
+namespace SharedKernel.Persistence.Testing;
 
 /// <summary>
 /// In-memory fake of <see cref="IRepository{TAggregate, TId}"/> (and therefore

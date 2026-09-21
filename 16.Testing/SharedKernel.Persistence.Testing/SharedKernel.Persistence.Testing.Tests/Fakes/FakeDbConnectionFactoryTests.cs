@@ -1,8 +1,9 @@
 using System.Data.Common;
 using NSubstitute;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Testing;
 
-namespace SharedKernel.Testing.SelfTests.Persistence;
+namespace SharedKernel.Persistence.Testing.Tests.Fakes;
 
 public sealed class FakeDbConnectionFactoryTests
 {

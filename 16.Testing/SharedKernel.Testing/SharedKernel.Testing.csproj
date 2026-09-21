@@ -68,6 +68,14 @@
     -->
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
     <!--
+      P-558/W3c: the consumer-facing persistence test doubles and the PostgreSQL fixture moved to the packable
+      SharedKernel.Persistence.Testing (FakeRepository, FakeUnitOfWork, FakeDbConnectionFactory, FakeAuditTrailWriter,
+      TestRequestContext, FakeCrossTenantScope, PostgresTestServer/PostgresTestDatabase). This package builds on them:
+      FakeRequestContext/FakeAuditActorContext derive from TestRequestContext, PostgreSqlContainerFixture wraps
+      PostgresTestServer.
+    -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Testing\SharedKernel.Persistence.Testing.csproj" />
+    <!--
       Communication test doubles (S-10, P-186): MockServiceEndpointResolver (IServiceEndpointResolver).
       SCOPE LOCK: never reference SharedKernel.Communication.Rest, .Grpc, or .GraphQL from this package.
     -->

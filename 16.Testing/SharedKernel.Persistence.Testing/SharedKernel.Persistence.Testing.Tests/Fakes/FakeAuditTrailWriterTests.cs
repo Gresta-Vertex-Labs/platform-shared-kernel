@@ -1,7 +1,8 @@
 using SharedKernel.Application.Auditing;
 using SharedKernel.Testing.Application;
+using SharedKernel.Persistence.Testing;
 
-namespace SharedKernel.Testing.SelfTests.Application;
+namespace SharedKernel.Persistence.Testing.Tests.Fakes;
 
 /// <summary>
 /// Proves <see cref="FakeAuditTrailWriter"/> against the shared

@@ -23,6 +23,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SharedKernel.Cryptography" />
+    <!-- The consumer testing package (P-558/W3c): its fakes and its PostgreSQL fixture, as a consumer test project uses them. -->
+    <PackageReference Include="SharedKernel.Persistence.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
   <ItemGroup>

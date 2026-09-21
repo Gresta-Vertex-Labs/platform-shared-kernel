@@ -1,7 +1,8 @@
 using SharedKernel.Testing.Application;
 using Xunit;
+using SharedKernel.Persistence.Testing;
 
-namespace SharedKernel.Testing.SelfTests.Application;
+namespace SharedKernel.Persistence.Testing.Tests.Fakes;
 
 public sealed class FakeUnitOfWorkTests
 {

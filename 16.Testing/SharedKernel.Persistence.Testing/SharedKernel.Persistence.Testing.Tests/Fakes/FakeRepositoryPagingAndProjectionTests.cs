@@ -2,8 +2,9 @@ using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Testing;
 
-namespace SharedKernel.Testing.SelfTests.Persistence;
+namespace SharedKernel.Persistence.Testing.Tests.Fakes;
 
 /// <summary>
 /// Proves <see cref="FakeRepository{TAggregate, TId}"/>'s paging/projection/streaming/id-lookup

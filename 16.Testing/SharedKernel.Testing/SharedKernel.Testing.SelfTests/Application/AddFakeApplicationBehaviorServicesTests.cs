@@ -4,6 +4,7 @@ using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Context;
 using SharedKernel.Testing.Application;
 using Xunit;
+using SharedKernel.Persistence.Testing;
 
 namespace SharedKernel.Testing.SelfTests.Application;
 

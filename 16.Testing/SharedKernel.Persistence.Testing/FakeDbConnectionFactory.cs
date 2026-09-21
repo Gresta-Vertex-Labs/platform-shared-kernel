@@ -1,7 +1,7 @@
 using System.Data.Common;
 using SharedKernel.Persistence.Abstractions.Connections;
 
-namespace SharedKernel.Testing.Persistence;
+namespace SharedKernel.Persistence.Testing;
 
 /// <summary>
 /// In-memory fake implementation of <see cref="IDbConnectionFactory"/> (<c>06.Persistence</c>) for

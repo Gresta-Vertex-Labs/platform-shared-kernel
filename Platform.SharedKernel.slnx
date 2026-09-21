@@ -198,6 +198,8 @@
     <Project Path="15.Integration/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/16.Testing/">
+    <Project Path="16.Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.csproj" />
+    <Project Path="16.Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj" />
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj" />
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/SharedKernel.Testing.SelfTests.csproj" />
   </Folder>

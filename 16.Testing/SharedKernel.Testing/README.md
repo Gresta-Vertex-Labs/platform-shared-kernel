@@ -147,13 +147,18 @@ assembly fixture, not per test.
 
 ## What is in here
 
+The consumer-facing persistence doubles — `FakeRepository<,>`, `FakeUnitOfWork`, `FakeAuditTrailWriter` (for `AuditEntry`),
+`FakeDbConnectionFactory`, `FakeCrossTenantScope`, `TestRequestContext` and the `PostgresTestServer`/`PostgresTestDatabase`
+fixture — live in the packable `SharedKernel.Persistence.Testing` (namespace `SharedKernel.Persistence.Testing`), which
+this package references.
+
 | Area | Types |
 | --- | --- |
-| `Application/` | `FakeRequestContext`, `FakeUnitOfWork`, `FakeRequestIdempotencyStore`, `FakeAuditTrailWriter`, `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
+| `Application/` | `FakeRequestContext` (a `TestRequestContext`), `FakeRequestIdempotencyStore`, `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
 | `Caching/` | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService`, `FakeDistributedLock`, `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>`, `FakeCacheWarmupStrategy`, `FakeTenantCacheKeyProvider` |
 | `Clocks/` | `FakeClock` |
 | `Communication/` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `MockServiceEndpointResolver`, `ActivityRecorder`, `AmbientActivityTestHelper`, `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
-| `Containers/` | `PostgreSqlContainerFixture`, `RedisContainerFixture`, `RabbitMqContainerFixture`, `MinioContainerFixture`, `ElasticsearchContainerFixture`, `MeilisearchContainerFixture`, `QdrantContainerFixture` |
+| `Containers/` | `PostgreSqlContainerFixture` (xUnit wrapper over `PostgresTestServer`), `RedisContainerFixture`, `RabbitMqContainerFixture`, `MinioContainerFixture`, `ElasticsearchContainerFixture`, `MeilisearchContainerFixture`, `QdrantContainerFixture` |
 | `Contracts/` | `IntegrationEventFaker<TEvent>`, `EventEnvelopeBuilder<TEvent>`, `PagedListBuilder<T>`, `PagedListAssertions` |
 | `Cryptography/` | Fakes for every `SharedKernel.Cryptography` contract — hashing, symmetric and asymmetric encryption, signing, key providers, envelope encryption, secure random, TOTP replay — plus `AddFakeCryptography()` |
 | `DataPrivacy/` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
@@ -166,7 +171,7 @@ assembly fixture, not per test.
 | `Logging/` | `InMemoryLogger`, `InMemoryLogger<T>`, `InMemoryLoggerFactory`, `LogRecord`, `LoggerAssertions` |
 | `Messaging/` | `InMemoryMessageBus`, `InMemoryEventPublisher`, `TestHarnessFactory` |
 | `Notifications/` | `InMemoryNotificationSender`, `InMemoryNotificationDeliveryObserver` |
-| `Persistence/` | `FakeRepository<TAggregate,TId>` (evaluates real specifications in memory), `FakeUnitOfWork`, `FakePersistenceTransaction`, `FakeDbConnectionFactory`, `FakeAuditTrailWriter`, `FakeAuditQueryService`, `TestSharedKernelDbContext`, aggregate fakers, `ProjectionSpecificationBuilder<,>` |
+| `Persistence/` | `FakeAuditActorContext` (a `TestRequestContext` with a fixed tenant), `FakeAuditTrailWriter` (ledger records), `FakeAuditQueryService`, `TestSharedKernelDbContext`, aggregate fakers, `ProjectionSpecificationBuilder<,>` |
 | `Reporting/` | `InMemoryReportExporter<TRow>` |
 | `Scheduling/` | `InMemoryScheduledJobRegistry` |
 | `Search/` | `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor` |

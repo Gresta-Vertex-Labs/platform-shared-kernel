@@ -16,6 +16,7 @@ using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Tests.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Persistence.Testing;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
 
@@ -486,7 +487,7 @@ public sealed class RepositoryRedesignTests
     {
         var (context, orders) = await SeedAsync();
         using var __ = context;
-        var fake = new SharedKernel.Testing.Persistence.FakeRepository<ShopOrder, ShopOrderId>(o => o.Id, orders);
+        var fake = new SharedKernel.Persistence.Testing.FakeRepository<ShopOrder, ShopOrderId>(o => o.Id, orders);
         var real = new EfReadRepository<ShopOrder, ShopOrderId>(context);
 
         var fakeFirst = await fake.ListKeysetAsync(Spec.For<ShopOrder>(), CursorPageRequest.Create(limit: 2).Value, o => o.Number);

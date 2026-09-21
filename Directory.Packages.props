@@ -291,6 +291,7 @@
     <PackageVersion Include="SharedKernel.Persistence.EfCore.Auditing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.EfCore.Encryption" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Npgsql" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Persistence.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />

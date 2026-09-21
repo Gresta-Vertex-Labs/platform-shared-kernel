@@ -4,8 +4,9 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
+using SharedKernel.Persistence.Testing;
 
-namespace SharedKernel.Testing.SelfTests.Persistence;
+namespace SharedKernel.Persistence.Testing.Tests.Fakes;
 
 // Shared fixtures for FakeRepository<TAggregate,TId>/FakeUnitOfWork/FakePersistenceTransaction
 // self-tests (T-66..T-71, P-335/WO-053) — none are part of the testing-infrastructure public

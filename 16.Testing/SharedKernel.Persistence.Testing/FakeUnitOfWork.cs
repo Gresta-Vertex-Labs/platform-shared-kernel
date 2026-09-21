@@ -3,7 +3,7 @@ using System.Threading;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Primitives.Results;
 
-namespace SharedKernel.Testing.Application;
+namespace SharedKernel.Persistence.Testing;
 
 /// <summary>
 /// In-memory fake implementation of the shared <see cref="IUnitOfWork"/>
