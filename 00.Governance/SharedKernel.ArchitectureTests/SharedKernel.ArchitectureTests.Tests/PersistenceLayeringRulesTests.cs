@@ -211,9 +211,11 @@ public sealed class PersistenceLayeringRulesTests
     }
 
     [Fact]
-    public void PersistenceAbstractions_ReferencesTheSharedApplicationAbstractions()
+    public void PersistenceEfCore_ReferencesTheSharedApplicationAbstractions()
     {
-        typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly
+        // P-558 (A): the audit contracts that used the shared enums left .Abstractions, so the EF Core package
+        // (EfUnitOfWork implements the shared IUnitOfWork) is now the one that proves the reference.
+        typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name)
             .Should().Contain("SharedKernel.Application.Abstractions");

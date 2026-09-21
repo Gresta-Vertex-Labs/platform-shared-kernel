@@ -9,10 +9,9 @@ using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Cryptography.Signing;
-using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Context;
-using SharedKernel.Persistence.EfCore.Auditing.Chain;
 using SharedKernel.Persistence.EfCore.Auditing.Extensions;
 using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.Npgsql.Extensions;
@@ -79,7 +78,11 @@ public sealed class AuditTransactionWiringPostgresTests
 
         var configurationValues = new Dictionary<string, string?>
         {
-            [$"{AuditChainOptions.SectionName}:{nameof(AuditChainOptions.HmacKeyBase64)}"] =
+            [$"{AuditLedgerOptions.SectionName}:CurrentKeyId"] = "k1",
+            [$"{AuditLedgerOptions.SectionName}:Keys:k1:Order"] = "1",
+            [$"{AuditLedgerOptions.SectionName}:Sealer:Enabled"] = "false",
+            [$"{AuditLedgerOptions.SectionName}:SelfCheck"] = "Off",
+            [$"{AuditLedgerOptions.SectionName}:Keys:k1:Material"] =
                 Convert.ToBase64String(Enumerable.Repeat((byte)0x24, 32).ToArray()),
             [$"{NpgsqlPersistenceOptions.SectionName}:{nameof(NpgsqlPersistenceOptions.ConnectionString)}"] = connectionString,
             // Testcontainers' Postgres image has no TLS configured — the documented, explicit opt-down
@@ -114,7 +117,10 @@ public sealed class AuditTransactionWiringPostgresTests
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
         await using var scope = provider.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<AuditWiringTestDbContext>().Database.EnsureCreatedAsync();
+        var database = scope.ServiceProvider.GetRequiredService<AuditWiringTestDbContext>().Database;
+        await database.EnsureCreatedAsync();
+        // The ledger tables are not part of the EF model; they are created by the migration helper's DDL.
+        await database.ExecuteSqlRawAsync(AuditLedgerSchema.CreateScript);
 
         return provider;
     }
@@ -139,9 +145,8 @@ public sealed class AuditTransactionWiringPostgresTests
 
         (await context.Orders.CountAsync(o => o.Id == orderId)).Should().Be(1);
 
-        var auditRecords = await context.Set<AuditRecord>()
-            .Where(r => r.ResourceId == orderId.ToString())
-            .ToListAsync();
+        var auditRecords = (await verifyScope.ServiceProvider.GetRequiredService<IAuditQueryService>()
+            .QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = orderId.ToString() })).Items;
         auditRecords.Should().ContainSingle();
         auditRecords[0].Outcome.Should().Be(AuditOutcome.Succeeded);
     }
@@ -175,9 +180,8 @@ public sealed class AuditTransactionWiringPostgresTests
         (await context.Orders.CountAsync(o => o.Id == orderId)).Should().Be(
             0, "the business write failed at SaveChangesAsync and must have rolled back");
 
-        var auditRecords = await context.Set<AuditRecord>()
-            .Where(r => r.ResourceId == orderId.ToString())
-            .ToListAsync();
+        var auditRecords = (await verifyScope.ServiceProvider.GetRequiredService<IAuditQueryService>()
+            .QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = orderId.ToString() })).Items;
         auditRecords.Should().ContainSingle("no Succeeded attestation may exist for a write that never landed");
         auditRecords[0].Outcome.Should().Be(AuditOutcome.Failed);
         auditRecords[0].ErrorCode.Should().Contain(nameof(SharedKernel.Core.Exceptions.ValidationException));
@@ -205,9 +209,8 @@ public sealed class AuditTransactionWiringPostgresTests
         await using var verifyScope = provider.CreateAsyncScope();
         var context = verifyScope.ServiceProvider.GetRequiredService<AuditWiringTestDbContext>();
 
-        var auditRecords = await context.Set<AuditRecord>()
-            .Where(r => r.ResourceId == orderId.ToString())
-            .ToListAsync();
+        var auditRecords = (await verifyScope.ServiceProvider.GetRequiredService<IAuditQueryService>()
+            .QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = orderId.ToString() })).Items;
         auditRecords.Should().ContainSingle();
         auditRecords[0].Outcome.Should().Be(AuditOutcome.Failed);
         auditRecords[0].ErrorCode.Should().Be("order.rejected");

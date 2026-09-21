@@ -12,7 +12,7 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Application.Auditing;
-using SharedKernel.Persistence.Abstractions.Auditing;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Dapper.Extensions;
@@ -182,7 +182,9 @@ public sealed class ConsumerVerifyTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["SharedKernel:Persistence:Auditing:HmacKeyBase64"] =
+                ["SharedKernel:Persistence:Auditing:CurrentKeyId"] = "k1",
+                ["SharedKernel:Persistence:Auditing:Keys:k1:Order"] = "1",
+                ["SharedKernel:Persistence:Auditing:Keys:k1:Material"] =
                     Convert.ToBase64String(new byte[32]),
                 ["SharedKernel:Persistence:Npgsql:ConnectionString"] =
                     "Host=localhost;Port=1;Database=consumer_verify;Username=x;Password=x",

@@ -1,108 +1,4 @@
 #nullable enable
-SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification.AuditActorActionsSpecification(string! actorId, System.DateTimeOffset? afterKey, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.AuditChainCheckpoint() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.CreatedOn.get -> System.DateTimeOffset
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.CreatedOn.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Id.get -> System.Guid
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Id.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.RecordHash.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.RecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ResourceType.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ResourceType.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Sequence.get -> long
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Sequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Signature.get -> byte[]!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Signature.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.SigningKeyId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.SigningKeyId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.TenantId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.TenantId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.AuditChainVerificationResult() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtRecordId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtRecordId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtSequence.get -> long?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtSequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.IsIntact.get -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.IsIntact.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Reason.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Reason.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.RecordsChecked.get -> int
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.RecordsChecked.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditCrossTenantResourceHistorySpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditCrossTenantResourceHistorySpecification.AuditCrossTenantResourceHistorySpecification(string! resourceType, string! resourceId, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditQueryLimits
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Action.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Action.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorKind.get -> SharedKernel.Application.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorKind.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AfterSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AfterSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ApprovalId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ApprovalId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AuditRecord() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.BeforeSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.BeforeSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ClientId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ClientId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.CorrelationId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.CorrelationId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ErrorCode.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ErrorCode.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.HashAlgorithm.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.HashAlgorithm.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Id.get -> System.Guid
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Id.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.IdempotencyKey.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.IdempotencyKey.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ImpersonatorId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ImpersonatorId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.KeyId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.KeyId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.OccurredOn.get -> System.DateTimeOffset
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.OccurredOn.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Outcome.get -> SharedKernel.Application.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Outcome.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.PreviousRecordHash.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.PreviousRecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.RecordHash.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.RecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceType.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceType.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SchemaVersion.get -> int
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SchemaVersion.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Sequence.get -> long
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Sequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SessionId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SessionId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SourceService.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SourceService.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.TenantId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.TenantId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification.AuditResourceHistorySpecification(string! resourceType, string! resourceId, long? afterSequence, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.IAuditCheckpointService
-SharedKernel.Persistence.Abstractions.Auditing.IAuditCheckpointService.CreateCheckpointAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.ExportRangeAsync(string! resourceType, System.DateTimeOffset from, System.DateTimeOffset to, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetActorActionsAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetResourceHistoryAcrossTenantsAsync(string! resourceType, string! resourceId, System.Guid? afterId, bool descending, int take, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetResourceHistoryAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.VerifyChainFromCheckpointAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint! checkpoint, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? expectedHead, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.VerifyFullChainAsync(string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope
@@ -164,27 +60,9 @@ SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TAggregat
 SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TAggregate, TId>.ByIdSpecification(TId id) -> void
 SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>
 SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<TAggregate, TResult>!>!
-const SharedKernel.Persistence.Abstractions.Auditing.AuditQueryLimits.MaxPageSize = 1000 -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ToString() -> string!
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.ToString() -> string!
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ToString() -> string!
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.GetHashCode() -> int
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.ToString() -> string!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Broken(long brokenAtSequence, System.Guid? brokenAtRecordId, string! reason, int recordsChecked) -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Intact(int recordsChecked) -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! factory, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
