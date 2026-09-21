@@ -1,5 +1,8 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
@@ -16,6 +19,11 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 public sealed class ModelValidationTests
 {
     private const string NoDatabase = "Host=localhost;Port=1;Database=none;Username=x;Password=y";
+
+    private static readonly IConfiguration NoDatabaseConfiguration =
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:customers"] = NoDatabase })
+            .Build();
 
     private static Microsoft.EntityFrameworkCore.Metadata.IModel ModelOf<TContext>(bool wireEncryption = true)
         where TContext : SharedKernelDbContext
@@ -95,10 +103,8 @@ public sealed class ModelValidationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelEfCore<CustomerDbContext>(o => o.UseNpgsql(NoDatabase))
-            .WithMultiTenancy()
-            .UseFieldEncryption()
-            .Build();
+        services.AddSharedKernelPostgres<CustomerDbContext>(NoDatabaseConfiguration, "customers", p => p
+            .UseFieldEncryption());
         using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<IOptions<EncryptionOptions>>().Value;
@@ -110,16 +116,14 @@ public sealed class ModelValidationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelEfCore<CustomerDbContext>(o => o.UseNpgsql(NoDatabase))
-            .WithMultiTenancy()
+        services.AddSharedKernelPostgres<CustomerDbContext>(NoDatabaseConfiguration, "customers", p => p
             .UseFieldEncryption(k => k.FromConfiguration().Configure(o =>
             {
                 o.Keys.CurrentKeyId = "k1";
                 o.Keys.Keys["k1"] = Convert.ToBase64String(new byte[16]);
                 o.BlindIndexKeys.CurrentVersion = "V1!";
                 o.BlindIndexKeys.Keys["V1!"] = Convert.ToBase64String(new byte[32]);
-            }))
-            .Build();
+            })));
         using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<IOptions<EncryptionOptions>>().Value;
@@ -132,14 +136,12 @@ public sealed class ModelValidationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSharedKernelEfCore<CustomerDbContext>(o => o.UseNpgsql(NoDatabase))
-            .WithMultiTenancy()
+        services.AddSharedKernelPostgres<CustomerDbContext>(NoDatabaseConfiguration, "customers", p => p
             .UseFieldEncryption(k => k.FromConfiguration().Configure(o =>
             {
                 o.Keys.CurrentKeyId = "k1";
                 o.Keys.Keys["k1"] = Convert.ToBase64String(TestKeys.V1);
-            }))
-            .Build();
+            })));
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IOptions<EncryptionOptions>>().Value.Keys.CurrentKeyId.Should().Be("k1");
@@ -154,8 +156,36 @@ public sealed class ModelValidationTests
     public void TwoDifferentKeySources_AreRejected()
     {
         var services = new ServiceCollection();
-        var act = () => services.AddSharedKernelEfCore<CustomerDbContext>(o => o.UseNpgsql(NoDatabase))
-            .UseFieldEncryption(k => k.FromConfiguration().UseKeyProvider(_ => TestKeys.Provider()));
+        var act = () => services.AddSharedKernelPostgres<CustomerDbContext>(NoDatabaseConfiguration, "customers", p => p
+            .UseFieldEncryption(k => k.FromConfiguration().UseKeyProvider(_ => TestKeys.Provider())));
         act.Should().Throw<InvalidOperationException>().WithMessage("*already uses key source*");
     }
+
+    [Fact]
+    public void EncryptionInterceptor_IsTheLastSaveChangesInterceptor_AfterThePlatformAndUserInterceptors()
+    {
+        // The user interceptor is registered AFTER UseFieldEncryption on purpose: the core applies option
+        // extensions (encryption) after its own and every user interceptor, whatever the registration order, so
+        // values a SavingChanges interceptor writes are encrypted too.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IEncryptionKeyProvider>(TestKeys.Provider());
+        services.AddSharedKernelPostgres<CustomerDbContext>(NoDatabaseConfiguration, "customers", p => p
+            .UseFieldEncryption()
+            .AddInterceptor<StampingSaveInterceptor>());
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CustomerDbContext>();
+
+        var saveInterceptors = context.GetService<IDbContextOptions>()
+            .FindExtension<CoreOptionsExtension>()!.Interceptors!
+            .OfType<ISaveChangesInterceptor>()
+            .ToList();
+
+        saveInterceptors.Should().HaveCountGreaterThan(2);
+        saveInterceptors.Should().ContainSingle(i => i is StampingSaveInterceptor);
+        saveInterceptors[^1].GetType().Name.Should().Be("EncryptionInterceptor");
+    }
+
+    private sealed class StampingSaveInterceptor : SaveChangesInterceptor;
 }

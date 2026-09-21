@@ -33,10 +33,7 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         builder.UsePostgreSQL(TestNpgsqlDataSources.Get(ConnectionString));
         clock ??= new FakeClock();
 
-        return new ConcurrencyTestDbContext(builder.Options, new PersistenceContextDependencies(
-            new AuditInterceptor(new FakeAuditActorContext(), clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor()));
+        return new ConcurrencyTestDbContext(builder.Options, PersistenceContextDependencies.Create(requestContext: new FakeAuditActorContext(), clock: clock));
     }
 
     private async Task<(ConcurrentPgId Id, uint Version)> SeedAsync(string name)

@@ -1,5 +1,3 @@
-using System.Data.Common;
-using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -23,13 +21,14 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 /// <strong>Configuration:</strong> the connection string comes from <c>ConnectionStrings:{name}</c> (the Aspire and
 /// Testcontainers convention) unless <c>SharedKernel:Persistence:{name}:ConnectionString</c> sets it; every other
 /// <c>NpgsqlPersistenceOptions</c> setting (timeouts, <c>UseVector</c>, <c>SslMode</c>, ...) is read from
-/// <c>SharedKernel:Persistence:{name}</c>.
+/// <c>SharedKernel:Persistence:{name}</c> (for the default data source also from <c>SharedKernel:Persistence:Npgsql</c>).
 /// </para>
 /// <para>
-/// <strong>TLS:</strong> <c>VerifyFull</c> by default. An <c>SSL Mode</c> written in the connection string is honored
-/// as an explicit choice. A loopback host (or Unix socket) without an explicit mode uses <c>Disable</c>, and in the
-/// Development environment a weaker mode needs no extra acknowledgement — local containers work with no TLS setup,
-/// production cannot downgrade by accident.
+/// <strong>TLS and validation</strong> are <c>SharedKernel.Persistence.Npgsql</c>'s single implementation
+/// (<c>NpgsqlPersistenceOptions</c>): an explicit <c>SSL Mode</c> in the connection string is honored, a loopback
+/// host without one uses <c>Disable</c>, anything else defaults to <c>VerifyFull</c>; a downgrade for a remote host
+/// needs the Development environment or an explicit acknowledgement. A missing connection string fails at startup
+/// naming <c>ConnectionStrings:{name}</c>.
 /// </para>
 /// </remarks>
 internal static class PostgresDataSources
@@ -37,11 +36,15 @@ internal static class PostgresDataSources
     private const string SectionPrefix = "SharedKernel:Persistence:";
 
     /// <summary>Registers (or reuses) the data source of <paramref name="name"/> and returns its key (<see langword="null"/> = default).</summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The root configuration.</param>
+    /// <param name="name">The connection name.</param>
+    /// <param name="configureDataSource">Optional data-source hook.</param>
+    /// <returns>The service key of the data source, or <see langword="null"/> for the default one.</returns>
     public static string? Register(
         IServiceCollection services,
         IConfiguration? configuration,
         string name,
-        bool isDevelopment,
         Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
     {
         var registry = services
@@ -61,93 +64,33 @@ internal static class PostgresDataSources
 
         var isDefault = !registry.Keys.ContainsValue(null);
         var key = isDefault ? null : name;
+        var section = RequireConfiguration(configuration, name).GetSection(SectionPrefix + name);
 
         if (isDefault)
         {
             var alreadyRegistered = services.Any(sd => sd.ServiceType == typeof(NpgsqlDataSource) && !sd.IsKeyedService);
             if (!alreadyRegistered)
             {
-                services.AddSharedKernelNpgsql(RequireConfiguration(configuration, name), configureDataSource);
-                AddOverlay(services, configuration!, name, Microsoft.Extensions.Options.Options.DefaultName, isDevelopment, bindNamedSection: true);
+                services.AddSharedKernelNpgsql(configuration!, name, configureDataSource);
+
+                // The per-connection section overlays the package-wide one (bound first by AddSharedKernelNpgsql).
+                services.AddOptions<NpgsqlPersistenceOptions>().Bind(section);
             }
         }
         else
         {
-            var section = RequireConfiguration(configuration, name).GetSection(SectionPrefix + name);
+            // Resolved against the configuration passed here, not the container's (which may have none).
+            services.AddOptions<NpgsqlPersistenceOptions>(name).Configure(options =>
+            {
+                options.ConnectionStringName ??= name;
+                if (string.IsNullOrWhiteSpace(options.ConnectionString))
+                    options.ConnectionString = configuration!.GetConnectionString(name) ?? string.Empty;
+            });
             services.AddSharedKernelNpgsql(section, name, configureDataSource);
-            AddOverlay(services, configuration!, name, name, isDevelopment, bindNamedSection: false);
         }
 
         registry.Keys[name] = key;
         return key;
-    }
-
-    /// <summary>Applies the connection-string fallback and the TLS policy to the named options.</summary>
-    internal static void ApplySslPolicy(NpgsqlPersistenceOptions options, bool sslModeConfigured, bool isDevelopment)
-    {
-        if (!sslModeConfigured && !string.IsNullOrWhiteSpace(options.ConnectionString))
-        {
-            var raw = new DbConnectionStringBuilder { ConnectionString = options.ConnectionString };
-            var explicitSsl = raw.Keys.Cast<string>()
-                .Any(k => string.Equals(k.Replace(" ", string.Empty, StringComparison.Ordinal), "sslmode", StringComparison.OrdinalIgnoreCase));
-
-            var parsed = new NpgsqlConnectionStringBuilder(options.ConnectionString);
-            if (explicitSsl)
-            {
-                options.SslMode = parsed.SslMode;
-                options.AcknowledgeInsecureSslMode = true;
-            }
-            else if (IsLoopback(parsed.Host))
-            {
-                options.SslMode = SslMode.Disable;
-                options.AcknowledgeInsecureSslMode = true;
-            }
-        }
-
-        if (isDevelopment && options.SslMode < SslMode.VerifyFull)
-            options.AcknowledgeInsecureSslMode = true;
-    }
-
-    internal static bool IsLoopback(string? host)
-    {
-        if (string.IsNullOrWhiteSpace(host))
-            return false;
-
-        return host.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).All(h =>
-        {
-            var hostOnly = h.StartsWith('[') ? h.TrimStart('[').Split(']')[0] : h.Split(':')[0];
-            return hostOnly.StartsWith('/')
-                || string.Equals(hostOnly, "localhost", StringComparison.OrdinalIgnoreCase)
-                || (IPAddress.TryParse(hostOnly, out var address) && IPAddress.IsLoopback(address));
-        });
-    }
-
-    private static void AddOverlay(
-        IServiceCollection services,
-        IConfiguration configuration,
-        string name,
-        string optionsName,
-        bool isDevelopment,
-        bool bindNamedSection)
-    {
-        services.AddOptions<NpgsqlPersistenceOptions>(optionsName)
-            .PostConfigure(options =>
-            {
-                var section = configuration.GetSection(SectionPrefix + name);
-                if (bindNamedSection)
-                    section.Bind(options);
-
-                if (string.IsNullOrWhiteSpace(options.ConnectionString))
-                    options.ConnectionString = configuration.GetConnectionString(name) ?? string.Empty;
-
-                var sslModeConfigured = section[nameof(NpgsqlPersistenceOptions.SslMode)] is not null
-                    || (bindNamedSection && configuration[NpgsqlPersistenceOptions.SectionName + ":" + nameof(NpgsqlPersistenceOptions.SslMode)] is not null);
-
-                ApplySslPolicy(options, sslModeConfigured, isDevelopment);
-            })
-            .Validate(
-                options => !string.IsNullOrWhiteSpace(options.ConnectionString),
-                $"No connection string for '{name}': set 'ConnectionStrings:{name}' (or '{SectionPrefix}{name}:ConnectionString').");
     }
 
     private static IConfiguration RequireConfiguration(IConfiguration? configuration, string name) =>

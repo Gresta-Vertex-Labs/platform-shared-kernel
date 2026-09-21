@@ -42,7 +42,6 @@ namespace SharedKernel.Persistence.EfCore.Extensions;
 public sealed class EfCorePersistenceBuilder<TContext>
     where TContext : SharedKernelDbContext
 {
-    private readonly List<Action> _buildActions = [];
     private readonly List<Type> _interceptorTypes = [];
     private readonly List<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps = [];
     private readonly List<Action<PostgreSqlProviderOptions>> _providerConfigurations = [];
@@ -59,12 +58,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _migrateOnStartup;
     private TimeSpan _startupLockTimeout = TimeSpan.FromMinutes(2);
 
-    internal EfCorePersistenceBuilder(IServiceCollection services, IConfiguration? configuration, string connectionName, bool isDevelopment)
+    internal EfCorePersistenceBuilder(IServiceCollection services, IConfiguration? configuration, string connectionName)
     {
         Services = services;
         Configuration = configuration;
         ConnectionName = connectionName;
-        IsDevelopment = isDevelopment;
     }
 
     /// <summary>The service collection the registration writes to (for capability packages' extension methods).</summary>
@@ -78,8 +76,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     internal bool MultiTenancyRequested { get; set; }
 
     internal IConfiguration? Configuration { get; }
-
-    internal bool IsDevelopment { get; }
 
     /// <summary>Changes the PostgreSQL provider settings (retry — on by default —, pgvector).</summary>
     /// <param name="configure">Mutates the provider options.</param>
@@ -232,23 +228,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
         return this;
     }
 
-    /// <summary>For capability packages: runs <paramref name="action"/> after all options are known, before registration.</summary>
-    /// <param name="action">A validation or registration step.</param>
-    /// <returns>This builder.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public EfCorePersistenceBuilder<TContext> AddBuildAction(Action action)
-    {
-        ArgumentNullException.ThrowIfNull(action);
-        _buildActions.Add(action);
-        return this;
-    }
-
-    /// <summary>No-op, kept for capability packages compiled against the previous builder. <see cref="IDbContextFactory{TContext}"/> is always registered.</summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public void RequireDbContextFactory()
-    {
-    }
-
     /// <summary>Test seam: replaces the PostgreSQL provider setup (e.g. with SQLite) for unit tests of this package.</summary>
     internal EfCorePersistenceBuilder<TContext> UseProviderForTesting(Action<IServiceProvider, DbContextOptionsBuilder> configure)
     {
@@ -274,9 +253,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
             throw new InvalidOperationException(
                 $"UseMultiTenancy() requires '{typeof(TContext).Name}' to derive from TenantedDbContext.");
         }
-
-        foreach (var action in _buildActions)
-            action();
 
         RegisterShared(services);
         var provider = BuildProviderSetup(services);
@@ -414,7 +390,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (_dataSource is { } dataSource)
             return (_, options) => options.UsePostgreSQL(dataSource, Configure);
 
-        var dataSourceName = PostgresDataSources.Register(services, Configuration, ConnectionName, IsDevelopment, _configureDataSource);
+        var dataSourceName = PostgresDataSources.Register(services, Configuration, ConnectionName, _configureDataSource);
         return (sp, options) => options.UsePostgreSQL(sp, dataSourceName, Configure);
     }
 

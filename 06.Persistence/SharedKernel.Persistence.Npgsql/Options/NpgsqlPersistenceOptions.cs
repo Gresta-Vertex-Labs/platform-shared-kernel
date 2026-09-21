@@ -20,7 +20,8 @@ namespace SharedKernel.Persistence.Npgsql.Options;
 /// </para>
 /// <para>
 /// <strong>TLS.</strong> The effective SSL mode is <see cref="SslMode"/> when set, otherwise the
-/// connection string's own <c>SSL Mode</c> keyword when present, otherwise <c>VerifyFull</c>. A mode below
+/// connection string's own <c>SSL Mode</c> keyword when present, otherwise <c>Disable</c> for a loopback host
+/// (local containers publish plain-text ports) and <c>VerifyFull</c> for any other host. A mode below
 /// <c>VerifyFull</c> is accepted without further ceremony for a loopback host (<c>localhost</c>,
 /// <c>127.0.0.1</c>, <c>::1</c>, a Unix socket) or in the <c>Development</c> environment; anywhere else it
 /// also needs <see cref="AcknowledgeInsecureSslMode"/>, and a warning is logged at startup. For managed
@@ -49,7 +50,7 @@ public sealed class NpgsqlPersistenceOptions : ISectionBoundOptions
 
     /// <summary>
     /// The TLS mode, overriding the connection string's <c>SSL Mode</c>. <see langword="null"/> (default)
-    /// keeps the connection string's value, or <c>VerifyFull</c> when it has none.
+    /// keeps the connection string's value; with none, <c>Disable</c> for a loopback host and <c>VerifyFull</c> otherwise.
     /// </summary>
     public SslMode? SslMode { get; set; }
 

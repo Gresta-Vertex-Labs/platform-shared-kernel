@@ -2,7 +2,9 @@ using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Interception;
+using SharedKernel.Persistence.Npgsql.Connections;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 
@@ -14,7 +16,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 /// <para>
 /// Connects, in order of preference, through the data source given to <c>UseMaintenanceDataSource</c>, the
 /// cross-tenant data source <c>AddSharedKernelNpgsql</c> registers for row-level security
-/// (<see cref="CrossTenantDataSourceKey"/>, a role that bypasses it), or the context's own connection, opened through
+/// (<see cref="NpgsqlDataSourceKeys.CrossTenant"/>, a role that bypasses it), or the context's own connection, opened through
 /// EF Core so connection interceptors run. The platform's cross-tenant scope is entered for the whole operation.
 /// </para>
 /// <para>
@@ -26,13 +28,6 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 /// </remarks>
 internal sealed class MaintenanceSession : IAsyncDisposable
 {
-    /// <summary>
-    /// The key of the cross-tenant <see cref="NpgsqlDataSource"/> that <c>AddSharedKernelNpgsql</c> registers when
-    /// <c>RowLevelSecurity.CrossTenantConnectionString</c> is configured: a role that bypasses row-level security.
-    /// </summary>
-    /// <remarks>Same value as <c>SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.CrossTenant</c>; reference that constant once both are on one branch.</remarks>
-    internal const string CrossTenantDataSourceKey = "SharedKernel.Persistence.Npgsql.CrossTenant";
-
     private readonly DbContext _context;
     private readonly bool _ownsConnection;
     private readonly bool _closeContextConnection;
@@ -60,11 +55,11 @@ internal sealed class MaintenanceSession : IAsyncDisposable
         string reason,
         CancellationToken cancellationToken)
     {
-        var scope = CrossTenantScopeBridge.Enter(services, reason);
+        var scope = services.GetService<ICrossTenantScope>()?.Enter(reason);
         try
         {
             var dataSource = runtime.Settings.MaintenanceDataSourceFactory?.Invoke(services)
-                ?? (services as IKeyedServiceProvider)?.GetKeyedService(typeof(NpgsqlDataSource), CrossTenantDataSourceKey) as DbDataSource;
+                ?? (services as IKeyedServiceProvider)?.GetKeyedService(typeof(NpgsqlDataSource), NpgsqlDataSourceKeys.CrossTenant) as DbDataSource;
             if (dataSource is not null)
             {
                 var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

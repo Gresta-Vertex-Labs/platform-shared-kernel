@@ -191,7 +191,7 @@ public sealed class RequestPathTests(PostgreSqlContainerFixture fixture)
         system.TenantId.Should().BeNull();
 
         host.Context.ActorKind = ActorKind.User;
-        using (host.Scope.Enter())
+        using (host.Scope.Enter("audit test"))
         {
             var scoped = await host.InScopeAsync(sp => sp.GetRequiredService<EfAuditTrailWriter>().RecordAsync(Entry(AuditOutcome.Failed)));
             scoped.TenantId.Should().BeNull();

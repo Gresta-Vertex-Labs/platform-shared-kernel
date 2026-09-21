@@ -9,10 +9,10 @@ namespace SharedKernel.Idempotency.EfCore.Context;
 /// <remarks>
 /// <para>
 /// Deliberately does NOT extend <c>SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext</c>
-/// (D-06). That base unconditionally wires <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c>/
-/// <c>ConcurrencyInterceptor</c>. <c>SoftDeleteInterceptor</c> would silently rewrite the
+/// (D-06). That base always runs the platform save pipeline (audit stamping, soft delete, concurrency
+/// translation, tenant guard). Its soft-delete step would silently rewrite the
 /// documented cleanup recipe's hard <c>DELETE FROM ... WHERE expires_at_utc &lt; now()</c> into an
-/// update, defeating retention entirely (Domain Invariant 5); <c>ConcurrencyInterceptor</c>
+/// update, defeating retention entirely (Domain Invariant 5); its xmin concurrency convention
 /// assumes a row-version column this table has no reason to carry. This context is plain EF Core,
 /// no SharedKernel base, owning exactly two entities.
 /// </para>

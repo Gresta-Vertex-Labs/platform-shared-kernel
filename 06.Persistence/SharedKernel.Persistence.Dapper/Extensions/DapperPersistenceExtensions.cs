@@ -66,8 +66,7 @@ public static class DapperPersistenceExtensions
         DapperConfiguration.Apply(configure);
 
         services.TryAddScoped<IDbSessionFactory, DbSessionFactory>();
-        services.TryAddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
-        services.TryAddSingleton<ICrossTenantScope, CrossTenantScope>();
+        services.AddSharedKernelCrossTenantScope();
 
         return services;
     }

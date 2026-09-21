@@ -71,7 +71,7 @@ public static class PostgresPersistenceExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        Register(builder.Services, builder.Configuration, connectionName, builder.Environment.IsDevelopment(), configure);
+        Register(builder.Services, builder.Configuration, connectionName, configure);
         return builder;
     }
 
@@ -92,7 +92,7 @@ public static class PostgresPersistenceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        Register(services, configuration, connectionName, isDevelopment: false, configure);
+        Register(services, configuration, connectionName, configure);
         return services;
     }
 
@@ -126,13 +126,12 @@ public static class PostgresPersistenceExtensions
         IServiceCollection services,
         IConfiguration? configuration,
         string connectionName,
-        bool isDevelopment,
         Action<EfCorePersistenceBuilder<TContext>>? configure)
         where TContext : SharedKernelDbContext
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionName);
 
-        var persistence = new EfCorePersistenceBuilder<TContext>(services, configuration, connectionName, isDevelopment);
+        var persistence = new EfCorePersistenceBuilder<TContext>(services, configuration, connectionName);
         configure?.Invoke(persistence);
         persistence.Register();
     }
@@ -168,6 +167,12 @@ internal sealed class PersistenceStartupValidator<TContext>(IServiceProvider ser
             var entityTypeCount = context.Model.GetEntityTypes().Count();
             PersistenceContextLog.ModelValidated(logger, typeof(TContext).Name, entityTypeCount);
             return ValidateOptionsResult.Success;
+        }
+        catch (OptionsValidationException)
+        {
+            // An invalid options instance (e.g. no connection string) fails startup through its own validator,
+            // with its own message; reporting it again as "the model is invalid" would only mislead.
+            return ValidateOptionsResult.Skip;
         }
         catch (Exception ex)
         {

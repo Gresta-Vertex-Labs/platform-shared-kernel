@@ -215,7 +215,7 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
         var act = () => host.InScopeAsync(sp => sp.GetRequiredService<IAuditCheckpointService>().CreateCheckpointForChainAsync(TestRequestContext.TenantA, "Order"));
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cross-tenant scope*");
 
-        using (host.Scope.Enter())
+        using (host.Scope.Enter("audit test"))
             (await act()).Sequence.Should().Be(1);
     }
 

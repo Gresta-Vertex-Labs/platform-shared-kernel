@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Application.Context;
@@ -101,8 +102,10 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Write_NoTenantBound_IsRejectedByTheDatabase()
+    public async Task Write_NoTenantBound_IsRejectedByTheApplicationGuard_BeforeReachingTheDatabase()
     {
+        // Defense in depth: the tenant write guard is always on for a TenantedDbContext, so the application
+        // rejects the write before any SQL is sent; the database policy is the second line (next test).
         await SeedAsync();
         using var host = BuildHost(AppConnectionString());
 
@@ -113,8 +116,34 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         var act = () => context.SaveChangesAsync();
 
         (await act.Should().ThrowAsync<ForbiddenException>())
-            .Which.InnerException!.InnerException.Should().BeOfType<PostgresException>()
+            .Which.InnerException.Should().BeNull("the application guard fires before any SQL, so there is no DbUpdateException");
+        host.Commands.Should().NotContain(c => c.Contains("INSERT", StringComparison.Ordinal));
+        (await AdminCountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Write_BypassingTheApplicationGuard_IsRejectedByTheDatabasePolicy()
+    {
+        // Raw SQL skips every EF Core save interceptor, so only the row-level security policy stands between
+        // the statement and the table.
+        await SeedAsync();
+        using var host = BuildHost(AppConnectionString());
+
+        using var scope = host.Provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
+
+        var noTenant = () => context.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantA}, 'raw')");
+        (await noTenant.Should().ThrowAsync<PostgresException>())
             .Which.MessageText.Should().Contain("row-level security");
+
+        host.Tenant.TenantId = TenantA;
+        var otherTenant = () => context.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantB}, 'raw')");
+        (await otherTenant.Should().ThrowAsync<PostgresException>())
+            .Which.MessageText.Should().Contain("row-level security");
+
+        (await AdminCountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -317,6 +346,37 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StartupSeeder_UnderRowLevelSecurity_WithPooling_WritesEveryTenant_OnTheCrossTenantConnection()
+    {
+        // A tenanted seeder writes across tenants, which the application role's policy forbids; the startup
+        // service runs it inside a cross-tenant scope on a dedicated (unpooled) context switched to the
+        // cross-tenant role's connection — a pooled context could not keep the switched connection safely.
+        await SeedAsync();
+        using var host = BuildHost(
+            AppConnectionString(),
+            crossTenantConnectionString: RoleConnectionString(BypassRole),
+            configure: p => p.UseDbContextPooling(poolSize: 8).AddSeeder<TwoTenantSeeder>());
+
+        foreach (var hosted in host.Provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+                     .Where(s => s.GetType().Name.StartsWith("MigrationAndSeedHostedService", StringComparison.Ordinal)))
+        {
+            await hosted.StartAsync(CancellationToken.None);
+        }
+
+        (await AdminCountAsync()).Should().Be(2);
+    }
+
+    private sealed class TwoTenantSeeder : SharedKernel.Persistence.EfCore.Seeding.IDataSeeder<RlsTestDbContext>
+    {
+        public async Task SeedAsync(RlsTestDbContext context, CancellationToken cancellationToken)
+        {
+            context.Orders.Add(new RlsOrder { Id = Guid.NewGuid(), TenantId = TenantA, Description = "seed-A" });
+            context.Orders.Add(new RlsOrder { Id = Guid.NewGuid(), TenantId = TenantB, Description = "seed-B" });
+            await context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task CrossTenantScope_OnTheApplicationRole_IsRefused()
     {
         await SeedAsync((TenantA, "A-1"));
@@ -441,10 +501,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     private static PersistenceContextDependencies Dependencies()
     {
         var clock = new SharedKernel.Primitives.Clocks.SystemClock();
-        return new PersistenceContextDependencies(
-            new AuditInterceptor(AnonymousRequestContext.Instance, clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor());
+        return PersistenceContextDependencies.Create(requestContext: AnonymousRequestContext.Instance, clock: clock);
     }
 
     private string AppConnectionString() => RoleConnectionString(AppRole);
@@ -452,11 +509,14 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     private string RoleConnectionString(string role) =>
         new NpgsqlConnectionStringBuilder(_adminConnectionString) { Username = role, Password = Password }.ConnectionString;
 
-    private RlsHost BuildHost(string connectionString, string? crossTenantConnectionString = null)
+    private RlsHost BuildHost(
+        string connectionString,
+        string? crossTenantConnectionString = null,
+        Action<EfCorePersistenceBuilder<RlsTestDbContext>>? configure = null)
     {
         var services = new ServiceCollection();
         var tenant = new MutableTenantContext();
-        var crossTenantScope = new CrossTenantScope();
+        var crossTenantScope = new CrossTenantScope(tenant);
         var commands = new ConcurrentQueue<string>();
 
         services.AddLogging();
@@ -466,14 +526,16 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         if (crossTenantConnectionString is not null)
             services.AddKeyedSingleton(NpgsqlDataSourceKeys.CrossTenant, TestNpgsqlDataSources.Get(crossTenantConnectionString));
 
-        services
-            .AddSharedKernelEfCore<RlsTestDbContext>((_, options) =>
-                options.UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o => o.Retry.Enabled = false))
-            .WithRowLevelSecurity()
-            .Build();
+        services.AddSharedKernelPostgres<RlsTestDbContext>(new ConfigurationBuilder().Build(), "rls", p =>
+        {
+            p.UseDataSource(TestNpgsqlDataSources.Get(connectionString))
+                .ConfigureProvider(o => o.Retry.Enabled = false)
+                .UseMultiTenancy(rowLevelSecurity: true);
+            configure?.Invoke(p);
 
-        // Registered after WithRowLevelSecurity, so it sees each command's final text.
-        services.AddSingleton<IPersistenceOptionsExtension>(new CommandRecorder(commands));
+            // Registered after the row-level security extension, so it sees each command's final text.
+            p.Services.AddSingleton<IPersistenceOptionsExtension>(new CommandRecorder(commands));
+        });
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         return new RlsHost(provider, tenant, crossTenantScope, commands);

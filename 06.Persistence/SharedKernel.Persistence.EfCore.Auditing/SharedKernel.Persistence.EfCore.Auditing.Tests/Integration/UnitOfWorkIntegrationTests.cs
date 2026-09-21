@@ -69,11 +69,10 @@ public sealed class UnitOfWorkIntegrationTests(PostgreSqlContainerFixture fixtur
         services.AddSingleton<IDbConnectionFactory>(new TestConnectionFactory(cs));
         services.AddSingleton<IHmacSigner, HmacSha256Signer>();
 
-        services.AddSharedKernelEfCore<LedgerTestDbContext>(o => o
-                .UsePostgreSQL(TestNpgsqlDataSources.Get(cs))
-                .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
-            .UseAuditTrail(configuration)
-            .Build();
+        services.AddSharedKernelPostgres<LedgerTestDbContext>(configuration, "ledger", p => p
+            .UseDataSource(TestNpgsqlDataSources.Get(cs))
+            .ConfigureDbContext((_, o) => o.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .UseAuditTrail(configuration));
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using var scope = provider.CreateAsyncScope();

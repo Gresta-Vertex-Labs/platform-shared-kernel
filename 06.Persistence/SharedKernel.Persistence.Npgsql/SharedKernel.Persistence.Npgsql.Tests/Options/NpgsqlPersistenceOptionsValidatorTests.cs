@@ -28,6 +28,7 @@ public sealed class NpgsqlPersistenceOptionsValidatorTests
         { Remote + ";SSL Mode=Disable", SslMode.VerifyFull, false, Environments.Production, true }, // option overrides
         { Remote, SslMode.Disable, false, Environments.Production, false },
         { Loopback + ";SSL Mode=Disable", null, false, Environments.Production, true },            // loopback
+        { Loopback, null, false, Environments.Production, true },                                 // loopback default = Disable
         { "Host=127.0.0.1;Database=x;Username=u;Password=p;SSL Mode=Disable", null, false, Environments.Production, true },
         { "Host=[::1]:5433;Database=x;Username=u;Password=p;SSL Mode=Disable", null, false, Environments.Production, true },
         { "Host=/var/run/postgresql;Database=x;Username=u", SslMode.Disable, false, Environments.Production, true },
@@ -58,6 +59,9 @@ public sealed class NpgsqlPersistenceOptionsValidatorTests
 
         NpgsqlConnectionStringPolicy.EffectiveSslMode(options, Remote).Should().Be(SslMode.VerifyFull);
         NpgsqlConnectionStringPolicy.EffectiveSslMode(options, Remote + ";SSL Mode=Require").Should().Be(SslMode.Require);
+        NpgsqlConnectionStringPolicy.EffectiveSslMode(options, Loopback).Should().Be(SslMode.Disable);
+        NpgsqlConnectionStringPolicy.EffectiveSslMode(options, Loopback + ";SSL Mode=Require").Should().Be(SslMode.Require);
+        NpgsqlConnectionStringPolicy.EffectiveSslMode(options, "Host=localhost,db.internal.example;Database=x").Should().Be(SslMode.VerifyFull);
 
         options.SslMode = SslMode.VerifyCA;
         NpgsqlConnectionStringPolicy.EffectiveSslMode(options, Remote + ";SSL Mode=Require").Should().Be(SslMode.VerifyCA);

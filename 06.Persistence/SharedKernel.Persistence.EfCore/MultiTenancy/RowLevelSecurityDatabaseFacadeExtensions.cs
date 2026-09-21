@@ -59,7 +59,7 @@ public static class RowLevelSecurityDatabaseFacadeExtensions
             ?? throw new InvalidOperationException(
                 "The context has no application service provider, so the cross-tenant data source cannot be resolved.");
 
-        if (!services.GetRequiredService<ICrossTenantScope>().IsActive)
+        if (!CrossTenantScope.IsActiveInCurrentFlow)
             throw new InvalidOperationException("UseCrossTenantConnection requires an active cross-tenant scope.");
 
         var dataSource = services.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.CrossTenant)

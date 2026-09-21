@@ -111,7 +111,7 @@ internal static partial class PersistenceLog
     // SharedKernel.Persistence.EfCore.Encryption's own EncryptionLog, which claims its own dedicated
     // 6300-6399 sub-block (SharedKernel.Persistence.EfCore.Encryption/Encryption/Diagnostics/
     // EncryptionLog.cs) — this class is `internal` and therefore unreachable from that sibling
-    // package. IDs 6009-6012 were never actually used by it and remain free within this sub-block,
+    // package. IDs 6009 (retired RLS connection reset, P-558) and 6011-6012 are free within this sub-block,
     // alongside every ID from 6014 up. The entry below claims 6013, the first gap left by 6000-6008.
 
     /// <summary>
@@ -126,19 +126,6 @@ internal static partial class PersistenceLog
         Level = LogLevel.Error,
         Message = "No IMigrationLock is registered for context '{ContextType}' — startup migration/seed coordination across replicas is NOT guaranteed.")]
     internal static partial void NoMigrationLockRegistered(ILogger logger, string contextType);
-
-    /// <summary>
-    /// Logged when resetting a connection's row-level-security session bindings before it returns to
-    /// the pool fails. Non-fatal: the connection close itself still proceeds. (Formerly EventId 6500 in
-    /// the retired <c>SharedKernel.Persistence.PostgreSQL</c> package.)
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 9,
-        Level = LogLevel.Warning,
-        Message = "Failed to reset row-level-security session bindings before returning a connection "
-            + "to the pool. The connection close proceeded regardless; if the connection is reused "
-            + "while still bound, the next lease could inherit a stale tenant binding.")]
-    internal static partial void RowLevelSecurityResetFailed(this ILogger logger, Exception exception);
 
     /// <summary>
     /// Logged when a failed <c>SaveChanges</c> is classified by its PostgreSQL SQLSTATE. Carries the

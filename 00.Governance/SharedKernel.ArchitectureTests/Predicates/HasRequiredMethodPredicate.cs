@@ -83,17 +83,38 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
     /// </returns>
     public bool MeetsRule(TypeDefinition type)
     {
-        if (!ImplementsTargetInterface(type))
+        // Interfaces (e.g. IRepository : IReadRepository) are contracts, not implementations.
+        if (type.IsInterface || !ImplementsTargetInterface(type))
             return true;
 
-        foreach (var method in type.Methods)
+        // The method may be declared on the type or inherited from a base class (EfRepository inherits
+        // GetByIdsAsync from EfReadRepository). Explicit implementations are named "Namespace.IFoo.Method".
+        for (var current = type; current is not null; current = TryResolveBase(current))
         {
-            if (string.Equals(method.Name, _requiredMethodName, System.StringComparison.Ordinal))
-                return true;
+            foreach (var method in current.Methods)
+            {
+                if (string.Equals(method.Name, _requiredMethodName, System.StringComparison.Ordinal)
+                    || method.Name.EndsWith("." + _requiredMethodName, System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
         }
 
-        // Type is in scope but does not declare the required method — violation.
+        // Type is in scope but neither declares nor inherits the required method — violation.
         return false;
+    }
+
+    private static TypeDefinition? TryResolveBase(TypeDefinition type)
+    {
+        try
+        {
+            return type.BaseType?.Resolve();
+        }
+        catch (AssemblyResolutionException)
+        {
+            return null; // a base type outside the resolvable assemblies (e.g. System.Object's assembly)
+        }
     }
 
     private bool ImplementsTargetInterface(TypeDefinition type)

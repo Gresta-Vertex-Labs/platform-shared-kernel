@@ -108,7 +108,7 @@ public sealed class QueryTests(PostgreSqlContainerFixture fixture)
         var query = new AuditRecordQuery { ResourceType = "Order", ResourceId = "shared" };
         await host.Invoking(h => QueryAsync(h, q => q.QueryAcrossTenantsAsync(query))).Should().ThrowAsync<InvalidOperationException>();
 
-        using (host.Scope.Enter())
+        using (host.Scope.Enter("audit test"))
         {
             (await QueryAsync(host, q => q.QueryAcrossTenantsAsync(query))).Items.Should().HaveCount(2);
 

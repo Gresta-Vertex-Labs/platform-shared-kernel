@@ -19,7 +19,9 @@ internal static class NpgsqlConnectionStringPolicy
         if (HasExplicitSslMode(connectionString))
             return new NpgsqlConnectionStringBuilder(connectionString).SslMode;
 
-        return SslMode.VerifyFull;
+        // A loopback host (or Unix socket) without an explicit mode never leaves the machine: local
+        // containers (Aspire, Testcontainers) publish plain-text ports that VerifyFull would refuse.
+        return IsLoopback(connectionString) ? SslMode.Disable : SslMode.VerifyFull;
     }
 
     /// <summary>

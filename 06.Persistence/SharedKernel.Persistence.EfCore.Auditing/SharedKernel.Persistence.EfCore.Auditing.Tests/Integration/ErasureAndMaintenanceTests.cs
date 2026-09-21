@@ -93,7 +93,7 @@ public sealed class ErasureAndMaintenanceTests(PostgreSqlContainerFixture fixtur
 
         await host.Invoking(h => MaintenanceAsync(h, m => m.ErasePayloadAsync(target.Id, "x"))).Should().ThrowAsync<KeyNotFoundException>();
 
-        using (host.Scope.Enter())
+        using (host.Scope.Enter("audit test"))
             (await MaintenanceAsync(host, m => m.ErasePayloadAsync(target.Id, "x"))).Should().BeTrue();
     }
 
@@ -135,7 +135,7 @@ public sealed class ErasureAndMaintenanceTests(PostgreSqlContainerFixture fixtur
         await host.Invoking(h => MaintenanceAsync(h, m => m.SealAllChainsAsync("k1 leaked"))).Should().ThrowAsync<InvalidOperationException>();
 
         AuditResealResult result;
-        using (host.Scope.Enter())
+        using (host.Scope.Enter("audit test"))
             result = await MaintenanceAsync(host, m => m.SealAllChainsAsync("k1 leaked"));
 
         result.Should().Be(new AuditResealResult(ChainsResealed: 2, RecordsSealed: 2, CheckpointsEmitted: 2, FullySealed: true));

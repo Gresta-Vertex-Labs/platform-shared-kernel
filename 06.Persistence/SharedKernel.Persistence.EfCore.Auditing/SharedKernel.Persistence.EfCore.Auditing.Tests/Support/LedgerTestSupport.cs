@@ -41,7 +41,7 @@ public sealed class TestCrossTenantScope : ICrossTenantScope
 {
     public bool IsActive { get; set; }
 
-    public IDisposable Enter()
+    public IDisposable Enter(string reason)
     {
         IsActive = true;
         return new Exit(this);

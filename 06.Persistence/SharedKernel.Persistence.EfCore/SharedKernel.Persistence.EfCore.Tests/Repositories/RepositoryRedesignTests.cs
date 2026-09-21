@@ -137,8 +137,6 @@ public sealed class ShopDbContext(DbContextOptions<ShopDbContext> options, Persi
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ShopOrderId, Guid>();
-        configurationBuilder.ConfigureStronglyTypedId<ShopInvoiceId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -157,10 +155,7 @@ public sealed class ShopDbContext(DbContextOptions<ShopDbContext> options, Persi
             .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var context = new ShopDbContext(options, new PersistenceContextDependencies(
-            new AuditInterceptor(new SharedKernel.Testing.Persistence.FakeAuditActorContext(), clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor()));
+        var context = new ShopDbContext(options, PersistenceContextDependencies.Create(requestContext: new SharedKernel.Testing.Persistence.FakeAuditActorContext(), clock: clock));
 
         context.Database.OpenConnection();
         context.Database.EnsureCreated();
@@ -174,7 +169,6 @@ public sealed class ShopMirrorDbContext(DbContextOptions<ShopMirrorDbContext> op
 {
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ShopOrderId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -192,10 +186,7 @@ public sealed class ShopMirrorDbContext(DbContextOptions<ShopMirrorDbContext> op
             .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        return new ShopMirrorDbContext(options, new PersistenceContextDependencies(
-            new AuditInterceptor(new SharedKernel.Testing.Persistence.FakeAuditActorContext(), clock),
-            new SoftDeleteInterceptor(clock),
-            new ConcurrencyInterceptor()));
+        return new ShopMirrorDbContext(options, PersistenceContextDependencies.Create(requestContext: new SharedKernel.Testing.Persistence.FakeAuditActorContext(), clock: clock));
     }
 }
 

@@ -243,7 +243,7 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
 
         // The cross-tenant data source AddSharedKernelNpgsql registers for RLS is picked up without configuration.
         await using var bypass = EncryptionHost.Build<CustomerDbContext>(
-            cs, currentKeyId: "v2", configureServices: s => s.AddKeyedSingleton(Maintenance.MaintenanceSession.CrossTenantDataSourceKey, maintSource));
+            cs, currentKeyId: "v2", configureServices: s => s.AddKeyedSingleton(SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.CrossTenant, maintSource));
         var report = await RunAsync(bypass, new EncryptionMaintenanceRequest { Mode = EncryptionMaintenanceMode.ReEncrypt, ExpectedCurrentKeyId = "v2" });
         report.ValuesReEncrypted.Should().Be(4); // both tenants: an email and an iban each
         (await KeyIdsAsync(cs, "SELECT email, billing_bank_iban FROM customers")).Should().OnlyContain(k => k == "v2");

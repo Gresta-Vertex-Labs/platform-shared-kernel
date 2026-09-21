@@ -74,7 +74,7 @@ internal sealed class TestEfCoreBuilder<TContext>(
 
     public IServiceCollection Build()
     {
-        PostgresPersistenceExtensions.Register<TContext>(services, configuration: null, "test", isDevelopment: false, b =>
+        PostgresPersistenceExtensions.Register<TContext>(services, configuration: null, "test", b =>
         {
             b.UseProviderForTesting(provider);
             foreach (var step in _steps)

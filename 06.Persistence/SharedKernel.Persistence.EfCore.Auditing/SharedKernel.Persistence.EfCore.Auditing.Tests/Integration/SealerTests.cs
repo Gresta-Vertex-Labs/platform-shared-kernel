@@ -220,8 +220,8 @@ public sealed class SealerTests(PostgreSqlContainerFixture fixture)
     [Fact]
     public void SealerLockKey_IsTheNamespacedHash()
     {
-        var expected = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(
-            System.Security.Cryptography.SHA256.HashData("sk:audit:sealer"u8));
-        Sealing.AuditSealingEngine.SealerLockKey.Should().Be(expected);
+        Sealing.AuditSealingEngine.SealerLockName.Should().Be("sk:audit:sealer");
+        Sealing.AuditSealingEngine.SealerLockKey.Should().Be(
+            SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.ToKey("sk:audit:sealer"));
     }
 }

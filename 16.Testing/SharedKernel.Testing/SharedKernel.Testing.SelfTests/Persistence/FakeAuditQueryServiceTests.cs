@@ -110,5 +110,14 @@ public sealed class FakeAuditQueryServiceTests
     private sealed class ActiveScope : ICrossTenantScope
     {
         public bool IsActive => true;
+
+        public IDisposable Enter(string reason) => new NoopDisposable();
+
+        private sealed class NoopDisposable : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
     }
 }

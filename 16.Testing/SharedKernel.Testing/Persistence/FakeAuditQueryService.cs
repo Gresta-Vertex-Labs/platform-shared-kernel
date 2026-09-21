@@ -184,5 +184,9 @@ public sealed class FakeAuditQueryService : IAuditQueryService
         public static readonly InactiveScope Instance = new();
 
         public bool IsActive => false;
+
+        public IDisposable Enter(string reason) =>
+            throw new NotSupportedException(
+                "FakeAuditQueryService was created without a cross-tenant scope; pass one (for example a CrossTenantScope) to enter it.");
     }
 }

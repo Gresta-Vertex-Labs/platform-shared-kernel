@@ -24,8 +24,10 @@ using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Extensions;
 using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
+using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Primitives.Clocks;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -191,14 +193,15 @@ public sealed class ConsumerVerifyTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+        var failure = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+        Assert.Contains("ConnectionStrings:orders", failure.Message);
     }
 
     // -----------------------------------------------------------------------
     // Composed scenario against a real PostgreSQL: multi-tenancy + RLS + audit trail + encryption + retry.
     // -----------------------------------------------------------------------
 
-    [Fact(Skip = "enable after wave-2 merge")]
+    [Fact]
     public async Task Composed_MultiTenancy_RowLevelSecurity_AuditTrail_Encryption_Retry()
     {
         await using var postgres = new PostgreSqlBuilder("postgres:16.4").Build();
@@ -209,7 +212,7 @@ public sealed class ConsumerVerifyTests
         await using (var setup = NpgsqlDataSource.Create(admin))
         {
             await using var command = setup.CreateCommand(
-                "CREATE ROLE app LOGIN PASSWORD 'app' NOSUPERUSER NOBYPASSRLS; GRANT ALL ON SCHEMA public TO app;");
+                "CREATE ROLE app LOGIN PASSWORD 'app' NOSUPERUSER NOBYPASSRLS; GRANT USAGE ON SCHEMA public TO app;");
             await command.ExecuteNonQueryAsync();
         }
 
@@ -231,18 +234,28 @@ public sealed class ConsumerVerifyTests
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         }
 
-        // Schema: created by the admin (owner), RLS + audit ledger as a migration would create them.
-        await using (var adminServices = Services(null))
-        await using (var scope = adminServices.CreateAsyncScope())
+        // Schema: created by the admin (owner) the way migrations would — the tables, the tenant policy
+        // (EnableTenantRowLevelSecurity) and the audit ledger — then the least-privilege grants from the READMEs.
+        var adminServices = new ServiceCollection();
+        adminServices.AddLogging();
+        AddEncryptionKeys(adminServices);
+        adminServices.AddSharedKernelPostgres<OrdersDbContext>(Configuration(admin), "orders", p => p.UseFieldEncryption());
+        await using (var adminProvider = adminServices.BuildServiceProvider())
+        await using (var scope = adminProvider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
-            db.Database.SetConnectionString(admin);
             await db.Database.EnsureCreatedAsync();
+
+            var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(activeProvider: "Npgsql");
+            migration.EnableTenantRowLevelSecurity("orders");
+            foreach (var operation in migration.Operations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>())
+                await db.Database.ExecuteSqlRawAsync(operation.Sql);
+
+            await db.Database.ExecuteSqlRawAsync(AuditLedgerSchema.CreateScript);
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE orders ENABLE ROW LEVEL SECURITY; ALTER TABLE orders FORCE ROW LEVEL SECURITY; " +
-                "CREATE POLICY orders_tenant_isolation ON orders USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid); " +
-                "GRANT SELECT, INSERT, UPDATE, DELETE ON orders TO app;");
-            await db.Database.ExecuteSqlRawAsync(SharedKernel.Persistence.EfCore.Auditing.Migrations.AuditLedgerSchema.CreateScript);
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON orders TO app; " +
+                "GRANT SELECT, INSERT ON audit_records, audit_chain_links, audit_checkpoints TO app; " +
+                "GRANT SELECT, INSERT, DELETE ON audit_record_payloads TO app;");
         }
 
         await using var servicesA = Services(tenantA);

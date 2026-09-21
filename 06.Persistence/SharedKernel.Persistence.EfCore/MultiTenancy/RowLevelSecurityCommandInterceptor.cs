@@ -45,14 +45,6 @@ internal sealed class RowLevelSecurityCommandInterceptor : DbCommandInterceptor
 {
     private const string BindSql = "SELECT set_config('" + TenantSessionSql.TenantIdSetting + "', @sk_tenant_id, true)";
 
-    private readonly ICrossTenantScope _crossTenantScope;
-
-    public RowLevelSecurityCommandInterceptor(ICrossTenantScope crossTenantScope)
-    {
-        ArgumentNullException.ThrowIfNull(crossTenantScope);
-        _crossTenantScope = crossTenantScope;
-    }
-
     public override InterceptionResult<DbDataReader> ReaderExecuting(
         DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
     {
@@ -108,7 +100,7 @@ internal sealed class RowLevelSecurityCommandInterceptor : DbCommandInterceptor
             ?? throw new InvalidOperationException("The command has no connection.");
 
         var onCrossTenantConnection = RowLevelSecurityConnections.IsCrossTenant(connection);
-        var scopeActive = _crossTenantScope.IsActive;
+        var scopeActive = CrossTenantScope.IsActiveInCurrentFlow;
 
         if (scopeActive && !onCrossTenantConnection)
         {

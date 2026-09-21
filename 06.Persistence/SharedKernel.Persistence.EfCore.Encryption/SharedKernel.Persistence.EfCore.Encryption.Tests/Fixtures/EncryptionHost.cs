@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Application.Context;
@@ -96,31 +97,35 @@ public static class EncryptionHost
 
         // The key source is registered once, as the async provider only: no sync/async double registration.
         services.AddSingleton<IEncryptionKeyProvider>(TestKeys.Provider(currentKeyId));
-        var builder = services.AddSharedKernelEfCore<TContext>(options => options
-                .UsePostgreSQL(TestNpgsqlDataSources.Get(connectionString), o => o.Retry.Enabled = false)
-                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)));
-        if (typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext)))
-            builder.WithMultiTenancy();
-
-        if (wireEncryption)
+        // A TenantedDbContext gets the tenant write guard without UseMultiTenancy(); that call only adds RLS.
+        services.AddSharedKernelPostgres<TContext>(new ConfigurationBuilder().Build(), "encryption", builder =>
         {
-            builder.UseFieldEncryption(k =>
-            {
-                k.AddBlindIndexNormalizer<IbanNormalizer>();
-                k.Configure(o =>
-                {
-                    o.BlindIndexKeys.CurrentVersion = blindIndexVersion;
-                    o.BlindIndexKeys.Keys["v1"] = TestKeys.BlindV1;
-                    if (blindIndexVersion == "v2")
-                        o.BlindIndexKeys.Keys["v2"] = TestKeys.BlindV2;
-                });
-                configure?.Invoke(k);
-            });
-        }
+            builder
+                .UseDataSource(TestNpgsqlDataSources.Get(connectionString))
+                .ConfigureProvider(o => o.Retry.Enabled = false)
+                .ConfigureDbContext((_, options) => options.ConfigureWarnings(
+                    w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)));
 
-        // After UseFieldEncryption, so a test extension registered here is applied after encryption.
-        configureServices?.Invoke(services);
-        builder.Build();
+            if (wireEncryption)
+            {
+                builder.UseFieldEncryption(k =>
+                {
+                    k.AddBlindIndexNormalizer<IbanNormalizer>();
+                    k.Configure(o =>
+                    {
+                        o.BlindIndexKeys.CurrentVersion = blindIndexVersion;
+                        o.BlindIndexKeys.Keys["v1"] = TestKeys.BlindV1;
+                        if (blindIndexVersion == "v2")
+                            o.BlindIndexKeys.Keys["v2"] = TestKeys.BlindV2;
+                    });
+                    configure?.Invoke(k);
+                });
+            }
+
+            // After UseFieldEncryption, so a test extension registered here is applied after encryption.
+            configureServices?.Invoke(services);
+        });
+
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 

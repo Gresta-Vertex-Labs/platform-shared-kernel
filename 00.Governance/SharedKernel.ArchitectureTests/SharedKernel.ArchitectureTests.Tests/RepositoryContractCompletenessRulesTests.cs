@@ -9,27 +9,26 @@ namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
 /// Tests for <see cref="RepositoryContractCompletenessRules"/> — covering:
-/// <c>AllRepositoryImplementorsMustHaveExistsAsync</c> (Rules 2 fire/pass) and
+/// <c>AllReadRepositoryImplementorsMustHaveGetByIdAsync</c> (T-63/T-64) and
 /// <c>AllReadRepositoryImplementorsMustHaveGetByIdsAsync</c> (Rules 3 fire/pass).
 /// </summary>
 /// <remarks>
-/// T-63/T-64: Rule 2 — AllRepositoryImplementorsMustHaveExistsAsync
+/// T-63/T-64: AllReadRepositoryImplementorsMustHaveGetByIdAsync
 /// T-65/T-66: Rule 3 — AllReadRepositoryImplementorsMustHaveGetByIdsAsync
 /// </remarks>
 public class RepositoryContractCompletenessRulesTests
 {
     // ---------------------------------------------------------------------------
-    // T-63 — Rule 2 fire path: IRepository implementor without ExistsAsync fails
+    // T-63 — GetByIdAsync fire path: IReadRepository implementor without GetByIdAsync fails
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-63: An assembly containing an <c>IRepository&lt;Order, Guid&gt;</c> implementor that
-    /// does NOT declare <c>ExistsAsync</c> must fail
-    /// <see cref="RepositoryContractCompletenessRules.AllRepositoryImplementorsMustHaveExistsAsync"/>.
-    /// The failure message must reference the offending type.
+    /// T-63: An assembly containing an <c>IReadRepository&lt;Order, Guid&gt;</c> implementor that does NOT
+    /// declare <c>GetByIdAsync</c> must fail
+    /// <see cref="RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdAsync"/>.
     /// </summary>
     [Fact]
-    public void AllRepositoryImplementorsMustHaveExistsAsync_MissingExistsAsync_RuleFails()
+    public void AllReadRepositoryImplementorsMustHaveGetByIdAsync_MissingGetByIdAsync_RuleFails()
     {
         const string source = """
             using System;
@@ -39,7 +38,7 @@ public class RepositoryContractCompletenessRulesTests
 
             namespace Persistence.Abstractions
             {
-                public interface IRepository<TEntity, TId> { }
+                public interface IReadRepository<TEntity, TId> { }
             }
 
             namespace Domain
@@ -49,59 +48,50 @@ public class RepositoryContractCompletenessRulesTests
 
             namespace Persistence.Repositories
             {
-                // Violation: IRepository implementor missing ExistsAsync (added in P-093)
-                public class OrderRepository
-                    : Persistence.Abstractions.IRepository<Domain.Order, Guid>
+                // Violation: the read contract's aggregate lookup is missing
+                public class OrderReadRepository
+                    : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
                 {
-                    public Task<Domain.Order?> GetByIdAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult<Domain.Order?>(null);
-                    }
-
-                    public Task<IReadOnlyList<Domain.Order>> FindAsync(
-                        CancellationToken ct = default)
+                    public Task<IReadOnlyList<Domain.Order>> GetByIdsAsync(
+                        IEnumerable<Guid> ids, CancellationToken ct = default)
                     {
                         return Task.FromResult<IReadOnlyList<Domain.Order>>(new List<Domain.Order>());
                     }
-
-                    // ExistsAsync is intentionally omitted to trigger the rule
                 }
             }
             """;
 
-        var assembly = CompileInMemory("MissingExistsAsyncViolation", source);
+        var assembly = CompileInMemory("MissingGetByIdAsyncViolation", source);
 
         var result = RepositoryContractCompletenessRules
-            .AllRepositoryImplementorsMustHaveExistsAsync(assembly)
+            .AllReadRepositoryImplementorsMustHaveGetByIdAsync(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "OrderRepository implements IRepository<Order, Guid> but does not declare " +
-                     "ExistsAsync, which was added to the interface contract in P-093");
+            because: "OrderReadRepository implements IReadRepository<Order, Guid> but does not declare GetByIdAsync");
     }
 
     // ---------------------------------------------------------------------------
-    // T-64 — Rule 2 pass path: IRepository implementor with ExistsAsync passes
+    // T-64 — GetByIdAsync pass path: read and write implementors that declare it pass
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-64: An assembly where all <c>IRepository&lt;,&gt;</c> implementors declare
-    /// <c>ExistsAsync</c> must pass
-    /// <see cref="RepositoryContractCompletenessRules.AllRepositoryImplementorsMustHaveExistsAsync"/>.
+    /// T-64: read-side and write-side (<c>IRepository : IReadRepository</c>) implementors that declare
+    /// <c>GetByIdAsync</c> pass
+    /// <see cref="RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdAsync"/>.
     /// </summary>
     [Fact]
-    public void AllRepositoryImplementorsMustHaveExistsAsync_ExistsAsyncPresent_RulePasses()
+    public void AllReadRepositoryImplementorsMustHaveGetByIdAsync_GetByIdAsyncPresent_RulePasses()
     {
         const string source = """
             using System;
-            using System.Collections.Generic;
             using System.Threading;
             using System.Threading.Tasks;
 
             namespace Persistence.Abstractions
             {
-                public interface IRepository<TEntity, TId> { }
+                public interface IReadRepository<TEntity, TId> { }
+                public interface IRepository<TEntity, TId> : IReadRepository<TEntity, TId> { }
             }
 
             namespace Domain
@@ -111,39 +101,30 @@ public class RepositoryContractCompletenessRulesTests
 
             namespace Persistence.Repositories
             {
-                // Compliant: ExistsAsync declared per the P-093 interface contract
+                public class OrderReadRepository
+                    : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
+                {
+                    public Task<Domain.Order?> GetByIdAsync(Guid id, CancellationToken ct = default)
+                        => Task.FromResult<Domain.Order?>(null);
+                }
+
                 public class OrderRepository
                     : Persistence.Abstractions.IRepository<Domain.Order, Guid>
                 {
-                    public Task<Domain.Order?> GetByIdAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult<Domain.Order?>(null);
-                    }
-
-                    public Task<bool> ExistsAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult(false);
-                    }
-
-                    public Task<IReadOnlyList<Domain.Order>> FindAsync(
-                        CancellationToken ct = default)
-                    {
-                        return Task.FromResult<IReadOnlyList<Domain.Order>>(new List<Domain.Order>());
-                    }
+                    public Task<Domain.Order?> GetByIdAsync(Guid id, CancellationToken ct = default)
+                        => Task.FromResult<Domain.Order?>(null);
                 }
             }
             """;
 
-        var assembly = CompileInMemory("ExistsAsyncPresent", source);
+        var assembly = CompileInMemory("GetByIdAsyncPresent", source);
 
         var result = RepositoryContractCompletenessRules
-            .AllRepositoryImplementorsMustHaveExistsAsync(assembly)
+            .AllReadRepositoryImplementorsMustHaveGetByIdAsync(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "OrderRepository declares ExistsAsync per the P-093 interface contract");
+            because: "both repositories declare GetByIdAsync, the read contract's aggregate lookup");
     }
 
     // ---------------------------------------------------------------------------
@@ -275,63 +256,24 @@ public class RepositoryContractCompletenessRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // Additional scoping test: IReadRepository implementors are NOT checked by
-    // AllRepositoryImplementorsMustHaveExistsAsync
+    // Real assembly: the shipped EF Core repositories satisfy the read contract rules
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Scoping test: an assembly containing only <c>IReadRepository</c> implementors (no write-side
-    /// <c>IRepository</c> implementors) must pass
-    /// <see cref="RepositoryContractCompletenessRules.AllRepositoryImplementorsMustHaveExistsAsync"/>
-    /// even if <c>ExistsAsync</c> is absent — read repositories are out of scope for the write-side rule.
+    /// The concrete repositories in <c>SharedKernel.Persistence.EfCore</c> declare both lookups and the
+    /// read-only repository never tracks.
     /// </summary>
     [Fact]
-    public void AllRepositoryImplementorsMustHaveExistsAsync_ReadRepositoryImplementor_NotInScope()
+    public void EfCoreRepositories_SatisfyTheReadContractRules()
     {
-        const string source = """
-            using System;
-            using System.Collections.Generic;
-            using System.Threading;
-            using System.Threading.Tasks;
+        var assembly = typeof(SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<,>).Assembly;
 
-            namespace Persistence.Abstractions
-            {
-                // IReadRepository only — no write-side IRepository here
-                public interface IReadRepository<TEntity, TId> { }
-            }
-
-            namespace Domain
-            {
-                public class Order { public Guid Id { get; set; } }
-            }
-
-            namespace Persistence.Repositories
-            {
-                // IReadRepository implementor — should NOT be required to have ExistsAsync
-                // (ExistsAsync is a write-side contract; read-side has GetByIdsAsync instead)
-                public class OrderReadRepository
-                    : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
-                {
-                    public Task<Domain.Order?> GetAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult<Domain.Order?>(null);
-                    }
-
-                    // No ExistsAsync — this is correct; read repositories don't have it
-                }
-            }
-            """;
-
-        var assembly = CompileInMemory("ReadOnlyRepoNoExistsAsync", source);
-
-        var result = RepositoryContractCompletenessRules
-            .AllRepositoryImplementorsMustHaveExistsAsync(assembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "IReadRepository implementors are excluded from the ExistsAsync rule — " +
-                     "ExistsAsync is a write-side (IRepository) contract");
+        RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdAsync(assembly)
+            .GetResult().IsSuccessful.Should().BeTrue();
+        RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdsAsync(assembly)
+            .GetResult().IsSuccessful.Should().BeTrue();
+        PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack(assembly)
+            .GetResult().IsSuccessful.Should().BeTrue();
     }
 
     // ---------------------------------------------------------------------------

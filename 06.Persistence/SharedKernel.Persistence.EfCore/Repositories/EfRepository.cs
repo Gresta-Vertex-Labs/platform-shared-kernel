@@ -1,10 +1,10 @@
-using System.Buffers.Binary;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Specifications;
@@ -109,12 +109,9 @@ public class EfRepository<TAggregate, TId>
         {
             AttachIfDetached(aggregate);
 
-            // The UPDATE's WHERE clause compares the token's ORIGINAL value, so setting it to the version the client
-            // read makes the save fail with a concurrency conflict when the row has changed since.
-            var entry = DbContext.Entry(aggregate);
-            var token = FindRowVersion(entry.Metadata);
-            entry.Property(token.Name).OriginalValue =
-                token.ClrType == typeof(byte[]) ? ToBigEndianBytes(expectedVersion) : expectedVersion;
+            // The UPDATE's WHERE clause compares the xmin token's ORIGINAL value; an unchanged entity already loaded
+            // at another version fails immediately. Either way the conflict carries the current version.
+            ConcurrencyVersion.SetExpected(DbContext, aggregate, expectedVersion);
         });
     }
 
@@ -252,20 +249,4 @@ public class EfRepository<TAggregate, TId>
             stage();
             return Task.CompletedTask;
         });
-
-    // The PostgreSQL row version: the concurrency token mapped to the xmin system column.
-    private static IProperty FindRowVersion(IEntityType entityType) =>
-        entityType.GetProperties().FirstOrDefault(p =>
-            p.IsConcurrencyToken
-            && string.Equals(p.GetColumnName(), "xmin", StringComparison.Ordinal))
-        ?? throw new InvalidOperationException(
-            $"'{entityType.DisplayName()}' has no xmin row-version concurrency token, so an expected version cannot "
-            + "be checked.");
-
-    private static byte[] ToBigEndianBytes(uint version)
-    {
-        var bytes = new byte[4];
-        BinaryPrimitives.WriteUInt32BigEndian(bytes, version);
-        return bytes;
-    }
 }

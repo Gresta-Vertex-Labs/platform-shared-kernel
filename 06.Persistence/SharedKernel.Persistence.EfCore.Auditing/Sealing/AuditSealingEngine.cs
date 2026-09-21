@@ -1,8 +1,6 @@
-using System.Buffers.Binary;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,6 +8,7 @@ using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
+using SharedKernel.Persistence.Npgsql.Coordination;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Sealing;
@@ -41,16 +40,11 @@ internal sealed class AuditSealingEngine(
     IOptions<AuditLedgerOptions> options,
     ILogger<AuditSealingEngine> logger)
 {
-    /// <summary>The namespaced advisory-lock name, hashed to <see cref="SealerLockKey"/>.</summary>
-    public const string SealerLockName = "sk:audit:sealer";
+    /// <summary>The namespaced advisory-lock name (<c>sk:audit:sealer</c>), hashed to <see cref="SealerLockKey"/>.</summary>
+    public static readonly string SealerLockName = AdvisoryLockKeys.Audit("sealer");
 
-    /// <summary>The advisory-lock key: the first 8 bytes of <c>SHA-256("sk:audit:sealer")</c>, big-endian.</summary>
-    /// <remarks>
-    /// Merge note (P-558): once <c>SharedKernel.Persistence.Npgsql</c>'s namespaced advisory keys land, this becomes
-    /// <c>AdvisoryLockKeys.ToKey(AdvisoryLockKeys.Audit("sealer"))</c> — the same name, hashed by the shared helper.
-    /// </remarks>
-    public static readonly long SealerLockKey =
-        BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(SealerLockName)));
+    /// <summary>The advisory-lock key, derived by the platform-wide <see cref="AdvisoryLockKeys.ToKey"/>.</summary>
+    public static readonly long SealerLockKey = AdvisoryLockKeys.ToKey(SealerLockName);
 
     private const int LinkParameterCount = 10;
 

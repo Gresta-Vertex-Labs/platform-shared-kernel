@@ -54,10 +54,10 @@ public static class PersistenceLayerProtectionRules
     /// at the call site, so the rule correctly self-documents the single permitted caller.
     /// </para>
     /// <para>
-    /// Calling <c>SaveChangesAsync</c> directly bypasses the EF Core interceptor chain
-    /// (<c>AuditInterceptor</c>, <c>SoftDeleteInterceptor</c>, <c>OutboxInterceptor</c>,
-    /// <c>ConcurrencyInterceptor</c>). Only <c>EfUnitOfWork</c> may commit — all other code
-    /// must call <c>IUnitOfWork.CommitAsync()</c>.
+    /// Calling <c>SaveChangesAsync</c> directly bypasses the unit of work (its transaction, pre-commit hooks
+    /// and execution-strategy retry) — the platform save pipeline itself runs inside
+    /// <c>SharedKernelDbContext.SaveChangesAsync</c>. Only <c>EfUnitOfWork</c> may commit — all other code
+    /// must call <c>IUnitOfWork.SaveChangesAsync()</c> or <c>ExecuteInTransactionAsync(...)</c>.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>

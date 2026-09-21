@@ -369,7 +369,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var tenant = new MutableTenantContext();
-        var scope = new CrossTenantScope();
+        var scope = new CrossTenantScope(tenant);
         var services = new ServiceCollection();
 
         services.AddLogging();
@@ -384,7 +384,8 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
 
         if (withEfCore)
         {
-            services.AddSharedKernelEfCore<WidgetDbContext>((sp, options) => options.UsePostgreSQL(sp)).Build();
+            // Reuses the Npgsql data source registered above (one pool for EF Core and Dapper).
+            services.AddSharedKernelPostgres<WidgetDbContext>(configuration, "widgets");
         }
 
         return new TestHost(services.BuildServiceProvider(), tenant, scope);
