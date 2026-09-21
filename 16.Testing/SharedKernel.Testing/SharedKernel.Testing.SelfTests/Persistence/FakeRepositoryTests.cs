@@ -137,17 +137,18 @@ public sealed class FakeRepositoryTests
         Assert.Empty(repo.Items);
     }
 
-    // ----- Pure lookups: never soft-delete-filtered -----
+    // ----- Id lookups hide soft-deleted rows, like production -----
 
     [Fact]
-    public async Task ExistsAsync_And_GetByIdAsync_ReturnSoftDeletedRowsToo()
+    public async Task ExistsAsync_And_GetByIdAsync_HideSoftDeletedRows()
     {
         var order = NewOrder();
         order.Delete("someone");
         var repo = CreateRepository([order]);
 
-        Assert.True(await repo.ExistsAsync(order.Id));
-        Assert.NotNull(await repo.GetByIdAsync(order.Id));
+        Assert.False(await repo.ExistsAsync(order.Id));
+        Assert.Null(await repo.GetByIdAsync(order.Id));
+        Assert.True(repo.Items.ContainsKey(order.Id));
     }
 
     [Fact]
@@ -184,7 +185,7 @@ public sealed class FakeRepositoryTests
 
         Assert.NotNull(await repo.GetByIdAsync(order.Id));
         Assert.True(await repo.ExistsAsync(order.Id));
-        Assert.NotNull(await repo.GetBySpecAsync(new AllTestOrdersSpecification()));
+        Assert.NotNull(await repo.FirstOrDefaultAsync(new AllTestOrdersSpecification()));
     }
 
     // ----- Seed / Reset -----

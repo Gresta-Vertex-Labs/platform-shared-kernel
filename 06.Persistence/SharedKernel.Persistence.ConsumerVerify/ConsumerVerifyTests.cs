@@ -14,7 +14,6 @@ using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Application.Auditing;
 using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Dapper.Extensions;
 using SharedKernel.Persistence.Dapper.ReadModels;
 using SharedKernel.Persistence.Dapper.TypeHandlers;
@@ -164,7 +163,7 @@ public sealed class ConsumerVerifyTests
         ctx.ChangeTracker.Clear();
 
         var readRepo = new OrderReadRepository(ctx);
-        var loaded = await readRepo.GetBySpecAsync(new ByIdSpecification<Order, OrderId>(order.Id));
+        var loaded = await readRepo.GetByIdAsync(order.Id);
 
         Assert.NotNull(loaded);
         Assert.Equal("ada@example.com", loaded!.CustomerEmail);

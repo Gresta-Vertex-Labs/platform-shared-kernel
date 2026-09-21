@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Domain-driven design building blocks for .NET services: entities with identity equality, aggregate roots that raise timestamped domain events and enforce business rules, value objects with explicit validation, strongly-typed identifiers with JSON support, audit, soft-delete and tenant bases, query specifications with offset and keyset paging, domain policies, and a currency-aware Money type with loss-free allocation. Built on SharedKernel.Primitives and SharedKernel.Core.</Description>
+    <Description>Domain-driven design building blocks for .NET services: entities with identity equality, aggregate roots that raise timestamped domain events and enforce business rules, value objects with explicit validation, strongly-typed identifiers with JSON support, audit, soft-delete and tenant bases, query specifications with an inline builder and typed ThenInclude, domain policies, and a currency-aware Money type with loss-free allocation. Built on SharedKernel.Primitives and SharedKernel.Core.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>
     <PackageTags>shared-kernel;ddd;domain-driven-design;aggregate;entity;value-object;domain-events;specification;money;strongly-typed-id</PackageTags>
     <!--

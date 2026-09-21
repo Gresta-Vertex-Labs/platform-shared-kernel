@@ -18,7 +18,6 @@ using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.ReadReplica;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Application.Context;
 using SharedKernel.Application.Transactions;
@@ -758,6 +757,10 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
+
+        // P-558/E2: open-generic IRepository<,>/IReadRepository<,>/IBulkMutationRepository<,> for this
+        // context's aggregates (E1 calls the same seam from its new entry point).
+        SharedKernel.Persistence.EfCore.Repositories.RepositoryRegistration.Register<TContext>(_services);
 
         // Default IRequestContext when none is registered yet: the fail-closed anonymous caller (no
         // tenant, attributed to the service name). A consuming service registers its real one with

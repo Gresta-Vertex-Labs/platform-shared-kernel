@@ -129,7 +129,7 @@ public sealed class EfReadRepositoryTests
         var spec = new TestNameSpec("SpecTarget");
 
         // Act
-        var result = await readRepo.GetBySpecAsync(spec);
+        var result = await readRepo.FirstOrDefaultAsync(spec);
 
         // Assert
         result.Should().NotBeNull();

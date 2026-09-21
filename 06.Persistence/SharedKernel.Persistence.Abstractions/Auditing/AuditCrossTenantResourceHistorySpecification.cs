@@ -13,8 +13,17 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// <see cref="IAuditQueryService.GetResourceHistoryAcrossTenantsAsync"/>'s remarks for why a
 /// cross-tenant result set cannot be ordered by a per-chain sequence number.
 /// </remarks>
-public sealed class AuditCrossTenantResourceHistorySpecification : KeysetSpecification<AuditRecord, Guid>
+public sealed class AuditCrossTenantResourceHistorySpecification : Specification<AuditRecord>
 {
+    /// <summary>Gets the id of the last row of the previous page, or <see langword="null"/> on the first page.</summary>
+    public Guid? AfterId { get; }
+
+    /// <summary>Gets a value indicating whether the most recently created records come first.</summary>
+    public bool Descending { get; }
+
+    /// <summary>Gets the page size.</summary>
+    public int PageSize { get; }
+
     /// <summary>Initialises a new cross-tenant resource-history query.</summary>
     /// <param name="resourceType">The resource type to filter by.</param>
     /// <param name="resourceId">The specific resource instance to filter by.</param>
@@ -30,8 +39,10 @@ public sealed class AuditCrossTenantResourceHistorySpecification : KeysetSpecifi
         Guid? afterId,
         bool descending,
         int take)
-            : base(r => r.Id, r => r.Id, afterId, afterId, descending, ClampTake(take))
     {
+        AfterId = afterId;
+        Descending = descending;
+        PageSize = ClampTake(take);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceId);
 

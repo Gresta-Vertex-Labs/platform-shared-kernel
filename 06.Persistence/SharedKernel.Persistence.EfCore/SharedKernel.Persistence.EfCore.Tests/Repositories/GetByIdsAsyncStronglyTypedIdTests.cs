@@ -1,7 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;

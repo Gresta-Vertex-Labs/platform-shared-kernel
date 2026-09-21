@@ -29,12 +29,11 @@ public sealed class WithDeletedSpecification<TAggregate> : Specification<TAggreg
 
         if (inner.Skip is int skip && inner.Take is int take)
             ApplyPaging(skip, take);
+        else if (inner.Take is int takeOnly)
+            ApplyTake(takeOnly);
 
         if (inner.IsDistinct)
             ApplyDistinct();
-
-        if (inner.AsNoTracking)
-            ApplyNoTracking();
 
         foreach (var path in inner.StringIncludes)
             AddStringInclude(path);

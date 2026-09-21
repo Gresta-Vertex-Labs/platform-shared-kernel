@@ -21,7 +21,7 @@ namespace SharedKernel.Testing.Persistence;
 /// <c>EfAuditQueryService</c> — apply tenant scoping THEMSELVES (from <paramref name="tenantContext"/>),
 /// never trusting a tenant value the specification might carry (it carries none — see
 /// <see cref="AuditResourceHistorySpecification"/>'s remarks), then evaluate the supplied
-/// <see cref="KeysetSpecification{T,TKey}"/> in-memory: filter (<c>Criteria</c>), order
+/// the audit keyset specifications in-memory: filter (<c>Criteria</c>), order
 /// (<c>OrderBy</c>/<c>OrderByDescending</c> + <c>ThenBys</c>), seek past the cursor
 /// (<c>AfterKey</c>/<c>AfterId</c>/<c>Descending</c>), then take <c>Take + 1</c> and hand the lookahead
 /// to <see cref="CursorPagedList{T}.FromLookahead"/> — mirroring
@@ -73,10 +73,12 @@ public sealed class FakeAuditQueryService : IAuditQueryService
 
         var tenantId = _tenantContext.TenantId;
         var scoped = _writer.Records.Where(r => r.TenantId == tenantId).ToList();
-        var page = EvaluateKeyset(scoped, specification);
+        var page = EvaluateKeyset(
+            scoped, specification, r => r.Sequence, specification.AfterKey, specification.AfterId,
+            specification.Descending, specification.PageSize);
 
         return Task.FromResult(CursorPagedList<AuditRecord>.FromLookahead(
-            page, specification.Take!.Value, last => PageCursor.Encode(last.Sequence, last.Id)));
+            page, specification.PageSize, last => PageCursor.Encode(last.Sequence, last.Id)));
     }
 
     /// <inheritdoc />
@@ -88,10 +90,12 @@ public sealed class FakeAuditQueryService : IAuditQueryService
 
         var tenantId = _tenantContext.TenantId;
         var scoped = _writer.Records.Where(r => r.TenantId == tenantId).ToList();
-        var page = EvaluateKeyset(scoped, specification);
+        var page = EvaluateKeyset(
+            scoped, specification, r => r.OccurredOn, specification.AfterKey, specification.AfterId,
+            specification.Descending, specification.PageSize);
 
         return Task.FromResult(CursorPagedList<AuditRecord>.FromLookahead(
-            page, specification.Take!.Value, last => PageCursor.Encode(last.OccurredOn, last.Id)));
+            page, specification.PageSize, last => PageCursor.Encode(last.OccurredOn, last.Id)));
     }
 
     /// <inheritdoc />
@@ -111,10 +115,10 @@ public sealed class FakeAuditQueryService : IAuditQueryService
         }
 
         var specification = new AuditCrossTenantResourceHistorySpecification(resourceType, resourceId, afterId, descending, take);
-        var page = EvaluateKeyset(_writer.Records, specification);
+        var page = EvaluateKeyset(_writer.Records, specification, r => r.Id, specification.AfterId, specification.AfterId, specification.Descending, specification.PageSize);
 
         return Task.FromResult(CursorPagedList<AuditRecord>.FromLookahead(
-            page, specification.Take!.Value, last => PageCursor.Encode(last.Id, last.Id)));
+            page, specification.PageSize, last => PageCursor.Encode(last.Id, last.Id)));
     }
 
     /// <inheritdoc />
@@ -193,9 +197,16 @@ public sealed class FakeAuditQueryService : IAuditQueryService
             $"{nameof(FakeAuditQueryService)} does not support checkpoint-anchored verification — " +
             "checkpoints require real asymmetric signing. Test against the real EfAuditQueryService/EfAuditCheckpointService instead.");
 
+    // Mirrors KeysetQueryableExtensions.ToKeysetPage: order by key then id (both in the requested direction),
+    // seek past the cursor, and read one row beyond the page for FromLookahead.
     private static IReadOnlyList<AuditRecord> EvaluateKeyset<TKey>(
         IReadOnlyList<AuditRecord> source,
-        KeysetSpecification<AuditRecord, TKey> spec)
+        ISpecification<AuditRecord> spec,
+        Func<AuditRecord, TKey> keySelector,
+        TKey? afterKey,
+        Guid? afterId,
+        bool descending,
+        int pageSize)
         where TKey : struct, IComparable<TKey>
     {
         IEnumerable<AuditRecord> query = source;
@@ -205,38 +216,21 @@ public sealed class FakeAuditQueryService : IAuditQueryService
             query = query.Where(spec.Criteria.Compile());
         }
 
-        var keySelector = (spec.OrderBy ?? spec.OrderByDescending)!.Compile();
-        var idSelector = spec.ThenBys[0].KeySelector.Compile();
-
-        var ordered = spec.Descending
-            ? query.OrderByDescending(keySelector).ThenBy(idSelector)
-            : query.OrderBy(keySelector).ThenBy(idSelector);
+        var ordered = descending
+            ? query.OrderByDescending(keySelector).ThenByDescending(r => r.Id)
+            : query.OrderBy(keySelector).ThenBy(r => r.Id);
 
         IEnumerable<AuditRecord> afterCursor = ordered;
-        if (spec.AfterKey is { } afterKey)
+        if (afterKey is { } key && afterId is { } id)
         {
-            var afterId = spec.AfterId;
-            afterCursor = ordered.SkipWhile(item =>
+            var direction = descending ? -1 : 1;
+            afterCursor = ordered.Where(item =>
             {
-                var itemKey = (TKey)keySelector(item);
-                var primaryRank = itemKey.CompareTo(afterKey);
-                if (spec.Descending)
-                {
-                    primaryRank = -primaryRank;
-                }
-
-                if (primaryRank != 0)
-                {
-                    return primaryRank < 0;
-                }
-
-                return Comparer<object>.Default.Compare(idSelector(item), afterId) <= 0;
+                var byKey = keySelector(item).CompareTo(key);
+                return direction * (byKey != 0 ? byKey : item.Id.CompareTo(id)) > 0;
             });
         }
 
-        // GetKeysetQuery's real lookahead contract fetches Take + 1 rows so
-        // CursorPagedList<T>.FromLookahead can compute HasMore without a second round-trip — mirror
-        // that here rather than returning exactly Take rows.
-        return [.. afterCursor.Take(spec.Take!.Value + 1)];
+        return [.. afterCursor.Take(pageSize + 1)];
     }
 }

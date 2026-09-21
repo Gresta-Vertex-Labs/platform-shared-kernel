@@ -386,41 +386,6 @@ public sealed class DomainHardeningTests
     public void SecondPrimarySort_Throws() =>
         FluentActions.Invoking(() => new TwoPrimarySorts()).Should().Throw<InvalidOperationException>();
 
-    private sealed class Paged(int page, int size) : PagedSpecification<Item>(page, size);
-
-    [Fact]
-    public void PagedSpecification_OffsetBeyondInt32_Throws()
-    {
-        // Before: Skip overflowed to a negative number.
-        var act = () => new Paged(int.MaxValue / 2, 1000);
-
-        act.Should().Throw<ArgumentOutOfRangeException>();
-    }
-
-    private sealed class ByCreated(bool descending) : KeysetSpecification<Item, DateTimeOffset>(
-        i => i.Created, i => i.Id, null, null, descending, 10);
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Keyset_IdTiebreak_FollowsThePrimarySortDirection(bool descending)
-    {
-        // Before: always ascending, while the persistence seek predicate flips to "<" when descending,
-        // which skipped or repeated rows sharing a sort key.
-        new ByCreated(descending).ThenBys.Should().ContainSingle().Which.Descending.Should().Be(descending);
-    }
-
-    private sealed class NullKeySelector() : KeysetSpecification<Item, DateTimeOffset>(
-        null!, i => i.Id, null, null, false, 10);
-
-    [Fact]
-    public void Keyset_NullKeySelector_ThrowsArgumentNullException()
-    {
-        // Before: a NullReferenceException from deep inside the selector conversion.
-        FluentActions.Invoking(() => new NullKeySelector()).Should().Throw<ArgumentNullException>()
-            .Which.ParamName.Should().Be("keySelector");
-    }
-
     private sealed class WithInclude : Specification<Item>
     {
         public static readonly Expression<Func<Item, object>> Nav = i => i.Tenant;

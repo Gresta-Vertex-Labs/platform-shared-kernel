@@ -88,11 +88,14 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
         var tenantId = _tenantContext.TenantId;
         var source = _dbContext.Set<AuditRecord>().Where(r => r.TenantId == tenantId);
-        var query = _evaluator.GetKeysetQuery(source, specification);
+        var query = _evaluator.GetQuery(source, specification).AsNoTracking().ToKeysetPage(
+            r => r.Sequence, r => r.Id,
+            specification.AfterKey is { } afterSequence ? new CursorPosition<long, Guid>(afterSequence, specification.AfterId!.Value) : null,
+            specification.Descending, specification.PageSize);
 
         var rows = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
         return CursorPagedList<AuditRecord>.FromLookahead(
-            rows, specification.Take!.Value, last => PageCursor.Encode(last.Sequence, last.Id));
+            rows, specification.PageSize, last => PageCursor.Encode(last.Sequence, last.Id));
     }
 
     /// <inheritdoc />
@@ -104,11 +107,14 @@ public sealed class EfAuditQueryService : IAuditQueryService
 
         var tenantId = _tenantContext.TenantId;
         var source = _dbContext.Set<AuditRecord>().Where(r => r.TenantId == tenantId);
-        var query = _evaluator.GetKeysetQuery(source, specification);
+        var query = _evaluator.GetQuery(source, specification).AsNoTracking().ToKeysetPage(
+            r => r.OccurredOn, r => r.Id,
+            specification.AfterKey is { } afterKey ? new CursorPosition<DateTimeOffset, Guid>(afterKey, specification.AfterId!.Value) : null,
+            specification.Descending, specification.PageSize);
 
         var rows = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
         return CursorPagedList<AuditRecord>.FromLookahead(
-            rows, specification.Take!.Value, last => PageCursor.Encode(last.OccurredOn, last.Id));
+            rows, specification.PageSize, last => PageCursor.Encode(last.OccurredOn, last.Id));
     }
 
     /// <inheritdoc />
@@ -125,11 +131,14 @@ public sealed class EfAuditQueryService : IAuditQueryService
         var specification = new AuditCrossTenantResourceHistorySpecification(
             resourceType, resourceId, afterId, descending, take);
 
-        var query = _evaluator.GetKeysetQuery(_dbContext.Set<AuditRecord>().AsQueryable(), specification);
+        var query = _evaluator.GetQuery(_dbContext.Set<AuditRecord>(), specification).AsNoTracking().ToKeysetPage(
+            r => r.Id, r => r.Id,
+            specification.AfterId is { } after ? new CursorPosition<Guid, Guid>(after, after) : null,
+            specification.Descending, specification.PageSize);
         var rows = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
 
         return CursorPagedList<AuditRecord>.FromLookahead(
-            rows, specification.Take!.Value, last => PageCursor.Encode(last.Id, last.Id));
+            rows, specification.PageSize, last => PageCursor.Encode(last.Id, last.Id));
     }
 
     /// <inheritdoc />

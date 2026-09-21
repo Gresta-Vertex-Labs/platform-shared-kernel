@@ -7,7 +7,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Extends <see cref="KeysetSpecification{T,TKey}"/>. Kept
+/// A filter plus a keyset cursor, paged by the query service. Kept
 /// <see cref="AuditRecord.OccurredOn"/>-ordered (with <see cref="AuditRecord.Id"/> as tiebreaker) rather
 /// than <see cref="AuditRecord.Sequence"/>-ordered — unlike <see cref="AuditResourceHistorySpecification"/>,
 /// this query spans EVERY resource type the actor touched, i.e. potentially many chains at once, so
@@ -20,8 +20,20 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// remarks for why; the same reasoning applies here.
 /// </para>
 /// </remarks>
-public sealed class AuditActorActionsSpecification : KeysetSpecification<AuditRecord, DateTimeOffset>
+public sealed class AuditActorActionsSpecification : Specification<AuditRecord>
 {
+    /// <summary>Gets the time of the last row of the previous page, or <see langword="null"/> on the first page.</summary>
+    public DateTimeOffset? AfterKey { get; }
+
+    /// <summary>Gets the id of the last row of the previous page, or <see langword="null"/> on the first page.</summary>
+    public Guid? AfterId { get; }
+
+    /// <summary>Gets a value indicating whether the most recent records come first.</summary>
+    public bool Descending { get; }
+
+    /// <summary>Gets the page size.</summary>
+    public int PageSize { get; }
+
     /// <summary>
     /// Initialises a new actor-actions query, scoped to whichever tenant
     /// <see cref="IAuditQueryService.GetActorActionsAsync"/> resolves.
@@ -41,8 +53,14 @@ public sealed class AuditActorActionsSpecification : KeysetSpecification<AuditRe
         Guid? afterId,
         bool descending,
         int take)
-            : base(r => r.OccurredOn, r => r.Id, afterKey, afterId, descending, ClampTake(take))
     {
+        if (afterKey.HasValue != afterId.HasValue)
+            throw new ArgumentException("A cursor supplies both afterKey and afterId, or neither.", nameof(afterKey));
+
+        AfterKey = afterKey;
+        AfterId = afterId;
+        Descending = descending;
+        PageSize = ClampTake(take);
         ArgumentException.ThrowIfNullOrWhiteSpace(actorId);
 
         AddCriteria(r => r.ActorId == actorId);

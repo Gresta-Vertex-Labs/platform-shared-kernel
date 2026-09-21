@@ -7,7 +7,7 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Extends <see cref="KeysetSpecification{T,TKey}"/>, keyed by
+/// A filter plus a keyset cursor, paged by the query service and keyed by
 /// <see cref="AuditRecord.Sequence"/> rather than <see cref="AuditRecord.OccurredOn"/> — see
 /// <see cref="AuditRecord"/>'s remarks for why sequence, not wall-clock time, orders a chain.
 /// <see cref="AuditRecord.Id"/> remains the base class's mandatory tiebreaker even though
@@ -20,8 +20,20 @@ namespace SharedKernel.Persistence.Abstractions.Auditing;
 /// a forged tenant id through. See <see cref="IAuditQueryService"/>'s remarks.
 /// </para>
 /// </remarks>
-public sealed class AuditResourceHistorySpecification : KeysetSpecification<AuditRecord, long>
+public sealed class AuditResourceHistorySpecification : Specification<AuditRecord>
 {
+    /// <summary>Gets the sequence of the last row of the previous page, or <see langword="null"/> on the first page.</summary>
+    public long? AfterKey { get; }
+
+    /// <summary>Gets the id of the last row of the previous page, or <see langword="null"/> on the first page.</summary>
+    public Guid? AfterId { get; }
+
+    /// <summary>Gets a value indicating whether the most recent records come first.</summary>
+    public bool Descending { get; }
+
+    /// <summary>Gets the page size.</summary>
+    public int PageSize { get; }
+
     /// <summary>
     /// Initialises a new resource-history query, scoped to a single resource instance within
     /// whichever tenant's chain <see cref="IAuditQueryService.GetResourceHistoryAsync"/> resolves.
@@ -43,8 +55,14 @@ public sealed class AuditResourceHistorySpecification : KeysetSpecification<Audi
         Guid? afterId,
         bool descending,
         int take)
-            : base(r => r.Sequence, r => r.Id, afterSequence, afterId, descending, ClampTake(take))
     {
+        if (afterSequence.HasValue != afterId.HasValue)
+            throw new ArgumentException("A cursor supplies both afterSequence and afterId, or neither.", nameof(afterSequence));
+
+        AfterKey = afterSequence;
+        AfterId = afterId;
+        Descending = descending;
+        PageSize = ClampTake(take);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceId);
 

@@ -1,10 +1,10 @@
-using System.Linq.Expressions;
+using System.Buffers.Binary;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Specifications;
@@ -12,283 +12,222 @@ using SharedKernel.Persistence.EfCore.Specifications;
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
 /// <summary>
-/// Abstract EF Core implementation of the write-side repository contract.
-/// Backed by <see cref="DbContext.Set{TEntity}()"/> — never exposes <see cref="IQueryable{T}"/>.
+/// EF Core implementation of <see cref="IRepository{TAggregate, TId}"/> and
+/// <see cref="IBulkMutationRepository{TAggregate, TId}"/>.
 /// </summary>
-/// <typeparam name="TAggregate">
-/// The aggregate root type. Must implement <see cref="IAggregateRoot{TId}"/>.
-/// </typeparam>
-/// <typeparam name="TId">The aggregate's identity type. Must be non-null.</typeparam>
+/// <typeparam name="TAggregate">The aggregate root type.</typeparam>
+/// <typeparam name="TId">The aggregate's identity type.</typeparam>
 /// <remarks>
 /// <para>
-/// Concrete repositories extend this class and are registered as
-/// <c>IRepository&lt;TAggregate, TId&gt;</c> in DI. Do not register this abstract class directly.
+/// <b>No class needed.</b> Both interfaces are registered automatically for every aggregate the service's
+/// DbContexts map. Derive from this class only for custom queries or to override
+/// <see cref="EfReadRepository{TAggregate, TId}.AggregateQuery"/>.
 /// </para>
 /// <para>
-/// Mutations staged via <c>AddAsync</c>, <c>UpdateAsync</c>, <c>DeleteAsync</c>, and their range
-/// counterparts are not persisted until <c>IUnitOfWork.SaveChangesAsync</c> is called.
-/// For soft-deletable aggregates the <c>SoftDeleteInterceptor</c> converts the delete state to
-/// a soft-delete before commit.
-/// </para>
-/// <para>
-/// <strong>Update tracking optimisation:</strong> <see cref="UpdateAsync"/> checks
-/// <c>DbContext.Entry(aggregate).State</c> before calling <c>.Update()</c>. Tracked entities
-/// (any state other than <see cref="EntityState.Detached"/>) rely on EF change detection — only
-/// the actually-modified columns are written. Detached entities get an unconditional <c>.Update()</c>
-/// which marks all columns as modified (same as before). The helper
-/// <see cref="MarkAsModifiedIfDetached"/> is virtual so subclasses may override the strategy.
-/// </para>
-/// <para>
-/// <strong>Observability:</strong> every public write
-/// operation on this class — <see cref="GetBySpecAsync"/>, <see cref="GetByIdAsync"/>,
-/// <see cref="ExistsAsync"/>, <see cref="AddAsync"/>, <see cref="UpdateAsync"/>,
-/// <see cref="DeleteAsync"/>, <see cref="RestoreAsync"/>, and their range counterparts — is
-/// wrapped in a distributed-tracing span via
-/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>, emitted on
-/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceActivitySource"/>
-/// (<c>"SharedKernel.Persistence"</c>/<c>"1.0"</c>) and tagged with
-/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceTagKeys"/>. Bulk mutations
-/// (<see cref="ExecuteUpdateAsync"/>/<see cref="ExecuteDeleteAsync"/>) are the sole exceptions — they
-/// are not traced through this helper, consistent with their documented bypass of every other
-/// per-entity platform concern (interceptors, domain events).
+/// <b>Tracking.</b> <see cref="GetByIdAsync"/>, <see cref="FirstOrDefaultAsync"/> and <see cref="ListAsync"/>
+/// return tracked aggregates (even when the context's default is no-tracking). Through an
+/// <see cref="IReadRepository{TAggregate, TId}"/> reference the same object answers untracked, as that contract
+/// promises; every other read member is always untracked.
 /// </para>
 /// </remarks>
-public abstract class EfRepository<TAggregate, TId>
-    : IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>, IRestorableRepository<TAggregate, TId>
+public class EfRepository<TAggregate, TId>
+    : EfReadRepository<TAggregate, TId>, IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>
     where TAggregate : class, IAggregateRoot<TId>
     where TId : notnull
 {
-    /// <summary>The underlying EF Core context.</summary>
-    protected SharedKernelDbContext DbContext { get; }
-
-    private readonly ISpecificationEvaluator<TAggregate> _evaluator;
-
-    /// <summary>
-    /// Initialises a new <see cref="EfRepository{TAggregate, TId}"/>.
-    /// </summary>
-    /// <param name="dbContext">The scoped shared-kernel DB context.</param>
-    /// <param name="evaluator">
-    /// Optional specification evaluator. Defaults to <see cref="SpecificationEvaluator{T}"/>
-    /// when not supplied (e.g., from concrete repositories that only inject the DbContext).
-    /// </param>
-    protected EfRepository(
-        SharedKernelDbContext dbContext,
-        ISpecificationEvaluator<TAggregate>? evaluator = null)
+    /// <summary>Initializes a new repository over <paramref name="dbContext"/>.</summary>
+    /// <param name="dbContext">The context that maps <typeparamref name="TAggregate"/>.</param>
+    /// <param name="evaluator">The specification evaluator; <see cref="SpecificationEvaluator{T}"/> when <see langword="null"/>.</param>
+    public EfRepository(SharedKernelDbContext dbContext, ISpecificationEvaluator<TAggregate>? evaluator = null)
+        : base(dbContext, evaluator)
     {
-        DbContext = dbContext;
-        _evaluator = evaluator ?? new SpecificationEvaluator<TAggregate>();
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Applies <see cref="ISpecificationEvaluator{T}.GetQuery"/> to the base set, then calls
-    /// <c>FirstOrDefaultAsync</c>. The spec's <c>AsNoTracking</c> flag is honored — write-side
-    /// callers should leave it unset to receive a tracked entity for subsequent mutations without
-    /// requiring an explicit <c>.Update()</c> call. Never returns <see cref="IQueryable{TAggregate}"/>.
-    /// </remarks>
-    public virtual Task<TAggregate?> GetBySpecAsync(
-        ISpecification<TAggregate> spec,
-        CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetBySpecAsync), async () =>
-        {
-            KeysetSpecificationGuard.EnsureNotKeyset(spec, nameof(GetBySpecAsync));
-            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-            return await query.FirstOrDefaultAsync(cancellationToken);
-        });
+    /// <summary>Returns the tracked aggregate with the given identity, or <see langword="null"/>.</summary>
+    /// <param name="id">The aggregate's identity.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The complete aggregate, tracked; or <see langword="null"/>.</returns>
+    public new virtual Task<TAggregate?> GetByIdAsync(TId id, CancellationToken cancellationToken = default) =>
+        RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetByIdAsync), () =>
+            AggregateQuery().AsTracking()
+                .Where(RepositoryExpressions<TAggregate, TId>.ById(id))
+                .FirstOrDefaultAsync(cancellationToken));
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Wrapped in a distributed-tracing span — previously the only two
-    /// <see cref="EfRepository{TAggregate, TId}"/> members not traced via
-    /// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>.
-    /// </remarks>
-    public virtual Task<TAggregate?> GetByIdAsync(TId id, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetByIdAsync), async () =>
-            await DbContext.Set<TAggregate>().FindAsync([id], cancellationToken));
+    /// <summary>Returns the first tracked aggregate matching <paramref name="spec"/>, or <see langword="null"/>.</summary>
+    /// <param name="spec">The query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The first match, tracked; or <see langword="null"/>.</returns>
+    public new virtual Task<TAggregate?> FirstOrDefaultAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default) =>
+        RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(FirstOrDefaultAsync), () =>
+            Query(spec).AsTracking().FirstOrDefaultAsync(cancellationToken));
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Uses an expression-tree predicate (same pattern as <c>ByIdSpecification&lt;TAggregate, TId&gt;</c>)
-    /// rather than <c>EF.Property&lt;TId&gt;(e, "Id")</c> — the shadow-property accessor is fragile
-    /// on concrete CLR properties. The expression tree is AOT-safe on <see cref="IQueryable{T}"/>.
-    /// Wrapped in a distributed-tracing span — see <see cref="GetByIdAsync"/>'s remarks.
-    /// </remarks>
-    public virtual Task<bool> ExistsAsync(TId id, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate, bool>(nameof(ExistsAsync), async () =>
-        {
-            var holder = new IdHolder(id);
-            var param = Expression.Parameter(typeof(TAggregate), "e");
-            var idProperty = Expression.Property(param, "Id");
-            var idValue = Expression.Field(Expression.Constant(holder), nameof(IdHolder.Id));
-            var equals = Expression.Equal(idProperty, idValue);
-            var predicate = Expression.Lambda<Func<TAggregate, bool>>(equals, param);
-            return await DbContext.Set<TAggregate>().AnyAsync(predicate, cancellationToken);
-        });
+    /// <summary>Returns every aggregate matching <paramref name="spec"/>, tracked.</summary>
+    /// <param name="spec">The query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matches, tracked.</returns>
+    public new virtual Task<IReadOnlyList<TAggregate>> ListAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default) =>
+        RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TAggregate>>(nameof(ListAsync), async () =>
+            await Query(spec).AsTracking().ToListAsync(cancellationToken).ConfigureAwait(false));
 
-    // Mimics the shape of a compiler-generated closure display class so a captured id value is
-    // recognized and parameterized by EF Core's query-parameter extraction — the
-    // same pattern ByIdSpecification<TAggregate,TId> uses — rather than inlined as a SQL literal.
-    private sealed class IdHolder(TId id)
-    {
-        public readonly TId Id = id;
-    }
+    // Through the read contract the same object stays untracked.
+    Task<TAggregate?> IReadRepository<TAggregate, TId>.GetByIdAsync(TId id, CancellationToken cancellationToken) =>
+        base.GetByIdAsync(id, cancellationToken);
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// <para>
-    /// Throws <see cref="InvalidOperationException"/> naming
-    /// <typeparamref name="TAggregate"/> when it does not implement
-    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> — restore has no meaning for a
-    /// non-soft-deletable aggregate. Otherwise reuses <see cref="MarkAsModifiedIfDetached"/> so the
-    /// entry ends up <see cref="EntityState.Modified"/>, then writes
-    /// <c>IsDeleted</c>/<c>DeletedOn</c>/<c>DeletedBy</c> via
-    /// <c>ChangeTracker.Entry(entity).CurrentValues[propertyName]</c> — the same mutation rule that
-    /// governs <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c>.
-    /// </para>
-    /// <para>
-    /// Only STAGES the mutation — a subsequent <c>IUnitOfWork.SaveChangesAsync()</c> persists it.
-    /// Restoring an aggregate already not deleted is an idempotent no-op success.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when <typeparamref name="TAggregate"/> does not implement
-    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/>.
-    /// </exception>
-    public virtual Task RestoreAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(RestoreAsync), () =>
-        {
-            if (aggregate is not ISoftDeletable)
-            {
-                throw new InvalidOperationException(
-                    $"'{typeof(TAggregate).Name}' does not implement " +
-                    $"'{nameof(ISoftDeletable)}' — '{nameof(RestoreAsync)}' has no meaning for a " +
-                    "non-soft-deletable aggregate.");
-            }
+    Task<TAggregate?> IReadRepository<TAggregate, TId>.FirstOrDefaultAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken) =>
+        base.FirstOrDefaultAsync(spec, cancellationToken);
 
-            MarkAsModifiedIfDetached(aggregate);
-
-            var entry = DbContext.Entry(aggregate);
-            entry.CurrentValues[nameof(ISoftDeletable.IsDeleted)] = false;
-            entry.CurrentValues[nameof(ISoftDeletable.DeletedOn)] = null;
-            entry.CurrentValues[nameof(ISoftDeletable.DeletedBy)] = null;
-
-            return Task.CompletedTask;
-        });
+    Task<IReadOnlyList<TAggregate>> IReadRepository<TAggregate, TId>.ListAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken) =>
+        base.ListAsync(spec, cancellationToken);
 
     /// <inheritdoc />
     public virtual Task AddAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(AddAsync), async () =>
-            await DbContext.Set<TAggregate>().AddAsync(aggregate, cancellationToken));
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+        return Traced(nameof(AddAsync), () => DbContext.Set<TAggregate>().Add(aggregate));
+    }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Delegates to <c>DbContext.Set&lt;TAggregate&gt;().AddRangeAsync</c> which is asynchronous.
-    /// Rows are staged in the change tracker and not written to the database until
-    /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
-    /// </remarks>
     public virtual Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(AddRangeAsync), async () =>
-            await DbContext.Set<TAggregate>().AddRangeAsync(aggregates, cancellationToken));
+    {
+        ArgumentNullException.ThrowIfNull(aggregates);
+        return Traced(nameof(AddRangeAsync), () => DbContext.Set<TAggregate>().AddRange(aggregates));
+    }
 
     /// <inheritdoc />
     public virtual Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(UpdateAsync), () =>
-        {
-            MarkAsModifiedIfDetached(aggregate);
-            return Task.CompletedTask;
-        });
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+        return Traced(nameof(UpdateAsync), () => AttachIfDetached(aggregate));
+    }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// <c>DbContext.UpdateRange</c> is synchronous — this method completes without any async I/O.
-    /// The per-entity detached-state check from <see cref="MarkAsModifiedIfDetached"/> is applied
-    /// to each aggregate: tracked entities rely on EF change detection (only dirty columns are
-    /// written); detached entities get an unconditional <c>.Update()</c> (all columns marked Modified).
-    /// Mutations are staged and not persisted until <c>IUnitOfWork.SaveChangesAsync</c> is called.
-    /// </remarks>
-    public virtual Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(UpdateRangeAsync), () =>
-        {
-            // UpdateRange is synchronous in EF Core; apply per-entity detached-state check.
-            foreach (var aggregate in aggregates)
-                MarkAsModifiedIfDetached(aggregate);
+    public virtual Task UpdateAsync(TAggregate aggregate, uint expectedVersion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
 
-            return Task.CompletedTask;
+        return Traced(nameof(UpdateAsync), () =>
+        {
+            AttachIfDetached(aggregate);
+
+            // The UPDATE's WHERE clause compares the token's ORIGINAL value, so setting it to the version the client
+            // read makes the save fail with a concurrency conflict when the row has changed since.
+            var entry = DbContext.Entry(aggregate);
+            var token = FindRowVersion(entry.Metadata);
+            entry.Property(token.Name).OriginalValue =
+                token.ClrType == typeof(byte[]) ? ToBigEndianBytes(expectedVersion) : expectedVersion;
         });
+    }
+
+    /// <inheritdoc />
+    public virtual Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(aggregates);
+        return Traced(nameof(UpdateRangeAsync), () =>
+        {
+            foreach (var aggregate in aggregates)
+                AttachIfDetached(aggregate);
+        });
+    }
 
     /// <inheritdoc />
     public virtual Task DeleteAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(DeleteAsync), () =>
-        {
-            DbContext.Set<TAggregate>().Remove(aggregate);
-            return Task.CompletedTask;
-        });
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+        return Traced(nameof(DeleteAsync), () => DbContext.Set<TAggregate>().Remove(aggregate));
+    }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Delegates to <c>DbContext.RemoveRange</c> which is synchronous — this method completes
-    /// without any async I/O. For <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/>
-    /// aggregates the <c>SoftDeleteInterceptor</c> converts the <c>Deleted</c> state to
-    /// <c>Modified</c> before commit. Mutations are staged and not persisted until
-    /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
-    /// </remarks>
     public virtual Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken cancellationToken = default)
-        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(DeleteRangeAsync), () =>
+    {
+        ArgumentNullException.ThrowIfNull(aggregates);
+        return Traced(nameof(DeleteRangeAsync), () => DbContext.Set<TAggregate>().RemoveRange(aggregates));
+    }
+
+    /// <inheritdoc />
+    public virtual Task<int> ExecuteUpdateAsync(
+        ISpecification<TAggregate> spec,
+        Action<BulkUpdateSetters<TAggregate>> setters,
+        CancellationToken cancellationToken = default)
+    {
+        BulkSpecificationGuard.Validate(spec);
+        ArgumentNullException.ThrowIfNull(setters);
+
+        var recorded = new BulkUpdateSetters<TAggregate>();
+        setters(recorded);
+        var targets = BulkSpecificationGuard.ValidateSetters(recorded, EntityType);
+
+        var stampModified = typeof(IHasAudit).IsAssignableFrom(typeof(TAggregate))
+            && !targets.Any(p => p.DeclaringType is IEntityType
+                && p.Name is nameof(IHasAudit.ModifiedOn) or nameof(IHasAudit.ModifiedBy));
+
+        var extra = stampModified ? ModifiedSetters(DbContext.Clock.UtcNow, DbContext.CurrentActorId) : null;
+
+        return RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(ExecuteUpdateAsync), () =>
+            BulkQuery(spec).ExecuteUpdateAsync(recorded.ToEfSetters(extra), cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public virtual Task<int> ExecuteDeleteAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
+    {
+        BulkSpecificationGuard.Validate(spec);
+
+        if (!typeof(ISoftDeletable).IsAssignableFrom(typeof(TAggregate)))
         {
-            DbContext.Set<TAggregate>().RemoveRange(aggregates);
-            return Task.CompletedTask;
-        });
+            return RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(ExecuteDeleteAsync), () =>
+                BulkQuery(spec).ExecuteDeleteAsync(cancellationToken));
+        }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Bypasses the change tracker, <c>IUnitOfWork.SaveChangesAsync</c>, all three platform
-    /// interceptors, and domain event dispatch — see <see cref="IBulkMutationRepository{TAggregate,TId}"/>
-    /// for details. Only <see cref="ISpecification{TAggregate}.Criteria"/> and
-    /// <see cref="ISpecification{TAggregate}.IncludeDeleted"/> are applied; any other specification
-    /// shape throws <see cref="UnsupportedSpecificationException"/>.
-    /// </remarks>
-    public virtual async Task<int> ExecuteUpdateAsync(
-        ISpecification<TAggregate> spec,
-        Action<UpdateSettersBuilder<TAggregate>> setPropertyCalls,
-        CancellationToken cancellationToken = default)
-    {
-        BulkSpecificationGuard.Validate(spec);
-        BulkSpecificationGuard.ValidateSetters(setPropertyCalls, DbContext.Model.FindEntityType(typeof(TAggregate)));
-        var query = BuildBulkQuery(spec);
-        return await query.ExecuteUpdateAsync(setPropertyCalls, cancellationToken);
+        // A soft-deletable aggregate is soft-deleted in bulk too (A5). Rows already deleted keep their
+        // original deletion time and actor.
+        var now = DbContext.Clock.UtcNow;
+        var actor = DbContext.CurrentActorId;
+        var stampModified = typeof(IHasAudit).IsAssignableFrom(typeof(TAggregate));
+
+        var query = BulkQuery(spec).Where(RepositoryExpressions<TAggregate, TId>.NotDeleted());
+
+        return RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(ExecuteDeleteAsync), () =>
+            query.ExecuteUpdateAsync(
+                builder =>
+                {
+                    builder.SetProperty(RepositoryExpressions<TAggregate, TId>.Property<bool>(nameof(ISoftDeletable.IsDeleted)), true);
+                    builder.SetProperty(RepositoryExpressions<TAggregate, TId>.Property<DateTimeOffset?>(nameof(ISoftDeletable.DeletedOn)), now);
+                    builder.SetProperty(RepositoryExpressions<TAggregate, TId>.Property<string?>(nameof(ISoftDeletable.DeletedBy)), actor);
+
+                    if (stampModified)
+                        ModifiedSetters(now, actor)(builder);
+                },
+                cancellationToken));
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Bypasses the change tracker, <c>IUnitOfWork.SaveChangesAsync</c>, all three platform
-    /// interceptors, and domain event dispatch — see <see cref="IBulkMutationRepository{TAggregate,TId}"/>
-    /// for details. Always issues a hard physical <c>DELETE</c>, even for
-    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> aggregates. Only
-    /// <see cref="ISpecification{TAggregate}.Criteria"/> and
-    /// <see cref="ISpecification{TAggregate}.IncludeDeleted"/> are applied; any other specification
-    /// shape throws <see cref="UnsupportedSpecificationException"/>.
-    /// </remarks>
-    public virtual async Task<int> ExecuteDeleteAsync(
-        ISpecification<TAggregate> spec,
-        CancellationToken cancellationToken = default)
+    public virtual Task<int> ExecutePurgeAsync(ISpecification<TAggregate> spec, CancellationToken cancellationToken = default)
     {
         BulkSpecificationGuard.Validate(spec);
-        var query = BuildBulkQuery(spec);
-        return await query.ExecuteDeleteAsync(cancellationToken);
+
+        return RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(ExecutePurgeAsync), () =>
+            BulkQuery(spec).ExecuteDeleteAsync(cancellationToken));
     }
 
-    // Builds an IQueryable<TAggregate> applying ONLY IgnoreQueryFilters (when IncludeDeleted) and
-    // Criteria — the only specification shapes meaningful for a single ExecuteUpdate/ExecuteDelete
-    // statement. Does not use ISpecificationEvaluator<T>.GetQuery, which applies the full pipeline.
-    //
-    // IgnoreQueryFilters is SELECTIVE — only the named "SoftDelete" filter is
-    // dropped. The tenant filter (named "Tenant") is NEVER dropped here, so a bulk mutation issued
-    // through a tenanted repository stays scoped to the current tenant even when IncludeDeleted is
-    // set; bypassing tenant isolation requires the explicit ICrossTenantScope escape hatch, not this
-    // flag.
-    private IQueryable<TAggregate> BuildBulkQuery(ISpecification<TAggregate> spec)
+    /// <summary>
+    /// Attaches a detached aggregate as modified (every column written); a tracked aggregate is left to change
+    /// detection, so only changed columns are written.
+    /// </summary>
+    /// <param name="aggregate">The aggregate.</param>
+    protected virtual void AttachIfDetached(TAggregate aggregate)
     {
-        var query = DbContext.Set<TAggregate>().AsQueryable();
+        if (DbContext.Entry(aggregate).State == EntityState.Detached)
+            DbContext.Set<TAggregate>().Update(aggregate);
+    }
+
+    private IEntityType EntityType =>
+        DbContext.Model.FindEntityType(typeof(TAggregate))
+        ?? throw new InvalidOperationException(
+            $"'{typeof(TAggregate).Name}' is not mapped by '{DbContext.GetType().Name}'.");
+
+    // Only criteria and the selective soft-delete bypass; the tenant filter always stays.
+    private IQueryable<TAggregate> BulkQuery(ISpecification<TAggregate> spec)
+    {
+        IQueryable<TAggregate> query = DbContext.Set<TAggregate>().TagWith(spec.GetType().Name);
 
         if (spec.IncludeDeleted)
             query = query.IgnoreQueryFilters([PersistenceFilterNames.SoftDelete]);
@@ -299,15 +238,34 @@ public abstract class EfRepository<TAggregate, TId>
         return query;
     }
 
-    /// <summary>
-    /// Calls <c>DbContext.Update(aggregate)</c> only when the aggregate is in the
-    /// <see cref="EntityState.Detached"/> state. For already-tracked entities EF change detection
-    /// handles dirty tracking automatically, avoiding unnecessary full-column UPDATE statements.
-    /// </summary>
-    /// <param name="aggregate">The aggregate to mark as modified if detached.</param>
-    protected virtual void MarkAsModifiedIfDetached(TAggregate aggregate)
+    private static Action<UpdateSettersBuilder<TAggregate>> ModifiedSetters(DateTimeOffset now, string actor) =>
+        builder =>
+        {
+            builder.SetProperty(RepositoryExpressions<TAggregate, TId>.Property<DateTimeOffset?>(nameof(IHasAudit.ModifiedOn)), now);
+            builder.SetProperty(RepositoryExpressions<TAggregate, TId>.Property<string?>(nameof(IHasAudit.ModifiedBy)), actor);
+        };
+
+    // Staging is in-memory work, but it keeps a span per operation like every other repository call.
+    private static Task Traced(string operation, Action stage) =>
+        RepositoryTracing.ExecuteTracedAsync<TAggregate>(operation, () =>
+        {
+            stage();
+            return Task.CompletedTask;
+        });
+
+    // The PostgreSQL row version: the concurrency token mapped to the xmin system column.
+    private static IProperty FindRowVersion(IEntityType entityType) =>
+        entityType.GetProperties().FirstOrDefault(p =>
+            p.IsConcurrencyToken
+            && string.Equals(p.GetColumnName(), "xmin", StringComparison.Ordinal))
+        ?? throw new InvalidOperationException(
+            $"'{entityType.DisplayName()}' has no xmin row-version concurrency token, so an expected version cannot "
+            + "be checked.");
+
+    private static byte[] ToBigEndianBytes(uint version)
     {
-        if (DbContext.Entry(aggregate).State == EntityState.Detached)
-            DbContext.Set<TAggregate>().Update(aggregate);
+        var bytes = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, version);
+        return bytes;
     }
 }

@@ -126,17 +126,12 @@ public sealed class AuditingContractTests
         var spec = new AuditResourceHistorySpecification(
             "Order", "order-1", afterSequence: null, afterId: null, descending: false, take: 10);
 
-        spec.OrderBy.Should().NotBeNull("the primary sort key is Sequence, not OccurredOn — see AuditRecord's remarks");
-        spec.ThenBys.Should().ContainSingle();
-        spec.ThenBys[0].Descending.Should().BeFalse(
-            "the Id tiebreaker is always ascending, regardless of the primary sort direction");
-
-        var record = MakeRecord(Guid.NewGuid(), "Order", "order-1");
-        var sequenceSelector = spec.OrderBy!.Compile();
-        sequenceSelector(record).Should().Be(record.Sequence);
-
-        var idSelector = spec.ThenBys[0].KeySelector.Compile();
-        idSelector(record).Should().Be(record.Id, "the mandatory tiebreaker must select AuditRecord.Id");
+        spec.AfterKey.Should().BeNull();
+        spec.Descending.Should().BeFalse();
+        spec.PageSize.Should().Be(10);
+        FluentActions.Invoking(() => new AuditResourceHistorySpecification(
+                "Order", "order-1", afterSequence: 5, afterId: null, descending: false, take: 10))
+            .Should().Throw<ArgumentException>("a cursor supplies both values or neither");
     }
 
     [Theory]
@@ -158,7 +153,7 @@ public sealed class AuditingContractTests
             "Order", "order-1", afterSequence: null, afterId: null, descending: false,
             take: AuditQueryLimits.MaxPageSize);
 
-        spec.Take.Should().Be(AuditQueryLimits.MaxPageSize);
+        spec.PageSize.Should().Be(AuditQueryLimits.MaxPageSize);
     }
 
     [Fact]
@@ -181,12 +176,9 @@ public sealed class AuditingContractTests
         var spec = new AuditActorActionsSpecification(
             "actor-1", afterKey: null, afterId: null, descending: true, take: 10);
 
-        spec.OrderByDescending.Should().NotBeNull(
-            "descending: true routes the primary sort through OrderByDescending, not OrderBy");
-        spec.OrderBy.Should().BeNull();
-        spec.ThenBys.Should().ContainSingle();
-        spec.ThenBys[0].Descending.Should().BeTrue(
-            "the Id tiebreaker follows the primary sort direction, matching the seek predicate's comparison");
+        spec.Descending.Should().BeTrue();
+        spec.AfterKey.Should().BeNull();
+        spec.AfterId.Should().BeNull();
     }
 
     [Theory]
@@ -208,10 +200,13 @@ public sealed class AuditingContractTests
         var actorSpec = new AuditActorActionsSpecification(
             "actor-1", afterKey: null, afterId: null, descending: false, take: 10);
 
-        resourceSpec.Skip.Should().Be(0, "keyset pagination replaces Skip/OFFSET with a seek predicate");
-        actorSpec.Skip.Should().Be(0);
-        resourceSpec.Take.Should().Be(10);
-        actorSpec.Take.Should().Be(10);
+        // P-558: the cursor paging lives at the call site (ToKeysetPage); the specifications carry the
+        // filter and the cursor, never Skip/Take or an ordering.
+        resourceSpec.Skip.Should().BeNull();
+        resourceSpec.OrderBy.Should().BeNull();
+        actorSpec.Take.Should().BeNull();
+        resourceSpec.PageSize.Should().Be(10);
+        actorSpec.PageSize.Should().Be(10);
     }
 
     private static AuditRecord MakeRecord(

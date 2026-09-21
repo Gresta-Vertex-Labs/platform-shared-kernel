@@ -303,21 +303,20 @@ public sealed class ConsumerVerifyTests
     }
 
     [Fact]
-    public void KeysetSpecification_FirstPage_OrdersByKeyThenId_ResolvedFromPackage()
+    public void InlineSpecificationBuilder_ResolvedFromPackage()
     {
-        var spec = new OrderKeysetSpec(afterKey: null, afterId: null, take: 10);
+        ISpecification<OrderDto> spec = Spec.For<OrderDto>().Where(o => o.Id > 1).OrderBy(o => o.Id).ThenBy(o => o.Id).Take(10);
 
-        Assert.Null(spec.AfterKey);
-        Assert.Null(spec.AfterId);
-        Assert.False(spec.Descending);
-        Assert.Equal(0, spec.Skip);
+        Assert.NotNull(spec.Criteria);
+        Assert.NotNull(spec.OrderBy);
+        Assert.Single(spec.ThenBys);
         Assert.Equal(10, spec.Take);
     }
 
     [Fact]
-    public void KeysetSpecification_PartialCursor_ThrowsArgumentException_ResolvedFromPackage()
+    public void ThenBy_WithoutOrderBy_Throws_ResolvedFromPackage()
     {
-        Assert.Throws<ArgumentException>(() => new OrderKeysetSpec(afterKey: 5, afterId: null, take: 10));
+        Assert.Throws<InvalidOperationException>(() => Spec.For<OrderDto>().ThenBy(o => o.Id));
     }
 
     [Fact]
@@ -492,15 +491,6 @@ internal sealed class WithIncludeSpec : Specification<OrderDto>
 internal sealed class WithStringIncludeSpec : Specification<OrderDto>
 {
     public WithStringIncludeSpec() => AddStringInclude("SomeNavigation");
-}
-
-// P-308a — KeysetSpecification<T, TKey>
-internal sealed class OrderKeysetSpec : KeysetSpecification<OrderDto, int>
-{
-    public OrderKeysetSpec(int? afterKey, object? afterId, int take)
-        : base(o => o.Id, o => o.Id, afterKey, afterId, descending: false, take)
-    {
-    }
 }
 
 // P-308b — ISpecification<T>.AsSplitQuery

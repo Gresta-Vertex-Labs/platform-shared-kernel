@@ -15,9 +15,9 @@ namespace SharedKernel.Contracts.Pagination;
 /// validation error for the caller instead of an exception.
 /// </para>
 /// <para>
-/// <b>Limits.</b> <see cref="MaxPageSize"/> matches the largest page <c>PagedSpecification</c> in
-/// <c>SharedKernel.Domain</c> accepts, and <see cref="Offset"/> always fits in an <see cref="int"/>, so a valid
-/// request can always be turned into a specification.
+/// <b>Limits.</b> <see cref="MaxPageSize"/> is the single platform-wide page-size limit: repositories page
+/// with this request at the call site (<c>ListPagedAsync(spec, page)</c>), and <see cref="Offset"/> always fits in an <see cref="int"/>, so a valid
+/// request can always be executed.
 /// </para>
 /// <para>
 /// <b>Offset or cursor.</b> Offset paging supports "page 7 of 12" and a total count, but gets slower with depth and

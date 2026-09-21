@@ -1,3 +1,5 @@
+using SharedKernel.Contracts.Pagination;
+using SharedKernel.Domain.Specifications;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 
@@ -5,7 +7,7 @@ namespace SharedKernel.Testing.SelfTests.Persistence;
 
 /// <summary>
 /// Proves <see cref="FakeRepository{TAggregate, TId}"/>'s paging/projection/streaming/id-lookup
-/// surface: <c>ListPagedAsync</c>, <c>ListProjectedAsync</c>, <c>GetBySpecProjectedAsync</c>,
+/// surface: <c>ListPagedAsync</c>, <c>ListProjectedAsync</c>, <c>FirstOrDefaultProjectedAsync</c>,
 /// <c>ListPagedProjectedAsync</c>, <c>StreamAsync</c>, <c>StreamProjectedAsync</c>,
 /// <c>GetByIdsAsync</c>, and <c>GetByIdsChunkedAsync</c>.
 /// </summary>
@@ -20,28 +22,20 @@ public sealed class FakeRepositoryPagingAndProjectionTests
         return new FakeRepository<TestSoftDeletableOrder, Guid>(o => o.Id, orders);
     }
 
-    // ----- ListPagedAsync: multi-page paging arithmetic -----
+    // ----- ListPagedAsync: call-site paging -----
+
+    private static PageRequest Page(int page, int size) => PageRequest.Create(page, size).Value;
 
     [Fact]
     public async Task ListPagedAsync_FirstPage_ReturnsExpectedWindowAndTotalCount()
     {
         var repo = RepositoryWithOrders(10);
 
-        var page = await repo.ListPagedAsync(new TestOrdersPagedSpecification(skip: 0, take: 3));
+        var page = await repo.ListPagedAsync(new TestOrdersUnpagedOrderedSpecification(), Page(1, 3));
 
-        Assert.Equal(3, page.Items.Count);
+        Assert.Equal([0, 1, 2], page.Items.Select(o => o.Rank));
         Assert.Equal(10, page.TotalCount);
-    }
-
-    [Fact]
-    public async Task ListPagedAsync_MiddlePage_ReturnsExpectedWindow()
-    {
-        var repo = RepositoryWithOrders(10);
-
-        var page = await repo.ListPagedAsync(new TestOrdersPagedSpecification(skip: 3, take: 3));
-
-        Assert.Equal(3, page.Items.Count);
-        Assert.Equal(10, page.TotalCount);
+        Assert.Equal(4, page.TotalPages);
     }
 
     [Fact]
@@ -49,7 +43,7 @@ public sealed class FakeRepositoryPagingAndProjectionTests
     {
         var repo = RepositoryWithOrders(10);
 
-        var page = await repo.ListPagedAsync(new TestOrdersPagedSpecification(skip: 9, take: 3));
+        var page = await repo.ListPagedAsync(new TestOrdersUnpagedOrderedSpecification(), Page(4, 3));
 
         Assert.Single(page.Items);
         Assert.Equal(10, page.TotalCount);
@@ -60,23 +54,19 @@ public sealed class FakeRepositoryPagingAndProjectionTests
     {
         var repo = new FakeRepository<TestSoftDeletableOrder, Guid>(o => o.Id);
 
-        var page = await repo.ListPagedAsync(new TestOrdersPagedSpecification(skip: 0, take: 10));
+        var page = await repo.ListPagedAsync(new TestOrdersUnpagedOrderedSpecification(), Page(1, 10));
 
         Assert.Empty(page.Items);
         Assert.Equal(0, page.TotalCount);
     }
 
     [Fact]
-    public async Task ListPagedAsync_SpecWithNoTakeSet_IsTreatedAsOneFullPage()
+    public async Task ListPagedAsync_RejectsUnorderedAndSelfPagedSpecifications()
     {
-        var repo = RepositoryWithOrders(5);
+        var repo = RepositoryWithOrders(3);
 
-        var page = await repo.ListPagedAsync(new TestOrdersUnpagedOrderedSpecification());
-
-        Assert.Equal(5, page.Items.Count);
-        Assert.Equal(5, page.TotalCount);
-        Assert.Equal(1, page.Page);
-        Assert.Equal(5, page.PageSize);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repo.ListPagedAsync(Spec.For<TestSoftDeletableOrder>(), PageRequest.First));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repo.ListPagedAsync(new TestOrdersPagedSpecification(0, 2), PageRequest.First));
     }
 
     // ----- Projection: selector applied strictly after Skip/Take -----
@@ -93,32 +83,32 @@ public sealed class FakeRepositoryPagingAndProjectionTests
     }
 
     [Fact]
-    public async Task GetBySpecProjectedAsync_Match_ReturnsProjectedResult()
+    public async Task FirstOrDefaultProjectedAsync_Match_ReturnsProjectedResult()
     {
         var repo = RepositoryWithOrders(3);
         var spec = new TestOrdersCustomerProjectionSpecification(o => o.Customer == "C1");
 
-        Assert.Equal("C1", await repo.GetBySpecProjectedAsync(spec));
+        Assert.Equal("C1", await repo.FirstOrDefaultProjectedAsync(spec));
     }
 
     [Fact]
-    public async Task GetBySpecProjectedAsync_NoMatch_ReturnsDefault()
+    public async Task FirstOrDefaultProjectedAsync_NoMatch_ReturnsDefault()
     {
         var repo = RepositoryWithOrders(3);
         var spec = new TestOrdersCustomerProjectionSpecification(o => o.Customer == "NoSuchCustomer");
 
-        Assert.Null(await repo.GetBySpecProjectedAsync(spec));
+        Assert.Null(await repo.FirstOrDefaultProjectedAsync(spec));
     }
 
     [Fact]
-    public async Task ListPagedProjectedAsync_SameDerivationAsListPagedAsync_WithProjectionAppliedLast()
+    public async Task ListPagedProjectedAsync_PagesAtTheCallSite_WithProjectionAppliedLast()
     {
         var repo = RepositoryWithOrders(10);
-        var spec = new TestOrdersPagedCustomerProjectionSpecification(skip: 2, take: 3);
+        var spec = Spec.For<TestSoftDeletableOrder>().OrderBy(o => o.Rank).Select(o => o.Customer);
 
-        var page = await repo.ListPagedProjectedAsync(spec);
+        var page = await repo.ListPagedProjectedAsync(spec, Page(2, 3));
 
-        Assert.Equal(["C2", "C3", "C4"], page.Items);
+        Assert.Equal(["C3", "C4", "C5"], page.Items);
         Assert.Equal(10, page.TotalCount);
     }
 
@@ -189,33 +179,5 @@ public sealed class FakeRepositoryPagingAndProjectionTests
         var repo = RepositoryWithOrders(3);
 
         Assert.Empty(await repo.GetByIdsAsync([]));
-    }
-
-    // ----- GetByIdsChunkedAsync: identical results to the unchunked call -----
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(100)] // larger than the id count
-    public async Task GetByIdsChunkedAsync_ProducesIdenticalResultsToTheUnchunkedCall(int chunkSize)
-    {
-        var repo = RepositoryWithOrders(7);
-        var ids = repo.Items.Keys.ToList();
-
-        var unchunked = await repo.GetByIdsAsync(ids);
-        var chunked = await repo.GetByIdsChunkedAsync(ids, chunkSize);
-
-        Assert.Equal(unchunked.Select(o => o.Id).ToHashSet(), chunked.Select(o => o.Id).ToHashSet());
-        Assert.Equal(unchunked.Count, chunked.Count);
-    }
-
-    [Fact]
-    public async Task GetByIdsChunkedAsync_ChunkSizeLessThanOne_ThrowsArgumentOutOfRangeException()
-    {
-        var repo = RepositoryWithOrders(3);
-
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => repo.GetByIdsChunkedAsync(repo.Items.Keys, chunkSize: 0));
     }
 }

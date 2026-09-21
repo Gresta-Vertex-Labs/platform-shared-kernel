@@ -119,17 +119,13 @@ public sealed class SpecificationEvaluatorTests
     }
 
     [Fact]
-    public void GetQuery_ThenBys_IgnoredWithoutPrimarySort()
+    public void ThenByWithoutPrimarySort_ThrowsWhenTheSpecificationIsBuilt()
     {
         // Arrange
-        using var ctx = CreateAndSeedContext();
-        var spec = new ThenByOnlySpec(); // ThenBy without OrderBy
+        // P-558: a secondary key without a primary sort used to be silently ignored.
+        var act = () => new ThenByOnlySpec();
 
-        // Act — should not throw, ThenBy is silently ignored
-        var act = () => _evaluator.GetQuery(ctx.TestAggregates, spec);
-
-        // Assert
-        act.Should().NotThrow();
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -146,22 +142,6 @@ public sealed class SpecificationEvaluatorTests
         // Assert — ordered ascending by name, first 2 should be "Alpha", "Alpha"
         result.Should().HaveCount(2);
         result.Should().AllSatisfy(e => e.Name.Should().Be("Alpha"));
-    }
-
-    [Fact]
-    public async Task GetQuery_AsNoTracking_AppliesNoTracking()
-    {
-        // Arrange
-        using var ctx = CreateAndSeedContext();
-        var spec = new NoTrackingSpec();
-
-        // Act
-        var query = _evaluator.GetQuery(ctx.TestAggregates, spec);
-        var result = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(query);
-
-        // Assert — no-tracking results are not tracked by the change tracker
-        result.Should().HaveCount(5);
-        ctx.ChangeTracker.Entries<TestAggregate>().Should().BeEmpty();
     }
 }
 
@@ -234,7 +214,3 @@ internal sealed class OrderedPagedSpec : Specification<TestAggregate>
     }
 }
 
-internal sealed class NoTrackingSpec : ReadOnlySpecification<TestAggregate>
-{
-    // ReadOnlySpecification sets AsNoTracking = true by default
-}

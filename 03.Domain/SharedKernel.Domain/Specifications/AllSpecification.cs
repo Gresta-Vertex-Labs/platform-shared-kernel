@@ -17,8 +17,8 @@ namespace SharedKernel.Domain.Specifications;
 /// matches nothing.
 /// </para>
 /// <para>
-/// <b>Pitfall.</b> AND does not return the other operand itself: its ordering, paging and Distinct are
-/// dropped, as with any composition.
+/// <b>Pitfall.</b> AND does not return the other operand itself; its ordering is carried over, and an
+/// operand with Skip/Take makes the composition throw.
 /// </para>
 /// </remarks>
 /// <example>
