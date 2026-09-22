@@ -38,7 +38,7 @@ public sealed class InMemoryReportExporterTests
         };
 
     private static ReportDestination CreateDestination(TimeSpan? presignedExpiry = null) =>
-        new() { Bucket = "reports", Key = "export.csv", PresignedDownloadUrlExpiry = presignedExpiry };
+        new() { Store = "reports", TenantId = "tenant-a", Key = "export.csv", PresignedDownloadUrlExpiry = presignedExpiry };
 
     [Fact]
     public async Task ExportAsync_DrainsAllRows_MakesThemAvailableViaLastRows()
@@ -76,7 +76,8 @@ public sealed class InMemoryReportExporterTests
         var result = await exporter.ExportAsync(RowsAsync(), CreateDefinition(), destination, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(destination.Bucket, result.Value.StoredFile.Bucket);
+        Assert.Equal(destination.Store, result.Value.StoredFile.Store);
+        Assert.Equal(destination.TenantId, result.Value.StoredFile.TenantId);
         Assert.Equal(destination.Key, result.Value.StoredFile.Key);
         Assert.Null(result.Value.DownloadUrl);
     }
