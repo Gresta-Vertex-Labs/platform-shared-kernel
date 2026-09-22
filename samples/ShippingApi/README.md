@@ -1,0 +1,131 @@
+# ShippingApi
+
+A working shipping service on `07.Messaging`, consuming the **packed** NuGet packages the way any other service
+would. It publishes an integration event, sends a command, schedules a reminder through the broker, deduplicates
+redeliveries, carries the caller's tenant across the bus, and observes what fails — all through an HTTP surface
+you can drive with `curl`.
+
+```
+POST /shipments               publish  → ShipmentDispatched, consumed into a read model
+GET  /shipments/{id}          read     → 404 until the consumer has run (an honest asynchronous write)
+POST /shipments/{id}/hold     send     → one endpoint, not a broadcast
+POST /shipments/{id}/chase    schedule → the broker holds it, not this process
+POST /shipments/{id}/check    fail     → exhausts retries, then a fault consumer observes it
+GET  /shipments/{id}/fault    read     → what the fault consumer saw
+GET  /health/live /health/ready        → the bus-backed readiness probe
+```
+
+## What it demonstrates
+
+| Feature | Where to look |
+| --- | --- |
+| CloudEvents publish and consume | `POST /shipments` → `ShipmentDispatchedConsumer` |
+| Point-to-point send with an explicit route | `WithSendEndpointRoute<HoldShipment>` → `HoldShipmentConsumer` |
+| **The publisher's tenant and actor on the consumer** | `WithInboundRequestContext()`; the consumer injects `IRequestContext` and reads it like an HTTP handler would |
+| At-most-once consumption | `WithIdempotency()` over `InMemoryIdempotencyStore` |
+| Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
+| Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
+| Readiness that actually gates traffic | `AddMessagingReadinessCheck()` |
+| `Result` at the HTTP boundary | `published.ToProblemDetailsResult()` |
+
+The consumer is the point of the whole sample:
+
+```csharp
+public sealed class ShipmentDispatchedConsumer(
+    ShipmentProjection projection,
+    IRequestContext caller,                 // ← the caller that PUBLISHED, not "nobody"
+    ILogger<ShipmentDispatchedConsumer> logger)
+    : ConsumerBase<EventEnvelope<ShipmentDispatched>>(logger)
+{
+    protected override Task ConsumeAsync(EventEnvelope<ShipmentDispatched> message, CancellationToken ct)
+    {
+        projection.RecordDispatch(/* … */, caller);   // caller.TenantId is set
+        return Task.CompletedTask;
+    }
+}
+```
+
+It never reads a tenant out of the message body and never takes the actor as a parameter. Without
+`WithInboundRequestContext()`, `caller.TenantId` would be `null` and every tenant-scoped write a real service
+made here would fail closed.
+
+## Run it
+
+The tests start their own broker, so this is only needed to poke at it by hand.
+
+```bash
+docker compose -f samples/ShippingApi/compose.yaml up -d
+
+dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-local.1
+dotnet run --project samples/ShippingApi -p:SharedKernelPackageVersion=1.0.0-local.1
+```
+
+```bash
+# Acting as a tenant and an actor — this sample reads them from two headers in place of a real
+# identity provider. A production service registers 13.ServiceDefaults' AddSharedKernelRequestContext().
+TENANT=$(uuidgen); H="-H X-Demo-Tenant:$TENANT -H X-Demo-Actor:operator-7"
+
+ID=$(curl -sf $H -X POST localhost:5000/shipments \
+      -H 'Content-Type: application/json' \
+      -d '{"carrier":"acme-freight","trackingNumber":"TRK-100"}' | jq -r .shipmentId)
+
+curl -sf localhost:5000/shipments/$ID | jq
+# { "tenantId": "…", "actorId": "operator-7", "actorKind": 0, "deliveries": 1, … }
+```
+
+The RabbitMQ management UI is at <http://localhost:15672> (`guest` / `guest`) — the queues, the message rates and
+the error queue are all worth a look while you drive the endpoints.
+
+> **`masstransit/rabbitmq`, not the official image.** `WithDelayedDelivery()` uses the broker's delayed-message
+> exchange, a community plugin the official image does not ship. This one has it enabled.
+
+## Test it
+
+```bash
+dotnet test samples/ShippingApi/ShippingApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1
+```
+
+Nine scenarios against a real RabbitMQ broker (Testcontainers; Docker required). Nothing is faked — a publish
+leaves the process and comes back to a consumer.
+
+## What it found
+
+This sample is not a demo. It found three defects in the messaging packages that no unit test had, all of which
+looked correct in isolation and only showed up against a real broker:
+
+1. **The event-publisher path never wrote the tenant transport header.** The value reached the CloudEvents
+   envelope's body, which a transport-level consume filter cannot read without deserializing a payload it has no
+   type for — so the envelope carried the right tenant and the consumer saw none.
+2. **It stamped the transport correlation id only when the caller supplied a custom header or a partition key**,
+   because that combination was the condition on a fast path that skipped the pipe callback entirely. The
+   ordinary publish — the common case — lost it.
+3. **The endpoint-name formatter produced an empty queue prefix** when the service name came from configuration
+   rather than an inline action. Queues were declared as `hold-shipment` instead of `shipping-api-hold-shipment`,
+   so two services sharing a broker would have contended for the same queues. Nothing threw; the wrong queues
+   were simply declared.
+
+All three are fixed and have regression tests, and both dispatch verbs now share one context-mapping path so they
+cannot drift apart again.
+
+It also surfaced an operational fact worth knowing: **MassTransit starts the bus in the background**, so the host
+reports "started" before any queue exists, and a message published in that window is dropped by the broker
+silently and successfully. The test suite waits for `/health/ready` before its first publish — exactly what
+Kubernetes does in production. Before it did, roughly one run in three lost a message and looked like a
+messaging defect.
+
+## Why `PackageReference`
+
+Like every sample here, this one resolves `SharedKernel.*` from the local `nupkgs/` feed rather than by
+`ProjectReference`. The point is to prove the **packed** packages work for a consumer who has only the published
+artifacts — a project reference would bypass exactly the thing under test. See
+[samples/README.md](../README.md).
+
+## Shortcuts a real service would not take
+
+| Here | In production |
+| --- | --- |
+| `HeaderRequestContext` reads the tenant and actor from two request headers | `13.ServiceDefaults`' `AddSharedKernelRequestContext()` over the authenticated principal |
+| `InMemoryIdempotencyStore` deduplicates within one process | `SharedKernel.Idempotency.Redis` or `.EfCore`, which reserve atomically across replicas |
+| `ShipmentProjection` is a dictionary | A real read model written through `06.Persistence` inside the consumer's transaction |
+
+Each is a deliberate trade: a sample about messaging should not require a database and a cache to run.
