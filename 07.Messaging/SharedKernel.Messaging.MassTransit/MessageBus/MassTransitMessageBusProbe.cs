@@ -27,7 +27,7 @@ namespace SharedKernel.Messaging.MassTransit.MessageBus;
 internal sealed class MassTransitMessageBusProbe : IMessageBusProbe
 {
     // Registration name required by BusHealthCheck.CheckHealthAsync (HealthCheckContext.Registration
-    // must be non-null — see the "MassTransit 9.x API notes" entry for this discovery). Never surfaced
+    // must be non-null — see the "MassTransit API notes" entry for this discovery). Never surfaced
     // externally; this probe is not itself registered as an ASP.NET Core IHealthCheck.
     private const string RegistrationName = "masstransit-bus";
 

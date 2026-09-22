@@ -30,7 +30,7 @@ namespace SharedKernel.Messaging.MassTransit.Serialization;
 /// <para>
 /// Encryption goes through <see cref="ISynchronousSymmetricEncryptionService"/>: MassTransit's
 /// <see cref="IMessageSerializer.GetMessageBody{T}(SendContext{T})"/> is a hard-synchronous
-/// interface member with no async overload anywhere in MassTransit 9.1.2, so this pipeline stage
+/// interface member with no async overload anywhere in MassTransit, so this pipeline stage
 /// can only use keys an <see cref="ISynchronousEncryptionKeyProvider"/> holds in memory.
 /// </para>
 /// </remarks>

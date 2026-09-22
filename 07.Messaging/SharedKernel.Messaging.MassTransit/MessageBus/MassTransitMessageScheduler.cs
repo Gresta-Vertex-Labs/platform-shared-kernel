@@ -7,20 +7,25 @@ using MtScheduler = MassTransit.IMessageScheduler;
 namespace SharedKernel.Messaging.MassTransit.MessageBus;
 
 /// <summary>
-/// MassTransit implementation of <see cref="IMessageScheduler"/>.
-/// Delegates scheduling to MassTransit's <c>IMessageScheduler</c> and maps the returned
-/// <c>ScheduledMessage.TokenId</c> to the opaque <see cref="Guid"/> token exposed by
-/// the abstraction.
+/// The transport-native implementation of <see cref="IMessageScheduler"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Registered as a scoped service by <c>MessagingBusBuilder.WithInMemoryScheduler()</c> or
-/// <c>MessagingBusBuilder.WithQuartzScheduler()</c>.
+/// Delegates to MassTransit's own scheduler, which in turn uses the broker's scheduling feature —
+/// the RabbitMQ delayed-message exchange, or Azure Service Bus scheduled enqueue. Nothing is held
+/// in this process, so a scheduled message survives a restart. The returned
+/// <c>ScheduledMessage.TokenId</c> becomes the abstraction's opaque token.
 /// </para>
 /// <para>
-/// Maintains an internal token-to-message-type mapping to support
-/// <see cref="CancelAsync"/> without exposing the message type at call time.
-/// The mapping is per-scope and is not persisted across process restarts.
+/// Registered as a scoped service by <c>MessagingBusBuilder.WithDelayedDelivery()</c>.
+/// </para>
+/// <para>
+/// <strong>Cancellation is best-effort across a restart.</strong> MassTransit's cancel API needs
+/// the message type, which the abstraction's opaque token deliberately does not carry, so this
+/// class keeps a token-to-type map. That map lives in the DI scope and is not persisted: after a
+/// restart the <em>delivery</em> still happens, because the broker holds it, but this process can
+/// no longer cancel it. Where cancelling matters across a restart, have the consumer check whether
+/// the work is still wanted rather than relying on the token.
 /// </para>
 /// </remarks>
 internal sealed class MassTransitMessageScheduler : IMessageScheduler

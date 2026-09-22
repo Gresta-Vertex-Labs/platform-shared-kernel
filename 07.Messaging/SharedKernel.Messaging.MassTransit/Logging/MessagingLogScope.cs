@@ -9,17 +9,17 @@ namespace SharedKernel.Messaging.MassTransit.Logging;
 /// This is the ONLY approved construction path for the base entry of an
 /// <c>ILogger.BeginScope(...)</c> dictionary anywhere in this package. Callers add their own
 /// type-specific entries to the returned dictionary before passing it to <c>BeginScope</c>
-/// (e.g. <c>MessageType</c>, <c>BatchSize</c>, <c>FaultId</c>, <c>routing_slip.tracking_number</c>).
+/// (e.g. <c>MessageType</c>, <c>BatchSize</c>, <c>FaultId</c>).
 /// </para>
 /// <para>
 /// Consumed by <see cref="Consumers.ConsumerBase{TMessage}"/>.Consume(),
-/// <see cref="Consumers.BatchConsumerBase{TMessage}"/>.Consume(),
-/// <c>FaultConsumerAdapter&lt;TMessage,TFaultConsumer&gt;.Consume()</c>, and
-/// <see cref="RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.Execute()/Compensate() —
-/// the four consumer/activity base types in this package that build a structured log scope.
-/// Guarantees an identical <see cref="CorrelationIdKey"/> key name and identical null-handling
-/// across all four, instead of four independently hand-rolled dictionary literals drifting out
-/// of sync with each other (the exact defect P-254 fixed).
+/// <see cref="Consumers.BatchConsumerBase{TMessage}"/>.Consume() and
+/// <c>FaultConsumerAdapter&lt;TMessage,TFaultConsumer&gt;.Consume()</c> — the three consumer base
+/// types in this package that build a structured log scope. Guarantees an identical
+/// <see cref="CorrelationIdKey"/> key name and identical null-handling across all three, instead
+/// of three independently hand-rolled dictionary literals drifting out of sync with each other
+/// (the exact defect P-254 fixed). A fourth consumer of it, <c>RoutingSlipActivityBase</c>, went
+/// with routing slips when P-560 removed them from this domain.
 /// </para>
 /// <para>
 /// <c>VersionTranslatingConsumer</c> and <c>TranslatorRegistrationValidator</c> do not use

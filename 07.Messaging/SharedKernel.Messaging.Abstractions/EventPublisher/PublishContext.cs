@@ -1,16 +1,27 @@
 namespace SharedKernel.Messaging.Abstractions.EventPublisher;
 
 /// <summary>
-/// Mutable builder for configuring per-publish metadata such as correlation identifiers
-/// and custom transport headers. Passed as an <see cref="Action{T}"/> callback to
-/// <see cref="IEventPublisher"/> and <see cref="SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus"/> publish overloads.
+/// Everything about one dispatch that is not the message itself: who it correlates to, which
+/// tenant it is for, what caused it, which partition it belongs on, and any headers of your own.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Callers configure the instance via the callback; the implementation owns the lifetime.
+/// Reached through the <see cref="Action{T}"/> overload of
+/// <see cref="SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync{T}(T, Action{PublishContext}, CancellationToken)"/>
+/// and <see cref="IEventPublisher.PublishAsync{TEvent}(TEvent, Action{PublishContext}, CancellationToken)"/>.
+/// The bus owns the instance; the callback only configures it.
 /// </para>
 /// <para>
-/// Header keys must be non-null, non-empty strings. Duplicate keys overwrite silently.
+/// <strong>Precedence: propagators first, your callback last.</strong> Every registered
+/// <see cref="HeaderPropagation.IMessageHeaderPropagator"/> runs before the callback, so an
+/// explicit value here always wins over the ambient one. That is how a background job publishes on
+/// behalf of a tenant it is not itself scoped to, and it means you never have to disable a
+/// propagator to override it once.
+/// </para>
+/// <para>
+/// Most publishes need none of this. Correlation and tenant arrive on their own when
+/// <c>WithAmbientCorrelationPropagation()</c> and <c>WithInboundRequestContext()</c> are enabled —
+/// reach for the callback only for the values only this call site knows.
 /// </para>
 /// </remarks>
 public sealed class PublishContext
@@ -35,10 +46,12 @@ public sealed class PublishContext
     /// <see cref="CorrelationId"/> or <see cref="CausationId"/>.
     /// </summary>
     /// <remarks>
-    /// Flows into <c>EventEnvelope&lt;TEvent&gt;.TenantId</c> (<c>04.Contracts</c>, P-331) via the
-    /// <c>IEventPublisher</c> path only — <c>IMessageBus</c> has no envelope to carry it, so setting
-    /// <see cref="TenantId"/> on a plain <c>IMessageBus.PublishAsync</c>/<c>SendAsync</c> call is a
-    /// no-op today (P-340/WO-054).
+    /// Flows into <c>EventEnvelope&lt;TEvent&gt;.TenantId</c> (<c>04.Contracts</c>, P-331) on the
+    /// <c>IEventPublisher</c> path. On the <c>IMessageBus</c> path, which has no envelope, it is
+    /// written as the <c>X-Tenant-Id</c> transport header
+    /// (<c>01.Core</c>'s <see cref="SharedKernel.Primitives.Propagation.WellKnownHeaders.TenantId"/>)
+    /// — the same name every other domain propagates tenant identity under. Setting it used to be a
+    /// silent no-op on that path; P-560 made it real.
     /// </remarks>
     public Guid? TenantId { get; private set; }
 
@@ -61,9 +74,13 @@ public sealed class PublishContext
     /// </summary>
     /// <remarks>
     /// Flows into the CloudEvents <c>subject</c> attribute (<c>EventEnvelope&lt;TEvent&gt;.Subject</c>,
-    /// <c>04.Contracts</c>) via the <c>IEventPublisher</c> path only, so brokers and subscribers can filter on
-    /// it without reading the event data. Like <see cref="TenantId"/>, setting it on a plain
-    /// <c>IMessageBus.PublishAsync</c>/<c>SendAsync</c> call is a no-op.
+    /// <c>04.Contracts</c>) so brokers and subscribers can filter on it without reading the event data.
+    /// <para>
+    /// <strong>Envelope-only.</strong> Unlike <see cref="TenantId"/>, this is a CloudEvents attribute
+    /// with no meaning outside an envelope, so it is ignored on the <c>IMessageBus</c> path — that
+    /// path publishes a bare message, and giving <c>subject</c> a transport header there would invent
+    /// a wire convention no other domain reads. Use <c>IEventPublisher</c> when you need it (P-560).
+    /// </para>
     /// </remarks>
     public string? Subject { get; private set; }
 
