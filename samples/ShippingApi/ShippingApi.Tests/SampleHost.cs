@@ -25,8 +25,7 @@ namespace ShippingApi.Tests;
 /// </remarks>
 public sealed class SampleHost : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly RabbitMqContainer _broker = new RabbitMqBuilder()
-        .WithImage("masstransit/rabbitmq:4.3.1")
+    private readonly RabbitMqContainer _broker = new RabbitMqBuilder("masstransit/rabbitmq:4.3.1")
         .WithUsername("guest")
         .WithPassword("guest")
         .Build();
