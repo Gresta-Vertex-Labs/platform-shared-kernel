@@ -1,125 +1,185 @@
 # SharedKernel.Storage.Obs
 
-Huawei Cloud OBS implementation of [`SharedKernel.Storage.Abstractions`](../SharedKernel.Storage.Abstractions/README.md), consumed over OBS's S3-compatible endpoint via `AWSSDK.S3` (the native `HuaweiCloud.ESDK.OBS.Core` SDK was rejected — last published November 2022, .NET Standard 2.0, personal-account maintained, no AOT story). Provides `ObsFileStorage` (`IFileStorage`) and `ObsBlobUriGenerator` (`IBlobUriGenerator`).
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+[![Huawei OBS](https://img.shields.io/badge/Huawei%20OBS-verified%20tr--west--1-CF0A2C?logo=huawei&logoColor=white)](#what-obs-supports)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-**Independent sibling package of [`SharedKernel.Storage.S3`](../SharedKernel.Storage.S3/README.md) — this package never references it, and never will.** Both happen to sit on `AWSSDK.S3` because OBS exposes an S3-compatible API, but they are built, versioned, and configured as fully independent providers.
+> **Huawei Cloud OBS for
+> [`SharedKernel.Storage.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/08.Storage/SharedKernel.Storage.Abstractions/README.md),
+> over OBS's S3-compatible API — with the OBS behaviour that would silently corrupt data handled for you.**
 
-## Included Types
+Application code injects `IFileStorage` / `ITenantFileStorage` exactly as it would for S3. This package adds OBS
+configuration and a compatibility profile verified against a live OBS region, on top of the
+[`SharedKernel.Storage.S3`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/08.Storage/SharedKernel.Storage.S3/README.md)
+implementation. OBS and S3 stores can be registered side by side in one service.
 
-- `ObsFileStorage` — sealed `IFileStorage` implementation targeting the OBS S3-compatible endpoint; mirrors `S3FileStorage`'s implementation shape one-for-one, but is its own type, not a shared base
-- `ObsBlobUriGenerator` — sealed `IBlobUriGenerator` implementation; presigns via `IAmazonS3`'s native request presigning, clamped to the S3-family 7-day expiry maximum
-- `ObsStorageOptions` — Options-pattern configuration, validated at startup
-- `ObsStorageConstants` — internal magic-string discipline constants (`MaxBatchDeleteKeys = 1000`), independently declared from `S3StorageConstants`
-- `AddSharedKernelObsStorage(IConfiguration)` — DI registration entry point
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [What OBS supports](#what-obs-supports)
+- [What the package handles for you](#what-the-package-handles-for-you)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
+- [AI quick reference](#ai-quick-reference)
 
 ## Install
 
-```xml
-<ProjectReference Include="..\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj" />
+```shell
+dotnet add package SharedKernel.Storage.Obs
 ```
 
-Or, once published, reference the NuGet package `SharedKernel.Storage.Obs` (which brings in `SharedKernel.Storage.Abstractions` transitively).
+Reference it from the host only. It brings `SharedKernel.Storage.S3` and, through it, the Abstractions.
 
-## Setup
-
-```csharp
-services.AddSharedKernelObsStorage(configuration);
-
-// Application code injects the abstraction, never Amazon.S3.IAmazonS3 directly:
-public sealed class DocumentService(IFileStorage fileStorage, IBlobUriGenerator blobUriGenerator)
-{
-    // ...
-}
-```
-
-`AddSharedKernelObsStorage` binds and validates `ObsStorageOptions`, registers an OBS-endpoint `IAmazonS3` as a **singleton** (thread-safe and connection-pooled — never scoped/transient), and registers `IFileStorage`/`IBlobUriGenerator` as singletons backed by `ObsFileStorage`/`ObsBlobUriGenerator`. A misconfigured section fails at `IHost.StartAsync()`, not at first upload.
-
-## Configuration reference
-
-Binds from the `SharedKernel:Storage:Obs` section (`ObsStorageOptions.SectionName`):
-
-| Property | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `Endpoint` | `string` | Yes | The region OBS S3-compatible endpoint (e.g. `"obs.ap-southeast-1.myhuaweicloud.com"`). |
-| `AccessKeyId` | `string` | Yes | OBS access key (AK) used to authenticate against the provider. |
-| `SecretAccessKey` | `string` | Yes | OBS secret key (SK) used to authenticate against the provider. |
-| `ForcePathStyle` | `bool` | No (default `false`) | `true` addresses buckets as path segments (`https://host/bucket/key`) instead of subdomains. |
-| `DefaultBucket` | `string?` | No | Optional convenience default bucket for single-bucket services. Not read by `AddSharedKernelObsStorage` itself — a convenience for consuming-service code. |
+## Quick start
 
 ```json
-{
-  "SharedKernel": {
-    "Storage": {
-      "Obs": {
-        "Endpoint": "https://obs.ap-southeast-1.myhuaweicloud.com",
-        "AccessKeyId": "...",
-        "SecretAccessKey": "...",
-        "ForcePathStyle": false
-      }
+"SharedKernel": {
+  "Storage": {
+    "Obs": {
+      "Endpoint": "https://obs.tr-west-1.myhuaweicloud.com",
+      "AccessKeyId": "<AK from a secret store>",
+      "SecretAccessKey": "<SK from a secret store>"
+    },
+    "Stores": {
+      "archive": { "Bucket": "acme-archive", "Encryption": "S3Managed", "MaxPresignExpiry": "01:00:00" }
     }
   }
 }
 ```
 
-Unlike `S3StorageOptions.Region`, `Endpoint` here is unconditionally required — `CreateClient` assigns it straight to `AmazonS3Config.ServiceURL`, with no region-based branch. Supply the full endpoint including scheme (e.g. `https://...`).
-
-## Usage
-
-See [`SharedKernel.Storage.Abstractions`'s README](../SharedKernel.Storage.Abstractions/README.md) for the full `IFileStorage`/`IBlobUriGenerator` usage guide (upload/download/copy/batch-delete/streaming-list/health-probe/presigned URLs) — this package is a pure implementation and adds no members beyond the abstraction's own contract.
-
-## Registering both `.S3` and `.Obs` side by side (keyed DI)
-
-`AddSharedKernelS3Storage()` and `AddSharedKernelObsStorage()` each register **unkeyed** singletons for `IAmazonS3`, `IFileStorage`, and `IBlobUriGenerator`. Calling both in the same service collection means the second call's registrations win for every unkeyed resolve — the first provider becomes unreachable, not merely shadowed for one member.
-
-A service that genuinely needs both providers available at once (e.g. migrating buckets from OBS to S3, or routing uploads to one provider and archival reads to the other) must register each provider under a **key** instead of relying on either `AddX` extension's unkeyed registration. Build each provider's `IAmazonS3` client and `IFileStorage`/`IBlobUriGenerator` pair manually via `AddKeyedSingleton`, still binding each options type through `SharedKernel.Configuration.AddValidatedOptions` exactly as the unkeyed extensions do:
-
 ```csharp
-using Amazon.Runtime;
-using Amazon.S3;
+builder.Services.AddSharedKernelStorage()
+    .AddObs(builder.Configuration)
+    .AddStore("archive");
 
-// S3 side, keyed "s3"
-services.AddValidatedOptions<S3StorageOptions>(configuration.GetSection(S3StorageOptions.SectionName));
-services.AddKeyedSingleton<IAmazonS3>("s3", (sp, _) =>
-{
-    var options = sp.GetRequiredService<IOptions<S3StorageOptions>>().Value;
-    var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-    var config = new AmazonS3Config { ForcePathStyle = options.ForcePathStyle };
-    if (!string.IsNullOrWhiteSpace(options.ServiceUrl))
-        config.ServiceURL = options.ServiceUrl;
-    else
-        config.RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region);
-    return new AmazonS3Client(credentials, config);
-});
-services.AddKeyedSingleton<IFileStorage>("s3", (sp, key) =>
-    new S3FileStorage(sp.GetRequiredKeyedService<IAmazonS3>(key), sp.GetRequiredService<ILogger<S3FileStorage>>()));
-services.AddKeyedSingleton<IBlobUriGenerator>("s3", (sp, key) =>
-    new S3BlobUriGenerator(sp.GetRequiredKeyedService<IAmazonS3>(key), sp.GetRequiredService<IClock>(), sp.GetRequiredService<ILogger<S3BlobUriGenerator>>()));
-
-// OBS side, keyed "obs"
-services.AddValidatedOptions<ObsStorageOptions>(configuration.GetSection(ObsStorageOptions.SectionName));
-services.AddKeyedSingleton<IAmazonS3>("obs", (sp, _) =>
-{
-    var options = sp.GetRequiredService<IOptions<ObsStorageOptions>>().Value;
-    var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-    var config = new AmazonS3Config { ServiceURL = options.Endpoint, ForcePathStyle = options.ForcePathStyle };
-    return new AmazonS3Client(credentials, config);
-});
-services.AddKeyedSingleton<IFileStorage>("obs", (sp, key) =>
-    new ObsFileStorage(sp.GetRequiredKeyedService<IAmazonS3>(key), sp.GetRequiredService<ILogger<ObsFileStorage>>()));
-services.AddKeyedSingleton<IBlobUriGenerator>("obs", (sp, key) =>
-    new ObsBlobUriGenerator(sp.GetRequiredKeyedService<IAmazonS3>(key), sp.GetRequiredService<IClock>(), sp.GetRequiredService<ILogger<ObsBlobUriGenerator>>()));
-
-// Consuming code resolves by key, never by the unkeyed IFileStorage/IBlobUriGenerator:
-public sealed class MigrationService(
-    [FromKeyedServices("s3")] IFileStorage s3Storage,
-    [FromKeyedServices("obs")] IFileStorage obsStorage)
-{
-    // ...
-}
+builder.Services.AddHealthChecks().AddStorageReadinessCheck("archive");   // SharedKernel.ServiceDefaults.Storage
 ```
 
-`ObsFileStorage`/`ObsBlobUriGenerator` and `S3FileStorage`/`S3BlobUriGenerator` are public sealed classes with plain constructor-injected dependencies (`IAmazonS3` [+ `IClock` for the URI generators] + `ILogger<T>`), so they are directly constructible in a keyed factory delegate exactly as shown — no reflection, no internal-visibility workaround needed. Neither `AddSharedKernelS3Storage()` nor `AddSharedKernelObsStorage()` offers a keyed-registration overload today — this pattern is the documented, supported way to compose both providers in one host until such an overload exists.
+```csharp
+public sealed class Archive([FromKeyedServices("archive")] IFileStorage archive) { /* … */ }
+```
 
-## Package
+## Configuration
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [08.Storage/CLAUDE.md](../CLAUDE.md) for the full interface contracts, status-code error mapping, and AOT posture.
+### The connection — `SharedKernel:Storage:Obs` (`ObsStorageOptions`)
+
+| Setting | Default | |
+| --- | --- | --- |
+| `Endpoint` | — | Required: the regional endpoint, e.g. `https://obs.tr-west-1.myhuaweicloud.com` |
+| `Region` | read from the endpoint | The signing region. Read from `obs.{region}.myhuaweicloud.com`; required for any other host |
+| `AccessKeyId` / `SecretAccessKey` | — | Required (AK/SK). Bind them from a secret store |
+| `SecurityToken` | — | For temporary credentials, such as an agency's STS token |
+| `ForcePathStyle` | `false` | Address buckets as a path segment |
+| `MaxRetries` | `3` | Retries of throttled and failed requests, 0 to 10 |
+| `RequestTimeout` | `00:01:40` | Per HTTP request, 1 second to 1 hour |
+
+### Stores — `SharedKernel:Storage:Stores:{name}`
+
+Exactly the store settings of `SharedKernel.Storage.S3`: `Bucket`, `KeyPrefix`, `Encryption`, `KmsKeyId`,
+`DefaultTier`, `MaxPresignExpiry`, `MultipartPartSize` (see its
+[store settings](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/08.Storage/SharedKernel.Storage.S3/README.md#a-store--sharedkernelstoragestoresname-s3storeoptions)).
+
+Everything is validated when the host starts: a missing AK/SK or an endpoint whose region cannot be read fails
+`IHost.StartAsync()` naming the setting.
+
+## What OBS supports
+
+Verified against OBS `tr-west-1` on 2026-09-22 with the
+[`DocumentsApi` sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/DocumentsApi/README.md)
+(50 scenarios, all passing).
+
+| Capability | On OBS |
+| --- | --- |
+| Upload (single and multipart), download, range reads, properties, metadata, exists | ✅ |
+| Delete, batch delete, copy (server-side between OBS stores), listing with folders and paging | ✅ |
+| Presigned download and upload URLs, presigned forms with size and type limits, presigned multipart | ✅ |
+| Tenant stores, key prefixes, object tags, SSE (`S3Managed`, `Kms`) | ✅ |
+| `WriteCondition` (create-only, `If-Match`), conditional deletes, create-only upload URLs | ⛔ `storage.not_supported` |
+| `FileUploadOptions.ChecksumSha256` | ⛔ `storage.not_supported` |
+
+⛔ requests are refused **before** anything is sent. OBS's S3-compatible API accepts `If-None-Match`, `If-Match` and
+`x-amz-checksum-sha256` and then **ignores** them — it overwrites existing objects and stores bytes without checking
+them. Pretending those guarantees held would corrupt data silently.
+
+## What the package handles for you
+
+- **Encrypted downloads.** The ETag of an encrypted OBS object is not the MD5 of its content, which makes the AWS SDK
+  reject every full download. The OBS profile requests full downloads as `bytes=0-`, which returns the same bytes
+  without that check. Empty objects are handled too.
+- **The signing region.** Read from standard endpoints, so `Endpoint` is usually the only address setting.
+
+## Recipes
+
+### 1. Keep an OBS archive next to S3 stores
+
+```csharp
+IStorageBuilder storage = builder.Services.AddSharedKernelStorage();
+storage.AddS3(builder.Configuration).AddStore("uploads");
+storage.AddObs(builder.Configuration).AddStore("archive");
+
+// Copies between the two stream through the service (different connections):
+Result<FileReference> archived = await uploads.CopyToAsync(key, archive, $"2026/{key}", cancellationToken: ct);
+```
+
+### 2. Create-only semantics on OBS
+
+OBS cannot enforce them, so choose a key that cannot collide instead — for example
+`$"{Guid.CreateVersion7()}/{fileName}"` — and record the key in your database, whose unique constraint does the
+enforcement.
+
+### 3. Browser uploads
+
+`CreateUploadFormAsync` works on OBS with the same size and content-type policy as on S3. Send the file part with a
+plain `filename`, as browsers do. OBS rejects the `filename*=` form that .NET's
+`MultipartFormDataContent.Add(content, name, fileName)` produces; from .NET, set the part's `ContentDisposition`
+yourself:
+
+```csharp
+var file = new ByteArrayContent(bytes);
+file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "\"file\"", FileName = "\"photo.png\"" };
+```
+
+## Reference
+
+| Member | Purpose |
+| --- | --- |
+| `IStorageBuilder.AddObs(configuration, configure?)` | Adds the OBS connection (`SharedKernel:Storage:Obs`, connection name `Obs`); returns an `S3StorageBuilder` for `AddStore` / `AddTenantStore` |
+| `ObsStorageBuilderExtensions.ObsConnectionName` | `"Obs"` — the `storage.provider` tag on spans and metrics |
+| `ObsStorageOptions` | The connection settings above |
+
+Logging, telemetry, error mapping and registered services are those of `SharedKernel.Storage.S3`.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Rely on `WriteCondition` or checksums on OBS | Handle `storage.not_supported`, or use collision-free keys | OBS ignores them |
+| Switch those features on through a custom S3 connection | Use `AddObs` | You would silently overwrite data |
+| Use a non-standard endpoint without `Region` | Set `Region` | The signing region cannot be read from the host |
+| Post form uploads with `filename*=` | A plain `filename` | OBS rejects the file part |
+
+## Design decisions
+
+**Why build on the S3 package instead of the native Huawei SDK?** The native .NET SDK targets .NET Standard 2.0, was
+last released in 2022 and is maintained from a personal account. OBS's S3-compatible API, driven by the actively
+maintained `AWSSDK.S3`, covers everything the contracts need. The old standalone OBS implementation was a line-by-line
+copy of the S3 one; this package now contains only configuration and the compatibility profile.
+
+**Why refuse conditions and checksums rather than emulate them?** A read-then-write emulation of "create only" races,
+and a client-side checksum proves nothing about what OBS stored. Refusing is the only honest answer.
+
+## AI quick reference
+
+```text
+REGISTER       services.AddSharedKernelStorage().AddObs(configuration).AddStore("name");  config SharedKernel:Storage:Obs.
+CONFIG         Endpoint = "https://obs.{region}.myhuaweicloud.com", AccessKeyId, SecretAccessKey (secrets). Region only for other hosts.
+STORES         SharedKernel:Storage:Stores:{name}:Bucket (same settings as S3 stores).
+NOT SUPPORTED  WriteCondition, conditional delete, CreateOnly upload URLs, ChecksumSha256 -> storage.not_supported. Do not work around.
+SUPPORTED      Everything else in IFileStorage, including tags, SSE, forms and multipart.
+FORMS          File part with plain filename (set ContentDisposition by hand from .NET).
+```
