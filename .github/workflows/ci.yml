@@ -493,6 +493,7 @@ jobs:
             "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" \
             "samples/OrderApi/OrderApi.csproj" \
             "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" \
+            "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" \
             ; do
             echo "::group::restore $proj"
             dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$SK_VERSION"
@@ -552,11 +553,18 @@ jobs:
         run: |
           dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+          dotnet build "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       # BillingApi: the persistence stack through HTTP — real Program, Testcontainers PostgreSQL with the production
       # role split, real migrations at startup, Production-mode startup checks (RLS coverage, audit self-check).
       - name: Run BillingApi end-to-end tests (Testcontainers PostgreSQL)
         run: dotnet test "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+
+      # DocumentsApi: the storage stack through HTTP — two S3 connections and an OBS connection, tenant stores,
+      # conditional writes, presigned PUT/POST/multipart sent with a plain HttpClient. CI runs it against MinIO
+      # (Testcontainers); the same scenarios run against real S3 and OBS when the SK_LIVE_* variables are set.
+      - name: Run DocumentsApi end-to-end tests (Testcontainers MinIO)
+        run: dotnet test "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       - name: Smoke-test OrderApi sample
         env:
