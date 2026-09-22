@@ -2,11 +2,16 @@
 
 ## What This Domain Is
 
-The object-storage abstraction and provider-wiring layer. Downstream microservices depend on `SharedKernel.Storage.Abstractions` to upload, download, delete, copy, batch-delete, stream-list, and generate presigned URLs for binary blobs (documents, images, exports, attachments), plus probe basic connectivity for K8s readiness — never on a concrete cloud SDK. Concrete provider packages (`SharedKernel.Storage.S3`, `SharedKernel.Storage.Obs`) wire the vendor SDK, map its results onto the abstraction contracts, and own all provider-specific configuration.
+Provider-neutral object storage for SharedKernel services: files (documents, images, exports, attachments) in
+**named stores**, optionally **tenant-scoped**, with streaming I/O, conditional writes, integrity checks, listing,
+copies and presigned client transfers. Application code depends only on `SharedKernel.Storage.Abstractions`; the
+host picks a provider.
 
-Philosophy: **Thin abstractions. Provider-swappable. Stream-first. Presigned-URL-native. No domain coupling.**
+Philosophy: **named stores, not buckets. Tenant isolation by construction. Stream-first. Every rule validated
+before I/O, every expected failure a `Result`.**
 
-> `08.Storage` may only reference `01.Core`. It must never reference `03.Domain`, `04.Contracts`, `06.Persistence`, `07.Messaging`, or any other capability domain. Blob bytes never flow through the application/domain layers as in-memory buffers — the storage surface is `Stream`-based end to end so large objects never materialize fully in managed memory.
+Redesigned before first publish by **P-559** (2026-09-22). Entry points: `README.md` (overview), each package
+`README.md` (usage), this file (maintainer rules). Nothing in this domain is published yet.
 
 ---
 
@@ -14,369 +19,177 @@ Philosophy: **Thin abstractions. Provider-swappable. Stream-first. Presigned-URL
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Storage.Abstractions` | `IFileStorage`, `IBlobUriGenerator` interfaces plus their request/result models (`FileUploadRequest`, `FileReference`, `FileDownload`, `FileMetadata`, `FileDeleteOutcome`, `PresignedUrlRequest`, `PresignedUrl`) and `StorageErrors` factory — the only types application code should ever inject | `SharedKernel.Primitives` |
-| `SharedKernel.Storage.S3` | Concrete AWS S3 / MinIO implementation: `S3FileStorage`, `S3BlobUriGenerator`, `S3StorageOptions`, `AddSharedKernelS3Storage()` DI extension | `SharedKernel.Storage.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3`, `Microsoft.Extensions.Logging.Abstractions` |
-| `SharedKernel.Storage.Obs` | Concrete Huawei Cloud OBS implementation over OBS's S3-compatible endpoint: `ObsFileStorage`, `ObsBlobUriGenerator`, `ObsStorageOptions`, `AddSharedKernelObsStorage()` DI extension | `SharedKernel.Storage.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Storage.Abstractions` | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`, `IFileStorageHealthProbe`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`, internal `FileStorageFactory`/`ScopedFileStorage`/`TenantFileStorage`) | `SharedKernel.Primitives`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| `SharedKernel.Storage.S3` | The S3 implementation (AWS, MinIO, any S3-compatible service): `AddS3(configuration)`, `AddS3(configuration, connectionName)`, `AddS3Compatible`, `S3StorageBuilder` (`AddStore`/`AddTenantStore`), `S3StorageOptions`, `S3StoreOptions`, `S3Encryption`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, telemetry, logging | Abstractions, `SharedKernel.Configuration`, `AWSSDK.S3`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Storage.Obs` | Huawei Cloud OBS: `AddObs`, `ObsStorageOptions`, the OBS compatibility profile — nothing else | `SharedKernel.Storage.S3` |
 
-All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). `SharedKernel.Storage.Abstractions` has **zero third-party NuGet dependencies** — only a `SharedKernel.Primitives` project reference.
+All three track their public API (`PublicAPI.*.txt`, RS0016/RS0017 as errors) and require XML docs (CS1591). Every
+public type lives in the flat namespace `SharedKernel.Storage`, except the S3/OBS option types
+(`SharedKernel.Storage.S3`, `SharedKernel.Storage.Obs`).
 
-> **Provider role note:** `SharedKernel.Storage.S3` and `SharedKernel.Storage.Obs` are sibling `.{Provider}` packages, not a `.{Provider}.Core` / `.{Provider}.{Role}` split. They must never reference each other. Both happen to sit on `AWSSDK.S3` because Huawei OBS exposes an S3-compatible API (see Technology Stack) — but they remain independent packages with independent options types and DI entry points so a future native-SDK swap inside `.Obs` never touches `.S3`.
+**Layering:** `08.Storage` references `01.Core` only. `SharedKernel.Storage.Obs → SharedKernel.Storage.S3` is the one
+intra-domain provider reference, and it is deliberate (P-559): the two implementations were ~500 lines of identical
+code maintained twice. `S3` must never reference `Obs`; Abstractions never references a cloud SDK, S3, OBS or
+`SharedKernel.Configuration` (`StorageTopologyRules`).
 
 ---
 
-## Technology Stack
+## How It Fits Together
 
-| Concern | Technology |
+```text
+app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed singletons, one per store name)
+                 │
+                 ▼
+          ScopedFileStorage  (Abstractions, internal)   validates keys/options, applies "tenants/{id}/",
+                 │                                        strips it from results and error messages
+                 ▼
+          S3FileStorage      (S3, internal)             bucket + store KeyPrefix, compatibility checks,
+                 │                                        SDK calls, error mapping, telemetry, logging
+                 ▼
+          S3Connection       (keyed by connection name)  one IAmazonS3 + TransferUtility per connection
+```
+
+- A provider contributes a store with `IStorageBuilder.AddStore(new FileStoreRegistration(name, tenantScoped,
+  factory, probe))`. The factory returns the provider's **raw** store (`StoreName == name`, `TenantId == null`, whole
+  store); the registry checks that and wraps it. The raw store is never handed out, so tenant stores cannot be used
+  without a tenant and every copy between handed-out stores can be unwrapped to raw stores for a server-side copy.
+- `IFileStorage` unkeyed resolves only when exactly one shared store is registered (same for `ITenantFileStorage`);
+  otherwise it throws naming the stores. Store names: 1–64 of `A-Z a-z 0-9 . _ -`, unique ignoring case.
+- Configuration: connection at `SharedKernel:Storage:S3` (connection `S3`), `SharedKernel:Storage:S3:{name}` (named
+  connection, `AddS3(configuration, name)`) or `SharedKernel:Storage:Obs`; each store at
+  `SharedKernel:Storage:Stores:{name}` (named `S3StoreOptions`), then the `configure` delegate. All validated on start.
+- Upload path: one `PutObject` when a `ChecksumSha256` is given or the length is known (seekable stream or
+  `FileUploadOptions.ContentLength`) and at most `MultipartPartSize`; otherwise `TransferUtility` multipart.
+
+---
+
+## Contract Rules (do not break)
+
+1. **Keys are validated before any I/O** by `StorageValidation.ValidateKey`: no empty key, leading `/`, `\`, empty/`.`/`..`
+   segment, control character, or more than 1024 UTF-8 bytes (checked again by the provider on the full key). Tenant
+   ids: 1–128 of `A-Z a-z 0-9 . _ -`, not `.`/`..` — **validated, never escaped**, so two ids cannot share a prefix.
+2. **Tenant keys are `{store prefix}tenants/{tenantId}/{key}`.** A tenant view returns relative keys and rewrites
+   error messages so the prefix never reaches a caller. A tenant store is never resolvable as `IFileStorage`.
+3. **Expected failures are `Result` values with a `StorageErrorCodes` code** — built only through `StorageErrors`.
+   Throttling, 5xx, timeouts and network failures are `storage.unavailable` (after the SDK's own retries), never an
+   exception. Only caller cancellation throws; `ListAsync` throws `StorageException` (an async stream has no `Result`).
+   `access_denied` is `ErrorType.Forbidden`.
+4. **Error messages name the store and key the caller passed — never the bucket, endpoint or provider request id.**
+   Those go to logs. **Object keys are never logged or put on spans/metrics** (they carry user data).
+5. **Streams are never buffered.** Upload reads the caller's stream from its position, never disposes or rewinds it;
+   unknown-length streams go multipart with at most one part in memory. Downloads return the provider's stream.
+6. **A feature the endpoint lacks fails with `storage.not_supported` before the request is sent** (`S3Compatibility`),
+   never silently degraded. This covers conditional writes/deletes/create-only presigned PUTs, SHA-256 checksums,
+   object tags, SSE-KMS and presigned POST. `ETagIsContentMd5 = false` changes behaviour instead of refusing: full
+   downloads are requested as `bytes=0-` (a 416 answer means an empty object).
+7. **Every presigned URL/form is capped by the store's `MaxPresignExpiry`** (default 1 hour, max 7 days). A presigned
+   `PUT` returns every header the client must send (content type, metadata, SSE, `If-None-Match`, checksum, storage
+   class); the signature covers them. Browser uploads that need a size limit use the presigned POST form.
+8. **The S3 client is never registered as `IAmazonS3`.** It lives in the internal keyed `S3Connection`, created on
+   first use and disposed with the host, so it cannot collide with a service's own client.
+9. **Credentials:** no static keys → the AWS default chain (IRSA, Pod Identity, ECS, EC2). `AccessKeyId`/`SecretAccessKey`
+   are both set or neither.
+10. **A caller-supplied `ChecksumSha256` on a stream that cannot report its length needs `ContentLength`**; without it
+   the upload fails with `storage.invalid_request` naming the fix, never with an opaque provider error.
+
+---
+
+## Decisions and Why
+
+| Decision | Why |
 | --- | --- |
-| Storage abstractions | Pure C# 13 interfaces + `Stream` — zero external NuGet dependencies |
-| Outcome type | `Result<T>` / `Result` / `Error` from `SharedKernel.Primitives` — storage operations never throw for expected failures (not-found, access-denied) |
-| AWS S3 provider | `AWSSDK.S3` pinned `4.0.101.1` (latest stable on nuget.org confirmed at Scaffold-phase implementation time) — `Amazon.S3.IAmazonS3`, `TransferUtility` |
-| MinIO | Served by `SharedKernel.Storage.S3` via a configurable `ServiceUrl` + `ForcePathStyle = true` — MinIO is S3-API-compatible, so it needs no separate package |
-| Huawei Cloud OBS provider | `AWSSDK.S3` pinned `4.0.101.1` — same exact version as `.S3`, pointed at the OBS S3-compatible endpoint (`ServiceUrl` = region OBS endpoint, `ForcePathStyle` per bucket-addressing mode) |
-| Presigned URLs | Provider-native presign (`GetPreSignedURL` / `AmazonS3` request presigning) — no custom HMAC signing |
-| Configuration | Options-pattern via `SharedKernel.Configuration.AddValidatedOptions` — misconfiguration fails at startup, not first upload |
-| DI composition | Per-provider `AddSharedKernelS3Storage()` / `AddSharedKernelObsStorage()` extensions |
-| Logging | `[LoggerMessage]` source-generated pattern, `EventId` range **8000–8999** (`LoggingEventIdRanges.Storage`, from `01.Core`); 100-wide sub-blocks per package in declaration order (Abstractions 8000–8099, S3 8100–8199, Obs 8200–8299). `.S3`/`.Obs` require an explicit `Microsoft.Extensions.Logging.Abstractions` `10.0.9` `PackageReference` (provides `ILogger<T>`/`LogLevel`/the `LoggerMessage` attribute) — it is not pulled in transitively by `AWSSDK.S3` or `SharedKernel.Configuration`; omitting it fails the build with `ILogger`/`LoggerMessage` unresolved even though the `[LoggerMessage]`-attributed code itself is otherwise complete |
-| Narrow error-mapping test mocking | `NSubstitute` `5.3.0` — `SharedKernel.Storage.S3.Tests`-only `PackageReference` (matches the version already pinned by `06.Persistence.EfCore.Tests`), used exclusively to substitute `IAmazonS3` for status-code → `StorageErrors` mapping assertions where inducing a real 403/500 against a live backend is impractical; never used for behavioral/round-trip coverage |
-| XML doc enforcement / NuGet packaging | `<GenerateDocumentationFile>true</GenerateDocumentationFile>` + `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` + a full NuGet metadata block (`PackageId`/`Version`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`IncludeSymbols`/`SymbolPackageFormat=snupkg`) on all three production `.csproj` files (Docs phase) — mirrors the `05.Application`/`06.Persistence`/`07.Messaging` convention of bundling doc-coverage enforcement with NuGet metadata early so a missing XML doc (CS1591) or unresolved `<see cref>` (CS1574) fails the build going forward. **One field the Docs-phase metadata block omitted:** `<PackageReadmeFile>README.md</PackageReadmeFile>` + `<None Include="README.md" Pack="true" PackagePath="\" />` — each package's `README.md` existed on disk since Docs but was never wired into the pack itself, so `dotnet pack` emitted a `NU5039` "missing a readme" warning until the Published phase (P-01/P-02) added both lines to all three `.csproj` files, mirroring `01.Core/SharedKernel.Configuration`'s existing pattern. A future domain's Docs phase should add this pair alongside the rest of the metadata block up front rather than leaving it for Published to catch |
-
-> **Why `AWSSDK.S3` inside `SharedKernel.Storage.Obs` (not the native Huawei SDK):** Huawei's officially-documented .NET package (`HuaweiCloud.ESDK.OBS.Core`) was last published November 2022, targets .NET Standard 2.0, is owned by a personal NuGet account, and carries no AOT story. OBS's endpoint is S3-API-compatible, so `AWSSDK.S3` (actively maintained, `net8.0`+, ~11M downloads/day) drives OBS through its own options + DI seam without the stale dependency. The trade-off: OBS-only features outside the S3 API surface are out of scope for this package. If a native-SDK need ever arises, it is isolated to `.Obs` behind the same `IFileStorage`/`IBlobUriGenerator` contracts — the root brain's "place non-AOT-safe third-party packages behind an abstraction" guidance is pre-satisfied.
-
----
-
-## Interface Contracts
-
-### `SharedKernel.Storage.Abstractions` — public surface
-
-> Zero third-party NuGet dependencies. References only `SharedKernel.Primitives`.
-> Every operation returns `Result`/`Result<T>` — expected failures (not-found, access-denied, checksum-mismatch) are `Error` values, never exceptions. Only truly exceptional transport faults surface as thrown exceptions.
-
-#### File storage (`Abstractions/`)
-
-```text
-IFileStorage
-    .UploadAsync(FileUploadRequest request, CancellationToken ct)              → Task<Result<FileReference>>
-    .DownloadAsync(string bucket, string key, CancellationToken ct)            → Task<Result<FileDownload>>
-    .DeleteAsync(string bucket, string key, CancellationToken ct)              → Task<Result>
-    .ExistsAsync(string bucket, string key, CancellationToken ct)              → Task<Result<bool>>
-    .GetMetadataAsync(string bucket, string key, CancellationToken ct)         → Task<Result<FileMetadata>>
-    .CopyAsync(string sourceBucket, string sourceKey,
-               string destinationBucket, string destinationKey,
-               CancellationToken ct)                                          → Task<Result<FileReference>>
-    .DeleteManyAsync(string bucket, IReadOnlyCollection<string> keys,
-                      CancellationToken ct)                                    → Task<Result<IReadOnlyList<FileDeleteOutcome>>>
-    .ListAsync(string bucket, string prefix,
-               [EnumeratorCancellation] CancellationToken ct)                  → IAsyncEnumerable<FileMetadata>
-    .CheckHealthAsync(string bucket, CancellationToken ct)                     → Task<Result>
-    NOTE: Stream-first. UploadAsync consumes FileUploadRequest.Content (a caller-owned Stream) and
-          streams it to the provider — the payload is never buffered whole in managed memory.
-          DownloadAsync returns a FileDownload whose Content is a provider-backed Stream the CALLER
-          must dispose (FileDownload is IAsyncDisposable). ExistsAsync issues a HEAD-style metadata
-          probe — never downloads the object body. DeleteAsync is idempotent: deleting an absent key
-          succeeds (Result.Success). bucket/key are validated non-empty; invalid input returns
-          StorageErrors.InvalidKey / InvalidBucket, not an exception.
-
-          CopyAsync (P-265) is a server-side object copy — the provider issues a native copy call
-          (e.g. S3 CopyObject) so object bytes never round-trip through application memory. Returns
-          the destination FileReference (new ETag/VersionId); the source object is left untouched.
-
-          DeleteManyAsync (P-265) is a batch/multi-key delete backed by the provider's native
-          multi-object delete where available. The outer Result fails ONLY when the batch call
-          itself cannot be attempted (empty/null keys, transport fault); the inner
-          IReadOnlyList<FileDeleteOutcome> carries each key's individual success/failure so a
-          partial batch failure never masquerades as one opaque error. Providers chunk internally
-          at their own native per-request key limit (invisible to the caller).
-
-          ListAsync (P-265) streams FileMetadata via constant-memory IAsyncEnumerable, mirroring
-          06.Persistence's IReadRepository.StreamAsync precedent (P-149) — supersedes the originally
-          sketched Task<Result<IReadOnlyList<FileMetadata>>> shape, which was never implemented.
-          DELIBERATE, DOCUMENTED DEVIATION from this domain's own Result-first convention: the
-          method is NOT Result-wrapped. A provider fault mid-enumeration (e.g. credentials revoked
-          between pages) propagates as a thrown exception from MoveNextAsync, not an Error value.
-          This mirrors the one existing platform precedent for streaming reads rather than
-          inventing a new streaming-plus-Result shape.
-
-          CheckHealthAsync (P-265) is a lightweight, non-generic Result connectivity/reachability
-          probe scoped to a bucket — mirrors ExistsAsync's bucket-scoped, no-body shape minus the
-          key. Never requires a specific object key to exist, never touches object bytes. Backing
-          for a K8s readiness health check (13.ServiceDefaults) that proves "storage is reachable"
-          without side-effecting a real object operation. Considered-and-rejected alternative: a
-          richer Result<StorageHealthProbe> payload carrying latency, mirroring 06.Persistence's
-          DatabaseReadinessResult — rejected because a plain Result is sufficient and
-          13.ServiceDefaults's eventual IHealthCheck adapter (P-270) can derive Healthy/Unhealthy
-          plus a description directly from Result.IsSuccess/Error.Description; a richer payload
-          remains a strictly additive future change if ever needed.
-```
-
-#### Presigned URL generation (`Abstractions/`)
-
-```text
-IBlobUriGenerator
-    .GeneratePresignedUploadUrl(PresignedUrlRequest request)                   → Result<PresignedUrl>
-    .GeneratePresignedDownloadUrl(PresignedUrlRequest request)                 → Result<PresignedUrl>
-    NOTE: Synchronous — presigning is a local cryptographic operation against provider credentials,
-          no network round-trip. Presigned upload URLs let a browser/client PUT directly to storage,
-          bypassing the service process for large payloads. Expiry is bounded by the provider's
-          maximum (7 days for S3-family signatures); requests exceeding it return
-          StorageErrors.ExpiryTooLong. The returned PresignedUrl carries the absolute ExpiresAt so
-          callers never recompute it from a relative TimeSpan.
-```
-
-#### Request / result models (`Models/`)
-
-```text
-FileUploadRequest  (sealed record)
-    .Bucket        → string                       (required, non-empty)
-    .Key           → string                       (required, non-empty; the object path/name)
-    .Content       → Stream                        (required; caller-owned, read from current position)
-    .ContentType   → string                        (required; MIME type, e.g. "application/pdf")
-    .Metadata      → IReadOnlyDictionary<string,string>?  (optional user metadata; null = none)
-    NOTE: Content is NOT disposed by UploadAsync — the caller owns the stream lifetime.
-
-FileReference  (sealed record)
-    .Bucket   → string
-    .Key      → string
-    .ETag     → string?         (provider entity tag for the stored object)
-    .VersionId → string?        (provider version id when bucket versioning is enabled; else null)
-    NOTE: The canonical handle to a stored object. Persist this (not a presigned URL) as the durable
-          pointer — presigned URLs expire, FileReference does not.
-
-FileDownload  (sealed class, IAsyncDisposable)
-    .Content       → Stream                        (provider-backed; CALLER disposes via FileDownload)
-    .ContentType   → string
-    .ContentLength → long
-    .Metadata      → IReadOnlyDictionary<string,string>
-    NOTE: await using the FileDownload (or await DisposeAsync) to release the underlying network stream.
-
-FileMetadata  (sealed record)
-    .Bucket        → string
-    .Key           → string
-    .ContentType   → string
-    .ContentLength → long
-    .LastModified  → DateTimeOffset
-    .ETag          → string?
-    NOTE: Returned by GetMetadataAsync and each element streamed by ListAsync — never carries
-          object bytes.
-
-FileDeleteOutcome  (sealed record)
-    .Key        → string
-    .Succeeded  → bool
-    .Error      → Error?          (null when Succeeded == true)
-    NOTE: One element per requested key in DeleteManyAsync's result list — mirrors the provider's
-          native multi-object-delete response shape (e.g. S3 DeleteObjects' Deleted[]/Errors[]
-          arrays), so a caller can distinguish "key 3 of 10 failed" from "the whole batch failed."
-
-PresignedUrlRequest  (sealed record)
-    .Bucket → string                               (required, non-empty)
-    .Key    → string                               (required, non-empty)
-    .Expiry → TimeSpan                              (required; time-to-live from now)
-    NOTE: HTTP verb is implied by the generator method (upload = PUT, download = GET).
-
-PresignedUrl  (sealed record)
-    .Url       → Uri
-    .ExpiresAt → DateTimeOffset                     (absolute expiry — derived once, never recomputed)
-```
-
-#### Storage errors (`Errors/`)
-
-```text
-StorageErrors  (static class — canonical Error factory, mirrors the platform Error-value convention)
-    .NotFound(bucket, key)          → Error   (Error.NotFound — object or bucket absent)
-    .AccessDenied(bucket, key)      → Error   (Error.Forbidden — credentials lack permission)
-    .InvalidBucket(bucket)          → Error   (Error.Validation — empty/malformed bucket name)
-    .InvalidKey(key)                → Error   (Error.Validation — empty/malformed object key)
-    .ExpiryTooLong(requested, max)  → Error   (Error.Validation — presign TTL exceeds provider max)
-    .UploadFailed(bucket, key)      → Error   (Error.Failure — provider rejected the write)
-    .CopyFailed(sourceBucket, sourceKey,
-                destinationBucket, destinationKey)
-                                    → Error   (Error.Failure — provider rejected the server-side copy)
-    .BatchDeleteFailed(bucket)      → Error   (Error.Failure — outer DeleteManyAsync call-level
-                                                failure only; per-key failures inside
-                                                FileDeleteOutcome.Error reuse .NotFound/.AccessDenied)
-    .ConnectivityFailure(bucket)    → Error   (Error.Failure — CheckHealthAsync's failure path)
-    NOTE: Named-constant, single-source error factory — provider implementations return these, they
-          never construct ad-hoc Error values inline. Message templates use PascalCase named
-          placeholders; no correlation/tenant ids embedded (those flow ambiently — see Logging).
-          The three P-265 additions all route through Error.Failure — no new Error kind was needed.
-```
+| Named stores instead of a bucket argument | Bucket names are configuration; per-call buckets spread them through code and made the unkeyed `IAmazonS3` collide when S3 and OBS were both registered (the old OBS client silently served S3 stores) |
+| Tenant isolation in Abstractions (`ScopedFileStorage`), not per provider | One implementation for every provider and the in-memory fake; providers only see validated, prefixed keys |
+| `ITenantFileStorage.ForTenant(id)` returning a view, not a tenant parameter on 17 members | Same explicitness as `ITenantCacheService` with one entry point; a view cannot be used without a tenant |
+| Presigned members on `IFileStorage`, `IBlobUriGenerator` removed | One object per store; tenant views cover presigning for free |
+| OBS over the S3 implementation (sibling rule reversed) | The two packages were identical except for configuration; OBS differences are a compatibility profile |
+| Conditional copies stream through a conditional PUT | MinIO (and possibly others) ignore `If-None-Match` on `CopyObject` and overwrite — verified against MinIO 2025-09 |
+| SHA-256 requested only for known-length uploads | The SDK cannot attach part checksums to an unknown-length multipart upload (`checksum missing` from MinIO) |
+| A caller-supplied `ChecksumSha256` forces a single `PutObject` | Only a single PUT verifies a whole-object SHA-256; multipart checksums are checksums of parts |
+| `RequestChecksumCalculation`/`ResponseChecksumValidation = WHEN_REQUIRED` | Several S3-compatible services reject the SDK's default flexible-checksum headers |
+| Only `Default`/`InfrequentAccess` tiers | Archive tiers need a restore step before reads; left to lifecycle rules |
+| `FileUploadOptions.ContentLength` | An ASP.NET Core request body cannot report its length; the SDK's single `PutObject` (the only way to verify a whole-object SHA-256) then failed with "Could not determine content length" — found by the live run |
+| `S3Compatibility.ETagIsContentMd5` + `bytes=0-` full downloads | OBS ETags of encrypted objects are not content MD5s and the SDK's legacy MD5 check failed every full download; the only SDK switch is process-wide (`AWSConfigsS3.DisableDefaultChecksumValidation`), which a library must not flip |
+| Named S3 connections | Buckets owned by different IAM users could not be configured together — found by the live run |
+| OBS profile: conditions and checksums refused, tags on | Measured on OBS `tr-west-1`: `If-None-Match`, `If-Match` and `x-amz-checksum-sha256` are accepted and ignored (overwrite, unchecked bytes); tagging works |
+| `DefaultBucket`, `CheckHealthAsync(bucket)`, `FileMetadata` with empty content type removed | Dead setting; health belongs to `IFileStorageHealthProbe`; listings honestly have no content type (`FileListItem`) |
 
 ---
 
-### `SharedKernel.Storage.S3` — public surface
+## Logging and Telemetry
 
-```text
-S3FileStorage  (sealed class, implements IFileStorage)
-    — wraps Amazon.S3.IAmazonS3; UploadAsync uses TransferUtility for multipart-aware streaming.
-    — maps AmazonS3Exception status codes onto StorageErrors (404 → NotFound, 403 → AccessDenied, …).
-    — CopyAsync: IAmazonS3.CopyObjectAsync (native server-side copy, no TransferUtility involved);
-      source-404 → NotFound, 403 → AccessDenied, other → CopyFailed.
-    — DeleteManyAsync: IAmazonS3.DeleteObjectsAsync, chunked internally at
-      S3StorageConstants.MaxBatchDeleteKeys (1000 — S3's hard per-request limit, invisible to the
-      caller); DeleteObjectsResponse.DeleteErrors map to per-key FileDeleteOutcome.Error via
-      NotFound/AccessDenied; a whole-call transport fault maps to the outer BatchDeleteFailed.
-      DeletedObjects/DeleteErrors are null-coalesced to [] before use — confirmed some S3-compatible
-      providers (observed against MinIO) return null, not an empty list, when there is nothing to
-      report on that side; assuming non-null caused a NullReferenceException (WO-043 Tests-phase
-      finding). ObsFileStorage mirrors this exactly.
-    — ListAsync: hand-written async IAsyncEnumerable<FileMetadata> iterator over
-      IAmazonS3.ListObjectsV2Async, paged manually via ContinuationToken — deliberately NOT using
-      IAmazonS3's built-in paginator helper, which relies on a reflection-based code path (see AOT
-      Compatibility below).
-    — CheckHealthAsync: IAmazonS3.HeadBucketAsync; 404/403/timeout → ConnectivityFailure(bucket).
-
-S3BlobUriGenerator  (sealed class, implements IBlobUriGenerator)
-    — delegates to IAmazonS3 request presigning (GetPreSignedURL); clamps Expiry to the 7-day max.
-    — GetPreSignedUrlRequest.Protocol is explicitly derived from _s3.Config.UseHttp (HTTP if true,
-      HTTPS otherwise) — AWSSDK.S3 defaults this property to HTTPS unconditionally regardless of the
-      client's own ServiceURL scheme, which breaks presigned URLs against any plain-HTTP
-      S3-compatible endpoint (MinIO) with a TLS handshake failure. Confirmed defect, fixed WO-043
-      Tests-phase closeout; ObsBlobUriGenerator mirrors this exactly via _obs.Config.UseHttp.
-
-S3StorageConstants  (internal static class — magic-string discipline, SK0022)
-    MaxBatchDeleteKeys = 1000   (S3's native DeleteObjects per-request key limit)
-    NOTE: Plus any S3-specific header/metadata keys used at more than one call site. Independently
-          declared from ObsStorageConstants — never shared/imported across the sibling packages.
-
-S3StorageOptions  (sealed class — Options-pattern, validated at startup)
-    public const string SectionName = "SharedKernel:Storage:S3"
-    .ServiceUrl        → string?         (null = real AWS; set to the MinIO/custom endpoint otherwise)
-    .Region            → string?         (AWS region system name, e.g. "eu-central-1")
-    .AccessKeyId       → string          (required)
-    .SecretAccessKey   → string          (required)
-    .ForcePathStyle    → bool  (default false; set true for MinIO / path-style addressing)
-    .DefaultBucket     → string?         (optional convenience default for single-bucket services)
-    NOTE: SectionName is the single source for the config path — never a bare "SharedKernel:Storage:S3"
-          literal at a GetSection call site. Validation: AccessKeyId/SecretAccessKey non-empty; when
-          ServiceUrl is null, Region must be non-empty.
-
-AddSharedKernelS3Storage(IConfiguration config)  →  IServiceCollection
-    Registers:
-      — S3StorageOptions bound + validated from S3StorageOptions.SectionName
-      — IAmazonS3 as a singleton built from the options (credentials, ServiceUrl, ForcePathStyle)
-      — IFileStorage → S3FileStorage (singleton)
-      — IBlobUriGenerator → S3BlobUriGenerator (singleton)
-    NOTE: IAmazonS3 is thread-safe and pooled — singleton is correct; never scoped/transient.
-```
-
----
-
-### `SharedKernel.Storage.Obs` — public surface
-
-```text
-ObsFileStorage  (sealed class, implements IFileStorage)
-    — same IAmazonS3-backed implementation shape as S3FileStorage, targeting the OBS S3-compatible
-      endpoint. Separate type (not a shared base with S3FileStorage) so the two providers stay
-      independently swappable per the sibling-package rule.
-    — CopyAsync/DeleteManyAsync/ListAsync/CheckHealthAsync mirror S3FileStorage's shape one-for-one
-      (CopyObjectAsync / chunked DeleteObjectsAsync / manually-paged IAsyncEnumerable over
-      ListObjectsV2Async / HeadBucketAsync) against the OBS endpoint, using
-      ObsStorageConstants.MaxBatchDeleteKeys — independently declared, never imported from `.S3`.
-
-ObsBlobUriGenerator  (sealed class, implements IBlobUriGenerator)
-    — OBS presigning via IAmazonS3 request presigning against the OBS endpoint.
-
-ObsStorageConstants  (internal static class — magic-string discipline, SK0022)
-    MaxBatchDeleteKeys = 1000   (OBS's S3-compatible DeleteObjects per-request key limit)
-    NOTE: Independently declared from S3StorageConstants — same value, deliberately duplicated
-          rather than shared, per the sibling-package no-cross-reference rule.
-
-ObsStorageOptions  (sealed class — Options-pattern, validated at startup)
-    public const string SectionName = "SharedKernel:Storage:Obs"
-    .Endpoint          → string          (required; region OBS endpoint, e.g. "obs.ap-southeast-1.myhuaweicloud.com")
-    .AccessKeyId       → string          (required; OBS AK)
-    .SecretAccessKey   → string          (required; OBS SK)
-    .ForcePathStyle    → bool  (default false)
-    .DefaultBucket     → string?         (optional)
-    NOTE: Distinct SectionName and options type from S3 — a service may configure both providers
-          side by side without collision. Validation: Endpoint/AccessKeyId/SecretAccessKey non-empty.
-
-AddSharedKernelObsStorage(IConfiguration config)  →  IServiceCollection
-    Registers ObsStorageOptions (validated), an OBS-endpoint IAmazonS3 singleton, IFileStorage →
-    ObsFileStorage, IBlobUriGenerator → ObsBlobUriGenerator.
-    NOTE: When a service registers BOTH providers, the last IFileStorage registration wins for the
-          default resolve; keyed DI (AddKeyedSingleton) is the intended path for multi-provider
-          services — documented at design time, not yet implemented.
-```
-
----
-
-## Implementation Rules
-
-- `SharedKernel.Storage.Abstractions` has **zero third-party NuGet dependencies** — references only `SharedKernel.Primitives`. Adding a cloud SDK reference here is a hard violation.
-- Every `IFileStorage` / `IBlobUriGenerator` method returns `Result` / `Result<T>` for **expected** outcomes. Not-found, access-denied, validation, and provider-rejection are `Error` values via `StorageErrors` — never thrown exceptions. Only genuinely exceptional transport faults (socket reset, DNS failure) propagate as exceptions.
-- **Stream-first, always.** Payloads flow as `Stream` from caller to provider and back. No `byte[]` upload/download convenience overloads that buffer the whole object in memory — large blobs must never fully materialize in the managed heap.
-- `FileUploadRequest.Content` is **caller-owned** — `UploadAsync` never disposes it. `FileDownload` is **caller-disposed** — it is `IAsyncDisposable` and owns the provider network stream.
-- Provider `IAmazonS3` clients are **singletons** — thread-safe and connection-pooled. Never register scoped or transient.
-- All configuration binds through `SharedKernel.Configuration.AddValidatedOptions` — a misconfigured service fails at `IHost.StartAsync()`, not at first upload.
-- Config section paths are a `public const string SectionName` on the options type — never a bare `"SharedKernel:Storage:..."` literal at a `GetSection` call site (magic-string convention, `SK0022`).
-- Bucket names, object-key prefixes, and any provider header/metadata keys used at more than one call site are named constants in the owning provider package — never retyped literals.
-- `SharedKernel.Storage.S3` and `SharedKernel.Storage.Obs` **never reference each other**. Shared shape is duplicated deliberately; extracting a shared base would couple the two providers and defeat the swap-independence the split exists to protect. This includes their `S3StorageConstants`/`ObsStorageConstants` internal constants classes — same values (e.g. `MaxBatchDeleteKeys = 1000`), independently declared, never shared.
-- Production logging uses the `[LoggerMessage]` source-generated pattern with explicit `EventId`s in the **8000–8999** range (`LoggingEventIdRanges.Storage`). CorrelationId / TraceId / TenantId are never explicit message-template placeholders — they flow ambiently through the OTel pipeline.
-- No static mutable state anywhere in this domain.
-- **`ListAsync`'s streaming shape is a deliberate, documented exception to the Result-first rule above** (P-265): it returns `IAsyncEnumerable<FileMetadata>` directly, not `Task<Result<IAsyncEnumerable<FileMetadata>>>` or similar — mirroring `06.Persistence`'s `IReadRepository.StreamAsync` precedent (P-149). A provider fault mid-enumeration propagates as a thrown exception from `MoveNextAsync`. Do not "fix" this by wrapping it in `Result` — that would diverge from the one existing platform precedent for streaming reads instead of following it.
-- `CopyAsync` and `DeleteManyAsync` must never be implemented as a hand-rolled download+upload round-trip or an N-call delete loop — both are backed by the provider's native server-side/batch operation (S3 `CopyObject/DeleteObjects`) so object bytes never flow through application memory and a bulk delete costs one provider call (chunked at the provider's own limit), not N.
-- `CheckHealthAsync` is scoped to a bucket and never requires a specific object key to exist — it must not download, upload, or otherwise touch object bytes; it is a connectivity/reachability probe only, backed by the provider's cheapest bucket-level call (e.g. S3 `HeadBucketAsync`).
-
----
-
-## DI Registration (expected shape)
-
-```csharp
-// AWS S3 (or MinIO via ServiceUrl + ForcePathStyle in config):
-services.AddSharedKernelS3Storage(configuration);
-
-// Huawei Cloud OBS (S3-compatible endpoint):
-services.AddSharedKernelObsStorage(configuration);
-
-// In application code, inject the abstractions — never a cloud SDK type:
-//   IFileStorage        → upload / download / delete / exists / metadata / copy / batch-delete /
-//                          streaming list / connectivity health probe
-//   IBlobUriGenerator   → presigned upload / download URLs for direct client transfer
-```
-
-`SharedKernel.Storage.Abstractions` ships **no DI extensions** — it is a pure abstraction library. All registration lives in the provider packages.
-
-Neither `AddSharedKernelS3Storage()` nor `AddSharedKernelObsStorage()` offers a keyed-registration overload — calling both in one service collection means the second call's unkeyed `IAmazonS3`/`IFileStorage`/`IBlobUriGenerator` registrations win and the first provider becomes unreachable. For side-by-side `.S3` + `.Obs` registration, a consuming service manually registers each provider under a key via `AddKeyedSingleton` (both concrete provider types are public sealed classes with plain constructor-injected dependencies, so this needs no reflection or internal-visibility workaround) — see `SharedKernel.Storage.Obs/README.md`'s fully worked example for the exact pattern (C-29/DO-06).
-
----
-
-## AOT Compatibility
-
-- `IFileStorage`, `IBlobUriGenerator`, and all `Models/` records are interface/sealed types over BCL primitives and `Stream` — AOT-safe.
-- `StorageErrors` is a static factory returning `Error` values — AOT-safe.
-- `S3StorageOptions` / `ObsStorageOptions` bind via `Microsoft.Extensions.Options` — AOT-compatible; verify on each upgrade.
-- `AWSSDK.S3` uses reflection in some serialization/paginator code paths — AOT support is partial. Encapsulating it behind `IFileStorage`/`IBlobUriGenerator` limits the AOT blast radius to the registration + provider-implementation path; consuming services stay AOT-clean.
-- `ListAsync`'s S3/OBS implementation deliberately hand-writes its own `ContinuationToken` paging loop over `ListObjectsV2Async` instead of using `IAmazonS3`'s built-in paginator helper (`IAmazonS3.Paginators.ListObjectsV2`) — the paginator's `IPaginatedEnumerable<T>` machinery relies on the same reflection-based code path flagged above, and a hand-written loop is both AOT-cleaner and keeps the async-iterator's `[EnumeratorCancellation]` wiring explicit.
-- No `Activator.CreateInstance`, no `Assembly.Load`, no reflection in this domain's own code.
+- `[LoggerMessage]` only. EventIds: Abstractions 8000–8099 (none yet), S3 8100–8199 (`S3StorageLog`: 8100 access
+  denied, 8101 unavailable, 8102 provider error, 8103 expected failure at Debug, 8104 probe failed, 8105 bucket not served by the configured region/endpoint), OBS 8200–8299
+  (none; it logs through S3).
+- `ActivitySource`/`Meter` `"SharedKernel.Storage"` (S3 package): spans `storage {operation}` (kind Client) with
+  `storage.store`, `storage.operation`, `storage.provider` and `error.type` (the storage code) on failure; histogram
+  `storage.client.operation.duration` (s); counter `storage.client.bytes` (`storage.direction` upload/download).
+  Wired by `WithStorageTelemetry()` in `SharedKernel.ServiceDefaults`.
 
 ---
 
 ## Test Rules
 
-- Unit tests for each package live in its own nested `*.Tests` folder (e.g. `08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.Tests/`).
-- `SharedKernel.Storage.Abstractions` tests: `StorageErrors` factory returns the correct `Error` kind/code for each case (including the three P-265 additions — `.CopyFailed`/`.BatchDeleteFailed`/`.ConnectivityFailure`); model records honor value equality (including `FileDeleteOutcome`'s `Succeeded`/`Error` invariant); `PresignedUrl.ExpiresAt` is absolute; reflection-based `ContractShapeTests` lock `IFileStorage.ListAsync`'s `IAsyncEnumerable<FileMetadata>` return shape and `CheckHealthAsync`'s non-generic `Task<Result>` shape against silent regression (mirrors `06.Persistence`'s `ContractShapeTests` precedent).
-- Provider tests exercise the real S3 API against a **Testcontainers MinIO** container (via `16.Testing`, P-268) — never mock `IAmazonS3` for behavioral coverage. Assert round-trip upload → download → copy → batch-delete → not-found, streaming-list (yields all seeded items via `await foreach` without materializing an intermediate list; cancellation mid-enumeration stops paging), connectivity probe (healthy + unreachable), presigned-URL round-trip, and status-code → `StorageErrors` mapping. `SharedKernel.Storage.Obs`'s own suite stands the same MinIO container in for the OBS S3-compatible endpoint — OBS is never available in CI. **Sanctioned exception:** status-code → `StorageErrors` mapping assertions (404/403/500 across Download/GetMetadata/Exists/Delete/Copy/DeleteMany/CheckHealth) may substitute `IAmazonS3` via `NSubstitute` instead of a real backend — inducing a real 403/500 without live IAM/bucket-policy setup is impractical, and both `S3FileStorage`/`ObsFileStorage` take `IAmazonS3` as a plain constructor parameter, making substitution direct. `UploadAsync`'s own status-mapping is NOT reachable this way — it routes through an internally-constructed `TransferUtility`, not the injected client directly — and remains provider-round-trip-only coverage.
-- **`16.Testing`'s `MinioContainerFixture` (P-268) now exists** — confirmed on disk as of 2026-07-17: `16.Testing/SharedKernel.Testing/Containers/MinioContainerFixture.cs` is implemented and `16.Testing/state-map.md`'s `SK.16.Core` task `C-60` is `●` (63/63). Consumed via `[CollectionDefinition]`+`ICollectionFixture<MinioContainerFixture>` in both `SharedKernel.Storage.S3.Tests/Containers/MinioCollection.cs` and `SharedKernel.Storage.Obs.Tests/Containers/MinioCollection.cs`. **A future session should still verify this directly on disk before assuming it** rather than trusting this line — the pattern that mattered here (implement every task that genuinely needs no live backend and mark round-trip/streaming/presigned-HTTP tasks `⚑` Blocked rather than hand-rolling a competing ad-hoc Testcontainers MinIO setup) remains the correct approach if a future domain's fixture is similarly not-yet-landed.
-- **Confirmed, non-fixable-from-this-domain defect:** `DeleteManyAsync`'s real round-trip test is rejected by `MinioContainerFixture`'s pinned image (`minio/minio:RELEASE.2024-01-16T16-07-38Z`) with `Missing required header for this request: Content-Md5` — AWSSDK.S3 4.0.101.1 no longer auto-computes the classic Content-MD5 header this MinIO release requires for `DeleteObjectsAsync`, under any `RequestChecksumCalculation`/`ChecksumAlgorithm` combination available in that SDK version. Confirmed via independent reproduction against a locally-pulled `minio/minio:latest` that upgrading the pinned image resolves this specific symptom (a `16.Testing`-side fix, not this domain's) — though doing so surfaces a different genuine AWSSDK.S3 defect (`DeleteObjectsResponse.DeleteErrors`/`DeletedObjects` can be `null`, not an empty list, in the zero-errors case; both `S3FileStorage`/`ObsFileStorage.DeleteManyAsync` now null-coalesce to `[]` as a direct, permanent fix regardless of MinIO version). The `DeleteManyAsync` round-trip sub-test is `[Fact(Skip = "...")]` with full reproduction evidence in its XML doc (`S3RoundTripTests.cs`/`ObsRoundTripTests.cs`) — every other `IFileStorage` operation round-trips and passes against the real fixture with zero mocking.
-- MinIO-path confirmation: the same round-trip/streaming-list/connectivity-probe/presigned-URL suite passes unchanged with `ServiceUrl`+`ForcePathStyle` configured, proving no MinIO-specific code path exists in either provider.
-- `S3StorageOptions` / `ObsStorageOptions` validation: valid config registers without throw; missing credentials fail at startup; over-long presign expiry returns `StorageErrors.ExpiryTooLong`. Resolving `IOptions<TOptions>.Value` directly (no `IHost` needed) is sufficient to trigger the `ValidateDataAnnotations()` failure — `SharedKernel.Configuration.AddValidatedOptions`'s `IValidateOptions<T>` runs on first `.Value`/`.CurrentValue` access regardless of whether `.ValidateOnStart()`'s eager host-startup check ever fires. The `Expiry`-too-long check is local/network-free (presigning never calls the network) — test it directly against `S3BlobUriGenerator`/`ObsBlobUriGenerator` with a substituted `IAmazonS3` that is never configured to return anything, since the clamp check runs before any client call.
-- DI registration tests: `IFileStorage` / `IBlobUriGenerator` resolve; `IAmazonS3` resolves as a singleton; use `ServiceCollection` + `BuildServiceProvider()` — no web host required for DI-level verification. `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` deliberately do **not** register `ILogger<T>` themselves (that is the consuming host's responsibility, e.g. via `Host.CreateDefaultBuilder()`'s built-in logging) — a DI-only test resolving `IFileStorage`/`IBlobUriGenerator` must additionally register `services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>))` itself or the resolve throws `InvalidOperationException` for the unresolved `ILogger<S3FileStorage>`/`ILogger<S3BlobUriGenerator>` (and Obs equivalents).
-- `SharedKernel.Storage.Obs`'s test project additionally carries a lightweight sibling-independence check (no `using SharedKernel.Storage.S3` anywhere in its own source/tests) — the authoritative enforcement is `00.Governance`'s `StorageTopologyRules`/SK0023 architecture test, outside this domain's own test suite. Implement this as a `[System.Runtime.CompilerServices.CallerFilePath]`-anchored scan of the package folder for `using`-directive lines specifically (trimmed-line prefix match, not whole-file substring search) — a naive `string.Contains("using SharedKernel.Storage.S3")` over full file text false-positives on the test's own descriptive XML-doc prose mentioning that same phrase.
-- Real-backend provider tests are consumed via a `[CollectionDefinition]`+`ICollectionFixture<MinioContainerFixture>` pair per `.Tests` project (`Containers/MinioCollection.cs`), matching `16.Testing`'s own container-fixture rule (one instance per test collection, never per test method). A companion `internal static class MinioProviderFactory` (`Containers/MinioProviderFactory.cs`) builds real, non-DI `S3FileStorage`/`S3BlobUriGenerator` (or `ObsFileStorage`/`ObsBlobUriGenerator`) instances directly from the fixture's connection properties, mirroring `AddSharedKernelS3Storage`/`AddSharedKernelObsStorage`'s own client-construction shape exactly (including `RequestChecksumCalculation = WHEN_REQUIRED` and MinIO's plain-HTTP `UseHttp` requirement) so tests exercise the identical configuration a consuming host would build.
-- `DeleteManyAsync`'s real round-trip assertion against `MinioContainerFixture`'s pinned image (`minio/minio:RELEASE.2024-01-16T16-07-38Z`) is a confirmed, fully-investigated `AWSSDK.S3 4.0.101.1`/MinIO interoperability defect (not a defect in `S3FileStorage`/`ObsFileStorage`) — see the Test Rules bullet on `MinioContainerFixture` above for the root cause and evidence. The corresponding test method is `[Fact(Skip = "...")]` with the full reproduction record in its XML doc, never a forced pass or a silently-left-failing test. Every other `IFileStorage`/`IBlobUriGenerator` operation round-trips and passes against the real fixture with zero mocking.
+- `SharedKernel.Storage.Abstractions.Tests` — validation, registry resolution and tenant isolation against a recording
+  fake store (no Docker).
+- `SharedKernel.Storage.S3.Tests` / `.Obs.Tests` — real MinIO (`quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`,
+  Testcontainers) for every behaviour: round trips, non-seekable multipart upload, ranges, conditions, checksums, batch
+  delete, copies across stores and tenants, listing and paging, presigned GET/PUT/POST/multipart through `HttpClient`,
+  tenant isolation, probe, outage → `unavailable`, cancellation, telemetry. Never mock `IAmazonS3` for behaviour.
+- The storage test projects do not reference `SharedKernel.Testing` (it references Abstractions for the in-memory
+  store; keeping them apart keeps the build graph acyclic in practice).
+- `consumer-verify/` composes S3 and OBS stores in a real host and checks start-up validation.
+
+## Known Limits
+
+- MinIO does not report a stored SHA-256 (`FileProperties.ChecksumSha256` is `null` there); verification of a supplied
+  checksum is tested and works.
+- SSE-S3 is exercised live (S3 `documents` and OBS `archive` stores of `samples/DocumentsApi`); SSE-KMS only by its
+  headers.
+- The OBS profile was verified against OBS `tr-west-1`: it ignores `If-None-Match`/`If-Match`/`x-amz-checksum-sha256`
+  (so they are refused), supports tags, and returns non-MD5 ETags for encrypted objects (`ETagIsContentMd5 = false`).
+- Server-side copy is limited to 5 GiB by S3 `CopyObject`.
+- `ExistsAsync`/`GetPropertiesAsync` use `HEAD`, whose 404 carries no error code: a missing bucket reads as a missing
+  object there. Every other operation checks `NoSuchBucket` (`IsMissingObject`) and returns `storage.provider_error`;
+  the readiness probe reports the bucket at startup.
+
+## Documentation Rules
+
+Four audiences, four artefacts — keep them in sync in the same change as the code:
+
+| Artefact | Reader | Rules |
+| --- | --- | --- |
+| `08.Storage/README.md` | GitHub visitors choosing the domain | Explains each package, the architecture, a 10-minute path, the provider matrix, guarantees. Relative links (not packed) |
+| `SharedKernel.Storage.*/README.md` | GitHub and nuget.org readers (packed into the `.nupkg`) | Caching-style gold standard: pitch, contents, install, quick start, how it works, numbered recipes, reference tables (types, options, error codes, exceptions), pitfalls, design decisions, **AI quick reference**, guarantees. **Absolute** GitHub links only — relative links break on nuget.org. Every claim verified by a test or the live run |
+| XML docs on every public member | IntelliSense, "Go to definition", AI tools reading the package | Purpose, defaults, limits, the `storage.*` code or exception of each failure, a `<code>` example on entry points. CS1591 is an error |
+| `<Description>` in each `.csproj` | nuget.org search, IDE package manager | One paragraph: what it is, what it guarantees, the registration call |
+
+The AI quick reference blocks are rules, one per line; update them whenever a registration, option or error code
+changes. Never document a provider behaviour that no test or live run has shown.
+
+## Live Verification
+
+`samples/DocumentsApi/DocumentsApi.Tests` runs every capability through an HTTP API against MinIO, and against real
+Amazon S3 (two IAM users, two buckets) and Huawei Cloud OBS when `SK_LIVE_*` is set (see that README). Run it after
+any provider change: MinIO accepted three defects that only the real services exposed (P-559 live pass, below).
 
 ---
 
 ## Changelog
 
-> Maintained by the storage domain agent. One line per significant change.
-
-- [2026-07-16] Domain brain initialized — packages (Abstractions + S3 + Obs), technology stack (AWSSDK.S3 for both S3/MinIO and Huawei OBS's S3-compatible endpoint), `IFileStorage`/`IBlobUriGenerator` interface surface, Result-valued error convention, options/DI shape, AOT + test rules; OBS packaged as its own `SharedKernel.Storage.Obs` over `AWSSDK.S3` (native `HuaweiCloud.ESDK.OBS.Core` rejected as stale/.NET Standard 2.0/personal-account) (root, user request)
-- [2026-07-16] WO-043 P-265/P-266/P-267 — `IFileStorage` finalized to nine members before any provider code exists: added `CopyAsync` (server-side copy), `DeleteManyAsync` (batch delete with per-key `FileDeleteOutcome` results), redesigned `ListAsync` from a fully-materialized `Task<Result<IReadOnlyList<FileMetadata>>>` to a constant-memory streaming `IAsyncEnumerable<FileMetadata>` (documented Result-first exception, mirrors `06.Persistence` P-149), and added `CheckHealthAsync` (bucket-scoped, non-generic `Result` connectivity probe backing the future `13.ServiceDefaults` readiness check). `StorageErrors` gained `.CopyFailed`/`.BatchDeleteFailed`/`.ConnectivityFailure`. `S3FileStorage`/`ObsFileStorage` implementation shapes specified for all four new members (`CopyObjectAsync`/chunked `DeleteObjectsAsync`/hand-paged `ListObjectsV2Async`/`HeadBucketAsync`), plus new `S3StorageConstants`/`ObsStorageConstants` (`MaxBatchDeleteKeys = 1000`, independently declared per sibling-package rule) and the AOT rationale for hand-writing the list-paging loop instead of using `IAmazonS3`'s reflection-based paginator helper. Full six-phase task plan (88 tasks) added to `state-map.md` (arch-lead, WO-043, P-265–P-267)
-- [2026-07-16] Design phase (SK.08.Design, D-01–D-15) verified complete against this file — corrected a repeated "ten-member `IFileStorage`" miscount to the accurate nine (five original + `CopyAsync`/`DeleteManyAsync`/`ListAsync`/`CheckHealthAsync`) in this changelog and mirrored in `state-map.md`; added the previously-undocumented "considered-and-rejected `Result<StorageHealthProbe>`" rationale to the `CheckHealthAsync` contract note for full design traceability. No interface, model, or rule changes — contract confirmed locked as the Scaffold-phase basis (storage-phase-implementer, WO-043)
-- [2026-07-16] Scaffold phase (SK.08.Scaffold, S-01–S-12) complete — all three packages' `.csproj` files wired to the design-locked reference shape; `AWSSDK.S3` version confirmed and pinned to `4.0.101.1` (latest stable on nuget.org at implementation time) for both `.S3` and `.Obs`, updating the prior "4.x" placeholder in the Technology Stack table to the exact confirmed version; net-new `SharedKernel.Storage.Abstractions.Tests` and the entire `SharedKernel.Storage.Obs`(+`.Tests`) package created from scratch, folder-for-folder mirroring `.S3`'s shape (`FileStorage/`, `BlobUri/`, `Options/`, `Constants/`, `Logging/`, `Extensions/`) with zero `ProjectReference` to `.S3`; all six projects registered in `Platform.SharedKernel.slnx` (verified via `dotnet sln list`) and build with 0 errors. Folder/file stubs carry no logic per phase scope — Core phase (C-01 onward) is next (storage-phase-implementer, WO-043)
-- [2026-07-17] Core phase (SK.08.Core, C-01–C-30) complete — Abstractions and `.S3` were found already fully implemented (production-quality, full XML docs) from an earlier uncommitted session, verified correct against this file's locked D-07 contract with zero interface/model/error deviations; found and fixed one real defect — both `.S3`'s and `.Obs`'s `.csproj` files were missing a `Microsoft.Extensions.Logging.Abstractions` `PackageReference`, so neither project actually compiled despite complete `[LoggerMessage]` code (`ILogger<T>`/`LogLevel`/`LoggerMessage` all unresolved); fixed by adding the package (see Technology Stack/Packages table updates above). `SharedKernel.Storage.Obs` implemented net-new this session — `ObsFileStorage`/`ObsBlobUriGenerator`/`ObsStorageOptions`/`ObsStorageConstants`/`AddSharedKernelObsStorage`/`ObsStorageLog` (EventId 8200-8299) — mirroring `.S3`'s already-shipped shape one-for-one with zero deviation from this file's already-locked `.Obs` public-surface spec. Grep-verified zero project/type reference between `.S3` and `.Obs` in either direction. All six projects build with 0 errors individually. Test-writing deliberately deferred to the already-fully-specified Tests phase (SK.08.Tests) — Core's own task list contained only Implement/Confirm tasks (storage-phase-implementer, WO-043)
-- [2026-07-17] Tests phase partially complete (10/17 tasks, 91/91 tests passing) — verified on disk that `16.Testing`'s `MinioContainerFixture` (P-268) does not exist yet, so all genuinely container-free tasks were implemented (Abstractions unit tests; S3/Obs DI-registration and options-validation tests; S3 status-code mapping via the newly-sanctioned `NSubstitute` exception; Obs sibling-independence source scan) and the seven real-backend round-trip/streaming/presigned-HTTP/MinIO-path tasks left `⚑` Blocked in `state-map.md` rather than hand-rolling a competing container setup. New Technology Stack row for `NSubstitute` `5.3.0` (scoped to `S3.Tests` narrow error-mapping only); Test Rules gained the sanctioned-mocking-exception clarification, the missing-fixture pre-check instruction, the `IOptions<T>.Value`-triggers-validation-without-a-host technique, the `AddSharedKernel{S3,Obs}Storage()`-does-not-register-`ILogger<T>` DI gotcha, and the `[CallerFilePath]`-anchored line-scan technique for the sibling-independence check (storage-phase-implementer, WO-043)
-- [2026-07-17] Tests phase closed in full (SK.08.Tests, 17/17 → `●`, promoted to root) — re-verified on disk that `16.Testing`'s `MinioContainerFixture` had since landed (`SK.16.Core` C-60–C-63, 63/63 `●`) and implemented all seven previously-blocked tasks (T-05–T-08, T-12–T-14) against it via a new `[CollectionDefinition]`+`ICollectionFixture<MinioContainerFixture>` pair and companion `MinioProviderFactory` in each `.Tests` project. **Two real production defects found and fixed** during this real-backend testing pass (both documented in Interface Contracts above): (1) `S3BlobUriGenerator`/`ObsBlobUriGenerator` never set `GetPreSignedUrlRequest.Protocol`, which AWSSDK.S3 defaults to HTTPS unconditionally regardless of the client's own `ServiceURL` scheme, breaking every presigned URL against a plain-HTTP S3-compatible endpoint — fixed by deriving `Protocol` from `_s3.Config.UseHttp`/`_obs.Config.UseHttp`; (2) `DeleteManyAsync` on both providers assumed `DeleteObjectsResponse.DeletedObjects`/`.DeleteErrors` are never `null` — confirmed `null` (not empty) against MinIO in the zero-errors case, now null-coalesced to `[]`. Also added `RequestChecksumCalculation = WHEN_REQUIRED` to both providers' client config (partial compatibility improvement). **One confirmed, non-fixable-from-this-domain defect remains** — `DeleteManyAsync`'s real round-trip assertion is rejected by the fixture's pinned MinIO image with a Content-MD5 requirement AWSSDK.S3 4.0.101.1 no longer satisfies under any available SDK configuration; independently reproduced against a newer MinIO image to confirm the fix belongs to `16.Testing`'s pinned-image choice, not this domain — handled via a documented `[Fact(Skip = "...")]` with full reproduction evidence in-code, not a forced pass. Final tallies: Abstractions 50/50, S3 44/45 (1 skip), Obs 23/24 (1 skip) — 117 passing + 2 documented skips + 0 failures across 119 tests. Corrected this file's own stale "`MinioContainerFixture` may not exist yet" prose to reflect the cleared blocker; added two new Test Rules bullets (the `MinioCollection`/`MinioProviderFactory` pattern, and the documented-Skip convention for confirmed non-fixable defects) (storage-phase-implementer, WO-043)
-- [2026-07-17] Docs phase closed in full (SK.08.Docs, DO-01–DO-07, 7/7 → `●`, promoted to root) — enabled `GenerateDocumentationFile`+`TreatWarningsAsErrors`+full NuGet metadata block on all three production `.csproj` files (Technology Stack table updated); all three rebuilt 0 warnings/0 errors on the first attempt, confirming the Core-phase XML docs were genuinely complete. Wrote `README.md` for all three packages (none existed before this phase) — Abstractions covers the full `IFileStorage`/`IBlobUriGenerator` surface and the Stream-first/caller-owned/caller-disposed stream contract; S3 covers setup, the MinIO `ServiceUrl`+`ForcePathStyle` note, and the full `S3StorageOptions` config table; Obs covers setup, the full `ObsStorageOptions` config table, and a fully worked `AddKeyedSingleton` example for side-by-side `.S3`+`.Obs` registration (fulfills C-29), now also cross-referenced from this file's DI Registration section. DO-07 drift check read every production source file in all three packages against this file's Interface Contracts section — zero drift found, no interface/model/error-mapping corrections needed. 117 passing + 2 documented skips + 0 failures, unchanged (storage-phase-implementer)
-- [2026-07-18] Published phase closed in full (SK.08.Published, P-01–P-07, 7/7 → `●`, promoted to root) — **08.Storage domain (WO-043) complete end to end, all six phases `●`.** P-01 re-verification found the Docs-phase metadata block was not fully complete: `PackageReadmeFile`/packed `README.md` was missing from all three `.csproj` files despite each package's README existing on disk, causing a `NU5039` pack warning — fixed (see Technology Stack table). All three packages re-packed clean to `artifacts/nupkg/` (`.nupkg`+`.snupkg`, zero warnings). New `08.Storage/consumer-verify` console harness (mirrors the `13.ServiceDefaults`/`14.Presentation`/`15.Integration`/`04.Contracts` precedent) added and registered in `Platform.SharedKernel.slnx` — five surfaces, all passing: `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` each resolve `IFileStorage`/`IBlobUriGenerator` through a real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()` composition (not just `BuildServiceProvider()`); both providers registered side by side via `AddKeyedSingleton`, executing the `SharedKernel.Storage.Obs/README.md` C-29/DO-06 worked example against real compiled code for the first time (keyed `"s3"`/`"obs"` resolve to distinct concrete types, zero collision); a `S3StorageOptions`/`ObsStorageOptions` section missing required fields throws `OptionsValidationException` at `IHost.StartAsync()` naming the missing property, not a silent default. Test suites re-run after the csproj edits: Abstractions 50/50 unchanged; the Testcontainers-MinIO-backed round-trip/streaming/presigned-URL suites in `.S3.Tests`/`.Obs.Tests` could not be re-run this session — no Docker daemon available in the environment — but this session touched zero production `.cs` files in either provider, only NuGet packaging metadata and a new standalone harness project, so this is a documented environment gap, not a regression risk (storage-phase-implementer)
+- [2026-09-22] **P-559 pre-publish redesign** of all three packages. Named and tenant-scoped stores, conditional
+  writes, SHA-256 verification, range reads, folder listing with paging, cross-store copy, presigned PUT with signed
+  headers, presigned POST forms with size/type policy, presigned multipart, IAM default credential chain, SSE-S3/KMS,
+  storage tiers, `ExpectedBucketOwner`, telemetry, `unavailable` instead of exceptions, `Forbidden` for access denied;
+  OBS reduced to configuration over S3. 109 tests (66 unit, 43 MinIO). Pre-P-559 history (WO-043, WO-055, SK.08.*
+  phases) is in git history and `state-map.md`.
+- [2026-09-22] **P-559 live verification** through the new `samples/DocumentsApi` (100 scenarios: 50 MinIO, 50 AWS S3
+  eu-central-1 + OBS tr-west-1, all passing). Fixed what the real services exposed: `FileUploadOptions.ContentLength`
+  (a checksummed upload of a request body failed), `S3Compatibility.ETagIsContentMd5` (every full download of an
+  encrypted OBS object failed the SDK's MD5 check), named S3 connections `AddS3(configuration, name)` (buckets with
+  different IAM users could not be configured), EventId 8105 for a wrong region (was a bare provider error). OBS
+  profile corrected from verified behaviour: tags on; conditions and checksums stay refused because OBS ignores them.
+- [2026-09-22] **P-559 documentation pass**: domain README rewritten as the GitHub landing page (packages,
+  architecture, 10-minute start, provider matrix, guarantees); the three package READMEs rewritten to the Caching gold
+  standard with recipes, reference tables and AI quick references; XML docs of every public member reviewed against
+  the implementation; NuGet descriptions rewritten; documentation rules added to this file.
