@@ -1,0 +1,23 @@
+#nullable enable
+const SharedKernel.Storage.ObsStorageBuilderExtensions.ObsConnectionName = "Obs" -> string!
+SharedKernel.Storage.Obs.ObsStorageOptions
+SharedKernel.Storage.Obs.ObsStorageOptions.AccessKeyId.get -> string!
+SharedKernel.Storage.Obs.ObsStorageOptions.AccessKeyId.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.Endpoint.get -> string!
+SharedKernel.Storage.Obs.ObsStorageOptions.Endpoint.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.ForcePathStyle.get -> bool
+SharedKernel.Storage.Obs.ObsStorageOptions.ForcePathStyle.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.MaxRetries.get -> int
+SharedKernel.Storage.Obs.ObsStorageOptions.MaxRetries.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.ObsStorageOptions() -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.Region.get -> string?
+SharedKernel.Storage.Obs.ObsStorageOptions.Region.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.RequestTimeout.get -> System.TimeSpan
+SharedKernel.Storage.Obs.ObsStorageOptions.RequestTimeout.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.SecretAccessKey.get -> string!
+SharedKernel.Storage.Obs.ObsStorageOptions.SecretAccessKey.set -> void
+SharedKernel.Storage.Obs.ObsStorageOptions.SecurityToken.get -> string?
+SharedKernel.Storage.Obs.ObsStorageOptions.SecurityToken.set -> void
+SharedKernel.Storage.ObsStorageBuilderExtensions
+static SharedKernel.Storage.Obs.ObsStorageOptions.SectionName.get -> string!
+static SharedKernel.Storage.ObsStorageBuilderExtensions.AddObs(this SharedKernel.Storage.IStorageBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Storage.Obs.ObsStorageOptions!>? configure = null) -> SharedKernel.Storage.S3StorageBuilder!
