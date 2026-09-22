@@ -95,9 +95,9 @@ Primitives → Core, Configuration → Domain, Contracts, Cryptography, Caching.
 `EfCore.Auditing`/`EfCore.Encryption` pin `Persistence.EfCore` and `EfCore` pins `Persistence.Npgsql` to the **exact**
 version (they use each other's internals): publish them from the same build.
 
-Before publishing: run the packed ConsumerVerify (§5) against the real feed, not only the local folder feed;
-`06.Persistence/SharedKernel.Persistence.ConsumerVerify` is **not wired into CI** yet (`ci.yml`'s packaging-verify job
-runs the 02–05 harnesses only) — add it (it needs Docker for the composed scenario).
+Before publishing: run the packed ConsumerVerify (§5) and the BillingApi sample (§7) against the real feed, not only
+the local folder feed. Both are wired into CI's packaging-verify job (the 06 ConsumerVerify step and the BillingApi
+end-to-end tests; both need Docker).
 
 ## 5. Verification state
 
@@ -107,6 +107,8 @@ runs the 02–05 harnesses only) — add it (it needs Docker for the composed sc
 | Unit + integration suites | per project, Docker running | all green at `340c5fa0`: Analyzers 362, ArchitectureTests 364, Linter 36, Domain 505, Contracts 105, Application.Abstractions 25, Application 33, Behaviors 80, Behaviors.Caching 51, Persistence.Abstractions 33, EfCore 375, EfCore.Integration 111, Auditing 107, Encryption 92, Npgsql 116, Dapper 23, ServiceDefaults 96 (+ integration packages: .Persistence 16, .Security 8, .Security.Mtls 51, …), MultiTenancy 85, Testing.SelfTests 1318, Persistence.Testing.Tests 79, Idempotency.EfCore 36, Idempotency.Redis 35 |
 | Domain README sample | `dotnet test 13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/SharedKernel.ServiceDefaults.Persistence.Tests -c Release` | 18/18 incl. the two new `PersistenceReadmeSampleTests` (MediatR + RLS + audit + Money on PostgreSQL; fakes) |
 | Packed consumers | `dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-p558.local.4`, then `dotnet test 06.Persistence/SharedKernel.Persistence.ConsumerVerify -p:SharedKernelPackageVersion=1.0.0-p558.local.4` (same for `05.Application/SharedKernel.Application.ConsumerVerify`) | 06: 9/9 (composed multi-tenancy + RLS + audit + encryption + retry scenario, testing-package tests); 05: 6/6 |
+| Sample service, packed feed (2026-09-22) | pack as `1.0.0-p558.local.8`; `dotnet test samples/BillingApi/BillingApi.Tests -p:SharedKernelPackageVersion=1.0.0-p558.local.8` | 16/16 (15 end-to-end over HTTP in the Production environment on Testcontainers PostgreSQL 17 with the role split and real migrations; 1 unit test over the fakes) |
+| Sample service in Docker (2026-09-22) | `dotnet publish samples/BillingApi -t:PublishContainer …`, `docker compose up -d`, `./smoke-test.sh` | 28/28 checks; ready in Production with RLS privilege + coverage checks and the audit self-check at `Fail` |
 
 ## 6. Known limitations, deliberately open
 
@@ -128,7 +130,27 @@ runs the 02–05 harnesses only) — add it (it needs Docker for the composed sc
   assembly breaks a `TenantedDbContext` model build unless `ShouldApplyConfiguration` filters (documented; the README
   sample test needed it).
 
-## 7. Working notes
+## 7. Pre-publish verification through a real service (2026-09-22)
+
+`samples/BillingApi` uses all six persistence packages, `SharedKernel.Persistence.Testing`, the pipeline behaviors,
+`ServiceDefaults.Security`/`.Persistence` and `Presentation.WebApi` from the **packed** feed, through an HTTP API, against
+PostgreSQL with the canonical role script (`docker/init-roles.sql`), in Docker Compose and in its tests. Building it the
+way the READMEs say found five defects the package suites had not, all fixed with regression tests:
+
+| # | Package | Defect | Fix |
+| --- | --- | --- | --- |
+| 1 | EfCore | `PostgresDesignTimeDbContextFactory` built the model without capability conventions: `dotnet ef migrations add` failed for any `.Encrypt()` model, and would otherwise have produced a migration without the blind-index columns / encrypted widths the runtime model has | virtual `ConfigurePersistence(EfCorePersistenceBuilder<TContext>)`; the factory takes the model conventions/configurators of that registration (nothing else is resolved); the guard message names it; `DesignTimeFactoryTests` proves design model == runtime model |
+| 2 | EfCore | **Security.** `migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel!)` — the call every README prescribes — created **no policy** in a real migration: a `TargetModel` is property bags without CLR types, so the `IHasTenant` test never matched. Dapper SQL relying on RLS then returned another tenant's rows (observed: tenant B's revenue report showed tenant A's invoice). Hidden because tests passed the live model and the coverage check only warns in Development | tenant entity types carry `SharedKernel:Persistence:Tenant` (into the Designer file); `TenantTables` reads it; `ForModel` throws on zero tables; `MigrationTargetModelTests` compiles a scaffolded migration and uses its own `TargetModel` (fails without the fix) |
+| 3 | EfCore | `ConcurrencyVersion.Get` on an untracked entity (the documented read path, `IReadRepository`) returned version **0**: GET → `ETag: "0"` → every PUT with that `If-Match` answered 412 | throws with guidance for an untracked shadow-`xmin` entity; README: read the ETag from a tracked instance |
+| 4 | Persistence.Testing | `FakeUnitOfWork` rollback (failed `Result`, exception, `TransientFailures` replay) left `FakeRepository` writes in place: the README's own handler pattern failed the documented re-runnability proof with "already exists", and failed commands left data behind | fake repositories enlist in the fake transaction (either registration order) and are restored on rollback |
+| 5 | Npgsql | Npgsql's default GSS encryption `Prefer` probed Kerberos on every new physical connection; in the standard ASP.NET image it printed `libgssapi_krb5.so.2: cannot open shared object file` | GSS encryption `Disable` unless the connection string sets `GSS Encryption Mode` |
+
+Also: `Directory.Packages.props` gained `PackageVersion` entries for `SharedKernel.Security.Abstractions`,
+`SharedKernel.ServiceDefaults.Persistence` and `.Security` (consumers of the packed feed need them); the domain README's
+migration step and the EfCore/Testing/Npgsql READMEs describe the new behavior; the README sample test compiles the
+design-time factory. Every migration generated before fix 2 must be regenerated (none is published).
+
+## 8. Working notes
 
 - **Windows path length.** Deep test paths overflow 260 characters (`MSB3030` in the KeyVault integration test
   projects is a pre-existing baseline). Parallel streams used short worktrees under `C:\wt\<stream>` (`git worktree

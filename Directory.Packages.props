@@ -294,7 +294,10 @@
     <PackageVersion Include="SharedKernel.Persistence.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Security.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ServiceDefaults.Persistence" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ServiceDefaults.Security" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Validation" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Validation.FluentValidation" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
