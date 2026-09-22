@@ -17,7 +17,7 @@ Same underlying constraint as [`SharedKernel.Reporting.Spreadsheet`](../SharedKe
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("exports"); // any SharedKernel.Storage provider
 builder.Services.AddPdfReportExporter<Invoice>(builder.Configuration);
 
 var host = builder.Build();

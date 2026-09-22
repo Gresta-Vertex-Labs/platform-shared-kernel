@@ -23,7 +23,7 @@ public interface IReportExporter<TRow>
 }
 ```
 
-Both members accept `IAsyncEnumerable<TRow>` — **never** `IEnumerable<TRow>` or `List<TRow>`, and no such overload will ever be added. `ExportAsync` is the primary, storage-delivered path (via `IFileStorage`, with an optional presigned URL via `IBlobUriGenerator`). `ExportToStreamAsync` is a small-output/direct-stream convenience path — never the *only* way out of a provider.
+Both members accept `IAsyncEnumerable<TRow>` — **never** `IEnumerable<TRow>` or `List<TRow>`, and no such overload will ever be added. `ExportAsync` is the primary, storage-delivered path (into a named `IFileStorage` store, with an optional presigned download request created by that store). `ExportToStreamAsync` is a small-output/direct-stream convenience path — never the *only* way out of a provider.
 
 If you have an in-memory collection, convert it yourself: `myList.ToAsyncEnumerable()` (`System.Linq.Async` or a one-line adapter). That is your call to make, not this contract's to weaken.
 
@@ -51,19 +51,25 @@ var definition = new ReportDefinition<Invoice>
 ```csharp
 var destination = new ReportDestination
 {
-    Bucket = "exports",
-    Key = $"invoices/{tenantId}/{DateOnly.FromDateTime(DateTime.UtcNow)}.csv",
+    Store = "exports",                                   // a store registered with AddSharedKernelStorage()
+    TenantId = tenantId,                                 // only for a tenant store; from the authenticated request
+    Key = $"invoices/{DateOnly.FromDateTime(DateTime.UtcNow)}.csv",
     PresignedDownloadUrlExpiry = TimeSpan.FromHours(1), // omit for no presigned URL
 };
 
 var result = await exporter.ExportAsync(rows, definition, destination, cancellationToken);
 if (result.IsSuccess)
 {
-    Console.WriteLine(result.Value.StoredFile.Key);   // the durable pointer — persist this
-    Console.WriteLine(result.Value.DownloadUrl?.Url);  // populated only when PresignedDownloadUrlExpiry was set
-    Console.WriteLine(result.Value.RowCount);          // counted for free while streaming
+    FileReference stored = result.Value.StoredFile;    // store, tenant and key — persist this
+    PresignedRequest? link = result.Value.DownloadUrl; // Url, Method, Headers, ExpiresAt; only when PresignedDownloadUrlExpiry was set
+    long rowCount = result.Value.RowCount;             // counted for free while streaming
 }
 ```
+
+- `Store` names a store the host registered; an unknown store, or a `TenantId` that does not match the store's tenancy (set for a shared store, missing for a tenant store), is a configuration error and throws.
+- For a tenant store the object lands under that tenant's own prefix, and `StoredFile` carries the tenant. Open it later with `IFileStorageFactory.Open(storedFile)`.
+- `PresignedDownloadUrlExpiry` may not exceed the store's `MaxPresignExpiry`; a longer one fails the export with `storage.expiry_too_long` after the object has been stored.
+- Every storage failure (`storage.already_exists`, `storage.unavailable`, …) comes back as the failed `Result` with the storage error code unchanged.
 
 `ExportAsync` is composed internally from `StorageStreamingWriter` — a `System.IO.Pipelines.Pipe`-based primitive that runs `IFileStorage.UploadAsync` concurrently against a provider's own row-to-bytes encoder, so bytes reach storage as they are produced rather than after the whole output is buffered. This package exposes no DI registration of its own — each provider (`.Csv`/`.Spreadsheet`/`.Pdf`) owns its own `AddXReportExporter<TRow>(IConfiguration)` extension, since only a concrete provider knows its own encoding.
 
@@ -85,7 +91,9 @@ This package never registers itself — a provider does. A real composition root
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+builder.Services.AddSharedKernelStorage()
+    .AddS3(builder.Configuration)
+    .AddStore("exports");
 builder.Services.AddCsvReportExporter<Invoice>(builder.Configuration);
 builder.Services.AddSpreadsheetReportExporter<Invoice>(builder.Configuration); // optional, composes freely
 builder.Services.AddPdfReportExporter<Invoice>(builder.Configuration);        // optional, composes freely

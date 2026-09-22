@@ -1687,7 +1687,7 @@ Register `IAmazonS3` as a singleton.
 
 `AmazonS3Client` is thread-safe and holds its own HTTP connection pool and credential cache. Registering `IAmazonS3` as scoped or transient builds a new client for every scope or resolution, with a fresh connection pool each time. Under load this wastes CPU and memory, adds TLS handshakes to every request, and can exhaust ephemeral ports.
 
-The SharedKernel S3 and OBS storage providers already register the client as a singleton. This rule catches a service that registers its own client with the wrong lifetime. It is the inverse of [SK0703](#sk0703-messagebussingletonregistration), which requires `IMessageBus` to be scoped.
+The SharedKernel S3 and OBS storage providers do not register `IAmazonS3` at all: they keep one client per connection inside an internal keyed singleton. This rule catches a service that registers its own client with the wrong lifetime. It is the inverse of [SK0703](#sk0703-messagebussingletonregistration), which requires `IMessageBus` to be scoped.
 
 #### What it flags
 

@@ -90,8 +90,8 @@ public sealed class CsvReportExporterMemoryTests
 
     private static CsvReportExporter<TestRow> CreateExporter()
     {
-        var fileStorage = new SharedKernel.Testing.Storage.InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new SharedKernel.Testing.Storage.InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(SharedKernel.Testing.Storage.InMemoryStorage.CreateFactory(fileStorage), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
         var options = Microsoft.Extensions.Options.Options.Create(new CsvExportOptions());
         return new CsvReportExporter<TestRow>(writer, options);
     }

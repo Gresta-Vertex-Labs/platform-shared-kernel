@@ -1,24 +1,37 @@
-namespace SharedKernel.Storage.Abstractions.Models;
+namespace SharedKernel.Storage;
 
 /// <summary>
-/// The canonical, durable handle to a stored object, returned by
-/// <see cref="Abstractions.IFileStorage.UploadAsync"/> and <see cref="Abstractions.IFileStorage.CopyAsync"/>.
+/// The durable handle to a stored object: store name, tenant and key, returned by every write. Persist this —
+/// never a presigned URL, which expires, and never a bucket name, which is configuration.
 /// </summary>
 /// <remarks>
-/// Persist this — not a presigned URL — as the long-lived pointer to a stored object. Presigned URLs
-/// expire; a <see cref="FileReference"/> does not.
+/// Open the object again with <see cref="IFileStorageFactory.Open(FileReference)"/>, which picks the store and
+/// the tenant view. A reference into a tenant-scoped store carries its <see cref="TenantId"/>: store it with the
+/// row that owns it and load it through the same tenant filter, so one tenant's reference cannot be replayed by
+/// another. A plain record: it serializes as JSON as it is.
 /// </remarks>
 public sealed record FileReference
 {
-    /// <summary>The bucket the object is stored in.</summary>
-    public required string Bucket { get; init; }
+    /// <summary>
+    /// Gets the name of the store holding the object, as registered (<see cref="IFileStorage.StoreName"/>).
+    /// </summary>
+    public required string Store { get; init; }
 
-    /// <summary>The object's path/name within <see cref="Bucket"/>.</summary>
+    /// <summary>Gets the tenant of a tenant-scoped store, or <see langword="null"/> for a shared store.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Gets the object key, relative to the store and tenant.</summary>
     public required string Key { get; init; }
 
-    /// <summary>The provider-assigned entity tag for the stored object, when available.</summary>
+    /// <summary>
+    /// Gets the entity tag the provider assigned to this content (quoted on S3), when known. Pass it to
+    /// <see cref="WriteCondition.IfMatch(string)"/> to update only this version. Treat it as opaque: for multipart
+    /// uploads and encrypted objects it is not an MD5 of the content.
+    /// </summary>
     public string? ETag { get; init; }
 
-    /// <summary>The provider-assigned version id, when bucket versioning is enabled; otherwise <see langword="null"/>.</summary>
+    /// <summary>
+    /// Gets the provider's version id when the bucket keeps versions; otherwise <see langword="null"/>.
+    /// </summary>
     public string? VersionId { get; init; }
 }

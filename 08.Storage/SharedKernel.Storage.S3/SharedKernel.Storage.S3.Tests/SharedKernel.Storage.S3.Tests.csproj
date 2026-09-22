@@ -1,14 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Storage.S3.csproj" />
-    <!--
-      Test-only reference: backs the eventual Testcontainers MinIO fixture (P-268,
-      Containers/MinioContainerFixture) that SK.08.Tests' provider round-trip suites need.
-    -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -22,12 +17,10 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <!--
-      NSubstitute is used ONLY for the narrow status-code -> StorageErrors error-mapping assertions
-      (S3StatusCodeMappingTests) where inducing a real 403/500 failure against a live backend is hard
-      — per 08.Storage/CLAUDE.md's Test Rules: "Mock it only for narrow error-mapping/unit assertions
-      where a real failure is hard to induce." Behavioral/round-trip coverage never mocks IAmazonS3.
-    -->
-    <PackageReference Include="NSubstitute" />
+    <!-- Real MinIO in Docker: every behavioural test runs against a live S3 API, never a mocked client. -->
+    <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 </Project>

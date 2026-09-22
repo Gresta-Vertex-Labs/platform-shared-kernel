@@ -18,13 +18,12 @@ namespace SharedKernel.Testing.Containers;
 /// collection, never started per test method.
 /// </para>
 /// <para>
-/// Property names (<see cref="ServiceUrl"/>/<see cref="AccessKeyId"/>/<see cref="SecretAccessKey"/>/
-/// <see cref="ForcePathStyle"/>/<see cref="DefaultBucket"/>) match
-/// <c>SharedKernel.Storage.S3</c>'s <c>S3StorageOptions</c> 1:1 so
-/// <c>SharedKernel.Storage.S3.Tests</c> can bind this fixture directly with zero renaming.
-/// <c>SharedKernel.Storage.Obs.Tests</c> binds the same <see cref="ServiceUrl"/> value into
-/// <c>ObsStorageOptions</c>'s differently-named <c>Endpoint</c> property — a straight 1:1 property
-/// assignment, never provider-specific branching.
+/// For a consuming service's integration tests: <see cref="ServiceUrl"/>, <see cref="AccessKeyId"/>,
+/// <see cref="SecretAccessKey"/> and <see cref="ForcePathStyle"/> map to the
+/// <c>SharedKernel:Storage:S3</c> connection settings (<c>ServiceUrl</c>, <c>AccessKeyId</c>,
+/// <c>SecretAccessKey</c>, <c>ForcePathStyle</c>), and <see cref="DefaultBucket"/> to a store's
+/// <c>SharedKernel:Storage:Stores:{name}:Bucket</c>. <c>08.Storage</c>'s own suites start their own MinIO
+/// container and do not use this fixture.
 /// </para>
 /// <para>
 /// This is the ONLY type in <c>Containers/</c> permitted to carry an <c>AWSSDK.S3</c> reference
@@ -43,7 +42,7 @@ public sealed class MinioContainerFixture : IAsyncLifetime
     // 2026-09-12, so the unqualified reference fails to pull on any machine without a cached copy.
     // Same release tag, same image — only the registry changed.
     private readonly MinioContainer _container = new MinioBuilder(
-        "quay.io/minio/minio:RELEASE.2024-01-16T16-07-38Z").Build();
+        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z").Build();
 
     private bool _started;
 

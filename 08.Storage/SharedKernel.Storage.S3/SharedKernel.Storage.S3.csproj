@@ -1,22 +1,27 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>AWS S3 / MinIO implementation of SharedKernel.Storage.Abstractions: S3FileStorage (TransferUtility-backed streaming upload, server-side copy, chunked batch delete, streaming list, connectivity probe) and S3BlobUriGenerator (presigned upload/download URLs). MinIO is served through the same code path via ServiceUrl + ForcePathStyle configuration — no separate package needed. Register via AddSharedKernelS3Storage(IConfiguration).</Description>
-    <PackageTags>storage;blob;s3;aws;minio;object-storage;shared-kernel</PackageTags>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Description>Amazon S3, MinIO and S3-compatible storage for SharedKernel.Storage.Abstractions. Named stores over buckets and key prefixes; IAM roles through the default AWS credential chain (IRSA, EKS Pod Identity) or keys; named connections for buckets with different credentials; SSE-S3 and SSE-KMS; ExpectedBucketOwner; streaming multipart uploads; create-only and If-Match writes; SHA-256 checksums; presigned URLs, forms and multipart; feature flags that refuse what an S3-compatible service does not support; OpenTelemetry traces and metrics that never record object keys; startup validation. Verified against Amazon S3 and MinIO. Register with AddSharedKernelStorage().AddS3(configuration).AddStore("name").</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;storage;object-storage;s3;aws;minio;presigned-url</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <!-- AddValidatedOptions + ISectionBoundOptions for the connection and per-store settings. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      AWS S3 / MinIO client SDK. Pinned 4.0.101.1 (latest stable on nuget.org at implementation
-      time) — also the version SharedKernel.Storage.Obs pins, since both packages sit on the same
-      S3-compatible SDK surface but never reference each other (sibling-package rule).
-    -->
     <PackageReference Include="AWSSDK.S3" />
-    <!-- [LoggerMessage] source-generated logging (ILogger<T>, LogLevel, LoggerMessage attribute). -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Storage.S3.Tests" />
   </ItemGroup>
 </Project>

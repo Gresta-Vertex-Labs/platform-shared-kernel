@@ -124,7 +124,7 @@ public static class SearchTopologyRules
     /// <remarks>
     /// <para>
     /// TWO NAMED <see cref="Assembly"/> parameters (not <c>params Assembly[]</c>) — mirroring
-    /// <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>'s and
+    /// <c>StorageTopologyRules</c>' former <c>ProviderPackagesNeverReferenceEachOther</c>'s and
     /// <c>UnitOfWorkSeamRules</c>'s former <c>UnitOfWorkInterfacesRemainDistinct</c>'s two-named-parameter
     /// convention: the rule's whole purpose is comparing two specific, named packages, so
     /// positional <c>params</c> would obscure which assembly is expected to be which. Only two

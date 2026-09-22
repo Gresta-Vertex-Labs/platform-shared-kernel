@@ -1,7 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Integration.Notifications.Abstractions.Tests.Notifications;
 

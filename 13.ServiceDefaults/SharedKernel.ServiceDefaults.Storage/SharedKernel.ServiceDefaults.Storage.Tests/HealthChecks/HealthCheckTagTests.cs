@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.ServiceDefaults.HealthChecks;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 
 namespace SharedKernel.ServiceDefaults.Storage.Tests.HealthChecks;
 
@@ -12,9 +12,9 @@ public sealed class HealthCheckTagTests
     public void AddStorageReadinessCheck_RegistersWithReadyStorageTags_NeverLive()
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IFileStorage>());
+        services.AddSingleton(Substitute.For<IFileStorageHealthProbe>());
 
-        services.AddHealthChecks().AddStorageReadinessCheck("my-bucket");
+        services.AddHealthChecks().AddStorageReadinessCheck("invoices");
 
         var registrations = GetRegistrations(services);
         var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Storage);

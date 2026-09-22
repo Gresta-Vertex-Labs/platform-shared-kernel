@@ -39,7 +39,7 @@ Targets `net10.0`. `SharedKernel.Testing` itself has **no nested `.Tests` projec
 | xUnit lifetime contract | `xunit.core` (the `Xunit.IAsyncLifetime` contract only) — added solely so container fixtures can implement `IAsyncLifetime` directly; no test runner, no `Xunit.Assert`, no `xunit.runner.visualstudio` |
 | Thread-safe state | `System.Collections.Concurrent` (`ConcurrentDictionary`, `ConcurrentQueue`) — every stateful fake must tolerate parallel xUnit test collections |
 | Structured log capture | `Microsoft.Extensions.Logging.Abstractions` (pinned `10.0.9`, matching this project's `Microsoft.Extensions.*` version convention) — `ILogger`/`ILoggerFactory`/`ILogger<T>` implemented directly; also reuses the package's own real `Microsoft.Extensions.Logging.Logger<>` open-generic adapter class for DI wiring, never a hand-rolled substitute |
-| Object-storage bucket bootstrap | `AWSSDK.S3`, pinned `4.0.101.1` — CONFIRMED 2026-07-17 against the live `08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.csproj` (same version `08.Storage` pins for both `.S3` and `.Obs`), superseding the prior "confirm at implementation time" placeholder — used exclusively by `Containers/MinioContainerFixture` to create the default test bucket after container startup via a short-lived `AmazonS3Client`; scoped to that one file only, per the same "one file carries the heavier reference" pattern already established for `TestHarnessFactory`/`MassTransit`. `Storage/InMemoryFileStorage`/`InMemoryBlobUriGenerator` never reference `AWSSDK.S3` — they implement `SharedKernel.Storage.Abstractions`' interfaces directly in pure C#, zero third-party dependency, mirroring that package's own zero-third-party-NuGet rule |
+| Object-storage bucket bootstrap | `AWSSDK.S3`, pinned `4.0.101.1` — CONFIRMED 2026-07-17 against the live `08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.csproj` (central pin in `Directory.Packages.props`; since P-559 only `.S3` references it, `.Obs` gets it through `.S3`), superseding the prior "confirm at implementation time" placeholder — used exclusively by `Containers/MinioContainerFixture` to create the default test bucket after container startup via a short-lived `AmazonS3Client`; scoped to that one file only, per the same "one file carries the heavier reference" pattern already established for `TestHarnessFactory`/`MassTransit`. `Storage/InMemoryFileStorage` never references `AWSSDK.S3` — it implements `SharedKernel.Storage.Abstractions`' `IFileStorage` directly in pure C#, zero third-party dependency, mirroring that package's own zero-third-party-NuGet rule |
 | Vector-database containers | `Testcontainers.Qdrant`, `Testcontainers.Milvus` — CONFIRMED on nuget.org 2026-07-21: both exist, latest stable `4.13.0`, MIT-licensed, co-maintained by the `Testcontainers`/`HofmeisterAn` org, used by Microsoft Semantic Kernel/Aspire and the official Qdrant .NET SDK — matching this package's EXISTING `Testcontainers.*` floor exactly (established at S-25–S-27/WO-044), so unlike the `Testcontainers.Elasticsearch` addition, NO version-bump ceremony is required elsewhere in `Containers/`. Both are OFFICIAL dedicated Testcontainers modules — neither needs the generic `ContainerBuilder` hand-rolled fallback `MeilisearchContainerFixture` required. Confirmed via direct source read (`QdrantBuilder.cs`/`QdrantContainer.cs`, `MilvusBuilder.cs`/`MilvusContainer.cs`, 2026-07-21): `QdrantContainer` exposes `GetGrpcConnectionString()`/`GetHttpConnectionString()` (ports 6334/6333) with a built-in `/readyz` HTTP wait strategy; `MilvusContainer` exposes `GetEndpoint()` (gRPC port 19530) with a built-in `Wait.ForUnixContainer().UntilContainerIsHealthy()` docker-healthcheck wait strategy (curl `/healthz` on management port 9091) and runs Milvus in genuine single-container STANDALONE mode via its own `DEPLOY_MODE=STANDALONE`/`ETCD_USE_EMBED=true`/`COMMON_STORAGETYPE=local` defaults — embedded etcd, no external etcd/MinIO sidecar, satisfying P-283's minimal-standalone-deployment acceptance criterion with zero fixture-level orchestration. Both builders' parameterless constructors are `[Obsolete]` at `4.13.0` exactly like their four siblings — the CONSTRUCTOR RULE above applies identically; candidate image-tag pins (`qdrant/qdrant:v1.13.4`, `milvusdb/milvus:v2.3.10` — each module's own last-known-good default before its parameterless ctor was obsoleted) are to be RE-verified via `docker manifest inspect` at Core-phase implementation time, mirroring the `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` precedent |
 
 `SharedKernel.Testing` deliberately does **not** reference `FluentAssertions`, `NSubstitute`, or any xUnit runner package. Those belong to the **Standard Test Package Set** added directly by each `.Tests` project (see root `CLAUDE.md` Test Project Rules and each domain's own Test Rules section for the pinned versions). Mixing assertion/mocking libraries into a shared production-shaped dependency would force every consumer onto this package's framework choices.
@@ -63,7 +63,7 @@ SharedKernel.Testing/
   Fakers/          — SharedKernel.Testing.Fakers          — Bogus deterministic-seeding convention + abstract Faker<T> bases — FakerSeeding, EntityFaker<TEntity,TId>, SingleValueObjectFaker<TValueObject,TValue>
   Application/     — SharedKernel.Testing.Application     — pipeline test doubles + MediatR pipeline test harness (05.Application) — FakeRequestContext, FakeRequestIdempotencyStore, ApplicationPipelineTestHarness; FakeAuditTrailWriter implementing 05.Application.Behaviors' OWN, deliberately smaller local-seam IAuditTrailWriter (SAME NAME as, but a DIFFERENT type from, Persistence/FakeAuditTrailWriter above — mirrors the FakeUnitOfWork naming-collision precedent) (P-459/WO-071, implemented 2026-09-04). REDESIGNED P-544 (05.Application redesign, no shims): FakeAuthorizationContext/FakeIdempotencyKeyStore/FakeIdempotencyResponseStore/FakeDualApprovalStore/AddFakeDualApprovalStore REMOVED (their interfaces no longer exist — DualApproval retired entirely); FakeRequestContext/FakeRequestIdempotencyStore ADDED against the new IRequestContext/IRequestIdempotencyStore contracts. See this folder's Interface Contracts block below for the current shape; the narrative paragraphs further below predate P-544 and describe superseded interim states, per this repo's established historical-record convention
   Logging/         — SharedKernel.Testing.Logging          — structured log capture double (Microsoft.Extensions.Logging.Abstractions, cross-cutting — not owned by any single numbered domain) — LogRecord, InMemoryLogger, InMemoryLogger<TCategoryName>, InMemoryLoggerFactory, LoggerAssertions
-  Storage/         — SharedKernel.Testing.Storage          — IFileStorage / IBlobUriGenerator in-memory doubles (08.Storage) — InMemoryFileStorage, InMemoryBlobUriGenerator (implemented P-269/WO-043)
+  Storage/         — SharedKernel.Testing.Storage          — in-memory storage provider (08.Storage) — InMemoryFileStorage, InMemoryFileStorageOptions, AddInMemoryStore/AddInMemoryTenantStore on IStorageBuilder, GetInMemoryStore, InMemoryStorage.CreateFactory (implemented P-269/WO-043, rewritten for P-559)
   Search/          — SharedKernel.Testing.Search            — ISearchIndex<TDocument> / ISearchIndexProvisioner / ISearchProviderDescriptor in-memory doubles (09.Search) — InMemorySearchIndex<TDocument>, InMemorySearchIndexProvisioner, InMemorySearchProviderDescriptor (implemented P-276/WO-044, Core phase C-64–C-69, 2026-07-20); gained an opt-in bulk-write throttle surface (SearchBulkWriteOptions-carrying 4-arg IndexManyAsync/DeleteManyAsync overloads, plus LastBulkWriteOptions) — implemented P-355/WO-055, Core phase C-108–C-110, 2026-08-11, once 09.Search's own SearchBulkWriteOptions/ISearchIndex<TDocument> overloads shipped in SK.09.Core; proven Tests phase T-75–T-77, 2026-08-11
   Intelligence/    — SharedKernel.Testing.Intelligence      — IEmbeddingGenerator / IVectorCollection<TRecord> / IVectorCollectionProvisioner / IVectorProviderDescriptor / ISemanticKernel / ICompletionProviderDescriptor in-memory doubles (10.Intelligence) — InMemoryEmbeddingGenerator, InMemoryVectorCollection<TRecord>, InMemoryVectorCollectionProvisioner, InMemoryVectorProviderDescriptor, InMemorySemanticKernel, InMemoryCompletionProviderDescriptor (implemented P-284/WO-045, Core phase C-73–C-79, proven Tests phase T-54, 2026-07-22)
   Workflows/       — SharedKernel.Testing.Workflows          — IWorkflowDispatcher / IWorkflowHandle / IWorkflowHandle<TResult> in-memory doubles (17.Workflows) — InMemoryWorkflowDispatcher, InMemoryWorkflowHandle, InMemoryWorkflowHandle<TResult> (implemented P-288/WO-046, Core phase C-80–C-84, 2026-07-23; no paired Containers/ fixture, since 17.Workflows needs none)
@@ -977,8 +977,8 @@ MinioContainerFixture  (sealed class, implements IAsyncLifetime)
                                                                    a SharedKernel-invented value)
     .SecretAccessKey                                           → string  (same sourcing as AccessKeyId)
     .DefaultBucket                                             → string  (bootstrapped automatically during InitializeAsync —
-                                                                   both S3.Tests and Obs.Tests receive an already-existing
-                                                                   bucket with zero provider-specific setup of their own)
+                                                                   a consumer gets an already-existing bucket to name as a
+                                                                   store's Bucket, with no setup of its own)
     .ForcePathStyle                                            → bool  (always true — MinIO requires path-style addressing;
                                                                    exposed as a property so no consumer has to hardcode this
                                                                    fact itself)
@@ -987,13 +987,14 @@ MinioContainerFixture  (sealed class, implements IAsyncLifetime)
                                                                    Amazon.S3.AmazonS3Client pointed at ServiceUrl with
                                                                    ForcePathStyle=true)
     .DisposeAsync()                                            → Task  (stops and removes the container)
-    NOTE: Property names are chosen to match SharedKernel.Storage.S3's S3StorageOptions 1:1
-          (ServiceUrl/AccessKeyId/SecretAccessKey/ForcePathStyle/DefaultBucket — verified against the
-          live 08.Storage/CLAUDE.md Interface Contracts) so SharedKernel.Storage.S3.Tests binds this
-          fixture directly with zero renaming. SharedKernel.Storage.Obs.Tests binds the same
-          ServiceUrl value into ObsStorageOptions's differently-named Endpoint property — a straight
-          1:1 property assignment, never provider-specific branching logic, satisfying this
-          fixture's "no provider-specific branching required by the consumer" design goal.
+    NOTE: Property names match SharedKernel.Storage.S3's connection settings (S3StorageOptions
+          ServiceUrl/AccessKeyId/SecretAccessKey/ForcePathStyle; since P-559 the bucket is a per-store
+          setting, S3StoreOptions.Bucket, so DefaultBucket goes there). OBS names its endpoint
+          ObsStorageOptions.Endpoint — a straight 1:1 assignment, never provider-specific branching.
+          Since P-559 08.Storage's own test projects run their own MinIO and do not reference
+          SharedKernel.Testing (08.Storage/CLAUDE.md, Test Rules); this fixture is for consuming
+          services' integration tests (no repo suite outside SelfTests uses it today).
+          Pinned image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z (same as 08.Storage's tests).
           MinioContainerFixture is the ONLY type in Containers/ permitted to carry an AWSSDK.S3
           reference (bucket bootstrap only) — PostgreSqlContainerFixture/RedisContainerFixture/
           RabbitMqContainerFixture remain isolated to their own single Testcontainers.* package,
@@ -1478,145 +1479,83 @@ SCOPE LOCK (P-258/WO-041): Logging/ references only Microsoft.Extensions.Logging
     (Caching/, Messaging/, Application/, etc.), per the standing sibling-isolation rule.
 ```
 
-### `Storage/` — IFileStorage / IBlobUriGenerator in-memory doubles (08.Storage) — added P-269/WO-043
+### `Storage/` — in-memory storage provider (08.Storage) — added P-269/WO-043, rewritten for 08.Storage's P-559 redesign
 
 ```text
 InMemoryFileStorage  (sealed class, implements IFileStorage from SharedKernel.Storage.Abstractions)
-    .UploadAsync(FileUploadRequest request, CancellationToken ct)              → Task<Result<FileReference>>
-    .DownloadAsync(string bucket, string key, CancellationToken ct)            → Task<Result<FileDownload>>
-    .DeleteAsync(string bucket, string key, CancellationToken ct)              → Task<Result>
-    .ExistsAsync(string bucket, string key, CancellationToken ct)              → Task<Result<bool>>
-    .GetMetadataAsync(string bucket, string key, CancellationToken ct)         → Task<Result<FileMetadata>>
-    .CopyAsync(string sourceBucket, string sourceKey,
-               string destinationBucket, string destinationKey,
-               CancellationToken ct)                                          → Task<Result<FileReference>>
-    .DeleteManyAsync(string bucket, IReadOnlyCollection<string> keys,
-                      CancellationToken ct)                                    → Task<Result<IReadOnlyList<FileDeleteOutcome>>>
-    .ListAsync(string bucket, string prefix, [EnumeratorCancellation] CancellationToken ct) → IAsyncEnumerable<FileMetadata>
-    .CheckHealthAsync(string bucket, CancellationToken ct)                     → Task<Result>
-    .SimulateFailure                                           → bool  (settable, default false — a SINGLE general-purpose
-                                                                   write-path failure toggle, mirroring
-                                                                   FakeDistributedLockService.SimulateFailure's naming/shape
-                                                                   rather than five separate per-operation flags; when true,
-                                                                   UploadAsync/CopyAsync/DeleteAsync/DeleteManyAsync's outer
-                                                                   call all return the matching StorageErrors factory failure
-                                                                   instead of performing the operation. Read-path members
-                                                                   (DownloadAsync/ExistsAsync/GetMetadataAsync/ListAsync) and
-                                                                   CheckHealthAsync are UNAFFECTED by this toggle)
-    .UploadedKeys                                              → IReadOnlyList<(string Bucket, string Key)>  (every key ever
-                                                                   successfully uploaded, thread-safe, append-only — never
-                                                                   pruned on delete, mirroring InMemoryMessageBus's
-                                                                   "records every call even when never asserted on" rule)
-    .DeletedKeys                                               → IReadOnlyList<(string Bucket, string Key)>  (every key ever
-                                                                   successfully deleted via DeleteAsync or DeleteManyAsync)
-    .CopiedPairs                                                → IReadOnlyList<(string SourceBucket, string SourceKey,
-                                                                   string DestinationBucket, string DestinationKey)>
-    .WasUploaded(string bucket, string key)                     → bool  (query helper over UploadedKeys)
-    .WasDeleted(string bucket, string key)                      → bool  (query helper over DeletedKeys)
-    .WasCopied(string sourceBucket, string sourceKey,
-               string destinationBucket, string destinationKey) → bool  (query helper over CopiedPairs)
-    .Seed(string bucket, string key, Stream content, string contentType,
-          IReadOnlyDictionary<string,string>? metadata = null)  → void  (test-setup helper — pre-populates storage without
-                                                                   going through UploadAsync, mirroring this package's
-                                                                   general "pre-seed without the normal method" convention
-                                                                   (see e.g. Search/InMemorySearchIndex<TDocument>.Seed);
-                                                                   reads content fully but does not dispose the caller's
-                                                                   stream, same ownership contract as UploadAsync)
-    .Reset()                                                    → void  (clears all stored objects AND UploadedKeys/
-                                                                   DeletedKeys/CopiedPairs)
-    NOTE: Backing store is a ConcurrentDictionary<(string Bucket, string Key), StoredObject> holding
-          fully-buffered content bytes (read once from the caller's Stream during UploadAsync/Seed —
-          FileUploadRequest.Content is never disposed by this fake, per its documented caller-owned
-          contract), ContentType, Metadata, a DETERMINISTIC incrementing ETag (an Interlocked-based
-          sequence counter, e.g. "etag-{n}" — never a random Guid, keeping with this package's
-          no-unseeded-randomness rule), null VersionId, and a FIXED, non-real LastModified instant
-          (never DateTimeOffset.UtcNow) set on every upload/copy. This fake does NOT take an IClock
-          constructor dependency and does NOT reference Clocks/FakeClock — sibling capability folders
-          must never reference each other, so "never real time" is achieved here via an internal
-          fixed baseline value, independently declared, exactly as Storage/'s own isolation demands.
-          DownloadAsync wraps stored bytes in a FRESH MemoryStream per call so each returned
-          FileDownload is independently disposable. ExistsAsync/GetMetadataAsync/DownloadAsync return
-          StorageErrors.NotFound for a missing key — no failure-injection toggle needed since this
-          path is already exercisable by simply never uploading/seeding the key. DeleteAsync is
-          idempotent (absent key still returns Result.Success), matching the real contract exactly.
-          CopyAsync on a missing source key returns StorageErrors.NotFound(sourceBucket, sourceKey),
-          mirroring the real providers' documented source-404 mapping. DeleteManyAsync's per-key
-          FileDeleteOutcome list treats each requested key's deletion as idempotent (absent key →
-          Succeeded=true); the outer Result fails only when keys is null/empty (there is no
-          transport-fault path in an in-memory fake, so empty input is the only non-SimulateFailure
-          outer-failure trigger, matching the real contract's "outer Result fails ONLY when the batch
-          call itself cannot be attempted" note). ListAsync is a REAL async iterator (yields lazily,
-          checks ct.ThrowIfCancellationRequested() per item, never fully materializes before the
-          first yield) filtered by bucket + Key.StartsWith(prefix), so a consuming test can assert
-          cancellation-mid-enumeration behavior identically to the real provider's documented
-          contract. CheckHealthAsync ALWAYS returns Result.Success() unconditionally — deliberately
-          NOT gated by SimulateFailure, per this phase's explicit acceptance criterion; this is the
-          one documented exception to that toggle's scope.
+    ctor(string storeName = "default", InMemoryFileStorageOptions? options = null)
+                                                               (storeName must be a valid store name; it must match the
+                                                                name the store is registered under)
+    Every IFileStorage member, implemented faithfully: UploadAsync (write conditions IfNotExists/IfMatch,
+    SHA-256 checksum verification, headers/metadata/tags/tier), DownloadAsync (ranges, IfMatch),
+    GetPropertiesAsync, ExistsAsync, DeleteAsync (conditional), DeleteManyAsync (per-key BatchDeleteResult),
+    CopyAsync/CopyToAsync (including into another store), ListAsync (lazy async stream) and ListPageAsync
+    (folders + continuation token), CreateDownloadUrlAsync/CreateUploadUrlAsync/CreateUploadFormAsync and
+    the multipart members (Start/CreateUploadPartUrl/Complete/Abort). Requests are validated with the same
+    StorageValidation the real providers use, with the same StorageErrorCodes.
+    .StoreName                                                 → string
+    .TenantId                                                  → null (always — it is the raw store; tenant views are
+                                                                   applied by the registry)
+    .SimulateFailure                                           → bool  (settable; uploads, copies, deletes and starting or
+                                                                   completing a multipart upload return storage.unavailable
+                                                                   without changing anything — a batch delete reports every
+                                                                   key in BatchDeleteResult.Failed. Reads, listing,
+                                                                   presigning and the probe are unaffected)
+    .SimulateUnavailable                                       → bool  (settable; ProbeAsync reports storage.unavailable)
+    .UploadedKeys / .DeletedKeys                               → IReadOnlyList<string>  (store keys, append-only, never
+                                                                   pruned on delete)
+    .CopiedPairs                                               → IReadOnlyList<(string SourceKey, string DestinationStore,
+                                                                   string DestinationKey)>
+    .IssuedDownloadUrls / .IssuedUploadUrls                    → IReadOnlyList<(string Key, PresignedRequest Request)>
+    .Keys                                                      → IReadOnlyList<string>  (every stored object, ordinal order)
+    .WasUploaded(key) / .WasDeleted(key) / .WasCopied(sourceKey, destinationKey) → bool
+    .GetContent(key)                                           → byte[]  (a copy; KeyNotFoundException when absent)
+    .Seed(key, byte[] content, contentType?, metadata?) / .Seed(key, Stream content, ...) → FileReference
+                                                                   (test setup without UploadAsync; not recorded in
+                                                                   UploadedKeys; the stream is read, not disposed)
+    .UploadPart(MultipartUpload upload, int partNumber, byte[] content) → string  (the part's ETag — what a client
+                                                                   does with a part URL)
+    .ProbeAsync(ct)                                            → Task<Result>  (the store's readiness probe)
+    .Reset()                                                   → void  (clears objects, pending uploads, every recording
+                                                                   and both simulation flags)
+    static .TenantKey(tenantId, key)                           → string  ("tenants/{tenantId}/{key}" — the store key a
+                                                                   tenant view writes, for the inspection helpers)
+    NOTE: A raw provider store, the in-memory counterpart of SharedKernel.Storage.S3's store. The
+          inspection helpers take store keys. ETags are quoted and come from an internal sequence (a
+          new one on every write); times come from InMemoryFileStorageOptions.Clock, a fixed instant
+          (2024-01-01T00:00:00Z) by default — never real wall-clock time. Content is buffered in memory;
+          upload streams are read to their end and never disposed. Presigned URLs use the memory://
+          scheme ("memory://{store}/{key}?method=GET&expires=..."), are capped by MaxPresignExpiry
+          (storage.expiry_too_long above it), and are recorded.
 
-InMemoryBlobUriGenerator  (sealed class, implements IBlobUriGenerator from SharedKernel.Storage.Abstractions)
-    .GeneratePresignedUploadUrl(PresignedUrlRequest request)                   → Result<PresignedUrl>
-    .GeneratePresignedDownloadUrl(PresignedUrlRequest request)                 → Result<PresignedUrl>
-    .GeneratedUploadUrls                                        → IReadOnlyList<PresignedUrlRequest>  (every request ever
-                                                                   passed to GeneratePresignedUploadUrl)
-    .GeneratedDownloadUrls                                      → IReadOnlyList<PresignedUrlRequest>  (same, for the
-                                                                   download generator)
-    NOTE: Returns a deterministic, inspectable Uri encoding bucket/key/mode/expiry directly in the URL
-          string itself (e.g. "https://fake-storage.test/{bucket}/{key}?mode=upload&expirySeconds=
-          {n}"), so a test can assert on URL content directly without needing the recorded-list
-          accessors, though both are provided for convenience. PresignedUrl.ExpiresAt is computed as
-          a FIXED internal non-real baseline instant + request.Expiry — never
-          DateTimeOffset.UtcNow-derived, same "never real time" philosophy as InMemoryFileStorage
-          above, independently declared (no Clocks/ dependency, per sibling-isolation). Honors the
-          SAME StorageErrors.ExpiryTooLong validation as the real provider contract (Expiry exceeding
-          the documented 7-day provider maximum) so a test asserting this error path behaves
-          identically against the fake and a real provider.
+InMemoryFileStorageOptions  (sealed class)
+    .MaxPresignExpiry                                          → TimeSpan  (default 1 hour, S3StoreOptions' default)
+    .Clock                                                     → IClock?   (null → the fixed instant above)
 
-AddInMemoryFileStorage(this IServiceCollection)
-    NOTE: Registers InMemoryFileStorage → IFileStorage and InMemoryBlobUriGenerator → IBlobUriGenerator
-          as SINGLETONS, mirroring AddInMemoryMessageBus()/AddInMemoryEventPublisher()'s naming
-          convention. Unlike those two (which deliberately diverge from a scoped production
-          lifetime), this registration's singleton lifetime matches IFileStorage/IBlobUriGenerator's
-          own production lifetime exactly — both are already registered as singletons by
-          AddSharedKernelS3Storage()/AddSharedKernelObsStorage() (08.Storage) — so there is no
-          lifetime deviation to document here, unlike the messaging doubles.
+InMemoryStorageBuilderExtensions  (static class, extends IStorageBuilder from AddSharedKernelStorage())
+    .AddInMemoryStore(string name, Action<InMemoryFileStorageOptions>? configure = null)       → IStorageBuilder
+    .AddInMemoryTenantStore(string name, Action<InMemoryFileStorageOptions>? configure = null) → IStorageBuilder
+    .AddInMemoryStore(InMemoryFileStorage store) / .AddInMemoryTenantStore(InMemoryFileStorage store) → IStorageBuilder
+    IServiceProvider.GetInMemoryStore(string name)             → InMemoryFileStorage  (the raw store, for inspection/seeding)
+    NOTE: Registers the store like a provider does (IStorageBuilder.AddStore(new FileStoreRegistration(...))),
+          so application code resolves it exactly as in production — [FromKeyedServices(name)] IFileStorage,
+          ITenantFileStorage, IFileStorageFactory, IFileStorageHealthProbe — with the registry's request
+          validation and tenant isolation in front of it. The raw store is also a keyed singleton
+          InMemoryFileStorage under the store name.
+          Usage: services.AddSharedKernelStorage().AddInMemoryStore("invoices").AddInMemoryTenantStore("documents");
 
-SCOPE LOCK (P-269/WO-043): Storage/ references only SharedKernel.Storage.Abstractions — never
-    SharedKernel.Storage.S3 or SharedKernel.Storage.Obs (the concrete provider packages), and never
-    any sibling capability folder in this package (Caching/, Messaging/, Persistence/, Application/,
-    Logging/, Containers/, etc.) — in particular, never Containers/MinioContainerFixture. The
-    in-memory fake (fast, isolated, no Docker) and the real-provider-integration fixture (Docker,
-    exercises the actual AWSSDK.S3-backed providers) are deliberately independent test paths serving
-    different audiences: InMemoryFileStorage/InMemoryBlobUriGenerator are for a DOWNSTREAM
-    MICROSERVICE's own fast unit tests of handler/service logic that merely depends on IFileStorage;
-    MinioContainerFixture is for 08.Storage's OWN provider-behavior verification against a real
-    S3-compatible endpoint. Neither substitutes for the other.
+InMemoryStorage  (static class)
+    .CreateFactory(Action<IStorageBuilder> configure)          → IFileStorageFactory
+    .CreateFactory(params InMemoryFileStorage[] stores)        → IFileStorageFactory  (each as a shared store)
+    NOTE: A storage registry without a host, for tests of code that takes an IFileStorageFactory
+          (e.g. 20.Reporting's StorageStreamingWriter). Validation and tenant prefixes apply exactly as
+          in production.
 
-BLOCKER-CLEARANCE VERIFICATION (re-verified directly on disk, not assumed from CLAUDE.md prose):
-    at the original WO-043 design pass, `08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.csproj`
-    was a genuinely empty placeholder — zero `.cs` files, no ProjectReference, no PackageReference —
-    and `08.Storage`'s own `state-map.md` Package Board confirmed it was 100% Design-phase (`○`), not
-    merely "design-only" in the softer sense already precedented in this package (e.g. P-226/WO-036's
-    ActivityRecorder, which needed only a literal ActivitySource NAME STRING, never an actual type
-    reference). **As of this Design-phase confirmation pass (2026-07-17), that blocker has cleared.**
-    `08.Storage/SharedKernel.Storage.Abstractions` now ships real, compiled code: `IFileStorage`
-    (nine members — Upload/Download/Delete/Exists/GetMetadata/Copy/DeleteMany/List/CheckHealth, read
-    directly from `Abstractions/IFileStorage.cs`), `IBlobUriGenerator` (two members, read directly
-    from `Abstractions/IBlobUriGenerator.cs`), all seven `Models/` records (`FileUploadRequest`,
-    `FileReference`, `FileDownload`, `FileMetadata`, `FileDeleteOutcome`, `PresignedUrlRequest`,
-    `PresignedUrl`), and the nine-factory-method `StorageErrors` class (`Errors/StorageErrors.cs`) —
-    every one read directly from disk and matching the `InMemoryFileStorage`/`InMemoryBlobUriGenerator`
-    target shape documented above with ZERO drift. `08.Storage`'s own `state-map.md` confirms
-    `SK.08.Core` is `●` 30/30. `S3StorageOptions`'s `ServiceUrl`/`AccessKeyId`/`SecretAccessKey`/
-    `ForcePathStyle`/`DefaultBucket` properties (read directly from `SharedKernel.Storage.S3/Options/S3StorageOptions.cs`)
-    and `ObsStorageOptions`'s `Endpoint` (read directly from `SharedKernel.Storage.Obs/Options/ObsStorageOptions.cs`)
-    likewise match `MinioContainerFixture`'s D-79 property-naming design exactly. `AWSSDK.S3` is
-    confirmed pinned at `4.0.101.1` in `SharedKernel.Storage.S3.csproj` (matching the Technology
-    Stack row's deferred-to-implementation-time confirmation instruction). `InMemoryFileStorage`/
-    `InMemoryBlobUriGenerator` can now compile as `: IFileStorage`/`: IBlobUriGenerator` — Core-phase
-    implementation (C-61–C-63, plus T-47/DO-18) is corrected from `⚑` Blocked back to `○` Pending in
-    `state-map.md`; actually writing that code remains a future Core-phase implementer session, not
-    performed in this Design-confirmation pass. See `state-map.md`'s Cross-Domain Dependencies table
-    for the corrected `08.Storage` row (now `Available`).
+SCOPE LOCK: Storage/ references only SharedKernel.Storage.Abstractions — never SharedKernel.Storage.S3 or
+    SharedKernel.Storage.Obs, and never any sibling capability folder in this package, including
+    Containers/MinioContainerFixture. The in-memory store (fast, no Docker) is for a consuming service's
+    own tests of code that depends on the storage abstractions; the MinIO fixture is for tests against a
+    real S3-compatible endpoint. Neither substitutes for the other.
 ```
 
 ### `Search/` — ISearchIndex<TDocument> / ISearchIndexProvisioner / ISearchProviderDescriptor in-memory doubles (09.Search) — added P-276/WO-044
@@ -2937,9 +2876,10 @@ InMemoryReportExporter<TRow>  (sealed class, implements IReportExporter<TRow>)
           is; .Spreadsheet (ClosedXML) and .Pdf (MigraDoc/PdfSharp) are VERIFIED NOT TO BE — both
           third-party libraries build their full document object model in memory before writing a
           byte, a permanent, documented characteristic of those dependencies (20.Reporting/CLAUDE.md's
-          own Domain Invariants). Fabricates a synthetic delivered FileReference/PresignedUrl directly
-          from the caller-supplied ReportDestination, without touching any real
-          IFileStorage/IBlobUriGenerator. ExportToStreamAsync takes a raw Stream (never a
+          own Domain Invariants). Fabricates a synthetic delivered FileReference (Store/TenantId/Key from
+          the caller-supplied ReportDestination) and, when PresignedDownloadUrlExpiry is set, a
+          PresignedRequest (GET, expiry from the clock), without touching any real
+          IFileStorage/IFileStorageFactory. ExportToStreamAsync takes a raw Stream (never a
           ReportDestination), so it never sets .LastDestination.
 
 SCOPE LOCK (P-481/WO-077): Reporting/ references SharedKernel.Reporting.Abstractions only — never
@@ -3033,8 +2973,8 @@ services.AddFakeDomainServices();
 // missing-dependency guards for Transaction/Authorization/Idempotency behaviors (WO-040, redesigned P-544)
 services.AddFakeApplicationBehaviorServices();
 
-// Object storage doubles — singleton lifetime matches the production registration exactly (P-269/WO-043)
-services.AddInMemoryFileStorage();
+// Object storage — in-memory stores behind the real store registry, registered like a provider (P-559)
+services.AddSharedKernelStorage().AddInMemoryStore("invoices").AddInMemoryTenantStore("documents");
 
 // Search index double — SINGLETON, a deliberate deviation from the real scoped AddIndex<TDocument>
 // registration (see Search/ Interface Contracts); call once per TDocument the test needs indexed
@@ -3135,10 +3075,10 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - `Localization/CultureScope` (P-485/WO-078) is proven in `SharedKernel.Testing.SelfTests` (`Localization/CultureScopeTests.cs`, 8 tests, implemented 2026-09-04) — a standalone helper with no owning consuming-domain interface. The D-235 audit-finding composition with `01.Core/SharedKernel.Localization`'s `InMemoryLocalizationCatalog` is separately proven in `Localization/CultureScopeLocalizationCatalogInteropTests.cs` (4 tests, T-101) via a SelfTests-only `ProjectReference` to `SharedKernel.Localization` (mirroring the `Security/ApiKeyRotationScenarioBuilderTests.cs`/T-84 and `Caching/CacheEncryptionFakeCryptographyInteropTests.cs`/T-88 interop-proof-only precedent) — `SharedKernel.Testing` itself never takes this reference.
 - **P-558:** `Application/FakeAuditTrailWriter` was deleted (one shared `IAuditTrailWriter`; its fake is `SharedKernel.Persistence.Testing.FakeAuditTrailWriter`). Historical: - `Persistence/FakeAuditTrailWriter`/`FakeAuditQueryService`/`FakeAuditActorContext` (P-459/WO-071) and `Application/FakeAuditTrailWriter` (P-459/WO-071, same class name, different namespace) are proven in `SharedKernel.Testing.SelfTests` (implemented 2026-09-04, 33 tests: `Application/FakeAuditTrailWriterTests.cs`, `Persistence/FakeAuditActorContextTests.cs`, `Persistence/FakeAuditTrailWriterTests.cs`, `Persistence/FakeAuditQueryServiceTests.cs`) — net-new fakes, zero existing consumer in `06.Persistence.Abstractions.Tests`/`05.Application.Behaviors.Tests`. `Cryptography/FakeTotpReplayGuard`/`Security/FakeTotpChallengeStore` (P-453/WO-069; `FakeTotpChallengeStore` and its tests removed P-546, successors proven in `Security/InMemoryTotpStoresTests.cs`) are likewise proven in `SharedKernel.Testing.SelfTests` (`Cryptography/FakeTotpReplayGuardTests.cs`, `Security/FakeTotpChallengeStoreTests.cs`) plus `Security/TotpEnrollmentAndChallengeFlowTests.cs` (4 tests) proving the full enrollment→challenge→replay-rejection flow composes entirely from these two fakes plus the REAL `TotpGenerator`/`HotpGenerator`/`TotpVerifier`/`TotpEnrollmentService`/`TotpChallengeService` — 20 tests total for P-453. **P-527/WO-083 update**: `Cryptography/FakeTotpReplayGuardTests.cs` grew from 9 to 11 tests — every pre-existing scenario re-expressed against the new single-member `TryMarkUsedAsync` API with zero coverage loss, plus two new dedicated concurrency tests (`TryMarkUsedAsync_TwoConcurrentCallsSameCode_ExactlyOneWinner`, `TryMarkUsedAsync_ManyConcurrentCallsSameCode_ExactlyOneWinner`) proving the fake's claim logic is genuinely atomic.
 - `LogRecord`/`InMemoryLogger`/`InMemoryLogger<TCategoryName>`/`InMemoryLoggerFactory`/`LoggerAssertions` (`Logging/`, P-258/WO-041) are proven in `SharedKernel.Testing.SelfTests` unconditionally — this is a net-new capability with zero existing consumer in any domain's own `.Tests` project (no WO-041 domain retrofit to `[LoggerMessage]`-based logging has shipped yet — all ten domain phases are `○` Pending as of this design pass, including `01.Core`'s own `LoggingEventIdRanges` registry), so there is no owning-domain suite to "prove it there" against, consistent with the established no-consumer-yet fallback (`FakeClock`, `TestSharedKernelDbContext`, `Application/`'s six types, etc.). The `SelfTests` coverage for this folder must exercise a REAL `[LoggerMessage]`-attributed test-only call site, never a hand-written `ILogger.Log(...)` call standing in for one — per this phase's explicit acceptance criterion.
-- `Containers/MinioContainerFixture` (P-268/WO-043) is proven FIRST in `SharedKernel.Testing.SelfTests` (Docker-gated fixture-mechanics tests — `ServiceUrl` throws before `InitializeAsync`, pinned tag, `DefaultBucket` exists after startup, property shape binds directly to `S3StorageOptions`/`ObsStorageOptions`), mirroring the existing routing for `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture` (this package's own Docker-gated `Containers/` lifecycle tests already established that pattern). Adoption by `SharedKernel.Storage.S3.Tests`/`SharedKernel.Storage.Obs.Tests` — the ones that actually "prove it as the canonical shared fixture" per the general container-fixture rule above — happens once those `.Tests` projects exist and land their own provider-round-trip suites; that is an explicit cross-domain follow-up for a future `08.Storage` implementer pass, not performed here (this domain never touches a `.Tests` project, in this domain or any other).
-- `Storage/InMemoryFileStorage`/`InMemoryBlobUriGenerator`/`AddInMemoryFileStorage()` (P-269/WO-043) are proven in `SharedKernel.Testing.SelfTests` — net-new capability, zero existing consumer: `08.Storage`'s own test suite exercises its REAL providers against a `MinioContainerFixture`-backed container and never mocks `IFileStorage` itself (per `08.Storage`'s own Test Rules), and no downstream microservice `.Tests` project exists in this mono-repo yet to consume the fake either. **The hard compile-time blocker documented in the `Storage/` Interface Contracts section has CLEARED**, re-verified directly on disk as of this Design-phase confirmation pass (2026-07-17) — `08.Storage/SharedKernel.Storage.Abstractions` now ships real, compiled `IFileStorage`/`IBlobUriGenerator`/model/`StorageErrors` types, and `08.Storage`'s own `state-map.md` confirms `SK.08.Core` is `●` 30/30. C-61–C-63/T-47/DO-18 are corrected from `⚑` Blocked back to `○` Pending in `state-map.md` — actually implementing them remains a future Core/Tests/Docs-phase session's work, out of scope for this Design-confirmation pass. **T-46/T-47 IMPLEMENTED (2026-07-18)**: `Containers/MinioContainerFixtureTests.cs` (6 tests) and `Storage/InMemoryFileStorageTests.cs`/`InMemoryBlobUriGeneratorTests.cs`/`AddInMemoryFileStorageTests.cs` (18 tests) all landed in `SharedKernel.Testing.SelfTests`, 24 tests total. `dotnet test` (excluding `Containers/`, no Docker daemon in this session's environment) passed 332/332 with zero regressions to the 311 pre-existing tests.
+- `Containers/MinioContainerFixture` (P-268/WO-043) is proven FIRST in `SharedKernel.Testing.SelfTests` (Docker-gated fixture-mechanics tests — `ServiceUrl` throws before `InitializeAsync`, pinned tag, `DefaultBucket` exists after startup), mirroring the existing routing for `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture` (this package's own Docker-gated `Containers/` lifecycle tests already established that pattern). `08.Storage`'s own `.S3.Tests`/`.Obs.Tests` do not adopt it: since P-559 they run their own MinIO and deliberately do not reference `SharedKernel.Testing` (`08.Storage/CLAUDE.md`, Test Rules).
+- `Storage/InMemoryFileStorage` and its registration (`AddInMemoryStore`/`AddInMemoryTenantStore`, `GetInMemoryStore`, `InMemoryStorage.CreateFactory`) are proven in `SharedKernel.Testing.SelfTests` (`Storage/InMemoryFileStorageTests.cs`, `Storage/InMemoryStorageRegistrationTests.cs`): conditions, checksums, ranges, listing and paging, copies, presigning caps, multipart, the simulation flags, and resolution through the real registry including tenant views. Consumers in this repo: `15.Integration`'s SendGrid attachment tests and `20.Reporting`'s `StorageStreamingWriter` and provider tests. `08.Storage`'s own suites test the real providers against MinIO and never use this fake.
 - **All four `Containers/` fixture builders validate Docker connectivity eagerly inside the fixture's own constructor, not lazily at `InitializeAsync`** — discovered while writing `MinioContainerFixtureTests.cs` and independently reproduced against the three pre-existing sibling fixtures for confirmation. `MinioBuilder`/`PostgreSqlBuilder`/`RedisBuilder`/`RabbitMqBuilder.Build()` all throw `System.ArgumentException` ("Docker is either not running or misconfigured") the instant `new XyzContainerFixture()` runs if no Docker daemon is reachable — meaning even a fixture's pre-initialize property-throw tests (`ServiceUrl` throws `InvalidOperationException` before `InitializeAsync`) require a live Docker daemon to execute at all, not just the full-lifecycle test. This is Testcontainers' own builder-validation behavior, not something any fixture in this package controls or could change; it is not a defect, just an operational fact worth knowing before assuming a "throws before initialize" test is Docker-independent.
-- **`SharedKernel.Testing.SelfTests.csproj` does NOT carry the `HotChocolate.Data`→`GreenDonut.Result<TValue>` transitive-ambiguity landmine that `SharedKernel.Testing.csproj` has** (see the `Result<T>` fully-qualification note on `Storage/InMemoryFileStorage.cs`/`InMemoryBlobUriGenerator.cs` above). Global usings generated for a package reference are scoped to the project that declares the reference — they do not propagate through a `ProjectReference` to a consuming project. Confirmed by a clean build using bare, unqualified `Result<T>` throughout every `Storage/` test file in `SelfTests` — no `SharedKernel.Primitives.Results.Result<T>` fully-qualification workaround is needed there, unlike in the production package's own `Storage/` folder.
+- **`SharedKernel.Testing.SelfTests.csproj` does NOT carry the `HotChocolate.Data`→`GreenDonut.Result<TValue>` transitive-ambiguity landmine that `SharedKernel.Testing.csproj` has** (see `Storage/InMemoryFileStorage.cs`, which imports `SharedKernel.Primitives.Errors`/`.Results` inside its namespace so they win over the package's global HotChocolate/GreenDonut usings). Global usings generated for a package reference are scoped to the project that declares the reference — they do not propagate through a `ProjectReference` to a consuming project. Confirmed by a clean build using bare, unqualified `Result<T>` throughout every `Storage/` test file in `SelfTests` — no `SharedKernel.Primitives.Results.Result<T>` fully-qualification workaround is needed there, unlike in the production package's own `Storage/` folder.
 - `Containers/MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (P-275/WO-044) **implemented 2026-07-20 (C-64/C-65)**, proven 2026-07-20 (T-48/T-49): `Containers/MeilisearchContainerFixtureTests.cs` (3 tests) and `Containers/ElasticsearchContainerFixtureTests.cs` (3 tests) are now committed in `SharedKernel.Testing.SelfTests`, mirroring the existing `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture`/`MinioContainerFixture` Docker-gated pattern exactly — `.Url`/`.ApiKey`/`.Nodes` throw-before-`InitializeAsync`, full-lifecycle smoke tests (Meilisearch: unauthenticated `GET /health` + authenticated `GET /indexes`; Elasticsearch: root-endpoint `version.number` starts with `"9."`, proving the pinned 9.4.2 image over the module's own 8.6.1 default, plus a `/_cluster/health` call proving the explicit post-start poll genuinely resolved before `InitializeAsync` returned), and clean `DisposeAsync` shutdown. Run and passing against a real Docker daemon. Adoption by `SharedKernel.Search.Meilisearch.Tests`/`SharedKernel.Search.ElasticSearch.Tests` — the ones that actually "prove it as the canonical shared fixture" per the general container-fixture rule above — remains an explicit cross-domain follow-up for a future `09.Search` implementer pass, not performed here (this domain never touches a `.Tests` project, in this domain or any other).
 - `Search/InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor`/both `Add*` DI extensions (P-276/WO-044) **implemented 2026-07-20 (C-66–C-69)**, proven 2026-07-20 (T-50/T-51): `Search/InMemorySearchIndexTests.cs` (38 tests), `Search/InMemorySearchIndexProvisionerTests.cs` (16 tests), `Search/InMemorySearchProviderDescriptorTests.cs` (12 tests), and `Search/SearchServiceCollectionExtensionsTests.cs` (9 tests) are now committed in `SharedKernel.Testing.SelfTests` (net-new capability, zero existing consumer — no `SharedKernel.Search.*.Tests` project exists in this mono-repo yet, confirmed on disk via `grep`). Coverage includes the full write/read/corpus-walk contract, `SearchAsync`'s complete 5-step fail-loud validation pipeline with an explicit check-order proof, a dedicated test exercising all 8 `SearchFilter` AST node kinds, tenant-checked `GetAsync`, idempotent/additive-only `EnsureIndexAsync` incl. `IndexDefinitionConflict`, `CutoverAsync`'s `DeleteStagingAfterCutover` semantics both ways, `.Validate`'s pre-flight parity with `SearchAsync`'s own pipeline, and both DI extensions' singleton registration shape. All 75 tests passing.
 - `Containers/QdrantContainerFixture`/`MilvusContainerFixture` (P-283/WO-045) **implemented 2026-07-22 (C-70–C-72)**, proven 2026-07-22 (T-52/T-53): both fixtures landed exactly per D-122/D-123/D-125's design, both candidate image tags (`qdrant/qdrant:v1.13.4`, `milvusdb/milvus:v2.3.10`) reconfirmed via `docker manifest inspect` at implementation time with zero drift, and both smoke-tested end-to-end against a real Docker daemon (pre-`InitializeAsync` throw guard, container start, endpoint reachability, clean `DisposeAsync`) — neither module's own built-in wait strategy showed a readiness race, so neither fixture needed an `ElasticsearchContainerFixture`-style post-start poll override. `Containers/QdrantContainerFixtureTests.cs` (4 tests) and `Containers/MilvusContainerFixtureTests.cs` (3 tests) are now committed in `SharedKernel.Testing.SelfTests`, mirroring the established Docker-gated pattern: `.GrpcEndpoint`/`.HttpEndpoint`/`.Endpoint` throw-before-`InitializeAsync`; full-lifecycle smoke tests (Qdrant: unauthenticated `GET /readyz` + `GET /collections` over `.HttpEndpoint`; Milvus: `GET /healthz` over the management port); a **bare gRPC-channel-open probe** against `.GrpcEndpoint`/`.Endpoint` on both, implemented as a plain `System.Net.Sockets.TcpClient` connect (a gRPC channel is fundamentally a TCP connection to an HTTP/2 endpoint, so this proves reachability with zero `Qdrant.Client`/`Milvus.Client`/protobuf dependency — consistent with both fixtures' own "no `ProjectReference` to `SharedKernel.AI.*`" isolation). **Two new test-authoring techniques surfaced, worth recording for future `Containers/` test-writers**: (1) `MilvusContainerFixture` exposes no management-port (9091) property of its own — its host-mapped port has no fixed/derivable relationship to the gRPC port's own mapped port (confirmed empirically: the offset varies run to run) — so `MilvusContainerFixtureTests` reads it via the underlying `Testcontainers.Milvus.MilvusContainer`'s own public `GetMappedPublicPort(int)`, reached through the fixture's private `_container` field via reflection (`BindingFlags.NonPublic | BindingFlags.Instance`) since there is no other way to reach it without changing the already-shipped fixture's public surface — this is the same class of test-only reflection already sanctioned by `Domain/SpecificationAssert` (never acceptable in production). (2) The "no external etcd/MinIO container" acceptance criterion is proven via a `docker ps --format "{{.Image}}"` snapshot taken immediately before `InitializeAsync` and again immediately after, asserting no image containing `"etcd"`/`"minio"` appears in the diff — reading the child process's stdout AND stderr concurrently via `Task.WhenAll` (never sequentially — a sequential read risks a classic pipe-buffer deadlock if the child writes enough to the undrained stream; this was hit and fixed during implementation using `docker logs` before switching to the smaller-output `docker ps` command). This diff check has a documented, narrow residual race if a concurrently running sibling fixture test (e.g. `MinioContainerFixtureTests`) starts within the same ~7-second window, since this project has no test-parallelization override and xUnit parallelizes across test classes by default — accepted as a pragmatic trade-off, not eliminated. Adoption by `SharedKernel.AI.Qdrant.Tests`/`SharedKernel.AI.Milvus.Tests` (`10.Intelligence`'s own T-03/T-05, neither project existing on disk yet) is an explicit cross-domain follow-up for a future `10.Intelligence` implementer pass, not performed here.
@@ -3253,3 +3193,4 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-09-16] P-546 security redesign: `Security/` docs now describe the redesigned `12.Security` API — `FakeUserContext` (`SubjectId` with `DefaultSubjectId` "11111111-1111-1111-1111-111111111111", `ClientId`, `TenantId`, `SessionId`, `Name`, `Email`, ordered `Claims` list with `FindClaim`/`FindClaims`, settable `IdentityKind` with derived `IsAuthenticated`, ordinal role/permission/method checks); `SecurityTestContextBuilder` (`WithSubjectId/WithClientId/WithTenantId/WithSessionId/WithName/...`, `Build()` with short claim names and `Bearer`, service principal adds `idtyp=app`, `BuildUserContext()` returning `FakeUserContext`); `DpopTestProofBuilder` `WithKey(ECDsa)`/`WithNonce`/`WithType` and `DpopTestProof.JwkThumbprint`; new `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`; `ApiKeyRotationScenarioBuilder`/`ApiKeyRotationScenario` and `FakeTotpChallengeStore` recorded as removed; `SharedKernel.Testing.csproj` now also references `SharedKernel.Security.ApiKey` and `.Oidc`; `TestSharedKernelDbContext` uses a fixed `UserContext` (subject "00000000-0000-0000-0000-000000000001", name "test-user"). Earlier WO-060/P-453 narrative kept, with superseded notes (coordinator)
 - [2026-09-18] P-555 (01.Core, coordinator): `FeatureManagement/` rewritten for `SharedKernel.FeatureManagement`'s OpenFeature redesign — `FakeFeatureManager`/`AddFakeFeatureManagement()` deleted with `IFeatureManager`; new `FakeFeatureClient` (an `IFeatureClient` serving typed `FeatureFlag<T>` values, rules over the evaluation context, `SetObject` for JSON flags, `FlagNotFound` for unset flags) and `AddFakeFeatureFlags()`. 9 self-tests; `SharedKernel.Testing.SelfTests` 1417/1417
 - [2026-09-21] P-558: `SharedKernel.Persistence.Testing` (published, test-only) added; persistence/application contract fakes moved there; stale Persistence/ and Application/ sections rewritten (agent)
+- [2026-09-22] Docs updated for `08.Storage`'s P-559 redesign: `Storage/` section rewritten (`InMemoryFileStorage` as a raw store behind the real registry, `AddInMemoryStore`/`AddInMemoryTenantStore`, `GetInMemoryStore`, `InMemoryStorage.CreateFactory`; `InMemoryBlobUriGenerator`/`AddInMemoryFileStorage()` gone); MinIO fixture and `InMemoryReportExporter` notes corrected (coordinator)

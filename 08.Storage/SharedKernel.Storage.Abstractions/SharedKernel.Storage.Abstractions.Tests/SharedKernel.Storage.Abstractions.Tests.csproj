@@ -1,16 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Storage.Abstractions.csproj" />
-    <!--
-      Test-only reference: SharedKernel.Testing supplies no Storage/ test doubles yet (blocked on
-      this very package shipping real types — see 16.Testing/CLAUDE.md's Storage/ section), but the
-      phase spec requires the ProjectReference now so the Tests phase can adopt shared helpers
-      (e.g. FluentAssertions-free assertion conventions) without a second wiring pass later.
-    -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -24,5 +17,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 </Project>

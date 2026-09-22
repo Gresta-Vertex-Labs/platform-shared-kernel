@@ -3,10 +3,8 @@ using System.IO.Pipelines;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting.Abstractions.Diagnostics;
-using SharedKernel.Reporting.Abstractions.Errors;
 using SharedKernel.Reporting.Abstractions.Models;
-using SharedKernel.Storage.Abstractions.Abstractions;
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Reporting.Abstractions.Delivery;
 
@@ -23,7 +21,16 @@ namespace SharedKernel.Reporting.Abstractions.Delivery;
 /// pipe's writer-side <see cref="Stream"/>. Both tasks run under one <see cref="Task.WhenAll(Task[])"/>
 /// — the writer side completes the pipe on success, or completes it with the thrown exception on
 /// failure, so a faulted encoder cannot leave the reader side (and therefore the upload) hanging
-/// forever waiting for more bytes that will never arrive.
+/// forever waiting for more bytes that will never arrive. Symmetrically, the reader side is completed
+/// as soon as the upload returns, so an upload rejected before reading everything (an invalid key, a
+/// failed write condition) cannot leave the encoder blocked on a full pipe.
+/// </para>
+/// <para>
+/// The destination store is resolved per export through <see cref="IFileStorageFactory"/> —
+/// <see cref="ReportDestination.Store"/>, and the tenant view of it when
+/// <see cref="ReportDestination.TenantId"/> is set — so one writer serves every store the service
+/// registers. An unknown store name, or a tenancy that does not match the store's registration, is a
+/// configuration error and throws <see cref="InvalidOperationException"/>.
 /// </para>
 /// <para>
 /// This makes Invariant 2 concrete rather than aspirational: the delivery layer itself never
@@ -40,11 +47,10 @@ namespace SharedKernel.Reporting.Abstractions.Delivery;
 /// </para>
 /// </remarks>
 public sealed class StorageStreamingWriter(
-    IFileStorage fileStorage,
-    ILogger<StorageStreamingWriter> logger,
-    IBlobUriGenerator? blobUriGenerator = null)
+    IFileStorageFactory storageFactory,
+    ILogger<StorageStreamingWriter> logger)
 {
-    private readonly IFileStorage _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
+    private readonly IFileStorageFactory _storageFactory = storageFactory ?? throw new ArgumentNullException(nameof(storageFactory));
     private readonly ILogger<StorageStreamingWriter> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -63,13 +69,16 @@ public sealed class StorageStreamingWriter(
     /// source promptly rather than draining it.
     /// </param>
     /// <returns>
-    /// The <see cref="ReportExportOutcome"/> on success, or a failed <see cref="Result{T}"/> via
-    /// <c>StorageErrors</c> (upload failure) or <see cref="ReportingErrors"/> (presign requested
-    /// with no <see cref="IBlobUriGenerator"/> available). A thrown exception from
-    /// <paramref name="encodeAsync"/> propagates as a faulted <see cref="Task"/> rather than
-    /// becoming a <see cref="Result{T}"/> failure — encoding faults are programming/data errors,
-    /// not expected outcomes.
+    /// The <see cref="ReportExportOutcome"/> on success, or a failed <see cref="Result{T}"/> carrying
+    /// the store's <c>StorageErrors</c> failure (upload rejected, presign expiry beyond the store's
+    /// maximum). A thrown exception from <paramref name="encodeAsync"/> propagates as a faulted
+    /// <see cref="Task"/> rather than becoming a <see cref="Result{T}"/> failure — encoding faults are
+    /// programming/data errors, not expected outcomes.
     /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="ReportDestination.Store"/> is not registered, or <see cref="ReportDestination.TenantId"/>
+    /// does not match whether it is a tenant-scoped store.
+    /// </exception>
     public async Task<Result<ReportExportOutcome>> WriteAsync(
         ReportDestination destination,
         string contentType,
@@ -80,22 +89,24 @@ public sealed class StorageStreamingWriter(
         ArgumentNullException.ThrowIfNull(contentType);
         ArgumentNullException.ThrowIfNull(encodeAsync);
 
-        var pipe = new Pipe();
-        var readerStream = pipe.Reader.AsStream();
-
-        var uploadRequest = new FileUploadRequest
+        var store = _storageFactory.Open(new FileReference
         {
-            Bucket = destination.Bucket,
+            Store = destination.Store,
+            TenantId = destination.TenantId,
             Key = destination.Key,
-            Content = readerStream,
+        });
+
+        var pipe = new Pipe();
+        var uploadOptions = new FileUploadOptions
+        {
             ContentType = contentType,
             Metadata = destination.Metadata,
         };
 
-        ReportingLog.ExportStarted(_logger, destination.Bucket, destination.Key);
+        ReportingLog.ExportStarted(_logger, destination.Store, destination.Key);
         var stopwatch = Stopwatch.StartNew();
 
-        var uploadTask = _fileStorage.UploadAsync(uploadRequest, cancellationToken);
+        var uploadTask = RunUploadAsync(store, destination.Key, pipe.Reader, uploadOptions, cancellationToken);
         var encodeTask = RunEncodeAsync(pipe.Writer, encodeAsync, cancellationToken);
 
         try
@@ -105,7 +116,7 @@ public sealed class StorageStreamingWriter(
         catch (Exception ex)
         {
             stopwatch.Stop();
-            ReportingLog.ExportFailed(_logger, ex, destination.Bucket, destination.Key);
+            ReportingLog.ExportFailed(_logger, ex, destination.Store, destination.Key);
             throw;
         }
 
@@ -118,25 +129,17 @@ public sealed class StorageStreamingWriter(
             ReportingLog.ExportFailed(
                 _logger,
                 new InvalidOperationException(uploadResult.Error.Message),
-                destination.Bucket,
+                destination.Store,
                 destination.Key);
             return Result<ReportExportOutcome>.Failure(uploadResult.Error);
         }
 
-        PresignedUrl? downloadUrl = null;
+        PresignedRequest? downloadUrl = null;
         if (destination.PresignedDownloadUrlExpiry is { } expiry)
         {
-            if (blobUriGenerator is null)
-            {
-                return Result<ReportExportOutcome>.Failure(ReportingErrors.PresignedUrlUnavailable());
-            }
-
-            var presignResult = blobUriGenerator.GeneratePresignedDownloadUrl(new PresignedUrlRequest
-            {
-                Bucket = destination.Bucket,
-                Key = destination.Key,
-                Expiry = expiry,
-            });
+            var presignResult = await store
+                .CreateDownloadUrlAsync(destination.Key, new PresignedDownloadOptions { Expiry = expiry }, cancellationToken)
+                .ConfigureAwait(false);
 
             if (presignResult.IsFailure)
             {
@@ -146,7 +149,7 @@ public sealed class StorageStreamingWriter(
             downloadUrl = presignResult.Value;
         }
 
-        ReportingLog.ExportCompleted(_logger, destination.Bucket, destination.Key, rowCount, stopwatch.Elapsed.TotalMilliseconds);
+        ReportingLog.ExportCompleted(_logger, destination.Store, destination.Key, rowCount, stopwatch.Elapsed.TotalMilliseconds);
 
         return Result<ReportExportOutcome>.Success(new ReportExportOutcome
         {
@@ -154,6 +157,24 @@ public sealed class StorageStreamingWriter(
             DownloadUrl = downloadUrl,
             RowCount = rowCount,
         });
+    }
+
+    private static async Task<Result<FileReference>> RunUploadAsync(
+        IFileStorage store,
+        string key,
+        PipeReader reader,
+        FileUploadOptions options,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.UploadAsync(key, reader.AsStream(), options, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Releases an encoder still writing when the upload stopped reading early.
+            await reader.CompleteAsync().ConfigureAwait(false);
+        }
     }
 
     private static async Task<long> RunEncodeAsync(

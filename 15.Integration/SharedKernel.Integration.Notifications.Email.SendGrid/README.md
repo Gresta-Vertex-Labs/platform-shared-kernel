@@ -15,8 +15,11 @@ builder.Services.AddSendGridEmailNotifications(options =>
     options.ApiKey = builder.Configuration["SendGrid:ApiKey"]!;
 });
 
-// This provider also needs IFileStorage registered (08.Storage) if any message carries attachments.
-builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+// Attachments are read through IFileStorageFactory (08.Storage): register every store an attachment
+// can name, e.g. with the S3 provider.
+builder.Services.AddSharedKernelStorage()
+    .AddS3(builder.Configuration)
+    .AddStore("invoices");
 ```
 
 `AddSendGridEmailNotifications()` registers:
@@ -27,8 +30,8 @@ builder.Services.AddSharedKernelS3Storage(builder.Configuration);
   field-mapping formula `SharedKernel.Integration.Webhooks` already uses.
 - The keyed `INotificationSender` for `NotificationChannel.Email`.
 
-It does **not** register `INotificationSenderIdentityResolver` or `IFileStorage` — both must already
-be registered by the consuming service.
+It does **not** register `INotificationSenderIdentityResolver` or any storage — the consuming
+service registers both (`AddSharedKernelStorage()` provides the `IFileStorageFactory` this sender uses).
 
 ---
 
@@ -56,7 +59,8 @@ var result = await sender.SendAsync(
 ```
 
 `TemplateModel` is serialized into SendGrid's `personalizations[0].dynamic_template_data` field.
-Attachments are resolved via `IFileStorage.DownloadAsync` and base64-encoded by streaming through a
+Each attachment's `FileReference` (store, tenant, key) is opened with `IFileStorageFactory.Open(reference)`,
+downloaded with `IFileStorage.DownloadAsync` and base64-encoded by streaming through a
 `CryptoStream`/`ToBase64Transform` pair — the raw attachment bytes are never held as a single
 contiguous `byte[]` (SendGrid's Mail Send API has no true streaming-upload path, so the base64
 *text* is still assembled as one JSON string field, which is an unavoidable consequence of that
@@ -79,6 +83,7 @@ remains the caller's own outbox-level responsibility (e.g. checking whether a
 ## Never throws for a provider-level failure
 
 A non-2xx response, timeout, transport exception, or an unresolvable attachment `FileReference`
+(a store that is not registered, or a tenant its store does not have: `notifications.attachment_unresolvable`)
 all surface as a `NotificationDeliveryResult` with `IsSuccess == false` — this sender never throws
 for those cases, mirroring `IWebhookDispatcher`'s established convention. Only invalid input (a
 null `message`) throws.

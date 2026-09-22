@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Reporting.Pdf.Exporters;
 using SharedKernel.Reporting.Pdf.Extensions;
 using SharedKernel.Reporting.Pdf.Options;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Storage;
 
 namespace SharedKernel.Reporting.Pdf.Tests.Extensions;
@@ -20,8 +20,7 @@ public sealed class PdfReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
-                services.AddSingleton<IBlobUriGenerator>(new InMemoryBlobUriGenerator());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddPdfReportExporter<TestRow>(new ConfigurationBuilder().Build());
             })
             .Build();
@@ -48,7 +47,7 @@ public sealed class PdfReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddPdfReportExporter<TestRow>(configuration);
             })
             .Build();
@@ -75,7 +74,7 @@ public sealed class PdfReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddPdfReportExporter<TestRow>(configuration);
             })
             .Build();

@@ -5,6 +5,8 @@ using FluentAssertions;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
+using SharedKernel.Storage;
+using SharedKernel.Testing.Storage;
 
 namespace SharedKernel.Integration.Notifications.Email.SendGrid.Tests;
 
@@ -95,11 +97,11 @@ public sealed class SendGridEmailNotificationSenderTests
             return new HttpResponseMessage(HttpStatusCode.Accepted);
         });
         using var harness = new SendGridTestHarness(handler);
-        harness.FileStorage.Seed("invoices", "invoice-1.pdf", new MemoryStream(attachmentBytes), "application/pdf");
+        harness.FileStorage.Seed("invoice-1.pdf", attachmentBytes, "application/pdf");
 
         var attachment = new NotificationAttachment
         {
-            FileReference = new SharedKernel.Storage.Abstractions.Models.FileReference { Bucket = "invoices", Key = "invoice-1.pdf" },
+            FileReference = new FileReference { Store = "invoices", Key = "invoice-1.pdf" },
             FileName = "invoice.pdf",
             ContentType = "application/pdf",
         };
@@ -125,7 +127,7 @@ public sealed class SendGridEmailNotificationSenderTests
 
         var attachment = new NotificationAttachment
         {
-            FileReference = new SharedKernel.Storage.Abstractions.Models.FileReference { Bucket = "invoices", Key = "does-not-exist.pdf" },
+            FileReference = new FileReference { Store = "invoices", Key = "does-not-exist.pdf" },
             FileName = "invoice.pdf",
         };
 
@@ -134,6 +136,62 @@ public sealed class SendGridEmailNotificationSenderTests
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsSuccess.Should().BeFalse();
         result.Subject.Error.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task SendAsync_TenantAttachment_IsReadThroughThatTenantsView()
+    {
+        var tenantBytes = "tenant-a-statement"u8.ToArray();
+
+        JsonDocument? capturedBody = null;
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            capturedBody = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        });
+        using var harness = new SendGridTestHarness(handler);
+        harness.TenantFileStorage.Seed(InMemoryFileStorage.TenantKey("tenant-a", "statement.pdf"), tenantBytes, "application/pdf");
+
+        var attachment = new NotificationAttachment
+        {
+            FileReference = new FileReference { Store = "documents", TenantId = "tenant-a", Key = "statement.pdf" },
+            FileName = "statement.pdf",
+        };
+        var otherTenant = attachment with
+        {
+            FileReference = attachment.FileReference with { TenantId = "tenant-b" },
+        };
+
+        var result = await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
+        var otherTenantResult = await harness.Sender.SendAsync(Message(attachments: [otherTenant]), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var sent = capturedBody!.RootElement.GetProperty("attachments")[0];
+        sent.GetProperty("content").GetString().Should().Be(Convert.ToBase64String(tenantBytes));
+        sent.GetProperty("type").GetString().Should().Be("application/pdf", "the stored content type is used when the attachment names none");
+        otherTenantResult.IsSuccess.Should().BeFalse("tenant-b's view of the store holds no such object");
+    }
+
+    [Theory]
+    [InlineData("unregistered", null)]
+    [InlineData("documents", null)]
+    [InlineData("invoices", "tenant-a")]
+    public async Task SendAsync_AttachmentInUnknownStoreOrWrongTenancy_ReturnsFailureWithoutThrowing(string store, string? tenantId)
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var harness = new SendGridTestHarness(handler);
+
+        var attachment = new NotificationAttachment
+        {
+            FileReference = new FileReference { Store = store, TenantId = tenantId, Key = "invoice.pdf" },
+            FileName = "invoice.pdf",
+        };
+
+        var act = async () => await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsSuccess.Should().BeFalse();
+        result.Subject.Error.Should().Contain("Unable to resolve one or more attachments");
     }
 
     [Fact]

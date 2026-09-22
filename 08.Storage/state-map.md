@@ -1,3 +1,5 @@
+> **Superseded by P-559 (2026-09-22).** The pre-publish redesign replaced the API this state map describes (bucket-per-call `IFileStorage`, `IBlobUriGenerator`, sibling S3/OBS implementations). The current design, rules and decisions are in `08.Storage/CLAUDE.md`; this file is kept as history.
+
 # 08.Storage — State Map
 
 > **What this file is:** Phase and task tracker for all work within `08.Storage`.

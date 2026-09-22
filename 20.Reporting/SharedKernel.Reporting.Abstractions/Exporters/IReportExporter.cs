@@ -27,8 +27,9 @@ namespace SharedKernel.Reporting.Abstractions.Exporters;
 /// <para>
 /// <b>Invariant 2 — delivery goes through storage, never through the response.</b>
 /// <see cref="ExportAsync"/> is the primary path: output is written via
-/// <c>SharedKernel.Storage.Abstractions</c>' <c>IFileStorage</c>, with an optional presigned URL via
-/// <c>IBlobUriGenerator</c> when <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> is set.
+/// the named <c>SharedKernel.Storage</c> store <see cref="ReportDestination.Store"/> (resolved through
+/// <c>IFileStorageFactory</c>), with an optional presigned download URL from the same store when
+/// <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> is set.
 /// <see cref="ExportToStreamAsync"/> is a small-output/direct-stream convenience path — it still
 /// accepts <see cref="IAsyncEnumerable{T}"/>, so it never reopens Invariant 1 — but it is never the
 /// only way out: no code path may offer a fully-buffered byte array as the sole option.
@@ -61,7 +62,7 @@ public interface IReportExporter<TRow>
 {
     /// <summary>
     /// Streams <paramref name="rows"/> through this exporter's format and delivers the encoded
-    /// output to <paramref name="destination"/> via <c>IFileStorage</c>.
+    /// output to <paramref name="destination"/>'s store via <c>IFileStorage</c>.
     /// </summary>
     /// <param name="rows">
     /// The row source. Enumerated exactly once, forward-only. See this interface's Invariant 1 —

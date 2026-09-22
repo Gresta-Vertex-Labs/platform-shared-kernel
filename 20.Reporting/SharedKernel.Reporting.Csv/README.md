@@ -9,7 +9,7 @@ RFC 4180 CSV report/data export for Platform.SharedKernel microservices — hand
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSharedKernelS3Storage(builder.Configuration); // any SharedKernel.Storage.* provider
+builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("exports"); // any SharedKernel.Storage provider
 builder.Services.AddCsvReportExporter<Invoice>(builder.Configuration);
 
 var host = builder.Build();
@@ -18,7 +18,7 @@ await host.StartAsync();
 var exporter = host.Services.GetRequiredService<ICsvReportExporter<Invoice>>();
 ```
 
-`AddCsvReportExporter<TRow>` registers `CsvExportOptions` (validated, checked eagerly at startup via `ValidateOnStart()`), the shared `StorageStreamingWriter` (idempotent — safe alongside `AddSpreadsheetReportExporter`/`AddPdfReportExporter` in the same host), and `ICsvReportExporter<TRow>`. It does **not** register `IFileStorage`/`IBlobUriGenerator` — bring your own `SharedKernel.Storage.*` provider.
+`AddCsvReportExporter<TRow>` registers `CsvExportOptions` (validated, checked eagerly at startup via `ValidateOnStart()`), the shared `StorageStreamingWriter` (idempotent — safe alongside `AddSpreadsheetReportExporter`/`AddPdfReportExporter` in the same host), and `ICsvReportExporter<TRow>`. It does **not** register storage: call `AddSharedKernelStorage()` with a provider (`SharedKernel.Storage.S3`, `.Obs`) and register the stores your `ReportDestination.Store` values name.
 
 `ICsvReportExporter<TRow>` is a provider-exclusive marker interface (`: IReportExporter<TRow>`) — injecting it against a composition root that never called `AddCsvReportExporter` fails to compile against the wrong assembly reference, never a runtime format-string check.
 

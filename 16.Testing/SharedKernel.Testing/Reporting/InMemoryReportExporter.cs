@@ -2,7 +2,7 @@ using SharedKernel.Primitives.Clocks;
 using SharedKernel.Reporting.Abstractions.Errors;
 using SharedKernel.Reporting.Abstractions.Exporters;
 using SharedKernel.Reporting.Abstractions.Models;
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Reporting;
@@ -31,12 +31,12 @@ namespace SharedKernel.Testing.Reporting;
 /// </para>
 /// <para>
 /// Fabricates a synthetic <see cref="ReportExportOutcome"/> (and, when a presigned URL was
-/// requested, a synthetic <see cref="PresignedUrl"/>) directly from the caller-supplied
+/// requested, a synthetic <see cref="PresignedRequest"/>) directly from the caller-supplied
 /// <see cref="ReportDestination"/> — this fake never touches a real
-/// <c>SharedKernel.Storage.Abstractions.IFileStorage</c>/<c>IBlobUriGenerator</c>, and takes no
+/// <c>SharedKernel.Storage.IFileStorage</c>/<c>IFileStorageFactory</c>, and takes no
 /// dependency on either. References only <c>SharedKernel.Reporting.Abstractions</c> (plus this
 /// package's own established <see cref="Clocks.FakeClock"/> cross-folder exception, used solely to
-/// derive a deterministic <see cref="PresignedUrl.ExpiresAt"/> — never real wall-clock time).
+/// derive a deterministic <see cref="PresignedRequest.ExpiresAt"/> — never real wall-clock time).
 /// </para>
 /// </remarks>
 public sealed class InMemoryReportExporter<TRow> : IReportExporter<TRow>
@@ -48,7 +48,7 @@ public sealed class InMemoryReportExporter<TRow> : IReportExporter<TRow>
     /// Creates a new <see cref="InMemoryReportExporter{TRow}"/>.
     /// </summary>
     /// <param name="clock">
-    /// The clock used to derive a deterministic <see cref="PresignedUrl.ExpiresAt"/> when
+    /// The clock used to derive a deterministic <see cref="PresignedRequest.ExpiresAt"/> when
     /// <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> is set. Defaults to a fresh
     /// <see cref="FakeClock"/> when omitted.
     /// </param>
@@ -99,11 +99,18 @@ public sealed class InMemoryReportExporter<TRow> : IReportExporter<TRow>
                 ReportingErrors.InvalidDestination("Simulated failure via InMemoryReportExporter<TRow>.SimulateFailure."));
         }
 
-        var storedFile = new FileReference { Bucket = destination.Bucket, Key = destination.Key };
+        var storedFile = new FileReference
+        {
+            Store = destination.Store,
+            TenantId = destination.TenantId,
+            Key = destination.Key,
+        };
         var downloadUrl = destination.PresignedDownloadUrlExpiry is { } expiry
-            ? new PresignedUrl
+            ? new PresignedRequest
             {
-                Url = new Uri($"https://fake-report-storage.test/{destination.Bucket}/{destination.Key}"),
+                Url = new Uri($"https://fake-report-storage.test/{destination.Store}/{destination.Key}"),
+                Method = HttpMethod.Get.Method,
+                Headers = new Dictionary<string, string>(),
                 ExpiresAt = _clock.UtcNow + expiry,
             }
             : null;

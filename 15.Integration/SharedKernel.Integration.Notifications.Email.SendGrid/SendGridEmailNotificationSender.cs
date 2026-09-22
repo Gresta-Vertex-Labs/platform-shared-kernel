@@ -10,9 +10,10 @@ using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Tracing;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Serialization;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Integration.Notifications.Email.SendGrid;
 
@@ -24,9 +25,10 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
 {
     private const string MailSendEndpoint = "https://api.sendgrid.com/v3/mail/send";
     private const string NotificationDeliveryIdCustomArgKey = "notification_delivery_id";
+    private const string UnresolvableAttachmentCode = "notifications.attachment_unresolvable";
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IFileStorage _fileStorage;
+    private readonly IFileStorageFactory _storageFactory;
     private readonly INotificationSenderIdentityResolver _senderIdentityResolver;
     private readonly IEnumerable<INotificationDeliveryObserver> _observers;
     private readonly SendGridNotificationOptions _options;
@@ -35,21 +37,21 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
     /// <summary>Initializes a new instance of <see cref="SendGridEmailNotificationSender"/>.</summary>
     public SendGridEmailNotificationSender(
         IHttpClientFactory httpClientFactory,
-        IFileStorage fileStorage,
+        IFileStorageFactory storageFactory,
         INotificationSenderIdentityResolver senderIdentityResolver,
         IEnumerable<INotificationDeliveryObserver> observers,
         IOptions<SendGridNotificationOptions> options,
         ILogger<SendGridEmailNotificationSender> logger)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
-        ArgumentNullException.ThrowIfNull(fileStorage);
+        ArgumentNullException.ThrowIfNull(storageFactory);
         ArgumentNullException.ThrowIfNull(senderIdentityResolver);
         ArgumentNullException.ThrowIfNull(observers);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _httpClientFactory = httpClientFactory;
-        _fileStorage = fileStorage;
+        _storageFactory = storageFactory;
         _senderIdentityResolver = senderIdentityResolver;
         _observers = observers;
         _options = options.Value;
@@ -159,8 +161,22 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
 
         foreach (var attachment in attachments)
         {
-            var downloadResult = await _fileStorage
-                .DownloadAsync(attachment.FileReference.Bucket, attachment.FileReference.Key, ct)
+            var reference = attachment.FileReference;
+            IFileStorage store;
+            try
+            {
+                store = _storageFactory.Open(reference);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                // An attachment naming an unregistered store, or a tenancy its store does not have, is
+                // an unresolvable reference: a failed delivery, never an exception (INotificationSender).
+                return Result<IReadOnlyList<SendGridAttachment>>.Failure(
+                    Error.Validation(UnresolvableAttachmentCode, ex.Message));
+            }
+
+            var downloadResult = await store
+                .DownloadAsync(reference.Key, new FileDownloadOptions { VersionId = reference.VersionId }, ct)
                 .ConfigureAwait(false);
 
             if (downloadResult.IsFailure)
@@ -175,7 +191,7 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
             {
                 Content = base64Content,
                 Filename = attachment.FileName,
-                Type = attachment.ContentType ?? download.ContentType,
+                Type = attachment.ContentType ?? download.Properties.ContentType,
             });
         }
 

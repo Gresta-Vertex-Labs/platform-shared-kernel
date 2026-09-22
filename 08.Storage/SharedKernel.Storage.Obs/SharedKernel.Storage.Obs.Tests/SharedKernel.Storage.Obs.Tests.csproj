@@ -1,15 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Storage.Obs.csproj" />
-    <!--
-      Test-only reference: backs the same Testcontainers MinIO fixture (P-268,
-      Containers/MinioContainerFixture) SharedKernel.Storage.S3.Tests uses — MinIO stands in for the
-      OBS S3-compatible endpoint in CI, since OBS itself is never available there.
-    -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -23,5 +17,10 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <!-- Real MinIO in Docker: every behavioural test runs against a live S3 API, never a mocked client. -->
+    <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 </Project>

@@ -8,13 +8,14 @@ using Xunit;
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Tests for <see cref="StorageTopologyRules"/> — the <c>08.Storage</c> two-provider package
-/// topology enforcement predicates introduced by WO-043 P-271.
+/// Tests for <see cref="StorageTopologyRules"/> — the <c>08.Storage</c> package topology
+/// enforcement predicates introduced by WO-043 P-271 (Obs building on S3 since the named-store redesign).
 /// </summary>
 /// <remarks>
 /// <para>
-/// T-194/T-195 cover <see cref="StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies"/>.
-/// T-196/T-197 cover <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>.
+/// T-194/T-195 cover <see cref="StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies"/>, with
+/// <see cref="StorageTopologyRules.AbstractionsForbiddenAssemblyReferences"/> as its assembly-level half.
+/// <see cref="StorageTopologyRules.S3NeverReferencesObs"/>/<see cref="StorageTopologyRules.S3ForbiddenAssemblyReferences"/> replace the former sibling rule: <c>.Obs</c> now builds on <c>.S3</c>.
 /// T-198/T-199 cover <see cref="StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3"/>.
 /// </para>
 /// <para>
@@ -50,7 +51,7 @@ public class StorageTopologyRulesTests
             """;
 
         const string abstractionsSource = """
-            namespace SharedKernel.Storage.Abstractions.Abstractions
+            namespace SharedKernel.Storage
             {
                 public class LeakyFileStorage
                 {
@@ -96,7 +97,7 @@ public class StorageTopologyRulesTests
             """;
 
         const string abstractionsSource = """
-            namespace SharedKernel.Storage.Abstractions.Abstractions
+            namespace SharedKernel.Storage
             {
                 public class CleanFileStorage
                 {
@@ -121,23 +122,62 @@ public class StorageTopologyRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-196 — Fire path: S3-shaped fixture references Obs-shaped fixture, and vice versa
+    // Abstractions — assembly-reference half
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-196: When a contrived "SharedKernel.Storage.S3"-shaped assembly references a type whose
-    /// declaring assembly simulates <c>SharedKernel.Storage.Obs</c>,
-    /// <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/> must fail on
-    /// array element [0] only. The converse (Obs referencing S3) must fail on array element [1]
-    /// only.
+    /// A contrived abstractions-shaped assembly that uses a provider type declared in the shared
+    /// <c>SharedKernel.Storage</c> namespace passes the namespace check but is caught by
+    /// <see cref="StorageTopologyRules.AbstractionsForbiddenAssemblyReferences"/> — the gap the
+    /// assembly-reference half exists to close.
     /// </summary>
     [Fact]
-    public void ProviderPackagesNeverReferenceEachOther_S3ReferencesObs_FirstElementFails()
+    public void AbstractionsForbiddenAssemblyReferences_ProviderTypeInSharedNamespace_IsReported()
+    {
+        const string s3StubSource = """
+            namespace SharedKernel.Storage
+            {
+                public static class S3StorageBuilderExtensions { public const string S3ConnectionName = "S3"; public static string Name() => S3ConnectionName; }
+            }
+            """;
+
+        const string abstractionsSource = """
+            namespace SharedKernel.Storage
+            {
+                public class LeakyRegistry
+                {
+                    public string Connection() => SharedKernel.Storage.S3StorageBuilderExtensions.Name();
+                }
+            }
+            """;
+
+        var s3StubImage = CompileImage("SharedKernel.Storage.S3", s3StubSource);
+        var abstractionsAssembly = LoadImage(
+            "ViolatingSharedKernel.Storage.Abstractions.SharedNamespace",
+            CompileImage("ViolatingSharedKernel.Storage.Abstractions.SharedNamespace", abstractionsSource, s3StubImage));
+
+        StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies(abstractionsAssembly).GetResult().IsSuccessful
+            .Should().BeTrue(because: "the provider type lives in the shared SharedKernel.Storage namespace, invisible to a namespace check");
+        StorageTopologyRules.AbstractionsForbiddenAssemblyReferences(abstractionsAssembly)
+            .Should().Equal(["SharedKernel.Storage.S3"], because: "the referenced assembly name still reveals the provider dependency");
+    }
+
+    // ---------------------------------------------------------------------------
+    // S3 never references Obs — Obs is a thin provider over S3, never the reverse
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// When a contrived "SharedKernel.Storage.S3"-shaped assembly references a type in the
+    /// <c>SharedKernel.Storage.Obs</c> namespace, <see cref="StorageTopologyRules.S3NeverReferencesObs"/>
+    /// must fail.
+    /// </summary>
+    [Fact]
+    public void S3NeverReferencesObs_S3ReferencesObsNamespace_RuleFails()
     {
         const string obsStubSource = """
             namespace SharedKernel.Storage.Obs
             {
-                public interface IObsFileStorage { }
+                public sealed class ObsStorageOptions { }
             }
             """;
 
@@ -146,108 +186,69 @@ public class StorageTopologyRulesTests
             {
                 public class LeakyS3FileStorage
                 {
-                    private readonly SharedKernel.Storage.Obs.IObsFileStorage _obsFileStorage;
-                    public LeakyS3FileStorage(SharedKernel.Storage.Obs.IObsFileStorage obsFileStorage)
+                    private readonly SharedKernel.Storage.Obs.ObsStorageOptions _obsOptions;
+                    public LeakyS3FileStorage(SharedKernel.Storage.Obs.ObsStorageOptions obsOptions)
                     {
-                        _obsFileStorage = obsFileStorage;
+                        _obsOptions = obsOptions;
                     }
                 }
             }
             """;
 
-        const string cleanObsSource = """
-            namespace SharedKernel.Storage.Obs
-            {
-                public class CleanObsFileStorage { }
-            }
-            """;
-
-        var obsStubAssembly = CompileInMemory("Fixture.ProviderSiblingTest.SharedKernel.Storage.Obs", obsStubSource);
+        var obsStubAssembly = CompileInMemory("Fixture.S3ToObsTest.SharedKernel.Storage.Obs", obsStubSource);
         var violatingS3Assembly = CompileInMemory(
             "ViolatingSharedKernel.Storage.S3",
             s3Source,
             extraReferences: new[] { obsStubAssembly });
-        var cleanObsAssembly = CompileInMemory("CleanSharedKernel.Storage.Obs", cleanObsSource);
 
-        var conditionLists = StorageTopologyRules.ProviderPackagesNeverReferenceEachOther(
-            violatingS3Assembly,
-            cleanObsAssembly);
+        var result = StorageTopologyRules.S3NeverReferencesObs(violatingS3Assembly).GetResult();
 
-        conditionLists.Should().HaveCount(2);
-
-        conditionLists[0].GetResult().IsSuccessful.Should().BeFalse(
-            because: "LeakyS3FileStorage references SharedKernel.Storage.Obs directly");
-        conditionLists[1].GetResult().IsSuccessful.Should().BeTrue(
-            because: "the clean Obs fixture has no dependency on SharedKernel.Storage.S3");
+        result.IsSuccessful.Should().BeFalse(
+            because: "LeakyS3FileStorage special-cases OBS inside the S3 implementation");
     }
 
     /// <summary>
-    /// T-196 (converse): When a contrived "SharedKernel.Storage.Obs"-shaped assembly references a
-    /// type whose declaring assembly simulates <c>SharedKernel.Storage.S3</c>,
-    /// <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/> must fail on
-    /// array element [1] only.
+    /// An "SharedKernel.Storage.S3"-shaped assembly calling an OBS entry point declared in the shared
+    /// <c>SharedKernel.Storage</c> namespace slips past the namespace check but is reported by
+    /// <see cref="StorageTopologyRules.S3ForbiddenAssemblyReferences"/>.
     /// </summary>
     [Fact]
-    public void ProviderPackagesNeverReferenceEachOther_ObsReferencesS3_SecondElementFails()
+    public void S3ForbiddenAssemblyReferences_S3UsesObsEntryPointInSharedNamespace_IsReported()
     {
-        const string s3StubSource = """
-            namespace SharedKernel.Storage.S3
+        const string obsStubSource = """
+            namespace SharedKernel.Storage
             {
-                public interface IS3FileStorage { }
+                public static class ObsStorageBuilderExtensions { public const string ObsConnectionName = "Obs"; public static string Name() => ObsConnectionName; }
             }
             """;
 
-        const string obsSource = """
-            namespace SharedKernel.Storage.Obs
+        const string s3Source = """
+            namespace SharedKernel.Storage.S3
             {
-                public class LeakyObsFileStorage
+                public class LeakyS3Registration
                 {
-                    private readonly SharedKernel.Storage.S3.IS3FileStorage _s3FileStorage;
-                    public LeakyObsFileStorage(SharedKernel.Storage.S3.IS3FileStorage s3FileStorage)
-                    {
-                        _s3FileStorage = s3FileStorage;
-                    }
+                    public string Connection() => SharedKernel.Storage.ObsStorageBuilderExtensions.Name();
                 }
             }
             """;
 
-        const string cleanS3Source = """
-            namespace SharedKernel.Storage.S3
-            {
-                public class CleanS3FileStorage { }
-            }
-            """;
+        var obsStubImage = CompileImage("SharedKernel.Storage.Obs", obsStubSource);
+        var violatingS3Assembly = LoadImage(
+            "ViolatingSharedKernel.Storage.S3.SharedNamespace",
+            CompileImage("ViolatingSharedKernel.Storage.S3.SharedNamespace", s3Source, obsStubImage));
 
-        var s3StubAssembly = CompileInMemory("Fixture.ProviderSiblingConverseTest.SharedKernel.Storage.S3", s3StubSource);
-        var violatingObsAssembly = CompileInMemory(
-            "ViolatingSharedKernel.Storage.Obs",
-            obsSource,
-            extraReferences: new[] { s3StubAssembly });
-        var cleanS3Assembly = CompileInMemory("CleanSharedKernel.Storage.S3", cleanS3Source);
-
-        var conditionLists = StorageTopologyRules.ProviderPackagesNeverReferenceEachOther(
-            cleanS3Assembly,
-            violatingObsAssembly);
-
-        conditionLists.Should().HaveCount(2);
-
-        conditionLists[0].GetResult().IsSuccessful.Should().BeTrue(
-            because: "the clean S3 fixture has no dependency on SharedKernel.Storage.Obs");
-        conditionLists[1].GetResult().IsSuccessful.Should().BeFalse(
-            because: "LeakyObsFileStorage references SharedKernel.Storage.S3 directly");
+        StorageTopologyRules.S3NeverReferencesObs(violatingS3Assembly).GetResult().IsSuccessful
+            .Should().BeTrue(because: "AddObs-style entry points live in the shared SharedKernel.Storage namespace");
+        StorageTopologyRules.S3ForbiddenAssemblyReferences(violatingS3Assembly)
+            .Should().Equal(["SharedKernel.Storage.Obs"], because: "the S3 package must never reference the OBS package");
     }
 
-    // ---------------------------------------------------------------------------
-    // T-197 — Pass path: S3/Obs fixtures with no cross-reference pass both array elements
-    // ---------------------------------------------------------------------------
-
     /// <summary>
-    /// T-197: Contrived "SharedKernel.Storage.S3"- and "SharedKernel.Storage.Obs"-shaped
-    /// assemblies with no cross-reference must pass both array elements of
-    /// <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>.
+    /// The permitted direction: an "SharedKernel.Storage.S3"-shaped assembly with no OBS dependency
+    /// passes both halves, while an Obs-shaped assembly may freely build on S3 — no rule constrains it.
     /// </summary>
     [Fact]
-    public void ProviderPackagesNeverReferenceEachOther_NoCrossReference_BothElementsPass()
+    public void S3NeverReferencesObs_CleanS3_BothHalvesPass()
     {
         const string s3Source = """
             namespace SharedKernel.Storage.S3
@@ -256,24 +257,12 @@ public class StorageTopologyRulesTests
             }
             """;
 
-        const string obsSource = """
-            namespace SharedKernel.Storage.Obs
-            {
-                public class CleanObsFileStorage { }
-            }
-            """;
+        var s3Assembly = CompileInMemory("CleanSharedKernel.Storage.S3.NoObs", s3Source);
 
-        var s3Assembly = CompileInMemory("CleanSharedKernel.Storage.S3.NoCross", s3Source);
-        var obsAssembly = CompileInMemory("CleanSharedKernel.Storage.Obs.NoCross", obsSource);
-
-        var conditionLists = StorageTopologyRules.ProviderPackagesNeverReferenceEachOther(s3Assembly, obsAssembly);
-
-        conditionLists.Should().HaveCount(2);
-        foreach (var conditionList in conditionLists)
-        {
-            conditionList.GetResult().IsSuccessful.Should().BeTrue(
-                because: "neither provider package references the other");
-        }
+        StorageTopologyRules.S3NeverReferencesObs(s3Assembly).GetResult().IsSuccessful
+            .Should().BeTrue(because: "the S3 fixture has no dependency on OBS");
+        StorageTopologyRules.S3ForbiddenAssemblyReferences(s3Assembly)
+            .Should().BeEmpty(because: "the S3 fixture references no OBS assembly");
     }
 
     // ---------------------------------------------------------------------------
@@ -335,7 +324,7 @@ public class StorageTopologyRulesTests
     public void OnlyProviderPackagesMayReferenceAmazonS3_CleanConsumer_RulePasses()
     {
         const string abstractionsStubSource = """
-            namespace SharedKernel.Storage.Abstractions.Abstractions
+            namespace SharedKernel.Storage
             {
                 public interface IFileStorage { }
             }
@@ -346,8 +335,8 @@ public class StorageTopologyRulesTests
             {
                 public class UploadDocumentHandler
                 {
-                    private readonly SharedKernel.Storage.Abstractions.Abstractions.IFileStorage _fileStorage;
-                    public UploadDocumentHandler(SharedKernel.Storage.Abstractions.Abstractions.IFileStorage fileStorage)
+                    private readonly SharedKernel.Storage.IFileStorage _fileStorage;
+                    public UploadDocumentHandler(SharedKernel.Storage.IFileStorage fileStorage)
                     {
                         _fileStorage = fileStorage;
                     }
@@ -371,47 +360,53 @@ public class StorageTopologyRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // Real-assembly verification — 08.Storage reached Published (P-265/P-266/P-267 all shipped)
-    // before this phase's implementation session; the contrived fixtures above remain the
-    // primary red/green proof per the phase spec, but the real assemblies are also verified here
-    // since the dependency this phase originally flagged as blocking has resolved.
+    // Real-assembly verification — the contrived fixtures above remain the primary red/green
+    // proof; the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies are verified here too.
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Real-assembly verification: the actual <c>SharedKernel.Storage.Abstractions</c> assembly
-    /// (P-265) has zero third-party dependencies — confirms the contrived-fixture proof (T-194/
-    /// T-195) generalizes to the shipped package.
+    /// Real-assembly verification: the actual <c>SharedKernel.Storage.Abstractions</c> assembly has no
+    /// AWS SDK, provider or Options-validation dependency — by namespace and by referenced assembly.
     /// </summary>
     [Fact]
     public void AbstractionsHasNoThirdPartyDependencies_RealAbstractionsAssembly_RulePasses()
     {
-        var abstractionsAssembly = typeof(Storage.Abstractions.Abstractions.IFileStorage).Assembly;
+        var abstractionsAssembly = typeof(global::SharedKernel.Storage.IFileStorage).Assembly;
 
-        var conditionList = StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies(abstractionsAssembly);
-        var result = conditionList.GetResult();
+        var result = StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies(abstractionsAssembly).GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "the real SharedKernel.Storage.Abstractions references only SharedKernel.Primitives");
+            because: "the real SharedKernel.Storage.Abstractions references only SharedKernel.Primitives and DI abstractions");
+        StorageTopologyRules.AbstractionsForbiddenAssemblyReferences(abstractionsAssembly).Should().BeEmpty();
     }
 
     /// <summary>
-    /// Real-assembly verification: the actual <c>SharedKernel.Storage.S3</c> (P-266) and
-    /// <c>SharedKernel.Storage.Obs</c> (P-267) assemblies never reference each other.
+    /// Real-assembly verification: the actual <c>SharedKernel.Storage.S3</c> assembly never references
+    /// <c>SharedKernel.Storage.Obs</c>, by namespace or by assembly.
     /// </summary>
     [Fact]
-    public void ProviderPackagesNeverReferenceEachOther_RealS3AndObsAssemblies_BothElementsPass()
+    public void S3NeverReferencesObs_RealS3Assembly_BothHalvesPass()
     {
-        var s3Assembly = typeof(Storage.S3.Options.S3StorageOptions).Assembly;
-        var obsAssembly = typeof(Storage.Obs.Options.ObsStorageOptions).Assembly;
+        var s3Assembly = typeof(global::SharedKernel.Storage.S3.S3StorageOptions).Assembly;
 
-        var conditionLists = StorageTopologyRules.ProviderPackagesNeverReferenceEachOther(s3Assembly, obsAssembly);
+        StorageTopologyRules.S3NeverReferencesObs(s3Assembly).GetResult().IsSuccessful.Should().BeTrue(
+            because: "SharedKernel.Storage.S3 never names OBS");
+        StorageTopologyRules.S3ForbiddenAssemblyReferences(s3Assembly).Should().BeEmpty(
+            because: "SharedKernel.Storage.S3 must not reference SharedKernel.Storage.Obs");
+    }
 
-        conditionLists.Should().HaveCount(2);
-        foreach (var conditionList in conditionLists)
-        {
-            conditionList.GetResult().IsSuccessful.Should().BeTrue(
-                because: "SharedKernel.Storage.S3 and SharedKernel.Storage.Obs are independently-declared siblings");
-        }
+    /// <summary>
+    /// Real-assembly verification of the intended direction: <c>SharedKernel.Storage.Obs</c> is a thin
+    /// provider over <c>SharedKernel.Storage.S3</c>, so it references it.
+    /// </summary>
+    [Fact]
+    public void RealObsAssembly_BuildsOnTheS3Provider()
+    {
+        var obsAssembly = typeof(global::SharedKernel.Storage.Obs.ObsStorageOptions).Assembly;
+
+        obsAssembly.GetReferencedAssemblies().Select(a => a.Name).Should().Contain(
+            "SharedKernel.Storage.S3",
+            because: "OBS is served by the S3 implementation over its S3-compatible API");
     }
 
     /// <summary>
@@ -422,7 +417,7 @@ public class StorageTopologyRulesTests
     [Fact]
     public void OnlyProviderPackagesMayReferenceAmazonS3_RealNonProviderAssembly_RulePasses()
     {
-        var abstractionsAssembly = typeof(Storage.Abstractions.Abstractions.IFileStorage).Assembly;
+        var abstractionsAssembly = typeof(global::SharedKernel.Storage.IFileStorage).Assembly;
 
         var conditionList = StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3(abstractionsAssembly);
         var result = conditionList.GetResult();
@@ -499,6 +494,48 @@ public class StorageTopologyRulesTests
             File.WriteAllBytes(tempPath, stream.ToArray());
         }
 
+        return Assembly.LoadFrom(tempPath);
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="source"/> to an assembly image without loading it — for a stub whose
+    /// assembly name matches a real package (e.g. <c>SharedKernel.Storage.Obs</c>), which must never be
+    /// loaded next to the real one; it is only ever used as a metadata reference.
+    /// </summary>
+    private static byte[] CompileImage(string assemblyName, string source, params byte[][] referenceImages)
+    {
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
+        };
+        references.AddRange(referenceImages.Select(image =>
+            MetadataReference.CreateFromImage(System.Collections.Immutable.ImmutableArray.Create(image))));
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(source) },
+            references: references,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        if (!emitResult.Success)
+        {
+            var errors = string.Join(
+                System.Environment.NewLine,
+                emitResult.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()));
+            throw new InvalidOperationException($"Fixture '{assemblyName}' failed to compile:{System.Environment.NewLine}{errors}");
+        }
+
+        return stream.ToArray();
+    }
+
+    /// <summary>Writes <paramref name="image"/> to a temporary file and loads it for reflection.</summary>
+    private static Assembly LoadImage(string assemblyName, byte[] image)
+    {
+        var tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{assemblyName}_{System.Guid.NewGuid():N}.dll");
+        File.WriteAllBytes(tempPath, image);
         return Assembly.LoadFrom(tempPath);
     }
 }

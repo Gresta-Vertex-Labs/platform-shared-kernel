@@ -9,7 +9,7 @@ namespace SharedKernel.Reporting.Abstractions.Diagnostics;
 /// <remarks>
 /// One span per <c>IReportExporter&lt;TRow&gt;.ExportAsync</c>/<c>ExportToStreamAsync</c> call,
 /// tagging <see cref="ReportingTagKeys.Format"/> up front and
-/// <see cref="ReportingTagKeys.RowCount"/>/<see cref="ReportingTagKeys.Bucket"/> once the outcome is
+/// <see cref="ReportingTagKeys.RowCount"/>/<see cref="ReportingTagKeys.Store"/> once the outcome is
 /// known. No span emitted by any provider ever carries row content or a formatted cell value as a
 /// tag — see <see cref="Exporters.IReportExporter{TRow}"/>'s PII documentation.
 /// </remarks>

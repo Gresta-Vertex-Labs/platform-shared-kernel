@@ -1,6 +1,7 @@
 using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting.Abstractions.Errors;
 using SharedKernel.Reporting.Abstractions.Models;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Reporting.Abstractions.Validation;
 
@@ -40,14 +41,20 @@ public static class ReportExportPreconditions
 
         ArgumentNullException.ThrowIfNull(destination);
 
-        if (string.IsNullOrWhiteSpace(destination.Bucket))
+        if (string.IsNullOrWhiteSpace(destination.Store))
         {
-            return Result.Failure(ReportingErrors.InvalidDestination("Bucket is required."));
+            return Result.Failure(ReportingErrors.InvalidDestination("Store is required."));
         }
 
         if (string.IsNullOrWhiteSpace(destination.Key))
         {
             return Result.Failure(ReportingErrors.InvalidDestination("Key is required."));
+        }
+
+        if (destination.TenantId is not null && StorageValidation.ValidateTenantId(destination.TenantId) is not null)
+        {
+            return Result.Failure(ReportingErrors.InvalidDestination(
+                $"TenantId '{destination.TenantId}' is invalid: use 1 to {StorageValidation.MaxTenantIdLength} characters from A-Z, a-z, 0-9, '.', '_' and '-'."));
         }
 
         return Result.Success();

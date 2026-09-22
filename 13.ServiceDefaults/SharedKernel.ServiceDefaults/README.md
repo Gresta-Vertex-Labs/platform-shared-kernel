@@ -26,7 +26,7 @@ so a service restores only the integrations it actually uses.
 | A cache through `ICacheService` | `SharedKernel.ServiceDefaults.Caching` | `AddCacheReadinessCheck()` |
 | Redis | `SharedKernel.ServiceDefaults.Caching.Redis` | `AddRedisHealthCheck()` |
 | A message bus | `SharedKernel.ServiceDefaults.Messaging` | `AddMessagingReadinessCheck()` |
-| Object storage (S3, MinIO, OBS) | `SharedKernel.ServiceDefaults.Storage` | `AddStorageReadinessCheck(bucket)` |
+| Object storage (S3, MinIO, OBS) | `SharedKernel.ServiceDefaults.Storage` | `AddStorageReadinessCheck(storeName)` |
 | A search index (Meilisearch, Elasticsearch) | `SharedKernel.ServiceDefaults.Search` | `AddSearchReadinessCheck(indexName)` |
 | A vector store | `SharedKernel.ServiceDefaults.AI` | `AddVectorStoreReadinessCheck(collectionName)` |
 | Temporal workflows | `SharedKernel.ServiceDefaults.Workflows.Temporal` | `AddWorkflowReadinessCheck()` |
@@ -78,7 +78,7 @@ app.Run();
 | `HealthCheckNames`, `HealthCheckTags` | The shared names and tags every integration package uses |
 | `HealthCheckRegistrationLogging` | Logs a readiness check's registration (EventId `13002`) — use it in a check of your own |
 | `AddSharedKernelRateLimiting()` | ASP.NET Core rate limiting with conservative defaults |
-| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithWorkflowTelemetry()` | Registers a domain's `ActivitySource` and `Meter` with the host |
+| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithStorageTelemetry()` · `WithWorkflowTelemetry()` | Registers a domain's `ActivitySource` and `Meter` with the host |
 
 Every `WithXTelemetry()` lives here rather than in an integration package because each wires its domain's
 instruments **by name** and references nothing — so none of them adds a dependency.

@@ -1,92 +1,144 @@
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Storage.Abstractions.Errors;
+namespace SharedKernel.Storage;
 
 /// <summary>
-/// Canonical <see cref="Error"/> factory for <see cref="Abstractions.IFileStorage"/> and
-/// <see cref="Abstractions.IBlobUriGenerator"/>. Provider implementations return these values — they
-/// never construct ad-hoc <see cref="Error"/> instances inline.
+/// Builds the <see cref="Error"/> values storage operations return, one factory per <see cref="StorageErrorCodes"/>
+/// code. For provider packages and test doubles; application code matches on <see cref="Error.Code"/> instead.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="Primitives.Errors.ErrorType"/> has no dedicated "Forbidden" or "Failure" member, so
-/// this factory maps onto the closest existing kind: <see cref="AccessDenied"/> uses
-/// <see cref="ErrorType.Unauthorized"/> ("the caller is not authorized to perform the operation"),
-/// and the four provider-rejection factories (<see cref="UploadFailed"/>, <see cref="CopyFailed"/>,
-/// <see cref="BatchDeleteFailed"/>, <see cref="ConnectivityFailure"/>) use
-/// <see cref="ErrorType.Unexpected"/> ("an unexpected or unclassified failure ... external service
-/// fault").
-/// </para>
+/// Providers build every storage error through these factories, never inline, so codes, error types and message
+/// shapes stay identical across providers. Messages name the store and key the caller supplied, never the bucket,
+/// endpoint or provider request id, because they can reach an HTTP response; providers log those details instead.
+/// A tenant view removes its <c>tenants/{id}/</c> prefix from keys quoted in messages.
 /// </remarks>
 public static class StorageErrors
 {
-    private const string NotFoundCode = "storage.not_found";
-    private const string AccessDeniedCode = "storage.access_denied";
-    private const string InvalidBucketCode = "storage.invalid_bucket";
-    private const string InvalidKeyCode = "storage.invalid_key";
-    private const string ExpiryTooLongCode = "storage.expiry_too_long";
-    private const string UploadFailedCode = "storage.upload_failed";
-    private const string CopyFailedCode = "storage.copy_failed";
-    private const string BatchDeleteFailedCode = "storage.batch_delete_failed";
-    private const string ConnectivityFailureCode = "storage.connectivity_failure";
-
-    /// <summary>The requested object or bucket could not be located.</summary>
-    /// <param name="bucket">The bucket that was probed.</param>
-    /// <param name="key">The object key that was probed.</param>
-    public static Error NotFound(string bucket, string key) =>
-        Error.NotFound(NotFoundCode, $"Object '{key}' was not found in bucket '{bucket}'.");
-
-    /// <summary>The caller's credentials do not permit the requested operation.</summary>
-    /// <param name="bucket">The bucket the operation targeted.</param>
-    /// <param name="key">The object key the operation targeted.</param>
-    public static Error AccessDenied(string bucket, string key) =>
-        Error.Unauthorized(AccessDeniedCode, $"Access to object '{key}' in bucket '{bucket}' was denied.");
-
-    /// <summary>The supplied bucket name is empty or malformed.</summary>
-    /// <param name="bucket">The invalid bucket name.</param>
-    public static Error InvalidBucket(string bucket) =>
-        Error.Validation(InvalidBucketCode, $"Bucket name '{bucket}' is invalid.");
-
-    /// <summary>The supplied object key is empty or malformed.</summary>
-    /// <param name="key">The invalid object key.</param>
-    public static Error InvalidKey(string key) =>
-        Error.Validation(InvalidKeyCode, $"Object key '{key}' is invalid.");
-
-    /// <summary>The requested presigned-URL expiry exceeds the provider's maximum.</summary>
-    /// <param name="requested">The requested expiry.</param>
-    /// <param name="max">The provider's maximum permitted expiry.</param>
-    public static Error ExpiryTooLong(TimeSpan requested, TimeSpan max) =>
-        Error.Validation(
-            ExpiryTooLongCode,
-            $"Requested presign expiry '{requested}' exceeds the provider maximum of '{max}'.");
-
-    /// <summary>The provider rejected the write.</summary>
-    /// <param name="bucket">The bucket the upload targeted.</param>
-    /// <param name="key">The object key the upload targeted.</param>
-    public static Error UploadFailed(string bucket, string key) =>
-        Error.Unexpected(UploadFailedCode, $"Failed to upload object '{key}' to bucket '{bucket}'.");
-
-    /// <summary>The provider rejected the server-side copy.</summary>
-    /// <param name="sourceBucket">The bucket the source object is stored in.</param>
-    /// <param name="sourceKey">The source object's key.</param>
-    /// <param name="destinationBucket">The bucket the copy was written to.</param>
-    /// <param name="destinationKey">The destination object's key.</param>
-    public static Error CopyFailed(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey) =>
-        Error.Unexpected(
-            CopyFailedCode,
-            $"Failed to copy object '{sourceKey}' from bucket '{sourceBucket}' to '{destinationKey}' in bucket '{destinationBucket}'.");
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.NotFound"/>: the object, version or upload does not exist.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key.</param>
+    /// <returns>A <see cref="ErrorType.NotFound"/> error.</returns>
+    public static Error NotFound(string store, string key) =>
+        Error.NotFound(StorageErrorCodes.NotFound, $"Object '{key}' was not found in store '{store}'.");
 
     /// <summary>
-    /// The outer <see cref="Abstractions.IFileStorage.DeleteManyAsync"/> call-level batch failed.
-    /// Per-key failures inside the returned <see cref="Models.FileDeleteOutcome"/> list reuse
-    /// <see cref="NotFound"/>/<see cref="AccessDenied"/> instead.
+    /// Builds <see cref="StorageErrorCodes.AccessDenied"/>: the credentials may not perform the operation.
     /// </summary>
-    /// <param name="bucket">The bucket the batch delete targeted.</param>
-    public static Error BatchDeleteFailed(string bucket) =>
-        Error.Unexpected(BatchDeleteFailedCode, $"Batch delete failed for bucket '{bucket}'.");
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key, or <see langword="null"/> for a store-wide operation.</param>
+    /// <returns>A <see cref="ErrorType.Forbidden"/> error.</returns>
+    public static Error AccessDenied(string store, string? key = null) =>
+        Error.Forbidden(
+            StorageErrorCodes.AccessDenied,
+            key is null ? $"Access to store '{store}' was denied." : $"Access to object '{key}' in store '{store}' was denied.");
 
-    /// <summary>The <see cref="Abstractions.IFileStorage.CheckHealthAsync"/> connectivity probe failed.</summary>
-    /// <param name="bucket">The bucket the probe targeted.</param>
-    public static Error ConnectivityFailure(string bucket) =>
-        Error.Unexpected(ConnectivityFailureCode, $"Storage connectivity check failed for bucket '{bucket}'.");
+    /// <summary>Builds <see cref="StorageErrorCodes.InvalidKey"/>: a key or prefix breaks the key rules.</summary>
+    /// <param name="key">The rejected key, or <see langword="null"/>.</param>
+    /// <param name="reason">Which rule it breaks, as a sentence ending with a period, e.g. <c>it is empty.</c></param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error.</returns>
+    public static Error InvalidKey(string? key, string reason) =>
+        Error.Validation(StorageErrorCodes.InvalidKey, $"Object key '{key}' is invalid: {reason}");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.InvalidTenant"/>: the tenant id is not usable as a key prefix.
+    /// </summary>
+    /// <param name="tenantId">The rejected tenant id, or <see langword="null"/>.</param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error whose message states the tenant id rules.</returns>
+    public static Error InvalidTenant(string? tenantId) =>
+        Error.Validation(
+            StorageErrorCodes.InvalidTenant,
+            $"Tenant id '{tenantId}' is invalid: use 1 to {StorageValidation.MaxTenantIdLength} characters from A-Z, a-z, 0-9, '.', '_' and '-', other than '.' and '..'.");
+
+    /// <summary>Builds <see cref="StorageErrorCodes.InvalidRequest"/>: an option of the request is invalid.</summary>
+    /// <param name="message">The whole error message: what is wrong, naming the option.</param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error.</returns>
+    public static Error InvalidRequest(string message) =>
+        Error.Validation(StorageErrorCodes.InvalidRequest, message);
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.ExpiryTooLong"/>: a presign expiry is not positive or exceeds the store's
+    /// maximum.
+    /// </summary>
+    /// <param name="requested">The requested expiry.</param>
+    /// <param name="max">The store's maximum.</param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error naming both values.</returns>
+    public static Error ExpiryTooLong(TimeSpan requested, TimeSpan max) =>
+        Error.Validation(
+            StorageErrorCodes.ExpiryTooLong,
+            $"Presign expiry '{requested}' must be positive and at most '{max}'.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.AlreadyExists"/>: a create-only write found an existing object.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key.</param>
+    /// <returns>A <see cref="ErrorType.Conflict"/> error.</returns>
+    public static Error AlreadyExists(string store, string key) =>
+        Error.Conflict(StorageErrorCodes.AlreadyExists, $"Object '{key}' already exists in store '{store}'.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.PreconditionFailed"/>: an <c>If-Match</c> condition failed.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key.</param>
+    /// <returns>A <see cref="ErrorType.Conflict"/> error.</returns>
+    public static Error PreconditionFailed(string store, string key) =>
+        Error.Conflict(
+            StorageErrorCodes.PreconditionFailed,
+            $"Object '{key}' in store '{store}' no longer matches the expected version.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.ChecksumMismatch"/>: the received bytes do not match the supplied
+    /// checksum.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key.</param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error.</returns>
+    public static Error ChecksumMismatch(string store, string key) =>
+        Error.Validation(
+            StorageErrorCodes.ChecksumMismatch,
+            $"The content uploaded to '{key}' in store '{store}' does not match its checksum.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.InvalidRange"/>: the requested range starts beyond the end of the
+    /// object.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="key">The object key.</param>
+    /// <returns>A <see cref="ErrorType.Validation"/> error.</returns>
+    public static Error InvalidRange(string store, string key) =>
+        Error.Validation(
+            StorageErrorCodes.InvalidRange,
+            $"The requested range of object '{key}' in store '{store}' cannot be satisfied.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.NotSupported"/>: the store's provider does not support a feature.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="feature">The feature, completing "does not support ...", e.g. <c>conditional writes</c>.</param>
+    /// <returns>An <see cref="ErrorType.Unexpected"/> error.</returns>
+    public static Error NotSupported(string store, string feature) =>
+        Error.Unexpected(StorageErrorCodes.NotSupported, $"Store '{store}' does not support {feature}.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.Unavailable"/>: the provider is unreachable, throttling or failing.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="operation">The operation, e.g. <c>upload</c>; the message says it can be retried later.</param>
+    /// <returns>An <see cref="ErrorType.Unexpected"/> error.</returns>
+    public static Error Unavailable(string store, string operation) =>
+        Error.Unexpected(
+            StorageErrorCodes.Unavailable,
+            $"Store '{store}' is unavailable; the {operation} can be retried later.");
+
+    /// <summary>
+    /// Builds <see cref="StorageErrorCodes.ProviderError"/>: the provider rejected the request for another reason.
+    /// </summary>
+    /// <param name="store">The store name.</param>
+    /// <param name="operation">The operation, e.g. <c>copy</c>.</param>
+    /// <returns>An <see cref="ErrorType.Unexpected"/> error.</returns>
+    public static Error ProviderError(string store, string operation) =>
+        Error.Unexpected(StorageErrorCodes.ProviderError, $"Store '{store}' rejected the {operation}.");
 }
