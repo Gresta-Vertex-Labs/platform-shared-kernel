@@ -4,6 +4,7 @@ using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Contracts.Events;
+using SharedKernel.Messaging.Abstractions.Errors;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
@@ -350,7 +351,7 @@ public sealed class CloudEventsEnvelopeTests
     }
 
     [Fact]
-    public async Task PublishAsync_EventWithoutIntegrationEventAttribute_ThrowsInvalidOperationException()
+    public async Task PublishAsync_EventWithoutIntegrationEventAttribute_ReturnsContractViolationFailure()
     {
         // The event type implements IIntegrationEvent (so it compiles) but declares no wire name.
         // The publisher must refuse it rather than fall back to the CLR class name.
@@ -362,10 +363,12 @@ public sealed class CloudEventsEnvelopeTests
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         var evt = new UndeclaredEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
-        var act = async () => await publisher.PublishAsync(evt, CancellationToken.None);
+        // P-560: a missing [IntegrationEvent] attribute is reported as messaging.contract_violation
+        // so a caller never has to catch 04.Contracts' internal exception types.
+        var result = await publisher.PublishAsync(evt, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*[IntegrationEvent*");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(MessagingErrorCodes.ContractViolation);
         (await harness.Published.Any<EventEnvelope<UndeclaredEvent>>()).Should().BeFalse(
             "nothing may reach the transport for an event type with no declared wire name");
 
@@ -373,7 +376,7 @@ public sealed class CloudEventsEnvelopeTests
     }
 
     [Fact]
-    public async Task PublishAsync_EventWithEmptyEventId_ThrowsArgumentException()
+    public async Task PublishAsync_EventWithEmptyEventId_ReturnsInvalidMessageFailure()
     {
         await using var provider = BuildProvider("envelope-empty-id-service");
         var harness = provider.GetRequiredService<ITestHarness>();
@@ -383,9 +386,12 @@ public sealed class CloudEventsEnvelopeTests
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         var evt = OrderPlacedEvent.Create() with { EventId = Guid.Empty };
 
-        var act = async () => await publisher.PublishAsync(evt, CancellationToken.None);
+        // P-560: an unset EventId is a caller mistake the caller can fix, so it comes back as a
+        // messaging.invalid_message Result rather than an ArgumentException.
+        var result = await publisher.PublishAsync(evt, CancellationToken.None);
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(MessagingErrorCodes.InvalidMessage);
 
         await harness.Stop();
     }

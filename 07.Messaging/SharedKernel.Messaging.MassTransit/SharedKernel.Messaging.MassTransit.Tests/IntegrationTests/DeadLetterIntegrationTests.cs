@@ -160,7 +160,7 @@ internal sealed class DlTrackingFaultConsumer : IFaultConsumer<DlPoisonMessage>
         Guid faultId,
         DateTimeOffset faultTimestamp,
         DlPoisonMessage faultedMessage,
-        FaultExceptionInfo[] exceptions,
+        IReadOnlyList<FaultExceptionInfo> exceptions,
         CancellationToken ct)
     {
         LastMessage = faultedMessage;

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Generic host — lets this harness exercise the real IHost.StartAsync() path, where
+      ValidateOnStart runs, rather than only BuildServiceProvider(). A misconfigured
+      ServiceName has to fail here, not at the first publish.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

@@ -165,9 +165,9 @@ public sealed class RoutingTests
         await bus.SendAsync(new OrderCreatedCommand(), CancellationToken.None);
 
         // Assert: resolver output must match what the bus uses
-        var expectedQueueName = resolver.Resolve<OrderCreatedCommand>();
+        var expectedUri = resolver.Resolve<OrderCreatedCommand>();
         capturedUri.Should().NotBeNull();
-        capturedUri!.ToString().Should().Be($"queue:{expectedQueueName}",
+        capturedUri!.ToString().Should().Be(expectedUri.ToString(),
             "SendAsync must use ConventionSendEndpointResolver output when no route is registered");
     }
 
@@ -183,7 +183,9 @@ public sealed class RoutingTests
 
         // Assert: "payment-service" + "-" + SanitizeName("ProcessPaymentCommand")
         // KebabCaseEndpointNameFormatter strips nothing from non-Consumer/Event suffixes
-        result.Should().Be("payment-service-process-payment-command",
+        // P-560: the resolver returns a scheme-qualified Uri, not a bare queue name, so callers
+        // cannot drift from the convention by re-adding the scheme themselves.
+        result.ToString().Should().Be("queue:payment-service-process-payment-command",
             "convention resolver must prefix with ServiceName and convert type name to kebab-case");
     }
 

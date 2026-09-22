@@ -88,6 +88,7 @@
     <Project Path="07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/SharedKernel.Messaging.Abstractions.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/SharedKernel.Messaging.MassTransit.Tests.csproj" />
+    <Project Path="07.Messaging/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/08.Storage/">
     <Project Path="08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.csproj" />

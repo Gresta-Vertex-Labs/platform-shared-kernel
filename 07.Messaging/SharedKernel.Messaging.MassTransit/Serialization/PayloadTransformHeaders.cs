@@ -18,7 +18,7 @@ internal static class PayloadTransformHeaders
     /// Carries the publish-side AAD source string (<c>typeof(T).FullName ?? typeof(T).Name</c>)
     /// so the consume-side <see cref="PayloadTransformMessageDeserializer"/> — which has no
     /// generic <c>T</c> to derive the same string independently, unlike the publish-side
-    /// <see cref="MassTransit.IMessageSerializer.GetMessageBody{T}(MassTransit.SendContext{T})"/> —
+    /// <c>IMessageSerializer.GetMessageBody&lt;T&gt;</c> —
     /// can reproduce byte-identical associated data before attempting decryption.
     /// </summary>
     /// <remarks>
