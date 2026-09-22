@@ -186,6 +186,14 @@ jobs:
         # the LAST project's results). Letting the logger auto-name each trx keeps all of them.
         run: dotnet test Platform.SharedKernel.Unit.slnf --no-build --configuration Release --logger "trx" --results-directory ./TestResults
 
+      # A consumer-verify harness is an Exe, not a test project, so the filter above builds it and
+      # never runs it. This one asserts things only a real generic host can show — that
+      # IHost.StartAsync() fails on a bad ServiceName, that the injectable surface resolves from one
+      # registration chain, that a feature with an unmet prerequisite refuses to build. It needs no
+      # Docker daemon, so it belongs in the required lane rather than the container one.
+      - name: Run 07.Messaging consumer-verify
+        run: dotnet run --project "07.Messaging/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -494,6 +502,7 @@ jobs:
             "samples/OrderApi/OrderApi.csproj" \
             "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" \
             "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" \
+            "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" \
             ; do
             echo "::group::restore $proj"
             dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$SK_VERSION"
@@ -554,6 +563,7 @@ jobs:
           dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+          dotnet build "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       # BillingApi: the persistence stack through HTTP — real Program, Testcontainers PostgreSQL with the production
       # role split, real migrations at startup, Production-mode startup checks (RLS coverage, audit self-check).
@@ -565,6 +575,13 @@ jobs:
       # (Testcontainers); the same scenarios run against real S3 and OBS when the SK_LIVE_* variables are set.
       - name: Run DocumentsApi end-to-end tests (Testcontainers MinIO)
         run: dotnet test "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+
+      # ShippingApi: the messaging stack through HTTP — real Program, Testcontainers RabbitMQ, a publish that
+      # genuinely leaves the process and comes back to a consumer. Uses masstransit/rabbitmq rather than the
+      # official rabbitmq image because WithDelayedDelivery() uses the broker's delayed-message exchange, and
+      # that is a community plugin the official image does not ship.
+      - name: Run ShippingApi end-to-end tests (Testcontainers RabbitMQ)
+        run: dotnet test "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       - name: Smoke-test OrderApi sample
         env:
