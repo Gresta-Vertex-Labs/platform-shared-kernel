@@ -32,10 +32,10 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// <strong>No suppression namespace.</strong> SK0023 fires globally, mirroring SK0703's/SK0014's
 /// "fires globally" convention — <c>IAmazonS3</c> must be a singleton wherever it is registered,
-/// not only inside <c>SharedKernel.Storage.S3</c>/<c>SharedKernel.Storage.Obs</c>. A consuming
-/// microservice that re-registers <c>IAmazonS3</c> directly (bypassing
-/// <c>AddSharedKernelS3Storage()</c>/<c>AddSharedKernelObsStorage()</c>) with the wrong lifetime is
-/// exactly as unsafe as the provider package itself getting it wrong.
+/// not only inside <c>SharedKernel.Storage.S3</c>/<c>SharedKernel.Storage.Obs</c>. Those packages no
+/// longer register <c>IAmazonS3</c> in DI at all — <c>AddSharedKernelStorage().AddS3(...)</c>/<c>.AddObs(...)</c>
+/// keep one client per connection inside a keyed singleton — so today the rule guards a consuming
+/// microservice that registers its own <c>IAmazonS3</c> with the wrong lifetime.
 /// </para>
 /// <para>
 /// <strong>Suppression:</strong> use <c>#pragma warning disable SK0023</c> at the call site only

@@ -4,20 +4,35 @@ using NetArchTest.Rules;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Pre-built NetArchTest predicates that mechanically enforce the <c>08.Storage</c> two-provider
-/// package topology (<c>SharedKernel.Storage.Abstractions</c>, <c>SharedKernel.Storage.S3</c>,
-/// <c>SharedKernel.Storage.Obs</c>) documented in prose by <c>08.Storage/CLAUDE.md</c>. Introduced
-/// with the storage provider split.
+/// Pre-built NetArchTest predicates and assembly-reference checks that mechanically enforce the
+/// <c>08.Storage</c> package topology (<c>SharedKernel.Storage.Abstractions</c>,
+/// <c>SharedKernel.Storage.S3</c>, <c>SharedKernel.Storage.Obs</c>) documented in prose by
+/// <c>08.Storage/CLAUDE.md</c>. Introduced with the storage provider split.
 /// </summary>
 /// <remarks>
 /// <para>
+/// <strong>Topology:</strong> <c>SharedKernel.Storage.Obs</c> is a thin provider over
+/// <c>SharedKernel.Storage.S3</c> — OBS is served through its S3-compatible API, so <c>.Obs</c>
+/// references <c>.S3</c> and adds only OBS configuration and a compatibility profile. The direction is
+/// one-way: <c>.S3</c> must never reference <c>.Obs</c>, and the abstractions reference neither.
+/// This deliberately reverses the original sibling rule ("S3 and Obs never reference each other"),
+/// which forced the OBS package to duplicate the whole S3 implementation.
+/// </para>
+/// <para>
 /// Mirrors <see cref="RedisTopologyRules"/>'s structure and its documented
-/// <c>NotHaveDependencyOn</c> matching contract exactly (namespace <c>StartsWith</c>, no trailing
-/// dot, self-collision awareness) but is scoped to two provider packages instead of Redis's five.
-/// No Mono.Cecil, no <c>ICustomRule</c> — every check is a pure assembly-dependency-graph
-/// predicate using <c>.Should().NotHaveDependencyOn(...)</c>, and no new SK diagnostic ID is
-/// introduced by this class (SK0023 is a separate Roslyn analyzer covering the singleton-lifetime
-/// concern; this class covers package topology only).
+/// <c>NotHaveDependencyOn</c> matching contract (namespace <c>StartsWith</c>, no trailing dot,
+/// self-collision awareness). No Mono.Cecil, no <c>ICustomRule</c>, and no new SK diagnostic ID
+/// (SK0023 is a separate Roslyn analyzer covering the <c>IAmazonS3</c> singleton-lifetime concern;
+/// this class covers package topology only).
+/// </para>
+/// <para>
+/// <strong>Why namespace checks are paired with assembly-reference checks:</strong> the storage
+/// packages put their registration entry points in the shared <c>SharedKernel.Storage</c> namespace
+/// (<c>AddSharedKernelStorage()</c>, <c>AddS3</c>, <c>AddObs</c>, <c>S3StorageBuilder</c>), so a
+/// dependency on, say, <c>AddObs</c> is invisible to a <c>NotHaveDependencyOn("SharedKernel.Storage.Obs")</c>
+/// namespace check. <see cref="AbstractionsForbiddenAssemblyReferences"/> and
+/// <see cref="S3ForbiddenAssemblyReferences"/> close that gap by inspecting the referenced assembly
+/// names; assert both halves of each rule.
 /// </para>
 /// <para>
 /// <strong>Matching note:</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> compares
@@ -26,8 +41,8 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// deliberate bare prefix — it catches every <c>AWSSDK.S3</c> namespace (root namespace
 /// <c>Amazon</c>, covering <c>Amazon.S3</c>/<c>Amazon.Runtime</c>/etc. in one term) — while
 /// <c>"SharedKernel.Storage.S3"</c>/<c>"SharedKernel.Storage.Obs"</c>/<c>"SharedKernel.Configuration"</c>
-/// are exact package-identifying namespaces. None of the four terms is a prefix of
-/// <c>"SharedKernel.Storage.Abstractions"</c> — no self-collision for
+/// are exact package-identifying namespaces. None of the four terms is a prefix of the abstractions'
+/// own <c>SharedKernel.Storage</c> namespace — no self-collision for
 /// <see cref="AbstractionsHasNoThirdPartyDependencies"/>.
 /// </para>
 /// <para>
@@ -48,14 +63,29 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </remarks>
 public static class StorageTopologyRules
 {
+    /// <summary>The Obs provider's assembly and namespace, which <c>SharedKernel.Storage.S3</c> must never reference.</summary>
+    private const string ObsPackage = "SharedKernel.Storage.Obs";
+
     /// <summary>
-    /// The four forbidden dependency terms for <c>SharedKernel.Storage.Abstractions</c>.
+    /// The four forbidden dependency namespaces for <c>SharedKernel.Storage.Abstractions</c>.
     /// </summary>
     private static readonly string[] AbstractionsForbiddenTerms =
     [
         "Amazon",
         "SharedKernel.Storage.S3",
-        "SharedKernel.Storage.Obs",
+        ObsPackage,
+        "SharedKernel.Configuration",
+    ];
+
+    /// <summary>
+    /// The forbidden referenced-assembly name prefixes for <c>SharedKernel.Storage.Abstractions</c>:
+    /// the AWS SDK (<c>AWSSDK.*</c>), both provider packages and the Options-validation package.
+    /// </summary>
+    private static readonly string[] AbstractionsForbiddenAssemblyPrefixes =
+    [
+        "AWSSDK",
+        "SharedKernel.Storage.S3",
+        ObsPackage,
         "SharedKernel.Configuration",
     ];
 
@@ -64,16 +94,18 @@ public static class StorageTopologyRules
     /// <c>SharedKernel.Storage.Abstractions</c> has no dependency on any of four forbidden terms:
     /// <c>"Amazon"</c> (bare prefix — catches every <c>AWSSDK.S3</c> namespace),
     /// <c>"SharedKernel.Storage.S3"</c>, <c>"SharedKernel.Storage.Obs"</c>, or
-    /// <c>"SharedKernel.Configuration"</c> (the Options-validation package only the two provider
+    /// <c>"SharedKernel.Configuration"</c> (the Options-validation package only the provider
     /// packages need).
     /// </summary>
     /// <remarks>
     /// <para>
     /// <strong>Rationale:</strong> <c>08.Storage/CLAUDE.md</c> documents
-    /// <c>SharedKernel.Storage.Abstractions</c> as having "zero third-party NuGet dependencies —
-    /// only a <c>SharedKernel.Primitives</c> project reference." This mechanically confirms the
-    /// abstraction never accidentally couples to the AWS SDK, to either concrete provider package,
-    /// or to the Options-validation package.
+    /// <c>SharedKernel.Storage.Abstractions</c> as having no cloud SDK dependency — only a
+    /// <c>SharedKernel.Primitives</c> project reference plus
+    /// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> for the store registry. This
+    /// mechanically confirms the abstraction never accidentally couples to the AWS SDK, to either
+    /// concrete provider package, or to the Options-validation package. Pair with
+    /// <see cref="AbstractionsForbiddenAssemblyReferences"/>.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong> <c>SharedKernel.Storage.Abstractions</c> references
@@ -81,8 +113,8 @@ public static class StorageTopologyRules
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong> <c>SharedKernel.Storage.Abstractions</c> references only
-    /// <c>SharedKernel.Primitives</c> (<c>Result</c>/<c>Result&lt;T&gt;</c>/<c>Error</c>) and BCL
-    /// types.
+    /// <c>SharedKernel.Primitives</c> (<c>Result</c>/<c>Result&lt;T&gt;</c>/<c>Error</c>), DI
+    /// abstractions and BCL types.
     /// </para>
     /// </remarks>
     /// <param name="abstractionsAssembly">
@@ -112,73 +144,86 @@ public static class StorageTopologyRules
     }
 
     /// <summary>
-    /// Returns a <see cref="ConditionList"/> array of exactly two elements asserting that
-    /// <c>SharedKernel.Storage.S3</c> and <c>SharedKernel.Storage.Obs</c> never reference each
-    /// other.
+    /// Returns the names of every assembly <paramref name="abstractionsAssembly"/> references that it
+    /// must not: <c>AWSSDK.*</c>, <c>SharedKernel.Storage.S3</c>, <c>SharedKernel.Storage.Obs</c> or
+    /// <c>SharedKernel.Configuration</c>. Empty when compliant.
+    /// </summary>
+    /// <remarks>
+    /// The assembly-level half of <see cref="AbstractionsHasNoThirdPartyDependencies"/>: it also
+    /// catches a dependency on a provider type declared in the shared <c>SharedKernel.Storage</c>
+    /// namespace, which no namespace check can distinguish from the abstractions' own types.
+    /// </remarks>
+    /// <param name="abstractionsAssembly">The <c>SharedKernel.Storage.Abstractions</c> assembly under test.</param>
+    /// <returns>The offending referenced assembly names.</returns>
+    public static IReadOnlyList<string> AbstractionsForbiddenAssemblyReferences(Assembly abstractionsAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(abstractionsAssembly);
+
+        return abstractionsAssembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name ?? string.Empty)
+            .Where(name => AbstractionsForbiddenAssemblyPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no type in <c>SharedKernel.Storage.S3</c>
+    /// depends on the <c>SharedKernel.Storage.Obs</c> namespace.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// TWO NAMED <see cref="Assembly"/> parameters (not <c>params Assembly[]</c>) — deliberate,
-    /// mirroring <c>UnitOfWorkSeamRules</c>'s former <c>UnitOfWorkInterfacesRemainDistinct</c>'s
-    /// two-named-parameter convention: the rule's whole purpose is comparing two specific, named
-    /// packages, so positional <c>params</c> would obscure which assembly is expected to be which.
-    /// Unlike <see cref="RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther"/> (which
-    /// needs a lookup table to resolve each of four scanned assemblies' own identifying term
-    /// before excluding it to avoid self-collision), only two packages exist here and neither
-    /// identifying namespace (<c>"SharedKernel.Storage.S3"</c>, <c>"SharedKernel.Storage.Obs"</c>)
-    /// is a prefix of the other or of its own declaring assembly — no lookup table needed.
+    /// <strong>Rationale:</strong> <c>SharedKernel.Storage.Obs</c> is a thin provider built on
+    /// <c>SharedKernel.Storage.S3</c> (see the class remarks). A reference back from <c>.S3</c> to
+    /// <c>.Obs</c> would be a cycle in intent — the generic S3 implementation knowing about one
+    /// S3-compatible vendor — and every S3-only service would then restore the OBS package. Vendor
+    /// differences belong in <c>.Obs</c>'s compatibility profile, passed down to <c>.S3</c>
+    /// through <c>AddS3Compatible</c>. Pair with <see cref="S3ForbiddenAssemblyReferences"/>.
     /// </para>
     /// <para>
-    /// <strong>Rationale:</strong> the root <c>CLAUDE.md</c> documents S3 and Obs as sibling
-    /// <c>.{Provider}</c> packages (not a <c>.{Provider}.Core</c>/<c>.{Provider}.{Role}</c> split)
-    /// — <c>08.Storage/CLAUDE.md</c>'s own Provider role note states explicitly that they "must
-    /// never reference each other," since a future native-OBS-SDK swap inside <c>.Obs</c> must
-    /// never touch <c>.S3</c>'s implementation.
+    /// <strong>Offending pattern:</strong> <c>SharedKernel.Storage.S3</c> reads
+    /// <c>ObsStorageOptions</c> to special-case OBS inside the S3 store.
     /// </para>
     /// <para>
-    /// <strong>Offending pattern:</strong> <c>SharedKernel.Storage.Obs</c> references a type from
-    /// <c>SharedKernel.Storage.S3</c> (e.g., to reuse a constants class instead of independently
-    /// declaring its own).
-    /// </para>
-    /// <para>
-    /// <strong>Compliant pattern:</strong> each provider package independently declares its own
-    /// implementation shape (including its own <c>{Provider}StorageConstants</c>), referencing
-    /// only <c>SharedKernel.Storage.Abstractions</c> and <c>SharedKernel.Configuration</c>.
+    /// <strong>Compliant pattern:</strong> <c>SharedKernel.Storage.Obs</c> calls
+    /// <c>AddS3Compatible(...)</c> with an OBS client and an <c>S3Compatibility</c> profile;
+    /// <c>SharedKernel.Storage.S3</c> never names OBS.
     /// </para>
     /// </remarks>
     /// <param name="s3Assembly">
     /// The <c>SharedKernel.Storage.S3</c> assembly under test — supply via
     /// <c>typeof(SomeTypeInS3).Assembly</c>.
     /// </param>
-    /// <param name="obsAssembly">
-    /// The <c>SharedKernel.Storage.Obs</c> assembly under test — supply via
-    /// <c>typeof(SomeTypeInObs).Assembly</c>.
-    /// </param>
     /// <returns>
-    /// A two-element array: index 0 asserts <c>SharedKernel.Storage.S3</c> has no dependency on
-    /// <c>"SharedKernel.Storage.Obs"</c>; index 1 asserts <c>SharedKernel.Storage.Obs</c> has no
-    /// dependency on <c>"SharedKernel.Storage.S3"</c>. The caller must assert
-    /// <c>.GetResult().IsSuccessful</c> on EACH element.
+    /// A <see cref="ConditionList"/> ready for assertion via
+    /// <c>AssertRule</c> on
+    /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
-    public static ConditionList[] ProviderPackagesNeverReferenceEachOther(
-        Assembly s3Assembly,
-        Assembly obsAssembly)
-    {
-        var s3NeverReferencesObs = Types
+    public static ConditionList S3NeverReferencesObs(Assembly s3Assembly) =>
+        Types
             .InAssembly(s3Assembly)
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .NotHaveDependencyOn("SharedKernel.Storage.Obs");
+            .NotHaveDependencyOn(ObsPackage);
 
-        var obsNeverReferencesS3 = Types
-            .InAssembly(obsAssembly)
-            .That()
-            .HaveNameStartingWith(string.Empty)
-            .Should()
-            .NotHaveDependencyOn("SharedKernel.Storage.S3");
+    /// <summary>
+    /// Returns the names of every assembly <paramref name="s3Assembly"/> references that it must not —
+    /// <c>SharedKernel.Storage.Obs</c>. Empty when compliant.
+    /// </summary>
+    /// <remarks>
+    /// The assembly-level half of <see cref="S3NeverReferencesObs"/>: <c>AddObs</c> lives in the
+    /// shared <c>SharedKernel.Storage</c> namespace, so only the referenced assembly name reveals a
+    /// dependency on it.
+    /// </remarks>
+    /// <param name="s3Assembly">The <c>SharedKernel.Storage.S3</c> assembly under test.</param>
+    /// <returns>The offending referenced assembly names.</returns>
+    public static IReadOnlyList<string> S3ForbiddenAssemblyReferences(Assembly s3Assembly)
+    {
+        ArgumentNullException.ThrowIfNull(s3Assembly);
 
-        return [s3NeverReferencesObs, obsNeverReferencesS3];
+        return s3Assembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name ?? string.Empty)
+            .Where(name => name.StartsWith(ObsPackage, StringComparison.Ordinal))
+            .ToList();
     }
 
     /// <summary>
@@ -203,12 +248,11 @@ public static class StorageTopologyRules
     /// scanned, not by an internal exemption.
     /// </para>
     /// <para>
-    /// <strong>Rationale:</strong> application code must inject
-    /// <c>IFileStorage</c>/<c>IBlobUriGenerator</c> (<c>SharedKernel.Storage.Abstractions</c>) —
-    /// never a concrete <c>Amazon.S3.IAmazonS3</c> type. A direct <c>Amazon.S3.*</c> reference
-    /// anywhere outside the two provider packages defeats the abstraction split and makes a future
-    /// provider swap (or a genuine Huawei-native-SDK migration inside <c>.Obs</c>) touch consumer
-    /// code.
+    /// <strong>Rationale:</strong> application code must inject the named stores
+    /// (<c>IFileStorage</c>, <c>ITenantFileStorage</c>, <c>IFileStorageFactory</c> from
+    /// <c>SharedKernel.Storage.Abstractions</c>) — never a concrete <c>Amazon.S3.IAmazonS3</c> type. A
+    /// direct <c>Amazon.S3.*</c> reference anywhere outside the two provider packages defeats the
+    /// abstraction split and makes a provider swap touch consumer code.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong> a MediatR handler referencing
@@ -216,9 +260,9 @@ public static class StorageTopologyRules
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong> application code references only
-    /// <c>SharedKernel.Storage.Abstractions</c>; <c>SharedKernel.Storage.S3</c>/<c>.Obs</c> are
-    /// wired at the composition root via <c>AddSharedKernelS3Storage()</c>/
-    /// <c>AddSharedKernelObsStorage()</c>.
+    /// <c>SharedKernel.Storage.Abstractions</c>; the providers are wired at the composition root via
+    /// <c>AddSharedKernelStorage().AddS3(configuration)</c> or <c>.AddObs(configuration)</c> followed by
+    /// <c>.AddStore(name)</c>.
     /// </para>
     /// </remarks>
     /// <param name="assembliesUnderTest">

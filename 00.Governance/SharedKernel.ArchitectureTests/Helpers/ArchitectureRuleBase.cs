@@ -82,7 +82,7 @@ public abstract class ArchitectureRuleBase
     /// per package pair — because a single NetArchTest condition cannot express "none of these N
     /// dependencies". Pass such a result straight to this overload:
     /// <code>
-    /// AssertRules(StorageTopologyRules.ProviderPackagesNeverReferenceEachOther(s3, obs));
+    /// AssertRules(SearchTopologyRules.ProviderPackagesNeverReferenceEachOther(meilisearch, elasticSearch));
     /// </code>
     /// Evaluating all of them before throwing matters: fixing one forbidden dependency at a time,
     /// re-running, and discovering the next is far slower than seeing every violation at once.

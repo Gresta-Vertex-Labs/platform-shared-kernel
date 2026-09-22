@@ -19,7 +19,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// ships exactly TWO providers, so this class is implemented against that two-provider reality
 /// rather than the originally-drafted three-provider shape: <see cref="ProviderPackagesNeverReferenceEachOther"/>
 /// takes the TWO-named-Assembly-parameter form (mirroring
-/// <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>/
+/// <c>StorageTopologyRules</c>' former <c>ProviderPackagesNeverReferenceEachOther</c>/
 /// <see cref="SearchTopologyRules.ProviderPackagesNeverReferenceEachOther"/> exactly), not the
 /// three-named-parameter/six-element form the original design called for, and
 /// <see cref="AbstractionsHasNoThirdPartyDependencies"/> carries SIX forbidden terms (dropping the
@@ -139,7 +139,7 @@ public static class IntelligenceTopologyRules
     /// reality after one vector-database provider was retracted. The original design called for a
     /// THREE-named-Assembly-parameter form (Qdrant/Milvus/SemanticKernel) returning a six-element
     /// array; since <c>SharedKernel.AI.Milvus</c> was never built and never will be, this method
-    /// mirrors <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>/
+    /// mirrors <c>StorageTopologyRules</c>' former <c>ProviderPackagesNeverReferenceEachOther</c>/
     /// <see cref="SearchTopologyRules.ProviderPackagesNeverReferenceEachOther"/>'s
     /// two-named-parameter convention instead: the rule's whole purpose is comparing two specific,
     /// named packages, so positional <c>params</c> would obscure which assembly is expected to be
