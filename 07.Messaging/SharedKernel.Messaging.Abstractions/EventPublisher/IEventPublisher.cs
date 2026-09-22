@@ -1,4 +1,5 @@
 using SharedKernel.Contracts.Events;
+using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Messaging.Abstractions.EventPublisher;
 
@@ -34,7 +35,14 @@ public interface IEventPublisher
     /// </typeparam>
     /// <param name="integrationEvent">The integration event to publish.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes when the event has been accepted by the transport.</returns>
+    /// <returns>
+    /// A successful <see cref="Result"/> once the transport has accepted the event. A failure carries
+    /// <see cref="Errors.MessagingErrorCodes.InvalidMessage"/> when <typeparamref name="TEvent"/> is not the
+    /// runtime type of the argument or its <see cref="IIntegrationEvent.EventId"/>/<see cref="IIntegrationEvent.OccurredOn"/>
+    /// is unset, <see cref="Errors.MessagingErrorCodes.ContractViolation"/> when the type has no valid
+    /// <see cref="IntegrationEventAttribute"/>, or a transport code such as
+    /// <see cref="Errors.MessagingErrorCodes.Unavailable"/>.
+    /// </returns>
     /// <remarks>
     /// The MassTransit implementation wraps <typeparamref name="TEvent"/> in <see cref="EventEnvelope{TEvent}"/>
     /// before sending to the transport, constructed exclusively via <see cref="EventEnvelope.Wrap{TEvent}"/> —
@@ -49,14 +57,8 @@ public interface IEventPublisher
     /// from <see cref="PublishContext"/> when set by a registered header propagator or the <c>configure</c>
     /// callback; otherwise omitted.
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// <typeparamref name="TEvent"/> is not the runtime type of <paramref name="integrationEvent"/>, or the event's
-    /// <see cref="IIntegrationEvent.EventId"/> or <see cref="IIntegrationEvent.OccurredOn"/> is unset.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// <typeparamref name="TEvent"/> has no valid <see cref="IntegrationEventAttribute"/>.
-    /// </exception>
-    Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+    /// <exception cref="ArgumentNullException"><paramref name="integrationEvent"/> is <see langword="null"/>.</exception>
+    Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
         where TEvent : class, IIntegrationEvent;
 
     /// <summary>
@@ -73,15 +75,16 @@ public interface IEventPublisher
     /// values win.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes when the event has been accepted by the transport.</returns>
+    /// <returns>
+    /// A successful <see cref="Result"/> once the transport has accepted the event. A failure carries
+    /// <see cref="Errors.MessagingErrorCodes.InvalidMessage"/> when <typeparamref name="TEvent"/> is not the
+    /// runtime type of the argument or its <see cref="IIntegrationEvent.EventId"/>/<see cref="IIntegrationEvent.OccurredOn"/>
+    /// is unset, <see cref="Errors.MessagingErrorCodes.ContractViolation"/> when the type has no valid
+    /// <see cref="IntegrationEventAttribute"/>, or a transport code such as
+    /// <see cref="Errors.MessagingErrorCodes.Unavailable"/>.
+    /// </returns>
     /// <remarks>Envelope fields are populated as described on <see cref="PublishAsync{TEvent}(TEvent, CancellationToken)"/>.</remarks>
-    /// <exception cref="ArgumentException">
-    /// <typeparamref name="TEvent"/> is not the runtime type of <paramref name="integrationEvent"/>, or the event's
-    /// <see cref="IIntegrationEvent.EventId"/> or <see cref="IIntegrationEvent.OccurredOn"/> is unset.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// <typeparamref name="TEvent"/> has no valid <see cref="IntegrationEventAttribute"/>.
-    /// </exception>
-    Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
+    /// <exception cref="ArgumentNullException"><paramref name="integrationEvent"/> is <see langword="null"/>.</exception>
+    Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
         where TEvent : class, IIntegrationEvent;
 }

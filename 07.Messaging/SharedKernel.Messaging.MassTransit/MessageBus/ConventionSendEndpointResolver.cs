@@ -20,9 +20,9 @@ internal sealed class ConventionSendEndpointResolver : ISendEndpointResolver
     }
 
     /// <inheritdoc />
-    public string Resolve<T>() where T : class
+    public Uri Resolve<T>() where T : class
     {
         var typeName = KebabCaseEndpointNameFormatter.Instance.SanitizeName(typeof(T).Name);
-        return $"{_options.Value.ServiceName}-{typeName}";
+        return new Uri($"queue:{_options.Value.ServiceName}-{typeName}");
     }
 }
