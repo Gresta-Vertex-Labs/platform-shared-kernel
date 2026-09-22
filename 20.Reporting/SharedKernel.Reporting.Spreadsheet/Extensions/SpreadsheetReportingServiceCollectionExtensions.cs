@@ -28,9 +28,9 @@ public static class SpreadsheetReportingServiceCollectionExtensions
     /// </param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     /// <remarks>
-    /// The caller's composition root must separately register <c>IFileStorage</c> (and, if
-    /// presigned download URLs are needed, <c>IBlobUriGenerator</c>) from a
-    /// <c>SharedKernel.Storage.*</c> provider — this method does not register either.
+    /// The caller's composition root must separately register SharedKernel storage and the stores
+    /// reports are written to (<c>services.AddSharedKernelStorage().AddS3(configuration).AddStore("reports")</c>,
+    /// which also provides the <c>IFileStorageFactory</c> the exporter resolves stores through) — this method does not.
     /// </remarks>
     public static IServiceCollection AddSpreadsheetReportExporter<TRow>(
         this IServiceCollection services,

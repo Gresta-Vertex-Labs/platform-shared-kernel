@@ -197,21 +197,20 @@ public sealed class CsvReportExporterTests
     [Fact]
     public async Task ExportAsync_DeliversThroughStorageAndPresignsUrlOnlyWhenRequested()
     {
-        var fileStorage = new InMemoryFileStorage();
-        var blobUriGenerator = new InMemoryBlobUriGenerator();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance, blobUriGenerator);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var exporter = new CsvReportExporter<TestRow>(writer, Microsoft.Extensions.Options.Options.Create(new CsvExportOptions()));
         var definition = SingleColumnDefinition();
-        var destination = new ReportDestination { Bucket = "reports", Key = "export.csv" };
+        var destination = new ReportDestination { Store = "reports", Key = "export.csv" };
 
         var result = await exporter.ExportAsync(SingleRow("hello"), definition, destination, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.StoredFile.Bucket.Should().Be("reports");
+        result.Value.StoredFile.Store.Should().Be("reports");
         result.Value.StoredFile.Key.Should().Be("export.csv");
         result.Value.RowCount.Should().Be(1);
         result.Value.DownloadUrl.Should().BeNull();
-        fileStorage.WasUploaded("reports", "export.csv").Should().BeTrue();
+        fileStorage.WasUploaded("export.csv").Should().BeTrue();
 
         var withPresign = destination with { Key = "export2.csv", PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(15) };
         var presignedResult = await exporter.ExportAsync(SingleRow("hello"), definition, withPresign, CancellationToken.None);
@@ -239,8 +238,8 @@ public sealed class CsvReportExporterTests
 
     private static CsvReportExporter<TestRow> CreateExporter(bool includeUtf8Bom)
     {
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var options = Microsoft.Extensions.Options.Options.Create(new CsvExportOptions { IncludeUtf8Bom = includeUtf8Bom });
         return new CsvReportExporter<TestRow>(writer, options);
     }

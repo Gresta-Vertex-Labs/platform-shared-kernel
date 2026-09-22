@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Reporting.Csv.Exporters;
 using SharedKernel.Reporting.Csv.Extensions;
 using SharedKernel.Reporting.Csv.Options;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Storage;
 
 namespace SharedKernel.Reporting.Csv.Tests.Extensions;
@@ -19,8 +19,7 @@ public sealed class CsvReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
-                services.AddSingleton<IBlobUriGenerator>(new InMemoryBlobUriGenerator());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddCsvReportExporter<TestRow>(new ConfigurationBuilder().Build());
             })
             .Build();
@@ -47,7 +46,7 @@ public sealed class CsvReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddCsvReportExporter<TestRow>(configuration);
             })
             .Build();

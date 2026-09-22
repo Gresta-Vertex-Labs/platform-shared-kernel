@@ -59,13 +59,13 @@ public sealed class PdfReportExporterTests
         var definition = ThreeColumnDefinition();
         const int rowCount = 250;
 
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var exporterForOutcome = new PdfReportExporter<TestRow>(writer, Microsoft.Extensions.Options.Options.Create(new PdfExportOptions()));
         var outcome = await exporterForOutcome.ExportAsync(
             GenerateRows(rowCount),
             definition,
-            new ReportDestination { Bucket = "reports", Key = "export.pdf" },
+            new ReportDestination { Store = "reports", Key = "export.pdf" },
             CancellationToken.None);
 
         outcome.IsSuccess.Should().BeTrue();
@@ -88,17 +88,17 @@ public sealed class PdfReportExporterTests
     [Fact]
     public async Task ExportAsync_DeliversThroughStorage()
     {
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var exporter = new PdfReportExporter<TestRow>(writer, Microsoft.Extensions.Options.Options.Create(new PdfExportOptions()));
         var definition = ThreeColumnDefinition() with { Title = "Statement" };
-        var destination = new ReportDestination { Bucket = "reports", Key = "export.pdf" };
+        var destination = new ReportDestination { Store = "reports", Key = "export.pdf" };
 
         var result = await exporter.ExportAsync(GenerateRows(5), definition, destination, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.RowCount.Should().Be(5);
-        fileStorage.WasUploaded("reports", "export.pdf").Should().BeTrue();
+        fileStorage.WasUploaded("export.pdf").Should().BeTrue();
     }
 
     private static ReportDefinition<TestRow> ThreeColumnDefinition() => new()
@@ -122,8 +122,8 @@ public sealed class PdfReportExporterTests
 
     private static PdfReportExporter<TestRow> CreateExporter()
     {
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var options = Microsoft.Extensions.Options.Options.Create(new PdfExportOptions());
         return new PdfReportExporter<TestRow>(writer, options);
     }

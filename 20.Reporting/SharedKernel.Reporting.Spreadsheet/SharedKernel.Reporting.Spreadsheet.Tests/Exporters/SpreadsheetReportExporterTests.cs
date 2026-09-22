@@ -109,11 +109,11 @@ public sealed class SpreadsheetReportExporterTests
     [Fact]
     public async Task ExportAsync_DeliversThroughStorage()
     {
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var exporter = new SpreadsheetReportExporter<TestRow>(writer, Microsoft.Extensions.Options.Options.Create(new SpreadsheetExportOptions()));
         var definition = ThreeColumnDefinition();
-        var destination = new ReportDestination { Bucket = "reports", Key = "export.xlsx" };
+        var destination = new ReportDestination { Store = "reports", Key = "export.xlsx" };
 
         var result = await exporter.ExportAsync(
             Rows(new TestRow(1, "Alice", 1m, DateTime.UnixEpoch)),
@@ -123,7 +123,7 @@ public sealed class SpreadsheetReportExporterTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.RowCount.Should().Be(1);
-        fileStorage.WasUploaded("reports", "export.xlsx").Should().BeTrue();
+        fileStorage.WasUploaded("export.xlsx").Should().BeTrue();
     }
 
     private static ReportDefinition<TestRow> ThreeColumnDefinition() => new()
@@ -147,8 +147,8 @@ public sealed class SpreadsheetReportExporterTests
 
     private static SpreadsheetReportExporter<TestRow> CreateExporter()
     {
-        var fileStorage = new InMemoryFileStorage();
-        var writer = new StorageStreamingWriter(fileStorage, NullLogger<StorageStreamingWriter>.Instance);
+        var fileStorage = new InMemoryFileStorage("reports");
+        var writer = new StorageStreamingWriter(InMemoryStorage.CreateFactory(fileStorage), NullLogger<StorageStreamingWriter>.Instance);
         var options = Microsoft.Extensions.Options.Options.Create(new SpreadsheetExportOptions());
         return new SpreadsheetReportExporter<TestRow>(writer, options);
     }

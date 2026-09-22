@@ -6,7 +6,7 @@
 //      exceptions through a real IHost.StartAsync()
 //   2. The shared StorageStreamingWriter registers exactly once (idempotent TryAddSingleton) even
 //      though all three providers' AddXReportExporter<TRow>() extensions each call it
-//   3. A real CSV export round-trips through IFileStorage end to end
+//   3. A real CSV export round-trips through a named IFileStorage store end to end, with a presigned URL
 //   4. A real spreadsheet export round-trips through IFileStorage and re-opens correctly via ClosedXML
 //   5. A real PDF export round-trips through IFileStorage and re-opens correctly via PdfSharp
 
@@ -24,9 +24,7 @@ using SharedKernel.Reporting.Pdf.Exporters;
 using SharedKernel.Reporting.Pdf.Extensions;
 using SharedKernel.Reporting.Spreadsheet.Exporters;
 using SharedKernel.Reporting.Spreadsheet.Extensions;
-using SharedKernel.Storage.Abstractions.Abstractions;
-using SharedKernel.Storage.Abstractions.Errors;
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 
 await Surface1And2_AllThreeProvidersResolveWithSharedWriter();
 await Surface3_CsvRoundTrip();
@@ -41,8 +39,11 @@ return;
 static async Task Surface1And2_AllThreeProvidersResolveWithSharedWriter()
 {
     var builder = Host.CreateApplicationBuilder();
-    builder.Services.AddSingleton<IFileStorage>(new RecordingFileStorage());
-    builder.Services.AddSingleton<IBlobUriGenerator>(new StubBlobUriGenerator());
+    builder.Services.AddSharedKernelStorage().AddStore(new FileStoreRegistration(
+        RecordingFileStorage.Name,
+        tenantScoped: false,
+        _ => new RecordingFileStorage(),
+        (_, _) => Task.FromResult(Result.Success())));
 
     builder.Services.AddCsvReportExporter<Row>(builder.Configuration);
     builder.Services.AddSpreadsheetReportExporter<Row>(builder.Configuration);
@@ -73,7 +74,7 @@ static async Task Surface1And2_AllThreeProvidersResolveWithSharedWriter()
 static async Task Surface3_CsvRoundTrip()
 {
     var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage, Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
+    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
     var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Csv.Options.CsvExportOptions());
     var exporter = new CsvReportExporter<Row>(writer, options);
 
@@ -89,12 +90,14 @@ static async Task Surface3_CsvRoundTrip()
     var result = await exporter.ExportAsync(
         Rows(new Row(1, "Alice"), new Row(2, "Bob")),
         definition,
-        new ReportDestination { Bucket = "verify", Key = "export.csv" },
+        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.csv", PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(5) },
         CancellationToken.None);
 
     Verify(result.IsSuccess, "CSV ExportAsync succeeds");
     Verify(result.Value.RowCount == 2, "CSV RowCount is 2");
-    var content = System.Text.Encoding.UTF8.GetString(storage.GetContent("verify", "export.csv"));
+    Verify(result.Value.StoredFile.Store == RecordingFileStorage.Name, "CSV StoredFile names the store it was written to");
+    Verify(result.Value.DownloadUrl is { Method: "GET" }, "CSV DownloadUrl is presigned by the same store");
+    var content = System.Text.Encoding.UTF8.GetString(storage.GetContent("export.csv"));
     Verify(content.Contains("Alice", StringComparison.Ordinal) && content.Contains("Bob", StringComparison.Ordinal), "CSV content round-trips correctly");
 
     Console.WriteLine("Surface 3 PASS: real CSV export round-trips through IFileStorage");
@@ -104,7 +107,7 @@ static async Task Surface3_CsvRoundTrip()
 static async Task Surface4_SpreadsheetRoundTrip()
 {
     var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage, Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
+    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
     var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Spreadsheet.Options.SpreadsheetExportOptions());
     var exporter = new SpreadsheetReportExporter<Row>(writer, options);
 
@@ -120,11 +123,11 @@ static async Task Surface4_SpreadsheetRoundTrip()
     var result = await exporter.ExportAsync(
         Rows(new Row(1, "Alice")),
         definition,
-        new ReportDestination { Bucket = "verify", Key = "export.xlsx" },
+        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.xlsx" },
         CancellationToken.None);
 
     Verify(result.IsSuccess, "Spreadsheet ExportAsync succeeds");
-    using var workbook = new XLWorkbook(new MemoryStream(storage.GetContent("verify", "export.xlsx")));
+    using var workbook = new XLWorkbook(new MemoryStream(storage.GetContent("export.xlsx")));
     var worksheet = workbook.Worksheets.First();
     Verify(worksheet.Cell(2, 2).GetString() == "Alice", "spreadsheet content round-trips correctly via ClosedXML re-open");
 
@@ -135,7 +138,7 @@ static async Task Surface4_SpreadsheetRoundTrip()
 static async Task Surface5_PdfRoundTrip()
 {
     var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage, Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
+    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
     var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Pdf.Options.PdfExportOptions());
     var exporter = new PdfReportExporter<Row>(writer, options);
 
@@ -152,11 +155,11 @@ static async Task Surface5_PdfRoundTrip()
     var result = await exporter.ExportAsync(
         Rows(new Row(1, "Alice")),
         definition,
-        new ReportDestination { Bucket = "verify", Key = "export.pdf" },
+        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.pdf" },
         CancellationToken.None);
 
     Verify(result.IsSuccess, "PDF ExportAsync succeeds");
-    using var pdf = PdfReader.Open(new MemoryStream(storage.GetContent("verify", "export.pdf")), PdfDocumentOpenMode.Import);
+    using var pdf = PdfReader.Open(new MemoryStream(storage.GetContent("export.pdf")), PdfDocumentOpenMode.Import);
     Verify(pdf.PageCount >= 1, "PDF re-opens via PdfSharp with at least one page");
 
     Console.WriteLine("Surface 5 PASS: real PDF export round-trips through IFileStorage and re-opens via PdfSharp");
@@ -181,55 +184,82 @@ static void Verify(bool condition, string label)
 
 internal sealed record Row(int Id, string Name);
 
-/// <summary>Minimal in-process <see cref="IFileStorage"/> recording uploaded content — this harness deliberately avoids a 16.Testing reference, mirroring 08.Storage's own consumer-verify precedent.</summary>
+/// <summary>
+/// Minimal in-process storage provider store recording uploaded content, registered as the <c>verify</c>
+/// store through the real storage registry — this harness deliberately avoids a 16.Testing reference,
+/// mirroring 08.Storage's own consumer-verify precedent. Members the exporters never call throw.
+/// </summary>
 internal sealed class RecordingFileStorage : IFileStorage
 {
-    private readonly ConcurrentDictionary<(string Bucket, string Key), byte[]> _store = new();
+    public const string Name = "verify";
 
-    public byte[] GetContent(string bucket, string key) => _store[(bucket, key)];
+    private readonly ConcurrentDictionary<string, byte[]> _store = new();
 
-    public async Task<Result<FileReference>> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken)
+    public string StoreName => Name;
+
+    public string? TenantId => null;
+
+    /// <summary>Builds the registry the exporters resolve their store through.</summary>
+    public IFileStorageFactory CreateFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelStorage().AddStore(new FileStoreRegistration(
+            Name,
+            tenantScoped: false,
+            _ => this,
+            (_, _) => Task.FromResult(Result.Success())));
+        return services.BuildServiceProvider().GetRequiredService<IFileStorageFactory>();
+    }
+
+    public byte[] GetContent(string key) => _store[key];
+
+    public async Task<Result<FileReference>> UploadAsync(string key, Stream content, FileUploadOptions? options = null, CancellationToken cancellationToken = default)
     {
         using var buffer = new MemoryStream();
-        await request.Content.CopyToAsync(buffer, cancellationToken);
-        _store[(request.Bucket, request.Key)] = buffer.ToArray();
-        return Result<FileReference>.Success(new FileReference { Bucket = request.Bucket, Key = request.Key });
+        await content.CopyToAsync(buffer, cancellationToken);
+        _store[key] = buffer.ToArray();
+        return Result<FileReference>.Success(new FileReference { Store = Name, Key = key });
     }
 
-    public Task<Result<FileDownload>> DownloadAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+    public Task<Result<PresignedRequest>> CreateDownloadUrlAsync(string key, PresignedDownloadOptions options, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result<PresignedRequest>.Success(new PresignedRequest
+        {
+            Url = new Uri($"https://verify.test/{Name}/{key}"),
+            Method = "GET",
+            Headers = new Dictionary<string, string>(),
+            ExpiresAt = DateTimeOffset.UtcNow + options.Expiry,
+        }));
 
-    public Task<Result> DeleteAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success());
+    public Task<Result<bool>> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result<bool>.Success(_store.ContainsKey(key)));
 
-    public Task<Result<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        Task.FromResult(Result<bool>.Success(_store.ContainsKey((bucket, key))));
+    public Task<Result<FileDownload>> DownloadAsync(string key, FileDownloadOptions? options = null, CancellationToken cancellationToken = default) => throw Unused();
 
-    public Task<Result<FileMetadata>> GetMetadataAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+    public Task<Result<FileProperties>> GetPropertiesAsync(string key, CancellationToken cancellationToken = default) => throw Unused();
 
-    public Task<Result<FileReference>> CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+    public Task<Result> DeleteAsync(string key, FileDeleteOptions? options = null, CancellationToken cancellationToken = default) => throw Unused();
 
-    public Task<Result<IReadOnlyList<FileDeleteOutcome>>> DeleteManyAsync(string bucket, IReadOnlyCollection<string> keys, CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+    public Task<Result<BatchDeleteResult>> DeleteManyAsync(IEnumerable<string> keys, CancellationToken cancellationToken = default) => throw Unused();
 
-    public async IAsyncEnumerable<FileMetadata> ListAsync(string bucket, string prefix, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await Task.CompletedTask;
-        yield break;
-    }
+    public Task<Result<FileReference>> CopyAsync(string sourceKey, string destinationKey, FileCopyOptions? options = null, CancellationToken cancellationToken = default) => throw Unused();
 
-    public Task<Result> CheckHealthAsync(string bucket, CancellationToken cancellationToken) =>
-        Task.FromResult(Result.Success());
-}
+    public Task<Result<FileReference>> CopyToAsync(string sourceKey, IFileStorage destination, string destinationKey, FileCopyOptions? options = null, CancellationToken cancellationToken = default) => throw Unused();
 
-/// <summary>Minimal in-process <see cref="IBlobUriGenerator"/> stub.</summary>
-internal sealed class StubBlobUriGenerator : IBlobUriGenerator
-{
-    public Result<PresignedUrl> GeneratePresignedUploadUrl(PresignedUrlRequest request) =>
-        Result<PresignedUrl>.Success(new PresignedUrl { Url = new Uri($"https://verify.test/{request.Bucket}/{request.Key}"), ExpiresAt = DateTimeOffset.UtcNow + request.Expiry });
+    public IAsyncEnumerable<FileListItem> ListAsync(string prefix = "", CancellationToken cancellationToken = default) => throw Unused();
 
-    public Result<PresignedUrl> GeneratePresignedDownloadUrl(PresignedUrlRequest request) =>
-        Result<PresignedUrl>.Success(new PresignedUrl { Url = new Uri($"https://verify.test/{request.Bucket}/{request.Key}"), ExpiresAt = DateTimeOffset.UtcNow + request.Expiry });
+    public Task<Result<FileListPage>> ListPageAsync(FileListRequest request, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result<PresignedRequest>> CreateUploadUrlAsync(string key, PresignedUploadOptions options, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result<PresignedPost>> CreateUploadFormAsync(string key, PresignedPostOptions options, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result<MultipartUpload>> StartMultipartUploadAsync(string key, MultipartUploadOptions? options = null, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result<PresignedRequest>> CreateUploadPartUrlAsync(MultipartUpload upload, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result<FileReference>> CompleteMultipartUploadAsync(MultipartUpload upload, IReadOnlyCollection<UploadedPart> parts, WriteCondition? condition = null, CancellationToken cancellationToken = default) => throw Unused();
+
+    public Task<Result> AbortMultipartUploadAsync(MultipartUpload upload, CancellationToken cancellationToken = default) => throw Unused();
+
+    private static NotSupportedException Unused() => new("consumer-verify's RecordingFileStorage only records uploads and presigns downloads.");
 }

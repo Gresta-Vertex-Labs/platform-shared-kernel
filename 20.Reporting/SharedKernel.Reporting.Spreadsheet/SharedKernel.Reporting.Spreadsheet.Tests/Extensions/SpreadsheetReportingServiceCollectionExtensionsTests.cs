@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Reporting.Spreadsheet.Exporters;
 using SharedKernel.Reporting.Spreadsheet.Extensions;
 using SharedKernel.Reporting.Spreadsheet.Options;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Storage;
 
 namespace SharedKernel.Reporting.Spreadsheet.Tests.Extensions;
@@ -19,8 +19,7 @@ public sealed class SpreadsheetReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
-                services.AddSingleton<IBlobUriGenerator>(new InMemoryBlobUriGenerator());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddSpreadsheetReportExporter<TestRow>(new ConfigurationBuilder().Build());
             })
             .Build();
@@ -47,7 +46,7 @@ public sealed class SpreadsheetReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddSpreadsheetReportExporter<TestRow>(configuration);
             })
             .Build();
@@ -74,7 +73,7 @@ public sealed class SpreadsheetReportingServiceCollectionExtensionsTests
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices((_, services) =>
             {
-                services.AddSingleton<IFileStorage>(new InMemoryFileStorage());
+                services.AddSharedKernelStorage().AddInMemoryStore("reports");
                 services.AddSpreadsheetReportExporter<TestRow>(configuration);
             })
             .Build();

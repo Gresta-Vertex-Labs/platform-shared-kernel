@@ -75,7 +75,7 @@ public sealed class SpreadsheetReportExporter<TRow>(StorageStreamingWriter write
         if (result.IsSuccess)
         {
             activity?.SetTag(ReportingTagKeys.RowCount, result.Value.RowCount);
-            activity?.SetTag(ReportingTagKeys.Bucket, destination.Bucket);
+            activity?.SetTag(ReportingTagKeys.Store, destination.Store);
         }
 
         return result;

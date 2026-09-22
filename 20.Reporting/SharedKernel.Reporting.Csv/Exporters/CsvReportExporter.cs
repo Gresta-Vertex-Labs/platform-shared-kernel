@@ -65,7 +65,7 @@ public sealed class CsvReportExporter<TRow>(StorageStreamingWriter writer, IOpti
         if (result.IsSuccess)
         {
             activity?.SetTag(ReportingTagKeys.RowCount, result.Value.RowCount);
-            activity?.SetTag(ReportingTagKeys.Bucket, destination.Bucket);
+            activity?.SetTag(ReportingTagKeys.Store, destination.Store);
         }
 
         return result;
