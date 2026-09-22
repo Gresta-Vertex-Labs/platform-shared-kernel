@@ -11,25 +11,18 @@ using StackExchange.Redis;
 namespace SharedKernel.Idempotency.Redis.MessageStore;
 
 /// <summary>
-/// Atomic, tenant-scoped Redis implementation of <see cref="IIdempotencyStore"/> for
-/// consumer-side message deduplication.
+/// Redis-backed <see cref="IIdempotencyStore"/> using an atomic Lua reservation.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A separate physical class from <see cref="KeyStore.RedisRequestIdempotencyStore"/> —
-/// <see cref="IIdempotencyStore"/> is a distinct, simpler two-method contract with no fingerprint or
-/// response-replay concept, so there is no reason to fold it into the request-idempotency store
-/// class. It keeps the original <c>SET key &lt;sentinel&gt; NX PX</c> reservation shape unchanged.
+/// Keys are tenant-scoped by <see cref="RedisIdempotencyKeyBuilder"/>, so two tenants cannot
+/// collide on the same message id.
 /// </para>
 /// <para>
-/// Keyed under a distinct <c>msg</c> namespace segment (<see cref="Internal.RedisIdempotencyKeyBuilder"/>)
-/// so a message id can never collide with an unrelated idempotency key string. The in-flight TTL
-/// comes from <see cref="RedisIdempotencyOptions.InFlightTtl"/>; the full-retention window comes
-/// from <see cref="IdempotencyOptions.ExpiryWindow"/> (<c>07.Messaging.Abstractions</c>'s existing
-/// advisory hint) rather than duplicating a second retention knob (D-08).
-/// </para>
-/// <para>
-/// Registered <c>Scoped</c> — see <see cref="KeyStore.RedisRequestIdempotencyStore"/>'s remarks for why.
+/// Rewritten by P-560 onto the reserve/complete/release contract. The previous version exposed
+/// <c>HasProcessedAsync</c>, which was documented as a query but implemented as a mutating
+/// <c>SET NX</c> — it could not distinguish "another delivery is running" from "already consumed",
+/// so a redelivery following a <em>failed</em> attempt was reported as a duplicate and dropped.
 /// </para>
 /// </remarks>
 public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
@@ -40,7 +33,12 @@ public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
     private readonly IOptions<IdempotencyOptions> _messagingOptions;
     private readonly ILogger<RedisIdempotencyMessageStore> _logger;
 
-    /// <summary>Initializes a new instance of <see cref="RedisIdempotencyMessageStore"/>.</summary>
+    /// <summary>Creates the store.</summary>
+    /// <param name="connectionMultiplexer">The shared Redis connection.</param>
+    /// <param name="tenantContextAccessor">Supplies the ambient tenant for key scoping.</param>
+    /// <param name="redisOptions">Redis-specific options, including the in-flight lease.</param>
+    /// <param name="messagingOptions">Messaging options supplying the completed-record retention window.</param>
+    /// <param name="logger">Logger for fail-open diagnostics.</param>
     public RedisIdempotencyMessageStore(
         IConnectionMultiplexer connectionMultiplexer,
         ITenantContextAccessor tenantContextAccessor,
@@ -62,43 +60,91 @@ public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> HasProcessedAsync(Guid messageId, CancellationToken ct)
+    public async Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
     {
         var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
         var options = _redisOptions.Value;
+        var token = Guid.NewGuid().ToString("N");
 
         try
         {
             var db = _connectionMultiplexer.GetDatabase();
-            var reserved = await db.StringSetAsync(
-                    redisKey,
-                    RedisIdempotencyResponseSentinel.Value,
-                    options.InFlightTtl,
-                    When.NotExists)
+            var outcome = (string?)await db.ScriptEvaluateAsync(
+                    RedisIdempotencyMessageScripts.TryBegin,
+                    [redisKey],
+                    [
+                        token,
+                        (long)options.InFlightTtl.TotalMilliseconds,
+                        RedisIdempotencyMessageScripts.CompletedValue,
+                    ])
                 .ConfigureAwait(false);
 
-            return !reserved;
+            return outcome switch
+            {
+                "started" => IdempotencyReservation.Started(token),
+                "completed" => IdempotencyReservation.AlreadyProcessed(),
+                _ => IdempotencyReservation.InProgress(),
+            };
         }
         catch (Exception ex) when (RedisStoreUnavailableClassifier.IsStoreUnavailable(ex))
         {
-            return HandleStoreUnavailable(ex, nameof(HasProcessedAsync), fallback: false, options);
+            // Fail-open means "let the consumer run", which is a Started reservation. The token is
+            // still issued so Complete/Release stay symmetric; those calls will simply find no key.
+            return HandleStoreUnavailable(
+                ex, nameof(TryBeginAsync), IdempotencyReservation.Started(token), options);
         }
     }
 
     /// <inheritdoc />
-    public async Task MarkProcessedAsync(Guid messageId, CancellationToken ct)
+    public async Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct)
     {
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+
         var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
         var options = _redisOptions.Value;
 
         try
         {
             var db = _connectionMultiplexer.GetDatabase();
-            await db.KeyExpireAsync(redisKey, _messagingOptions.Value.ExpiryWindow).ConfigureAwait(false);
+            await db.ScriptEvaluateAsync(
+                    RedisIdempotencyMessageScripts.Complete,
+                    [redisKey],
+                    [
+                        reservationToken,
+                        (long)_messagingOptions.Value.ExpiryWindow.TotalMilliseconds,
+                        RedisIdempotencyMessageScripts.CompletedValue,
+                    ])
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (RedisStoreUnavailableClassifier.IsStoreUnavailable(ex))
         {
-            HandleStoreUnavailable(ex, nameof(MarkProcessedAsync), fallback: false, options);
+            HandleStoreUnavailable(ex, nameof(CompleteAsync), fallback: false, options);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+
+        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
+        var options = _redisOptions.Value;
+
+        try
+        {
+            var db = _connectionMultiplexer.GetDatabase();
+            await db.ScriptEvaluateAsync(
+                    RedisIdempotencyMessageScripts.Release,
+                    [redisKey],
+                    [reservationToken])
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (RedisStoreUnavailableClassifier.IsStoreUnavailable(ex))
+        {
+            // Swallowing here is safe in a way it is not for TryBegin: an unreleased reservation
+            // simply expires with its lease, so the message is retried a little later rather than
+            // lost. Rethrowing would replace the consumer's real failure with this one.
+            HandleStoreUnavailable(ex, nameof(ReleaseAsync), fallback: false, options);
         }
     }
 
