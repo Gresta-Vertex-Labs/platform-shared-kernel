@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 
 namespace SharedKernel.ServiceDefaults.HealthChecks;
 
 /// <summary>
-/// Wraps <see cref="IFileStorage.CheckHealthAsync"/> (<c>08.Storage</c>) in an <see cref="IHealthCheck"/>.
+/// Wraps <see cref="IFileStorageHealthProbe.ProbeAsync"/> (<c>08.Storage</c>) for one named store in an
+/// <see cref="IHealthCheck"/>.
 /// </summary>
 /// <remarks>
 /// Reports <see cref="HealthStatus.Healthy"/> when the probe's <c>Result.IsSuccess</c> is
@@ -16,16 +17,17 @@ namespace SharedKernel.ServiceDefaults.HealthChecks;
 /// rationale for <see cref="HealthStatus.Degraded"/>). The failing error's message is surfaced via
 /// <see cref="HealthCheckResult.Description"/>. <c>08.Storage</c> ships only the probe primitive —
 /// this adapter is the <c>13.ServiceDefaults</c>-owned <see cref="IHealthCheck"/> wiring per the
-/// platform's "OTel/health check/probe wiring lives in 13.ServiceDefaults" rule.
+/// platform's "OTel/health check/probe wiring lives in 13.ServiceDefaults" rule. A store name that is
+/// not registered makes the probe throw, which the health check service reports as unhealthy.
 /// </remarks>
-internal sealed class StorageReadinessHealthCheck(IFileStorage fileStorage, string bucket) : IHealthCheck
+internal sealed class StorageReadinessHealthCheck(IFileStorageHealthProbe probe, string storeName) : IHealthCheck
 {
     /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var result = await fileStorage.CheckHealthAsync(bucket, cancellationToken).ConfigureAwait(false);
+        var result = await probe.ProbeAsync(storeName, cancellationToken).ConfigureAwait(false);
 
         return result.IsSuccess
             ? HealthCheckResult.Healthy("Storage reachable.")

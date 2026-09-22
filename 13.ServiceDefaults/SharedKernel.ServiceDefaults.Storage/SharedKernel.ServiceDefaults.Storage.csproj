@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Object-storage readiness health check for Platform.SharedKernel microservices: AddStorageReadinessCheck(bucket), probing SharedKernel.Storage.Abstractions IFileStorage. Registered on /health/ready only. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <Description>Object-storage readiness health check for Platform.SharedKernel microservices: AddStorageReadinessCheck(storeName), probing a named store through SharedKernel.Storage.Abstractions IFileStorageHealthProbe. Registered on /health/ready only. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;storage</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
