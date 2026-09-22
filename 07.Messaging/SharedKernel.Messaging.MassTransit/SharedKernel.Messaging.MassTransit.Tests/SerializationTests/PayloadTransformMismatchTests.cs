@@ -39,7 +39,7 @@ public sealed class PayloadTransformMismatchTests
         EncryptedPayload encrypted = encryptionService.Encrypt(compressed, []);
         byte[] wireBytes = encrypted.ToBytes();
 
-        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
+        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer();
 
         // Consumer has the transform wired but disabled — mirrors "consumer never enabled it".
         var deserializer = new PayloadTransformMessageDeserializer(
@@ -62,7 +62,7 @@ public sealed class PayloadTransformMismatchTests
         // Arrange: plain, untransformed JSON bytes as if the publisher never enabled the transform.
         byte[] plainBytes = "{\"hello\":\"world\"}"u8.ToArray();
 
-        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
+        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer();
         var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         // Consumer expects the payload to have been encrypted.
@@ -89,7 +89,7 @@ public sealed class PayloadTransformMismatchTests
     {
         byte[] plainBytes = "{\"hello\":\"world\"}"u8.ToArray();
 
-        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();
+        var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer();
         var compressor = new BrotliPayloadCompressor(Microsoft.Extensions.Options.Options.Create(new CompressionOptions()));
 
         var deserializer = new PayloadTransformMessageDeserializer(

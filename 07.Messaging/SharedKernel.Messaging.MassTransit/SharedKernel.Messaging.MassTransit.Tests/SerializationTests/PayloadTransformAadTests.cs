@@ -32,10 +32,10 @@ public sealed class PayloadTransformAadTests
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var serializer = new PayloadTransformMessageSerializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateSerializer(),
             options, compressor: null, encryptionService);
         var deserializer = new PayloadTransformMessageDeserializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer(),
             options, compressor: null, encryptionService);
 
         var headers = new MtDictionarySendHeaders();
@@ -67,10 +67,10 @@ public sealed class PayloadTransformAadTests
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var serializer = new PayloadTransformMessageSerializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateSerializer(),
             options, compressor: null, encryptionService);
         var deserializer = new PayloadTransformMessageDeserializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer(),
             options, compressor: null, encryptionService);
 
         var headers = new MtDictionarySendHeaders();
@@ -100,7 +100,7 @@ public sealed class PayloadTransformAadTests
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
         var serializer = new PayloadTransformMessageSerializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateSerializer(),
             options, compressor: null, encryptionService);
 
         var headers = new MtDictionarySendHeaders();
@@ -127,7 +127,7 @@ public sealed class PayloadTransformAadTests
         var encryptionService = new SynchronousAesGcmEncryptionService(new FakeEncryptionKeyProvider());
         var options = new PayloadTransformOptions { EnableEncryption = true };
 
-        var innerSerializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateSerializer();
+        var innerSerializer = new MtSystemTextJsonMessageSerializerFactory().CreateSerializer();
         var sendContext = Substitute.For<SendContext<PayloadTransformAadTestMessage>>();
         sendContext.Message.Returns(new PayloadTransformAadTestMessage("no header", 3));
         sendContext.SupportedMessageTypes.Returns([MessageUrn.ForTypeString<PayloadTransformAadTestMessage>()]);
@@ -136,7 +136,7 @@ public sealed class PayloadTransformAadTests
         byte[] wireBytes = encryptionService.Encrypt(envelopeBytes, []).ToBytes();
 
         var deserializer = new PayloadTransformMessageDeserializer(
-            new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer(),
+            new MtSystemTextJsonMessageSerializerFactory().CreateDeserializer(),
             options, compressor: null, encryptionService);
 
         var act = () => deserializer.Deserialize(
