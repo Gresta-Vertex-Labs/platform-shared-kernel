@@ -59,10 +59,10 @@ internal static class MessagingDiagnostics
     /// <see cref="Consumers.ConsumerBase{TMessage}.Consume"/> to start the
     /// <c>"Consumer.Consume"</c> activity, by
     /// <see cref="EventPublisher.MassTransitEventPublisher"/> to start the
-    /// <c>"EventPublisher.Publish"</c> activity, and — as of P-348/WO-054 — by
-    /// <c>MassTransitMessageBus.SendAsync</c>, <c>.RequestAsync</c>, and
-    /// <c>.ExecuteRoutingSlipAsync</c> to start their own child activities, closing the
-    /// dispatch-surface coverage gap those three verbs previously had.
+    /// <c>"EventPublisher.Publish"</c> activity, and by <c>MassTransitMessageBus.PublishAsync</c>
+    /// and <c>.SendAsync</c> for <c>"MessageBus.Publish"</c> and <c>"MessageBus.Send"</c>.
+    /// Every dispatch verb is covered: P-348 gave <c>SendAsync</c> its activity, and P-560 gave
+    /// <c>PublishAsync</c> one — the platform's most-used verb was the last with none.
     /// </summary>
     public static readonly ActivitySource ActivitySource = new(SourceName, SourceVersion);
 
@@ -93,6 +93,18 @@ internal static class MessagingDiagnostics
     /// <c>ConsumeAsync</c> returns without throwing — a faulted consume attempt is
     /// never counted here (see <see cref="RetryCounter"/> and <see cref="FaultCounter"/>).
     /// </summary>
+    /// <summary>
+    /// Number of commands successfully sent point-to-point via <c>IMessageBus.SendAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// Added by P-560. Until then only publishes were counted, so a service whose traffic was
+    /// predominantly <c>SendAsync</c> appeared idle on the messaging dashboards.
+    /// </remarks>
+    public static readonly Counter<long> SendCounter = Meter.CreateCounter<long>(
+        name: "messaging.send.count",
+        unit: "{message}",
+        description: "Number of commands successfully sent to a point-to-point endpoint.");
+
     public static readonly Counter<long> ConsumeCounter = Meter.CreateCounter<long>(
         name: "messaging.consume.count",
         unit: "{message}",
@@ -113,11 +125,11 @@ internal static class MessagingDiagnostics
     /// <summary>
     /// Counts retry-filter re-deliveries observed by
     /// <see cref="Consumers.ConsumerBase{TMessage}.Consume"/>, tagged
-    /// <c>messaging.message_type</c>. MassTransit 9.1.2 ships <c>IRetryObserver</c> /
+    /// <c>messaging.message_type</c>. MassTransit ships <c>IRetryObserver</c> /
     /// <c>IRetryObserverConnector</c> in its public API, but no reachable configurator
     /// surface (<c>IBusFactoryConfigurator</c>, <c>IReceiveEndpointConfigurator</c>,
     /// <c>IBus</c>, <c>IBusControl</c>) implements <c>IRetryObserverConnector</c> in the
-    /// shipped 9.1.2 build — confirmed by reflection over the shipped assembly, not
+    /// shipped build — confirmed by reflection over the shipped assembly, not
     /// documented in its XML doc comments — so <c>ConnectRetryObserver</c> is unreachable
     /// from <c>MessagingBusBuilder</c>'s configuration-time API. The verified, working
     /// alternative is <c>ConsumeContext.GetRetryAttempt()</c>
