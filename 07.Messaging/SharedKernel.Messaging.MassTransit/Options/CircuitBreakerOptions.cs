@@ -1,8 +1,14 @@
-namespace SharedKernel.Messaging.Abstractions.Faults;
+namespace SharedKernel.Messaging.MassTransit.Options;
 
 /// <summary>
 /// Configuration options for the MassTransit circuit breaker middleware.
 /// </summary>
+/// <remarks>
+/// Lives in the MassTransit package, not the transport-agnostic Abstractions (moved by P-560).
+/// Every knob here maps one-to-one onto a MassTransit middleware parameter, so it is a transport
+/// concept wearing a neutral name — the Abstractions package bans transport NuGet references
+/// precisely so it does not accumulate transport *concepts* either.
+/// </remarks>
 /// <remarks>
 /// Consumed by <c>MessagingBusBuilder.WithCircuitBreaker()</c> in the MassTransit package.
 /// The circuit breaker is a global policy — not per-consumer. When both

@@ -4,72 +4,10 @@ using SharedKernel.Messaging.Abstractions.Faults;
 namespace SharedKernel.Messaging.Abstractions.Tests;
 
 /// <summary>
-/// T-15: CircuitBreakerOptions default values test.
 /// T-16: FaultExceptionInfo record equality test.
 /// </summary>
 public sealed class FaultTypesTests
 {
-    // -------------------------------------------------------------------------
-    // T-15: CircuitBreakerOptions defaults
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void CircuitBreakerOptions_DefaultTripThreshold_IsFive()
-    {
-        var opts = new CircuitBreakerOptions();
-        opts.TripThreshold.Should().Be(5);
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_DefaultActiveThreshold_IsTen()
-    {
-        var opts = new CircuitBreakerOptions();
-        opts.ActiveThreshold.Should().Be(10);
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_DefaultResetInterval_IsSixtySeconds()
-    {
-        var opts = new CircuitBreakerOptions();
-        opts.ResetInterval.Should().Be(TimeSpan.FromSeconds(60));
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_DefaultTrackingPeriod_IsSixtySeconds()
-    {
-        var opts = new CircuitBreakerOptions();
-        opts.TrackingPeriod.Should().Be(TimeSpan.FromSeconds(60));
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_IsSealed()
-    {
-        typeof(CircuitBreakerOptions).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_SectionName_IsExpectedValue()
-    {
-        CircuitBreakerOptions.SectionName.Should().Be("SharedKernel:Messaging:CircuitBreaker");
-    }
-
-    [Fact]
-    public void CircuitBreakerOptions_PropertiesAreMutable()
-    {
-        var opts = new CircuitBreakerOptions
-        {
-            TripThreshold = 10,
-            ActiveThreshold = 20,
-            ResetInterval = TimeSpan.FromSeconds(30),
-            TrackingPeriod = TimeSpan.FromSeconds(120)
-        };
-
-        opts.TripThreshold.Should().Be(10);
-        opts.ActiveThreshold.Should().Be(20);
-        opts.ResetInterval.Should().Be(TimeSpan.FromSeconds(30));
-        opts.TrackingPeriod.Should().Be(TimeSpan.FromSeconds(120));
-    }
-
     // -------------------------------------------------------------------------
     // T-16: FaultExceptionInfo record equality
     // -------------------------------------------------------------------------

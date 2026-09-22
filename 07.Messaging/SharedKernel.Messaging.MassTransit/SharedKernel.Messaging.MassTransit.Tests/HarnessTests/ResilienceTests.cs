@@ -224,9 +224,9 @@ internal static class FaultTracker
     public static bool WasCalled { get; private set; }
     public static FaultableMessage? ReceivedMessage { get; private set; }
     public static Guid ReceivedFaultId { get; private set; }
-    public static FaultExceptionInfo[]? ReceivedExceptions { get; private set; }
+    public static IReadOnlyList<FaultExceptionInfo>? ReceivedExceptions { get; private set; }
 
-    public static void Record(Guid faultId, FaultableMessage message, FaultExceptionInfo[] exceptions)
+    public static void Record(Guid faultId, FaultableMessage message, IReadOnlyList<FaultExceptionInfo> exceptions)
     {
         WasCalled = true;
         ReceivedFaultId = faultId;
@@ -277,7 +277,7 @@ internal sealed class TrackingFaultConsumer : IFaultConsumer<FaultableMessage>
         Guid faultId,
         DateTimeOffset faultTimestamp,
         FaultableMessage faultedMessage,
-        FaultExceptionInfo[] exceptions,
+        IReadOnlyList<FaultExceptionInfo> exceptions,
         CancellationToken ct)
     {
         FaultTracker.Record(faultId, faultedMessage, exceptions);

@@ -53,7 +53,7 @@ internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : I
 
         // P-348/WO-054: incremented unconditionally for every delivered fault, regardless of
         // whether the registered IFaultConsumer<TMessage> below then succeeds or throws.
-        MessagingDiagnostics.FaultCounter.Add(1, new KeyValuePair<string, object?>("messaging.message_type", messageTypeName));
+        MessagingDiagnostics.FaultCounter.Add(1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
 
         // Propagate CorrelationId from headers to Activity when no active span.
         var correlationId = context.CorrelationId;
@@ -68,7 +68,7 @@ internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : I
 
         using var scope = _logger.BeginScope(scopeState);
 
-        // Map MassTransit ExceptionInfo[] to FaultExceptionInfo[].
+        // Map MassTransit ExceptionInfo[] to the read-only FaultExceptionInfo list the contract takes.
         var exceptions = fault.Exceptions
             .Select(e => new FaultExceptionInfo(
                 ExceptionType: e.ExceptionType ?? string.Empty,
