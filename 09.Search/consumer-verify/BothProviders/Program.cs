@@ -3,8 +3,8 @@
 // SAME TDocument is a hard violation, because the neutral interfaces (ISearchIndex<TDocument>,
 // ISearchIndexProvisioner, ISearchProviderDescriptor) are unkeyed — the LAST registration silently wins
 // for every one of them. Neither provider's AddSharedKernelXxxSearch() offers a keyed-registration
-// overload (unlike 08.Storage's IFileStorage/IBlobUriGenerator, which a consumer disambiguates via
-// AddKeyedSingleton — see SharedKernel.Storage.Obs/README.md's worked example). There is currently no
+// overload (unlike 08.Storage, whose stores are named: each AddStore(name) registers a keyed IFileStorage, so S3
+// and OBS stores coexist as [FromKeyedServices("name")] IFileStorage). There is currently no
 // supported way to register two search providers against the same TDocument side by side; the
 // documented, supported pattern is one TDocument (and one index) per provider.
 //
