@@ -37,7 +37,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// resolved (<c>Resolve()</c> returns <see langword="null"/> — an unloaded assembly dependency),
 /// that constraint is treated as non-matching and the walk continues. This mirrors the
 /// fail-open policy already established by
-/// <see cref="SagaStateMustExtendSagaStateBasePredicate"/>.
+/// the messaging architecture rules.
 /// </para>
 /// <para>
 /// Returns <see langword="false"/> (rule violated) on the first structural match found. The

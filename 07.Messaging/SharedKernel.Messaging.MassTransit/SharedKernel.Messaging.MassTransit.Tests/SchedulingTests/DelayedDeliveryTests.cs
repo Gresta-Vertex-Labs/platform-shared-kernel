@@ -14,7 +14,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.SchedulingTests;
 /// SC-08: Schedule a message via IMessageScheduler.ScheduleAsync; assert consumed after deliverAt.
 /// SC-09: Schedule a message then CancelAsync before deliverAt; assert never consumed.
 /// </summary>
-public sealed class InMemorySchedulingTests
+public sealed class DelayedDeliveryTests
 {
     // -------------------------------------------------------------------------
     // SC-08: Message is delivered after deliverAt elapses
@@ -149,70 +149,35 @@ public sealed class InMemorySchedulingTests
     }
 
     // -------------------------------------------------------------------------
-    // SC-06 smoke: WithInMemoryScheduler builds without error
+    // SC-06 smoke: WithDelayedDelivery builds without error
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void WithInMemoryScheduler_BuildsSuccessfully()
+    public void WithDelayedDelivery_BuildsSuccessfully()
     {
         var services = new ServiceCollection();
         var act = () => services
             .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
             .UseRabbitMq("rabbitmq://localhost")
-            .WithInMemoryScheduler()
+            .WithDelayedDelivery()
             .Build();
 
-        act.Should().NotThrow("WithInMemoryScheduler should build without error");
+        act.Should().NotThrow("WithDelayedDelivery should build without error");
     }
 
     // -------------------------------------------------------------------------
-    // SC-07 smoke: WithQuartzScheduler throws when ConnectionString is null
+    // IMessageScheduler DI registration test — WithDelayedDelivery
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void WithQuartzScheduler_WithNoConnectionString_ThrowsAtBuild()
-    {
-        var services = new ServiceCollection();
-        var act = () => services
-            .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
-            .UseRabbitMq("rabbitmq://localhost")
-            .WithQuartzScheduler()
-            .Build();
-
-        act.Should().Throw<InvalidOperationException>(
-            "Build() must throw when QuartzSchedulerOptions.ConnectionString is null or empty");
-    }
-
-    // -------------------------------------------------------------------------
-    // SC-07 smoke: WithQuartzScheduler with valid ConnectionString builds
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void WithQuartzScheduler_WithConnectionString_BuildsSuccessfully()
-    {
-        var services = new ServiceCollection();
-        var act = () => services
-            .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
-            .UseRabbitMq("rabbitmq://localhost")
-            .WithQuartzScheduler(o => o.ConnectionString = "Host=localhost;Database=quartz")
-            .Build();
-
-        act.Should().NotThrow("WithQuartzScheduler with a valid ConnectionString should build without error");
-    }
-
-    // -------------------------------------------------------------------------
-    // IMessageScheduler DI registration test — WithInMemoryScheduler
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task WithInMemoryScheduler_IMessageSchedulerRegisteredAsScoped()
+    public async Task WithDelayedDelivery_IMessageSchedulerRegisteredAsScoped()
     {
         // Arrange
         var services = new ServiceCollection();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "sched-test")
             .UseRabbitMq("rabbitmq://localhost")
-            .WithInMemoryScheduler()
+            .WithDelayedDelivery()
             .Build();
 
         await using var sp = services.BuildServiceProvider(true);
@@ -223,7 +188,7 @@ public sealed class InMemorySchedulingTests
             .GetService<SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler>();
 
         // Assert
-        scheduler.Should().NotBeNull("IMessageScheduler must be registered when WithInMemoryScheduler() is called");
+        scheduler.Should().NotBeNull("IMessageScheduler must be registered when WithDelayedDelivery() is called");
         scheduler.Should().BeOfType<MassTransitMessageScheduler>(
             "the concrete implementation must be MassTransitMessageScheduler");
     }

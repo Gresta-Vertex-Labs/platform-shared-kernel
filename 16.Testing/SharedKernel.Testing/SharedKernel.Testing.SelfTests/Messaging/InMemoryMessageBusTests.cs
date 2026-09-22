@@ -60,7 +60,7 @@ public sealed class InMemoryMessageBusTests
 
     /// <summary>Test-double propagator that populates only <see cref="PublishContext.PartitionKey"/> via
     /// <see cref="PublishContext.WithPartitionKey"/> — proves PartitionKey round-trips through the
-    /// captured context on dispatch verbs with no <c>configure</c> overload (SendAsync/RequestAsync),
+    /// captured context on dispatch verbs with no <c>configure</c> overload (SendAsync),
     /// mirroring <see cref="TenantPropagator"/>'s single-purpose shape (T-74/P-352/WO-054).</summary>
     private sealed class PartitionKeyPropagator(string partitionKey) : IMessageHeaderPropagator
     {
@@ -149,38 +149,6 @@ public sealed class InMemoryMessageBusTests
     }
 
     [Fact]
-    public async Task RequestAsync_WithRegisteredHandler_ReturnsHandlerResult()
-    {
-        var bus = new InMemoryMessageBus();
-        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
-
-        var response = await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
-
-        Assert.Equal(42, response.Y);
-    }
-
-    [Fact]
-    public async Task RequestAsync_NoHandlerRegistered_ThrowsDescriptiveException()
-    {
-        var bus = new InMemoryMessageBus();
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(1), CancellationToken.None));
-
-        Assert.Contains(nameof(TestRequest), ex.Message);
-        Assert.Contains(nameof(TestResponse), ex.Message);
-    }
-
-    [Fact]
-    public async Task ExecuteRoutingSlipAsync_AlwaysThrowsNotSupported()
-    {
-        var bus = new InMemoryMessageBus();
-
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
-            bus.ExecuteRoutingSlipAsync(new object(), CancellationToken.None));
-    }
-
-    [Fact]
     public async Task PublishAsync_RecordsEvenWithoutAssertion_DoesNotMutateOnQuery()
     {
         var bus = new InMemoryMessageBus();
@@ -248,23 +216,6 @@ public sealed class InMemoryMessageBusTests
     }
 
     [Fact]
-    public async Task RequestAsync_RunsPropagatorsInRegistrationOrder()
-    {
-        var executionLog = new List<string>();
-        var first = new OrderTrackingPropagator("first", executionLog);
-        var second = new OrderTrackingPropagator("second", executionLog);
-        var bus = new InMemoryMessageBus([first, second]);
-        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
-
-        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
-
-        Assert.Equal(["first", "second"], executionLog);
-        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
-        Assert.Equal("first", context.Headers["x-propagator-first"]);
-        Assert.Equal("second", context.Headers["x-propagator-second"]);
-    }
-
-    [Fact]
     public async Task PublishAsync_WithConfigure_ExplicitCallbackWinsOverPropagatorOnSameKey()
     {
         var propagator = new HeaderSettingPropagator("x-conflict", "from-propagator");
@@ -312,23 +263,6 @@ public sealed class InMemoryMessageBusTests
     }
 
     [Fact]
-    public async Task RequestAsync_PropagatorSetsCorrelationCausationAndHeaders_RoundTripsThroughCapturedContext()
-    {
-        var correlationId = Guid.NewGuid();
-        var causationId = Guid.NewGuid();
-        var propagator = new FullContextPropagator(correlationId, causationId, "x-custom", "custom-value");
-        var bus = new InMemoryMessageBus([propagator]);
-        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
-
-        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(1), CancellationToken.None);
-
-        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
-        Assert.Equal(correlationId, context.CorrelationId);
-        Assert.Equal(causationId, context.CausationId);
-        Assert.Equal("custom-value", context.Headers["x-custom"]);
-    }
-
-    [Fact]
     public async Task PublishAsync_NoPropagatorsRegistered_ConfigureCallbackAloneStillPopulatesContext()
     {
         var bus = new InMemoryMessageBus(); // default ctor — zero propagators, per P-352's own additive guarantee
@@ -357,18 +291,6 @@ public sealed class InMemoryMessageBusTests
         var bus = new InMemoryMessageBus();
         Assert.Throws<InvalidOperationException>(bus.ShouldHaveSentContext<TestCommand>);
     }
-
-    [Fact]
-    public void ShouldHaveRequestedContext_NoMatch_Throws()
-    {
-        var bus = new InMemoryMessageBus();
-        Assert.Throws<InvalidOperationException>(bus.ShouldHaveRequestedContext<TestRequest, TestResponse>);
-    }
-
-    // --- P-352/WO-054: PublishContext.TenantId/.PartitionKey round-trip (T-74) ---
-    // 07.Messaging.Abstractions/EventPublisher/PublishContext.cs re-verified directly on disk before
-    // writing these tests: TenantId (Guid?)/WithTenantId, PartitionKey (string?)/WithPartitionKey are
-    // all real, shipped members (P-340/P-344/WO-054) — the T-74 blocker has cleared.
 
     [Fact]
     public async Task PublishAsync_NoConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
@@ -404,19 +326,6 @@ public sealed class InMemoryMessageBusTests
         await bus.SendAsync(new TestCommand("do-it"), CancellationToken.None);
 
         var context = bus.ShouldHaveSentContext<TestCommand>();
-        Assert.Equal(tenantId, context.TenantId);
-    }
-
-    [Fact]
-    public async Task RequestAsync_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
-    {
-        var tenantId = Guid.NewGuid();
-        var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
-        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
-
-        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
-
-        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
         Assert.Equal(tenantId, context.TenantId);
     }
 
@@ -469,18 +378,6 @@ public sealed class InMemoryMessageBusTests
         await bus.SendAsync(new TestCommand("do-it"), CancellationToken.None);
 
         var context = bus.ShouldHaveSentContext<TestCommand>();
-        Assert.Equal("order-42", context.PartitionKey);
-    }
-
-    [Fact]
-    public async Task RequestAsync_PartitionKeyPropagator_RoundTripsPartitionKeyThroughCapturedContext()
-    {
-        var bus = new InMemoryMessageBus([new PartitionKeyPropagator("order-42")]);
-        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
-
-        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
-
-        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
         Assert.Equal("order-42", context.PartitionKey);
     }
 
