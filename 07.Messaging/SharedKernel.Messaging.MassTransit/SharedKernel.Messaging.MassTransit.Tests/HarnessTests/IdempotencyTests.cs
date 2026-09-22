@@ -12,201 +12,209 @@ using SharedKernel.Messaging.MassTransit.Extensions;
 namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 
 /// <summary>
-/// ID-06: Duplicate MessageId — consumer body not invoked on second delivery.
-/// ID-07: Novel MessageId — consumer body invoked; HasProcessedAsync called before; MarkProcessedAsync called after.
-/// ID-08: WithIdempotency() without IIdempotencyStore registered — Build() throws InvalidOperationException.
+/// Behaviour of <see cref="IdempotentConsumerBehavior{TMessage}"/> against the atomic
+/// reserve/complete/release contract introduced by P-560.
 /// </summary>
+/// <remarks>
+/// The <see cref="IdempotencyReservationStatus.InProgress"/> case is the one the previous
+/// two-method contract could not represent, and the reason a redelivery following a failed attempt
+/// used to be acknowledged and dropped.
+/// </remarks>
 public sealed class IdempotencyTests
 {
-    // -------------------------------------------------------------------------
-    // ID-06: Duplicate MessageId → consumer body NOT invoked; MarkProcessedAsync NOT called
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task DuplicateMessageId_ConsumerBodyNotInvoked()
-    {
-        // Arrange: IIdempotencyStore returns true (already processed).
-        IdempotencyTracker.Reset();
-        var store = Substitute.For<IIdempotencyStore>();
-        store.HasProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-             .Returns(Task.FromResult(true));
-
-        await using var provider = new ServiceCollection()
+    private static ServiceProvider BuildHarness<TConsumer>(IIdempotencyStore store)
+        where TConsumer : class, IConsumer =>
+        new ServiceCollection()
             .AddSingleton(store)
             .AddMassTransitTestHarness(cfg =>
             {
-                cfg.AddConsumer<IdempotencyTrackingConsumer>();
+                cfg.AddConsumer<TConsumer>();
                 cfg.UsingInMemory((ctx, busCfg) =>
                 {
                     busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
                     busCfg.ConfigureEndpoints(ctx);
                 });
             })
-            .AddScoped<IdempotentConsumerBehavior<IdempotencyTestMessage>>()
             .BuildServiceProvider(true);
 
+    // -------------------------------------------------------------------------
+    // ID-06: AlreadyProcessed -> consumer NOT invoked, nothing completed or released
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task AlreadyProcessedMessage_ConsumerBodyNotInvoked()
+    {
+        IdempotencyTracker.Reset();
+        var store = Substitute.For<IIdempotencyStore>();
+        store.TryBeginAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult(IdempotencyReservation.AlreadyProcessed()));
+
+        await using var provider = BuildHarness<IdempotencyTrackingConsumer>(store);
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
         var messageId = Guid.NewGuid();
-
-        // Act: publish with a known MessageId that the store claims is already processed.
-        await harness.Bus.Publish(new IdempotencyTestMessage("duplicate"), p =>
-        {
-            p.MessageId = messageId;
-        });
-
-        // Wait for harness to settle.
+        await harness.Bus.Publish(new IdempotencyTestMessage("duplicate"), p => p.MessageId = messageId);
         await harness.InactivityTask;
 
-        // Assert: HasProcessedAsync was called.
-        await store.Received(1).HasProcessedAsync(messageId, Arg.Any<CancellationToken>());
+        await store.Received(1).TryBeginAsync(messageId, Arg.Any<CancellationToken>());
 
-        // Assert: consumer body was NOT invoked (duplicate short-circuit).
         IdempotencyTracker.ConsumeCount.Should().Be(0,
-            "consumer body must not be invoked when HasProcessedAsync returns true");
+            "a message already consumed to completion must not run the consumer again");
 
-        // Assert: MarkProcessedAsync was NOT called (only on success, not on duplicate).
-        await store.DidNotReceive().MarkProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().CompleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().ReleaseAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         await harness.Stop();
     }
 
     // -------------------------------------------------------------------------
-    // ID-07: Novel MessageId → consumer body invoked; MarkProcessedAsync called after success
+    // ID-07: Started -> consumer invoked, then completed with the issued token
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task NovelMessageId_ConsumerBodyInvoked_MarkProcessedCalledAfterSuccess()
+    public async Task StartedReservation_ConsumerInvoked_ThenCompletedWithSameToken()
     {
-        // Arrange: IIdempotencyStore returns false (novel message).
         IdempotencyTracker.Reset();
+        const string Token = "reservation-token-1";
+
         var store = Substitute.For<IIdempotencyStore>();
-        store.HasProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-             .Returns(Task.FromResult(false));
-        store.MarkProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-             .Returns(Task.CompletedTask);
+        store.TryBeginAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult(IdempotencyReservation.Started(Token)));
 
-        await using var provider = new ServiceCollection()
-            .AddSingleton(store)
-            .AddMassTransitTestHarness(cfg =>
-            {
-                cfg.AddConsumer<IdempotencyTrackingConsumer>();
-                cfg.UsingInMemory((ctx, busCfg) =>
-                {
-                    busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
-                    busCfg.ConfigureEndpoints(ctx);
-                });
-            })
-            .AddScoped<IdempotentConsumerBehavior<IdempotencyTestMessage>>()
-            .BuildServiceProvider(true);
-
+        await using var provider = BuildHarness<IdempotencyTrackingConsumer>(store);
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
         var messageId = Guid.NewGuid();
+        await harness.Bus.Publish(new IdempotencyTestMessage("novel"), p => p.MessageId = messageId);
+        await harness.InactivityTask;
 
-        // Act: publish with a novel MessageId.
-        await harness.Bus.Publish(new IdempotencyTestMessage("novel"), p =>
-        {
-            p.MessageId = messageId;
-        });
+        IdempotencyTracker.ConsumeCount.Should().Be(1, "a started reservation must run the consumer exactly once");
 
-        // Wait for consumer to complete.
-        (await harness.Consumed.Any<IdempotencyTestMessage>()).Should().BeTrue();
-
-        // Assert: HasProcessedAsync was called before the consumer body.
-        await store.Received(1).HasProcessedAsync(messageId, Arg.Any<CancellationToken>());
-
-        // Assert: consumer body was invoked.
-        IdempotencyTracker.ConsumeCount.Should().Be(1,
-            "consumer body must be invoked when HasProcessedAsync returns false");
-
-        // Assert: MarkProcessedAsync was called after success.
-        await store.Received(1).MarkProcessedAsync(messageId, Arg.Any<CancellationToken>());
+        // The token must round-trip: a store uses it to reject a stale holder.
+        await store.Received(1).CompleteAsync(messageId, Token, Arg.Any<CancellationToken>());
+        await store.DidNotReceive().ReleaseAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         await harness.Stop();
     }
 
-    [Fact]
-    public async Task ConsumerThrows_MarkProcessedNotCalled()
-    {
-        // Arrange: store returns false (novel), but consumer throws — MarkProcessed must NOT be called.
-        var store = Substitute.For<IIdempotencyStore>();
-        store.HasProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-             .Returns(Task.FromResult(false));
-
-        await using var provider = new ServiceCollection()
-            .AddSingleton(store)
-            .AddMassTransitTestHarness(cfg =>
-            {
-                cfg.AddConsumer<IdempotencyThrowingConsumer>();
-                cfg.UsingInMemory((ctx, busCfg) =>
-                {
-                    // No retry so fault is immediate.
-                    busCfg.UseMessageRetry(r => r.Immediate(0));
-                    busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
-                    busCfg.ConfigureEndpoints(ctx);
-                });
-            })
-            .AddScoped<IdempotentConsumerBehavior<IdempotencyThrowingMessage>>()
-            .BuildServiceProvider(true);
-
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-
-        await harness.Bus.Publish(new IdempotencyThrowingMessage("throw-me"), p =>
-        {
-            p.MessageId = Guid.NewGuid();
-        });
-
-        // Wait for fault to be published (consumer threw).
-        (await harness.Published.Any<Fault<IdempotencyThrowingMessage>>()).Should().BeTrue(
-            "consumer threw so a fault must be published");
-
-        // Assert: MarkProcessedAsync was NOT called (consumer failed).
-        await store.DidNotReceive().MarkProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-
-        await harness.Stop();
-    }
+    // -------------------------------------------------------------------------
+    // P-560: completion must not be cancellable - the consumer's effects are already durable
+    // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task NullMessageId_PassesThrough_ConsumerInvoked()
+    public async Task Completion_IsCalledWithUncancellableToken()
     {
-        // Arrange: MessageId is null — filter should pass through without idempotency check.
         IdempotencyTracker.Reset();
         var store = Substitute.For<IIdempotencyStore>();
+        store.TryBeginAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult(IdempotencyReservation.Started("t")));
 
-        await using var provider = new ServiceCollection()
-            .AddSingleton(store)
-            .AddMassTransitTestHarness(cfg =>
-            {
-                cfg.AddConsumer<IdempotencyTrackingConsumer>();
-                cfg.UsingInMemory((ctx, busCfg) =>
-                {
-                    busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
-                    busCfg.ConfigureEndpoints(ctx);
-                });
-            })
-            .AddScoped<IdempotentConsumerBehavior<IdempotencyTestMessage>>()
-            .BuildServiceProvider(true);
-
+        await using var provider = BuildHarness<IdempotencyTrackingConsumer>(store);
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
-        // Publish without a MessageId (MassTransit may set one automatically, but test the behavior).
-        // Note: MassTransit 9.x always assigns a MessageId — to truly test null we publish via send endpoint.
-        // For this test we verify the consumer is invoked when the filter doesn't short-circuit.
-        await harness.Bus.Publish(new IdempotencyTestMessage("no-id-needed"), p =>
-        {
-            p.MessageId = Guid.NewGuid(); // novel, so should pass through
-        });
-        store.HasProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-             .Returns(Task.FromResult(false));
+        await harness.Bus.Publish(new IdempotencyTestMessage("novel"), p => p.MessageId = Guid.NewGuid());
+        await harness.InactivityTask;
 
-        (await harness.Consumed.Any<IdempotencyTestMessage>()).Should().BeTrue();
+        // A cancelled completion would leave finished work recorded as unprocessed, so it would run
+        // again on the next delivery - the defect this assertion pins.
+        await store.Received(1).CompleteAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Is<CancellationToken>(t => t == CancellationToken.None));
 
         await harness.Stop();
+    }
+
+    // -------------------------------------------------------------------------
+    // ID-09: consumer throws -> reservation released, never completed
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ConsumerThrows_ReservationReleased_NotCompleted()
+    {
+        IdempotencyTracker.Reset();
+        const string Token = "reservation-token-2";
+
+        var store = Substitute.For<IIdempotencyStore>();
+        store.TryBeginAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult(IdempotencyReservation.Started(Token)));
+
+        await using var provider = BuildHarness<IdempotencyThrowingConsumer>(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var messageId = Guid.NewGuid();
+        await harness.Bus.Publish(new IdempotencyThrowingMessage("boom"), p => p.MessageId = messageId);
+        await harness.InactivityTask;
+
+        // Without the release the id would stay reserved for the whole lease, and every redelivery
+        // inside that window would be discarded as a duplicate - losing the message.
+        await store.Received().ReleaseAsync(messageId, Token, Arg.Is<CancellationToken>(t => t == CancellationToken.None));
+        await store.DidNotReceive().CompleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        await harness.Stop();
+    }
+
+    // -------------------------------------------------------------------------
+    // P-560: InProgress -> filter throws so the message is never acknowledged
+    // -------------------------------------------------------------------------
+    //
+    // Driven directly rather than through the harness: what matters is that the filter *throws*
+    // instead of returning, and a harness assertion on a published Fault<T> would be testing
+    // MassTransit's error pipeline rather than this filter's decision.
+
+    [Fact]
+    public async Task InProgressReservation_FilterThrows_AndConsumerPipeNeverRuns()
+    {
+        var messageId = Guid.NewGuid();
+        var store = Substitute.For<IIdempotencyStore>();
+        store.TryBeginAsync(messageId, Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult(IdempotencyReservation.InProgress()));
+
+        var context = Substitute.For<ConsumeContext<IdempotencyFilterTestMessage>>();
+        context.MessageId.Returns(messageId);
+        context.CancellationToken.Returns(CancellationToken.None);
+
+        var next = Substitute.For<IPipe<ConsumeContext<IdempotencyFilterTestMessage>>>();
+        var filter = new IdempotentConsumerBehavior<IdempotencyFilterTestMessage>(store);
+
+        var act = async () => await filter.Send(context, next);
+
+        // Throwing leaves the message unacknowledged so the broker redelivers it. Returning instead
+        // would acknowledge a message whose only in-flight attempt might still fail.
+        await act.Should().ThrowAsync<ConcurrentMessageDeliveryException>();
+
+        await next.DidNotReceive().Send(Arg.Any<ConsumeContext<IdempotencyFilterTestMessage>>());
+        await store.DidNotReceive().CompleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().ReleaseAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
+    // ID-10: no MessageId -> filter passes straight through, store never consulted
+    // -------------------------------------------------------------------------
+    //
+    // Also driven directly: MassTransit assigns a MessageId to everything published through the
+    // bus, so this branch is unreachable from the harness. The test this replaced acknowledged as
+    // much in a comment and then set a MessageId anyway, so it never covered the branch at all.
+
+    [Fact]
+    public async Task NullMessageId_PassesThrough_WithoutConsultingStore()
+    {
+        var store = Substitute.For<IIdempotencyStore>();
+
+        var context = Substitute.For<ConsumeContext<IdempotencyFilterTestMessage>>();
+        context.MessageId.Returns((Guid?)null);
+        context.CancellationToken.Returns(CancellationToken.None);
+
+        var next = Substitute.For<IPipe<ConsumeContext<IdempotencyFilterTestMessage>>>();
+        var filter = new IdempotentConsumerBehavior<IdempotencyFilterTestMessage>(store);
+
+        await filter.Send(context, next);
+
+        // Nothing to deduplicate on, so the consumer still runs and the store is never touched.
+        await next.Received(1).Send(context);
+        await store.DidNotReceive().TryBeginAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -286,6 +294,17 @@ public sealed class IdempotencyTests
 // ---------------------------------------------------------------------------
 
 internal sealed record IdempotencyTestMessage(string Text);
+
+/// <summary>
+/// Message type for the tests that drive <c>IdempotentConsumerBehavior</c> directly.
+/// </summary>
+/// <remarks>
+/// Public on purpose: Castle DynamicProxy, which NSubstitute uses, refuses to proxy
+/// <c>ConsumeContext&lt;T&gt;</c> when <c>T</c> is internal and the strong-named
+/// MassTransit.Abstractions assembly is involved. The harness-driven tests keep their internal
+/// message types, which MassTransit's own type matching requires.
+/// </remarks>
+public sealed record IdempotencyFilterTestMessage(string Text);
 internal sealed record IdempotencyThrowingMessage(string Text);
 
 // ---------------------------------------------------------------------------
@@ -332,9 +351,12 @@ internal sealed class IdempotencyThrowingConsumer : ConsumerBase<IdempotencyThro
 
 internal sealed class NoOpIdempotencyStore : IIdempotencyStore
 {
-    public Task<bool> HasProcessedAsync(Guid messageId, CancellationToken ct)
-        => Task.FromResult(false);
+    public Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
+        => Task.FromResult(IdempotencyReservation.Started(Guid.NewGuid().ToString("N")));
 
-    public Task MarkProcessedAsync(Guid messageId, CancellationToken ct)
+    public Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct)
         => Task.CompletedTask;
 }

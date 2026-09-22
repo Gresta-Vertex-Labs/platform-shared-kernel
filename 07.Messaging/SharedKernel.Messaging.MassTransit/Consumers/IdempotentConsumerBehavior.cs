@@ -4,26 +4,13 @@ using SharedKernel.Messaging.Abstractions.Idempotency;
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
 /// <summary>
-/// Global MassTransit consume pipeline filter that provides consumer-side message deduplication.
-/// Applied to all consumers when <c>WithIdempotency()</c> is called on <c>MessagingBusBuilder</c>.
+/// Consume filter enforcing at-most-once consumption of a message id through an
+/// <see cref="IIdempotencyStore"/> reservation.
 /// </summary>
-/// <typeparam name="TMessage">The message type being consumed.</typeparam>
 /// <remarks>
-/// <para>
-/// Pipeline logic:
-/// <list type="number">
-///   <item>Read <c>ConsumeContext.MessageId</c> as <c>Guid?</c>. If <see langword="null"/>, pass through without idempotency check (defensive).</item>
-///   <item>Call <see cref="IIdempotencyStore.HasProcessedAsync"/> before delegating to the next filter.</item>
-///   <item>If <see langword="true"/> (already processed): acknowledge the message to the broker without invoking the consumer body. <see cref="IIdempotencyStore.MarkProcessedAsync"/> is NOT called on the duplicate short-circuit path.</item>
-///   <item>If <see langword="false"/> (novel message): call <c>next.Send(context, ct)</c> to invoke the consumer body.</item>
-///   <item>After <c>next.Send</c> returns successfully: call <see cref="IIdempotencyStore.MarkProcessedAsync"/>.</item>
-///   <item>If <c>next.Send</c> throws: propagate the exception without calling <see cref="IIdempotencyStore.MarkProcessedAsync"/> — the consumer failed; the message should be retried, not marked as processed.</item>
-/// </list>
-/// </para>
-/// <para>
-/// This is the only approved deduplication mechanism. Never implement deduplication logic
-/// inside <c>ConsumeAsync</c> bodies.
-/// </para>
+/// Rewritten by P-560 onto the atomic reserve/complete/release contract. The previous
+/// check-then-act version let two concurrent deliveries of the same id both run the consumer, and
+/// never released the reservation when the consumer failed.
 /// </remarks>
 internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeContext<TMessage>>
     where TMessage : class
@@ -35,16 +22,13 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
         _store = store;
     }
 
-    /// <inheritdoc />
     public void Probe(ProbeContext context)
         => context.CreateFilterScope("idempotent-consumer");
 
-    /// <inheritdoc />
     public async Task Send(ConsumeContext<TMessage> context, IPipe<ConsumeContext<TMessage>> next)
     {
-        var ct = context.CancellationToken;
-
-        // Step 1: If MessageId is null, pass through without idempotency check (defensive).
+        // A transport that supplies no MessageId gives us nothing to deduplicate on. Pass through
+        // rather than inventing an id, which would make every delivery look unique anyway.
         if (context.MessageId is null)
         {
             await next.Send(context).ConfigureAwait(false);
@@ -52,22 +36,54 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
         }
 
         var messageId = context.MessageId.Value;
+        var reservation = await _store.TryBeginAsync(messageId, context.CancellationToken).ConfigureAwait(false);
 
-        // Step 2: Check whether this message has already been successfully processed.
-        var alreadyProcessed = await _store.HasProcessedAsync(messageId, ct).ConfigureAwait(false);
-
-        if (alreadyProcessed)
+        switch (reservation.Status)
         {
-            // Step 3: Duplicate — acknowledge without invoking the consumer body.
-            // MarkProcessedAsync is NOT called on the duplicate short-circuit path.
-            return;
+            case IdempotencyReservationStatus.AlreadyProcessed:
+                // A true duplicate: the original delivery ran the consumer to completion. Return
+                // without invoking it, which acknowledges the message.
+                return;
+
+            case IdempotencyReservationStatus.InProgress:
+                // Another delivery is running the consumer right now. Throwing keeps the message
+                // unacknowledged so the broker redelivers it — if the in-flight attempt fails, the
+                // message is still processed. Returning here instead would acknowledge a message
+                // that may never have been consumed.
+                throw new ConcurrentMessageDeliveryException(messageId, typeof(TMessage));
+
+            case IdempotencyReservationStatus.Started:
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unknown {nameof(IdempotencyReservationStatus)} '{reservation.Status}' returned by " +
+                    $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)}.");
         }
 
-        // Step 4: Novel message — invoke the consumer body via the next filter.
-        // Step 6: If next.Send throws, propagate without marking as processed.
-        await next.Send(context).ConfigureAwait(false);
+        var token = reservation.ReservationToken
+            ?? throw new InvalidOperationException(
+                $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)} returned " +
+                $"{nameof(IdempotencyReservationStatus.Started)} without a reservation token. A started " +
+                "reservation must carry the token required to complete or release it.");
 
-        // Step 5: Only reached when next.Send returned successfully.
-        await _store.MarkProcessedAsync(messageId, ct).ConfigureAwait(false);
+        try
+        {
+            await next.Send(context).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Release before the exception propagates, so MassTransit's retry/redelivery can
+            // re-acquire the id immediately instead of waiting out the lease.
+            // CancellationToken.None: a cancelled release would strand the id for the whole lease
+            // window, which is exactly the failure mode this call exists to prevent.
+            await _store.ReleaseAsync(messageId, token, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        // Reached only when the consumer returned without throwing. CancellationToken.None because
+        // the consumer's side effects are already durable: cancelling this write would leave
+        // completed work recorded as unprocessed and run it again on the next delivery.
+        await _store.CompleteAsync(messageId, token, CancellationToken.None).ConfigureAwait(false);
     }
 }
