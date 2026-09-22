@@ -20,9 +20,7 @@ using SharedKernel.Integration.Webhooks.Observability;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Storage.Abstractions.Abstractions;
-using SharedKernel.Storage.Abstractions.Errors;
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 
 // ── Surface 1: AddSharedKernelWebhooks() + a registered IWebhookSubscriptionStore ──────────────
 {
@@ -97,7 +95,9 @@ Console.WriteLine("Surface 2 PASS: omitting IWebhookSubscriptionStore produces a
     var services = new ServiceCollection();
     services.AddLogging();
     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-    services.AddSingleton<IFileStorage, NoOpFileStorage>();
+    // An empty storage registry: the SendGrid sender needs IFileStorageFactory, but these surfaces
+    // only prove DI composition and never resolve an attachment.
+    services.AddSharedKernelStorage();
     services.AddScoped<INotificationSenderIdentityResolver, NoOpSenderIdentityResolver>();
 
     services.AddSharedKernelNotifications();
@@ -128,7 +128,9 @@ Console.WriteLine("Surface 3 PASS: both Notifications providers registered toget
     var services = new ServiceCollection();
     services.AddLogging();
     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-    services.AddSingleton<IFileStorage, NoOpFileStorage>();
+    // An empty storage registry: the SendGrid sender needs IFileStorageFactory, but these surfaces
+    // only prove DI composition and never resolve an attachment.
+    services.AddSharedKernelStorage();
     services.AddSharedKernelNotifications();
     services.AddSendGridEmailNotifications(o => o.ApiKey = "consumer-verify-key");
     // Deliberately no INotificationSenderIdentityResolver registration.
@@ -190,38 +192,6 @@ internal sealed class NoOpEventPublisher : IEventPublisher
     public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
         => Task.CompletedTask;
-}
-
-// ── WO-072: minimal IFileStorage stand-in — Surfaces 3/4 only prove DI composition/keyed
-// resolution, never actually download an attachment, so every member throws if ever invoked. ──────
-internal sealed class NoOpFileStorage : IFileStorage
-{
-    public Task<Result<FileReference>> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result<FileDownload>> DownloadAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result> DeleteAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result<FileMetadata>> GetMetadataAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result<FileReference>> CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result<IReadOnlyList<FileDeleteOutcome>>> DeleteManyAsync(string bucket, IReadOnlyCollection<string> keys, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public IAsyncEnumerable<FileMetadata> ListAsync(string bucket, string prefix, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
-
-    public Task<Result> CheckHealthAsync(string bucket, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
 }
 
 // ── WO-072: minimal INotificationSenderIdentityResolver stand-in for Surface 3 (Surface 4

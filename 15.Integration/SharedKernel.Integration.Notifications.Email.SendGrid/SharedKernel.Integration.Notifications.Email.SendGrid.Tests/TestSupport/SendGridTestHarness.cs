@@ -7,7 +7,7 @@ using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
-using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Logging;
 using SharedKernel.Testing.Storage;
 
@@ -16,7 +16,7 @@ namespace SharedKernel.Integration.Notifications.Email.SendGrid.Tests.TestSuppor
 /// <summary>
 /// Wires a full DI container for <see cref="SendGridEmailNotificationSender"/> with the named
 /// <see cref="HttpClient"/>'s transport replaced by a <see cref="StubHttpMessageHandler"/> — no real
-/// network call is ever made. Uses <see cref="InMemoryFileStorage"/> (<c>16.Testing</c>) for
+/// network call is ever made. Uses two <see cref="InMemoryFileStorage"/> stores (<c>16.Testing</c>) for
 /// attachment resolution and a <see cref="FakeNotificationSenderIdentityResolver"/> for the "from"
 /// address seam.
 /// </summary>
@@ -32,7 +32,7 @@ internal sealed class SendGridTestHarness : IDisposable
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSingleton<IFileStorage>(FileStorage);
+        services.AddSharedKernelStorage().AddInMemoryStore(FileStorage).AddInMemoryTenantStore(TenantFileStorage);
         services.AddSingleton<INotificationSenderIdentityResolver, FakeNotificationSenderIdentityResolver>();
         services.AddInMemoryLoggerFactory();
 
@@ -49,7 +49,11 @@ internal sealed class SendGridTestHarness : IDisposable
         _scope = _provider.CreateScope();
     }
 
-    public InMemoryFileStorage FileStorage { get; } = new();
+    /// <summary>The shared store <c>invoices</c>.</summary>
+    public InMemoryFileStorage FileStorage { get; } = new("invoices");
+
+    /// <summary>The tenant-scoped store <c>documents</c>; its keys are <c>tenants/{tenantId}/{key}</c>.</summary>
+    public InMemoryFileStorage TenantFileStorage { get; } = new("documents");
 
     public INotificationSender Sender =>
         _scope.ServiceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
