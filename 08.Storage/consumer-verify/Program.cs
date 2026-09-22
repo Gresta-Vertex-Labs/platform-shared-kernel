@@ -1,260 +1,159 @@
-// consumer-verify — exercises 08.Storage's published packages exactly as a downstream
-// microservice would: real DI composition through ProjectReference (standing in for a packed
-// NuGet reference — the compiled surface is identical either way), never in-process unit-test
-// scaffolding. Five surfaces:
-//   1. AddSharedKernelS3Storage() resolves IFileStorage/IBlobUriGenerator, zero DI exceptions (P-03)
-//   2. AddSharedKernelObsStorage() resolves IFileStorage/IBlobUriGenerator, zero DI exceptions (P-04)
-//   3. Both providers registered side by side via keyed DI, no resolution collision (P-05) —
-//      exercises the exact pattern documented in SharedKernel.Storage.Obs/README.md (C-29/DO-06)
-//   4. A missing/invalid S3StorageOptions section fails at IHost.StartAsync() with an actionable
-//      message — not a silent default or a first-upload failure (P-06)
-//   5. Same as Surface 4, for ObsStorageOptions (P-06)
+// consumer-verify — composes 08.Storage's packages the way a downstream service does: a real generic
+// host, configuration sections, IHost.StartAsync() (which runs every ValidateOnStart check), and
+// resolution through DI. No object-store I/O: the provider behaviour is covered by the MinIO suites.
+//   1. S3 (default credential chain) and OBS stores side by side, shared and tenant-scoped, resolved by name.
+//   2. A single store resolves as unkeyed IFileStorage.
+//   3. An invalid store section fails IHost.StartAsync() naming every problem.
+//   4. An invalid OBS connection fails IHost.StartAsync().
 
-using Amazon;
-using Amazon.Runtime;
-using Amazon.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Configuration.Extensions;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.Storage.Abstractions.Abstractions;
-using SharedKernel.Storage.Obs.BlobUri;
-using SharedKernel.Storage.Obs.Extensions;
-using SharedKernel.Storage.Obs.FileStorage;
-using SharedKernel.Storage.Obs.Options;
-using SharedKernel.Storage.S3.BlobUri;
-using SharedKernel.Storage.S3.Extensions;
-using SharedKernel.Storage.S3.FileStorage;
-using SharedKernel.Storage.S3.Options;
+using SharedKernel.Storage;
 
-await Surface1_S3ResolvesWithZeroDiExceptions();
-await Surface2_ObsResolvesWithZeroDiExceptions();
-Surface3_BothProvidersSideBySideViaKeyedDi();
-await Surface4_InvalidS3ConfigFailsAtHostStartAsync();
-await Surface5_InvalidObsConfigFailsAtHostStartAsync();
+await Surface1_S3AndObsStoresSideBySide();
+await Surface2_SingleStoreResolvesUnkeyed();
+await Surface3_InvalidStoreFailsAtStartup();
+await Surface4_InvalidObsConnectionFailsAtStartup();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 return;
 
-// ── Surface 1: AddSharedKernelS3Storage() — P-03 ─────────────────────────────
-static async Task Surface1_S3ResolvesWithZeroDiExceptions()
+static async Task Surface1_S3AndObsStoresSideBySide()
 {
-    var builder = Host.CreateApplicationBuilder();
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
-        ["SharedKernel:Storage:S3:AccessKeyId"] = "s3-access-key",
-        ["SharedKernel:Storage:S3:SecretAccessKey"] = "s3-secret-key",
         ["SharedKernel:Storage:S3:Region"] = "eu-central-1",
+        ["SharedKernel:Storage:Obs:Endpoint"] = "https://obs.tr-west-1.myhuaweicloud.com",
+        ["SharedKernel:Storage:Obs:AccessKeyId"] = "obs-ak",
+        ["SharedKernel:Storage:Obs:SecretAccessKey"] = "obs-sk",
+        ["SharedKernel:Storage:Stores:invoices:Bucket"] = "acme-invoices",
+        ["SharedKernel:Storage:Stores:invoices:Encryption"] = "Kms",
+        ["SharedKernel:Storage:Stores:documents:Bucket"] = "acme-documents",
+        ["SharedKernel:Storage:Stores:archive:Bucket"] = "acme-archive",
     });
 
-    builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+    IStorageBuilder storage = builder.Services.AddSharedKernelStorage();
+    storage.AddS3(builder.Configuration).AddStore("invoices").AddTenantStore("documents");
+    storage.AddObs(builder.Configuration).AddStore("archive");
 
-    using var host = builder.Build();
-    // Exercises the real ValidateOnStart() path — a valid config must pass cleanly, not just
-    // resolve via BuildServiceProvider().
+    using IHost host = builder.Build();
     await host.StartAsync();
 
-    var fileStorage = host.Services.GetRequiredService<IFileStorage>();
-    var uriGenerator = host.Services.GetRequiredService<IBlobUriGenerator>();
+    IFileStorage invoices = host.Services.GetRequiredKeyedService<IFileStorage>("invoices");
+    IFileStorage archive = host.Services.GetRequiredKeyedService<IFileStorage>("archive");
+    IFileStorage tenantDocuments = host.Services.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant("tenant-1");
+    IFileStorageFactory factory = host.Services.GetRequiredService<IFileStorageFactory>();
 
-    Verify(fileStorage is S3FileStorage, "IFileStorage resolves as S3FileStorage");
-    Verify(uriGenerator is S3BlobUriGenerator, "IBlobUriGenerator resolves as S3BlobUriGenerator");
+    Require(invoices.StoreName == "invoices" && archive.StoreName == "archive", "keyed stores resolve by name");
+    Require(tenantDocuments.TenantId == "tenant-1", "tenant view is bound to its tenant");
+    Require(factory.StoreNames.Count == 3 && factory.IsTenantScoped("documents"), "factory lists every store");
+    Require(Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IFileStorage>()), "unkeyed store is ambiguous with two shared stores");
+    Require(Throws<InvalidOperationException>(() => factory.GetStore("documents")), "a tenant store is never a shared store");
 
     await host.StopAsync();
-    Console.WriteLine(
-        "Surface 1 PASS: AddSharedKernelS3Storage() resolves IFileStorage/IBlobUriGenerator, zero DI exceptions");
+    Console.WriteLine("Surface 1 PASSED — S3 and OBS stores, shared and tenant-scoped, side by side");
 }
 
-// ── Surface 2: AddSharedKernelObsStorage() — P-04 ────────────────────────────
-static async Task Surface2_ObsResolvesWithZeroDiExceptions()
+static async Task Surface2_SingleStoreResolvesUnkeyed()
 {
-    var builder = Host.CreateApplicationBuilder();
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
-        ["SharedKernel:Storage:Obs:Endpoint"] = "https://obs.ap-southeast-1.myhuaweicloud.com",
-        ["SharedKernel:Storage:Obs:AccessKeyId"] = "obs-access-key",
-        ["SharedKernel:Storage:Obs:SecretAccessKey"] = "obs-secret-key",
+        ["SharedKernel:Storage:S3:ServiceUrl"] = "http://minio:9000",
+        ["SharedKernel:Storage:S3:ForcePathStyle"] = "true",
+        ["SharedKernel:Storage:S3:AccessKeyId"] = "minio",
+        ["SharedKernel:Storage:S3:SecretAccessKey"] = "minio-secret",
+        ["SharedKernel:Storage:Stores:uploads:Bucket"] = "uploads",
     });
+    builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("uploads");
 
-    builder.Services.AddSharedKernelObsStorage(builder.Configuration);
-
-    using var host = builder.Build();
+    using IHost host = builder.Build();
     await host.StartAsync();
 
-    var fileStorage = host.Services.GetRequiredService<IFileStorage>();
-    var uriGenerator = host.Services.GetRequiredService<IBlobUriGenerator>();
-
-    Verify(fileStorage is ObsFileStorage, "IFileStorage resolves as ObsFileStorage");
-    Verify(uriGenerator is ObsBlobUriGenerator, "IBlobUriGenerator resolves as ObsBlobUriGenerator");
+    Require(host.Services.GetRequiredService<IFileStorage>().StoreName == "uploads", "the only store resolves unkeyed");
 
     await host.StopAsync();
-    Console.WriteLine(
-        "Surface 2 PASS: AddSharedKernelObsStorage() resolves IFileStorage/IBlobUriGenerator, zero DI exceptions");
+    Console.WriteLine("Surface 2 PASSED — a single store resolves as unkeyed IFileStorage");
 }
 
-// ── Surface 3: .S3 + .Obs side by side via keyed DI — P-05 ───────────────────
-// Mirrors SharedKernel.Storage.Obs/README.md's fully worked AddKeyedSingleton example
-// (C-29/DO-06) verbatim — neither AddSharedKernelS3Storage() nor AddSharedKernelObsStorage()
-// offers a keyed overload, so this is the documented, supported composition path.
-static void Surface3_BothProvidersSideBySideViaKeyedDi()
+static async Task Surface3_InvalidStoreFailsAtStartup()
 {
-    var configuration = new ConfigurationBuilder()
-        .AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["SharedKernel:Storage:S3:AccessKeyId"] = "s3-access-key",
-            ["SharedKernel:Storage:S3:SecretAccessKey"] = "s3-secret-key",
-            ["SharedKernel:Storage:S3:Region"] = "eu-central-1",
-            ["SharedKernel:Storage:Obs:Endpoint"] = "https://obs.ap-southeast-1.myhuaweicloud.com",
-            ["SharedKernel:Storage:Obs:AccessKeyId"] = "obs-access-key",
-            ["SharedKernel:Storage:Obs:SecretAccessKey"] = "obs-secret-key",
-        })
-        .Build();
-
-    var services = new ServiceCollection();
-    services.AddLogging();
-    services.AddSingleton<IClock, SystemClock>();
-
-    // S3 side, keyed "s3"
-    services.AddValidatedOptions<S3StorageOptions>(configuration.GetSection(S3StorageOptions.SectionName));
-    services.AddKeyedSingleton<IAmazonS3>("s3", (sp, _) =>
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
-        var options = sp.GetRequiredService<IOptions<S3StorageOptions>>().Value;
-        var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-        var config = new AmazonS3Config { ForcePathStyle = options.ForcePathStyle };
-        if (!string.IsNullOrWhiteSpace(options.ServiceUrl))
-        {
-            config.ServiceURL = options.ServiceUrl;
-        }
-        else
-        {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(options.Region);
-        }
-
-        return new AmazonS3Client(credentials, config);
+        ["SharedKernel:Storage:S3:Region"] = "eu-central-1",
+        ["SharedKernel:Storage:Stores:invoices:Bucket"] = "Invalid_Bucket",
+        ["SharedKernel:Storage:Stores:invoices:KmsKeyId"] = "alias/without-kms-encryption",
     });
-    services.AddKeyedSingleton<IFileStorage>(
-        "s3",
-        (sp, key) => new S3FileStorage(
-            sp.GetRequiredKeyedService<IAmazonS3>(key),
-            sp.GetRequiredService<ILogger<S3FileStorage>>()));
-    services.AddKeyedSingleton<IBlobUriGenerator>(
-        "s3",
-        (sp, key) => new S3BlobUriGenerator(
-            sp.GetRequiredKeyedService<IAmazonS3>(key),
-            sp.GetRequiredService<IClock>(),
-            sp.GetRequiredService<ILogger<S3BlobUriGenerator>>()));
+    builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("invoices");
 
-    // OBS side, keyed "obs"
-    services.AddValidatedOptions<ObsStorageOptions>(configuration.GetSection(ObsStorageOptions.SectionName));
-    services.AddKeyedSingleton<IAmazonS3>("obs", (sp, _) =>
-    {
-        var options = sp.GetRequiredService<IOptions<ObsStorageOptions>>().Value;
-        var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-        var config = new AmazonS3Config { ServiceURL = options.Endpoint, ForcePathStyle = options.ForcePathStyle };
-        return new AmazonS3Client(credentials, config);
-    });
-    services.AddKeyedSingleton<IFileStorage>(
-        "obs",
-        (sp, key) => new ObsFileStorage(
-            sp.GetRequiredKeyedService<IAmazonS3>(key),
-            sp.GetRequiredService<ILogger<ObsFileStorage>>()));
-    services.AddKeyedSingleton<IBlobUriGenerator>(
-        "obs",
-        (sp, key) => new ObsBlobUriGenerator(
-            sp.GetRequiredKeyedService<IAmazonS3>(key),
-            sp.GetRequiredService<IClock>(),
-            sp.GetRequiredService<ILogger<ObsBlobUriGenerator>>()));
+    using IHost host = builder.Build();
+    OptionsValidationException? failure = await StartExpectingFailure(host);
 
-    using var provider = services.BuildServiceProvider(validateScopes: true);
-
-    var s3Storage = provider.GetRequiredKeyedService<IFileStorage>("s3");
-    var obsStorage = provider.GetRequiredKeyedService<IFileStorage>("obs");
-    var s3UriGenerator = provider.GetRequiredKeyedService<IBlobUriGenerator>("s3");
-    var obsUriGenerator = provider.GetRequiredKeyedService<IBlobUriGenerator>("obs");
-
-    Verify(s3Storage is S3FileStorage, "keyed \"s3\" IFileStorage resolves as S3FileStorage");
-    Verify(obsStorage is ObsFileStorage, "keyed \"obs\" IFileStorage resolves as ObsFileStorage");
-    Verify(
-        !ReferenceEquals(s3Storage, obsStorage),
-        "keyed \"s3\"/\"obs\" IFileStorage instances are distinct — no resolution collision");
-    Verify(s3UriGenerator is S3BlobUriGenerator, "keyed \"s3\" IBlobUriGenerator resolves as S3BlobUriGenerator");
-    Verify(obsUriGenerator is ObsBlobUriGenerator, "keyed \"obs\" IBlobUriGenerator resolves as ObsBlobUriGenerator");
-    Verify(
-        !ReferenceEquals(s3UriGenerator, obsUriGenerator),
-        "keyed \"s3\"/\"obs\" IBlobUriGenerator instances are distinct — no resolution collision");
-
-    Console.WriteLine(
-        "Surface 3 PASS: AddSharedKernelS3Storage() + AddSharedKernelObsStorage() compose side by side via keyed DI, zero collision");
+    Require(failure is { Failures: var f } && f.Count() == 2 && f.All(m => m.StartsWith("Storage store 'invoices'", StringComparison.Ordinal)),
+        "every invalid store setting is reported at startup, naming the store");
+    Console.WriteLine("Surface 3 PASSED — an invalid store fails IHost.StartAsync()");
 }
 
-// ── Surface 4: missing S3StorageOptions fails at IHost.StartAsync() — P-06 ───
-static async Task Surface4_InvalidS3ConfigFailsAtHostStartAsync()
+static async Task Surface4_InvalidObsConnectionFailsAtStartup()
 {
-    var builder = Host.CreateApplicationBuilder();
-    // Deliberately omit AccessKeyId/SecretAccessKey/Region/ServiceUrl entirely.
-    builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["SharedKernel:Storage:Obs:Endpoint"] = "https://storage.example.internal",
+        ["SharedKernel:Storage:Stores:archive:Bucket"] = "archive",
+    });
+    builder.Services.AddSharedKernelStorage().AddObs(builder.Configuration).AddStore("archive");
 
-    using var host = builder.Build();
+    using IHost host = builder.Build();
+    OptionsValidationException? failure = await StartExpectingFailure(host);
 
-    OptionsValidationException? caught = null;
+    Require(failure is { Failures: var f } && f.Count() == 2, "missing OBS credentials and region are reported at startup");
+    Console.WriteLine("Surface 4 PASSED — an invalid OBS connection fails IHost.StartAsync()");
+}
+
+static async Task<OptionsValidationException?> StartExpectingFailure(IHost host)
+{
     try
     {
         await host.StartAsync();
+        return null;
     }
     catch (OptionsValidationException ex)
     {
-        caught = ex;
+        return ex;
     }
-
-    Verify(
-        caught is not null,
-        "missing S3StorageOptions throws OptionsValidationException at IHost.StartAsync() (not a silent default)");
-    Verify(
-        caught!.Failures.Any(f => f.Contains("AccessKeyId", StringComparison.Ordinal)),
-        "the OptionsValidationException message names the missing AccessKeyId property (actionable, not generic)");
-
-    Console.WriteLine(
-        "Surface 4 PASS: missing S3StorageOptions fails at IHost.StartAsync() with a clear, actionable message");
+    catch (AggregateException ex) when (ex.InnerExceptions.OfType<OptionsValidationException>().Any())
+    {
+        return new OptionsValidationException(
+            string.Empty,
+            typeof(object),
+            ex.InnerExceptions.OfType<OptionsValidationException>().SelectMany(e => e.Failures));
+    }
 }
 
-// ── Surface 5: missing ObsStorageOptions fails at IHost.StartAsync() — P-06 ──
-static async Task Surface5_InvalidObsConfigFailsAtHostStartAsync()
+static bool Throws<TException>(Action action)
+    where TException : Exception
 {
-    var builder = Host.CreateApplicationBuilder();
-    // Deliberately omit Endpoint/AccessKeyId/SecretAccessKey entirely.
-    builder.Services.AddSharedKernelObsStorage(builder.Configuration);
-
-    using var host = builder.Build();
-
-    OptionsValidationException? caught = null;
     try
     {
-        await host.StartAsync();
+        action();
+        return false;
     }
-    catch (OptionsValidationException ex)
+    catch (TException)
     {
-        caught = ex;
+        return true;
     }
-
-    Verify(
-        caught is not null,
-        "missing ObsStorageOptions throws OptionsValidationException at IHost.StartAsync() (not a silent default)");
-    Verify(
-        caught!.Failures.Any(f => f.Contains("Endpoint", StringComparison.Ordinal)),
-        "the OptionsValidationException message names the missing Endpoint property (actionable, not generic)");
-
-    Console.WriteLine(
-        "Surface 5 PASS: missing ObsStorageOptions fails at IHost.StartAsync() with a clear, actionable message");
 }
 
-static void Verify(bool condition, string label)
+static void Require(bool condition, string what)
 {
     if (!condition)
     {
-        throw new InvalidOperationException($"FAIL: {label}");
+        throw new InvalidOperationException($"consumer-verify FAILED: {what}");
     }
 }
