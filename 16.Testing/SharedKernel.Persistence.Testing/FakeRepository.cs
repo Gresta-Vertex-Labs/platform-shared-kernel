@@ -32,8 +32,14 @@ namespace SharedKernel.Persistence.Testing;
 /// <see cref="DeleteAsync(TAggregate, CancellationToken)"/> always removes. The expected-version overload of <c>UpdateAsync</c> cannot check a
 /// row version and behaves like the plain overload. Includes and split queries are no-ops.
 /// </para>
+/// <para>
+/// <b>Transactions.</b> Registered with <c>AddFakeRepository</c> next to <c>AddFakeUnitOfWork</c>, the repository
+/// takes part in the fake transaction: a rollback — a failed <c>Result</c>, an exception, or a replay forced by
+/// <see cref="FakeUnitOfWork.TransientFailures"/> — puts back the aggregates the repository held when the transaction
+/// started. It restores which aggregates are stored, not changes made to an aggregate object in place.
+/// </para>
 /// </remarks>
-public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TId>
+public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TId>, IFakeTransactionParticipant
     where TAggregate : IAggregateRoot<TId>
     where TId : notnull
 {
@@ -310,6 +316,15 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
 
     /// <summary>Clears the store; <see cref="SimulateFailure"/> is left unchanged.</summary>
     public void Reset() => _items.Clear();
+
+    object IFakeTransactionParticipant.Capture() => new Dictionary<TId, TAggregate>(_items);
+
+    void IFakeTransactionParticipant.Restore(object snapshot)
+    {
+        _items.Clear();
+        foreach (var (key, aggregate) in (Dictionary<TId, TAggregate>)snapshot)
+            _items[key] = aggregate;
+    }
 
     // ----- in-memory evaluation -----
 

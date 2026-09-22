@@ -241,9 +241,9 @@ public static class NpgsqlPersistenceExtensions
         serviceProvider.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
             .Get(Microsoft.Extensions.Options.Options.DefaultName);
 
-    // Builds one data source: forces Persist Security Info off and the effective SSL mode, applies the
-    // server-side timeouts through the startup "Options" keyword, wires logging and the opt-in type
-    // mappings, then runs the caller's hook.
+    // Builds one data source: forces Persist Security Info off, the effective SSL mode and GSS encryption off unless
+    // the connection string asks for it, applies the server-side timeouts through the startup "Options" keyword,
+    // wires logging and the opt-in type mappings, then runs the caller's hook.
     private static NpgsqlDataSource BuildDataSource(
         NpgsqlPersistenceOptions options,
         string connectionString,
@@ -255,6 +255,7 @@ public static class NpgsqlPersistenceExtensions
         var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
         {
             SslMode = sslMode,
+            GssEncryptionMode = NpgsqlConnectionStringPolicy.EffectiveGssEncryptionMode(connectionString),
             PersistSecurityInfo = false,
         };
 

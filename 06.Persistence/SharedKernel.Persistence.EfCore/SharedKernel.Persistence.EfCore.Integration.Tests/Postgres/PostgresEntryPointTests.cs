@@ -205,6 +205,33 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
     }
 
     [Fact]
+    public async Task Version_OfAnUntrackedAggregate_IsRefused_NeverReportedAsZero()
+    {
+        // Found by the BillingApi sample: GET via IReadRepository + ConcurrencyVersion.Get answered ETag "0", and the
+        // client's following If-Match then failed every time with 412.
+        await using var provider = await OrdersAsync(NewDatabase());
+        var id = EntryOrderId.New();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<EntryOrderContext>().Orders.Add(new EntryOrder(id, "first", new SystemClock()));
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<EntryOrderContext>();
+            var untracked = await scope.ServiceProvider.GetRequiredService<IReadRepository<EntryOrder, EntryOrderId>>().GetByIdAsync(id);
+
+            var act = () => ConcurrencyVersion.Get(db, untracked!);
+            act.Should().Throw<InvalidOperationException>().WithMessage("*not tracked*IRepository*");
+
+            var tracked = await scope.ServiceProvider.GetRequiredService<IRepository<EntryOrder, EntryOrderId>>().GetByIdAsync(id);
+            ConcurrencyVersion.Get(db, tracked!).Should().NotBe(EntityVersion.None);
+        }
+    }
+
+    [Fact]
     public async Task ExpectedVersion_Stale_IsAConflictCarryingTheCurrentVersion()
     {
         await using var provider = await OrdersAsync(NewDatabase());

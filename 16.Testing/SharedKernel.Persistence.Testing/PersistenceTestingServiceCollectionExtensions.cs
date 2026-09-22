@@ -38,6 +38,8 @@ public static class PersistenceTestingServiceCollectionExtensions
         services.AddSingleton(repository);
         services.AddSingleton<IRepository<TAggregate, TId>>(repository);
         services.AddSingleton<IReadRepository<TAggregate, TId>>(repository);
+        foreach (var unitOfWork in RegisteredInstances<FakeUnitOfWork>(services))
+            unitOfWork.Enlist(repository);
         return repository;
     }
 
@@ -52,6 +54,8 @@ public static class PersistenceTestingServiceCollectionExtensions
         services.RemoveAll<IUnitOfWork>();
         services.AddSingleton(unitOfWork);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
+        foreach (var participant in RegisteredInstances<IFakeTransactionParticipant>(services))
+            unitOfWork.Enlist(participant);
         return unitOfWork;
     }
 
@@ -98,4 +102,8 @@ public static class PersistenceTestingServiceCollectionExtensions
         services.AddSingleton<IAuditTrailWriter>(writer);
         return writer;
     }
+
+    // Fakes registered by the Add* helpers are singleton instances; link them whichever is registered first.
+    private static IEnumerable<T> RegisteredInstances<T>(IServiceCollection services) =>
+        services.Where(d => !d.IsKeyedService && d.ImplementationInstance is T).Select(d => (T)d.ImplementationInstance!).Distinct();
 }

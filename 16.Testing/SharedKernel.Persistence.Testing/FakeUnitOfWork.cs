@@ -24,11 +24,18 @@ namespace SharedKernel.Persistence.Testing;
 /// already active joins it. <see cref="SaveChangesAsync"/> is a pure counter — it stages and writes
 /// nothing.
 /// </para>
+/// <para>
+/// A rollback undoes the writes of every <see cref="FakeRepository{TAggregate, TId}"/> registered next to it with
+/// <c>AddFakeRepository</c>: each is put back as it was when the transaction started, so a replayed handler finds
+/// the state a real retry would find, and a failed command leaves nothing behind.
+/// </para>
 /// </remarks>
 #pragma warning disable RS0026 // Mirrors IUnitOfWork's overload set.
 public sealed class FakeUnitOfWork : IUnitOfWork
 {
     private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
+    private readonly List<IFakeTransactionParticipant> _participants = [];
+    private readonly List<object> _snapshots = [];
     private int _saveChangesCallCount;
     private int _depth;
 
@@ -136,6 +143,9 @@ public sealed class FakeUnitOfWork : IUnitOfWork
         {
             TransactionCount++;
             _beforeCommit.Clear();
+            _snapshots.Clear();
+            foreach (var participant in _participants)
+                _snapshots.Add(participant.Capture());
             _depth++;
             _rollbackOnly = false;
 
@@ -210,11 +220,22 @@ public sealed class FakeUnitOfWork : IUnitOfWork
         _depth = 0;
     }
 
+    /// <summary>Makes <paramref name="participant"/>'s writes part of this unit of work's transactions (done by the <c>Add*</c> helpers).</summary>
+    internal void Enlist(IFakeTransactionParticipant participant)
+    {
+        if (!_participants.Contains(participant))
+            _participants.Add(participant);
+    }
+
     private void Rollback()
     {
         RollbackCount++;
         _depth--;
         _beforeCommit.Clear();
+
+        // What the database rollback and the change-tracker reset do for the real unit of work.
+        for (var i = 0; i < _snapshots.Count; i++)
+            _participants[i].Restore(_snapshots[i]);
     }
 }
 #pragma warning restore RS0026

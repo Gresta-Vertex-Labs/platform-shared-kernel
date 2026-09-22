@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
@@ -132,7 +133,20 @@ public static class RowLevelSecurityMigrationBuilderExtensions
         ArgumentNullException.ThrowIfNull(migrationBuilder);
         ArgumentNullException.ThrowIfNull(model);
 
-        foreach (var (table, schema, column) in TenantTables(model))
+        var tables = TenantTables(model);
+
+        // Fail closed: a call that protects nothing is a mistake (a model without tenant entities, or a migration
+        // generated before tenant entity types were annotated), never something to pass over silently.
+        if (tables.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "EnableTenantRowLevelSecurityForModel found no tenant tables in the model. Pass the migration's own "
+                + "TargetModel of a context whose tenant entities implement IHasTenant; if the migration was generated "
+                + "with an earlier SharedKernel.Persistence.EfCore, regenerate it, or protect the tables one by one "
+                + "with EnableTenantRowLevelSecurity(table).");
+        }
+
+        foreach (var (table, schema, column) in tables)
             migrationBuilder.EnableTenantRowLevelSecurity(table, column, schema, crossTenantRole);
 
         return migrationBuilder;
@@ -159,8 +173,7 @@ public static class RowLevelSecurityMigrationBuilderExtensions
         var tables = new List<(string Table, string? Schema, string TenantColumn)>();
         foreach (var entityType in model.GetEntityTypes())
         {
-            if (entityType.IsOwned() || !typeof(IHasTenant).IsAssignableFrom(entityType.ClrType)
-                || entityType.GetTableName() is not { } table)
+            if (entityType.IsOwned() || !IsTenantEntity(entityType) || entityType.GetTableName() is not { } table)
             {
                 continue;
             }
@@ -174,6 +187,22 @@ public static class RowLevelSecurityMigrationBuilderExtensions
         }
 
         return tables;
+    }
+
+    // A live model has the CLR type. A migration's TargetModel is rebuilt from its Designer file as property bags —
+    // no CLR type — so the annotation the domain-column convention stamps is what identifies a tenant entity there.
+    private static bool IsTenantEntity(IReadOnlyEntityType entityType)
+    {
+        if (typeof(IHasTenant).IsAssignableFrom(entityType.ClrType))
+            return true;
+
+        for (var current = entityType; current is not null; current = current.BaseType)
+        {
+            if (current.FindAnnotation(PersistenceModelAnnotationNames.Tenant)?.Value is true)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>The name of the tenant policy <see cref="EnableTenantRowLevelSecurity"/> creates on <paramref name="table"/>.</summary>

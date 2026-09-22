@@ -68,6 +68,16 @@ public sealed class NpgsqlPersistenceOptionsValidatorTests
     }
 
     [Fact]
+    public void EffectiveGssEncryptionMode_IsOff_UnlessTheConnectionStringAsksForIt()
+    {
+        // Found by the BillingApi container: Npgsql's default (Prefer) probes GSSAPI on every new connection and
+        // prints "libgssapi_krb5.so.2: cannot open shared object file" in the standard ASP.NET images.
+        NpgsqlConnectionStringPolicy.EffectiveGssEncryptionMode(Remote).Should().Be(GssEncryptionMode.Disable);
+        NpgsqlConnectionStringPolicy.EffectiveGssEncryptionMode(Remote + ";GSS Encryption Mode=Require").Should().Be(GssEncryptionMode.Require);
+        NpgsqlConnectionStringPolicy.EffectiveGssEncryptionMode(Remote + ";GssEncryptionMode=Prefer").Should().Be(GssEncryptionMode.Prefer);
+    }
+
+    [Fact]
     public void Validate_InsecureSecondaryConnectionString_Fails_NamingTheSetting()
     {
         var options = new NpgsqlPersistenceOptions

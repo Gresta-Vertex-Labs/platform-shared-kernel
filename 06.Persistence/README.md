@@ -168,8 +168,17 @@ public sealed class OrderDbContextFactory() : PostgresDesignTimeDbContextFactory
 {
     protected override OrderDbContext Create(DbContextOptions<OrderDbContext> options, PersistenceContextDependencies dependencies)
         => new(options, dependencies);
+
+    // The same capabilities as the registration in step 4, so the migration is generated from the model the service
+    // runs: field encryption widens encrypted columns and adds their blind-index columns.
+    protected override void ConfigurePersistence(EfCorePersistenceBuilder<OrderDbContext> persistence)
+        => persistence.UseMultiTenancy(rowLevelSecurity: true).UseAuditTrail();
 }
 ```
+
+Keep the capability calls in one method that both `Program.cs` and the factory call (the
+[BillingApi sample](../samples/BillingApi/Infrastructure/BillingDbContext.cs) does: `BillingDatabase.Configure`). A model
+with `.Encrypt(...)` properties refuses to build at design time without `UseFieldEncryption()` here.
 
 ```bash
 dotnet ef migrations add Initial
@@ -283,6 +292,7 @@ fixture.
 
 | Topic | Read |
 | --- | --- |
+| A complete service using every package through an HTTP API — Docker Compose with the role split, a smoke test, end-to-end tests | [samples/BillingApi](../samples/BillingApi/README.md) |
 | Registration options, transactions, several contexts, background work, cross-tenant access, read replicas | [EfCore README](SharedKernel.Persistence.EfCore/README.md) |
 | Repository and specification contracts, `EntityVersion`, bulk updates | [Abstractions README](SharedKernel.Persistence.Abstractions/README.md) |
 | Connection names, TLS, PgBouncer, the role script, advisory locks, error classification | [Npgsql README](SharedKernel.Persistence.Npgsql/README.md) |

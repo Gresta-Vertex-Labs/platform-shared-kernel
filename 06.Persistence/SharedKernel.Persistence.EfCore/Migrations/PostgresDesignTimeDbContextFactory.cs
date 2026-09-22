@@ -2,10 +2,15 @@ using System.Collections;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Application.Context;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Exceptions;
+using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Migrations;
 
@@ -21,8 +26,18 @@ namespace SharedKernel.Persistence.EfCore.Migrations;
 /// {
 ///     protected override OrderDbContext Create(DbContextOptions&lt;OrderDbContext&gt; options, PersistenceContextDependencies dependencies)
 ///         =&gt; new(options, dependencies);
+///
+///     // The same capability calls as Program.cs, so the migration sees the runtime model.
+///     protected override void ConfigurePersistence(EfCorePersistenceBuilder&lt;OrderDbContext&gt; persistence)
+///         =&gt; OrderPersistence.Configure(persistence);
 /// }
 /// </code>
+/// <para>
+/// <strong>The model.</strong> Capability packages add to the model: <c>UseFieldEncryption()</c> widens encrypted
+/// columns and adds their blind-index columns. Call the same capability methods in <see cref="ConfigurePersistence"/>
+/// as in the service registration — best through one shared method — or the migration is generated from a different
+/// model than the one the service runs. A context with <c>.Encrypt(...)</c> properties refuses to build without it.
+/// </para>
 /// <para>
 /// <strong>Connection string</strong>, first found wins: the <c>--connection "…"</c> argument
 /// (<c>dotnet ef migrations script -- --connection "…"</c>); <c>SharedKernel:Persistence:{name}:MigrationConnectionString</c>;
@@ -57,7 +72,8 @@ public abstract class PostgresDesignTimeDbContextFactory<TContext> : IDesignTime
     /// <inheritdoc />
     public TContext CreateDbContext(string[] args)
     {
-        var connectionString = ResolveConnectionString(args ?? [], BuildConfiguration())
+        var configuration = BuildConfiguration();
+        var connectionString = ResolveConnectionString(args ?? [], configuration)
             ?? throw new InvalidOperationException(
                 $"No connection string for '{ConnectionName}'. Pass '-- {ConnectionArgument} \"Host=…\"' to dotnet ef, or set "
                 + $"'SharedKernel:Persistence:{ConnectionName}:MigrationConnectionString' or 'ConnectionStrings:{ConnectionName}' "
@@ -71,7 +87,43 @@ public abstract class PostgresDesignTimeDbContextFactory<TContext> : IDesignTime
             ConfigureProvider(provider);
         });
 
-        return Create(options.Options, PersistenceContextDependencies.Create());
+        return Create(options.Options, BuildDependencies(configuration));
+    }
+
+    /// <summary>
+    /// Applies the same capability calls as the service's <c>AddSharedKernelPostgres</c> registration —
+    /// <c>UseMultiTenancy(...)</c>, <c>UseFieldEncryption(...)</c>, <c>UseAuditTrail()</c> — so migrations are generated
+    /// from the model the service runs. Share one method between the two.
+    /// </summary>
+    /// <param name="persistence">The builder of a registration used only to collect what the capabilities add to the model.</param>
+    /// <remarks>
+    /// Only the model is taken from it: no key, connection or other service is resolved, so key providers, audit keys
+    /// and the like need not be configured at design time.
+    /// </remarks>
+    protected virtual void ConfigurePersistence(EfCorePersistenceBuilder<TContext> persistence)
+    {
+    }
+
+    // The model conventions and configurators the capability packages register, exactly as the runtime
+    // registration collects them — and nothing else (no interceptor is created, so nothing needs keys or a database).
+    internal PersistenceContextDependencies BuildDependencies(IConfiguration configuration)
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelPostgres<TContext>(configuration, ConnectionName, ConfigurePersistence);
+        using var provider = services.BuildServiceProvider();
+
+        return new PersistenceContextDependencies(
+            new SystemClock(),
+            AnonymousRequestContext.Instance,
+            PersistenceDefaults.ServiceName,
+            defaultDomainEventDispatcher: null,
+            additionalInterceptors: null,
+            provider.GetServices<IPersistenceModelConventionFactory>(),
+            provider.GetServices<IPersistenceModelConfigurator>(),
+            optionsExtensions: null,
+            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier()],
+            keyGenerator: null,
+            loggerFactory: null);
     }
 
     /// <summary>Creates the context: <c>=&gt; new(options, dependencies)</c>.</summary>

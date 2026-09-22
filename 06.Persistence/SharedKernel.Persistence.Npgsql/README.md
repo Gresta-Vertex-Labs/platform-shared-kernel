@@ -82,6 +82,10 @@ psql -h localhost -U postgres -c "CREATE DATABASE orders"
 | below `VerifyFull`, `Development` environment | accepted, warning logged |
 | below `VerifyFull`, anything else | startup fails unless `AcknowledgeInsecureSslMode: true` (warning logged) |
 
+GSSAPI (Kerberos) transport encryption is off unless the connection string sets `GSS Encryption Mode`: Npgsql's own
+default probes for it on every new connection, which costs a round trip and, in images without the Kerberos library
+(the standard ASP.NET images), prints `libgssapi_krb5.so.2: cannot open shared object file`.
+
 Managed databases: keep `VerifyFull` and trust the provider's root CA — AWS RDS: download `global-bundle.pem` and add `Root Certificate=/certs/global-bundle.pem`; Azure Database for PostgreSQL: its roots (DigiCert Global Root G2, Microsoft RSA Root CA 2017) are public CAs from the standard `ca-certificates` bundle; if your image lacks them, point `Root Certificate` at the downloaded PEM.
 
 ## PgBouncer and poolers

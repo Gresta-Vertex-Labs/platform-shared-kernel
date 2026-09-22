@@ -48,7 +48,9 @@ internal sealed class EncryptAnnotationRegisteredGuardConvention : IModelFinaliz
                     "encryption was never wired in. Call 'UseFieldEncryption(...)' (from the " +
                     "SharedKernel.Persistence.EfCore.Encryption package) on this context's persistence builder, or " +
                     "remove the '.Encrypt(...)' call. Refusing to start with an encrypted property whose encryption " +
-                    "pipeline is not actually wired, which would otherwise persist plaintext.");
+                    "pipeline is not actually wired, which would otherwise persist plaintext. Under 'dotnet ef', " +
+                    "override ConfigurePersistence in the PostgresDesignTimeDbContextFactory and call " +
+                    "UseFieldEncryption() there too, so migrations see the model the service runs.");
             }
         }
     }

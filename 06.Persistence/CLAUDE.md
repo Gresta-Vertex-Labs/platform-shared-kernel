@@ -202,7 +202,8 @@ a proven cross-tenant write is logged/counted but answered with the **same** Con
 **Concurrency API.** `ConcurrencyVersion.Get(db, entity)`, `SetExpected(db, entity, EntityVersion)`,
 `TryGetCurrentVersion(exception, out version)`, `ConflictErrorCode`. `UpdateAsync/DeleteAsync(detached)` on an
 aggregate whose version is a shadow `xmin` throws `InvalidOperationException` pointing at the `expectedVersion` overload
-(a detached root carries no version); aggregates with a CLR `RowVersion` attach as before.
+(a detached root carries no version); aggregates with a CLR `RowVersion` attach as before. `Get` on an entity the context
+does not track (shadow `xmin`, e.g. loaded by `IReadRepository`) throws instead of reporting version 0.
 
 **Repositories.** `EfReadRepository<T,TId>`/`EfRepository<T,TId>` are concrete and subclassable (public ctor
 `(SharedKernelDbContext)`, virtual members, `protected virtual IQueryable<T> AggregateQuery()` used by
@@ -254,7 +255,10 @@ model) → hosted `StartAsync` (Npgsql RLS privilege check, migrations/seeders, 
 
 **Design-time.** `PostgresDesignTimeDbContextFactory<TContext>(connectionName)`: connection from `--connection`, then
 `SharedKernel:Persistence:{name}:MigrationConnectionString`, `SharedKernel:Persistence:Npgsql:MigrationConnectionString`,
-`ConnectionStrings:{name}` (appsettings*.json + environment), retry off; abstract `Create(options, dependencies)`.
+`ConnectionStrings:{name}` (appsettings*.json + environment), retry off; abstract `Create(options, dependencies)`;
+virtual `ConfigurePersistence(EfCorePersistenceBuilder<TContext>)` — the service's capability calls, from which only the
+model conventions/configurators are taken (no interceptor, key or connection resolved), so the migration model equals
+the runtime model (encrypted widths, blind-index columns). Without it an `.Encrypt()` model refuses to build.
 
 ### Multi-tenancy
 
@@ -281,7 +285,9 @@ Three independent layers; each alone is correct, together they are defense in de
    `EnableTenantRowLevelSecurityForModel(model, crossTenantRole?)`): `ENABLE` + `FORCE`, one predicate
    `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid` for `USING` and `WITH CHECK`, uses the tenant
    index; optional role-specific `USING (true)` policy for a cross-tenant role; `Disable*` drops policies, `NO FORCE`,
-   `DISABLE`. Identifiers above 63 bytes are rejected; policy names go through the same truncate-and-hash.
+   `DISABLE`. Identifiers above 63 bytes are rejected; policy names go through the same truncate-and-hash. A migration's
+   `TargetModel` is property bags (no CLR types): `DomainColumnConvention` stamps `SharedKernel:Persistence:Tenant` on every
+   non-owned `IHasTenant` type and `TenantTables` reads the CLR type or that annotation; `ForModel` throws on zero tables.
    **Cross-tenant = a separate database role** (`BYPASSRLS` or the role-specific policy) on the keyed
    `NpgsqlDataSourceKeys.CrossTenant` data source: inside an active scope EF commands on the application connection
    throw — call `context.Database.UseCrossTenantConnection()`; using that connection outside a scope throws; Dapper
@@ -299,7 +305,8 @@ Connection name → `ConnectionStrings:{name}`; settings in `SharedKernel:Persis
 there overrides); only the unnamed `AddSharedKernelNpgsql(configuration)` reads `SharedKernel:Persistence:Npgsql`.
 Reserved names: `Encryption`, `Auditing`, `Dapper`, `Npgsql`. `NpgsqlPersistenceOptions`: `SslMode?` (null = honour
 the connection string, else `VerifyFull`; loopback → `Disable`; below VerifyFull allowed for loopback or Development,
-else needs `AcknowledgeInsecureSslMode`, warning 6300), statement/lock/idle timeouts, `MigrationConnectionString`,
+else needs `AcknowledgeInsecureSslMode`, warning 6300; GSS encryption `Disable` unless the connection string sets
+`GSS Encryption Mode`), statement/lock/idle timeouts, `MigrationConnectionString`,
 `ReadOnlyConnectionString`, `RowLevelSecurity { Enabled, CrossTenantConnectionString, PrivilegeCheck }`,
 `EnableDynamicJson` (opt-in), `UseVector`. Validated at start, messages never echo a connection string. Keyed data
 sources exist only when configured (read-only falls back to multi-host `PreferStandby`, then primary).
@@ -556,8 +563,8 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
   offline export bundles and `IAuditContext` are not implemented.
 - **Public surface**: EfCore ≈ 140 `PublicAPI` lines (target was ~70) — the documented subclassable repositories account
   for most of it; accepted.
-- No real PgBouncer container test (simulated by one un-reset physical connection); the fake repository's writes are not
-  rolled back by `FakeUnitOfWork`.
+- No real PgBouncer container test (simulated by one un-reset physical connection); a `FakeUnitOfWork` rollback restores
+  which aggregates a `FakeRepository` holds, not in-place changes to an aggregate object.
 - `18.Idempotency.EfCore` runs its context with retry off on purpose (single atomic statements; fail-open must be fast).
 
 ---
@@ -567,3 +574,4 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
 > One line per session. Pre-P-558 history: `CLAUDE.archive.md` and git history. P-558 narrative: `docs/p558/`.
 
 - [2026-09-21] P-558 persistence gold-standard pass 2 — brain rewritten: PostgreSQL-only (`.PostgreSQL` merged into `.EfCore`), shared 05 contracts, one entry point, one transaction per scope, transaction-local RLS, encryption v3, audit ledger v3 with async sealer, `SharedKernel.Persistence.Testing` (agent)
+- [2026-09-22] P-558 verification via `samples/BillingApi`: design-time `ConfigurePersistence`; `SharedKernel:Persistence:Tenant` annotation so `EnableTenantRowLevelSecurityForModel(TargetModel)` works on real migrations (throws on zero tables); `ConcurrencyVersion.Get` refuses untracked entities; GSS encryption off unless configured; Testing fakes roll back repository writes. Record: `P-558-SESSION-HANDOFF.md` §7

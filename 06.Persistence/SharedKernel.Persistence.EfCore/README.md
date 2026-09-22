@@ -86,6 +86,10 @@ await unitOfWork.SaveChangesAsync(ct);                 // stale → ConflictExce
 catch (ConflictException ex) when (ConcurrencyVersion.TryGetCurrentVersion(ex, out var current)) { /* 412 + current */ }
 ```
 
+Read the ETag from a **tracked** instance — `IRepository.GetByIdAsync` or a query on the context. `IReadRepository`
+never tracks, and `xmin` is kept by the change tracker, not by the entity: `ConcurrencyVersion.Get` on an untracked
+entity throws rather than inventing a version.
+
 A **detached** aggregate (deserialized, or loaded in another scope) carries no version: `xmin` lives only in the
 database. `UpdateAsync(detached)` and `DeleteAsync(detached)` therefore throw and point at
 `UpdateAsync(aggregate, expectedVersion)` / `DeleteAsync(aggregate, expectedVersion)`; pass the version the client
@@ -143,6 +147,10 @@ protected override void Up(MigrationBuilder migrationBuilder)
 }
 ```
 
+A migration's `TargetModel` has no CLR types; tenant entity types carry the `SharedKernel:Persistence:Tenant`
+annotation into the Designer file, and that is what the call reads. It throws when it finds no tenant table, rather
+than protecting nothing.
+
 ## Cross-tenant access
 
 ```csharp
@@ -179,10 +187,16 @@ public sealed class OrderDbContextFactory() : PostgresDesignTimeDbContextFactory
 {
     protected override OrderDbContext Create(DbContextOptions<OrderDbContext> options, PersistenceContextDependencies dependencies)
         => new(options, dependencies);
+
+    // The same capability calls as the registration — share one method between the two.
+    protected override void ConfigurePersistence(EfCorePersistenceBuilder<OrderDbContext> persistence)
+        => OrderPersistence.Configure(persistence);   // UseMultiTenancy(...).UseAuditTrail().UseFieldEncryption(...)
 }
 ```
 
-It reads `--connection "…"` (`dotnet ef database update -- --connection "…"`), then
+`ConfigurePersistence` gives the design-time model what the capabilities add to it (encrypted column widths,
+blind-index columns), so the migration matches the model the service runs; nothing is resolved, so no key or audit
+configuration is needed at design time. It reads `--connection "…"` (`dotnet ef database update -- --connection "…"`), then
 `SharedKernel:Persistence:orders:MigrationConnectionString`, then `ConnectionStrings:orders`, from `appsettings*.json`
 and environment variables. Reference `Microsoft.EntityFrameworkCore.Design` (`PrivateAssets="all"`) in the
 migrations project. In CI, publish `dotnet ef migrations script --idempotent -o migrate.sql` and apply it as the

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Monetary;
+using SharedKernel.Persistence.EfCore.Extensibility;
 
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
@@ -99,6 +100,9 @@ internal sealed class DomainColumnConvention : IModelFinalizingConvention
 
         if (entityType.IsOwned())
             return;
+
+        // Survives into migration snapshots, where entity types have no CLR type (EnableTenantRowLevelSecurityForModel).
+        entityType.Builder.HasAnnotation(PersistenceModelAnnotationNames.Tenant, true);
 
         var alreadyLeading = entityType.GetIndexes().Any(i => ReferenceEquals(i.Properties[0], tenantId))
             || entityType.GetKeys().Any(k => ReferenceEquals(k.Properties[0], tenantId));

@@ -131,3 +131,72 @@ public sealed class PersistenceTestingServiceCollectionExtensionsTests
         audit.ShouldHaveAudited("widget.create", "Widget", id.ToString());
     }
 }
+
+/// <summary>
+/// Found by the BillingApi sample: a replay forced by TransientFailures found the first attempt's aggregate still in the
+/// fake repository, so a correct handler that adds with a command-supplied id failed with "already exists" — and a
+/// failed command left its writes behind. The real unit of work rolls back the database and resets the change tracker.
+/// </summary>
+public sealed class FakeUnitOfWorkRollbackTests
+{
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AReplayedOperation_StartsFromTheStateBeforeTheTransaction(bool unitOfWorkFirst)
+    {
+        var services = new ServiceCollection();
+        FakeUnitOfWork unitOfWork;
+        FakeRepository<Widget, Guid> widgets;
+        if (unitOfWorkFirst)
+        {
+            unitOfWork = services.AddFakeUnitOfWork();
+            widgets = services.AddFakeRepository<Widget, Guid>();
+        }
+        else
+        {
+            widgets = services.AddFakeRepository<Widget, Guid>();
+            unitOfWork = services.AddFakeUnitOfWork();
+        }
+
+        var existing = new Widget(Guid.NewGuid(), "existing");
+        widgets.Seed([existing]);
+        unitOfWork.TransientFailures = 2;
+        var id = Guid.NewGuid();
+        var runs = 0;
+
+        await unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            runs++;
+            await widgets.AddAsync(new Widget(id, "new"), ct);   // the same id on every run, as a command carries it
+            await widgets.DeleteAsync(existing, ct);
+        });
+
+        runs.Should().Be(3);
+        widgets.Items.Keys.Should().BeEquivalentTo([id]);
+    }
+
+    [Fact]
+    public async Task AFailedResult_OrAnException_LeavesNothingBehind()
+    {
+        var services = new ServiceCollection();
+        var unitOfWork = services.AddFakeUnitOfWork();
+        var widgets = services.AddFakeRepository<Widget, Guid>();
+
+        var failed = await unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await widgets.AddAsync(new Widget(Guid.NewGuid(), "rolled back"), ct);
+            return SharedKernel.Primitives.Results.Result.Failure(SharedKernel.Primitives.Errors.Error.Validation("x", "x"));
+        });
+        failed.IsFailure.Should().BeTrue();
+
+        var act = () => unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await widgets.AddAsync(new Widget(Guid.NewGuid(), "rolled back"), ct);
+            throw new InvalidOperationException("boom");
+        });
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        widgets.Items.Should().BeEmpty();
+        unitOfWork.RollbackCount.Should().Be(2);
+    }
+}

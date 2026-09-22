@@ -66,10 +66,22 @@ internal static class NpgsqlConnectionStringPolicy
 
     // NpgsqlConnectionStringBuilder reports every known keyword as present, so presence is checked on a
     // plain builder, whose keys are exactly what the string contained.
-    private static bool HasExplicitSslMode(string connectionString)
+    private static bool HasExplicitSslMode(string connectionString) => HasKey(connectionString, "SSL Mode", "SslMode");
+
+    /// <summary>
+    /// GSSAPI (Kerberos) transport encryption is used only when the connection string asks for it. Npgsql's default,
+    /// <c>Prefer</c>, probes for it on every new physical connection — an extra negotiation, and in images without the
+    /// Kerberos library (the standard ASP.NET images) a "libgssapi_krb5.so.2" error on standard error.
+    /// </summary>
+    public static GssEncryptionMode EffectiveGssEncryptionMode(string connectionString) =>
+        HasKey(connectionString, "GSS Encryption Mode", "GssEncryptionMode")
+            ? new NpgsqlConnectionStringBuilder(connectionString).GssEncryptionMode
+            : GssEncryptionMode.Disable;
+
+    private static bool HasKey(string connectionString, params string[] keys)
     {
         var raw = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        return raw.ContainsKey("SSL Mode") || raw.ContainsKey("SslMode");
+        return keys.Any(raw.ContainsKey);
     }
 
     private static string StripPort(string host)

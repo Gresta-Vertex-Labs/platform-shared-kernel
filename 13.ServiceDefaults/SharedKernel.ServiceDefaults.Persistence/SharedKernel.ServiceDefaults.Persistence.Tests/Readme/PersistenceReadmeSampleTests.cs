@@ -18,6 +18,7 @@ using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.Testing;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
@@ -63,6 +64,16 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options, Per
     // Not in the README: this test assembly holds another context's IEntityTypeConfiguration, and a context
     // applies every configuration of its own assembly unless told otherwise (see "Several contexts").
     protected override bool ShouldApplyConfiguration(Type configurationType) => false;
+}
+
+// README step 5: the design-time factory, with the same capabilities as the registration.
+public sealed class OrderDbContextFactory() : PostgresDesignTimeDbContextFactory<OrderDbContext>("orders")
+{
+    protected override OrderDbContext Create(DbContextOptions<OrderDbContext> options, PersistenceContextDependencies dependencies)
+        => new(options, dependencies);
+
+    protected override void ConfigurePersistence(EfCorePersistenceBuilder<OrderDbContext> persistence)
+        => persistence.UseMultiTenancy(rowLevelSecurity: true).UseAuditTrail();
 }
 
 public sealed record PlaceOrder(OrderId Id, string Customer, decimal Amount)
@@ -173,6 +184,15 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
             (await scope.ServiceProvider.GetRequiredService<IReadRepository<Order, OrderId>>().GetByIdAsync(id))
                 .Should().BeNull();
         }
+    }
+
+    [Fact]
+    public void DesignTimeFactorySample_BuildsTheModel_OnTheMigrationConnection()
+    {
+        using var context = new OrderDbContextFactory().CreateDbContext(["--connection", "Host=localhost;Port=1;Database=orders;Username=app_migrator"]);
+
+        context.Model.FindEntityType(typeof(Order)).Should().NotBeNull();
+        context.Database.GetConnectionString().Should().Contain("app_migrator");
     }
 
     [Fact]

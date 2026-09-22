@@ -43,13 +43,30 @@ public static class ConcurrencyVersion
     /// <param name="context">The context tracking <paramref name="entity"/>.</param>
     /// <param name="entity">The aggregate (or other entity with an <c>xmin</c> token).</param>
     /// <returns>The version loaded from, or last written to, the database; 0 for an entity not saved yet.</returns>
-    /// <exception cref="InvalidOperationException">The entity type has no row-version token (not PostgreSQL, or not an aggregate root).</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The entity type has no row-version token (not PostgreSQL, or not an aggregate root), or the entity is not tracked
+    /// by <paramref name="context"/> (for example loaded through <c>IReadRepository</c>, which never tracks): its version is
+    /// kept by the change tracker.
+    /// </exception>
     public static EntityVersion Get(DbContext context, object entity)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(entity);
 
-        var property = RequireToken(context.Entry(entity));
+        var entry = context.Entry(entity);
+        var property = RequireToken(entry);
+
+        // xmin is a shadow property: its value lives in the change tracker, not in the entity. An entity this context
+        // does not track (IReadRepository never tracks) has no version to report — answering 0 would hand the client
+        // an ETag that fails every If-Match.
+        if (entry.State == EntityState.Detached && property.Metadata.IsShadowProperty())
+        {
+            throw new InvalidOperationException(
+                $"'{entry.Metadata.DisplayName()}' is not tracked by this context, so its version is unknown: PostgreSQL's "
+                + "'xmin' is kept by the change tracker, not by the entity. Load it tracked — IRepository.GetByIdAsync "
+                + "(IReadRepository never tracks) or a query on this context — and read the version from that instance.");
+        }
+
         return EntityVersion.FromRowVersion(ToVersion(property.OriginalValue));
     }
 

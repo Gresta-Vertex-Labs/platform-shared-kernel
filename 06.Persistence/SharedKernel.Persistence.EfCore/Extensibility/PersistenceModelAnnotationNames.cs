@@ -28,5 +28,12 @@ internal static partial class PersistenceModelAnnotationNames
     public const string EncryptApplied = "SharedKernel:Persistence:Encrypt:Applied";
 
     /// <summary>Set by <c>IsTenantShared()</c> on an entity type that is deliberately not tenant-scoped.</summary>
+    /// <summary>
+    /// Marks an entity type whose rows belong to a tenant (it implements <c>IHasTenant</c>). Carried into migration
+    /// snapshots and Designer files, whose property-bag entity types have no CLR type to test, so
+    /// <c>EnableTenantRowLevelSecurityForModel(TargetModel)</c> finds the tenant tables there too.
+    /// </summary>
+    public const string Tenant = "SharedKernel:Persistence:Tenant";
+
     public const string TenantShared = "SharedKernel:Persistence:TenantShared";
 }
