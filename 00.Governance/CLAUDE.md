@@ -777,7 +777,9 @@ SK0023  NonSingletonAmazonS3ClientRegistration
                 genuinely short-lived client is required; document the rationale inline.
     Note      : No suppression namespace — SK0023 fires globally, mirroring SK0703's/
                 SK0014's "fires globally" convention: IAmazonS3 must be a singleton
-                wherever it is registered, not only inside SharedKernel.Storage.S3/.Obs.
+                wherever it is registered. Since P-559 SharedKernel.Storage.S3/.Obs no longer
+                register IAmazonS3 in DI at all (one client per connection inside an internal
+                keyed singleton), so the rule now guards a consuming service's own client.
                 Introduced in WO-043 P-271 — the structural inverse of SK0703
                 (MessageBusSingletonRegistration, which flags AddSingleton for a type that
                 must be scoped; SK0023 flags AddScoped/AddTransient for a type that must be
@@ -4691,53 +4693,52 @@ ApplicationBehaviorsCacheInvalidationOrderingLockTests  (test class, no producti
     Registry — dispatched and closed directly against a root Phase Backlog entry, same shape as
     P-490. 253/253 SharedKernel.ArchitectureTests.Tests pass (251 baseline + 2).
 
-StorageTopologyRules  (static class — 08.Storage package topology enforcement predicates; WO-043 P-271)
-    All factory methods accept Assembly (or params Assembly[]/two named Assembly parameters)
-    and return ConditionList (or ConditionList[]). Mirrors RedisTopologyRules's structure and
-    its documented NotHaveDependencyOn matching contract exactly (namespace StartsWith, no
-    trailing dot, self-collision awareness) but scoped to 08.Storage's two provider packages
-    instead of Redis's five. No Mono.Cecil, no ICustomRule — every check is a pure NetArchTest
-    .Should().NotHaveDependencyOn(...) assembly-dependency-graph predicate.
+StorageTopologyRules  (static class — 08.Storage package topology enforcement predicates; WO-043 P-271, reworked P-559)
+    Accepts Assembly (or params Assembly[]) and returns ConditionList, or IReadOnlyList<string> for the
+    two assembly-reference halves. Mirrors RedisTopologyRules's documented NotHaveDependencyOn matching
+    contract (namespace StartsWith, no trailing dot, self-collision awareness). No Mono.Cecil, no
+    ICustomRule. Topology since P-559: SharedKernel.Storage.Obs is a thin provider over
+    SharedKernel.Storage.S3 (OBS is served through its S3-compatible API), so .Obs → .S3 is allowed
+    and only the reverse direction is forbidden. This deliberately replaces the original sibling rule
+    (ProviderPackagesNeverReferenceEachOther, removed), which forced .Obs to duplicate the whole S3
+    implementation.
+
+    WHY EVERY NAMESPACE CHECK HAS AN ASSEMBLY-REFERENCE HALF: the storage packages put their
+    registration entry points in the shared SharedKernel.Storage namespace (AddSharedKernelStorage(),
+    AddS3, AddObs, S3StorageBuilder), so a dependency on, say, AddObs is invisible to a
+    NotHaveDependencyOn("SharedKernel.Storage.Obs") namespace check. The *ForbiddenAssemblyReferences
+    methods inspect referenced assembly names to close that gap. Assert both halves of each rule.
 
     .AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly) → ConditionList
         Asserts that SharedKernel.Storage.Abstractions has no dependency on any of four
         forbidden terms: "Amazon" (bare prefix — catches every AWSSDK.S3 namespace, since
-        AWSSDK.S3's root namespace is "Amazon", covering Amazon.S3/Amazon.Runtime/etc. in one
-        term), "SharedKernel.Storage.S3", "SharedKernel.Storage.Obs", and
-        "SharedKernel.Configuration" (the Options-validation package only the two provider
-        packages need — Abstractions itself references only SharedKernel.Primitives). Four
-        iterative .Should().NotHaveDependencyOn(term) calls, the same iterative pattern as
-        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure and
-        RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies. None of the four
-        terms is a prefix of "SharedKernel.Storage.Abstractions" — no self-collision.
-        Rationale: 08.Storage/CLAUDE.md documents SharedKernel.Storage.Abstractions as having
-        "zero third-party NuGet dependencies — only a SharedKernel.Primitives project
-        reference." This mechanically confirms the abstraction never accidentally couples to
-        the AWS SDK, to either concrete provider package, or to the Options-validation package.
+        AWSSDK.S3's root namespace is "Amazon"), "SharedKernel.Storage.S3",
+        "SharedKernel.Storage.Obs", and "SharedKernel.Configuration" (the Options-validation
+        package only the provider packages need). Four iterative .Should().NotHaveDependencyOn(term)
+        calls. None of the four terms is a prefix of the abstractions' own SharedKernel.Storage
+        namespace — no self-collision.
+        Rationale: 08.Storage/CLAUDE.md documents SharedKernel.Storage.Abstractions as having no
+        cloud SDK dependency — only SharedKernel.Primitives plus
+        Microsoft.Extensions.DependencyInjection.Abstractions for the store registry.
 
-    .ProviderPackagesNeverReferenceEachOther(Assembly s3Assembly, Assembly obsAssembly)
-                                            → ConditionList[]
-        Returns exactly two elements, in order: [0] SharedKernel.Storage.S3 must not depend on
-        "SharedKernel.Storage.Obs"; [1] SharedKernel.Storage.Obs must not depend on
-        "SharedKernel.Storage.S3". TWO NAMED Assembly parameters (not params Assembly[]) —
-        deliberate, mirroring UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct's
-        two-named-parameter convention: the rule's whole purpose is comparing two specific,
-        named packages, so positional params would obscure which assembly is expected to be
-        which. Unlike RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther (which needs
-        a Dictionary<string,string[]> to resolve each of FOUR scanned assemblies' own
-        identifying term before excluding it to avoid self-collision), only two packages exist
-        here and neither identifying namespace ("SharedKernel.Storage.S3",
-        "SharedKernel.Storage.Obs") is a prefix of the other or of its own declaring assembly —
-        no lookup table needed. Caller must assert .GetResult().IsSuccessful on EACH element.
-        Rationale: the root CLAUDE.md documents S3 and Obs as sibling .{Provider} packages (not
-        a .{Provider}.Core/.{Provider}.{Role} split) — 08.Storage/CLAUDE.md's own Provider role
-        note states explicitly that they "must never reference each other," since a future
-        native-OBS-SDK swap inside .Obs must never touch .S3's implementation.
+    .AbstractionsForbiddenAssemblyReferences(Assembly abstractionsAssembly) → IReadOnlyList<string>
+        The assembly-level half of the rule above: returns every referenced assembly name starting
+        with "AWSSDK", "SharedKernel.Storage.S3", "SharedKernel.Storage.Obs" or
+        "SharedKernel.Configuration". Empty when compliant.
+
+    .S3NeverReferencesObs(Assembly s3Assembly) → ConditionList
+        Asserts that no type in SharedKernel.Storage.S3 depends on the "SharedKernel.Storage.Obs"
+        namespace. Rationale: .S3 knowing about one S3-compatible vendor would be a cycle in intent,
+        and every S3-only service would restore the OBS package. Vendor differences belong in .Obs's
+        compatibility profile, passed down through AddS3Compatible.
+
+    .S3ForbiddenAssemblyReferences(Assembly s3Assembly) → IReadOnlyList<string>
+        The assembly-level half of S3NeverReferencesObs: returns every referenced assembly name
+        starting with "SharedKernel.Storage.Obs". Empty when compliant.
 
     .OnlyProviderPackagesMayReferenceAmazonS3(params Assembly[] assembliesUnderTest)
                                             → ConditionList
-        Asserts that no type in the supplied assemblies has a dependency on "Amazon.S3" (the
-        AWSSDK.S3 namespace both providers sit on). Single
+        Asserts that no type in the supplied assemblies has a dependency on "Amazon.S3". Single
         Types.InAssemblies(assembliesUnderTest).That()...Should().NotHaveDependencyOn(
         "Amazon.S3") call — the structural sibling of
         CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders and
@@ -4745,15 +4746,12 @@ StorageTopologyRules  (static class — 08.Storage package topology enforcement 
         supplies every production assembly to check and must NEVER include
         SharedKernel.Storage.S3 or SharedKernel.Storage.Obs themselves — exclusion is achieved
         entirely by caller choice of which assemblies to pass, the same caller-controlled
-        exclusion convention as PresentationLayeringRules (there is no single internal
-        namespace prefix that safely distinguishes "legitimate AWSSDK.S3 usage" from "leaked
-        AWSSDK.S3 usage" other than which package the type lives in, which NetArchTest can only
-        express by which assemblies are scanned, not by an internal exemption).
-        Rationale: application code must inject IFileStorage/IBlobUriGenerator
-        (SharedKernel.Storage.Abstractions) — never a concrete Amazon.S3.IAmazonS3 type. A
-        direct Amazon.S3.* reference anywhere outside the two provider packages defeats the
-        abstraction split and makes a future provider swap (or a genuine Huawei-native-SDK
-        migration inside .Obs) touch consumer code.
+        exclusion convention as PresentationLayeringRules.
+        Rationale: application code must inject the named stores (IFileStorage,
+        ITenantFileStorage, IFileStorageFactory from SharedKernel.Storage.Abstractions) — never a
+        concrete Amazon.S3.IAmazonS3 type. The providers are wired at the composition root via
+        AddSharedKernelStorage().AddS3(configuration) or .AddObs(configuration) followed by
+        .AddStore(name).
 
     Permitted exemption list (caller-controlled — carries NO internal namespace guard,
     consistent with PresentationLayeringRules/CompositionRootExclusivityRules):
@@ -4785,6 +4783,14 @@ StorageTopologyRules  (static class — 08.Storage package topology enforcement 
     (the RedisTopologyRulesTests/CompositionRootExclusivityRulesTests technique) remain in place as
     the primary proof, per the phase spec's own instruction that they "remain the primary red/green
     proof" even when real-assembly verification becomes possible.
+
+    P-559 update (2026-09-22): ProviderPackagesNeverReferenceEachOther was removed with the storage
+    redesign and replaced by S3NeverReferencesObs + S3ForbiddenAssemblyReferences;
+    AbstractionsForbiddenAssemblyReferences was added. StorageTopologyRulesTests now carries
+    contrived fire/pass tests for each rule plus real-assembly checks
+    (AbstractionsHasNoThirdPartyDependencies_RealAbstractionsAssembly_RulePasses,
+    S3NeverReferencesObs_RealS3Assembly_BothHalvesPass, RealObsAssembly_BuildsOnTheS3Provider,
+    OnlyProviderPackagesMayReferenceAmazonS3_RealNonProviderAssembly_RulePasses).
 
 SearchTopologyRules  (static class — 09.Search package topology enforcement predicates; WO-044 P-278)
     Both factory methods accept Assembly (or two named Assembly parameters) and return
@@ -4828,8 +4834,8 @@ SearchTopologyRules  (static class — 09.Search package topology enforcement pr
         Returns exactly two elements, in order: [0] SharedKernel.Search.Meilisearch must
         not depend on "SharedKernel.Search.ElasticSearch"; [1] SharedKernel.Search.ElasticSearch
         must not depend on "SharedKernel.Search.Meilisearch". TWO NAMED Assembly parameters
-        (not params Assembly[]) — mirroring StorageTopologyRules.ProviderPackagesNeverReferenceEachOther's
-        and UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct's two-named-parameter
+        (not params Assembly[]) — mirroring StorageTopologyRules' former ProviderPackagesNeverReferenceEachOther's
+        (removed P-559) and UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct's two-named-parameter
         convention: the rule's whole purpose is comparing two specific, named packages, so
         positional params would obscure which assembly is expected to be which. Only two
         packages exist here and neither identifying namespace
@@ -5415,7 +5421,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - **Empirically-verified SK0022 call-site-shape resolution (recorded during implementation, WO-042 P-264):** three of the four shapes' real BCL types (`System.Net.Http.Headers.HttpHeaders`/`HttpRequestHeaders`, `System.Security.Claims.Claim`/`ClaimsPrincipal`/`ClaimsIdentity`) compile and resolve correctly as-is inside `CSharpAnalyzerTest`'s default sandbox — no in-compilation stub is needed for these three, the same "already part of the default reference-assembly closure" precedent SK0013's real `System.Net.Http.HttpClient` fixture already established. `System.Diagnostics.Activity` is the ONE exception: the sandbox's default reference set resolves an old `System.Diagnostics.DiagnosticSource, Version=4.0.5.0` contract whose `Activity` type predates the `.SetTag`/`.SetBaggage` fluent overloads (added in .NET 5) — confirmed via a live `CS1061` compile error, not assumed. Adding a second, newer `System.Diagnostics.DiagnosticSource` reference via `TestState.AdditionalReferences` does NOT fix this — it produces a live `CS0433` "type exists in both assembly versions" ambiguity, since both the old (sandbox-default) and new (added) versions of the SAME-NAMED assembly are simultaneously on the reference list. The working fix is to REPLACE the entire reference set for just the Activity-shape tests via `test.ReferenceAssemblies = ReferenceAssemblies.Net.Net80;` (a full modern framework closure with the old `DiagnosticSource` nowhere in it, rather than an addition alongside it) — confirmed green. Only `Microsoft.Extensions.Configuration.IConfiguration` and `Microsoft.AspNetCore.Http.IHeaderDictionary` needed an in-compilation stub (per the original phase-spec instruction) — both are genuinely external, separately-versioned/SDK-gated packages absent from the default sandbox closure entirely, so no stub-vs-real-type conflict was possible for either.
 - SK0023 `NonSingletonAmazonS3ClientRegistrationAnalyzer` (WO-043 P-271) is the next sequential ID in the SK0001–SK00N general-purpose block (SK0022 was the prior ID) and the platform's first storage-domain diagnostic. It is the structural inverse of SK0703 `MessageBusSingletonRegistrationAnalyzer`: SK0703 flags `AddSingleton<IMessageBus>` because that type must be *scoped*; SK0023 flags `AddScoped<IAmazonS3>`/`AddTransient<IAmazonS3>` because that type must be *singleton*. Type-argument extraction reuses SK0703's exact technique (`GenericNameSyntax.TypeArgumentList.Arguments[0]` as an `IdentifierNameSyntax`, simple-name exact match) — syntax-only, no `SemanticModel`, covering both the one-argument factory form and the two-argument `TService,TImplementation` form.
 - SK0023 fires globally with no suppression namespace, mirroring SK0703's/SK0014's "fires globally" convention — `Amazon.S3.IAmazonS3` must be a singleton wherever it is registered platform-wide, not only inside `SharedKernel.Storage.S3`/`SharedKernel.Storage.Obs`. A single narrow storage-domain rule does not warrant opening a new `08xx` ID block (the multi-rule `02xx`/`03xx`/`07xx` blocks exist for multi-tenancy/encryption/messaging subsystems with several related rules each) — SK0023 stays in the sequential general-purpose block, following the SK0011 (persistence)/SK0013 (communication) precedent that a lone domain-specific rule does not need its own block.
-- `StorageTopologyRules` (WO-043 P-271) introduces zero new SK diagnostic IDs, zero new Mono.Cecil technique, and zero new `ICustomRule` — all three factory methods are pure `NetArchTest` `.Should().NotHaveDependencyOn(...)` checks, mirroring `RedisTopologyRules` exactly but scoped to `08.Storage`'s two provider packages instead of Redis's five. `ProviderPackagesNeverReferenceEachOther` takes two NAMED `Assembly` parameters (not `params Assembly[]`), mirroring `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct`'s two-named-parameter convention — with only two packages involved and neither identifying namespace a prefix of the other, no `Dictionary<string,string[]>` lookup table (the technique `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther` needs for four packages) is required.
+- `StorageTopologyRules` (WO-043 P-271, reworked P-559) introduces zero new SK diagnostic IDs, zero new Mono.Cecil technique, and zero new `ICustomRule` — its `ConditionList` rules are pure `NetArchTest` `.Should().NotHaveDependencyOn(...)` checks, mirroring `RedisTopologyRules`, and its two `*ForbiddenAssemblyReferences` methods read `Assembly.GetReferencedAssemblies()`, because the storage entry points share the `SharedKernel.Storage` namespace and a namespace check cannot see them. Since P-559 `.Obs` builds on `.S3` by design, so the sibling rule `ProviderPackagesNeverReferenceEachOther` was replaced by the one-way `S3NeverReferencesObs`.
 - `StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` carries NO internal namespace exemption — exclusion of `SharedKernel.Storage.S3`/`.Obs` is achieved entirely by the caller never passing either assembly to the factory method, the same caller-controlled-exclusion convention already established by `PresentationLayeringRules` and `CompositionRootExclusivityRules`. Document any future internal exemption here before adding one.
 - **`StorageTopologyRules` real-assembly status — CORRECTED at implementation closeout (2026-07-18).** At this phase's authoring (2026-07-16), `08.Storage`'s own `state-map.md` showed every phase at `○`/empty and P-265/P-266/P-267 as not-yet-shipped, so the phase spec instructed CONTRIVED-fixtures-only design. By the time this phase was implemented (2026-07-18), `08.Storage` had independently reached Published — P-265/P-266/P-267 are all `●` Complete, and `SharedKernel.Storage.Abstractions`/`.S3`/`.Obs` exist as real, clean-building assemblies. The contrived in-memory fixtures (`CSharpCompilation` + `MetadataReference.CreateFromImage`, the `RedisTopologyRulesTests`/`CompositionRootExclusivityRulesTests` technique) remain the PRIMARY red/green proof, per the phase spec's own instruction — T-194–T-199 all use contrived fixtures. Real-assembly verification was ADDITIONALLY wired in this same phase (not deferred as a follow-up, since the dependency the phase spec flagged as blocking had already resolved): `SharedKernel.ArchitectureTests.Tests.csproj` gained test-only `ProjectReference`s (`PrivateAssets="all"`) to all three real `08.Storage` assemblies, and three `Real*`-suffixed tests confirm all three `StorageTopologyRules` factory methods pass against the shipped packages with zero discrepancy from the design-time contrived-fixture behavior.
 - SK0024 `RawSearchFieldNameLiteralAnalyzer` and SK0025 `ObsoleteElasticsearchClientUsageAnalyzer` (WO-044 P-278) are the next two sequential IDs in the SK0001–SK00N general-purpose block (SK0023 was the prior ID) and the platform's first `09.Search`-domain diagnostics. Both require `SemanticModel` resolution — SK0024 the domain's eighth semantic-model analyzer (after SK0011, SK0015, SK0017–SK0019, SK0020, SK0022), SK0025 the ninth — because neither rule's discriminator is expressible as a safe syntax-only simple-name check without unacceptable false-positive risk (`OrderBy`/`Where`/`In`/`Exists` collide with LINQ; `ElasticClient`/`ConnectionSettings` are generic enough names to exist in unrelated libraries).
@@ -5621,3 +5627,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-16] P-546 security redesign: security rule docs now use the `SharedKernel.Security.Abstractions` namespace for `IUserContext`/`ITenantProvider` (the `.Abstractions.Abstractions` namespace is gone) and a `string? SubjectId` example; `NoSingletonRegistrationOfSecurityContextTypes` documents the non-generic `AnonymousUserContext.Instance` placeholder from `06.Persistence` as deliberately unflagged, with real-assembly tests locating Oidc through `OidcServiceCollectionExtensions` (`AddOidcAuthentication` uses `TryAddScoped`); `SecureDefaultsAssertion` T-309 now expects `MtlsAuthenticationOptions.RevocationMode` default `Online` (was `Offline`); T-310 now asserts the configured `JwtBearerOptions.TokenValidationParameters.ValidAlgorithms` excludes `none`/`HS*` and that configuring a forbidden algorithm fails startup validation, because `SecurityOptions` is removed and the Oidc algorithm collections default to empty (configuration binding appends); historical notes naming `ApiKeyUserContext`, `DpopProofValidator.ProofHeaderName` and the old T-310 test name annotated rather than rewritten (coordinator)
 - [2026-09-18] P-554: SK0035 retargeted to Microsoft's compliance model after `SharedKernel.DataPrivacy`'s redesign — classified = any `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`-derived attribute except `NoDataClassificationAttribute`; a classified parameter (and `[LogProperties]` for whole objects) is safe; `Pseudonymizer` calls exempt alongside `PiiMasking`; Restricted-tier/`SensitiveDataCategory` checks removed; message now names the attribute and suggests classifying the parameter (agent)
 - [2026-09-21] P-558: UnitOfWorkSeamRules.SharedContractsAreNotRedeclared, ReadOnlyRepositoriesNeverTrack, PersistenceNamespaceConventionRules, Persistence.Testing guard; SK0201 base-call only (agent)
+- [2026-09-22] Docs updated for `08.Storage`'s P-559 redesign: `StorageTopologyRules` contract block rewritten (`ProviderPackagesNeverReferenceEachOther` removed; `S3NeverReferencesObs`, `S3ForbiddenAssemblyReferences`, `AbstractionsForbiddenAssemblyReferences` documented; `.Obs` → `.S3` allowed); SK0023 note corrected (providers no longer register `IAmazonS3`) (coordinator)
