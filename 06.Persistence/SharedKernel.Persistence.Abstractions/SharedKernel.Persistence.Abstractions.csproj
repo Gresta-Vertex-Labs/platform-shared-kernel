@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Zero-ORM persistence abstractions: IRepository, IReadRepository, IUnitOfWork, ITransactionalUnitOfWork, IDbConnectionFactory, ISpecificationEvaluator. References only SharedKernel.Primitives, SharedKernel.Domain, and SharedKernel.Contracts (for PagedList&lt;T&gt;). Implemented by SharedKernel.Persistence.EfCore.</Description>
-    <PackageTags>persistence;repository;unit-of-work;specification;shared-kernel</PackageTags>
+    <Description>ORM-free persistence contracts for SharedKernel services: IRepository (always tracks) and IReadRepository (never tracks) over domain specifications with offset, keyset and projected paging; EntityVersion for ETag/If-Match optimistic concurrency; set-based bulk updates and deletes; ICrossTenantScope for explicit, logged cross-tenant work; IDbConnectionFactory. No EF Core, Npgsql or Dapper dependency. Implemented by SharedKernel.Persistence.EfCore.</Description>
+    <PackageTags>persistence;repository;specification;optimistic-concurrency;etag;multi-tenancy;abstractions;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
@@ -16,6 +16,18 @@
       Contracts]. No ORM NuGet references are introduced by this change.
     -->
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <!--
+      P-558: the single copy of IUnitOfWork, IRequestContext and IAuditTrailWriter/AuditEntry/AuditOutcome.
+      MediatR-free by design; the ONLY 05.Application package 06.Persistence may reference (never
+      SharedKernel.Application, .Behaviors or MediatR — locked by 00.Governance).
+    -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- P-558/W2: the default ICrossTenantScope (scoped, logged) and its registration helper live here, so a
+         Dapper-only service gets one without referencing EF Core. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

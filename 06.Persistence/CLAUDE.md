@@ -1,14 +1,27 @@
-# 06.Persistence — Data Access Layer
+# 06.Persistence — PostgreSQL Data Access Layer
+
+> **Audience:** maintainers and AI agents changing code in this folder. Consumers read
+> [`README.md`](README.md) (the domain entry point) and each package's own `README.md`; this brain holds the
+> rules, invariants and couplings the source does not make obvious. It describes the code **after P-558**
+> (persistence gold-standard pass 2, 2026-09-21). The P-557 brain and the pre-P-557 brain are kept, superseded,
+> in [`CLAUDE.archive.md`](CLAUDE.archive.md) — consult them only for the reasoning behind a decision, never for
+> routing. The review findings and design decisions behind P-558 are in [`docs/p558/`](docs/p558/).
 
 ## What This Domain Is
 
-The persistence primitives layer. Every repository, unit of work, and data-access abstraction in a downstream microservice derives from the interfaces and base types defined here. This domain may reference `01.Core`, `03.Domain`, and `04.Contracts` — it must never be referenced by those layers in return, and (since P-557) it no longer references `05.Application` or `12.Security` at all.
+The persistence layer of the platform: EF Core 10 and Dapper on **PostgreSQL only**. It implements the shared
+contracts of `05.Application/SharedKernel.Application.Abstractions` (`IUnitOfWork`, `IRequestContext`,
+`IAuditTrailWriter`) directly — there is no adapter or bridge between the MediatR pipeline and persistence — and
+adds its own repository/specification contracts, multi-tenancy (application guard + row-level security), field
+encryption and an audit ledger.
 
-Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Interceptor-composed. Local seams over upward references.**
+Philosophy: **One entry point. Conventions over configuration. One transaction per scope. Tenant isolation
+enforced twice (EF Core and PostgreSQL). Fail at startup, not at the first request.**
 
-> **Outbox scope:** The outbox pattern is owned entirely by `07.Messaging` via MassTransit's `UseEntityFrameworkOutbox`. No outbox types (`OutboxMessage`, `IOutboxWriter`, `OutboxInterceptor`) exist in this domain. Introducing any such type here is a hard violation — it creates competing infrastructure with no clear owner.
+> **Outbox scope:** owned entirely by `07.Messaging` (MassTransit `UseEntityFrameworkOutbox`). No outbox type
+> (`OutboxMessage`, `IOutboxWriter`, `OutboxInterceptor`) may exist in this domain.
 
-> **P-557 (2026-09, user-directed pre-publish gold-standard pass):** this file describes the domain **after** that pass. The domain split from 4 packages to 7, dropped its `05.Application.Behaviors`/`12.Security.Abstractions` references in favour of local seams, and gained row-level security, a redesigned field-encryption package, a redesigned audit ledger, and tenant-safe Dapper read/command services. **None of the 7 packages is published yet** — see `06.Persistence/state-map.md`'s `SK.06.P557` phase for the full record, including the two independent adversarial reviews that ran after the initial seven build waves and the remediation waves that resolved their Critical/High findings. This file is a living reference, not a changelog — phase history lives in `state-map.md`. The pre-P-557 version of this file, which described the four-package shape, is kept at [`CLAUDE.archive.md`](CLAUDE.archive.md) for the ~150 ratified decisions whose reasoning is still worth consulting; it is superseded and must not be used for routing.
+**Nothing in this domain is published yet** (see the root `P-558-SESSION-HANDOFF.md` for the publish set and order).
 
 ---
 
@@ -16,15 +29,40 @@ Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Inter
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Persistence.Abstractions` | Zero-ORM contracts: `IRepository<T,TId>`/`IReadRepository<T,TId>`, `IUnitOfWork`/`ITransactionalUnitOfWork`, `IDbConnectionFactory`, `ISpecificationEvaluator`-facing types, local seams (`ICurrentActorContext`, `ICurrentTenantContext`, `ICrossTenantScope`, `ITenantSessionBinder`, `IAmbientDbTransaction`, `IMigrationLock`, `IAdvisoryTransactionLock`), the audit-ledger v2 contracts (`IAuditTrailWriter`, `IAuditQueryService`, `AuditRecord`, …), readiness-probe primitives | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (for `PagedList<T>`/`CursorPagedList<T>`) |
-| `SharedKernel.Persistence.EfCore` | EF Core 10 implementation: `SharedKernelDbContext`/`TenantedDbContext`, repositories, unit of work, the specification evaluator, the three always-on interceptors (Audit/SoftDelete/Concurrency) plus the tenant write guard, the extensibility seams siblings hook into (`IPersistenceModelConventionFactory`/`IPersistenceModelConfigurator`/`IPersistenceOptionsExtension`/`IDbUpdateExceptionClassifier`), `Money` two-column mapping, `EfCorePersistenceBuilder`. **No longer references `SharedKernel.Application.Behaviors` or `SharedKernel.Security.Abstractions`** — field encryption and the audit trail moved out to sibling packages; the 05/12 bridges moved to `13.ServiceDefaults.Persistence` | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Core`, `SharedKernel.Configuration`, `Microsoft.EntityFrameworkCore`/`.Relational` |
-| `SharedKernel.Persistence.EfCore.Auditing` | **New in P-557.** Append-only, hash-chained audit ledger v2 — `EfAuditTrailWriter`, `EfAuditQueryService`, `EfAuditCheckpointService`, three layers of immutability enforcement. Contributes to `SharedKernelDbContext` purely through the public extensibility interfaces, never a compile-time reference the other direction | `SharedKernel.Persistence.EfCore`, `SharedKernel.Cryptography` (`IHmacSigner`), `SharedKernel.Configuration` |
-| `SharedKernel.Persistence.EfCore.Encryption` | **New in P-557.** Field-level AES-256-GCM encryption v2 — interceptor-based (not a `ValueConverter`), row-bound associated data, blind indexes, resumable rotation. Contributes to `SharedKernelDbContext` the same way as `.Auditing` | `SharedKernel.Persistence.EfCore`, `SharedKernel.Cryptography`, `SharedKernel.Configuration` |
-| `SharedKernel.Persistence.Npgsql` | **New in P-557.** Npgsql-only (**no EF Core reference**) connection infrastructure: the one shared, options-bound `NpgsqlDataSource`, `NpgsqlConnectionFactory : IDbConnectionFactory`, advisory locks (`NpgsqlAdvisoryMigrationLock`, `NpgsqlAdvisoryTransactionLock`), `NpgsqlTenantSessionBinder`. Consumed by both `.PostgreSQL` (EF Core) and `.Dapper` (which never references it directly — see below) | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Configuration`, `Npgsql` |
-| `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific EF Core conventions: `SnakeCaseNamingConvention`, the xmin concurrency-token convention, JSONB, pgvector, a `DbUpdateException` classifier, row-level security (connection + command interceptors, migration helper), audit-immutability trigger helper, `UsePostgreSQL()`/`AddSharedKernelPostgreSQL()`. Resolves its `NpgsqlDataSource` from `.Npgsql` rather than building its own | `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.Npgsql`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Pgvector.EntityFrameworkCore` |
-| `SharedKernel.Persistence.Dapper` | Dapper micro-ORM read/command side: `DapperReadService` (read-only), `DapperCommandService` (writes, enlists in an ambient transaction), `TenantSafeDapperReadService`/`TenantSafeDapperCommandService` (fail-closed tenant binding via `ITenantSessionBinder`), type handlers, `AddSharedKernelDapper()`. **References only `.Abstractions` — never `.PostgreSQL` or `.Npgsql`.** A consuming service supplies `IDbConnectionFactory` itself, typically via `.Npgsql`'s `AddSharedKernelNpgsql()` | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Configuration`, `Dapper` |
+| `SharedKernel.Persistence.Abstractions` | ORM-free contracts: `IRepository<T,TId>`/`IReadRepository<T,TId>`, `EntityVersion`, `IBulkMutationRepository<T,TId>` + `BulkUpdateSetters<T>` + `AllRowsSpecification<T>`, `ICrossTenantScope` (+ its implementation `CrossTenantScope` and `AddSharedKernelCrossTenantScope()`), `IDbConnectionFactory` + readiness probe; infrastructure seams `ITenantSessionBinder`, `IAmbientDbTransaction`, `IMigrationLock`, `IAdvisoryTransactionLock` (`[EditorBrowsable(Never)]`) | `Primitives`, `Domain`, `Contracts`, `Application.Abstractions`, DI/Logging abstractions |
+| `SharedKernel.Persistence.Npgsql` | No EF Core. The `NpgsqlDataSource` per connection name (`AddSharedKernelNpgsql`), options + TLS policy, keyed secondary data sources (`NpgsqlDataSourceKeys.Migration`/`ReadOnly`/`CrossTenant`), `IDbConnectionFactory`, advisory locks + `AdvisoryLockKeys`, transaction-local tenant binding (`ITenantSessionBinder`), RLS privilege startup check + internal `RowLevelSecurityCatalog`, SQLSTATE classifier (`PostgresExceptionClassifier`, `PostgresErrorMapping`, `PostgresClassifiedErrorCodes`) | `Abstractions`, `Configuration`, `Npgsql`, `Pgvector` |
+| `SharedKernel.Persistence.EfCore` | **The PostgreSQL EF Core package** (the former `.PostgreSQL` package was merged in). `AddSharedKernelPostgres<TContext>` + `EfCorePersistenceBuilder<TContext>`, `SharedKernelDbContext`/`TenantedDbContext`, `PersistenceContextDependencies`, open-generic `EfRepository`/`EfReadRepository`, `TenantedRepository`, `EfUnitOfWork<TContext>` + `UnitOfWorkCoordinator`, the one save interceptor, conventions (snake_case via `EFCore.NamingConventions`, 63-byte identifiers, `xmin`, strongly-typed ids, `Money`, audit/soft-delete/tenant columns, tenant isolation), SQLSTATE classification, retry, RLS interceptors + migration helpers + coverage check, `ConcurrencyVersion`, `IPersistenceStartup`, migrations/seeding, `PostgresDesignTimeDbContextFactory<T>`, jsonb, pgvector | `Abstractions`, `Npgsql`, `Domain`, `Core`, `Configuration`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Pgvector.EntityFrameworkCore`, `EFCore.NamingConventions` |
+| `SharedKernel.Persistence.EfCore.Auditing` | Audit ledger v3 (AUDITv3): `UseAuditTrail()`, request-path writer (`IAuditTrailWriter`), background sealer, `IAuditQueryService`, `IAuditCheckpointService`/`IAuditCheckpointSink`, `IAuditLedgerMaintenance` (erasure, reseal), `IAuditRecordAuthenticator` (keyring), `IAuditSealingProbe`, self-check, `CreateAuditLedgerTable` migration helper, `AUDIT-FORMAT.md` (packed) | `EfCore` (exact version pin), `Cryptography`, `Configuration` |
+| `SharedKernel.Persistence.EfCore.Encryption` | Field encryption v3: `UseFieldEncryption()`, `.Encrypt(purpose)`/`.WithBlindIndex(...)`, `WhereEncryptedEquals`, query guard, `IEncryptionRotationJob` (maintenance modes), tenant data keys + `ITenantEncryptionKeyManager.ShredTenantAsync`, key ring + probe | `EfCore` (exact version pin), `Cryptography`, `Configuration` |
+| `SharedKernel.Persistence.Dapper` | `IDbSessionFactory`/`IDbSession` (connection + transaction that joins the unit of work, binds the tenant, picks the role), `DapperConfiguration`/`DapperConfigurationBuilder` type handlers, `AddSharedKernelDapper()` | `Npgsql` (never EF Core), `Configuration`, `Dapper` |
 
-All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled, `GenerateDocumentationFile`, and `WarningsAsErrors` including `CS1591`/`RS0016`/`RS0017`/`RS0022`/`RS0024`/`RS0025`/`RS0036`/`RS0037` (public-API tracking is build-breaking, not advisory, in every one of the seven). Test sub-folders live inside each package's own folder (never in a top-level `tests/`). An eighth, non-packable project, `SharedKernel.Persistence.ConsumerVerify`, restores the packed artifacts of all seven from the local feed and proves their dependency graph and DI wiring end to end — it is not a package itself.
+Outside this folder but part of the stack: **`16.Testing/SharedKernel.Persistence.Testing`** (packable, test
+projects only — fakes of every contract, `PostgresTestServer`/`PostgresTestDatabase` with the canonical roles),
+**`13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence`** (readiness checks) and
+**`SharedKernel.ServiceDefaults.Security`** (`AddSharedKernelRequestContext()`, the `IRequestContext` over
+`12.Security`). `SharedKernel.Persistence.ConsumerVerify` (not packable) restores the **packed** packages and runs
+the composed scenario against PostgreSQL.
+
+All packages: `net10.0`, nullable, XML docs, `PublicAPI.*.txt` tracking is build-breaking (`RS0016`/`RS0017`/…).
+Encryption and Auditing reach EfCore's extension points through `InternalsVisibleTo`, so their nuspecs pin
+`SharedKernel.Persistence.EfCore` to their **exact** version (`PinEfCoreDependencyToExactVersion`); EfCore pins
+`SharedKernel.Persistence.Npgsql` the same way (`PinNpgsqlDependencyToExactVersion`). Mixed versions can never
+restore together.
+
+### Namespaces (mechanically enforced)
+
+| Namespace | Holds |
+| --- | --- |
+| `SharedKernel.Persistence` | every registration/builder extension of every persistence package: `AddSharedKernelPostgres`, `EfCorePersistenceBuilder<T>`, `UseMultiTenancy`, `UseAuditTrail`, `UseFieldEncryption`, `UsePostgres`, `RowLevelSecurityCheckMode`, `AddSharedKernelNpgsql`, `AddSharedKernelDapper`, `AddSharedKernelAuditLedger`, `AddSharedKernelCrossTenantScope` |
+| `SharedKernel.Persistence.EfCore` | EF Core model/migration/query helpers: `Money`, `HasJsonbColumn`, `HasVectorColumn`/`HasVectorIndex`, `VectorOrderingExpressions`, `IsTenantShared`, `Encrypt`/`WithBlindIndex`/`BlindIndexNormalization`, `WhereEncryptedEquals`, `UseCrossTenantConnection`, `EnableTenantRowLevelSecurity*`, `CreateAuditLedgerTable`, `CreateTenantEncryptionKeyTable` |
+| `SharedKernel.Persistence.EfCore.Context` | `SharedKernelDbContext`, `TenantedDbContext`, `PersistenceContextDependencies`, `PersistenceFilterNames`, `ICallerDbContextFactory<T>` |
+
+Contracts stay in `SharedKernel.Persistence.Abstractions.{Repositories,Context,Connections,Coordination,Diagnostics}`
+and the feature namespaces (`...EfCore.Auditing`, `...EfCore.Encryption.*`, `...Dapper.Sessions`, `...Npgsql.*`).
+`00.Governance`'s `PersistenceNamespaceConventionRules.FindMisplacedExtensions` fails the build when an extension
+method on `IServiceCollection`/`IHostApplicationBuilder`/`EfCorePersistenceBuilder<T>`/`DbContextOptionsBuilder` lives outside
+`SharedKernel.Persistence`, or an EF Core builder/migration/query extension outside `SharedKernel.Persistence.EfCore`.
+No `*.Extensions` namespace exists in this domain.
 
 ---
 
@@ -32,303 +70,508 @@ All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled, `Ge
 
 | Concern | Technology |
 | --- | --- |
-| Repository / unit-of-work pattern | Pure C# interfaces in `.Abstractions` — no ORM dependency |
-| EF Core ORM | `Microsoft.EntityFrameworkCore`/`.Relational` 10.x |
-| EF Core interceptors | `ISaveChangesInterceptor`/`DbCommandInterceptor`/`DbConnectionInterceptor`/`IMaterializationInterceptor` — three always-on save interceptors (Audit/SoftDelete/Concurrency) plus `AggregateRootTouchInterceptor` and (opt-in) `TenantWriteGuardInterceptor`, `EncryptionInterceptor`, `EncryptedColumnEqualityGuardInterceptor`, `AuditRecordImmutabilityInterceptor`, `AuditRecordMutationGuardInterceptor`, `RowLevelSecurityConnectionInterceptor`/`RowLevelSecurityCommandInterceptor`; no `OutboxInterceptor` |
-| Specification evaluation | `SpecificationEvaluator<T>` translating `ISpecification<T>` (and `IProjectionSpecification`/keyset specs) to `IQueryable<T>` |
-| PostgreSQL connectivity | `Npgsql` directly (`.Npgsql` package — one shared `NpgsqlDataSource`) and `Npgsql.EntityFrameworkCore.PostgreSQL` (`.PostgreSQL` package) |
-| JSONB | Hand-configured `ValueConverter` + structural `ValueComparer`, STJ (reflective or source-generated `JsonTypeInfo<T>`) |
-| Vector search | `Pgvector.EntityFrameworkCore` — `Pgvector.Vector`-typed columns only (see AOT/Known Limitations) |
-| Micro-ORM (read + command side) | `Dapper`, with `DefaultTypeMap.MatchNamesWithUnderscores` enabled by default |
-| Field encryption | `SharedKernel.Cryptography`'s `ISynchronousSymmetricEncryptionService`/`ISynchronousEncryptionKeyProvider`, `IHmacSigner` (blind indexes), `SubkeyDerivation` (HKDF) — never hand-rolled AES |
-| Audit-chain signing | `SharedKernel.Cryptography`'s `IHmacSigner` (per-record HMAC-SHA256 chain) and, optionally, `IAsymmetricSignatureService` (signed checkpoints) |
-| Multi-tenancy (application-layer) | `TenantedDbContext` (named EF Core query filter) + `TenantWriteGuardInterceptor` + `TenantedRepository<T,TId>` |
-| Multi-tenancy (database-layer, opt-in) | PostgreSQL row-level security via `.WithRowLevelSecurity()` — `ITenantSessionBinder` + `RowLevelSecurityConnectionInterceptor`/`RowLevelSecurityCommandInterceptor` |
-| DI composition | `EfCorePersistenceBuilder<TContext>` fluent builder via `AddSharedKernelEfCore<TContext>` |
-
----
-
-## Local Seams — Why This Domain No Longer References `05.Application` or `12.Security`
-
-Before P-557, `SharedKernel.Persistence.EfCore` held direct `ProjectReference`s to `SharedKernel.Application.Behaviors` (for a dual-interface `IUnitOfWork` bridge) and `SharedKernel.Security.Abstractions` (for `IUserContext`/`ITenantProvider`, injected straight into `AuditInterceptor`/`SoftDeleteInterceptor`/`TenantedDbContext`). Both references are gone. In their place, `.Abstractions` declares small, ORM-agnostic seams that `.EfCore` and its siblings consume directly, and a new package, **`13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence`**, bridges those seams to the real `05.Application`/`12.Security` types for services that use both.
-
-| Seam (`SharedKernel.Persistence.Abstractions.Context`/`.Coordination`) | Shape | What it replaces | Default in `.EfCore` | Real bridge (`13.ServiceDefaults.Persistence`) |
-| --- | --- | --- | --- | --- |
-| `ICurrentActorContext` | `string ActorId`, `ActorKind ActorKind` (`User`/`Service`/`System`) | The old combined `IAuditActorContext` (fail-open, conflated actor + tenant) | `AnonymousActorContext` (`ActorId` = `PersistenceServiceOptions.ServiceName`, default `"system"`) | `SecurityCurrentActorContext` — maps `12.Security`'s `IUserContext`/`IdentityKind` |
-| `ICurrentTenantContext` | `Guid? TenantId` — **nullable**, fail-closed by construction | The old `IAuditActorContext.TenantId` (`Guid`, `Guid.Empty` overloaded as "no tenant") | `NullCurrentTenantContext.Instance` (always `null`) | `SecurityCurrentTenantContext` — maps `IUserContext`/`ITenantProvider`, `Guid.Empty` → `null` |
-| `ICrossTenantScope` | `bool IsActive` (+ `CrossTenantScope.Enter(string? actorId)` on the default impl) | — (new capability) | `CrossTenantScope` (`AsyncLocal`-backed singleton, records a `"SharedKernel.Persistence"` meter entry per `Enter`) | Same default — this seam needs no bridging, it is process-local |
-| `ITenantSessionBinder` | `BindAsync`/`BindConnectionAsync`/`ResetConnectionAsync` — binds tenant + cross-tenant-escape to a PostgreSQL session for row-level security | — (new capability, opt-in via `.WithRowLevelSecurity()`) | `NpgsqlTenantSessionBinder` (`.Npgsql`) | N/A — infrastructure-only, no application-layer identity involved |
-| `IAmbientDbTransaction` | `(DbConnection, DbTransaction)? Current` | — (new capability) | `AmbientDbTransactionAccessor`, published by `EfPersistenceTransaction`/`EfTransactionalUnitOfWork` | N/A |
-| `IMigrationLock` | Session-scoped, explicit-dispose cross-replica lock for startup migrations | Raw `pg_advisory_lock` SQL that used to live directly inside `MigrationAndSeedHostedService` (a package-graph violation — EfCore must never contain provider-specific SQL) | `NpgsqlAdvisoryMigrationLock` (`.Npgsql`) | N/A |
-| `IAdvisoryTransactionLock` | Transaction-scoped, self-releasing lock (`pg_advisory_xact_lock`) | — (new capability, backs the audit chain's per-chain serialization) | `NpgsqlAdvisoryTransactionLock` (`.Npgsql`) | N/A |
-
-**A derived context never resolves `ICurrentTenantContext`/`ICurrentActorContext` through its own constructor.** Both start at their fail-closed default and are attached **per DI-scope lease** (`RefreshActor`/`RefreshTenant`, `internal`) by whichever factory handed out the instance — the scoped `TContext` registration, the decorated `IDbContextFactory<TContext>` (`TenantAwareDbContextFactory<TContext>`), and `ReadReplicaContextAccessor<TContext>`. This is what makes `.WithDbContextPooling()` safely combinable with `.WithMultiTenancy()`: nothing about either seam is a captive Scoped constructor dependency any more (see Implementation Rules).
-
-The former P-228 dual-interface `IUnitOfWork` bridge (`EfUnitOfWork` implementing both this domain's `IUnitOfWork` and `05.Application.Behaviors.IUnitOfWork`) and `.WithApplicationTransactionBehavior()` moved to `13.ServiceDefaults.Persistence` as `PersistenceUnitOfWorkAdapter`/`TransactionalPersistenceUnitOfWorkAdapter` — the layer legally positioned to reference both `06.Persistence` and `05.Application.Behaviors`. The move also fixed a pre-existing bug: the old bridge cast to a concrete type `EfTransactionalUnitOfWork` never actually implemented.
+| ORM | `Microsoft.EntityFrameworkCore` 10 + `Npgsql.EntityFrameworkCore.PostgreSQL` |
+| Naming | `EFCore.NamingConventions` (`UseSnakeCaseNamingConvention(InvariantCulture)`) + internal `PostgresIdentifierLengthConvention` (63-byte UTF-8 cut + FNV-1a suffix) + `OwnedSharedTableKeyColumnConvention` |
+| Concurrency | PostgreSQL `xmin` (shadow `uint` on every aggregate root; `RowVersion` mapped to it for `IHasConcurrency`), exposed as opaque `EntityVersion` |
+| Retry | Npgsql execution strategy, **on by default** (`MaxRetryCount` 6, `MaxRetryDelay` 30 s; `ConfigureProvider(o => o.MaxRetryCount = 0)` turns it off) |
+| Micro-ORM | `Dapper` behind `IDbSession`; process-wide type map set only by `DapperConfiguration.Apply` |
+| Crypto | `01.Core` `SharedKernel.Cryptography` (`IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, `IHmacSigner`) + BCL `AesGcm`/HKDF |
+| Vectors | `Pgvector` / `Pgvector.EntityFrameworkCore` (opt-in `UseVector`) |
+| Telemetry | `ActivitySource`/`Meter` `"SharedKernel.Persistence"`, `"SharedKernel.Persistence.EfCore.Auditing"` (both), `Meter` `"SharedKernel.Persistence.EfCore.Encryption"`, Npgsql's own `"Npgsql"`; wired by `13.ServiceDefaults`' `WithPersistenceTelemetry()` by string name. Dapper emits no spans (Npgsql traces every command) |
+| Logging | `[LoggerMessage]`, `LoggingEventIdRanges.Persistence` + offset: EfCore 6000–6099 (context/UoW 6014–6021), Abstractions `CrossTenantScope` 6150, E2 range 6200–6299 reserved, Npgsql 6300–6399, EF RLS 6350–6351, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899 |
 
 ---
 
 ## Interface Contracts
 
+### Shared contracts (owned by `05.Application/SharedKernel.Application.Abstractions`, implemented here)
+
+- **`IUnitOfWork`** (`SharedKernel.Application.Transactions`): `SaveChangesAsync`, `IsTransactionActive`,
+  `ExecuteInTransactionAsync(op[, isolationLevel])` / `<TResult>`, `OnBeforeCommit(callback)`. The operation may
+  run more than once (retry); a returned failed `Result` (`IHasSuccessFlag`) rolls back; a call inside an active
+  transaction joins it; `OnBeforeCommit` callbacks run after the last save, before commit, and are discarded with a
+  retried attempt. `CommitOutcomeUnknownException` (commit failed without a server response — never replayed) and
+  `TransactionRolledBackException` (an outer success on a rollback-only transaction). There is no
+  `BeginTransactionAsync`: a caller-held handle cannot be replayed by a retrying strategy.
+  EfCore adds `IUnitOfWork<TContext>` and a keyed `IUnitOfWork` per context type.
+- **`IRequestContext`** (`SharedKernel.Application.Context`): who is calling — `IsAuthenticated`, `UserId`,
+  `TenantId` (`Guid?`), `ActorKind` (`User`/`Service`/`System`/`Anonymous`), `ClientId`, `SessionId`,
+  `ImpersonatorId`, `HasPermissionAsync`. Replaces P-557's `ICurrentActorContext`/`ICurrentTenantContext` (deleted).
+  Default when none is registered: `AnonymousRequestContext` (no tenant → fail closed).
+- **`IAuditTrailWriter`/`AuditEntry`/`AuditOutcome`** (`SharedKernel.Application.Auditing`): the caller supplies
+  only action, resource, snapshots, outcome, error code, approval id, idempotency key; the writer resolves actor,
+  tenant, client, session, time, trace and correlation itself.
+
 ### `SharedKernel.Persistence.Abstractions`
 
-**Repositories (`Repositories/`).** `IRepository<TAggregate,TId>` (write-side, tracked) and `IReadRepository<TAggregate,TId>` (read-side, `AsNoTracking`-friendly) never expose `IQueryable<T>`. `IRestorableRepository<TAggregate,TId>` adds single-entity soft-delete restore. `ByIdSpecification<TAggregate,TId>` and `IProjectionSpecification<TAggregate,TResult>` live here.
+- **Repositories.** `IReadRepository<T,TId>` is **never tracked**: `GetByIdAsync` (whole aggregate), `GetByIdsAsync`,
+  `ExistsAsync`, `FirstOrDefaultAsync(spec)`, `ListAsync`, `CountAsync` (`long`), `AnyAsync`,
+  `ListPagedAsync(spec, PageRequest)`, `ListKeysetAsync<TKey>(spec, CursorPageRequest, keySelector, descending)`,
+  `StreamAsync`, and `*ProjectedAsync` variants taking `IProjectionSpecification<T,TResult>` (projections keep a
+  distinct name because `IRepository` re-declares `ListAsync`, which would hide a same-named overload).
+  `IRepository<T,TId> : IReadRepository<T,TId>` is **always tracked**: `new` `GetByIdAsync`/`FirstOrDefaultAsync`/
+  `ListAsync`, `AddAsync`/`AddRangeAsync`, `UpdateAsync(agg[, EntityVersion expectedVersion])`, `UpdateRangeAsync`,
+  `DeleteAsync(agg[, EntityVersion])`, `DeleteRangeAsync`. Paging is always at the call site; a specification that
+  pages itself, an offset page without a primary sort, or a keyset spec that declares ordering throws
+  `InvalidOperationException`; a malformed cursor throws `ValidationException(pagination.cursor.invalid)`.
+- **`EntityVersion`** — opaque readonly struct: `ToString()` is the ETag value (decimal), `Parse`/`TryParse` accept
+  `"…"` and `W/"…"`, `None`; `FromRowVersion`/`ToRowVersion` are the provider seam (`[EditorBrowsable(Never)]`).
+- **Bulk.** `IBulkMutationRepository<T,TId>`: `ExecuteUpdateAsync(spec, Action<BulkUpdateSetters<T>>)`,
+  `ExecuteDeleteAsync(spec)` (soft-deletes `ISoftDeletable` rows), `ExecutePurgeAsync(spec)` (always physical).
+  The spec must carry `Criteria` or be `AllRowsSpecification<T>`.
+- **`ICrossTenantScope`** — `IsActive`, `Enter(string reason)` → `IDisposable`. `CrossTenantScope` keeps its depth on
+  the **instance** (registered scoped), so an `Enter` anywhere in a DI scope — including inside an awaited helper —
+  is visible to that scope's contexts/sessions until disposed, and never to another scope. Reason mandatory; every
+  entry logged (6150) with actor, actor kind, tenant, reason and counted (tag `persistence.actor_kind`).
+- **Infrastructure seams** (implemented by `.Npgsql`/`.EfCore`, hidden from IntelliSense): `ITenantSessionBinder.BindAsync(connection, transaction, tenantId)`
+  (transaction-local only), `IAmbientDbTransaction.Current`, `IMigrationLock`, `IAdvisoryTransactionLock`.
+- **Diagnostics.** `DatabaseReadinessResult` + `IDbConnectionFactory.CheckReadinessAsync` (bounded, never echoes
+  `ex.Message`). No `IHealthCheck` here — `13.ServiceDefaults.Persistence` wraps it.
 
-**Unit of Work (`UnitOfWork/`).** `IUnitOfWork.SaveChangesAsync` is the only permitted save boundary. `ITransactionalUnitOfWork : IUnitOfWork` adds `BeginTransactionAsync` (returns `IPersistenceTransaction` — `CommitAsync`/`RollbackAsync`) and retry-safe `ExecuteInTransactionAsync`/`ExecuteInTransactionAsync<TResult>` overloads (optional `IsolationLevel?`, optional `verifySucceeded` callback for telling "genuinely failed" apart from "succeeded but the ack was lost" inside a `RetryLimitExceededException` catch body).
-
-**Connections (`Connections/`).** `IDbConnectionFactory.CreateConnectionAsync` returns `Task<System.Data.Common.DbConnection>` — **not** `IDbConnection` (a P-557 breaking change: `DbConnection` is required for `await using` and Dapper's async surface).
-
-**Coordination (`Coordination/`).** `IMigrationLock`, `IAdvisoryTransactionLock` — see Local Seams above.
-
-**Context (`Context/`).** `ICurrentActorContext`, `ICurrentTenantContext`, `ICrossTenantScope` + its default `CrossTenantScope`/`CrossTenantScopeDiagnostics`, `ActorKind`, `ITenantSessionBinder` — see Local Seams above.
-
-**Specifications (`Specifications/`).** `IProjectionSpecification<TAggregate,TResult>` extends `ISpecification<TAggregate>` with a `Selector` expression. `ISpecificationEvaluator<T>` itself lives in `.EfCore` (it is inherently EF/LINQ-flavoured — `.Abstractions` stays zero-ORM).
-
-**Diagnostics (`Diagnostics/`).** `DatabaseReadinessResult` (BCL-only record) and `DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(IDbConnectionFactory, TimeSpan timeout, ...)` — bounded, never leaks `ex.Message`, rethrows on caller cancellation. No `IHealthCheck` ships from this domain — wiring into `AddHealthChecks()` is `13.ServiceDefaults`'s job.
-
-**Auditing (`Auditing/`) — the ledger v2 contract, see "Audit Ledger v2" below for the full design.** `IAuditTrailWriter` (one member, `RecordAsync` — no update/delete member exists on the contract at all), `IAuditQueryService` (`GetResourceHistoryAsync`/`GetActorActionsAsync`/`GetResourceHistoryAcrossTenantsAsync`/`ExportRangeAsync`/`VerifyFullChainAsync`/`VerifyChainFromCheckpointAsync`), `AuditRecord`/`AuditEntry`/`AuditOutcome`/`AuditQueryLimits`, `AuditResourceHistorySpecification`/`AuditActorActionsSpecification`/`AuditCrossTenantResourceHistorySpecification`, `AuditChainCheckpoint`/`AuditChainVerificationResult`, `IAuditCheckpointService`. **Every tenant-scoped query method resolves its tenant exclusively from `ICurrentTenantContext` — none accepts a caller-supplied `tenantId` any more** (a P-557 remediation fix, see Findings C3 in `state-map.md`); the two privileged cross-tenant methods are separately named and require an active `ICrossTenantScope`.
+Specifications themselves (`ISpecification<T>`, `Specification<T>`, `Spec.For<T>()` builder, `ProjectionSpecification<T,TResult>`,
+`IProjectionSpecification<T,TResult>`, typed `ThenInclude`, `And`/`Or`/`Not`) live in `03.Domain`.
 
 ### `SharedKernel.Persistence.EfCore`
 
-**DbContext base (`Context/`).** `SharedKernelDbContext` and `MultiTenancy.TenantedDbContext` take exactly **one** required constructor parameter beyond `DbContextOptions`: `PersistenceContextDependencies`. This bundles the three platform interceptors, every additional/opt-in interceptor, and every `IPersistenceModelConventionFactory`/`IPersistenceModelConfigurator`/`IPersistenceOptionsExtension`/`IDbUpdateExceptionClassifier` contribution. Its `ApplyTo(DbContextOptionsBuilder)` is the **single source of truth** for what gets wired onto a context's options, called from both `SharedKernelDbContext.OnConfiguring` (non-pooled) and `EfCorePersistenceBuilder<TContext>.Build()`'s pooled-factory callback — the two paths cannot drift apart, by construction. A derived context declares exactly:
+**Entry point.** `builder.AddSharedKernelPostgres<TContext>("name", p => ...)` (`IHostApplicationBuilder`) or
+`services.AddSharedKernelPostgres<TContext>(configuration, "name", p => ...)`. Callback style, no `.Build()`.
+Builder members: `ConfigureProvider` (`PostgresProviderOptions`: `UseVector`, `MaxRetryCount`, `MaxRetryDelay`,
+`AdditionalTransientErrorCodes`), `ConfigureDataSource((sp, ds) => …)`, `UseDataSource(NpgsqlDataSource)`,
+`ConfigureDbContext((sp, o) => …)` (compiled model: `o.UseModel(...)`), `UseDbContextPooling(poolSize)`,
+`UseServiceName`, `UseUuidV7Keys`, `MigrateOnStartup(lockTimeout?)`, `AddSeeder<T>`, `AddInterceptor<T>`; extensions
+`UseMultiTenancy(rowLevelSecurity, rowLevelSecurityCheck)` (TenantedDbContext only), `UseAuditTrail()`,
+`UseFieldEncryption(k => …)`. Registering the same `TContext` twice throws.
 
-```csharp
-public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options, PersistenceContextDependencies dependencies)
-    : SharedKernelDbContext(options, dependencies);
-```
+Registered per context: inner (pooled or plain) **singleton** `IDbContextFactory<TContext>` under a private key;
+public **scoped** `IDbContextFactory<TContext>` (`TenantAwareDbContextFactory`: attaches the scope's `IRequestContext`,
+`IDomainEventDispatcher` and `ICrossTenantScope` per lease); **singleton** `ICallerDbContextFactory<TContext>` (explicit
+caller, for singletons/hosted services); scoped `TContext` (tracked by the scope's `UnitOfWorkCoordinator`);
+`SharedKernelDbContext` unkeyed (first context) and keyed by `typeof(TContext)`; `IUnitOfWork<TContext>`, keyed
+`IUnitOfWork`, unkeyed `IUnitOfWork` (first context); open-generic repositories (`RepositoryRegistration`: the
+aggregate's context is found by probing the registered models once; ambiguity or no match is a clear error; closed
+registrations win); the migration/seed hosted service when requested; `ValidateOnStart` model validation
+(`PersistenceStartupValidator`). Shared, once: the PostgreSQL classifier (first), `PersistenceServiceOptions`
+(`SharedKernel:Persistence`, `ServiceName`), `IClock`, `ICrossTenantScope` + anonymous `IRequestContext`,
+`PersistenceContextDependencies`, `IAmbientDbTransaction`, `UnitOfWorkCoordinator`, `ISpecificationEvaluator<>`.
+Data source per connection name (`PostgresDataSources`): the first name is the unkeyed default, further names are
+keyed by name; contexts with the same name share it.
 
-**Why this collapsed from nine parameters to one:** before `PersistenceContextDependencies` existed, a derived context that declared its own, shorter constructor — omitting one of the five optional trailing collection parameters — compiled cleanly and ran without error, yet silently lost whichever opt-in capability rode that collection (the tenant write guard, row-level-security binding, the audit mutation guard, field encryption, a registered exception classifier). Reads stayed tenant-filtered (the query filter installs at model-build time, unaffected), which made the gap easy to miss — only writes and database-level protections silently went unprotected. A single required parameter forecloses that mistake structurally.
+**Context.** A derived context has exactly one constructor:
+`(DbContextOptions<T> options, PersistenceContextDependencies dependencies)`. `PersistenceContextDependencies` has an
+internal constructor; `PersistenceContextDependencies.Create(...)` exists for design-time factories, tools and tests.
+`SharedKernelDbContext.RequestContext` and `.CrossTenantScope` are attached per lease and reset on
+`Dispose`/`DisposeAsync` (the pool-return hook). `TenantedDbContext.CurrentTenantId` = `RequestContext.TenantId`.
+Entity configurations: plain `ApplyConfigurationsFromAssembly(GetType().Assembly, ShouldApplyConfiguration)`
+(skipped when the assembly has none); override `protected virtual bool ShouldApplyConfiguration(Type)` when several
+contexts share an assembly. Conventions are created in `ConfigureConventions` once per model build; the model cache
+key includes UUID v7 generation and the capability configurators.
 
-**Extensibility interfaces (`Extensibility/`).** `IPersistenceModelConventionFactory.CreateConvention(DbContext, DbContextOptions)`, `IPersistenceModelConfigurator.Configure(ModelBuilder)`, `IPersistenceOptionsExtension.Apply(DbContextOptionsBuilder)`, `IDbUpdateExceptionClassifier.TryClassify(DbUpdateException)`. Every one is resolved from DI as `IEnumerable<T>` and applied uniformly on **both** the pooled and non-pooled registration paths. This is how `.Encryption`, `.Auditing`, and `.PostgreSQL`'s row-level security contribute to `SharedKernelDbContext` without it ever referencing them — `PersistenceModelAnnotationNames` (a bare `internal`-visible string-constant pair, `Encrypt`/`EncryptApplied`) is the only coupling, and it is a shared constant, never a shared type.
+**Conventions (always on, no base configuration class).** `DomainTypeMappings`: every `StronglyTypedId<T>` reachable
+from the `DbSet`s or declared in the context's assembly gets a converter. `MoneyMapping`: every `Money` property is a
+complex type `{p}_amount numeric(19,4)` + `{p}_currency char(3)`, required unless `Money?`; `builder.Money(...)` only
+changes defaults. `DomainColumnConvention`: audit/soft-delete/tenant/version columns from the implemented interfaces,
+TenantId index, `CreatedBy`/`CreatedOn` after-save `Ignore`. `XminConcurrencyTokenConvention` (first finalizing
+convention): shadow `xmin` on every aggregate root. `SoftDeleteQueryFilterConvention`: named filter
+`PersistenceFilterNames.SoftDelete`. `TenantIsolationConvention` (TenantedDbContext): see Multi-tenancy.
+`ValueObjectOwnershipBuilder`: `IValueObject` properties → complex types. `EncryptAnnotationRegisteredGuardConvention`
+(last): an `.Encrypt()` annotation without `UseFieldEncryption()` fails the model.
 
-**Named query filters + tenant write guard (`Conventions/`, `Interceptors/`).** `PersistenceFilterNames.SoftDelete`/`.Tenant` name two independent, AND-combined EF Core 10 query filters — `SoftDeleteQueryFilterConvention` installs the first on every root `ISoftDeletable` type; `TenantedDbContext.ApplyTenantFilters` installs the second (`e => CurrentTenant.TenantId.HasValue && e.TenantId == CurrentTenant.TenantId`, built via expression trees, bound through `Expression.Constant(this, GetType())` so EF Core rebinds it per executing instance) on every root `IHasTenant` type. **`IncludeDeleted` ignores only `[PersistenceFilterNames.SoftDelete]`** (never the parameterless `IgnoreQueryFilters()`, which would also drop the tenant filter) — every read path (`SpecificationEvaluator`, `EfRepository`'s bulk paths, `TenantedRepository`) uses the selective overload. Dropping the **tenant** filter requires an active `ICrossTenantScope`. `TenantWriteGuardInterceptor` (`ISaveChangesInterceptor`) rejects any insert/update/delete whose entity's `TenantId` does not match `ICurrentTenantContext.TenantId`, unless a scope is active — covering tracked saves, bulk `ExecuteUpdate` `SetProperty` calls (via `UpdateSettersInspector`), and detached/re-attached updates. `TenantedDbContext.ApplyTenantFilters` additionally marks `TenantId` an **EF Core concurrency token** on every `IHasTenant` type — this closes the harder attack the interceptor alone cannot see: a detached stub carrying the *attacker's own legitimate* `TenantId` and a *victim's* primary key. The write guard only inspects the in-memory value; marking `TenantId` a concurrency token puts it in the physical `WHERE` clause, so the statement matches zero rows for a victim in a different tenant and EF Core raises `DbUpdateConcurrencyException`, translated by `ConcurrencyInterceptor` into the same tenant-isolation error.
+**Save pipeline.** One internal singleton `PersistenceSaveChangesInterceptor`: one `DetectChanges`, a snapshot with
+auto-detect off, a key index for principal lookup; in order **soft delete** (a deleted `ISoftDeletable` becomes
+modified; cascade-deleted dependents are soft-deleted or restored, so a soft-deleted order keeps its lines) →
+**aggregate-root touch** (a changed owned entity, child or grandchild marks its aggregate root modified — `FindParent`
+walks required FKs through tracked principals preferring composed roots — so the root's `xmin` is checked and
+advanced) → **audit stamps** (actor = `UserId`, else `ServiceName`) → **tenant stamping and write guard**. Then
+`SharedKernelDbContext.SaveChangesAsync` runs the domain-event dispatch loop **before** the physical save, on every
+save path (unit of work, seeder, factory user). No dispatcher registered → events cleared + Warning 6014 (startup
+warns 6016). A synchronous `SaveChanges` with pending events and a dispatcher throws. A throwing dispatcher clears
+the change tracker and rethrows. Other always-on interceptors: `ProtectedColumnUpdateGuard`
+(`IQueryExpressionInterceptor`: `ExecuteUpdate` may never set `TenantId`, `CreatedBy`/`CreatedOn` or a concurrency
+token), `DomainClockMaterializationInterceptor` (attaches `IClock` via `IHasClock`). Capability packages' interceptors
+run after the platform's and the user's (`IPersistenceOptionsExtension` is applied last) — encryption must be the last
+`SavingChanges` interceptor.
 
-**Repositories (`Repositories/`).** `EfRepository<TAggregate,TId>`/`EfReadRepository<TAggregate,TId>`. `IBulkMutationRepository<TAggregate,TId>.ExecuteUpdateAsync`/`ExecuteDeleteAsync` bypass `SaveChanges`/every interceptor/domain-event dispatch (documented bypass) and are guarded by `BulkSpecificationGuard`: a bulk mutation must carry either `Criteria` or the explicit `AllRowsSpecification<T>` marker, may never target `TenantId` or a concurrency-token property, may never target a property annotated `Encrypt` (writing plaintext into an encrypted column), and an **unresolvable** setter selector (e.g. a raw `EF.Property<Guid>(x,"TenantId")` string lookup) is rejected outright rather than silently passed through.
+**Errors.** Internal `PostgresDbUpdateExceptionClassifier` (always registered, first): 23505 → `ConflictException`;
+23503 → `ValidationException` (missing reference) or `ConflictException` (`foreign_key_dependent_exists`), decided by
+the FK in the model and the tracked changes on each side; 23502/23514/23P01/22001 → Validation; 40001/40P01/55P03/57014
+→ transient Conflict; 42501 (incl. an RLS `WITH CHECK` failure) → `ForbiddenException`. A transient error is **not**
+wrapped while retry is on, so the strategy can retry it. Every `DbUpdateConcurrencyException` →
+`ConflictException` (`persistence.concurrency_conflict`) carrying the current version (`ConcurrencyVersion.TryGetCurrentVersion`);
+a proven cross-tenant write is logged/counted but answered with the **same** Conflict (no existence oracle).
 
-**Unit of work + domain-event dispatch (`UnitOfWork/`).** `EfUnitOfWork`/`EfTransactionalUnitOfWork` share `DomainEventDispatchLoop`: events are snapshotted and cleared, dispatched, and re-scanned for any new same-`DbContext` side-effect events, **pre-commit**, inside `SaveChangesAsync` itself, looping until quiescent (capped at a fixed iteration ceiling to fail loudly on an accidental handler cycle rather than hang). The physical save happens only once the loop reaches quiescence. This means a hard-deleted aggregate's events are no longer lost (they are read before the entity's tracked state is touched by save) and dispatch no longer depends on whether/when `CommitAsync` is called. **Structural consequence, not a defect:** because dispatch is pre-commit, a subsequent `RollbackAsync` cannot retract a dispatch that already fired — a domain-event handler with only in-process, same-`DbContext` effects rolls back atomically with everything else; a handler with any genuinely external effect must never be registered here (it belongs behind an outbox or `05.Application`'s post-commit `ICommandScope.OnCompleted`). `IAmbientDbTransaction` is published by `EfPersistenceTransaction`/`EfTransactionalUnitOfWork` around every transactional scope so a Dapper command service sharing the same connection can enlist.
+**Concurrency API.** `ConcurrencyVersion.Get(db, entity)`, `SetExpected(db, entity, EntityVersion)`,
+`TryGetCurrentVersion(exception, out version)`, `ConflictErrorCode`. `UpdateAsync/DeleteAsync(detached)` on an
+aggregate whose version is a shadow `xmin` throws `InvalidOperationException` pointing at the `expectedVersion` overload
+(a detached root carries no version); aggregates with a CLR `RowVersion` attach as before. `Get` on an entity the context
+does not track (shadow `xmin`, e.g. loaded by `IReadRepository`) throws instead of reporting version 0.
 
-**Specification evaluator + keyset (`Specifications/`).** Canonical pipeline order: `IgnoreQueryFilters` (selective) → `Criteria` → `Includes` → `StringIncludes` → `OrderBy`/`ThenBys` → **`Distinct`** → `AsSplitQuery` → `AsNoTracking` → `Skip`/`Take` → `Select`. **`Distinct` moved before `OrderBy`** in P-557 (the old order was not guaranteed stable across providers for a projected/non-key-preserving query); **paging now throws without an explicit order** (an unordered `Skip`/`Take` is nondeterministic). A `.TagWith(spec.GetType().Name)` is applied automatically to every generated query. Keyset reads (`EfReadRepository.ListKeysetAsync`/`ListKeysetProjectedAsync`) return `04.Contracts`'s `CursorPagedList<T>`/`CursorPagedList<TResult>` (the old `KeysetPage<T,TKey>` is gone); the seek predicate and `ByIdSpecification`'s predicate are both built through a closure-holder pattern so EF Core's parameter-extraction visitor promotes the cursor value to a real bound parameter instead of an inlined SQL literal. `CountAsync` returns `long` and always strips paging before counting.
+**Repositories.** `EfReadRepository<T,TId>`/`EfRepository<T,TId>` are concrete and subclassable (public ctor
+`(SharedKernelDbContext)`, virtual members, `protected virtual IQueryable<T> AggregateQuery()` used by
+`GetByIdAsync`/`GetByIdsAsync` — put `Include`s there; `AutoInclude` is honoured). Tracked members use `AsTracking()`,
+the read contract `AsNoTracking()`, regardless of the context default. Keyset: seek predicate with closure-held
+parameters, strongly-typed id unwrap, `Take(limit+1)`, projected pages in SQL, compiled key accessors cached per member
+path; nullable keys are rejected. Bulk setters are recorded in `BulkUpdateSetters<T>` and replayed onto EF's builder
+(no EF internal API); targets resolve through the full member chain incl. nested complex properties and **fail closed**
+(PK, any concurrency token, `TenantId`, `CreatedBy`/`CreatedOn`, encrypted columns, unresolvable/`EF.Property`);
+`ExecuteUpdateAsync` stamps `ModifiedOn/By` unless the caller sets them. `TenantedRepository<T,TId>`:
+`GetByIdForTenantAsync`/`GetByIdForTenantIncludingDeletedAsync` (require an active cross-tenant scope). Every
+repository method is traced; every query is `TagWith`'d with the specification's type name.
 
-**Interceptors (`Interceptors/`).** Always-on: `AuditInterceptor`, `SoftDeleteInterceptor` (now walks EF ownership/FK metadata to rescue owned-type/child entries that would otherwise hard-delete alongside a soft-deleted root — a real cascade bug fixed in P-557), `ConcurrencyInterceptor`, `AggregateRootTouchInterceptor` (an owned/complex-type-only change now bumps the *owning root's* concurrency token — without this, an edit confined to an owned value object could save without the root's version changing). Opt-in: `TenantWriteGuardInterceptor` (via `.WithMultiTenancy()`), plus the opt-in interceptors sibling packages register through `IPersistenceOptionsExtension`. **Interceptor firing order matters and is fixed**: `SoftDeleteInterceptor` → `AggregateRootTouchInterceptor` → `AuditInterceptor` → `ConcurrencyInterceptor` → `DomainClockMaterializationInterceptor` → consumer-supplied additional interceptors — both state-flipping interceptors run before `Audit` so it always observes final state.
+**Unit of work — one transaction per DI scope (`UnitOfWorkCoordinator`, scoped).** Every scope-resolved context
+registers with the coordinator; every `EfUnitOfWork<TContext>` delegates to it.
 
-**Money mapping (`Conversions/`).** `builder.Money(e => e.Price, required: true, precision: 19, scale: 4)` (`MoneyEntityTypeBuilderExtensions`) configures `Money` as an **EF Core 10 complex type with two independently queryable columns** — `{property}_amount numeric(p,s)` and `{property}_currency char(3)` — via `ComplexProperty(...)`. This **replaced** the pre-P-557 single packed-string column design once `Money` gained a private, persistence-only 2-argument constructor (`Money(decimal amount, Currency currency)`, additive to `03.Domain`) that EF Core's complex-type materialization can bind directly. A stored amount with more decimal places than its currency's minor unit allows fails loudly on read (`money.stored_precision_exceeded`) instead of being silently re-rounded. **Requires `ModelConfigurationBuilderExtensions.ConfigureMoney()` to be called from `ConfigureConventions()`** — it pre-declares `Money` as a complex type before EF Core's early navigation discovery would otherwise walk it as a candidate entity type. `Money` remains excluded from `ValueObjectOwnershipBuilder`'s generic scan (it needs column-specific precision/scale the blind scan cannot guess).
+- `ExecuteInTransactionAsync` begins the transaction on the calling context and moves every tracked context that
+  reaches the **same database** (host, port, database, user, and the same side of the cross-tenant switch) onto that
+  connection (`SetDbConnection(owned:false)` + `UseTransaction`); contexts resolved during the transaction join on
+  resolution. Before commit every enlisted context with changes is saved (until quiescent, 16 passes max), then the
+  `OnBeforeCommit` callbacks run (a second save if they staged EF changes), then commit. Afterwards each joined
+  context is moved back to its data source.
+- A context that cannot join (another database/role, its own open connection or transaction) holding changes at
+  commit → `InvalidOperationException`, rollback. **No two-phase commit.**
+- Nested calls (any context's UoW) **join**. A joined operation that throws or returns a failed `Result` marks the
+  transaction **rollback-only**: the outermost call rolls back, returning its own failed result, or throws
+  `TransactionRolledBackException` if it would have succeeded.
+- Retry: the whole delegate runs inside the execution strategy; trackers of enlisted contexts are cleared before a
+  **retried** attempt only; starting with changes already staged under a retrying strategy is refused (they would be
+  lost on replay).
+- Commit: a failure with no `PostgresException` in the chain (I/O, timeout, cancellation) →
+  `CommitOutcomeUnknownException`, never retried, trackers cleared; a server-rejected commit (40001, deferred
+  constraint) rolled back and is retried/reported normally.
+- `SaveChangesAsync` outside a transaction: the owner alone → plain save; owner + joinable contexts with changes →
+  one transaction in the strategy (`acceptAllChanges:false`, `AcceptAllChanges` after commit).
+- The transaction is published on `IAmbientDbTransaction` (Dapper sessions and the audit writer enlist) and the
+  previous value is **restored** at the end, never blindly cleared.
 
-**Conventions (`Conventions/`).** `ValueObjectOwnershipBuilder` maps any `IValueObject`-implementing property onto `ComplexProperty(...)` (not `OwnsOne`, per P-557 — a complex type has no separate row/identity, so it is structurally immune to the owned-type cascade-delete-fixup class of bug). Every scalar member is declared explicitly (EF Core 10 complex types do not auto-discover scalars the way owned entities do); a `SingleValueObject<TValue>`-derived member (e.g. `Currency`) is unconditionally excluded (register a converter instead — never rely on ownership); a nested non-`SingleValueObject` value object (including `Money`) throws a clear, actionable exception at `Apply()` time rather than letting EF Core fail with a cryptic error later, because **EF Core 10 cannot bind a constructor parameter to a nested complex type or a nested owned entity type at all** — verified across every API idiom, a genuine platform limitation, not a config mistake. `EncryptAnnotationRegisteredGuardConvention` (`IModelFinalizingConvention`, always registered, always last) throws if any property still carries the `Encrypt` annotation with no matching `EncryptApplied` — i.e. `.Encrypt(...)` was used somewhere `.WithEncryption()` was never called; this scans **both** direct properties and complex-type sub-properties.
+**Startup.** `IPersistenceStartup` (`IsCompleted`, `WaitAsync`) completes when every context's
+`MigrateOnStartup`/seeders finished (immediately when none), fails when they fail. `MigrationAndSeedHostedService`
+(`StartAsync`, blocks host start) runs migrations over `NpgsqlDataSourceKeys.Migration` when registered, under
+`IMigrationLock` (`sk:migration:{Context}`, default 2 min; EF Core 9+'s own migration lock is taken after it, same
+order on every replica); seeders run as `SystemRequestContext("seeder:{Type}")` and, on a `TenantedDbContext`, inside
+the context's cross-tenant scope — under RLS on `UseCrossTenantConnection()` (needs `CrossTenantConnectionString`); a
+pooled context whose connection is swapped gets an unpooled copy. Order at host start: `ValidateOnStart` (options,
+model) → hosted `StartAsync` (Npgsql RLS privilege check, migrations/seeders, encryption key-ring load) → `StartedAsync`
+(RLS coverage check, audit self-check — both after `IPersistenceStartup.WaitAsync`) → background sealer (waits too).
+`AddDatabaseReadinessCheck<T>` is Unhealthy until `IPersistenceStartup.IsCompleted`.
 
-**DI extensions (`Extensions/EfCorePersistenceExtensions.cs`) — `EfCorePersistenceBuilder<TContext>`.** `WithMultiTenancy()`, `WithDbContextFactory()`/`RequireDbContextFactory()`, `WithCompiledModel(IModel)`, `WithCommandTimeout(int)`, `WithReadReplica(Action<DbContextOptionsBuilder>)`, `WithTransactionalUnitOfWork()`, `WithServiceName(string)`/`WithServiceName(IConfiguration)`, `WithMigrationsOnStartup()`, `WithTransientFaultRetry(...)`, `WithDbContextPooling(poolSize)`, `AddInterceptor<TInterceptor>()`, `AddBuildAction(Action)`, `Build()`. `Build()` is **idempotent-guarded** (calling it twice for the same `TContext` throws `InvalidOperationException` rather than re-keying an already-rekeyed factory registration into a self-referencing loop) and guards against a second, different `TContext` silently last-writer-winning over the first's `IUnitOfWork` registration.
+**Design-time.** `PostgresDesignTimeDbContextFactory<TContext>(connectionName)`: connection from `--connection`, then
+`SharedKernel:Persistence:{name}:MigrationConnectionString`, `SharedKernel:Persistence:Npgsql:MigrationConnectionString`,
+`ConnectionStrings:{name}` (appsettings*.json + environment), retry off; abstract `Create(options, dependencies)`;
+virtual `ConfigurePersistence(EfCorePersistenceBuilder<TContext>)` — the service's capability calls, from which only the
+model conventions/configurators are taken (no interceptor, key or connection resolved), so the migration model equals
+the runtime model (encrypted widths, blind-index columns). Without it an `.Encrypt()` model refuses to build.
 
-**Pooling + multi-tenancy — the real fix, not a guard.** `TenantedDbContext`'s constructor takes **no** `ICurrentTenantContext` parameter; `CurrentTenant` starts at `NullCurrentTenantContext.Instance` and is attached **per lease** by `TenantAwareDbContextFactory<TContext>` (a scoped decorator wrapping the real pooled-or-not `IDbContextFactory<TContext>`, calling `RefreshActor`/`RefreshTenant` on every `CreateDbContext[Async]`). `TenantWriteGuardInterceptor` reads tenant identity **live off `eventData.Context`**, never a constructor-captured field, which is what makes it safe to register Singleton under pooling alongside the three platform interceptors. `TenantedDbContext.Dispose`/`DisposeAsync` reset `CurrentTenant` back to the fail-closed default before calling the base implementation — EF Core 10's pool-return hook (`IResettableService`/`IDbContextPoolable`) is `internal`/explicit-interface-implemented and not overridable, so `Dispose`/`DisposeAsync` (public `virtual`, and the actual method the pool's return-to-pool interception hangs off) is the genuinely available mechanism. **`AddInterceptor<T>()` combined with pooling remains unsupported for any interceptor other than the platform's own `TenantWriteGuardInterceptor`** — a consumer-supplied interceptor with its own scoped dependency hits the identical captive-dependency hazard pooling always carries.
+### Multi-tenancy
 
-**Migration lock + seeding (`Seeding/`).** `IDataSeeder<TContext>`, `MigrationAndSeedHostedService<TContext>` (opt-in via `.WithMigrationsOnStartup()`/`.WithSeeders(...)`). Resolves `IMigrationLock` optionally; when migrations/seeders are configured and none is registered, logs an **Error**-level (not silent) warning that cross-replica coordination is not guaranteed, then proceeds. `MigrationAndSeedHostedService` opens its own DI scope for the migration step (`IDbContextFactory<TContext>` is Scoped, per the pooling redesign above) — a migration run has no tenant identity of its own, so the fail-closed defaults are correct for it.
+Three independent layers; each alone is correct, together they are defense in depth.
 
-**Diagnostics/telemetry (`Diagnostics/`).** `PersistenceActivitySource` (`ActivityKind.Internal`), `PersistenceMeter` (`"SharedKernel.Persistence"`, `ConcurrencyConflicts`/`TenantIsolationViolations` counters, plus `CrossTenantScope`'s own entry counter on the same meter), `PersistenceRetryDiagnosticListener` (bridges EF Core's provider-neutral `CoreEventId.ExecutionStrategyRetrying`), `[LoggerMessage]` sub-block `6000-6099`. `13.ServiceDefaults`'s `WithPersistenceTelemetry` wires this `ActivitySource`/`Meter` plus (as of P-557) `SharedKernel.Persistence.Dapper`'s `ActivitySource` and `.Encryption`'s/`.Auditing`'s `Meter`s, each by string name (the `ServiceDefaults` base takes no `SharedKernel` package reference at all — WO-084's split).
-
-### `SharedKernel.Persistence.EfCore.Encryption` — Field Encryption v2
-
-**Interceptor-based, not a `ValueConverter`.** Associated data must bind purpose + primary key + tenant id, and a `ValueConverter` sees only the single property being converted — no access to sibling properties. `EncryptionInterceptor` implements **both** `ISaveChangesInterceptor` (encrypt, in `SavingChangesAsync`) and `IMaterializationInterceptor` (decrypt — EF Core 10's *only* extension point that sees the whole materialized instance; it is synchronous-only, so decrypt must be sync regardless). Both directions call `ISynchronousSymmetricEncryptionService`/`ISynchronousEncryptionKeyProvider` — never `ValueConverter`, never async. AES-GCM is CPU-bound, so this is not a sync-over-async violation.
-
-**Opt-in entry point:**
-
-```csharp
-services.AddSingleton<IEncryptionKeyProvider>(...);           // or an ISynchronousEncryptionKeyProvider directly
-services.AddSharedKernelEfCore<OrderDbContext>(options => ...)
-    .WithEncryption(configuration)                            // section "SharedKernel:Persistence:Encryption"
-    .Build();
-```
-
-`.WithEncryption()` auto-detects whichever `01.Core` key provider(s) the consumer already registered (Static/Cached/Azure Key Vault), bridging an async-only provider via `EncryptionKeyRingCache`/`EncryptionKeyRingRefreshHostedService` when no sync provider is present, and throws a clear `InvalidOperationException` at `Build()` if neither is registered. **No config-backed default key provider ships from this package at all.**
-
-```csharp
-builder.Property(x => x.Ssn).Encrypt("customer.ssn");
-builder.Property(x => x.Email).Encrypt("customer.email").WithBlindIndex();
-builder.ComplexProperty(x => x.Billing, b => b.Property(a => a.Line1).Encrypt("customer.billing.line1"));
-```
-
-**Associated data (`AssociatedDataBuilder`):** `"SKENC1"` domain separator + length-prefixed `purpose` + `primaryKey` (canonical bytes, `PrimaryKeyCanonicalizer` — the write path and the rotation path use the **same** canonicalizer, a real bug from an earlier cut of this pass) + `tenantId` (16 raw bytes) **whenever the declaring entity implements `IHasTenant`, unconditionally** — `perTenantKey` (below) controls key *derivation* only, not whether the tenant id is bound into the AAD. Renaming a table/column/schema never breaks decryption (AAD never depends on physical names).
-
-**Blind index (`.WithBlindIndex(normalize?)`):** adds a shadow `string` column (`"{Property}BlindIndex"`), maintained by `EncryptionInterceptor` on every save — HMAC-SHA256 over an HKDF subkey (`SubkeyDerivation.DeriveKey(rootKey, "blindindex:{purpose}", tenantId?)`), tenant-scoped whenever the entity is tenanted. Query with `EncryptedPropertyQueryExtensions.WhereBlindIndexEquals(query, blindIndexService, property, purpose, value, normalize?, tenantId?)` — the computed digest is bound as a genuine `EF.Parameter`, never a SQL literal. `EncryptedColumnEqualityGuardInterceptor` (heuristic, regex over generated SQL) throws before executing a query that appears to filter an encrypted column by equality/`IN` **including a blind-indexed one** (the message then points at `WhereBlindIndexEquals` rather than suggesting a blind index that already exists) — a `.TagWith(EncryptedColumnEqualityGuardInterceptor.DisableTagText)` opts one query out.
-
-**Rotation v2 (`Rotation/EncryptionRotationService<TContext>` implementing `IEncryptionRotationJob`):** `RotateAsync(expectedCurrentKeyId, checkpointToken?, batchSize, ct)` walks `IModel` metadata directly and issues **raw ADO.NET** — keyset-paginated `SELECT`, per-row `ReEncryptAsync` (plaintext never leaves the crypto layer, re-derived from the *same explicit key* used for the matching blind-index recomputation), then a **compare-and-swap `UPDATE ... WHERE pk=@pk AND ciphertext=@old`** — bypassing every EF filter and every interceptor (no audit stamping) by design. Zero affected rows on the swap is counted `RowsFailed` (a concurrent writer changed the row — retried on a later pass, never overwritten: no lost updates). An unparseable stored value is counted separately (`RowsSkippedUnparseable`) and never silently folded into a successful `Completed: true` report. The resumable checkpoint (`EncryptionRotationCheckpoint`) identifies a target by a stable `EntityTypeName::PropertyPath` key, **never** by a positional index into the live, rebuildable target list — a checkpoint survives the model gaining or losing encrypted properties between runs. Supports single-column `Guid`/`Int64`/`Int32`/`string` primary keys; a composite key, or an encrypted property on a **same-table owned entity type** (whose primary key is always an unreadable shadow property in EF Core 10 — a genuine platform ceiling, not a gap this package chose to leave), throws at model-build time, not at `RotateAsync` time. An encrypted property on a **complex type** rotates correctly (no separate PK of its own — its columns are flattened onto the owning entity's row).
-
-**Deliberately out of scope this pass:** `byte[]`-typed encrypted properties (string only; anything else throws at model build); genuine per-tenant crypto-**shredding** (`perTenantKey: true` gives real cross-tenant key *isolation*, not independently-destroyable tenant keys — the subkey is deterministically re-derivable from the still-live root key and the tenant id).
-
-### `SharedKernel.Persistence.EfCore.Auditing` — Audit Ledger v2
-
-Distinct from `.EfCore`'s always-on `AuditInterceptor` (which only stamps mutable `CreatedBy`/`ModifiedOn` columns and preserves no history). This package is an **explicit act** — never fed automatically off `AuditInterceptor` — typically via `05.Application`'s opt-in `IAuditableRequest`/`AuditingBehavior`, bridged to `IAuditTrailWriter` at the composition root.
-
-**Chain partitioning:** one hash chain per `(TenantId, ResourceType)`, not per tenant alone (would serialize every write for a busy tenant regardless of resource type) and not per resource instance (fragments verification into near-useless 1-2-record chains). A single resource's own history is a **filter** over its type's chain, not a separate chain.
-
-**Concurrency (dual layer):** when `SharedKernel.Persistence.Npgsql` registers `IAdvisoryTransactionLock`, appenders to the same chain fully serialize via `pg_advisory_xact_lock` (zero retries, `AcquireAsync`'s optional `timeout` bounds the wait — see Known Limitations for the one remaining gap). Always-active fallback: a unique index on `(chain_key, sequence)` plus a `SAVEPOINT`-per-attempt retry loop (retrying inside an aborted PostgreSQL transaction without a savepoint fails every subsequent statement with `25P02` — a real bug this pass found and fixed).
-
-**Canonical encoding + hash:** length-prefixed binary encoding, domain separator `"AUDITv2"` (bumped from `v1` in a P-557 remediation fix — see Findings H6), every optional field carries an explicit presence flag before its payload (`null` and `""` are byte-distinct), `OccurredOn` is hashed as **integer UTC microseconds since epoch**, never a formatted string (closes a ~90% false-"Broken" defect from hashing an un-truncated .NET tick value against a naturally-µs-precision `timestamptz` column). `HashAlgorithm` and `KeyId` are themselves part of the hashed payload (also a remediation fix — relabeling either out of band used to be silently undetectable). `IHmacSigner.Sign` keyed by `IAuditChainKeyProvider` — key material lives outside the database.
-
-**Transaction semantics — the exact rule (see `IAuditTrailWriter`'s own XML doc, quoted here because it is load-bearing):**
-- `Outcome.Succeeded` — the writer **requires** an active `IAmbientDbTransaction.Current` and enlists in it; commits/rolls back atomically with the business write. **Calling this with no ambient transaction active throws `InvalidOperationException`** rather than silently committing a "succeeded" attestation with no transactional tie to the write it describes.
-- `Outcome.Failed` — **always** opens its own connection and its own transaction, committed immediately, independent of any ambient transaction's fate.
-
-For this to be reachable at all, the caller needs a real ambient transaction around an audited command — see "05↔06 audit transaction wiring" below.
-
-**Immutability, three layers, all mandatory for a genuine guarantee:** (1) `AuditRecordImmutabilityInterceptor` — a tracked update/delete throws before `SaveChanges` issues any command; (2) `AuditRecordMutationGuardInterceptor` (`DbCommandInterceptor`, regex over generated SQL) — catches `ExecuteUpdate`/`ExecuteDelete`/raw SQL (`UPDATE`/`DELETE`/`TRUNCATE`/`DROP TABLE`/`ALTER TABLE`, schema-qualified, an optional `ONLY`), invisible to layer 1; (3) a PostgreSQL `BEFORE UPDATE/DELETE/TRUNCATE ... ENABLE ALWAYS TRIGGER` (`AuditImmutabilityMigrationBuilderExtensions`, `.PostgreSQL`) — **mandatory for production**, since layers 1-2 cannot stop a different service/console/DBA tool sharing the database; `ENABLE ALWAYS` (not the `CREATE TRIGGER` default of `ENABLE ORIGIN`) specifically so `SET session_replication_role = 'replica'` cannot bypass it. Pair with a `REVOKE UPDATE, DELETE ON audit_records FROM <application_role>` grant.
-
-**Query service (`EfAuditQueryService`):** every tenant-scoped method resolves tenant from `ICurrentTenantContext` — `ExportRangeAsync`/`VerifyFullChainAsync` **no longer take a caller-supplied `tenantId` at all** (a remediation fix that closed an unrestricted cross-tenant ledger read/verify). `VerifyChainFromCheckpointAsync` genuinely compares the hash it finds at the checkpoint's sequence against `expectedHead.RecordHash` (another remediation fix — it previously only checked sequence reachability, which a same-length forged tail could satisfy).
-
-**Opt-in entry point:**
-
-```csharp
-services.AddSharedKernelCryptography(configuration);           // IHmacSigner
-services.AddSharedKernelEfCore<OrderDbContext>(options => ...)
-    .WithAuditTrail(configuration)                              // section "SharedKernel:Persistence:Auditing", REQUIRED argument
-    .WithAuditChainCheckpoints(signingKeyId)                     // optional — ECDSA-signed checkpoints
-    .Build();
-```
-
-`.WithAuditTrail(IConfiguration)` genuinely **requires** `IDbConnectionFactory` and `IAmbientDbTransaction` to already be resolvable (`AddSharedKernelNpgsql(...)` and `.WithTransactionalUnitOfWork()` respectively) — omitting either fails `IAuditTrailWriter` resolution outright with `InvalidOperationException`, not a graceful degrade. `IAdvisoryTransactionLock` is genuinely optional (falls back to the savepoint-retry path). Re-registering `.WithAuditTrail()` when a consumer has already registered its own `IAuditTrailWriter` still wires every guard/interceptor (`TryAdd` semantics) while the consumer's writer still wins resolution.
-
-**05↔06 audit transaction wiring.** `05.Application.Behaviors` gained local `ITransactionalUnitOfWork`/`IPersistenceTransaction` seams (mirroring its existing `IUnitOfWork`/`IAuditTrailWriter`/`AuditEntry` same-name-different-namespace bridge pattern). When the registered `IUnitOfWork` also implements `ITransactionalUnitOfWork`, `TransactionBehavior` opens a real transaction **before** the handler runs and commits/rolls back around it — so `AddAuditingBehavior()` + `AddTransactionBehavior()` composed together now genuinely satisfy `IAuditTrailWriter`'s ambient-transaction requirement for a `Succeeded` outcome. `13.ServiceDefaults.Persistence`'s `WithApplicationTransactionBehavior()` selects the transactional adapter **lazily**, at first DI resolution inside a real scope (never an eager `_services.Any(...)` check at builder-call time), so it works regardless of whether `.WithTransactionalUnitOfWork()` was called before or after it in the fluent chain.
+1. **Model (`TenantIsolationConvention`, model-finalizing, TenantedDbContext only).** Every `IHasTenant` root type gets
+   the named query filter `PersistenceFilterNames.Tenant` (`e.TenantId == CurrentTenantId`, fails closed on `null`)
+   and `TenantId` as a **concurrency token** (a detached stub carrying another tenant's key matches zero rows). Every
+   other non-owned, non-property-bag entity type must be `[TenantShared]` (`03.Domain`) or `builder.IsTenantShared()`
+   — otherwise the model build fails. Children are tenant data: same filter, guard, token and RLS as roots.
+2. **Save pipeline.** An added `IHasTenant` with `TenantId == Guid.Empty` is stamped with its tracked aggregate root's
+   tenant, else the caller's; then the write guard rejects any add/modify/delete outside the current tenant or a
+   tenant change (actionable `TenantIsolationErrors` messages). Skipped only while the context's
+   `CrossTenantScope.IsActive`. Always on for a `TenantedDbContext` (`UseMultiTenancy()` states intent + RLS switch).
+3. **PostgreSQL row-level security** (`UseMultiTenancy(rowLevelSecurity: true)`; Npgsql
+   `RowLevelSecurity.Enabled`). One setting, `app.tenant_id`, bound **transaction-locally only**
+   (`set_config(..., true)`), never for the session — safe behind transaction-mode PgBouncer and connection reuse.
+   Internal EF interceptors: inside a transaction bind once per (context, EF `TransactionId`, tenant), rebind on tenant
+   change or savepoint rollback; a query carries the bind in its own round trip (prefix), a `SaveChanges` batch gets a
+   separate `set_config` command first (EF checks per-statement row counts by position); outside a transaction every
+   command is prefixed with a `DO` block (one implicit transaction per command, no result set); `SaveChanges` under
+   RLS is forced into a transaction (`AutoTransactionBehavior.Always`); migration commands untouched.
+   Policy (`EnableTenantRowLevelSecurity(table, tenantColumn, schema, crossTenantRole?)` /
+   `EnableTenantRowLevelSecurityForModel(model, crossTenantRole?)`): `ENABLE` + `FORCE`, one predicate
+   `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid` for `USING` and `WITH CHECK`, uses the tenant
+   index; optional role-specific `USING (true)` policy for a cross-tenant role; `Disable*` drops policies, `NO FORCE`,
+   `DISABLE`. Identifiers above 63 bytes are rejected; policy names go through the same truncate-and-hash. A migration's
+   `TargetModel` is property bags (no CLR types): `DomainColumnConvention` stamps `SharedKernel:Persistence:Tenant` on every
+   non-owned `IHasTenant` type and `TenantTables` reads the CLR type or that annotation; `ForModel` throws on zero tables.
+   **Cross-tenant = a separate database role** (`BYPASSRLS` or the role-specific policy) on the keyed
+   `NpgsqlDataSourceKeys.CrossTenant` data source: inside an active scope EF commands on the application connection
+   throw — call `context.Database.UseCrossTenantConnection()`; using that connection outside a scope throws; Dapper
+   sessions switch automatically; encryption maintenance uses it by itself. There is **no escape token**.
+   Startup checks: Npgsql `RowLevelSecurityStartupCheck` (`PrivilegeCheck` Fail/Warn/Disabled, default Fail) — runtime
+   role superuser, `BYPASSRLS`, owner or member of owner of an RLS table, or a permissive non-tenant policy applying to
+   it (PUBLIC, itself, any role it is a member of); EfCore `RowLevelSecurityCoverageCheck<T>`
+   (`RowLevelSecurityCheckMode` Fail, Warn in Development, Off) — every tenant table of the design-time model has RLS
+   enabled + forced + a policy reading `app.tenant_id` (one catalog query). Options validation refuses `Multiplexing`
+   and `No Reset On Close` with RLS.
 
 ### `SharedKernel.Persistence.Npgsql`
 
-The one shared, options-bound `NpgsqlDataSource` (`SharedKernel:Persistence:Npgsql`, `SslMode` defaults to `VerifyFull` with an explicit, auditable `AcknowledgeInsecureSslMode` opt-down, `Persist Security Info` forced `false` unconditionally, `statement_timeout`/`lock_timeout`/`idle_in_transaction_session_timeout` startup keywords, a periodic-password-provider hook for Entra/RDS IAM token rotation). `NpgsqlConnectionFactory : IDbConnectionFactory`, registered **Singleton** (it is stateless). `NpgsqlAdvisoryMigrationLock`/`NpgsqlAdvisoryTransactionLock` (`IMigrationLock`/`IAdvisoryTransactionLock`) share one `internal` FNV-1a 64-bit key-hashing helper (`AdvisoryLockKeyHasher`) — deterministic across processes/replicas. `NpgsqlTenantSessionBinder : ITenantSessionBinder` (`set_config('app.tenant_id', ...)`/`'app.cross_tenant'`, parameterized, never string-interpolated). `AddSharedKernelNpgsql(configuration)` / `AddSharedKernelNpgsql(IConfigurationSection, name, ...)` (a second, keyed database — does **not** register `IMigrationLock`/`ITenantSessionBinder` for the named instance) / `AddSharedKernelNpgsql(string connectionString)`.
-
-### `SharedKernel.Persistence.PostgreSQL`
-
-`UsePostgreSQL(DbContextOptionsBuilder, IServiceProvider, useVector: false, ...)` (resolves the DI-registered `NpgsqlDataSource`, throwing if `.Npgsql` was never wired) / `UsePostgreSQL(..., string connectionString, ...)` / `UsePostgreSQL(..., NpgsqlDataSource, ...)`. `useVector` is opt-in on every overload — `npgsqlOptions.UseVector()` and the `vector` extension (`VectorExtensionConvention`, via `HasPostgresExtension("vector")`) are applied only when it is `true`.
-
-**Row-level security (opt-in, `.WithRowLevelSecurity<TContext>()` where `TContext : TenantedDbContext`):** `RowLevelSecurityConnectionInterceptor` binds tenant + cross-tenant-escape on `ConnectionOpened[Async]`, resets on `ConnectionClosing[Async]` (reset failures logged, never rethrown); `RowLevelSecurityCommandInterceptor` **rebinds per statement inside an explicit transaction** (a remediation fix — without it, a scope entered or exited mid-transaction left the connection-scoped binding stale for the rest of that transaction). `RowLevelSecurityMigrationBuilderExtensions.EnableTenantRowLevelSecurity` issues `ENABLE`+`FORCE ROW LEVEL SECURITY` and a policy `tenant_column = NULLIF(current_setting('app.tenant_id', true),'')::uuid OR current_setting('app.cross_tenant', true) = '<token>'` — fails **closed** (zero rows) when no tenant is bound; the escape token defaults to the literal `"on"` but should be set to a real per-deployment secret via `NpgsqlPersistenceOptions.CrossTenantEscapeToken` (`[MinLength(32)]` when set) in production, since nothing at the database level otherwise stops any session with SQL access from setting the literal itself. **`.WithRowLevelSecurity()` does not require `.WithMultiTenancy()` too** — RLS alone is already a coherent, secure configuration (EF Core's own read filter still installs regardless); combining both is defense in depth. **PostgreSQL superusers bypass RLS unconditionally, even under `FORCE ROW LEVEL SECURITY`** — every RLS-dependent test in this domain connects through a genuinely unprivileged role; testing through a superuser connection proves nothing.
-
-**Other conventions:** `SnakeCaseNamingConvention` (`internal`) now renames tables, columns (including recursively into complex-type sub-columns), indexes, FK/PK/AK/check constraints, truncating any identifier over PostgreSQL's 63-byte `NAMEDATALEN` limit with an 8-hex-char stable hash suffix; a non-table-backed entity type (a view/`ToSqlQuery`/keyless/abstract TPC root) is skipped, never given an invented name. `XminConcurrencyTokenConvention`/`XminRowVersionValueConverter` fail loudly (model-build time / a thrown `ArgumentException`) instead of silently skipping or zeroing a malformed value. `PostgreSqlDbUpdateExceptionClassifier : IDbUpdateExceptionClassifier` — SQLSTATE `23505` → `ConflictException`, `23503` on an `Added`/`Modified` entry → `ValidationException` (referenced a nonexistent row), `23503` on a `Deleted` entry → `ConflictException` (a dependent still exists), `40001`/`40P01` → `ConflictException` (safe to retry). `JsonbEntityTypeBuilderExtensions.HasJsonbColumn` — **method-based, not attribute-based** (`JsonbColumnAttribute` was deleted as dead, domain-leaking code) — now attaches a structural `ValueComparer` (without it, EF Core's default reference-equality comparer never detects an in-place mutation of the deserialized object graph) and has a `JsonTypeInfo<T>`-accepting, reflection-free overload; prefer EF Core 10's native `ComplexProperty(...).ToJson()` when the payload's shape is itself a mapped complex type. `VectorEntityTypeBuilderExtensions.HasVectorColumn`/`HasHalfVectorColumn` are constrained to `Expression<Func<TEntity, Pgvector.Vector>>` **at compile time** — a `float[]` vector column was proven, not assumed, unsupported by EF Core 10 (`InvalidOperationException` at model-validation time) and the API narrowed so that mistake is a compile error instead. `VectorDistanceMetric` covers `Cosine`/`L2`/`L1`/`InnerProduct`; `HasVectorIndex` adds an HNSW/IVFFlat index with the matching operator class. Migration helpers: `AuditImmutabilityMigrationBuilderExtensions` (see above), `RowLevelSecurityMigrationBuilderExtensions` (see above).
+Connection name → `ConnectionStrings:{name}`; settings in `SharedKernel:Persistence:{name}` (a `ConnectionString` key
+there overrides); only the unnamed `AddSharedKernelNpgsql(configuration)` reads `SharedKernel:Persistence:Npgsql`.
+Reserved names: `Encryption`, `Auditing`, `Dapper`, `Npgsql`. `NpgsqlPersistenceOptions`: `SslMode?` (null = honour
+the connection string, else `VerifyFull`; loopback → `Disable`; below VerifyFull allowed for loopback or Development,
+else needs `AcknowledgeInsecureSslMode`, warning 6300; GSS encryption `Disable` unless the connection string sets
+`GSS Encryption Mode`), statement/lock/idle timeouts, `MigrationConnectionString`,
+`ReadOnlyConnectionString`, `RowLevelSecurity { Enabled, CrossTenantConnectionString, PrivilegeCheck }`,
+`EnableDynamicJson` (opt-in), `UseVector`. Validated at start, messages never echo a connection string. Keyed data
+sources exist only when configured (read-only falls back to multi-host `PreferStandby`, then primary).
+`AdvisoryLockKeys`: `sk:migration:`/`sk:audit:` namespaces, `ToKey` = FNV-1a 64. Bounded xact lock restores the
+previous `lock_timeout` and rounds up to ≥ 1 ms. Npgsql's per-command Information log is lowered to Debug on data
+sources built here. `PostgresErrorMapping.TryAsync` gives Dapper/raw ADO the same `Error` as EF Core.
 
 ### `SharedKernel.Persistence.Dapper`
 
-`DapperReadService` is **read-only** — `ExecuteAsync` moved to the new `DapperCommandService` (a deliberate breaking change: "this type only ever reads" is now structurally true). Every method takes optional `commandTimeout`/`CommandFlags`, defaulting to `DapperPersistenceOptions.DefaultCommandTimeoutSeconds`; `QueryAsync<TResult>` returns `IReadOnlyList<TResult>`; new `QueryUnbufferedAsync<TResult>` (`IAsyncEnumerable`, no `CommandDefinition`/`CancellationToken` overload exists on Dapper's own unbuffered API — cancellation is caller-side-stop-enumerating only), `QueryFirstOrDefaultAsync`, `ExecuteScalarAsync`. `DapperCommandService.ExecuteAsync`/`ExecuteScalarAsync` enlist in `IAmbientDbTransaction.Current` when present (the same connection/transaction an `ITransactionalUnitOfWork` or `EfTransactionalUnitOfWork.ExecuteInTransactionAsync` scope published — proving EF Core and Dapper share one transaction, commit/rollback both survive or vanish together), otherwise open and auto-commit their own.
+`IDbSessionFactory` (scoped): `OpenAsync()`, `OpenReadOnlyAsync()`, `OpenAsync(DbSessionOptions { ReadOnly,
+IsolationLevel, EnlistInAmbientTransaction })`. `IDbSession`: `Connection`, `Transaction`, `IsEnlisted`, `IsReadOnly`,
+`TenantId`, `RequireTenantId()`, `Command(sql, params, ct)` (adds transaction + `DefaultCommandTimeoutSeconds`),
+`CommitAsync`. Inside a unit of work it enlists (commit/dispose no-ops); otherwise own connection + transaction,
+dispose without commit rolls back (a rollback failure is logged 6400 and never masks the original error). Read-only
+= `SET TRANSACTION READ ONLY` on the read-only data source. RLS on → tenant bound through `ITenantSessionBinder`;
+inside a cross-tenant scope → cross-tenant data source (refused inside a unit of work). `DapperConfiguration.Apply`
+is the one place the process-wide type map is set (`AddSmartEnum`, `AddStronglyTypedId`, `AddJsonb(JsonTypeInfo<T>)`,
+`AddTypeHandler`, `MatchNamesWithUnderscores`; pgvector types always). `AddSharedKernelDapper` also TryAdds the
+anonymous `IRequestContext` and `ICrossTenantScope`, so a Dapper-only service works.
 
-**Tenant-safe variants (`TenantSafeDapperReadService`/`TenantSafeDapperCommandService`) — fail closed before any SQL runs** when `ICurrentTenantContext.TenantId` is `null` and no `ICrossTenantScope.IsActive`. When a tenant *is* resolved, the read service opens its own read-only transaction and binds it via `ITenantSessionBinder.BindAsync` before running the query (committing afterward so the transaction-local `set_config` resets); the command service rebinds the ambient/enlisted transaction's tenant setting **immediately before its own statement**, every call, never assuming a prior statement's binding is still current. **Defense in depth, not the enforcement mechanism** — the real enforcement is the RLS policy (`.PostgreSQL`) reading the same session setting; this class's WHERE-clause discipline is real but does not make a WHERE-less query "safe" on its own.
+### `SharedKernel.Persistence.EfCore.Auditing` — audit ledger v3 (async sealer)
 
-**Type handlers (`TypeHandlers/`):** `StronglyTypedIdTypeHandler<TStronglyTypedId,TValue>` (explicit conversion operator — `03.Domain`'s identifiers convert only explicitly, never implicitly), `SmartEnumTypeHandler<TEnum,TValue>` (`TryFromValue`, zero per-row reflection — `SmartEnum<TEnum,TValue>`'s own base type already force-runs the derived type's static constructor once per closed generic type at its own static init). Both use `Convert.ChangeType(..., CultureInfo.InvariantCulture)` explicitly. `DapperTypeHandlers.Apply(configure?, enableSnakeCaseMapping: true)` sets `Dapper.DefaultTypeMap.MatchNamesWithUnderscores` under the same lock as handler registration, and applies **every** `configure` delegate passed to it across every call (not first-call-wins) — two independent composition-root modules each calling `AddSharedKernelDapper` with their own handlers both take effect.
+- **Request path** (`UseAuditTrail()` → internal `EfAuditTrailWriter`): one statement (CTE) inserting
+  `audit_records` + `audit_record_payloads`; no sequence, hash, lock or retry on the request path. `Succeeded` must run
+  inside `IAmbientDbTransaction.Current` (throws otherwise) and commits with the business write — `05`'s
+  `AuditingCommitBehavior` queues it on `OnBeforeCommit`. `Failed` is one autocommitted statement on its own
+  connection. Idempotency: `ON CONFLICT DO NOTHING` on `(tenant_id, resource_type, idempotency_key) NULLS NOT
+  DISTINCT`. Field lengths validated before any SQL (`AuditFieldLimits`). Identity from `IRequestContext` +
+  `ServiceName`; an unauthenticated caller is always recorded `Anonymous`, never `System`; W3C trace id and baggage
+  correlation id captured. A `null` tenant is allowed only for an authenticated `System` actor or inside an active
+  cross-tenant scope (writer, queries, verification, checkpoints, erasure).
+- **Sealer** (`AuditSealerHostedService` → `AuditSealingEngine`): each pass is one transaction taking
+  `pg_try_advisory_xact_lock(ToKey("sk:audit:sealer"))` (leader per pass, pooler-safe), selecting records with
+  `insert_xid < pg_snapshot_xmin(pg_current_snapshot())`, `insert_xid >= floor` and **no link yet**, in `(insert_xid,
+  id)` order (commit-safe: a long transaction that commits late is sealed in xid order), appending insert-only
+  `audit_chain_links` rows (per-chain sequence, previous MAC, MAC, key id, algorithm, format). `insert_xid` is stamped
+  by a BEFORE INSERT trigger. The floor is learned in-process from its own scans (a new process scans the sealed
+  prefix once); a forged max-xid link cannot stall it. Chains: one per `(TenantId, ResourceType)`; the unique
+  `(tenant_id, resource_type, sequence) NULLS NOT DISTINCT` index is the second fence. Checkpoints every
+  `Sealer:CheckpointInterval` to `IAuditCheckpointSink` (default insert-only `audit_checkpoints`). Optional separate
+  sealer role: `Sealer:DataSourceName` (a keyed `AddSharedKernelNpgsql` registration).
+- **Format AUDITv3** (`AUDIT-FORMAT.md`, test vectors parsed by `AuditFormatVectorTests`): big-endian RFC 9562 GUIDs,
+  µs timestamps, presence flags, domain separators `AUDITv3`/`AUDITv3-PAYLOAD`/`AUDITv3-CHECKPOINT`, key id + algorithm
+  inside the MAC. The chain commits to `SHA-256(salt ‖ payload)`; payload + salt live in erasable
+  `audit_record_payloads`.
+- **Keys**: `AuditLedgerOptions` (`SharedKernel:Persistence:Auditing`): `CurrentKeyId`, `Keys{id:{Material,Order}}`
+  (≥ 32 bytes, current = newest), `CheckpointSigningKeyId`, `AcceptedCheckpointSigningKeyIds`,
+  `Sealer{Enabled,Interval,BatchSize,CheckpointInterval,DataSourceName}`, `SelfCheck` (Off/Warn/Fail, default Warn —
+  use Fail in production). `IAuditRecordAuthenticator` (async, KMS-capable); default keyring over `IHmacSigner`; a
+  custom authenticator registered first wins.
+- **Verification**: `AuditVerificationStatus` Intact/Broken/Unverifiable + `AuditVerificationFailureKind`
+  (SequenceGap, HashMismatch, LinkMismatch, KeyRegression, AnchorMismatch, TailTruncated, UnknownKey, PayloadErased,
+  NotSealed). Checkpoint anchors are re-authenticated. Checkpoint creation is scope-gated, verifies incrementally from
+  the latest authentic checkpoint before signing, and the verifier accepts only pinned signing key ids.
+  `IAuditLedgerMaintenance`: `SealPendingAsync`, `SealAllChainsAsync(reason)` (after a key compromise; later forgeries
+  under the old key → KeyRegression), `ErasePayloadAsync`/`EraseResourcePayloadsAsync` (GDPR; chain stays Intact,
+  reported as erased). Export and cross-tenant queries audit themselves (`AuditLedgerActions`).
+- **Immutability**: triggers `ENABLE ALWAYS` rejecting UPDATE/DELETE/TRUNCATE on records, links, checkpoints and
+  UPDATE/TRUNCATE on payloads (SQLSTATE 42501) + privileges from `CreateAuditLedgerTable(runtimeRole, sealerRole)`
+  (revokes default privileges, grants exactly) + startup self-check (superuser, owner/member, UPDATE/DELETE/TRUNCATE,
+  RLS on a ledger table, missing/disabled trigger, runtime INSERT on links when a separate sealer is configured). The
+  ledger is **not** part of any EF Core model and is **never** RLS-protected (the sealer sees every tenant).
+- `AddSharedKernelAuditLedger(IConfiguration)` is the idempotent service-collection form; `UseAuditTrail()` uses the
+  configuration given to `AddSharedKernelPostgres`.
 
-**No `.PostgreSQL`/`.Npgsql` reference at all.** A consuming service supplies `IDbConnectionFactory` itself — typically `.Npgsql`'s `AddSharedKernelNpgsql()`, but any implementation works, and `DapperReadService`/`DapperCommandService` never know or care which one.
+### `SharedKernel.Persistence.EfCore.Encryption` — field encryption v3
+
+- **Interceptor-based, never a `ValueConverter`** (associated data needs the primary key and tenant). Encrypt in
+  `SavingChanges` (only properties whose `IsModified` is true), decrypt in `IMaterializationInterceptor`; after a save
+  the entry is reset to plaintext and unchanged (no re-encryption on the next save). Stale pending entries are
+  restored at the start of each save.
+- **Crypto**: AES-256-GCM (BCL `AesGcm`), random nonce, **per-purpose HKDF-SHA256 key** (cached per key id +
+  purpose), payload = `01.Core` `EncryptedPayload` (key id = root key id or `skt:{tenant}`), AAD tag `SKENC2` binding
+  purpose, canonical primary key and tenant. Purposes are unique model-wide (TPH siblings on one column allowed).
+- **Model**: `.Encrypt(purpose)` on entity and complex properties at any depth (one recursive traversal helper shared
+  by convention, guard, interceptor and maintenance); rejected at model build: non-string, complex collections,
+  JSON/struct complex types, composite/shadow/unsupported primary keys. `HasMaxLength(n)` is widened to the
+  ciphertext bound. Annotations are strings/flags/names only (migrations and compiled models scaffold).
+- **Blind index**: `.WithBlindIndex(BlindIndexNormalization flags, string? normalizer)`, shadow
+  `Path_With_UnderscoresBlindIndex` column; separate versioned keys (`IBlindIndexKeyProvider`, values `v1:<hex>`),
+  HMAC over tenant ‖ normalized value; lookups match every configured version. Query with
+  `WhereEncryptedEquals(x => x.Email, value[, tenantId])` (purpose, normalization, tenant from the model/context).
+- **Query guard** (`EncryptedMemberQueryGuard : IQueryExpressionInterceptor`): any use of an encrypted member other
+  than `== null`/`!= null` — filter, order, group, join, projection, `ExecuteUpdate` setter — throws before the query
+  runs; matched by member metadata token per model (no false positives). Raw SQL is not checked.
+- **Keys**: default key source = the `IEncryptionKeyProvider`/sync provider already in DI (register once);
+  `FromConfiguration()`, `UseKeyProvider<T>()`. Async providers are bridged by `FieldKeyRing` (startup load, periodic
+  refresh, on-miss background fetch with 30 s cooldown, `MaxKeyStaleness` → keyed probe
+  `FieldEncryptionServiceKeys.KeyRingProbe` unhealthy). Options `SharedKernel:Persistence:Encryption`, validated at start.
+- **Maintenance** (`IEncryptionRotationJob.RunAsync(EncryptionMaintenanceRequest, progress, ct)`): modes
+  `VerifyOnly | ReEncrypt | RecomputeBlindIndexes | EncryptPlaintext` (flags); targets are distinct
+  (schema, table, column) from relational mappings (TPH/TPT/TPC); one batched CAS `UPDATE … FROM unnest(...)` per batch;
+  checkpoint by column; each batch in its own transaction with `SET LOCAL row_security = off` on the cross-tenant data
+  source (errors instead of silently filtering), row-count sanity check when `RequireRowSecurityBypass = false`;
+  `report.IsSafeToRetire(keyId)`. **Requires a caller-entered cross-tenant scope — never enters one itself.**
+- **Tenant data keys / crypto-shredding** (`UseTenantDataKeys()`): per-tenant data key wrapped by an
+  `IEnvelopeEncryptionProvider`, stored in `sk_tenant_encryption_keys` (`CreateTenantEncryptionKeyTable`), created on
+  first write. `ITenantEncryptionKeyManager.ShredTenantAsync(tenantId, TenantShredOptions?, ct)` (caller-entered scope
+  required) tombstones the key, clears the tenant's blind indexes, and refuses (`TenantShredIncompleteException`)
+  when root-key or plaintext values of that tenant remain unless `AllowIncompleteErasure`. After a shred, root-key
+  values of that tenant are refused on read; writes re-check the tombstone in the write transaction (`FOR SHARE` on
+  the key row, serialized with the shred); maintenance never rewrites a shredded tenant's rows.
 
 ---
 
 ## Implementation Rules
 
-**Hard violations (never do these):**
+**Invariants — do not break (each was a real defect once):**
 
-- Expose `IQueryable<T>` from any `.Abstractions` or `.EfCore` public repository member.
-- Call `DbContext.SaveChanges[Async]` outside `EfUnitOfWork`/`EfTransactionalUnitOfWork`/`EfPersistenceTransaction`.
-- Introduce an outbox type (`OutboxMessage`, `IOutboxWriter`, `OutboxInterceptor`) anywhere in this domain — owned entirely by `07.Messaging`.
-- Reference `SharedKernel.Application.Behaviors` or `SharedKernel.Security.Abstractions` from any package **except** through the documented local seams and the `13.ServiceDefaults.Persistence` bridge — this is the P-557 layering fix, and it is now mechanically locked (`SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity`, `00.Governance`, scanning every `.cs` file physically under `06.Persistence`, production and test).
-- `SharedKernel.Persistence.Dapper` referencing `SharedKernel.Persistence.PostgreSQL`/`.Npgsql`, or `SharedKernel.Persistence.EfCore` referencing `Npgsql` directly — enforced by the `ConsumerVerify` project's reflection-based dependency-graph assertions.
-- String-interpolated or concatenated SQL passed as the `sql` argument to any `DapperReadService`/`DapperCommandService`/`Dapper.SqlMapper` call — mechanically flagged by `00.Governance`'s `SK0042` analyzer (Warning severity).
-- Use the parameterless `IgnoreQueryFilters()` overload anywhere in this domain — always the selective `IgnoreQueryFilters([PersistenceFilterNames.SoftDelete])` (or, for a genuine cross-tenant read under an active `ICrossTenantScope`, `[..., PersistenceFilterNames.Tenant]`), never both filters dropped by accident.
-- Read or write a bulk mutation (`IBulkMutationRepository`) without going through `BulkSpecificationGuard` — never hand-roll `ExecuteUpdateAsync`/`ExecuteDeleteAsync` elsewhere in this domain.
-- Resolve `ICurrentActorContext`/`ICurrentTenantContext` via a derived `DbContext`'s own constructor — always via `PersistenceContextDependencies` + the per-lease `RefreshActor`/`RefreshTenant` pattern (the pooling-safety property depends on this).
-- Encrypt or decrypt via a hand-rolled `ValueConverter` in this domain — field encryption is `EncryptionInterceptor`-only (`.EfCore.Encryption`); a `ValueConverter` cannot see sibling properties (the primary key, the tenant id) that associated data requires.
-- Bind row-level security session settings via string-interpolated SQL — always a parameterized `set_config(...)` call through `ITenantSessionBinder`.
-- Call `IAuditTrailWriter.RecordAsync` with `Outcome.Succeeded` outside an ambient transaction, or attempt to work around the resulting `InvalidOperationException` by opening a throwaway standalone transaction just to satisfy it — the whole point of the check is that the audit record's fate must be tied to the *real* business transaction, not to *a* transaction.
-- `Activator.CreateInstance`/`MakeGenericMethod` in any hot (per-row/per-call) path — the platform-wide reflection ban. The one narrow, documented exception is `EncryptionInterceptor`'s materialization-time property **setter** resolution (`IPropertyBase.GetMemberInfo(forMaterialization: true, forSet: true)`) — EF Core 10 exposes no public non-reflective write accessor at materialization time; read access (`GetGetter()`) has one, write does not.
+- **A derived context has exactly one constructor parameter besides options: `PersistenceContextDependencies`.**
+  Per-capability constructor parameters let a context compile into a silently unprotected state.
+- **Identity, dispatcher and cross-tenant scope are attached per lease, never through a context constructor**, and
+  reset on dispose — this is what makes pooling safe with multi-tenancy. Singleton infrastructure (interceptors) reads
+  identity from the context being saved, never from a captured field.
+- **One transaction per DI scope.** Every scoped context registers with `UnitOfWorkCoordinator`; never start a
+  transaction on a context directly (`Database.BeginTransaction` fails under the retrying strategy anyway), never
+  clear the ambient transaction blindly (restore the previous value), never let a joined failure commit.
+- **An ambiguous commit is never replayed** (`CommitOutcomeUnknownException`); a server-rejected one may be.
+- **Tenant binding is transaction-local only.** Never `set_config(..., false)`, never a connection-open interceptor,
+  never a second setting or an escape token in policy text. Cross-tenant work uses a separate role.
+- **Every entity type of a `TenantedDbContext` is tenant data or explicitly `[TenantShared]`.** Do not weaken
+  `TenantIsolationConvention` to roots only — children were readable across tenants through their own `DbSet`.
+- **Every production `IgnoreQueryFilters` is selective** (`[PersistenceFilterNames.SoftDelete]` or, under an active
+  scope, `[..., PersistenceFilterNames.Tenant]`). The parameterless overload drops the tenant filter too.
+- **Bulk setters fail closed** — an unresolvable target is rejected, never passed through.
+- **Any traversal of `.Encrypt()` annotations uses the shared recursive helper** (`PersistenceModelAnnotationNames.GetPropertiesIncludingComplex`);
+  a one-level loop is exactly how nested complex properties were once stored in plaintext.
+- **Maintenance and shredding never enter the cross-tenant scope themselves** — the caller's entered scope is the
+  authorization.
+- **The audit request path takes no lock and assigns no sequence**; sealing is the sealer's job, in commit-safe xid
+  order. `Succeeded` is written only inside the business transaction; never "fix" the ambient-transaction check by
+  opening a standalone transaction.
+- **An unauthenticated caller is never audited as `System`.**
+- **The ledger stays outside EF Core models and outside RLS.**
+- **Encryption stays the last `SavingChanges` interceptor** (options extensions are applied after platform and user
+  interceptors).
+- **Startup work that needs the schema waits for `IPersistenceStartup`** (audit self-check, sealer, RLS coverage
+  check, database readiness).
+- **Sibling packages pin EfCore (and EfCore pins Npgsql) to the exact version** — they use each other's internals.
+
+**Hard violations:**
+
+- Referencing MediatR, `SharedKernel.Application` (the MediatR package), `.Behaviors`, or `12.Security` from any
+  persistence package. Only `SharedKernel.Application.Abstractions` is allowed (`PersistenceNeverReferencesApplicationOrSecurity`
+  and `PersistenceForbiddenAssemblyReferences`, source and assembly level).
+- `SharedKernel.Persistence.Dapper` or `.Npgsql` referencing EF Core; `.Abstractions` referencing an ORM, Npgsql or Dapper.
+- Declaring `IUnitOfWork`, `IRequestContext`, `IAuditTrailWriter` (or the deleted `ITransactionalUnitOfWork`,
+  `IPersistenceTransaction`, `ICurrentActorContext`, `ICurrentTenantContext`) anywhere but `Application.Abstractions`
+  (`UnitOfWorkSeamRules.SharedContractsAreNotRedeclared`).
+- A read repository that tracks (`PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack`, IL scan).
+- Exposing `IQueryable<T>` from a repository contract; calling `SaveChanges` outside the unit of work/context save path.
+- Interpolated SQL into `IDbSession.Command`/Dapper (`SK0042`); a `TenantedDbContext.OnModelCreating` override that
+  skips `base.OnModelCreating` (`SK0201`).
+- An outbox type; a hand-rolled encryption `ValueConverter`; hand-rolled AES.
+- Referencing `SharedKernel.Persistence.Testing` (or `SharedKernel.Testing`) from production code
+  (`TestingNeverReferencedByProduction`).
+- Reflection in a per-row/per-call path. The documented exceptions: encryption's materialization-time setter
+  resolution (`GetMemberInfo(forMaterialization: true, forSet: true)`), cached per model, and Dapper's own mapping.
+
+**Conventions for new code:** new `[LoggerMessage]` events in the package's own EventId block; configuration types
+implement `ISectionBoundOptions` and register with `AddValidatedOptions`; every option that can be wrong is validated
+at start; public types that only sibling packages need are `internal` + IVT, not public; new registration/builder
+extensions go in `SharedKernel.Persistence`, EF Core model/migration/query extensions in `SharedKernel.Persistence.EfCore`.
 
 ---
 
-## DI Registration (expected shape)
+## DI Registration
+
+The canonical composition (compiled and run by `13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/…Tests/Readme/PersistenceReadmeSampleTests.cs`):
 
 ```csharp
-// --- Npgsql: the one shared data source, always registered first ---
-services.AddSharedKernelNpgsql(builder.Configuration);   // section "SharedKernel:Persistence:Npgsql"
+builder.Services.AddOidcAuthentication(builder.Configuration);      // 12.Security
+builder.Services.AddSharedKernelRequestContext();                   // 13.ServiceDefaults.Security → IRequestContext
+builder.Services.AddSharedKernelCryptography(builder.Configuration);// IHmacSigner (audit), key providers (encryption)
 
-// --- Minimal single-tenant EF Core wiring ---
-services
-    .AddSharedKernelEfCore<OrderDbContext>((sp, options) =>
-        options.UsePostgreSQL(sp))
-    .Build();
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p     // ConnectionStrings:orders + SharedKernel:Persistence:orders
+    .UseMultiTenancy(rowLevelSecurity: true)
+    .UseAuditTrail()                                                // SharedKernel:Persistence:Auditing
+    .UseFieldEncryption(k => k.UseTenantDataKeys())                 // SharedKernel:Persistence:Encryption
+    .MigrateOnStartup());
 
-// --- Full multi-tenant wiring: RLS + application-layer guard + encryption + audit trail + a real
-//     ambient transaction for audited commands ---
-services.AddSharedKernelCryptography(builder.Configuration);   // IHmacSigner, and a key provider for encryption
-services.AddSingleton<IEncryptionKeyProvider>(...);             // or wire an ISynchronousEncryptionKeyProvider directly
-services
-    .AddSharedKernelEfCore<OrderDbContext>((sp, options) =>
-        options.UsePostgreSQL(sp))
-    .WithMultiTenancy()                       // TContext must extend TenantedDbContext, or Build() throws
-    .WithRowLevelSecurity<OrderDbContext>()    // DB-layer defense in depth; requires AddSharedKernelNpgsql above
-    .WithEncryption(builder.Configuration)     // section "SharedKernel:Persistence:Encryption"
-    .WithTransactionalUnitOfWork()             // ITransactionalUnitOfWork -> EfTransactionalUnitOfWork
-    .WithAuditTrail(builder.Configuration)     // section "SharedKernel:Persistence:Auditing" — REQUIRES the two lines above
-    .Build();
+builder.Services.AddSharedKernelApplicationBehaviors()              // 05: no adapters, persistence implements the contracts
+    .AddDefaultBehaviors().AddTransactionBehavior().AddAuditingBehavior().Build();
 
-// --- Consuming service bridges the real identity source at its own composition root (13.ServiceDefaults.Persistence) ---
-services.AddOidcAuthentication(builder.Configuration);       // registers 12.Security's IUserContext/ITenantProvider
-// registers SecurityCurrentActorContext/SecurityCurrentTenantContext (exact DI extension name lives in
-// 13.ServiceDefaults.Persistence, not verified here)
-services.AddSharedKernelAuditTrailBridge();                   // 05.Application.Behaviors.IAuditTrailWriter -> this domain's IAuditTrailWriter
-services.WithApplicationTransactionBehavior<OrderDbContext>(); // AppBehaviors.IUnitOfWork -> this domain's (transactional variant when available)
+builder.Services.AddSharedKernelDapper(builder.Configuration, d => d.AddStronglyTypedId<OrderId, Guid>());  // optional
 
-// --- Dapper read/command side, sharing the same Npgsql data source ---
-services.AddSharedKernelDapper(b => b.AddTypeHandler<OrderId, StronglyTypedIdTypeHandler<OrderId, Guid>>());
-services.AddScoped<OrderReadService>();   // : TenantSafeDapperReadService
-
-// --- Per-aggregate repository pair — one registration per aggregate in the consuming service ---
-services.AddScoped<IRepository<Order, OrderId>, OrderEfRepository>();
-services.AddScoped<IReadRepository<Order, OrderId>, OrderEfReadRepository>();
-
-// --- Background service / hosted-service DbContext access ---
-services.AddSharedKernelEfCore<OrderDbContext>((sp, options) => options.UsePostgreSQL(sp)).Build();
-// IDbContextFactory<OrderDbContext> is now always registered (needed internally regardless of whether a
-// consumer asked for it) — inject it directly in a hosted service; audit fields default to
-// PersistenceServiceOptions.ServiceName ("system" unless overridden) with no HTTP user context.
+builder.Services.AddHealthChecks()                                  // 13.ServiceDefaults.Persistence
+    .AddDatabaseReadinessCheck<OrderDbContext>()
+    .AddPersistenceStartupReadinessCheck()
+    .AddFieldEncryptionReadinessCheck()
+    .AddAuditSealingReadinessCheck();
 ```
 
-`AddSharedKernelAuditTrailBridge()` and `WithApplicationTransactionBehavior<TContext>()` are real, verified `13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence` entry points; the security-bridge registration's exact method name was not independently re-verified in this pass — see that domain's own `CLAUDE.md` for its current API. This file only documents the `06.Persistence` side of the handshake.
+A Dapper-only service: `services.AddSharedKernelNpgsql(configuration, "orders"); services.AddSharedKernelDapper(...)`.
+A second context: another `AddSharedKernelPostgres<ReportDbContext>("reporting")`; inject `IUnitOfWork<ReportDbContext>`
+or `[FromKeyedServices(typeof(ReportDbContext))] IUnitOfWork` to start on it — any unit of work commits every joinable
+context. A singleton: `ICallerDbContextFactory<T>.CreateDbContextAsync(new SystemRequestContext([], "job"), ct)`.
+Hand-built (tools/tests): `options.UsePostgres(dataSource); new T(options.Options, PersistenceContextDependencies.Create())`.
 
 ---
 
 ## AOT Compatibility
 
-- Every `.Abstractions` interface is AOT-safe by definition. `SpecificationEvaluator<T>`, the tenant filter, the keyset seek predicate, and every ordering/projection expression are built with `Expression<Func<...>>` trees consumed by `IQueryable<T>` — no `GetMethod`/`MakeGenericMethod`/`Invoke` anywhere in a hot path.
-- `StronglyTypedIdValueConverter`/`CurrencyValueConverter` use the explicit conversion operator and the public `Currency.Create` factory respectively — zero reflection. `MoneyEntityTypeBuilderExtensions.Money(...)` configures `ComplexProperty` via ordinary typed builder calls.
-- `ValueObjectOwnershipBuilder` scans entity/property metadata at **model-build time only** (not a hot path); its `[DynamicallyAccessedMembers]`-annotated reflection is the same accepted, documented, startup-only class of exception used elsewhere on the platform.
-- `EncryptionInterceptor`'s **one** reflection use — `IPropertyBase.GetMemberInfo(forMaterialization: true, forSet: true)` at decrypt time — is documented above under Hard Violations as the sole sanctioned exception; EF Core 10 genuinely exposes no non-reflective write accessor at materialization time.
-- `EncryptionRotationService`/`EfAuditTrailWriter`/`EfAuditQueryService` issue raw ADO.NET (`DbConnection`/`DbCommand`/`DbDataReader`) directly — no LINQ expression compilation, no reflection.
-- `Dapper` uses reflection for parameter binding and result mapping — a known, accepted AOT limitation, fully contained behind `DapperReadService`/`DapperCommandService`; nothing outside `.Dapper` is affected.
-- `AdvisoryLockKeyHasher` (FNV-1a) and every canonical-encoding helper (`CanonicalEncoding`, `AuditRecordHasher`, `PrimaryKeyCanonicalizer`) are pure `Span<byte>`/BCL code — zero reflection.
-- `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL`, and `Pgvector.EntityFrameworkCore` — verify AOT status on each major upgrade; the abstraction boundary (`.Abstractions`) allows a provider swap regardless.
-- `EfCorePersistenceBuilder`'s guard exceptions (multi-tenancy mismatch, pooling combination guards, idempotent-`Build()` guard) are startup-time `InvalidOperationException`s — DI composition is not an AOT-critical hot path.
+Not a design constraint for this domain (EF Core, Npgsql and Dapper are reflection-based). Still: no
+`MakeGenericMethod`/`Activator` in hot paths; expression trees built once and cached (keyset accessors, tenant
+filter, bulk setters); the canonical encodings (AUDITv3, AAD, primary-key canonicalization, advisory-lock hashing)
+are pure `Span<byte>` code; model-build-time scans are the accepted startup-only reflection.
 
 ---
 
 ## Test Rules
 
-- Unit tests live in the nested `.Tests/` folder inside each package's own folder.
-- **Every package's dedicated `.Tests` project runs against real PostgreSQL via Testcontainers for anything provider-specific or security-critical** — row-level security, tenant isolation attack scenarios (detached-stub cross-tenant writes, bulk `SetProperty` escapes), the audit chain's concurrency/tamper/immutability behavior, encryption rotation, and every SQLSTATE-classification path. `SharedKernel.Persistence.EfCore.Tests` keeps SQLite for pure LINQ/interceptor logic but carries its own `Postgres/` sub-folder for the scenarios that genuinely need a real database (concurrent tenant isolation, retry-under-real-transient-fault, pooled multi-tenancy under real concurrency, xmin-backed concurrency conflicts).
-- **RLS-dependent tests must connect through a genuinely unprivileged role, never the fixture's own superuser connection** — PostgreSQL superusers bypass row-level security unconditionally, even under `FORCE ROW LEVEL SECURITY`; a test that only ever exercises the superuser connection proves nothing about isolation.
-- **A cross-tenant "attack" scenario is only proven by actually building a detached entity/raw SQL statement that could plausibly come from a malicious or buggy caller** — asserting only the happy path (a tracked entity loaded through the tenant filter) never exercises `TenantWriteGuardInterceptor`'s or the tenant-concurrency-token's real job.
-- `DapperReadService`/`DapperCommandService`/tenant-safe variant tests must never assert against a superuser-privileged connection for a tenant-isolation claim (same rule as EF Core RLS tests above); Dapper's default column mapper does **not** strip underscores unless `DefaultTypeMap.MatchNamesWithUnderscores` is enabled — a hand-written raw-SQL test query either aliases explicitly or relies on `DapperTypeHandlers.Apply()`'s default having run.
-- Encryption/audit rotation and chain-concurrency tests must prove the real mechanism empirically (a genuine `Task.WhenAll` concurrent-writer race, a real injected `PostgresException` with the exact SQLSTATE code, a real cancellation mid-page) — never a sequential/mocked stand-in for a property the design explicitly claims holds under concurrency.
-- **`PublicApiAnalyzers` is build-breaking, not advisory**, in all seven packages (`RS0016`/`RS0017`/`CS1591` are in `WarningsAsErrors`) — a genuinely new/changed public member requires a `PublicAPI.Unshipped.txt` update in the same change, verified via a clean analyzer-on rebuild, not eyeballed.
-- `RS0026`/`RS0027` (optional-parameter overload ambiguity) warnings are **not surfaced by an ordinary `dotnet build`** in this repo — MSBuild's incremental-build cache can leave them stale/unreported across sessions. Force a real recompile (e.g. `dotnet pack -p:MinVerVersionOverride=...`) before trusting a "zero RS00xx" claim. Every legitimate suppression in this domain is a **paired, individually-justified** `#pragma warning disable/restore` naming exactly why the overloads are unambiguous (required-parameter type/count/generic arity) — never a blanket suppression.
-- `SharedKernel.ArchitectureTests.Tests`' `PersistenceLayeringRulesTests` proves, against the real compiled assemblies, that none of the seven `06.Persistence` production assemblies references `SharedKernel.Application.Behaviors`/`SharedKernel.Security.Abstractions` — a Roslyn source-tree scan (not an assembly-reference scan alone) additionally walks every `.cs` file physically under `06.Persistence`, production and test, distinguishing a real `using` directive from a doc comment that legitimately *discusses* the removed dependency.
-- `SharedKernel.Persistence.ConsumerVerify` restores the **packed** artifacts (never `ProjectReference`) and proves, via reflection over `GetReferencedAssemblies()`, the domain's own package-graph rules (`.EfCore` never references `Npgsql`; `.Dapper` never references `.EfCore`; `.Abstractions` references no ORM/Dapper package) plus every opt-in capability's DI resolution against the real packed assemblies — a `ProjectReference`-only test suite cannot catch a packaging-metadata defect (a missing `PackageReadmeFile`, a `.nuspec` dependency drift).
-- **Standard test package set** (all seven packages' `.Tests` projects): `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector`, `FluentAssertions`; EF Core-side tests also pull `Microsoft.EntityFrameworkCore.Sqlite`; audit-trail tests use `Microsoft.EntityFrameworkCore.InMemory` for the small subset of pure-logic checks that do not need Postgres, since SQLite cannot translate `ORDER BY` on a `DateTimeOffset` expression at all. `GlobalUsings.cs` with `global using Xunit;` is required in every test project — `ImplicitUsings` does not auto-import xUnit attributes.
-- Every test project references `16.Testing/SharedKernel.Testing` for shared helpers — `PostgreSqlContainerFixture` (one shared container per xUnit collection, per-test-class-uniquely-named databases when several `DbContext` shapes share one container), fakes for the local seams, and Bogus faker factories.
+- Tests are nested in each package (`*.Tests`). **Unit lane** (`Platform.SharedKernel.Unit.slnf`, no Docker):
+  `Persistence.Abstractions.Tests`, `Persistence.EfCore.Tests` (SQLite via the internal `UseProviderForTesting` seam —
+  `TestPersistenceRegistration` keeps the old call shape over the real registration). **Integration lane**
+  (`Platform.SharedKernel.Integration.slnf`, Testcontainers): `EfCore.Integration.Tests`, `Npgsql.Tests`,
+  `Dapper.Tests`, `EfCore.Auditing.Tests`, `EfCore.Encryption.Tests`, `16.Testing/SharedKernel.Persistence.Testing.Tests`.
+- **RLS and tenant-isolation claims are proven through an unprivileged role** — a superuser bypasses RLS even under
+  `FORCE`. Attack scenarios build the detached stub / raw SQL a buggy or hostile caller would send; happy paths prove
+  nothing about isolation.
+- Concurrency/commit-order/retry claims are proven empirically (real concurrent writers, injected transient
+  `PostgresException`s or `DbTransactionInterceptor` failures, a transaction that commits late), never by a sequential
+  stand-in.
+- Every finding fix carries a regression test (P-558 review IDs A*, C*, S*, F* appear in test names).
+- README samples are compiled by tests: `PersistenceReadmeSampleTests` (domain README), `Encryption.Tests/Unit/ReadmeSampleTests`,
+  `Auditing.Tests/Registration/ReadmeSampleTests`; `AuditFormatVectorTests` parses the packed `AUDIT-FORMAT.md`.
+- `SharedKernel.Persistence.ConsumerVerify` runs against the **packed** packages (not in CI yet — see the handoff):
+  `dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-local.N`, then
+  `dotnet test 06.Persistence/SharedKernel.Persistence.ConsumerVerify -p:SharedKernelPackageVersion=1.0.0-local.N`.
+- Build output on the maintainer machine is Turkish: judge by exit code and `error CS`/`error MSB`/`error RS` greps.
+  `RS0026`/`RS0027` only surface on a real recompile (`--no-incremental` or a pack).
+- Container suites that fail under whole-solution load are re-run in isolation before being treated as real.
 
 ---
 
-## Known Limitations / Deferred (explicit — not silently dropped)
+## Known Limitations (deliberate, open)
 
-- **`IAdvisoryTransactionLock.AcquireAsync`'s `timeout` parameter mitigates, but does not structurally close, the audit chain's self-deadlock hazard**: a `Succeeded` write holding a chain's advisory lock inside an ambient transaction, contended by a `Failed` write on the *same* chain nested inside the *same* logical call, now fails fast with a diagnosable `PostgresException` instead of hanging forever — but the underlying nested-same-chain contention itself is not prevented. A caller that can trigger both a Succeeded and a Failed audit write for the same resource inside one logical operation should be aware of this.
-- **Composite (multi-column) primary keys are unsupported for encryption rotation** (the runtime encrypt/decrypt path has no such limitation — only `EncryptionRotationService` is scoped down); guarded at model-build time, not merely at first `RotateAsync` call.
-- **`byte[]`-typed encrypted properties are unsupported** — `.Encrypt()` on anything but `string` throws at model build.
-- **Per-tenant encryption keys (`perTenantKey: true`) give key *isolation*, never crypto-*shredding*** — see the Encryption v2 section above.
-- **A same-table owned entity type can never carry an encrypted property of its own** — its primary key is always an unreadable EF Core 10 shadow property at materialization time; a genuine platform ceiling. Move the property to the owning entity type, or use a complex type instead (no separate PK).
-- **`EncryptedColumnEqualityGuardInterceptor`/`AuditRecordMutationGuardInterceptor` are both heuristic, regex-over-generated-SQL guards**, not real SQL parsers — each can in principle have a false negative (an unusual query shape) or false positive (a coincidental match); the PostgreSQL-trigger layer is what makes the audit-mutation guarantee real regardless.
-- **`.WithRowLevelSecurity()`'s cross-tenant escape token defaults to the literal `"on"`** unless `NpgsqlPersistenceOptions.CrossTenantEscapeToken` is explicitly configured — set a real per-deployment secret in production.
-- **`AddInterceptor<T>()` combined with `.WithDbContextPooling()` remains unsupported for any interceptor other than the platform's own `TenantWriteGuardInterceptor`.**
-- **This domain is not yet published to GitHub Packages.** All seven packages build, pack, and test clean (`dotnet pack` against a consistent version override, zero warnings including zero `RS00xx`, `SharedKernel.Persistence.ConsumerVerify` green against the packed artifacts); publishing is a separate, user-directed `git tag` action per root `CLAUDE.md`'s MinVer-lockstep versioning convention, and will require republishing the already-published dependency closure (`SharedKernel.Primitives`/`.Core`/`.Configuration`/`.Cryptography`/`.Domain`/`.Contracts`) at the same build height so the packed `.nuspec` files resolve against the feed.
+- **No two-phase commit**: a context on another database (or the cross-tenant role) never joins the scope's
+  transaction; holding changes at commit is refused.
+- **Nested audited command**: its `Succeeded` entry rolls back with a failing outer command and no separate `Failed`
+  entry is written for it (the outer command records the failure).
+- **`IRequestContext.ImpersonatorId`** is not populated by `SecurityRequestContext` (`12.Security`'s `IUserContext`
+  exposes no actor/impersonation claim).
+- **Seeding under RLS** requires `RowLevelSecurity:CrossTenantConnectionString`.
+- **`EnableTenantRowLevelSecurityForModel` in a later migration** re-creates policies of existing tables — use the
+  per-table helper for tables added later.
+- **Encryption**: no specification-criterion form of `WhereEncryptedEquals` (a spec has no context/keys/tenant — use the
+  `IQueryable` overload or resolve the id first); no tenant data-key rotation (master-key rewrap is the KMS's job);
+  `byte[]`, composite/shadow keys unsupported; writes that bypass EF Core (Dapper, raw SQL) are not tombstone-checked;
+  another process may decrypt a shredded tenant's tenant-key values from its cache for up to `TenantKeyCacheDuration`;
+  the rotation CAS race has no dedicated test.
+- **Audit**: a link forged for one specific record makes it look sealed until verification reports it — prevented
+  only by the separate sealer role (the self-check enforces the revoke when configured); partitioned retention, signed
+  offline export bundles and `IAuditContext` are not implemented.
+- **Public surface**: EfCore ≈ 140 `PublicAPI` lines (target was ~70) — the documented subclassable repositories account
+  for most of it; accepted.
+- No real PgBouncer container test (simulated by one un-reset physical connection); a `FakeUnitOfWork` rollback restores
+  which aggregates a `FakeRepository` holds, not in-place changes to an aggregate object.
+- `18.Idempotency.EfCore` runs its context with retry off on purpose (single atomic statements; fail-open must be fast).
 
 ---
 
 ## Changelog
 
-> One line per session. History before P-557 (WO-008 through P-498) is preserved in this file's own git history — this entry summarizes the state after a full pre-first-publish redesign, not a delta against every prior narrative paragraph this file used to carry inline.
+> One line per session. Pre-P-558 history: `CLAUDE.archive.md` and git history. P-558 narrative: `docs/p558/`.
 
-- [2026-09-20] P-557 (user-directed pre-publish gold-standard pass) recorded — this domain split from 4 packages to 7 (`SharedKernel.Persistence.Npgsql`, `.EfCore.Encryption`, `.EfCore.Auditing` new); `.EfCore` dropped its `05.Application.Behaviors`/`12.Security.Abstractions` references for local seams (`ICurrentActorContext`/`ICurrentTenantContext`/`ICrossTenantScope`/`ITenantSessionBinder`) bridged from `13.ServiceDefaults.Persistence`; a derived context's constructor collapsed from nine parameters to one (`PersistenceContextDependencies`); `Money` gained a two-column EF Core complex-type mapping; field encryption and the audit trail were both redesigned from scratch (interceptor-based AES-256-GCM with blind indexes and resumable rotation; a hash-chained ledger partitioned by tenant+resource-type with three layers of immutability enforcement); PostgreSQL row-level security, tenant-safe Dapper read/command services, and advisory locks shipped as new capabilities. Two independent post-implementation reviews (a bulk-edit-damage audit and an adversarial security design review) found real Critical/High defects, and every one was resolved across four remediation waves — see `state-map.md`'s `SK.06.P557` phase for the full, itemized record, including the one finding (H8, the audit-chain advisory-lock self-deadlock) that is mitigated rather than structurally closed. This file rewritten to describe the resulting state; full historical narrative for every prior phase remains in git history and in `state-map.md`. **Not yet published** (persistence-arch-planner)
+- [2026-09-21] P-558 persistence gold-standard pass 2 — brain rewritten: PostgreSQL-only (`.PostgreSQL` merged into `.EfCore`), shared 05 contracts, one entry point, one transaction per scope, transaction-local RLS, encryption v3, audit ledger v3 with async sealer, `SharedKernel.Persistence.Testing` (agent)
+- [2026-09-22] P-558 verification via `samples/BillingApi`: design-time `ConfigurePersistence`; `SharedKernel:Persistence:Tenant` annotation so `EnableTenantRowLevelSecurityForModel(TargetModel)` works on real migrations (throws on zero tables); `ConcurrencyVersion.Get` refuses untracked entities; GSS encryption off unless configured; Testing fakes roll back repository writes. Record: `P-558-SESSION-HANDOFF.md` §7

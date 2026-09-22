@@ -13,8 +13,9 @@ root `CLAUDE.md` Folder Map entry for `18.Idempotency` for why this domain exist
 
 ```csharp
 services.AddClock(); // 01.Core/SharedKernel.Primitives — IClock, required
+var idempotencyDataSource = NpgsqlDataSource.Create(connectionString); // or the service's shared data source
 services.AddSharedKernelEfCoreIdempotency(
-    configureDbContext: options => options.UsePostgreSQL(connectionString),
+    configureDbContext: options => options.UsePostgres(idempotencyDataSource), // namespace SharedKernel.Persistence
     configureOptions: o =>
     {
         o.InFlightTtl = TimeSpan.FromSeconds(30);
@@ -112,7 +113,7 @@ public sealed class IdempotencyDbContextFactory : IDesignTimeDbContextFactory<Id
     public IdempotencyDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<IdempotencyDbContext>();
-        optionsBuilder.UsePostgreSQL("Host=localhost;Database=mydb;Username=...;Password=...");
+        optionsBuilder.UsePostgres(NpgsqlDataSource.Create("Host=localhost;Database=mydb;Username=...;Password=..."));
         return new IdempotencyDbContext(optionsBuilder.Options);
     }
 }
@@ -120,7 +121,7 @@ public sealed class IdempotencyDbContextFactory : IDesignTimeDbContextFactory<Id
 
 Then run `dotnet ef migrations add InitialIdempotency --context IdempotencyDbContext` from that
 project. The two tables (`idempotency_keys`, `idempotency_messages`) are snake_case-named via
-`SharedKernel.Persistence.PostgreSQL`'s `UsePostgreSQL(...)` conventions.
+`SharedKernel.Persistence.EfCore`'s `UsePostgres(...)` conventions (retry is switched off for this context on purpose: each store call is one atomic statement).
 
 ## Cleanup recipe (bounded retention)
 
@@ -162,7 +163,7 @@ var host = Host.CreateDefaultBuilder()
     .ConfigureServices(services =>
     {
         services.AddClock();
-        services.AddSharedKernelEfCoreIdempotency(o => o.UsePostgreSQL(connectionString));
+        services.AddSharedKernelEfCoreIdempotency(o => o.UsePostgres(NpgsqlDataSource.Create(connectionString)));
         services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
     })
     .Build();

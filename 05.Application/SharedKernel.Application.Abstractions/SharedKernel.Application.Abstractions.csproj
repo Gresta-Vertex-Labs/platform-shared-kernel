@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>The contracts shared by the application pipeline and the persistence layer, with no MediatR and no ORM: who is calling (IRequestContext), how work commits (IUnitOfWork), and how an audited action is recorded (IAuditTrailWriter).
+
+SharedKernel.Application.Behaviors consumes these contracts and SharedKernel.Persistence.EfCore implements them, so a service wires its database once and both the transaction behavior and the audit behavior use it directly — no adapter, no bridge, no second copy of the same interface in another namespace.
+
+IUnitOfWork runs a whole unit of work through ExecuteInTransactionAsync, so a retrying execution strategy can replay it, and lets code inside the transaction queue work to run just before commit (OnBeforeCommit). A failed Result returned by the operation rolls the transaction back. IRequestContext carries the caller's identity, tenant and actor kind; persistence attributes audit columns from it and filters tenant data by it, failing closed when no tenant is resolved.
+
+Depends only on SharedKernel.Primitives.</Description>
+    <PackageReleaseNotes>First release.
+
+WHAT IS IN IT
+- The caller: IRequestContext (identity, tenant, actor kind, client/session/impersonator, permission check), ActorKind, SystemRequestContext and AnonymousRequestContext. These types moved here from SharedKernel.Application, which forwards them, so existing code keeps compiling.
+- The unit of work: IUnitOfWork — SaveChangesAsync, retry-safe ExecuteInTransactionAsync overloads with an optional isolation level, IsTransactionActive and OnBeforeCommit.
+- The audit writer: IAuditTrailWriter, AuditEntry, AuditOutcome.
+
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- The operation passed to ExecuteInTransactionAsync may run more than once under a retrying execution strategy. Load what it needs inside the delegate.
+- A Result/Result&lt;T&gt; failure returned from ExecuteInTransactionAsync&lt;TResult&gt; commits nothing.
+- A Succeeded audit entry is written inside the business transaction; a Failed one is written on its own.</PackageReleaseNotes>
+    <PackageTags>cqrs;application;unit-of-work;transaction;auditing;request-context;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      MediatR-free and ORM-free by design: 06.Persistence references this package (06 may reference
+      01-05), so anything added here is inherited by every persistence package. References only
+      SharedKernel.Primitives (IHasSuccessFlag, used to roll back a failed Result).
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

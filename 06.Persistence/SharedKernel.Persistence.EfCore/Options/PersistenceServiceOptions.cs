@@ -10,11 +10,11 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// <remarks>
 /// <para>
 /// <see cref="ServiceName"/> replaces the hardcoded <c>"system"</c> literal in
-/// <c>AuditInterceptor.ResolveUserId()</c> for unauthenticated (background, seed) writes.
+/// the actor of unauthenticated (background, seed) writes.
 /// </para>
 /// <para>
-/// Register via <c>EfCorePersistenceBuilder.WithServiceName(string)</c>.
-/// The default value <c>"system"</c> is used when <c>WithServiceName</c> is not called.
+/// Set with <c>UseServiceName(string)</c> on the <c>AddSharedKernelPostgres</c> builder, or bind the <c>ServiceName</c> key of this section.
+/// The default value <c>"system"</c> is used when neither is set.
 /// </para>
 /// <para>
 /// Implements <see cref="ISectionBoundOptions"/> (<c>01.Core/SharedKernel.Configuration</c>)
@@ -24,12 +24,12 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// <c>configuration.GetSection(PersistenceServiceOptions.SectionName)</c> call site keeps compiling.
 /// </para>
 /// </remarks>
-public sealed class PersistenceServiceOptions : ISectionBoundOptions
+internal sealed class PersistenceServiceOptions : ISectionBoundOptions
 {
     /// <summary>
     /// The configuration section path this type binds from —
     /// <c>"SharedKernel:Persistence"</c>. Used by
-    /// <c>EfCorePersistenceBuilder.WithServiceName(IConfiguration)</c> instead of a
+    /// <c>AddSharedKernelPostgres</c> instead of a
     /// bare <c>GetSection("SharedKernel:Persistence")</c> literal at each call site.
     /// </summary>
     public static string SectionName => "SharedKernel:Persistence";

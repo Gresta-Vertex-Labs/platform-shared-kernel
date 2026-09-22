@@ -1,164 +1,16 @@
 #nullable enable
-SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification.AuditActorActionsSpecification(string! actorId, System.DateTimeOffset? afterKey, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.AuditChainCheckpoint() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.CreatedOn.get -> System.DateTimeOffset
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.CreatedOn.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Id.get -> System.Guid
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Id.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.RecordHash.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.RecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ResourceType.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ResourceType.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Sequence.get -> long
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Sequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Signature.get -> byte[]!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Signature.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.SigningKeyId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.SigningKeyId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.TenantId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.TenantId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.AuditChainVerificationResult() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtRecordId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtRecordId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtSequence.get -> long?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.BrokenAtSequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.IsIntact.get -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.IsIntact.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Reason.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Reason.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.RecordsChecked.get -> int
-SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.RecordsChecked.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditCrossTenantResourceHistorySpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditCrossTenantResourceHistorySpecification.AuditCrossTenantResourceHistorySpecification(string! resourceType, string! resourceId, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditEntry!
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Action.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Action.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.AfterSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.AfterSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ApprovalId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ApprovalId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.AuditEntry() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.BeforeSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.BeforeSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ClientId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ClientId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditEntry? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ErrorCode.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ErrorCode.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.IdempotencyKey.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.IdempotencyKey.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ImpersonatorId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ImpersonatorId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Outcome.get -> SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Outcome.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ResourceId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ResourceId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ResourceType.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ResourceType.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.SessionId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.SessionId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.SourceService.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.SourceService.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome.Failed = 1 -> SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome.Succeeded = 0 -> SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditQueryLimits
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.<Clone>$() -> SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Action.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Action.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorKind.get -> SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ActorKind.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AfterSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AfterSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ApprovalId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ApprovalId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.AuditRecord() -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.BeforeSnapshot.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.BeforeSnapshot.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ClientId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ClientId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.CorrelationId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.CorrelationId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Equals(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? other) -> bool
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ErrorCode.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ErrorCode.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.HashAlgorithm.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.HashAlgorithm.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Id.get -> System.Guid
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Id.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.IdempotencyKey.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.IdempotencyKey.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ImpersonatorId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ImpersonatorId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.KeyId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.KeyId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.OccurredOn.get -> System.DateTimeOffset
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.OccurredOn.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Outcome.get -> SharedKernel.Persistence.Abstractions.Auditing.AuditOutcome
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Outcome.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.PreviousRecordHash.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.PreviousRecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.RecordHash.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.RecordHash.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceId.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceType.get -> string!
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ResourceType.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SchemaVersion.get -> int
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SchemaVersion.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Sequence.get -> long
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Sequence.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SessionId.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SessionId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SourceService.get -> string?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.SourceService.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.TenantId.get -> System.Guid?
-SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.TenantId.init -> void
-SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification
-SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification.AuditResourceHistorySpecification(string! resourceType, string! resourceId, long? afterSequence, System.Guid? afterId, bool descending, int take) -> void
-SharedKernel.Persistence.Abstractions.Auditing.IAuditCheckpointService
-SharedKernel.Persistence.Abstractions.Auditing.IAuditCheckpointService.CreateCheckpointAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.ExportRangeAsync(string! resourceType, System.DateTimeOffset from, System.DateTimeOffset to, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetActorActionsAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditActorActionsSpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetResourceHistoryAcrossTenantsAsync(string! resourceType, string! resourceId, System.Guid? afterId, bool descending, int take, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.GetResourceHistoryAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditResourceHistorySpecification! specification, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.VerifyChainFromCheckpointAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint! checkpoint, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? expectedHead, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditQueryService.VerifyFullChainAsync(string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!>!
-SharedKernel.Persistence.Abstractions.Auditing.IAuditTrailWriter
-SharedKernel.Persistence.Abstractions.Auditing.IAuditTrailWriter.RecordAsync(SharedKernel.Persistence.Abstractions.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Auditing.AuditRecord!>!
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
-SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Context.ActorKind.Service = 1 -> SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Context.ActorKind.System = 2 -> SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Context.ActorKind.User = 0 -> SharedKernel.Persistence.Abstractions.Context.ActorKind
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope() -> void
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string? actorId = null) -> System.IDisposable!
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Application.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>? logger = null) -> void
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActive.get -> bool
+SharedKernel.Persistence.CrossTenantScopeServiceCollectionExtensions
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope
+SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope.IsActive.get -> bool
-SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext
-SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext.ActorId.get -> string!
-SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext.ActorKind.get -> SharedKernel.Persistence.Abstractions.Context.ActorKind
-SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext
-SharedKernel.Persistence.Abstractions.Context.ICurrentTenantContext.TenantId.get -> System.Guid?
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindConnectionAsync(System.Data.Common.DbConnection! connection, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.ResetConnectionAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Coordination.IAdvisoryTransactionLock
 SharedKernel.Persistence.Abstractions.Coordination.IAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Coordination.IAmbientDbTransaction
@@ -179,76 +31,70 @@ SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Latenc
 SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Provider.get -> string!
 SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Provider.init -> void
 SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions
+SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<T>
+SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<T>.AllRowsSpecification() -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.Accept(SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate!>! visitor) -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.BulkUpdateSetters() -> void
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.SetProperty<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! valueExpression) -> SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.SetProperty<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, TProperty value) -> SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!
+SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>.Targets.get -> System.Collections.Generic.IReadOnlyList<System.Linq.Expressions.LambdaExpression!>!
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.EntityVersion() -> void
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion other) -> bool
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToRowVersion() -> ulong
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider) -> bool
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteDeleteAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecutePurgeAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteUpdateAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Action<SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate!>!>! setters, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>.SetExpression<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! valueExpression) -> void
+SharedKernel.Persistence.Abstractions.Repositories.IBulkUpdateSetterVisitor<TAggregate>.SetValue<TProperty>(System.Linq.Expressions.Expression<System.Func<TAggregate!, TProperty>!>! property, TProperty value) -> void
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.AnyAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.CountAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ExistsAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.FirstOrDefaultAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.FirstOrDefaultProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.GetByIdAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.GetByIdsAsync(System.Collections.Generic.IEnumerable<TId>! ids, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.GetByIdsChunkedAsync(System.Collections.Generic.IEnumerable<TId>! ids, int chunkSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.GetBySpecAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.GetBySpecProjectedAsync<TResult>(SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListKeysetAsync<TKey>(SharedKernel.Domain.Specifications.KeysetSpecification<TAggregate, TKey>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TAggregate>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListKeysetProjectedAsync<TKey, TResult>(SharedKernel.Domain.Specifications.KeysetSpecification<TAggregate, TKey>! spec, System.Linq.Expressions.Expression<System.Func<TAggregate, TResult>!>! selector, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TResult>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListPagedAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TAggregate>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListPagedProjectedAsync<TResult>(SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TResult>!>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListProjectedAsync<TResult>(SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TResult>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListKeysetAsync<TKey>(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, SharedKernel.Contracts.Pagination.CursorPageRequest! page, System.Linq.Expressions.Expression<System.Func<TAggregate, TKey>!>! keySelector, bool descending = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TAggregate>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListKeysetProjectedAsync<TKey, TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, SharedKernel.Contracts.Pagination.CursorPageRequest! page, System.Linq.Expressions.Expression<System.Func<TAggregate, TKey>!>! keySelector, bool descending = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.CursorPagedList<TResult>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListPagedAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, SharedKernel.Contracts.Pagination.PageRequest! page, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TAggregate>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListPagedProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, SharedKernel.Contracts.Pagination.PageRequest! page, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Contracts.Pagination.PagedList<TResult>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.ListProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TResult>!>!
 SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.StreamAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TAggregate>!
-SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.StreamProjectedAsync<TResult>(SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+SharedKernel.Persistence.Abstractions.Repositories.IReadRepository<TAggregate, TId>.StreamProjectedAsync<TResult>(SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.AddAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.AddRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.DeleteRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.ExistsAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.FirstOrDefaultAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.GetByIdAsync(TId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
-SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.GetBySpecAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.ListAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TAggregate>!>!
+SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 SharedKernel.Persistence.Abstractions.Repositories.IRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Repositories.IRestorableRepository<TAggregate, TId>
-SharedKernel.Persistence.Abstractions.Repositories.IRestorableRepository<TAggregate, TId>.RestoreAsync(TAggregate aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TAggregate, TId>
-SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TAggregate, TId>.ByIdSpecification(TId id) -> void
-SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>
-SharedKernel.Persistence.Abstractions.Specifications.IProjectionSpecification<TAggregate, TResult>.Selector.get -> System.Linq.Expressions.Expression<System.Func<TAggregate, TResult>!>!
-SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction
-SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction.CommitAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction.RollbackAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.BeginTransactionAsync(System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction!>!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.BeginTransactionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.UnitOfWork.IPersistenceTransaction!>!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<bool>!>? verifySucceeded, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
-SharedKernel.Persistence.Abstractions.UnitOfWork.ITransactionalUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
-SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork
-SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-const SharedKernel.Persistence.Abstractions.Auditing.AuditQueryLimits.MaxPageSize = 1000 -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.ToString() -> string!
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.ToString() -> string!
-override SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.ToString() -> string!
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.Equals(object? obj) -> bool
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.GetHashCode() -> int
-override SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.ToString() -> string!
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.GetHashCode() -> int
 override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.ToString() -> string!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainCheckpoint? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Broken(long brokenAtSequence, System.Guid? brokenAtRecordId, string! reason, int recordsChecked) -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.Intact(int recordsChecked) -> SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult!
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.Abstractions.Auditing.AuditChainVerificationResult? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditEntry? left, SharedKernel.Persistence.Abstractions.Auditing.AuditEntry? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditEntry.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditEntry? left, SharedKernel.Persistence.Abstractions.Auditing.AuditEntry? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator !=(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
-static SharedKernel.Persistence.Abstractions.Auditing.AuditRecord.operator ==(SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? left, SharedKernel.Persistence.Abstractions.Auditing.AuditRecord? right) -> bool
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(object? obj) -> bool
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.GetHashCode() -> int
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString() -> string!
+static SharedKernel.Persistence.CrossTenantScopeServiceCollectionExtensions.AddSharedKernelCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! factory, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
-static readonly SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.DefaultTimeout -> System.TimeSpan
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.FromRowVersion(ulong rowVersion) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.None.get -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! value) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Persistence.Abstractions.Repositories.EntityVersion result) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse(string? value, out SharedKernel.Persistence.Abstractions.Repositories.EntityVersion version) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator !=(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
+static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator ==(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool

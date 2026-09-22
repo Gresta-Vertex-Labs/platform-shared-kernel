@@ -3,12 +3,13 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
 using SharedKernel.Application.Behaviors.Caching.Extensions;
 using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Behaviors.Transaction;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Primitives.Results;
@@ -123,13 +124,55 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
     /// </summary>
     private sealed class OrderRecordingSpy : ICacheService, IUnitOfWork, IAuditTrailWriter
     {
+        public const string Commit = "Commit";
+
+        private readonly List<Func<CancellationToken, Task>> _beforeCommit = [];
+
         public List<string> CallOrder { get; } = [];
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        public bool IsTransactionActive { get; private set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             CallOrder.Add(nameof(SaveChangesAsync));
             return Task.FromResult(1);
         }
+
+        public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+            => ExecuteInTransactionAsync<object?>(async ct => { await operation(ct); return null; }, cancellationToken);
+
+        public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, System.Data.IsolationLevel? isolationLevel, CancellationToken cancellationToken = default)
+            => ExecuteInTransactionAsync(operation, cancellationToken);
+
+        public Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, System.Data.IsolationLevel? isolationLevel, CancellationToken cancellationToken = default)
+            => ExecuteInTransactionAsync(operation, cancellationToken);
+
+        // The shared IUnitOfWork contract's order, without a database: operation, save, pre-commit
+        // callbacks, commit; a failed Result commits nothing.
+        public async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default)
+        {
+            IsTransactionActive = true;
+            _beforeCommit.Clear();
+            try
+            {
+                var result = await operation(cancellationToken);
+                if (result is IHasSuccessFlag { IsSuccess: false })
+                    return result;
+
+                await SaveChangesAsync(cancellationToken);
+                foreach (var callback in _beforeCommit)
+                    await callback(cancellationToken);
+
+                CallOrder.Add(Commit);
+                return result;
+            }
+            finally
+            {
+                IsTransactionActive = false;
+            }
+        }
+
+        public void OnBeforeCommit(Func<CancellationToken, Task> callback) => _beforeCommit.Add(callback);
 
         public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default)
         {
@@ -248,7 +291,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
 
         result.IsSuccess.Should().BeTrue();
         spy.CallOrder.Should().Equal(
-            [nameof(IUnitOfWork.SaveChangesAsync), nameof(ICacheService.RemoveAsync), nameof(ICacheService.RemoveByTagAsync)],
+            [nameof(IUnitOfWork.SaveChangesAsync), OrderRecordingSpy.Commit, nameof(ICacheService.RemoveAsync), nameof(ICacheService.RemoveByTagAsync)],
             "the real, compiled SharedKernel.Application.Behaviors.dll's ApplicationBehaviorsBuilder " +
             "must register CacheInvalidationBehavior CLOSER to the outer edge of the pipeline than " +
             "TransactionBehavior so eviction observably follows the commit, never precedes it " +
@@ -295,15 +338,16 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         result.IsSuccess.Should().BeTrue();
         spy.CallOrder.Should().Equal(
             [
-                nameof(IAuditTrailWriter.RecordAsync),
                 nameof(IUnitOfWork.SaveChangesAsync),
+                nameof(IAuditTrailWriter.RecordAsync),
+                OrderRecordingSpy.Commit,
                 nameof(ICacheService.RemoveAsync),
                 nameof(ICacheService.RemoveByTagAsync)
             ],
             "against the real, compiled assembly, the audit write must land inside the same commit " +
-            "(RecordAsync before SaveChangesAsync, WO-071/P-458), and cache eviction must only " +
-            "follow a CONFIRMED commit (SaveChangesAsync before RemoveAsync/RemoveByTagAsync, " +
-            "WO-080/P-488/P-489) — both invariants proven to hold simultaneously, not merely in " +
-            "isolation");
+            "(RecordAsync after the business save, before the commit, via the unit of work's " +
+            "pre-commit hook — P-558), and cache eviction must only follow a CONFIRMED commit " +
+            "(Commit before RemoveAsync/RemoveByTagAsync, WO-080/P-488/P-489) — both invariants " +
+            "proven to hold simultaneously, not merely in isolation");
     }
 }

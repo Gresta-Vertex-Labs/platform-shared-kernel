@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 /// <para>
 /// <strong>Never a raw <c>ILogger.LogX(...)</c> call anywhere in this domain</strong> — every
 /// production log statement is one of the source-generated partial methods below.
-/// <see cref="EncryptionRotationBatchProcessed"/>/<see cref="EncryptionRotationCompleted"/> never
+/// The encryption rotation logs (now in the Encryption package) never
 /// log a key byte, a Base64-encoded key string, or any column plaintext/ciphertext value — only
 /// counts and already-non-secret version-tag strings (e.g. <c>"v1"</c>).
 /// </para>
@@ -27,7 +27,7 @@ namespace SharedKernel.Persistence.EfCore.Diagnostics;
 internal static partial class PersistenceLog
 {
     /// <summary>
-    /// Logged by <c>ConcurrencyInterceptor.TryTranslate</c> immediately before it returns the
+    /// Logged by the concurrency-conflict translator immediately before it returns the
     /// translated <see cref="SharedKernel.Core.Exceptions.ConflictException"/> — never logs the row
     /// payload, only the conflicting entry's CLR type name.
     /// </summary>
@@ -67,8 +67,8 @@ internal static partial class PersistenceLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 4,
         Level = LogLevel.Warning,
-        Message = "Migration and seed startup sequence failed for context '{ContextType}'.")]
-    internal static partial void MigrationAndSeedFailed(ILogger logger, Exception exception, string contextType);
+        Message = "Migration and seed startup sequence failed for context '{ContextType}' ({ExceptionType}); the exception is reported by the host.")]
+    internal static partial void MigrationAndSeedFailed(ILogger logger, string contextType, string exceptionType);
 
     /// <summary>
     /// Logged immediately after the PostgreSQL advisory lock is acquired. Never logs the lock key
@@ -92,19 +92,11 @@ internal static partial class PersistenceLog
         Message = "Advisory lock released for context '{ContextType}'.")]
     internal static partial void AdvisoryLockReleased(ILogger logger, string contextType);
 
-    /// <summary>
-    /// Logged once per retry attempt by the internal
-    /// <c>PersistenceRetryDiagnosticListener</c>, registered only when
-    /// <c>EfCorePersistenceBuilder.WithTransientFaultRetry()</c> was called.
-    /// </summary>
-    [LoggerMessage(
-        EventId = LoggingEventIdRanges.Persistence + 7,
-        Level = LogLevel.Warning,
-        Message = "Transient fault triggered retry attempt {AttemptNumber} for a database operation.")]
-    internal static partial void TransientRetryAttempt(ILogger logger, int attemptNumber);
+    // 6007 (TransientRetryAttempt) was retired with PersistenceRetryDiagnosticListener (P-558): EF Core
+    // itself logs every retry as CoreEventId.ExecutionStrategyRetrying. Do not reuse the id.
 
     /// <summary>
-    /// Logged by <c>EfUnitOfWork.SaveChangesAsync</c> / <c>EfTransactionalUnitOfWork</c> when a
+    /// Logged by <c>EfUnitOfWork.SaveChangesAsync</c> / <c>ExecuteInTransactionAsync</c> when a
     /// configured retrying execution strategy exhausts all attempts, immediately before the final
     /// exception is rethrown unchanged.
     /// </summary>
@@ -119,7 +111,7 @@ internal static partial class PersistenceLog
     // SharedKernel.Persistence.EfCore.Encryption's own EncryptionLog, which claims its own dedicated
     // 6300-6399 sub-block (SharedKernel.Persistence.EfCore.Encryption/Encryption/Diagnostics/
     // EncryptionLog.cs) — this class is `internal` and therefore unreachable from that sibling
-    // package. IDs 6009-6012 were never actually used by it and remain free within this sub-block,
+    // package. IDs 6009 (retired RLS connection reset, P-558) and 6011-6012 are free within this sub-block,
     // alongside every ID from 6014 up. The entry below claims 6013, the first gap left by 6000-6008.
 
     /// <summary>
@@ -134,4 +126,34 @@ internal static partial class PersistenceLog
         Level = LogLevel.Error,
         Message = "No IMigrationLock is registered for context '{ContextType}' — startup migration/seed coordination across replicas is NOT guaranteed.")]
     internal static partial void NoMigrationLockRegistered(ILogger logger, string contextType);
+
+    /// <summary>
+    /// Logged when a failed <c>SaveChanges</c> is classified by its PostgreSQL SQLSTATE. Carries the
+    /// violated constraint and table (internal schema names, never returned to the caller) so a
+    /// classified 409/400 can be traced to the rule that produced it. Never logs the offending value.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 10,
+        Level = LogLevel.Information,
+        Message = "Database error {SqlState} classified as '{ErrorCode}' (constraint '{ConstraintName}', table '{TableName}').")]
+    internal static partial void DatabaseErrorClassified(
+        ILogger logger,
+        string sqlState,
+        string errorCode,
+        string constraintName,
+        string tableName);
+
+    /// <summary>A context resolved in the scope cannot share the unit of work's transaction; it is refused at commit if it holds changes.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 20,
+        Level = LogLevel.Debug,
+        Message = "Context '{ContextType}' cannot join the transaction of '{OwnerType}': {Reason}. Its changes are refused at commit.")]
+    internal static partial void ContextCannotJoinTransaction(ILogger logger, string contextType, string ownerType, string reason);
+
+    /// <summary>The outermost operation succeeded but joined work failed, so the transaction was rolled back.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 21,
+        Level = LogLevel.Warning,
+        Message = "The transaction of '{ContextType}' was rolled back: work that joined it failed.")]
+    internal static partial void RolledBackAfterJoinedFailure(ILogger logger, string contextType);
 }

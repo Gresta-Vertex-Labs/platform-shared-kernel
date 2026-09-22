@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Test helpers for services built on the SharedKernel persistence packages — reference from test projects only. In-memory fakes that follow the production rules (specification evaluation, paging and cursors, a unit of work that rolls back and replays like the retrying strategy), a test IRequestContext, and a Testcontainers PostgreSQL fixture that provisions the production database roles and applies the row-level security, audit-ledger and encryption migration helpers.</Description>
+    <PackageTags>persistence;testing;test-doubles;fakes;testcontainers;postgresql;integration-testing;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- IRepository/IReadRepository, IDbConnectionFactory, ICrossTenantScope; IUnitOfWork, IRequestContext and
+         IAuditTrailWriter arrive through SharedKernel.Application.Abstractions. -->
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!-- PostgresTestDatabase: the migration helpers it applies (row-level security, audit ledger, tenant keys) and
+         the EF Core SQL generator that turns them into statements. -->
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

@@ -21,7 +21,8 @@ so a service restores only the integrations it actually uses.
 
 | Your service uses | Add | Gives you |
 | --- | --- | --- |
-| EF Core or a Dapper connection factory | `SharedKernel.ServiceDefaults.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
+| EF Core or a Dapper connection factory | `SharedKernel.ServiceDefaults.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()`, `AddFieldEncryptionReadinessCheck()`, `AddAuditSealingReadinessCheck()` |
+| The caller (`IRequestContext`) over `12.Security` | `SharedKernel.ServiceDefaults.Security` | `AddSharedKernelRequestContext()` |
 | A cache through `ICacheService` | `SharedKernel.ServiceDefaults.Caching` | `AddCacheReadinessCheck()` |
 | Redis | `SharedKernel.ServiceDefaults.Caching.Redis` | `AddRedisHealthCheck()` |
 | A message bus | `SharedKernel.ServiceDefaults.Messaging` | `AddMessagingReadinessCheck()` |

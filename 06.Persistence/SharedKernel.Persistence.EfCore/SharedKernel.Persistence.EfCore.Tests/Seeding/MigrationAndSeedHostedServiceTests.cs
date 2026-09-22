@@ -5,12 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Primitives.Clocks;
 
@@ -353,14 +351,14 @@ internal sealed class SeedItem : AggregateRoot<SeedItemId>
         Name = name;
     }
 
-    protected SeedItem() { }
+    private SeedItem() { }
 }
 
-internal sealed class SeedItemConfig : EntityTypeConfigurationBase<SeedItem, SeedItemId>
+internal sealed class SeedItemConfig : IEntityTypeConfiguration<SeedItem>
 {
-    public override void Configure(EntityTypeBuilder<SeedItem> builder)
+    public void Configure(EntityTypeBuilder<SeedItem> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.ToTable("seed_items");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
@@ -380,7 +378,6 @@ internal sealed class SeedTestDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<SeedItemId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -444,5 +441,49 @@ internal sealed class IdempotentSeedTestSeeder : IDataSeeder<SeedTestDbContext>
             context.SeedItems.Add(new SeedItem(SeedItemId.New(), SeedName, new SystemClock()));
             await context.SaveChangesAsync(ct);
         }
+    }
+}
+
+public sealed class PersistenceStartupSignalRegistrationTests
+{
+    // ---- F1 (wave 3b): the persistence startup signal ----
+
+    [Fact]
+    public async Task StartupSignal_CompletesOnlyAfterTheStartupSeedersRan()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new List<string>());
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
+                opts.UseSqlite(connectionString).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+                    .AddSeeder<TrackingSeeder>()
+                        .Build();
+
+        await using var provider = services.BuildServiceProvider();
+        await using (var scope = provider.CreateAsyncScope())
+            scope.ServiceProvider.GetRequiredService<SeedTestDbContext>().Database.EnsureCreated();
+
+        var startup = provider.GetRequiredService<IPersistenceStartup>();
+        startup.IsCompleted.Should().BeFalse("the seeder has not run yet");
+        var waiting = startup.WaitAsync();
+
+        await provider.GetServices<IHostedService>().OfType<MigrationAndSeedHostedService<SeedTestDbContext>>().Single()
+            .StartAsync(CancellationToken.None);
+
+        await waiting;
+        startup.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public void StartupSignal_IsCompleteAtOnce_WhenNothingRunsAtStartup()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+                .Build();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IPersistenceStartup>().IsCompleted.Should().BeTrue();
     }
 }

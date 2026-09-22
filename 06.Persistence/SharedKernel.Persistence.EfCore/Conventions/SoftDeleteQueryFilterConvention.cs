@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Conventions;
@@ -46,7 +47,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// cost.
 /// </para>
 /// </remarks>
-public sealed class SoftDeleteQueryFilterConvention : IModelFinalizingConvention
+internal sealed class SoftDeleteQueryFilterConvention : IModelFinalizingConvention
 {
     /// <inheritdoc />
     public void ProcessModelFinalizing(

@@ -6,10 +6,8 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -44,7 +42,7 @@ public sealed class ChildEntity
         ParentId = parentId;
     }
 
-    protected ChildEntity() { }
+    private ChildEntity() { }
 }
 
 public sealed class ParentEntity : AggregateRoot<ParentId>
@@ -57,15 +55,15 @@ public sealed class ParentEntity : AggregateRoot<ParentId>
         Title = title;
     }
 
-    protected ParentEntity() { }
+    private ParentEntity() { }
 }
 
 // Entity configurations
-public sealed class ParentEntityConfig : EntityTypeConfigurationBase<ParentEntity, ParentId>
+public sealed class ParentEntityConfig : IEntityTypeConfiguration<ParentEntity>
 {
-    public override void Configure(EntityTypeBuilder<ParentEntity> builder)
+    public void Configure(EntityTypeBuilder<ParentEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         builder.HasMany(e => e.Children)
             .WithOne()
@@ -100,8 +98,6 @@ public sealed class StringIncludeDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ParentId, Guid>();
-        configurationBuilder.ConfigureStronglyTypedId<ChildId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -141,11 +137,9 @@ public sealed class StringIncludeTests
                 .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new StringIncludeDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new StringIncludeDbContext(options, audit);
         ctx.Database.OpenConnection();
         ctx.Database.EnsureCreated();
 

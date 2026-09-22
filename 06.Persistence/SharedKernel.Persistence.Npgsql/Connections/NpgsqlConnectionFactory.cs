@@ -19,7 +19,7 @@ namespace SharedKernel.Persistence.Npgsql.Connections;
 /// <c>NpgsqlConnection</c> instances directly in Dapper services — always use this factory.
 /// </para>
 /// </remarks>
-public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
+internal sealed class NpgsqlConnectionFactory : IDbConnectionFactory
 {
     private readonly NpgsqlDataSource _dataSource;
 

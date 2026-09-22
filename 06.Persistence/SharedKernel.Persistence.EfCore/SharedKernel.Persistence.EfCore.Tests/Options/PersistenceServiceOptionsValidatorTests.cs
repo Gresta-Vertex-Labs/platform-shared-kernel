@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using SharedKernel.Persistence.EfCore.Extensions;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 

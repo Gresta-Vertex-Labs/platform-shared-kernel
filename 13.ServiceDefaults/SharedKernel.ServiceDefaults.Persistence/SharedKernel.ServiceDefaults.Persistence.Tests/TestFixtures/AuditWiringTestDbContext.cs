@@ -44,7 +44,7 @@ internal sealed class WiringTestOrderConfig : IEntityTypeConfiguration<WiringTes
 
 /// <summary>
 /// Test <see cref="SharedKernelDbContext"/> hosting <see cref="WiringTestOrder"/> plus, once
-/// <c>.WithAuditTrail()</c> is opted into, the audit-record table.
+/// <c>.UseAuditTrail()</c> is opted into, the audit-record table.
 /// </summary>
 public sealed class AuditWiringTestDbContext : SharedKernelDbContext
 {

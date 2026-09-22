@@ -34,6 +34,12 @@ See the package README for the decision guide, the walkthrough and the full refe
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+    <!--
+      IRequestContext and its two implementations live in SharedKernel.Application.Abstractions
+      (MediatR-free, shared with 06.Persistence) and are type-forwarded from this assembly — see
+      Context/TypeForwards.cs.
+    -->
+    <ProjectReference Include="..\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--

@@ -25,16 +25,20 @@ public sealed class WithDeletedSpecification<TAggregate> : Specification<TAggreg
             ApplyOrderByDescending(inner.OrderByDescending);
 
         foreach (var (keySelector, descending) in inner.ThenBys)
-            ApplyThenBy(keySelector, descending);
+        {
+            if (descending)
+                ApplyThenByDescending(keySelector);
+            else
+                ApplyThenBy(keySelector);
+        }
 
         if (inner.Skip is int skip && inner.Take is int take)
             ApplyPaging(skip, take);
+        else if (inner.Take is int takeOnly)
+            ApplyTake(takeOnly);
 
         if (inner.IsDistinct)
             ApplyDistinct();
-
-        if (inner.AsNoTracking)
-            ApplyNoTracking();
 
         foreach (var path in inner.StringIncludes)
             AddStringInclude(path);

@@ -240,7 +240,8 @@ SK0304  DirectEncryptedValueConverterInstantiation
                 the auto-wire mechanism and must never be flagged.
     Fix       : Replace `new EncryptedValueConverter<string>(...)` + `.HasConversion(converter)`
                 with `.Encrypt()` on `PropertyBuilder<T>`. The `EncryptionModelConvention`
-                (registered via `EfCorePersistenceBuilder.WithEncryption()`) detects the
+                (pre-P-557 design — field encryption has been interceptor-based since P-557 and is enabled
+                with `UseFieldEncryption()` since P-558; the rule stays as a guard against a converter) detects the
                 marker and applies the converter automatically at model finalization.
                 Direct instantiation bypasses the convention, producing duplicate or
                 inconsistent converter registration (double-encryption of stored data).
@@ -254,12 +255,11 @@ SK0201  TenantedDbContextOnModelCreatingGuard
     Category  : Design
     Severity  : Warning
     Trigger   : A class whose BaseList contains TenantedDbContext (simple name match) declares
-                an override of OnModelCreating; the method body does not contain any invocation
-                of base.OnModelCreating(...) or ApplyTenantFilters(...) (simple name or member
-                access, any receiver). Neither found → fires SK0201 on the method identifier.
-    Fix       : Add base.OnModelCreating(modelBuilder) as the first call in the override body,
-                or explicitly call this.ApplyTenantFilters(modelBuilder) when the base call must
-                be deferred (advanced multi-context patterns only; document the rationale).
+                an override of OnModelCreating; the method body does not invoke base.OnModelCreating(...).
+                (P-558: ApplyTenantFilters no longer exists — the tenant filter is a model-finalizing
+                convention and applies regardless — so it no longer satisfies the rule.)
+    Fix       : Call base.OnModelCreating(modelBuilder) in the override: it applies the entity
+                configurations of the context's assembly, the Money mapping and key generation.
     Suppress  : Per-site via #pragma warning disable SK0201 with a comment explaining why the
                 tenant filter is intentionally omitted or applied via another mechanism.
     Note      : Syntax-only check scoped to the current file. Cross-file or cross-assembly
@@ -1610,6 +1610,17 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .DomainNeverReferencesMessaging(Assembly)       → ConditionList  (hard rule)
     .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
     .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
+        P-558: also forbids SharedKernel.Persistence.Testing (the one published 16.Testing package);
+        TestingPackagesNeverReferencedByProductionTests scans every production csproj plus the IL of the
+        six persistence assemblies.
+    .PersistenceNeverReferencesApplicationOrSecurity(Assembly) → ConditionList  (P-557, REWRITTEN P-558)
+        06.Persistence may reach 05.Application only through SharedKernel.Application.Abstractions
+        (ApplicationAbstractionsNamespaces allow-list) — never MediatR, SharedKernel.Application's
+        MediatR-bearing namespaces (Behaviors, Messaging, DomainEvents, Extensions, Streaming) or
+        SharedKernel.Security. Paired with .PersistenceForbiddenAssemblyReferences(Assembly) →
+        IReadOnlyList<string> (assembly-reference level) and a Roslyn source scan of 06.Persistence.
+        PersistenceLayeringRulesTests also locks: EfCore IS the PostgreSQL provider, Dapper and Npgsql
+        never reference EF Core.
     .SearchReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-044 P-278)
     .IntelligenceReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-045 P-286)
     .WorkflowsReferencesOnlyCoreContractsAndApplication(Assembly) → ConditionList[]  (WO-046 P-290)
@@ -2278,17 +2289,14 @@ PersistenceInterfaceOwnershipRules  (static class — interface declaration owne
         application handlers reading via the read-side abstraction. Query surface belongs on
         Specification<T>, not on raw IQueryable return types.
 
-    .NoGetByIdAsyncOnReadRepository(Assembly assembly)  → ConditionList
-        Asserts that no class implementing an IReadRepository-prefixed interface declares a
-        method named "GetByIdAsync". Uses NoGetByIdOnReadRepositoryPredicate (ICustomRule).
-        Failure message: "{type}.GetByIdAsync must be removed — use FindByIdAsync (returns
-        Result<T>) or GetAsync (returns T?) instead. GetByIdAsync was removed in P-080 to
-        eliminate duplication with IRepository."
-        Rationale: P-080 removed GetByIdAsync from IReadRepository to eliminate duplication
-        with the write-side IRepository. Redeclaring it on a concrete implementor reintroduces
-        the anti-pattern and diverges from the platform read/write split contract.
-        Offending pattern: Task<Order?> GetByIdAsync(Guid id) on an IReadRepository implementor
-        Compliant pattern: use FindByIdAsync(id) → Result<Order> or GetAsync(id) → Order?
+    .ReadOnlyRepositoriesNeverTrack(Assembly assembly)  → ConditionList   (P-558; replaces NoGetByIdAsyncOnReadRepository)
+        Asserts, by IL scan (nested types — async state machines, closures — included), that no
+        read-only repository (implements an IReadRepository-prefixed interface and no IRepository-prefixed
+        one) calls a method named AsTracking. Uses
+        ReadOnlyRepositoryNeverTracksPredicate. Tested against the real EfCore assembly.
+        Rationale: P-558 made IReadRepository<T,TId> "never tracked" and IRepository "always
+        tracked" (tracking left the specification). GetByIdAsync is now ON the read contract (it loads
+        the whole aggregate, untracked) — the old rule forbidding it was deleted.
 
 InterfaceDeclarationOwnershipPredicate  (class : ICustomRule — internal predicate)
     Constructed with a set of interface type names to detect (e.g., {"IUserContext"} or
@@ -2298,28 +2306,16 @@ InterfaceDeclarationOwnershipPredicate  (class : ICustomRule — internal predic
     for assembly identification. Stateless per evaluation — no cached state.
     Lives in Predicates/ folder. Used by PersistenceInterfaceOwnershipRules.
 
-NoGetByIdOnReadRepositoryPredicate  (class : ICustomRule — internal predicate)
-    Scope check: TypeDefinition.Interfaces contains an entry with InterfaceType.Name starting
-    with "IReadRepository". For each such type, iterates TypeDefinition.Methods for any entry
-    whose Name equals "GetByIdAsync" (exact match). Returns false (rule violated) with failure
-    message naming the offending type and referencing FindByIdAsync/GetAsync as the correct
-    alternatives. Lives in Predicates/ folder. Used by
-    PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository.
+ReadOnlyRepositoryNeverTracksPredicate  (class : ICustomRule — internal predicate, P-558)
+    Scans every method body of a read-only repository type and its nested types for a call/callvirt to a
+    method named AsTracking (any declaring type or overload). Lives in Predicates/.
+    Used by PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack.
 
 RepositoryContractCompletenessRules  (static class — repository interface contract completeness predicates)
     All factory methods accept Assembly and return ConditionList. Introduced in WO-016 P-096.
-    .AllRepositoryImplementorsMustHaveExistsAsync(Assembly assembly)  → ConditionList
-        Asserts that every non-abstract type implementing an IRepository-prefixed interface
-        (not IReadRepository) declares a method named "ExistsAsync". Uses
-        HasRequiredMethodPredicate("IRepository", "ExistsAsync"). Failure message:
-        "{type} implements IRepository<,> but does not declare ExistsAsync. Add ExistsAsync
-        per the interface contract defined in P-093."
-        Rationale: ExistsAsync was added to IRepository<,> in P-093. Any concrete repository
-        that does not implement it will compile (if a stub is provided by the base class) but
-        fail at runtime. This rule surfaces the gap at build time with a readable message.
-        Offending pattern: class OrderRepository : IRepository<Order, Guid> with no ExistsAsync
-        Compliant pattern: class OrderRepository : IRepository<Order, Guid> {
-            public Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) { ... } }
+    .AllReadRepositoryImplementorsMustHaveGetByIdAsync(Assembly assembly)  → ConditionList   (P-558; replaces AllRepositoryImplementorsMustHaveExistsAsync)
+        Asserts that every non-abstract IReadRepository implementor provides GetByIdAsync (declared,
+        inherited or explicit). Uses HasRequiredMethodPredicate("IReadRepository", "GetByIdAsync").
 
     .AllReadRepositoryImplementorsMustHaveGetByIdsAsync(Assembly assembly)  → ConditionList
         Asserts that every non-abstract type implementing an IReadRepository-prefixed interface
@@ -2341,6 +2337,9 @@ HasRequiredMethodPredicate  (class : ICustomRule — internal predicate)
     the required method name, and the implementing interface prefix. Reuses the established
     Mono.Cecil TypeDefinition access pattern — no new NuGet dependency.
     Lives in Predicates/ folder. Used by RepositoryContractCompletenessRules.
+    P-558: skips interfaces themselves and accepts an inherited or explicit-interface implementation
+    (the EfCore repositories implement the read contract explicitly and via a base class); the
+    excludeReadRepository parameter was removed.
 
 NoDirectSaveChangesPredicate  (class : ICustomRule — internal predicate)
     Walks TypeDefinition.Methods for each type. For each MethodDefinition.Body.Instructions,
@@ -2432,8 +2431,8 @@ EncryptionPatternGuardRules  (static class — encryption subsystem misuse enfor
         instantiation site.
         Failure message names the offending IEntityTypeConfiguration<T> implementor and
         the method containing the direct instantiation.
-        Rationale: EncryptionModelConvention (registered via EfCorePersistenceBuilder
-        .WithEncryption()) detects the .Encrypt() marker and applies EncryptedValueConverter<T>
+        Rationale (pre-P-557 design; encryption is interceptor-based, enabled with UseFieldEncryption()
+        since P-558 — the rule remains a guard): EncryptionModelConvention detects the .Encrypt() marker and applies EncryptedValueConverter<T>
         automatically at model finalization. Direct instantiation bypasses the convention,
         causing either duplicate converter registration (double-encryption) or inconsistent
         key-version handling across the model. The .Encrypt() extension is the only safe
@@ -2665,62 +2664,35 @@ NoPlainServiceCollectionRegistrationPredicate  (class : ICustomRule — internal
     type. Lives in Predicates/ folder. Used by
     CoreArchitectureRules.DiExtensionsUseTryAddRegistrationConvention.
 
-UnitOfWorkSeamRules  (static class — local-seam interface distinctness guard; WO-037 P-229)
-    .UnitOfWorkInterfacesRemainDistinct(Assembly applicationBehaviorsAssembly, Assembly persistenceAbstractionsAssembly)
-                                            → ConditionList
-        Asserts that SharedKernel.Application.Behaviors.IUnitOfWork and
-        SharedKernel.Persistence.Abstractions.IUnitOfWork remain two distinct interface
-        declarations — never merged into a single type, never one inheriting the other. Uses
-        UnitOfWorkInterfacesRemainDistinctPredicate (ICustomRule — see below). Takes TWO
-        Assembly parameters (not params Assembly[]) — one expected to contain each interface
-        by exact full name.
-        Failure message names which check failed: missing type, identity collapse
-        (ReferenceEquals match after resolution), or base-interface-list cross-reference in
-        either direction.
-        Rationale: the local-seam pattern (05.Application declares its own IUnitOfWork,
-        bridged to 06.Persistence's IUnitOfWork at the composition root — the same pattern
-        already proven for IRequestContext and IRequestIdempotencyStore) only holds if the
-        two interfaces stay genuinely independent. A future "simplification" that merges them
-        or makes one inherit the other would silently reintroduce the 05.Application →
-        06.Persistence layering violation the local-seam pattern exists to prevent. This is a
-        negative-space / regression-guard rule — both interfaces are independently declared
-        today (the desired state), so the fire-path test fixture must be a CONTRIVED pair of
-        assemblies proving the predicate would catch a future merge attempt, mirroring the
-        established technique for negative-space rules in this domain (e.g.
-        RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther,
-        CommunicationLayeringRules.GrpcNeverReferencesContracts).
-        Offending pattern: interface IUnitOfWork : SharedKernel.Persistence.Abstractions.IUnitOfWork
-            declared inside SharedKernel.Application.Behaviors (or the reverse direction)
-        Compliant pattern: two independently-declared IUnitOfWork interfaces, bridged only by
-            a concrete adapter (e.g. EfUnitOfWork implementing both) at the composition root —
-            never by interface inheritance between the two abstractions themselves.
+UnitOfWorkSeamRules  (static class — shared-contract single-declaration guard; WO-037 P-229, REWRITTEN P-558)
+    .SharedContractsAreNotRedeclared(Assembly assembly)  → ConditionList
+        Asserts that no type in the assembly is an interface named IUnitOfWork,
+        ITransactionalUnitOfWork, IPersistenceTransaction, IRequestContext, IAuditTrailWriter,
+        ICurrentActorContext or ICurrentTenantContext unless it is declared in
+        SharedKernel.Application.Abstractions. Run against every 05/06/13/16 assembly (tests include
+        the real assemblies).
+        Rationale (P-558): the unit of work, the caller and the audit writer are ONE contract each,
+        owned by 05.Application/SharedKernel.Application.Abstractions (MediatR-free) and implemented
+        directly by 06.Persistence and 13.ServiceDefaults.Security. P-557 had two copies of each (05
+        local seams + 06 local seams) bridged by adapters in 13.ServiceDefaults.Persistence; the
+        adapters drifted (the transactional one never actually worked) and are deleted. A redeclared
+        copy would silently bring the bridge problem back.
+    Note: the pre-P-558 rule UnitOfWorkInterfacesRemainDistinct and its predicate
+    (UnitOfWorkInterfacesRemainDistinctPredicate) asserted the OPPOSITE (two distinct IUnitOfWork
+    interfaces) and were deleted with the merge. No SK diagnostic ID.
 
-    Note: Introduced in WO-037 P-229. No new SK diagnostic ID — pure structural ICustomRule
-    check, following the RedisTopologyRules/CompositionRootExclusivityRules/
-    PresentationLayeringRules precedent of SK-less rules for boundary/shape prohibitions.
-    Lives in SharedKernel.ArchitectureTests/Rules/UnitOfWorkSeamRules.cs. Reuses the existing
-    Mono.Cecil >= 0.11.5 reference — no new NuGet dependency.
-
-UnitOfWorkInterfacesRemainDistinctPredicate  (class : ICustomRule — internal predicate)
-    Resolves both TypeDefinitions by exact full name:
-      "SharedKernel.Application.Behaviors.IUnitOfWork" in applicationBehaviorsAssembly
-      "SharedKernel.Persistence.Abstractions.IUnitOfWork" in persistenceAbstractionsAssembly
-    Three independent checks, each a distinct failure mode:
-      (1) Existence: both types must be found. If either is missing, returns false — a
-          renamed or removed interface is itself a seam-pattern violation requiring
-          governance review, not a silent pass.
-      (2) Identity collapse: the two resolved TypeDefinitions must not be
-          ReferenceEquals-identical after resolution — catches an accidental
-          type-forwarding/alias merge collapsing both names onto one type.
-      (3) Bidirectional base-interface check: neither TypeDefinition's Interfaces collection
-          may contain an entry whose InterfaceType.FullName equals the other's full name —
-          catches "interface IUnitOfWork : {other}.IUnitOfWork" being introduced on either
-          side.
-    Returns false (rule violated) on the first failing check, with failure message naming
-    which check failed and the two full type names involved. Lives in Predicates/ folder.
-    Used by UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct. Reuses the
-    TypeDefinition.Interfaces enumeration pattern already used by
-    DoesNotImplementOpenGenericInterfacePredicate — no new technique, no new NuGet dependency.
+PersistenceNamespaceConventionRules  (static class — consumer-facing namespace layout of 06.Persistence; P-558)
+    .FindMisplacedExtensions(params Assembly[] assemblies)  → IReadOnlyList<string>  (empty = holds)
+        Checks every public extension method of a public static class by its receiver type (simple
+        name, so no EF Core/hosting reference): receivers IServiceCollection, IHostApplicationBuilder,
+        EfCorePersistenceBuilder<T>, DbContextOptionsBuilder must live in namespace
+        SharedKernel.Persistence (RegistrationNamespace); ModelBuilder, EntityTypeBuilder<T>,
+        PropertyBuilder<T>, ComplexTypePropertyBuilder<T>, MigrationBuilder, DatabaseFacade,
+        IQueryable<T>, DbSet<T> in SharedKernel.Persistence.EfCore (EfCoreHelpersNamespace).
+        Rationale: a multi-tenant service needed ~22 usings before P-558; now ~7.
+        NOTE: NetArchTest prefix rules that forbid "SharedKernel.Persistence.EfCore"/".Npgsql"/".Dapper"
+        still match the builder/extension classes by type-name prefix; layers that must not see
+        persistence forbid "SharedKernel.Persistence" wholesale.
 
 NoEncryptionAttributeOnDomainEntityPredicate  (class : ICustomRule — internal predicate)
     For each type, iterates TypeDefinition.CustomAttributes. For each CustomAttribute,
@@ -3508,15 +3480,16 @@ EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; 
         assembly; persistence assemblies must not be included in the scan.
         Failure message names the offending type and the declaration site (field, constructor
         parameter, or method reference).
-        Rationale: ITransactionalUnitOfWork (P-099) is the only permitted transaction entry
-        point for application handlers. Direct injection of IDbContextTransaction couples
+        Rationale: IUnitOfWork.ExecuteInTransactionAsync (SharedKernel.Application.Abstractions;
+        ITransactionalUnitOfWork until P-558) is the only permitted transaction entry point for
+        application handlers. Direct injection of IDbContextTransaction couples
         application code to EF Core's specific transaction implementation, making the
         transaction abstraction boundary unenforceable.
         Offending pattern: class CreateOrderHandler {
             public CreateOrderHandler(IDbContextTransaction tx) { }
         }
         Compliant pattern: class CreateOrderHandler {
-            public CreateOrderHandler(ITransactionalUnitOfWork unitOfWork) { }
+            public CreateOrderHandler(IUnitOfWork unitOfWork) { }   // ExecuteInTransactionAsync
         }
         Exemptions: SharedKernel.Persistence.* namespaces (persistence implementation layer).
 
@@ -3628,8 +3601,8 @@ CompositionRootExclusivityRules  (static class — provider-family composition-r
                                             → ConditionList[]
         Mirrors CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching exactly:
         pure NetArchTest .Should().NotHaveDependencyOn(term) checks, no Mono.Cecil. Returns one
-        ConditionList per forbidden term (five total, in order): "SharedKernel.Persistence.EfCore",
-        "SharedKernel.Persistence.PostgreSQL", "SharedKernel.Persistence.Dapper",
+        ConditionList per forbidden term (four total since P-558 deleted the .PostgreSQL package, in order):
+        "SharedKernel.Persistence.EfCore", "SharedKernel.Persistence.Dapper",
         "SharedKernel.Messaging.MassTransit", "SharedKernel.Security.Oidc". Caller must assert
         .GetResult().IsSuccessful on EACH element of the returned array.
         The caller supplies the assemblies to check — must NOT include SharedKernel.ServiceDefaults,
@@ -5328,7 +5301,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `NoDirectSaveChangesPredicate` and `NoIQueryableReturnPredicate` reuse the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. The existing `Mono.Cecil >= 0.11.5` NuGet reference in `SharedKernel.ArchitectureTests` covers both new predicates — no new NuGet dependency is introduced.
 - `PersistenceInterfaceOwnershipRules.IUserContextDeclaredOnlyInSecurityAbstractions` and `TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions` accept `params Assembly[]` — the caller must NOT pass `SharedKernel.Security.Abstractions` itself; only the assemblies to be checked for erroneous re-declarations are supplied. These rules do not assert presence in the owner — they assert absence everywhere else.
 - `PersistenceInterfaceOwnershipRules.IReadRepositoryMustNotExposeIQueryable` is scoped to `"IReadRepository"` prefix specifically — it is separate from and complementary to `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable` (which uses the broader `"IRepository"` prefix). Both may run in the same test suite targeting the same assembly; neither removes the need for the other.
-- `PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository` uses exact name match `"GetByIdAsync"` only — it does not suppress for abstract base classes. If an abstract base `IReadRepository` implementor declares `GetByIdAsync`, the rule fires on the base class too (intentional — the method must be removed at every declaration level).
+- `PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack` (P-558) replaced `NoGetByIdAsyncOnReadRepository`: `GetByIdAsync` is part of the read contract now; the rule instead fails a read-only repository (an `IReadRepository` implementor with no `IRepository` interface) that calls `AsTracking` anywhere in its methods or nested types. Call it with the assembly containing the concrete repositories.
 - `InterfaceDeclarationOwnershipPredicate` is stateless and may be reused across multiple `PersistenceInterfaceOwnershipRules` factory methods with different name sets. Construct a new instance per call — do not share instances across rules to avoid name-set bleed.
 - SK0011 `GuidFormatCodeMisuseAnalyzer` is the first SK analyzer to require a `SemanticModel.GetTypeInfo` check on the receiver expression. This is necessary to distinguish `Guid.ToString("N")` from `int.ToString("N")` (which is a valid numeric format specifier). The semantic model call is scoped only to `ToString` invocations with a single string literal argument — the cost is minimal.
 - SK0011 fires globally with no suppression namespace. Suppression is per-call-site only (`#pragma warning disable SK0011`). The rationale is that non-`"D"` Guid formats are never correct in audit trail context; any other context (URL segments, log correlation IDs) should be explicitly opted out with an inline suppression and a comment.
@@ -5355,8 +5328,8 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - Both `02.Caching` dependencies (P-433/P-436, its own Phases 42/45) were still in the planning stage — not yet dispatched for implementation — when this rule was designed. Per this domain's own repeated experience (eight prior occurrences), the implementer must re-verify against `02.Caching/state-map.md` directly before writing either real-assembly test rather than trusting the "not yet implemented" framing recorded at design time — it has resolved before implementation in every prior phase in this family.
 - `CryptoIsolationRules` and `UnitOfWorkSeamRules` (WO-037 P-229) introduce zero new SK diagnostic IDs and zero new NuGet dependencies — both reuse the existing `Mono.Cecil >= 0.11.5` reference. `UnitOfWorkInterfacesRemainDistinctPredicate` is a negative-space/regression-guard rule: both `IUnitOfWork` interfaces are independently declared today (the desired state), so its fire-path test fixtures must use contrived two-assembly pairs proving the predicate would catch a future interface-merge or interface-inheritance attempt — there is no existing bad pattern in the codebase to point the fire-path test at.
 - `NoRawSymmetricCipherOutsideCryptographyPredicate`'s `RandomNumberGenerator` surface uses a `MethodReference.DeclaringType.FullName` match rather than a single method-name match, because `RandomNumberGenerator` exposes multiple static and instance entry points (`Fill`, `GetBytes`, `Create`, etc.) — a `DeclaringType` check catches all of them in one IL walk pass, consistent with how `NoDirectSaveChangesPredicate` matches `DbContext.SaveChanges`/`SaveChangesAsync` by declaring-type-plus-name rather than enumerating every overload individually.
-- `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct` is the only factory method in this domain that accepts exactly two named `Assembly` parameters (not a single `Assembly` or `params Assembly[]`) — this is deliberate: the rule's entire purpose is comparing two specific, named interfaces that live in two specific, named assemblies, so positional `params` would obscure which assembly is expected to hold which interface.
-- SK0201 `TenantedDbContextOnModelCreatingAnalyzer` scans `MethodDeclarationSyntax` nodes named `OnModelCreating` with the `override` modifier. Ancestry check walks `ClassDeclarationSyntax.BaseList.Types` for a type whose simple name is `TenantedDbContext`; if not found on the immediate class, walks parent `ClassDeclarationSyntax` nodes in the same file (syntax-only — cross-file ancestry is not resolved). Body scan calls `DescendantNodes().OfType<InvocationExpressionSyntax>()` on the method body and checks for: (a) `MemberAccessExpressionSyntax` with `BaseExpressionSyntax` receiver and `Name.Identifier.Text == "OnModelCreating"`, or (b) any invocation (simple name or member access) whose method name is `"ApplyTenantFilters"`. Fires on the method identifier if neither found. No suppression namespace — suppress per-site via `#pragma warning disable SK0201`.
+- `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` (P-558) takes one `Assembly` and is asserted once per 05/06/13/16 assembly; the former two-assembly `UnitOfWorkInterfacesRemainDistinct` was deleted with the contract merge.
+- SK0201 `TenantedDbContextOnModelCreatingAnalyzer` scans `MethodDeclarationSyntax` nodes named `OnModelCreating` with the `override` modifier. Ancestry check walks `ClassDeclarationSyntax.BaseList.Types` for a type whose simple name is `TenantedDbContext`; if not found on the immediate class, walks parent `ClassDeclarationSyntax` nodes in the same file (syntax-only — cross-file ancestry is not resolved). Body scan calls `DescendantNodes().OfType<InvocationExpressionSyntax>()` on the method body and checks for a `MemberAccessExpressionSyntax` with `BaseExpressionSyntax` receiver and `Name.Identifier.Text == "OnModelCreating"`. Fires on the method identifier if not found. (P-558 removed the former `ApplyTenantFilters` alternative: the tenant filter is a model-finalizing convention now.) No suppression namespace — suppress per-site via `#pragma warning disable SK0201`.
 - SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` scans `InvocationExpressionSyntax` nodes. Filter: simple method name (from `IdentifierNameSyntax` or `MemberAccessExpressionSyntax.Name`) is `"IgnoreQueryFilters"` AND argument list is empty (zero arguments). Two exemptions checked in order: (1) namespace walk via `SyntaxNode.Parent` for any `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` whose `Name.ToString()` starts with `"SharedKernel.Persistence.EfCore"` — same pattern as SK0001/SK0007; (2) `FirstAncestorOrSelf<ClassDeclarationSyntax>()` with `Identifier.Text == "TenantedRepository"` (exact string match). Reports on the full invocation expression if neither exemption applies. Any additional exemption class or namespace must be documented in `00.Governance/CLAUDE.md` under SK0202 before applying suppression.
 - RS2008 (analyzer release tracking) is **satisfied, never suppressed**. There is no `NoWarn` for it in `SharedKernel.Analyzers.csproj` and there must not be one. This rule previously said the opposite; that was wrong and hid a broken setup — Roslyn only recognises the filenames `AnalyzerReleases.Shipped.md`/`AnalyzerReleases.Unshipped.md`, and the files had been named `AnalyzerReleaseTracking.*.txt`, so they were registered as `AdditionalFiles` correctly but were never read, and RS2008 fired for every rule regardless of their contents. With the correct filenames the build is 0 warnings with `EnforceExtendedAnalyzerRules=true`. All 41 rules are recorded in `AnalyzerReleases.Shipped.md` under `## Release 1.0`; a new rule goes into `AnalyzerReleases.Unshipped.md` first and moves across when a release is cut. Adding a rule without recording it makes RS2008 fire, which is the intended behaviour — verified non-vacuous (removing one row yields exactly one RS2008 warning).
 - `NoDirectBusInjectionOutsideMessagingPredicate` exemption guard (`TypeDefinition.Namespace.StartsWith("SharedKernel.Messaging")`) is applied as the first check, before any constructor parameter inspection. This covers both `SharedKernel.Messaging.Abstractions` and `SharedKernel.Messaging.MassTransit` and all sub-namespaces with a single prefix check. Any additional namespace exemption must be documented in `00.Governance/CLAUDE.md` under `MessagingArchitectureRules` before applying.
@@ -5647,3 +5620,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-15] SK0040 `PipelineMarkerResponseShapeMismatchAnalyzer` added — pre-publish companion to `05.Application`'s P-544 redesign. Reads `FailureResponse.cs` and every behavior calling it before writing the rule: only `AuthorizationBehavior`/`IAuthorizeRequest` and `IdempotencyBehavior`/`IIdempotentRequest` genuinely construct a failed response through `FailureResponse.Create<TResponse>()`, which requires a `Result`/closed `Result<T>` response or throws `InvalidOperationException` at runtime. `AuditingBehavior`/`IAuditableRequest<TResponse>` and `LoggingBehavior`/`ILoggableRequest<TResponse>` were BOTH found, by reading their source, to never call it — both only forward the response `next()` already produced and classify it through `ResponseOutcome.TryGetError`, which degrades gracefully for a non-`Result` response — so neither is checked by this rule, and this applies to `IAuditableRequest` too even though the phase input's own marker list did not flag it for verification the way it flagged `ILoggableRequest`; independent verification found the identical exemption applies to both. `ValidationBehavior` also calls `FailureResponse.Create` but has no marker interface gating its scope (`TRequest : IRequest<TResponse>` unconditionally), so it is structurally out of reach for a type-declaration rule of this shape and not part of the trigger. Interface-closure resolution reuses `MarkerInterfaceHelpers.HasInterface` (WO-040/P-248's technique) for the two markers, plus new local logic resolving `MediatR.IRequest<TResponse>`'s closed type argument and checking it against `SharedKernel.Primitives.Results.Result`/`Result<T>` by exact namespace. An open type parameter or unresolved/error response type is never flagged (cannot determine the eventual closed shape); a closed `Result<T>` whose own type argument is still open still passes (only the outer shape is checked). Abstract types exempted, matching SK0009/SK0017/SK0018. No `SharedKernel.ArchitectureTests` counterpart — pure Roslyn analyzer, mirrors SK0017–SK0019's/SK0030's "no architecture-test counterpart by design" note. `SharedKernel.Analyzers.Tests`: 329/329 pass (10 new SK0040 tests: 3 fire-path including a both-markers-at-once case, 7 pass-path covering `Result`/closed `Result<T>` responses, no-`IRequest<>`, the `IAuditableRequest`/`ILoggableRequest` exclusions, and both open-generic shapes). `SharedKernel.ArchitectureTests.Tests` build currently fails — confirmed unrelated to this change: `05.Application.Behaviors`/`SharedKernel.Application`'s own `PublicApi.Analyzers` gate (RS0016) is failing on `IIdempotentRequest.Fingerprint`/`AnonymousRequestContext`/`SystemRequestContext`, all mid-edit by a concurrent `05.Application` session per this task's own stated constraint — not something `00.Governance` may fix, and this rule has no dependency on any of those in-flight members. Phase `SK.00.PipelineMarkerResponseShapeGuard` added — 13 tasks: D-84, C-146, T-379–T-388, DO-56. Root Backlog ID: P-544 (governance-phase-implementer)
 - [2026-09-16] P-546 security redesign: security rule docs now use the `SharedKernel.Security.Abstractions` namespace for `IUserContext`/`ITenantProvider` (the `.Abstractions.Abstractions` namespace is gone) and a `string? SubjectId` example; `NoSingletonRegistrationOfSecurityContextTypes` documents the non-generic `AnonymousUserContext.Instance` placeholder from `06.Persistence` as deliberately unflagged, with real-assembly tests locating Oidc through `OidcServiceCollectionExtensions` (`AddOidcAuthentication` uses `TryAddScoped`); `SecureDefaultsAssertion` T-309 now expects `MtlsAuthenticationOptions.RevocationMode` default `Online` (was `Offline`); T-310 now asserts the configured `JwtBearerOptions.TokenValidationParameters.ValidAlgorithms` excludes `none`/`HS*` and that configuring a forbidden algorithm fails startup validation, because `SecurityOptions` is removed and the Oidc algorithm collections default to empty (configuration binding appends); historical notes naming `ApiKeyUserContext`, `DpopProofValidator.ProofHeaderName` and the old T-310 test name annotated rather than rewritten (coordinator)
 - [2026-09-18] P-554: SK0035 retargeted to Microsoft's compliance model after `SharedKernel.DataPrivacy`'s redesign — classified = any `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`-derived attribute except `NoDataClassificationAttribute`; a classified parameter (and `[LogProperties]` for whole objects) is safe; `Pseudonymizer` calls exempt alongside `PiiMasking`; Restricted-tier/`SensitiveDataCategory` checks removed; message now names the attribute and suggests classifying the parameter (agent)
+- [2026-09-21] P-558: UnitOfWorkSeamRules.SharedContractsAreNotRedeclared, ReadOnlyRepositoriesNeverTrack, PersistenceNamespaceConventionRules, Persistence.Testing guard; SK0201 base-call only (agent)

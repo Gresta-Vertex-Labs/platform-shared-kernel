@@ -2,10 +2,10 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.Npgsql.Tests.Extensions;
@@ -33,12 +33,12 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
     }
 
     [Fact]
-    public async Task AddSharedKernelNpgsql_Configuration_DefaultSslMode_RejectsANonTlsServer()
+    public async Task AddSharedKernelNpgsql_Configuration_VerifyFull_RejectsANonTlsServer()
     {
         // The Testcontainers PostgreSQL image has no TLS certificate configured, so the secure
-        // VerifyFull default must genuinely refuse the connection rather than silently
+        // VerifyFull mode must genuinely refuse the connection rather than silently
         // downgrading — this is the real-world proof the opt-down mechanism exists for.
-        var provider = BuildProviderWithDefaultSsl();
+        var provider = BuildProviderWithVerifyFull();
         var dataSource = provider.GetRequiredService<NpgsqlDataSource>();
 
         var act = async () => await dataSource.OpenConnectionAsync();
@@ -146,13 +146,14 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
         return services.BuildServiceProvider();
     }
 
-    private ServiceProvider BuildProviderWithDefaultSsl()
+    private ServiceProvider BuildProviderWithVerifyFull()
     {
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["SharedKernel:Persistence:Npgsql:ConnectionString"] = _fixture.ConnectionString,
+                ["SharedKernel:Persistence:Npgsql:SslMode"] = "VerifyFull",
             })
                 .Build();
 

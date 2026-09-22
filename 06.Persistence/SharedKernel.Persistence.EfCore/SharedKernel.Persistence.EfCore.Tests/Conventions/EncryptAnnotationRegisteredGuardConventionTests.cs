@@ -3,7 +3,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
 
@@ -51,10 +50,7 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
     {
         var actor = new FakeAuditActorContext("encrypt-guard-test");
         var clock = new SystemClock();
-        return new PersistenceContextDependencies(
-            new AuditInterceptor(actor, clock),
-            new SoftDeleteInterceptor(actor, clock),
-            new ConcurrencyInterceptor());
+        return PersistenceContextDependencies.Create(actor, clock);
     }
 
     private static DbContextOptions<TContext> BuildSqliteOptions<TContext>(SqliteConnection connection)
@@ -96,7 +92,7 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*DirectPropEntity.Secret*")
-                .Which.Message.Should().Contain("WithEncryption");
+                .Which.Message.Should().Contain("UseFieldEncryption");
     }
 
     // ---------------------------------------------------------------------------
@@ -166,7 +162,7 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*ComplexPropEntity.Note.Body*")
-                .Which.Message.Should().Contain("WithEncryption");
+                .Which.Message.Should().Contain("UseFieldEncryption");
     }
 
     // ---------------------------------------------------------------------------
@@ -203,6 +199,50 @@ public sealed class EncryptAnnotationRegisteredGuardConventionTests
         var act = () => ctx.Model;
 
         act.Should().NotThrow();
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property two complex levels deep, never marked applied (finding A9: the traversal stopped one level down)
+    // ---------------------------------------------------------------------------
+
+    private sealed class NoteHolder
+    {
+        public NoteBox Inner { get; set; } = new();
+    }
+
+    private sealed class NestedComplexEntity
+    {
+        public int Id { get; set; }
+        public NoteHolder Outer { get; set; } = new();
+    }
+
+    private sealed class NestedComplexNotAppliedDbContext(
+        DbContextOptions<NestedComplexNotAppliedDbContext> options, PersistenceContextDependencies dependencies)
+            : SharedKernelDbContext(options, dependencies)
+    {
+        public DbSet<NestedComplexEntity> Items => Set<NestedComplexEntity>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<NestedComplexEntity>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.ComplexProperty(x => x.Outer, outer =>
+                    outer.ComplexProperty(o => o.Inner, inner =>
+                        inner.Property(n => n.Body).HasAnnotation(PersistenceModelAnnotationNames.Encrypt, "test.nested-purpose")));
+            });
+    }
+
+    [Fact]
+    public void ProcessModelFinalizing_NestedComplexSubPropertyEncryptedButNeverApplied_Throws()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+        using var ctx = new NestedComplexNotAppliedDbContext(
+            BuildSqliteOptions<NestedComplexNotAppliedDbContext>(connection), BuildDependencies());
+
+        var act = () => ctx.Model;
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*NestedComplexEntity.Outer.Inner.Body*UseFieldEncryption*");
     }
 
     // ---------------------------------------------------------------------------

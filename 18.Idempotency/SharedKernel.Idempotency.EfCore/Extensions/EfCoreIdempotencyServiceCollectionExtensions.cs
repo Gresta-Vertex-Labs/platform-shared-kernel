@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.EfCore.Context;
+using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.KeyStore;
 using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
@@ -28,7 +29,8 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configureDbContext">
     /// Configures the underlying <see cref="DbContextOptionsBuilder"/> — typically
-    /// <c>options.UsePostgreSQL(connectionString)</c> from <c>SharedKernel.Persistence.PostgreSQL</c>.
+    /// <c>options.UsePostgres(dataSource)</c> from <c>SharedKernel.Persistence.EfCore</c>, given an
+    /// <c>NpgsqlDataSource</c> the caller already holds.
     /// </param>
     /// <param name="configureOptions">
     /// Optional delegate to customise <see cref="EfCoreIdempotencyOptions"/>. When
@@ -62,7 +64,11 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
 
-        services.AddDbContext<IdempotencyDbContext>(configureDbContext);
+        services.AddDbContext<IdempotencyDbContext>(options =>
+        {
+            configureDbContext(options);
+            IdempotencyDbContextOptions.DisableRetry(options);
+        });
 
         services
             .AddOptions<EfCoreIdempotencyOptions>()

@@ -9,7 +9,7 @@ namespace SharedKernel.Persistence.Abstractions.Diagnostics;
 public static class DbConnectionFactoryDiagnosticsExtensions
 {
     /// <summary>The default upper bound a probe call is allowed to run before it is abandoned.</summary>
-    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Probes database connectivity by opening a connection and executing <c>SELECT 1</c>.

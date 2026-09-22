@@ -30,9 +30,9 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     <c>IReadRepository</c>-prefixed interface must not return <c>IQueryable&lt;T&gt;</c>.
 ///   </description></item>
 ///   <item><description>
-///     <see cref="NoGetByIdAsyncOnReadRepository"/> — types implementing an
-///     <c>IReadRepository</c>-prefixed interface must not declare <c>GetByIdAsync</c> (removed
-///     to eliminate duplication with the write-side <c>IRepository</c>).
+///     <see cref="ReadOnlyRepositoriesNeverTrack"/> — types implementing an
+///     <c>IReadRepository</c>-prefixed interface but no <c>IRepository</c>-prefixed one must never call
+///     <c>AsTracking</c> (the read contract never tracks).
 ///   </description></item>
 /// </list>
 /// <para>
@@ -160,48 +160,40 @@ public static class PersistenceInterfaceOwnershipRules
             .MeetCustomRule(new ReadRepositoryNoIQueryablePredicate());
 
     /// <summary>
-    /// Returns a <see cref="ConditionList"/> asserting that no type implementing an
-    /// <c>IReadRepository</c>-prefixed interface declares a method named
-    /// <c>GetByIdAsync</c>.
+    /// Returns a <see cref="ConditionList"/> asserting that no read-only repository — a type implementing an
+    /// <c>IReadRepository</c>-prefixed interface but no <c>IRepository</c>-prefixed one — calls
+    /// <c>AsTracking</c>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>GetByIdAsync</c> was removed from <c>IReadRepository&lt;T,TId&gt;</c> to
-    /// eliminate duplication with the write-side <c>IRepository&lt;T,TId&gt;</c>. Re-declaring
-    /// it on a concrete implementor reintroduces the anti-pattern and diverges from the platform
-    /// read/write split contract.
+    /// The read contract never tracks: an entity returned by <c>IReadRepository</c> is detached, so a change to
+    /// it can never be saved by accident, and reads skip the change tracker's snapshot cost. Tracked loads
+    /// belong to the write-side <c>IRepository</c> (which extends the read contract and is exempt here).
     /// </para>
     /// <para>
-    /// The rule fires on abstract base classes too — the method must be removed at every
-    /// declaration level.
-    /// </para>
-    /// <para>
-    /// <strong>Failure message content:</strong>
-    /// <c>{type}.GetByIdAsync must be removed — use FindByIdAsync (returns Result&lt;T&gt;) or
-    /// GetAsync (returns T?) instead. GetByIdAsync was removed to eliminate
-    /// duplication.</c>
+    /// Method bodies are inspected including compiler-generated nested types (async state machines, lambdas),
+    /// so an <c>AsTracking()</c> call inside an <c>async</c> method is found.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>
-    /// <code>Task&lt;Order?&gt; GetByIdAsync(Guid id); // on an IReadRepository implementor</code>
+    /// <code>_context.Set&lt;Order&gt;().AsTracking().FirstOrDefaultAsync(...) // in an IReadRepository-only type</code>
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong>
-    /// <code>Task&lt;Order?&gt; GetAsync(Guid id); // or: Task&lt;Result&lt;Order&gt;&gt; FindByIdAsync(Guid id);</code>
+    /// <code>_context.Set&lt;Order&gt;().AsNoTracking().FirstOrDefaultAsync(...)</code>
     /// </para>
     /// </remarks>
     /// <param name="assembly">The assembly to evaluate.</param>
     /// <returns>
-    /// A <see cref="ConditionList"/> asserting no <c>IReadRepository</c> implementor declares
-    /// <c>GetByIdAsync</c>.
+    /// A <see cref="ConditionList"/> asserting no read-only repository calls <c>AsTracking</c>.
     /// </returns>
-    public static ConditionList NoGetByIdAsyncOnReadRepository(Assembly assembly) =>
+    public static ConditionList ReadOnlyRepositoriesNeverTrack(Assembly assembly) =>
         Types
             .InAssembly(assembly)
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .MeetCustomRule(new NoGetByIdOnReadRepositoryPredicate());
+            .MeetCustomRule(new ReadOnlyRepositoryNeverTracksPredicate());
 
     // -------------------------------------------------------------------------
     // Private helpers

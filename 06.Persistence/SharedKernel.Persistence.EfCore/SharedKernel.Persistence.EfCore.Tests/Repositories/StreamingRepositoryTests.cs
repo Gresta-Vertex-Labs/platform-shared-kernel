@@ -2,7 +2,6 @@ using System.Linq.Expressions;
 using FluentAssertions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -83,7 +82,6 @@ public sealed class StreamingRepositoryTests
 
         // TrackedAllSpec does NOT call ApplyNoTracking — AsNoTracking == false on the spec.
         var spec = new TrackedAllSpec();
-        spec.AsNoTracking.Should().BeFalse("sanity check: this spec does not request no-tracking");
 
         var count = 0;
         await foreach (var _ in readRepo.StreamAsync(spec))

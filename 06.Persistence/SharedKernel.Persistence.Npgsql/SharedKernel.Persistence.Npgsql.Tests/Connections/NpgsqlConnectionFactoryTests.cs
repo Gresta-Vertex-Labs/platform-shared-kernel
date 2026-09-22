@@ -2,10 +2,12 @@ using System.Data;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Npgsql.Connections;
-using SharedKernel.Persistence.Npgsql.Extensions;
 using SharedKernel.Testing.Containers;
+
+using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Persistence.Npgsql.Tests.Connections;
 
@@ -74,7 +76,7 @@ public sealed class NpgsqlConnectionFactoryTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
 
-        services.AddSharedKernelNpgsql(_fixture.ConnectionString);
+        services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
 
         var provider = services.BuildServiceProvider();
 
@@ -91,7 +93,7 @@ public sealed class NpgsqlConnectionFactoryTests : IAsyncLifetime
     public async Task AddSharedKernelNpgsql_RegisteredConnectionFactory_OpensGenuineConnection()
     {
         var services = new ServiceCollection();
-        services.AddSharedKernelNpgsql(_fixture.ConnectionString);
+        services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
         var provider = services.BuildServiceProvider();
 
         using var scope = provider.CreateScope();

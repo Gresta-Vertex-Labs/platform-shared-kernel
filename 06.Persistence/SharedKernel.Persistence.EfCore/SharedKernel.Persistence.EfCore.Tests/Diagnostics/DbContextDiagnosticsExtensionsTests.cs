@@ -2,7 +2,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Diagnostics;
@@ -60,10 +59,7 @@ public sealed class DbContextDiagnosticsExtensionsTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         using var ctx = new TestDbContext(
             options,
-            new PersistenceContextDependencies(
-                new SharedKernel.Persistence.EfCore.Interceptors.AuditInterceptor(userContext, clock),
-            new SharedKernel.Persistence.EfCore.Interceptors.SoftDeleteInterceptor(userContext, clock),
-            new SharedKernel.Persistence.EfCore.Interceptors.ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(userContext, clock));
 
         var act = async () => await ctx.CheckReadinessAsync();
 

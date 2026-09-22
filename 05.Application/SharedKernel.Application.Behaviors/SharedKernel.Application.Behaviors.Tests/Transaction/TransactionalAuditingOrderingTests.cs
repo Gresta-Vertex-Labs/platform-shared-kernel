@@ -1,11 +1,13 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Tests.Support;
-using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Messaging;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -13,19 +15,15 @@ namespace SharedKernel.Application.Behaviors.Tests.Transaction;
 
 /// <summary>
 /// Proves — through a real, composed <c>ServiceCollection</c> + <c>AddMediatR</c> +
-/// <see cref="ApplicationBehaviorsBuilder"/> dispatch, never a hand-rolled pipeline — that when the
-/// resolved <c>IUnitOfWork</c> also implements <c>ITransactionalUnitOfWork</c>,
-/// <c>TransactionBehavior</c> opens the transaction BEFORE <c>AuditingBehavior</c> (registered inner to
-/// it in the canonical command stage) records its entry, and only commits or rolls back after that
-/// entry has already been staged.
+/// <see cref="ApplicationBehaviorsBuilder"/> dispatch — how auditing sits around the transaction: the
+/// <see cref="AuditOutcome.Succeeded"/> entry is written inside the transaction, after the business
+/// save and before the commit (the unit of work's pre-commit hook); every failure — a failed
+/// <c>Result</c>, a thrown exception, a failed commit — is written after the rollback.
 /// </summary>
 /// <remarks>
-/// This is the exact defect this capability fixes: an audit writer that requires an ambient
-/// transaction to record a successful outcome previously had none to enlist in, because nothing in
-/// <c>05.Application.Behaviors</c>/<c>13.ServiceDefaults</c> ever opened one. The genuinely atomic,
-/// real-Postgres proof of that fix lives in
-/// <c>13.ServiceDefaults.Persistence.Tests</c>' <c>AuditTransactionWiringPostgresTests</c> — this test
-/// proves the ORDERING contract the fix depends on, fast and deterministically, without a database.
+/// The real-PostgreSQL proof that the success entry commits atomically with the business write lives
+/// in <c>SharedKernel.Persistence.EfCore.Auditing.Tests</c>; this test proves the ordering contract
+/// deterministically, without a database.
 /// </remarks>
 public sealed class TransactionalAuditingOrderingTests
 {
@@ -39,7 +37,7 @@ public sealed class TransactionalAuditingOrderingTests
         public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "after" : null;
     }
 
-    private sealed class TestCommandHandler(List<string> sequence) : ICommandHandler<TestCommand>
+    private sealed class TestCommandHandler(List<string> sequence, ICommandScope commandScope) : ICommandHandler<TestCommand>
     {
         public Task<Result> Handle(TestCommand request, CancellationToken cancellationToken)
         {
@@ -47,78 +45,131 @@ public sealed class TransactionalAuditingOrderingTests
                 throw new InvalidOperationException("boom");
 
             sequence.Add("handler");
+            commandScope.OnCompleted(_ =>
+            {
+                sequence.Add("after-commit");
+                return Task.CompletedTask;
+            });
+
             return Task.FromResult(request.ShouldFail
                 ? Result.Failure(Error.Validation("test.rejected", "Rejected for testing."))
                 : Result.Success());
         }
     }
 
-    private static (ServiceProvider Provider, List<string> Sequence, FakeTransactionalUnitOfWork UnitOfWork) BuildProvider()
+    private static (ServiceProvider Provider, List<string> Sequence, FakeUnitOfWork UnitOfWork, FakeAuditTrailWriter Writer) BuildProvider(
+        Action<FakeUnitOfWork>? configure = null,
+        bool withTransaction = true)
     {
         var sequence = new List<string>();
-        var unitOfWork = new FakeTransactionalUnitOfWork(sequence);
+        var unitOfWork = new FakeUnitOfWork(sequence);
+        configure?.Invoke(unitOfWork);
+        var writer = new FakeAuditTrailWriter(sequence);
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
-        services.AddSingleton<IAuditTrailWriter>(new FakeAuditTrailWriter(sequence));
+        services.AddSingleton<IAuditTrailWriter>(writer);
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<TransactionalAuditingOrderingTests>());
 
-        services.AddSharedKernelApplicationBehaviors()
-            .AddAuditingBehavior()
-            .AddTransactionBehavior()
-            .Build();
+        var builder = services.AddSharedKernelApplicationBehaviors().AddAuditingBehavior();
+        if (withTransaction)
+            builder.AddTransactionBehavior();
+        builder.Build();
 
-        return (services.BuildServiceProvider(), sequence, unitOfWork);
+        return (services.BuildServiceProvider(), sequence, unitOfWork, writer);
     }
 
     [Fact]
-    public async Task Dispatch_Success_OpensTransactionBeforeAuditRecordAndCommitsAfterSaveChanges()
+    public async Task Dispatch_Success_WritesSucceededEntryAfterSaveAndBeforeCommit()
     {
-        var (provider, sequence, unitOfWork) = BuildProvider();
+        var (provider, sequence, unitOfWork, writer) = BuildProvider();
         using var _ = provider;
-        var sender = provider.GetRequiredService<ISender>();
 
-        var result = await sender.Send(new TestCommand(ShouldFail: false));
+        var result = await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: false));
 
         result.IsSuccess.Should().BeTrue();
         sequence.Should().Equal(
-            "transaction.begin", "handler", "audit.record", "transaction.savechanges", "transaction.commit");
-        unitOfWork.LastTransaction!.IsCommitted.Should().BeTrue();
-        unitOfWork.LastTransaction.IsRolledBack.Should().BeFalse();
+            "transaction.begin", "handler", "transaction.savechanges", "audit.record", "transaction.commit", "after-commit");
+        writer.RecordedEntries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Succeeded);
+        writer.RecordedEntries[0].AfterSnapshot.Should().Be("after");
+        unitOfWork.CommitCount.Should().Be(1);
     }
 
     [Fact]
-    public async Task Dispatch_ResultFailure_RecordsFailedAuditEntryInsideTransactionThenRollsBackWithoutSaving()
+    public async Task Dispatch_ResultFailure_RollsBackThenWritesFailedEntry()
     {
-        var (provider, sequence, unitOfWork) = BuildProvider();
-        using var _ = provider;
-        var sender = provider.GetRequiredService<ISender>();
+        var (provider, sequence, _, writer) = BuildProvider();
+        using var __ = provider;
 
-        var result = await sender.Send(new TestCommand(ShouldFail: true));
+        var result = await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: true));
 
         result.IsFailure.Should().BeTrue();
-        sequence.Should().Equal("transaction.begin", "handler", "audit.record", "transaction.rollback");
-        sequence.Should().NotContain("transaction.savechanges");
-        unitOfWork.LastTransaction!.IsRolledBack.Should().BeTrue();
-        unitOfWork.LastTransaction.IsCommitted.Should().BeFalse();
+        sequence.Should().Equal("transaction.begin", "handler", "transaction.rollback", "audit.record");
+        var entry = writer.RecordedEntries.Should().ContainSingle().Subject;
+        entry.Outcome.Should().Be(AuditOutcome.Failed);
+        entry.ErrorCode.Should().Be("test.rejected");
     }
 
     [Fact]
-    public async Task Dispatch_HandlerThrows_RecordsFaultAuditEntryInsideTransactionThenRollsBackAndRethrows()
+    public async Task Dispatch_HandlerThrows_RollsBackThenWritesFaultEntryAndRethrows()
     {
-        var (provider, sequence, unitOfWork) = BuildProvider();
-        using var _ = provider;
-        var sender = provider.GetRequiredService<ISender>();
+        var (provider, sequence, _, writer) = BuildProvider();
+        using var __ = provider;
 
-        var act = async () => await sender.Send(new TestCommand(ShouldFail: false, ShouldThrow: true));
+        var act = async () => await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: false, ShouldThrow: true));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        sequence.Should().Equal("transaction.begin", "audit.record", "transaction.rollback");
-        sequence.Should().NotContain("transaction.savechanges");
-        unitOfWork.LastTransaction!.IsRolledBack.Should().BeTrue();
-        unitOfWork.LastTransaction.IsCommitted.Should().BeFalse();
+        sequence.Should().Equal("transaction.begin", "transaction.rollback", "audit.record");
+        writer.RecordedEntries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Failed);
+    }
+
+    [Fact]
+    public async Task Dispatch_CommitFails_NoSucceededEntrySurvives_AndAFailedEntryIsWritten()
+    {
+        // The case the old in-transaction placement could never record: the handler succeeded but the
+        // commit failed. The succeeded entry was written inside the transaction and rolled back with it.
+        var (provider, sequence, _, writer) = BuildProvider(u => u.SimulateCommitFailure = true);
+        using var __ = provider;
+
+        var act = async () => await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: false));
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        sequence.Should().Equal(
+            "transaction.begin", "handler", "transaction.savechanges", "audit.record", "transaction.rollback", "audit.record");
+        writer.RecordedEntries.Select(e => e.Outcome).Should().Equal(AuditOutcome.Succeeded, AuditOutcome.Failed);
+        writer.RecordedEntries[1].ErrorCode.Should().Be(typeof(InvalidOperationException).FullName);
+        sequence.Should().NotContain("after-commit");
+    }
+
+    [Fact]
+    public async Task Dispatch_TransientRetry_ReplaysHandler_ButAuditsAndRunsAfterCommitCallbacksOnce()
+    {
+        var (provider, sequence, unitOfWork, writer) = BuildProvider(u => u.TransientFailures = 1);
+        using var _ = provider;
+
+        var result = await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: false));
+
+        result.IsSuccess.Should().BeTrue();
+        sequence.Count(s => s == "handler").Should().Be(2);
+        sequence.Count(s => s == "after-commit").Should().Be(1, "callbacks queued by the discarded attempt are dropped");
+        writer.RecordedEntries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Succeeded);
+        unitOfWork.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Dispatch_WithoutTransactionBehavior_WritesSucceededEntryDirectly()
+    {
+        var (provider, sequence, unitOfWork, writer) = BuildProvider(withTransaction: false);
+        using var _ = provider;
+
+        var result = await provider.GetRequiredService<ISender>().Send(new TestCommand(ShouldFail: false));
+
+        result.IsSuccess.Should().BeTrue();
+        sequence.Should().Equal("handler", "audit.record", "after-commit");
+        writer.RecordedEntries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Succeeded);
+        unitOfWork.CommitCount.Should().Be(0);
     }
 }

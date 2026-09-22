@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Specifications;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -43,19 +42,6 @@ internal sealed class StubSpecificationEvaluator<T> : ISpecificationEvaluator<T>
             : inputQuery;
         return filtered.Select(spec.Selector);
     }
-
-    public bool GetKeysetQueryCalled { get; private set; }
-
-    public IQueryable<T> GetKeysetQuery<TKey>(IQueryable<T> inputQuery, KeysetSpecification<T, TKey> spec)
-        where TKey : struct, IComparable<TKey>
-    {
-        GetKeysetQueryCalled = true;
-        // Minimal valid implementation for tests — criteria + Take(Take+1) only.
-        var filtered = spec.Criteria is not null
-            ? inputQuery.Where(spec.Criteria)
-            : inputQuery;
-        return filtered.Take(spec.Take!.Value + 1);
-    }
 }
 
 /// <summary>
@@ -67,7 +53,7 @@ internal sealed class StubBackedReadRepository(
     StubSpecificationEvaluator<TestAggregate> evaluator)
         : EfReadRepository<TestAggregate, TestId>(ctx, evaluator)
 {
-    public StubSpecificationEvaluator<TestAggregate> Evaluator { get; } = evaluator;
+    public new StubSpecificationEvaluator<TestAggregate> Evaluator { get; } = evaluator;
 }
 
 /// <summary>Minimal projection spec for interface-level tests.</summary>
@@ -78,7 +64,6 @@ internal sealed class TestNameProjectionSpec : Specification<TestAggregate>,
 
     public TestNameProjectionSpec()
     {
-        ApplyNoTracking();
     }
 }
 
@@ -103,16 +88,6 @@ public sealed class SpecificationEvaluatorInterfaceTests
         // lives in SharedKernel.Persistence.EfCore.
         var method = typeof(ISpecificationEvaluator<>).GetMethod("GetQuery");
         method.Should().NotBeNull("ISpecificationEvaluator<T> must expose GetQuery");
-    }
-
-    [Fact]
-    public void ISpecificationEvaluator_Declares_GetKeysetQuery()
-    {
-        // Moved here from SharedKernel.Persistence.Abstractions.Tests.
-        var method = typeof(ISpecificationEvaluator<>).GetMethod("GetKeysetQuery");
-        method.Should().NotBeNull("ISpecificationEvaluator<T> must expose GetKeysetQuery<TKey>");
-        method!.IsGenericMethodDefinition.Should().BeTrue(
-            "GetKeysetQuery must be a method-level generic over TKey, avoiding any TKey-erasure reflection");
     }
 
     [Fact]
@@ -154,7 +129,7 @@ public sealed class SpecificationEvaluatorInterfaceTests
     }
 
     [Fact]
-    public async Task EfReadRepository_GetBySpecProjectedAsync_WorksWith_StubEvaluator_NoDowncast()
+    public async Task EfReadRepository_FirstOrDefaultProjectedAsync_WorksWith_StubEvaluator_NoDowncast()
     {
         // Arrange
         using var ctx = TestDbContextFactory.CreateTestDbContext();
@@ -169,7 +144,7 @@ public sealed class SpecificationEvaluatorInterfaceTests
         var spec = new TestNameProjectionSpec();
 
         // Act
-        var result = await repo.GetBySpecProjectedAsync<string>(spec);
+        var result = await repo.FirstOrDefaultProjectedAsync<string>(spec);
 
         // Assert
         result.Should().Be("StubSingle");

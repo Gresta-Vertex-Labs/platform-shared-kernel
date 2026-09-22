@@ -1,13 +1,14 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
 
 namespace SharedKernel.Application.Behaviors.Auditing;
 
 /// <summary>
-/// Records an explicit, append-only audit-trail entry for an opted-in command via
-/// <see cref="IAuditTrailWriter"/>.
+/// Records an append-only audit-trail entry, through <see cref="IAuditTrailWriter"/>, for every
+/// outcome of a command that implements <see cref="IAuditableRequest{TResponse}"/>.
 /// </summary>
 /// <typeparam name="TRequest">
 /// The command type, constrained to <see cref="ICommandBase"/> and
@@ -16,31 +17,34 @@ namespace SharedKernel.Application.Behaviors.Auditing;
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
 /// <para>
-/// Calls <c>next()</c>, then unconditionally records an entry for every outcome — success, a
-/// <c>Result.Failure</c>, and a thrown exception alike. A rejected or faulted high-risk attempt is
-/// itself often the compliance-relevant event, so leaving it unrecorded would be the wrong default.
-/// Runs for nested commands exactly as for the outermost command — a nested audited command still
-/// records its own entry.
+/// <strong>Two halves, one on each side of the transaction.</strong> This behavior runs
+/// <em>outside</em> <c>TransactionBehavior</c> and records every failure: a failed <c>Result</c>, a
+/// thrown exception, and a failure of the commit itself (a save, a pre-commit callback or the commit
+/// throwing). By then the business transaction has rolled back, so the <see cref="AuditOutcome.Failed"/>
+/// entry is written on the writer's own connection without waiting on any lock the business
+/// transaction held. Its inner partner, registered <em>inside</em> <c>TransactionBehavior</c>,
+/// records success: it queues the <see cref="AuditOutcome.Succeeded"/> entry with
+/// <see cref="Transactions.IUnitOfWork.OnBeforeCommit"/>, so the entry is written in the same
+/// transaction as the change it attests to and commits or rolls back with it. When no transaction is
+/// active (no <c>TransactionBehavior</c>), the inner half writes the success entry directly.
 /// </para>
 /// <para>
 /// <see cref="AuditEntry.AfterSnapshot"/> is computed via
-/// <see cref="IAuditableRequest{TResponse}.GetAfterSnapshot"/> only on success; both a
-/// <c>Result.Failure</c> and a thrown exception record <see cref="AuditEntry.Succeeded"/> =
-/// <see langword="false"/> with <see cref="AuditEntry.AfterSnapshot"/> left <see langword="null"/>
-/// (there is no new state to snapshot). <see cref="AuditEntry.ErrorCode"/> carries the response's
-/// <c>Error.Code</c> on a <c>Result.Failure</c>, or the thrown exception's type full name on a fault
-/// — the exception itself is then rethrown unchanged after the entry is recorded.
+/// <see cref="IAuditableRequest{TResponse}.GetAfterSnapshot"/> only on success.
+/// <see cref="AuditEntry.ErrorCode"/> carries the response's <c>Error.Code</c> on a failed
+/// <c>Result</c>, or the exception's type full name on a fault.
 /// </para>
 /// <para>
-/// On the success/<c>Result.Failure</c> path, an exception thrown by
-/// <see cref="IAuditTrailWriter.RecordAsync"/> itself is <b>not</b> caught — it propagates unchanged
-/// and blocks the rest of the pipeline (fails closed): a failed audit write means
-/// <c>Transaction.TransactionBehavior</c>, which wraps this behavior in the canonical command stage,
-/// never reaches its own commit either. On the handler-exception path this fail-closed rule would
-/// hide the original fault behind the audit writer's own exception, so it does not apply there: if
-/// <see cref="IAuditTrailWriter.RecordAsync"/> itself throws while recording the fault entry, that
-/// write failure is logged and the <b>original</b> handler exception is still the one that
-/// propagates.
+/// <strong>Write failures.</strong> On the failed-<c>Result</c> path an exception from
+/// <see cref="IAuditTrailWriter.RecordAsync"/> propagates (fails closed). On the exception path it is
+/// logged (EventId 5130) and the <b>original</b> exception still propagates. A failed success write
+/// happens inside the transaction, so it rolls the business change back and is then recorded here as a
+/// failure.
+/// </para>
+/// <para>
+/// A nested audited command queues its success entry on the outer command's transaction. If the outer
+/// command later fails, that entry rolls back with it and no separate failure is recorded for the
+/// nested command — the outer command's own entry records the failure.
 /// </para>
 /// </remarks>
 public sealed partial class AuditingBehavior<TRequest, TResponse>(
@@ -62,14 +66,7 @@ public sealed partial class AuditingBehavior<TRequest, TResponse>(
         }
         catch (Exception exception)
         {
-            var faultEntry = new AuditEntry(
-                request.Action,
-                request.ResourceType,
-                request.ResourceId,
-                request.BeforeSnapshot,
-                AfterSnapshot: null,
-                Succeeded: false,
-                ErrorCode: exception.GetType().FullName ?? exception.GetType().Name);
+            var faultEntry = AuditEntries.Failed(request, exception.GetType().FullName ?? exception.GetType().Name);
 
             try
             {
@@ -86,19 +83,12 @@ public sealed partial class AuditingBehavior<TRequest, TResponse>(
             throw;
         }
 
-        var error = ResponseOutcome.TryGetError(response);
-        var succeeded = error is null;
-
-        var entry = new AuditEntry(
-            request.Action,
-            request.ResourceType,
-            request.ResourceId,
-            request.BeforeSnapshot,
-            succeeded ? request.GetAfterSnapshot(response) : null,
-            succeeded,
-            error?.Code);
-
-        await auditTrailWriter.RecordAsync(entry, cancellationToken).ConfigureAwait(false);
+        if (ResponseOutcome.TryGetError(response) is { } error)
+        {
+            await auditTrailWriter
+                .RecordAsync(AuditEntries.Failed(request, error.Code), cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return response;
     }

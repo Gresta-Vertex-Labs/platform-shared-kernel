@@ -1,16 +1,20 @@
 using FluentAssertions;
 using Npgsql;
 using SharedKernel.Persistence.Npgsql.Context;
+using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.Npgsql.Tests.Context;
 
 /// <summary>
-/// <see cref="NpgsqlTenantSessionBinder"/> against a real PostgreSQL Testcontainer: the
-/// session setting is readable inside the transaction and resets once the transaction ends.
+/// <see cref="NpgsqlTenantSessionBinder"/> and <see cref="TenantSessionSql.BindStatement"/> against a real
+/// PostgreSQL: the tenant is visible inside the binding transaction only, and a bind statement prefixed to
+/// a command outside a transaction covers exactly that command without changing its results.
 /// </summary>
 public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
 {
+    private const string ReadSettingSql = "SELECT current_setting('app.tenant_id', true)";
+
     private readonly PostgreSqlContainerFixture _fixture = new();
     private NpgsqlDataSource? _dataSource;
 
@@ -29,218 +33,125 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task BindAsync_SetsTheSessionSetting_ReadableWithinTheSameTransaction()
+    public async Task BindAsync_SetsTheTenant_ReadableWithinTheSameTransaction()
     {
-        var binder = new NpgsqlTenantSessionBinder();
         var tenantId = Guid.NewGuid();
 
         await using var connection = await _dataSource!.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
-        await binder.BindAsync(connection, transaction, tenantId, crossTenantActive: false);
+        await new NpgsqlTenantSessionBinder().BindAsync(connection, transaction, tenantId);
 
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT current_setting('app.tenant_id', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().Be(tenantId.ToString());
-
+        (await ReadSettingAsync(connection, transaction)).Should().Be(tenantId.ToString());
         await transaction.CommitAsync();
     }
 
-    [Fact]
-    public async Task BindAsync_SettingResets_AfterTheTransactionCommits()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task BindAsync_SettingIsGone_AfterTheTransactionEnds(bool commit)
     {
-        var binder = new NpgsqlTenantSessionBinder();
-        var tenantId = Guid.NewGuid();
-
         await using var connection = await _dataSource!.OpenConnectionAsync();
 
         await using (var transaction = await connection.BeginTransactionAsync())
         {
-            await binder.BindAsync(connection, transaction, tenantId, crossTenantActive: false);
-            await transaction.CommitAsync();
+            await new NpgsqlTenantSessionBinder().BindAsync(connection, transaction, Guid.NewGuid());
+            if (commit)
+                await transaction.CommitAsync();
+            else
+                await transaction.RollbackAsync();
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_setting('app.tenant_id', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().BeEmpty("the transaction-local setting must reset once the transaction that bound it ends");
+        (await ReadSettingAsync(connection, null)).Should().BeNullOrEmpty(
+            "a transaction-local setting must never outlive its transaction");
     }
 
     [Fact]
-    public async Task BindAsync_SettingResets_AfterTheTransactionRollsBack()
+    public async Task BindAsync_NullTenant_BindsTheEmptyString()
     {
-        var binder = new NpgsqlTenantSessionBinder();
-        var tenantId = Guid.NewGuid();
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
 
+        await new NpgsqlTenantSessionBinder().BindAsync(connection, transaction, tenantId: null);
+
+        (await ReadSettingAsync(connection, transaction)).Should().BeEmpty();
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
+    public async Task BindStatement_PrefixedOutsideATransaction_BindsForThatCommandOnly_AndKeepsItsResult()
+    {
+        var tenantId = Guid.NewGuid();
         await using var connection = await _dataSource!.OpenConnectionAsync();
 
-        await using (var transaction = await connection.BeginTransactionAsync())
+        await using (var command = connection.CreateCommand())
         {
-            await binder.BindAsync(connection, transaction, tenantId, crossTenantActive: false);
-            await transaction.RollbackAsync();
+            command.CommandText = TenantSessionSql.BindStatement(tenantId) + ReadSettingSql;
+            (await command.ExecuteScalarAsync()).Should().Be(
+                tenantId.ToString(), "the DO block returns no result set, so the query's value comes first");
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_setting('app.tenant_id', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().BeEmpty();
+        (await ReadSettingAsync(connection, null)).Should().BeNullOrEmpty(
+            "the statements of one command run in one implicit transaction, which ended with the command");
     }
 
     [Fact]
-    public async Task BindAsync_NullTenantId_BindsEmptyString()
+    public async Task BindStatement_PrefixedToAReader_ReturnsOnlyTheQuerysRows()
     {
-        var binder = new NpgsqlTenantSessionBinder();
-
         await using var connection = await _dataSource!.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-
-        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: false);
-
         await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT current_setting('app.tenant_id', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
+        command.CommandText = TenantSessionSql.BindStatement(Guid.NewGuid()) + "SELECT g FROM generate_series(1, 3) g";
 
-        value.Should().BeEmpty();
-
-        await transaction.CommitAsync();
-    }
-
-    [Fact]
-    public async Task BindAsync_CrossTenantActive_SetsTheCrossTenantSetting()
-    {
-        var binder = new NpgsqlTenantSessionBinder();
-
-        await using var connection = await _dataSource!.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-
-        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: true);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT current_setting('app.cross_tenant', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().Be("on");
-
-        await transaction.CommitAsync();
-    }
-
-    [Fact]
-    public async Task BindAsync_CrossTenantActive_WithCustomEscapeToken_WritesThatTokenNotTheLiteralOn()
-    {
-        // Hardening proof: when a per-deployment secret is configured, the binder writes THAT value,
-        // never the guessable default "on" — an attacker limited to executing arbitrary SQL as the
-        // application's own role has no way to learn this value from the client library alone.
-        var binder = new NpgsqlTenantSessionBinder(crossTenantEscapeToken: "a-long-unguessable-per-deployment-secret");
-
-        await using var connection = await _dataSource!.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-
-        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: true);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT current_setting('app.cross_tenant', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().Be("a-long-unguessable-per-deployment-secret");
-        value.Should().NotBe("on");
-
-        await transaction.CommitAsync();
-    }
-
-    [Fact]
-    public async Task BindAsync_CrossTenantActive_NoTokenConfigured_FallsBackToTheLegacyOnLiteral()
-    {
-        // Backward-compatible default: a deployment that has not opted into the hardened token keeps
-        // working exactly as before.
-        var binder = new NpgsqlTenantSessionBinder();
-
-        await using var connection = await _dataSource!.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-
-        await binder.BindAsync(connection, transaction, tenantId: null, crossTenantActive: true);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT current_setting('app.cross_tenant', true)";
-        var value = (string?)await command.ExecuteScalarAsync();
-
-        value.Should().Be("on");
-
-        await transaction.CommitAsync();
-    }
-
-    [Fact]
-    public async Task BindConnectionAsync_SetsTheSessionSetting_ReadableOutsideAnyTransaction()
-    {
-        var binder = new NpgsqlTenantSessionBinder();
-        var tenantId = Guid.NewGuid();
-
-        await using var connection = await _dataSource!.OpenConnectionAsync();
-
-        await binder.BindConnectionAsync(connection, tenantId, crossTenantActive: false);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_setting('app.tenant_id', true), current_setting('app.cross_tenant', true)";
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
-
-        reader.GetString(0).Should().Be(tenantId.ToString());
-        reader.GetString(1).Should().Be("off");
-    }
-
-    [Fact]
-    public async Task BindConnectionAsync_SettingSurvives_AcrossAnInnerExplicitTransaction()
-    {
-        // A connection-scoped (is_local: false) binding is what an inner explicit transaction's own
-        // COMMIT/ROLLBACK reverts back TO, not what it clears — proves the two binding shapes compose
-        // correctly rather than one silently erasing the other.
-        var binder = new NpgsqlTenantSessionBinder();
-        var connectionTenantId = Guid.NewGuid();
-        var transactionTenantId = Guid.NewGuid();
-
-        await using var connection = await _dataSource!.OpenConnectionAsync();
-        await binder.BindConnectionAsync(connection, connectionTenantId, crossTenantActive: false);
-
-        await using (var transaction = await connection.BeginTransactionAsync())
+        var values = new List<int>();
+        await using (var reader = await command.ExecuteReaderAsync())
         {
-            await binder.BindAsync(connection, transaction, transactionTenantId, crossTenantActive: true);
-            await transaction.CommitAsync();
+            while (await reader.ReadAsync())
+                values.Add(reader.GetInt32(0));
+
+            (await reader.NextResultAsync()).Should().BeFalse();
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_setting('app.tenant_id', true), current_setting('app.cross_tenant', true)";
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
-
-        reader.GetString(0).Should().Be(connectionTenantId.ToString());
-        reader.GetString(1).Should().Be("off");
+        values.Should().Equal(1, 2, 3);
     }
 
     [Fact]
-    public async Task ResetConnectionAsync_ClearsBothSettings()
+    public async Task BindStatement_PrefixedToANonQuery_KeepsTheRowsAffected()
     {
-        var binder = new NpgsqlTenantSessionBinder();
-        var tenantId = Guid.NewGuid();
-
         await using var connection = await _dataSource!.OpenConnectionAsync();
-        await binder.BindConnectionAsync(connection, tenantId, crossTenantActive: true);
+        await using (var create = connection.CreateCommand())
+        {
+            create.CommandText = "CREATE TEMP TABLE binder_rows (id int)";
+            await create.ExecuteNonQueryAsync();
+        }
 
-        await binder.ResetConnectionAsync(connection);
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = TenantSessionSql.BindStatement(Guid.NewGuid()) + "INSERT INTO binder_rows SELECT generate_series(1, 4)";
 
+        (await insert.ExecuteNonQueryAsync()).Should().Be(4);
+    }
+
+    [Fact]
+    public void BindStatement_InlinesOnlyTheGuid()
+    {
+        var tenantId = Guid.Parse("0b9a5c35-58e1-4f5c-a0d8-000000000001");
+
+        TenantSessionSql.BindStatement(tenantId).Should().Be(
+            "DO $sk_rls$BEGIN PERFORM set_config('app.tenant_id', '0b9a5c35-58e1-4f5c-a0d8-000000000001', true); END$sk_rls$;");
+        TenantSessionSql.BindStatement(null).Should().Contain("'app.tenant_id', '', true");
+    }
+
+    [Fact]
+    public void PolicyPredicate_IsTheSingleTenantComparison()
+    {
+        TenantSessionSql.PolicyPredicate("\"tenant_id\"").Should().Be(
+            "\"tenant_id\" = NULLIF(current_setting('app.tenant_id', true), '')::uuid");
+    }
+
+    private static async Task<string?> ReadSettingAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction)
+    {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_setting('app.tenant_id', true), current_setting('app.cross_tenant', true)";
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
-
-        reader.GetString(0).Should().BeEmpty();
-        reader.GetString(1).Should().Be("off");
+        command.Transaction = transaction;
+        command.CommandText = ReadSettingSql;
+        return (string?)await command.ExecuteScalarAsync();
     }
 }

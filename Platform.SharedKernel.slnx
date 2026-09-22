@@ -59,6 +59,8 @@
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj" />
   </Folder>
   <Folder Name="/05.Application/">
+    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.csproj" />
+    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.Tests/SharedKernel.Application.Abstractions.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.Tests/SharedKernel.Application.Behaviors.Caching.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />
@@ -72,6 +74,7 @@
     <Project Path="06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/SharedKernel.Persistence.Dapper.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Integration.Tests/SharedKernel.Persistence.EfCore.Integration.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/SharedKernel.Persistence.EfCore.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Auditing/SharedKernel.Persistence.EfCore.Auditing.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Auditing/SharedKernel.Persistence.EfCore.Auditing.Tests/SharedKernel.Persistence.EfCore.Auditing.Tests.csproj" />
@@ -79,8 +82,6 @@
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore.Encryption/SharedKernel.Persistence.EfCore.Encryption.Tests/SharedKernel.Persistence.EfCore.Encryption.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.Tests/SharedKernel.Persistence.Npgsql.Tests.csproj" />
-    <Project Path="06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.csproj" />
-    <Project Path="06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.Tests/SharedKernel.Persistence.PostgreSQL.Tests.csproj" />
   </Folder>
   <Folder Name="/07.Messaging/">
     <Project Path="07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj" />
@@ -166,6 +167,8 @@
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Scheduling/SharedKernel.ServiceDefaults.Scheduling.Tests/SharedKernel.ServiceDefaults.Scheduling.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Search/SharedKernel.ServiceDefaults.Search.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Search/SharedKernel.ServiceDefaults.Search.Tests/SharedKernel.ServiceDefaults.Search.Tests.csproj" />
+    <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.csproj" />
+    <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests/SharedKernel.ServiceDefaults.Security.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.Tests/SharedKernel.ServiceDefaults.Security.Mtls.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults.Storage/SharedKernel.ServiceDefaults.Storage.csproj" />
@@ -195,6 +198,8 @@
     <Project Path="15.Integration/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/16.Testing/">
+    <Project Path="16.Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.csproj" />
+    <Project Path="16.Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj" />
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj" />
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/SharedKernel.Testing.SelfTests.csproj" />
   </Folder>

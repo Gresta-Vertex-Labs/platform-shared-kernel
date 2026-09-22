@@ -1,9 +1,9 @@
+using SharedKernel.Application.Context;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
@@ -16,12 +16,10 @@ namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 /// <summary>
 /// Factory helpers for creating in-memory SQLite test DbContext instances.
 /// </summary>
-/// <remarks>
-/// <see cref="AuditInterceptor"/>/<see cref="SoftDeleteInterceptor"/> take
-/// <see cref="ICurrentActorContext"/> + <see cref="IClock"/>, and
-/// <see cref="TenantedDbContext"/> takes a separate <see cref="ICurrentTenantContext"/> — the former
-/// combined <c>IAuditActorContext</c> is retired. <see cref="FakeAuditActorContext"/>
-/// (<c>16.Testing</c>) implements both interfaces on one object, so every factory method below still
+/// <see cref="AuditInterceptor"/> takes the caller (<see cref="IRequestContext"/>), the clock and an
+/// optional service name; a context carries that caller as its <c>RequestContext</c>, which also
+/// supplies the tenant for <see cref="TenantedDbContext"/>. <see cref="FakeAuditActorContext"/>
+/// (<c>16.Testing</c>) is the default caller.
 /// takes/returns a single fake instance for both roles, exactly as before the seam split.
 /// </remarks>
 internal static class TestDbContextFactory
@@ -35,29 +33,29 @@ internal static class TestDbContextFactory
         => MicrosoftOptions.Create(new PersistenceServiceOptions { ServiceName = serviceName });
 
     public static TestDbContext CreateTestDbContext(
-        ICurrentActorContext? actorContext = null,
-        IClock? clock = null)
+        IRequestContext? actorContext = null,
+        IClock? clock = null,
+        string? serviceName = null)
     {
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid());
         clock ??= CreateClock(DateTimeOffset.UtcNow);
-        return CreateTestDbContextWithActor(actorContext, clock);
+        return CreateTestDbContextWithActor(actorContext, clock, serviceName);
     }
 
     /// <summary>Creates a TestDbContext with an explicit actor context (for audit/service-name tests).</summary>
     public static TestDbContext CreateTestDbContextWithActor(
-        ICurrentActorContext actorContext,
-        IClock clock)
+        IRequestContext actorContext,
+        IClock clock,
+        string? serviceName = null)
     {
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock, serviceName: serviceName ?? "system");
 
-        var ctx = new TestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new TestDbContext(options, audit);
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -75,12 +73,10 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new TenantedTestDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
-        ctx.RefreshTenant(actorContext);
+        var ctx = new TenantedTestDbContext(options, audit);
+        ctx.RefreshRequestContext(actorContext);
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -103,33 +99,29 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new SoftDeletableTenantedDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
-        ctx.RefreshTenant(actorContext);
+        var ctx = new SoftDeletableTenantedDbContext(options, audit);
+        ctx.RefreshRequestContext(actorContext);
         ctx.Database.EnsureCreated();
         return ctx;
     }
 
     /// <summary>
     /// Creates an authenticated <see cref="FakeAuditActorContext"/> —
-    /// <see cref="ICurrentActorContext.ActorId"/> mirrors the old <c>IUserContext.SubjectId</c>
+    /// <see cref="IRequestContext.UserId"/> mirrors the old <c>IUserContext.SubjectId</c>
     /// format ("D"-formatted GUID string). <paramref name="tenantId"/> defaults to
     /// <see langword="null"/> (no tenant resolved) — pass one explicitly for multi-tenant fixtures.
     /// </summary>
     public static FakeAuditActorContext CreateAuthenticatedActorContext(Guid userId, Guid? tenantId = null)
         => new(userId.ToString("D"), tenantId);
 
-    /// <summary>
-    /// Creates the unauthenticated-fallback <see cref="ICurrentActorContext"/> — the SAME production
-    /// type (<see cref="AnonymousActorContext"/>) <c>EfCorePersistenceBuilder.Build()</c> registers by
-    /// default, so its <see cref="ICurrentActorContext.ActorId"/> genuinely falls back to
-    /// <see cref="PersistenceServiceOptions.ServiceName"/> exactly as production does.
+    /// Returns the unauthenticated-fallback <see cref="IRequestContext"/> — the SAME instance
+    /// (<see cref="AnonymousRequestContext.Instance"/>) <c>EfCorePersistenceBuilder.Build()</c> registers
+    /// by default. Its <see cref="IRequestContext.UserId"/> is <see langword="null"/>, so audit columns
+    /// fall back to the service name passed to <see cref="CreateTestDbContext"/>.
     /// </summary>
-    public static ICurrentActorContext CreateUnauthenticatedActorContext(string? serviceName = null)
-        => new AnonymousActorContext(serviceName is null ? DefaultServiceOptions() : ServiceOptions(serviceName));
+    public static IRequestContext CreateUnauthenticatedActorContext() => AnonymousRequestContext.Instance;
 
     public static IClock CreateClock(DateTimeOffset now) => new FakeClock(now);
 }

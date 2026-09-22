@@ -2,44 +2,50 @@ using Dapper;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Persistence.Dapper.Extensions;
-using SharedKernel.Persistence.Dapper.TypeHandlers;
-using SharedKernel.Testing.Containers;
+using Pgvector;
+using Pgvector.Npgsql;
+using SharedKernel.Persistence;
+using Testcontainers.PostgreSql;
 
 namespace SharedKernel.Persistence.Dapper.Tests.TypeHandlers;
 
 /// <summary>
-/// <see cref="StronglyTypedIdTypeHandler{TStronglyTypedId,TValue}"/>/
-/// <see cref="SmartEnumTypeHandler{TEnum,TValue}"/> real round-trip against PostgreSQL, both as a
-/// query PARAMETER and as a mapped COLUMN, plus <see cref="AddSharedKernelDapper(IServiceCollection,Action{DapperTypeHandlerBuilder}?)"/>'s
-/// registration.
+/// Every handler registered through <c>AddSharedKernelDapper</c> round-trips against PostgreSQL (with pgvector),
+/// as a parameter and as a mapped column, with snake_case columns mapped without aliases.
 /// </summary>
+[Collection(DapperConfigurationCollection.Name)]
 public sealed class TypeHandlerRoundTripIntegrationTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainerFixture _fixture = new();
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg16").Build();
     private NpgsqlDataSource? _dataSource;
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        _dataSource = NpgsqlDataSource.Create(_fixture.ConnectionString);
+        await _container.StartAsync();
 
-        var services = new ServiceCollection();
-        services.AddSharedKernelDapper(b => b
-            .AddTypeHandler<TestOrderId, TestOrderIdHandler>()
-                .AddTypeHandler<TestStatus, TestStatusHandler>());
-        services.BuildServiceProvider();
+        var builder = new NpgsqlDataSourceBuilder(_container.GetConnectionString());
+        builder.UseVector();
+        _dataSource = builder.Build();
 
+        new ServiceCollection().AddSharedKernelDapper(b => b
+            .AddStronglyTypedId<TestOrderId, Guid>()
+            .AddSmartEnum<TestStatus, int>()
+            .AddJsonb(TestJsonContext.Default.TestAddress));
+
+        await using (var extension = _dataSource.CreateCommand("CREATE EXTENSION IF NOT EXISTS vector"))
+            await extension.ExecuteNonQueryAsync();
+
+        // Type loading happens per connection; reload after creating the extension.
         await using var connection = await _dataSource.OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            DROP TABLE IF EXISTS type_handler_test;
+        await connection.ReloadTypesAsync();
+        await connection.ExecuteAsync("""
             CREATE TABLE type_handler_test (
-                order_id UUID PRIMARY KEY,
-                status INT NOT NULL
+                order_id uuid PRIMARY KEY,
+                status int NOT NULL,
+                shipping_address jsonb NOT NULL,
+                embedding vector(3) NOT NULL
             );
-            """;
-        await command.ExecuteNonQueryAsync();
+            """);
     }
 
     public async Task DisposeAsync()
@@ -47,79 +53,38 @@ public sealed class TypeHandlerRoundTripIntegrationTests : IAsyncLifetime
         if (_dataSource is not null)
             await _dataSource.DisposeAsync();
 
-        await _fixture.DisposeAsync();
+        await _container.DisposeAsync();
     }
 
-    private sealed record TypeHandlerRow(TestOrderId OrderId, TestStatus Status);
+    private sealed record TypeHandlerRow(TestOrderId OrderId, TestStatus Status, TestAddress ShippingAddress, Vector Embedding);
 
     [Fact]
-    public async Task StronglyTypedIdAndSmartEnum_RoundTrip_AsParameterAndColumn()
+    public async Task EveryHandler_RoundTrips_AsParameterAndColumn()
     {
         var orderId = TestOrderId.New();
+        var address = new TestAddress("Main 1", "Izmir");
+        var embedding = new Vector(new float[] { 1, 2, 3 });
 
         await using var connection = await _dataSource!.OpenConnectionAsync();
-
         await connection.ExecuteAsync(
-            "INSERT INTO type_handler_test (order_id, status) VALUES (@OrderId, @Status)",
-            new { OrderId = orderId, Status = TestStatus.Active });
+            "INSERT INTO type_handler_test (order_id, status, shipping_address, embedding) VALUES (@OrderId, @Status, @Address, @Embedding)",
+            new { OrderId = orderId, Status = TestStatus.Active, Address = address, Embedding = embedding });
 
-        // No "AS PascalCase" aliasing needed — AddSharedKernelDapper's default
-        // enableSnakeCaseMapping: true (set in InitializeAsync above) means order_id binds directly
-        // to OrderId.
         var row = await connection.QuerySingleAsync<TypeHandlerRow>(
-            "SELECT order_id, status FROM type_handler_test WHERE order_id = @OrderId",
-            new { OrderId = orderId });
+            "SELECT order_id, status, shipping_address, embedding FROM type_handler_test WHERE order_id = @OrderId "
+                + "AND embedding <-> @Embedding < 0.001",
+            new { OrderId = orderId, Embedding = embedding });
 
         row.OrderId.Should().Be(orderId);
-        row.OrderId.Value.Should().Be(orderId.Value);
         row.Status.Should().Be(TestStatus.Active);
+        row.ShippingAddress.Should().Be(address);
+        row.Embedding.ToArray().Should().Equal(1, 2, 3);
     }
+}
 
-    [Fact]
-    public void AddSharedKernelDapper_Builder_RegistersEveryConfiguredHandler()
-    {
-        // A second, independent Apply call with a DIFFERENT handler set must still register both —
-        // AddSharedKernelDapper is not "first call wins".
-        var applied = new List<string>();
-
-        DapperTypeHandlers.Apply(b =>
-        {
-            b.AddTypeHandler<TestOrderId, TestOrderIdHandler>();
-            applied.Add(nameof(TestOrderId));
-        });
-
-        DapperTypeHandlers.Apply(b =>
-        {
-            b.AddTypeHandler<TestStatus, TestStatusHandler>();
-            applied.Add(nameof(TestStatus));
-        });
-
-        applied.Should().Contain([nameof(TestOrderId), nameof(TestStatus)]);
-    }
-
-    [Fact]
-    public void Apply_Default_EnablesSnakeCaseColumnMapping()
-    {
-        DapperTypeHandlers.Apply();
-
-        global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Apply_EnableSnakeCaseMappingFalse_DisablesIt_ThenRestoresThePlatformDefault()
-    {
-        // DefaultTypeMap.MatchNamesWithUnderscores is process-wide static Dapper
-        // state (see DapperTypeHandlers.Apply's own remarks) — always restore the platform default
-        // before returning so no other test observes the opt-out.
-        try
-        {
-            DapperTypeHandlers.Apply(enableSnakeCaseMapping: false);
-
-            global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores.Should().BeFalse();
-        }
-        finally
-        {
-            DapperTypeHandlers.Apply();
-        }
-    }
+/// <summary>Serializes the tests that change Dapper's process-wide configuration.</summary>
+[CollectionDefinition(Name)]
+public sealed class DapperConfigurationCollection
+{
+    public const string Name = "Dapper process-wide configuration";
 }

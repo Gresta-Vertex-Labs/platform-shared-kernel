@@ -4,11 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 
@@ -102,7 +100,6 @@ internal sealed class ValueObjectConventionDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ConventionTestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -114,11 +111,11 @@ internal sealed class ValueObjectConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class EntityWithValueObjectConfig : EntityTypeConfigurationBase<EntityWithValueObject, ConventionTestId>
+internal sealed class EntityWithValueObjectConfig : IEntityTypeConfiguration<EntityWithValueObject>
 {
-    public override void Configure(EntityTypeBuilder<EntityWithValueObject> builder)
+    public void Configure(EntityTypeBuilder<EntityWithValueObject> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
         // Price (MoneyValueObject) — ValueObjectOwnershipBuilder.Apply() will auto-configure a complex type.
     }
@@ -133,7 +130,6 @@ internal sealed class SimpleConventionDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ConventionTestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -143,11 +139,11 @@ internal sealed class SimpleConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class SimpleConventionEntityConfig : EntityTypeConfigurationBase<SimpleConventionEntity, ConventionTestId>
+internal sealed class SimpleConventionEntityConfig : IEntityTypeConfiguration<SimpleConventionEntity>
 {
-    public override void Configure(EntityTypeBuilder<SimpleConventionEntity> builder)
+    public void Configure(EntityTypeBuilder<SimpleConventionEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
@@ -161,7 +157,6 @@ internal sealed class FullAuditConventionDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<ConventionTestId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -171,11 +166,11 @@ internal sealed class FullAuditConventionDbContext : SharedKernelDbContext
     }
 }
 
-internal sealed class FullAuditConventionEntityConfig : EntityTypeConfigurationBase<FullAuditConventionEntity, ConventionTestId>
+internal sealed class FullAuditConventionEntityConfig : IEntityTypeConfiguration<FullAuditConventionEntity>
 {
-    public override void Configure(EntityTypeBuilder<FullAuditConventionEntity> builder)
+    public void Configure(EntityTypeBuilder<FullAuditConventionEntity> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
@@ -199,8 +194,7 @@ public sealed class DomainPrimitiveConventionTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new ValueObjectConventionDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContext, clock));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -215,8 +209,7 @@ public sealed class DomainPrimitiveConventionTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new SimpleConventionDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContext, clock));
         ctx.Database.EnsureCreated();
         return ctx;
     }
@@ -231,8 +224,7 @@ public sealed class DomainPrimitiveConventionTests
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new FullAuditConventionDbContext(
             options,
-            new PersistenceContextDependencies(
-                new AuditInterceptor(actorContext, clock), new SoftDeleteInterceptor(actorContext, clock), new ConcurrencyInterceptor()));
+            PersistenceContextDependencies.Create(actorContext, clock));
         ctx.Database.EnsureCreated();
         return ctx;
     }

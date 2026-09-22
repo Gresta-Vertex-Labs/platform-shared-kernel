@@ -1,37 +1,51 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Append-only, hash-chained audit-trail EF Core implementation for SharedKernel: AuditRecordEntityConfiguration, AuditRecordImmutabilityInterceptor, EfAuditTrailWriter, and EfAuditQueryService.</Description>
-    <PackageTags>persistence;efcore;audit-trail;shared-kernel</PackageTags>
+    <Description>A tamper-evident, append-only audit ledger on PostgreSQL for SharedKernel services: one INSERT per audited command inside its transaction (Failed entries after a rollback), a background sealer that links records into per-tenant HMAC-SHA256 chains in commit-safe order, signed checkpoints, Intact/Broken/Unverifiable verification, key rotation and compromise recovery, GDPR-erasable snapshots, and a specified byte format (AUDITv3) with test vectors.</Description>
+    <PackageTags>persistence;postgresql;audit-trail;audit-log;tamper-evident;hash-chain;compliance;gdpr;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
-      P-557/W1: this capability moved out of SharedKernel.Persistence.EfCore into its own package.
-      Contributes back into EfCore's SharedKernelDbContext purely through the
-      IPersistenceModelConfigurator extensibility interface and the builder's public
-      Services/AddInterceptor surface — never a compile-time reference the other direction.
+      The ledger is written and read through raw ADO.NET (IDbConnectionFactory / IAmbientDbTransaction).
+      EfCore is referenced for the EfCorePersistenceBuilder<TContext> registration seam
+      (WithAuditTrail/UseAuditTrail), PersistenceServiceOptions (service name) and MigrationBuilder;
+      it brings Npgsql and SharedKernel.Persistence.Npgsql transitively (PostgreSQL-only package).
     -->
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
-    <!--
-      IContentHasher (hash-chain digest) — the consuming service must additionally call
-      01.Core's AddSharedKernelCryptography() for it to resolve.
-    -->
+    <!-- IHmacSigner (default record authenticator), IAsymmetricSignatureService (checkpoint signing). -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
-    <!-- AuditChainOptions : ISectionBoundOptions / AddValidatedOptions. -->
+    <!-- AuditLedgerOptions : ISectionBoundOptions / AddValidatedOptions. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- The sealer (BackgroundService) and the startup self-check (IHostedService). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The byte-level AUDITv3 specification ships inside the package. -->
+    <None Include="AUDIT-FORMAT.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
+  <!--
+    P-558/W3a: this package uses SharedKernel.Persistence.EfCore internals (InternalsVisibleTo), so its nuspec
+    pins that dependency to exactly this build's version ([x.y.z]) instead of NuGet's default minimum (>= x.y.z):
+    a newer EfCore with changed internals can never be combined with this package.
+  -->
+  <Target Name="PinEfCoreDependencyToExactVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'SharedKernel.Persistence.EfCore'">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
 </Project>

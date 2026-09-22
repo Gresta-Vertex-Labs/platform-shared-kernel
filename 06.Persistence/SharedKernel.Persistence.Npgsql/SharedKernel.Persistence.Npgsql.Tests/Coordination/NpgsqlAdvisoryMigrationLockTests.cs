@@ -89,4 +89,32 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
         handleA.Should().NotBeNull();
         handleB.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task AcquireAsync_HoldsTheMigrationNamespacedKey_NotTheBareName()
+    {
+        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+            .AcquireAsync("orders-context", TimeSpan.FromSeconds(5));
+
+        await using var connection = await _dataSource!.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT array_agg((classid::bigint << 32) | objid::bigint) FROM pg_locks WHERE locktype = 'advisory'";
+        var keys = (long[]?)await command.ExecuteScalarAsync();
+
+        keys.Should().Contain(AdvisoryLockKeys.ToKey("sk:migration:orders-context"))
+            .And.NotContain(AdvisoryLockKeys.ToKey("orders-context"));
+    }
+
+    [Fact]
+    public async Task AcquireAsync_BareAndNamespacedNames_ContendForTheSameLock()
+    {
+        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+            .AcquireAsync("orders-context", TimeSpan.FromSeconds(5));
+
+        var act = async () => await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+            .AcquireAsync(AdvisoryLockKeys.Migration("orders-context"), TimeSpan.FromMilliseconds(300));
+
+        await act.Should().ThrowAsync<TimeoutException>();
+    }
 }

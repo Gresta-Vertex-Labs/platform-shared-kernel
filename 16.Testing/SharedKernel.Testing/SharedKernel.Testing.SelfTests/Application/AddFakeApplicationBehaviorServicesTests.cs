@@ -1,9 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Application.Behaviors.Transaction;
+using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Context;
 using SharedKernel.Testing.Application;
 using Xunit;
+using SharedKernel.Persistence.Testing;
 
 namespace SharedKernel.Testing.SelfTests.Application;
 

@@ -13,8 +13,20 @@ namespace SharedKernel.ServiceDefaults.HealthChecks;
 /// </remarks>
 public static class HealthCheckNames
 {
-    /// <summary>Default registration name for database readiness checks.</summary>
+    /// <summary>Default registration name for the EF Core database readiness check (<c>AddDatabaseReadinessCheck&lt;TContext&gt;</c>).</summary>
     public const string Database = "database";
+
+    /// <summary>Default registration name for the connection-factory database readiness check (<c>AddDapperDatabaseReadinessCheck</c>).</summary>
+    public const string DapperDatabase = "database-dapper";
+
+    /// <summary>Default registration name for the startup-migration readiness check (<c>AddPersistenceStartupReadinessCheck</c>).</summary>
+    public const string PersistenceStartup = "persistence-startup";
+
+    /// <summary>Default registration name for the field-encryption key-ring readiness check.</summary>
+    public const string FieldEncryption = "field-encryption";
+
+    /// <summary>Default registration name for the audit-ledger sealing readiness check.</summary>
+    public const string AuditSealing = "audit-sealing";
 
     /// <summary>Default registration name for Redis connectivity checks.</summary>
     public const string Redis = "redis";

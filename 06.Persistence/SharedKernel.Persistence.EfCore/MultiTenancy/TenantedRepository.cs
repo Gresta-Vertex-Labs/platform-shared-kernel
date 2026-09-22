@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Repositories;
 
@@ -33,7 +34,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// <para>
 /// <strong>Auditable escape hatch required:</strong> both cross-tenant methods now
 /// throw <see cref="InvalidOperationException"/> unless called with an active
-/// <see cref="ICrossTenantScope"/> (<c>crossTenantScope.Enter()</c>) — bypassing tenant isolation is
+/// <see cref="ICrossTenantScope"/> (<c>crossTenantScope.Enter(reason)</c>) — bypassing tenant isolation is
 /// only ever legal as a deliberate, attributable act, never an ambient capability every tenanted
 /// repository has by default.
 /// </para>
@@ -42,20 +43,14 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
     where TAggregate : class, IAggregateRoot<TId>, IHasTenant
     where TId : notnull
 {
-    private readonly ICrossTenantScope _crossTenantScope;
-
     /// <summary>
-    /// Initialises a new <see cref="TenantedRepository{TAggregate, TId}"/>.
+    /// Initialises a new <see cref="TenantedRepository{TAggregate, TId}"/>. The cross-tenant methods consult the
+    /// context's <see cref="Context.SharedKernelDbContext.CrossTenantScope"/> (the scope's own bypass).
     /// </summary>
     /// <param name="dbContext">The scoped tenanted DB context.</param>
-    /// <param name="crossTenantScope">
-    /// The current logical call's cross-tenant bypass scope, consulted by
-    /// <see cref="GetByIdForTenantAsync"/> and <see cref="GetByIdForTenantIncludingDeletedAsync"/>.
-    /// </param>
-    protected TenantedRepository(TenantedDbContext dbContext, ICrossTenantScope crossTenantScope)
+    protected TenantedRepository(TenantedDbContext dbContext)
         : base(dbContext)
     {
-        _crossTenantScope = crossTenantScope;
     }
 
     /// <summary>
@@ -175,12 +170,12 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
 
     private void RequireActiveCrossTenantScope(string methodName)
     {
-        if (!_crossTenantScope.IsActive)
+        if (!DbContext.CrossTenantScope.IsActive)
         {
             throw new InvalidOperationException(
                 $"'{methodName}' bypasses tenant isolation and requires an active " +
-                $"'{nameof(ICrossTenantScope)}'. Call 'crossTenantScope.Enter()' (typically " +
-                $"'using var _ = crossTenantScope.Enter();') around this call to make the bypass " +
+                $"'{nameof(ICrossTenantScope)}'. Call 'crossTenantScope.Enter(reason)' (typically " +
+                $"'using var _ = crossTenantScope.Enter(reason);') around this call to make the bypass " +
                 "explicit and attributable.");
         }
     }

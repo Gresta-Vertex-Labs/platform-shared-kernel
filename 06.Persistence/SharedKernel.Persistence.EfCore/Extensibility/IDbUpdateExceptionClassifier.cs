@@ -11,13 +11,13 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <para>
 /// <see cref="Context.SharedKernelDbContext"/> already translates
 /// <see cref="DbUpdateConcurrencyException"/> for <c>IHasConcurrency</c> entities via
-/// <c>ConcurrencyInterceptor</c> — that translation is unconditional and provider-neutral (a
+/// the context itself — that translation is unconditional and provider-neutral (a
 /// concurrency token mismatch means the same thing on every relational provider). A unique-index or
 /// foreign-key violation, by contrast, is signalled differently per provider (PostgreSQL's SQLSTATE
 /// <c>23505</c>/<c>23503</c>, SQL Server's error numbers,...), so
 /// <c>SharedKernel.Persistence.EfCore</c> — which must never reference a specific ADO.NET provider —
 /// cannot classify it directly. This interface is the seam: a provider package (e.g.
-/// <c>SharedKernel.Persistence.PostgreSQL</c>) implements it and registers itself, and
+/// <c>SharedKernel.Persistence.EfCore</c>'s own PostgreSQL classifier, always registered first) implements it, and
 /// <see cref="Context.SharedKernelDbContext"/> consults every registered classifier, in registration
 /// order, immediately after the concurrency translation fails to match.
 /// </para>
@@ -29,7 +29,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <c>try/catch</c>) can turn into a <c>Result</c> instead of an unhandled 500.
 /// </para>
 /// </remarks>
-public interface IDbUpdateExceptionClassifier
+internal interface IDbUpdateExceptionClassifier
 {
     /// <summary>
     /// Attempts to classify <paramref name="exception"/>.
@@ -37,7 +37,7 @@ public interface IDbUpdateExceptionClassifier
     /// <param name="exception">
     /// The exception observed at the <c>SaveChanges</c>/<c>SaveChangesAsync</c> call boundary. Never
     /// a <see cref="DbUpdateConcurrencyException"/> — those are exclusively
-    /// <c>ConcurrencyInterceptor</c>'s concern and are never offered to a classifier.
+    /// the context's own concern and are never offered to a classifier.
     /// </param>
     /// <returns>
     /// A typed <c>SharedKernel.Core.Exceptions</c> exception to throw instead of

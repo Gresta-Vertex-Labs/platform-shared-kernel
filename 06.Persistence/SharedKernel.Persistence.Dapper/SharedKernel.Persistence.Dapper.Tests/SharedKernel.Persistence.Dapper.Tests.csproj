@@ -7,11 +7,10 @@
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- P-557/W4: tenant-safe Dapper tests need SharedKernel.Persistence.Npgsql's
          NpgsqlTenantSessionBinder, and the RLS/audit-trigger migration helpers + real EF Core
-         DbContext live in SharedKernel.Persistence.PostgreSQL/.EfCore — needed for the
+         DbContext live in SharedKernel.Persistence.EfCore — needed for the
          "Dapper command service enlists in the EF transaction" proof. Test-only references; the
          production SharedKernel.Persistence.Dapper package itself still depends on Abstractions only. -->
     <ProjectReference Include="..\..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
-    <ProjectReference Include="..\..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
     <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -31,5 +30,6 @@
          depends only on Abstractions) — this test project talks to a real PostgreSQL
          Testcontainer via Dapper, so it references Npgsql directly for NpgsqlDataSource. -->
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,7 @@ using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.EfCore.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Persistence;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
 
@@ -61,6 +62,24 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
     }
+    [Fact]
+    public void AddSharedKernelEfCoreIdempotency_RunsTheStoreWithoutRetry_EvenOverTheRetryingPlatformDefault()
+    {
+        // UsePostgres turns retry on by default; the store makes single atomic statements and leaves retry to
+        // its caller, so an unreachable store fails fast (fail-open or fail-closed) instead of backing off.
+        var services = new ServiceCollection();
+        services.AddClock();
+        services.AddSharedKernelEfCoreIdempotency(options => options.UsePostgres(
+            SharedKernel.Testing.Persistence.TestNpgsqlDataSources.Get(ConnectionString)));
+        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<SharedKernel.Idempotency.EfCore.Context.IdempotencyDbContext>();
+
+        Assert.False(context.Database.CreateExecutionStrategy().RetriesOnFailure);
+    }
+
 
     [Fact]
     public void AddSharedKernelEfCoreIdempotency_AppliesConfigureOptionsDelegate()

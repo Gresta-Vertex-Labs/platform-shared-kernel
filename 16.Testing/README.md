@@ -4,9 +4,11 @@
 ![References](https://img.shields.io/badge/may%20reference-any%20layer-informational)
 ![Never shipped](https://img.shields.io/badge/never%20referenced%20by-production-brightgreen)
 
-**The shared test infrastructure of Platform.SharedKernel.** One library, `SharedKernel.Testing`, holding a
-test double for every abstraction the platform publishes, container fixtures for the real engines, and
-assertion helpers every `.Tests` project in this repository uses.
+**The shared test infrastructure of Platform.SharedKernel.** `SharedKernel.Testing` holds a test double for
+every abstraction the platform publishes, container fixtures for the real engines, and assertion helpers every
+`.Tests` project in this repository uses. `SharedKernel.Persistence.Testing` is the published slice of it for
+**consuming services' test projects**: fakes of the persistence and shared application contracts plus a
+PostgreSQL with the production role split.
 
 > Looking for how to use it? Read the
 > [**SharedKernel.Testing README**](SharedKernel.Testing/README.md): quick start, the full inventory and the
@@ -17,6 +19,8 @@ assertion helpers every `.Tests` project in this repository uses.
 | Project | What it is |
 | --- | --- |
 | [`SharedKernel.Testing`](SharedKernel.Testing/README.md) | The library itself — fakes, in-memory implementations, container fixtures, fakers, assertions |
+| [`SharedKernel.Persistence.Testing`](SharedKernel.Persistence.Testing/README.md) | **Published (P-558).** `FakeRepository<,>`, `FakeUnitOfWork`, `FakeAuditTrailWriter`, `FakeCrossTenantScope`, `TestRequestContext`, `FakeDbConnectionFactory`, `Add*` DI helpers, `PostgresTestServer`/`PostgresTestDatabase` — for services built on `06.Persistence` |
+| `SharedKernel.Persistence.Testing.Tests` | Its suite (Testcontainers; integration lane) |
 | `SharedKernel.Testing.SelfTests` | Its own suite: proves every helper that has no other domain to prove it |
 
 ## Where the layer sits
@@ -67,7 +71,11 @@ flowchart TD
   embedding generator derives its vectors from a hash rather than a model.
 - **Assertions read state.** Log assertions match an `EventId` and structured properties, never a rendered
   message, so rewording a message template never breaks a test.
-- **Consumed by `ProjectReference` only.** The library is `IsPackable=false` and is never pushed to a feed.
+- **`SharedKernel.Testing` is consumed by `ProjectReference` only** (`IsPackable=false`, never pushed to a feed).
+  `SharedKernel.Persistence.Testing` is packable and published so consuming services can test against the same
+  fakes and role split; it references `06.Persistence` concretely (EF Core, Auditing, Encryption) and
+  Testcontainers, and — like everything here — is refused in production code by
+  `TestingNeverReferencedByProduction`.
 
 ## Build and test
 

@@ -28,7 +28,7 @@ public sealed class TestAggregate : AggregateRoot<TestId>
         Name = name;
     }
 
-    protected TestAggregate() { } // ORM path
+    private TestAggregate() { } // ORM path
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ public sealed class AuditableTestAggregate : AuditableSoftDeletableAggregateRoot
         Name = name;
     }
 
-    protected AuditableTestAggregate() { } // ORM path
+    private AuditableTestAggregate() { } // ORM path
 
     protected override void OnDelete() { }
 
@@ -64,7 +64,7 @@ public sealed record TestDomainEvent : DomainEvent;
 
 // ---------------------------------------------------------------------------
 // Full-auditable, concurrency-token-bearing aggregate — used for
-// ConcurrencyInterceptor's provider-neutral SQLite proof; see ConcurrencyInterceptorTests
+// ConcurrencyInterceptor's provider-neutral SQLite proof; see ConcurrencyConflictTranslationTests
 // ---------------------------------------------------------------------------
 
 public sealed class ConcurrentTestAggregate : FullAuditableAggregateRoot<TestId>
@@ -76,7 +76,7 @@ public sealed class ConcurrentTestAggregate : FullAuditableAggregateRoot<TestId>
         Name = name;
     }
 
-    protected ConcurrentTestAggregate() { } // ORM path
+    private ConcurrentTestAggregate() { } // ORM path
 
     protected override void OnDelete() { }
 
@@ -102,7 +102,7 @@ public sealed class KeysetTestAggregate : AggregateRoot<TestId>
         SequenceNumber = sequenceNumber;
     }
 
-    protected KeysetTestAggregate() { } // ORM path
+    private KeysetTestAggregate() { } // ORM path
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ public sealed class HardDeleteAggregate : AggregateRoot<TestId>
         Title = title;
     }
 
-    protected HardDeleteAggregate() { } // ORM path
+    private HardDeleteAggregate() { } // ORM path
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ public sealed class TenantedTestAggregate : AggregateRoot<TenantedTestId>, IHasT
         TenantId = tenantId;
     }
 
-    protected TenantedTestAggregate() { } // ORM path
+    private TenantedTestAggregate() { } // ORM path
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ public sealed class SoftDeletableTenantedAggregate
         TenantId = tenantId;
     }
 
-    protected SoftDeletableTenantedAggregate() { } // ORM path
+    private SoftDeletableTenantedAggregate() { } // ORM path
 
     protected override void OnDelete() { }
 }

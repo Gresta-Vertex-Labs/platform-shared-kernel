@@ -4,17 +4,14 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <!--
-    Consumer verification: resolves all seven 06.Persistence packages as packages, never as
-    projects, to confirm the packed dependency graph, the SKPKG003 README requirement, and the
-    public API work for a real consumer. Point restore at the feed under test (defaults to the
-    local nupkgs/ feed NuGet.Config already maps every SharedKernel.* id to), and pin the version
-    with -p:SharedKernelPackageVersion=<version>.
+    Consumer verification: resolves the 06.Persistence packages as packages, never as projects, to confirm
+    the packed dependency graph, the SKPKG003 README requirement, and the public API work for a real
+    consumer. Point restore at the feed under test (defaults to the local nupkgs/ feed NuGet.Config already
+    maps every SharedKernel.* id to), and pin the version with -p:SharedKernelPackageVersion=<version>.
 
-    Deliberately no Testcontainers/real PostgreSQL here — that is the job of each package's own
-    nested .Tests project. This project proves the PACKED artifacts compose and the DI surface
-    wires up correctly; SQLite in-memory stands in for the EF Core proof, and the PostgreSQL/Npgsql
-    -specific registrations are proven by successful DI construction only (NpgsqlDataSource/
-    connection-factory construction is lazy and never opens a connection until first use).
+    Registration tests never open a connection (NpgsqlDataSource and context construction are lazy). The one
+    composed scenario test runs against a Testcontainers PostgreSQL and exercises the one-line entry point with
+    multi-tenancy + row-level security + audit trail + field encryption + retry together.
   -->
   <ItemGroup>
     <PackageReference Include="SharedKernel.Persistence.Abstractions" />
@@ -23,11 +20,12 @@
     <PackageReference Include="SharedKernel.Persistence.EfCore.Encryption" />
     <PackageReference Include="SharedKernel.Persistence.Dapper" />
     <PackageReference Include="SharedKernel.Persistence.Npgsql" />
-    <PackageReference Include="SharedKernel.Persistence.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SharedKernel.Cryptography" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!-- The consumer testing package (P-558/W3c): its fakes and its PostgreSQL fixture, as a consumer test project uses them. -->
+    <PackageReference Include="SharedKernel.Persistence.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

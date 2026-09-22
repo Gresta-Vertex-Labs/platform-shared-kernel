@@ -1,50 +1,84 @@
 #nullable enable
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
-SharedKernel.Persistence.Npgsql.Connections.NpgsqlConnectionFactory.NpgsqlConnectionFactory(Npgsql.NpgsqlDataSource! dataSource) -> void
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.BindConnectionAsync(System.Data.Common.DbConnection! connection, System.Guid? tenantId, bool crossTenantActive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.NpgsqlTenantSessionBinder(string? crossTenantEscapeToken = null) -> void
-SharedKernel.Persistence.Npgsql.Context.NpgsqlTenantSessionBinder.ResetConnectionAsync(System.Data.Common.DbConnection! connection, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.AcquireAsync(string! lockKey, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock.NpgsqlAdvisoryMigrationLock(Npgsql.NpgsqlDataSource! dataSource, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryMigrationLock!>? logger = null) -> void
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.AcquireAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, string! lockKey, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Npgsql.Coordination.NpgsqlAdvisoryTransactionLock.NpgsqlAdvisoryTransactionLock() -> void
-SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.FailureRefreshInterval.get -> System.TimeSpan
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.FailureRefreshInterval.init -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.NpgsqlPeriodicPasswordProviderOptions() -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.Provider.get -> System.Func<Npgsql.NpgsqlConnectionStringBuilder!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>!
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.Provider.init -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.SuccessRefreshInterval.get -> System.TimeSpan
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions.SuccessRefreshInterval.init -> void
+SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys
+SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys
+SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
+SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.MissingReference = 1 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
+SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.ReferencedByDependent = 2 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
+SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.Unknown = 0 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
+SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.ConstraintName.get -> string?
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.IsTransient.get -> bool
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.SqlState.get -> string!
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.TableName.get -> string?
+SharedKernel.Persistence.Npgsql.Errors.PostgresErrorMapping
+SharedKernel.Persistence.Npgsql.Errors.PostgresExceptionClassifier
+SharedKernel.Persistence.NpgsqlPersistenceExtensions
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode.get -> bool
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.AcknowledgeInsecureSslMode.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.get -> string!
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionString.set -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.CrossTenantEscapeToken.get -> string?
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.CrossTenantEscapeToken.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionStringName.get -> string?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ConnectionStringName.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.EnableDynamicJson.get -> bool
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.EnableDynamicJson.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.get -> int?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.IdleInTransactionSessionTimeoutMilliseconds.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.LockTimeoutMilliseconds.get -> int?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.LockTimeoutMilliseconds.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.MigrationConnectionString.get -> string?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.MigrationConnectionString.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.NpgsqlPersistenceOptions() -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SslMode.get -> Npgsql.SslMode
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ReadOnlyConnectionString.get -> string?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.ReadOnlyConnectionString.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.RowLevelSecurity.get -> SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions!
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.RowLevelSecurity.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SslMode.get -> Npgsql.SslMode?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SslMode.set -> void
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeoutMilliseconds.get -> int?
 SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.StatementTimeoutMilliseconds.set -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.NpgsqlPersistenceOptionsValidator() -> void
-SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptionsValidator.Validate(string? name, SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
-SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames
-const SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames.ActivitySourceName = "Npgsql" -> string!
-const SharedKernel.Persistence.Npgsql.Telemetry.NpgsqlTelemetryNames.MeterName = "Npgsql" -> string!
-static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null, SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string! name, System.Action<Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null, SharedKernel.Persistence.Npgsql.Options.NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! connectionString) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.UseVector.get -> bool
+SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.UseVector.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.CrossTenantConnectionString.get -> string?
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.CrossTenantConnectionString.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.Enabled.get -> bool
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.Enabled.set -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.NpgsqlRowLevelSecurityOptions() -> void
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.PrivilegeCheck.get -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
+SharedKernel.Persistence.Npgsql.Options.NpgsqlRowLevelSecurityOptions.PrivilegeCheck.set -> void
+SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
+SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Disabled = 2 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
+SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Fail = 0 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
+SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck.Warn = 1 -> SharedKernel.Persistence.Npgsql.Options.RowLevelSecurityPrivilegeCheck
+const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.CrossTenant = "SharedKernel.Persistence.Npgsql.CrossTenant" -> string!
+const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.Migration = "SharedKernel.Persistence.Npgsql.Migration" -> string!
+const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.ReadOnly = "SharedKernel.Persistence.Npgsql.ReadOnly" -> string!
+const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.AuditNamespace = "sk:audit:" -> string!
+const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.MigrationNamespace = "sk:migration:" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.CheckViolation = "persistence.postgresql.check_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ExclusionViolation = "persistence.postgresql.exclusion_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyDependentExists = "persistence.postgresql.foreign_key_dependent_exists" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyReferenceMissing = "persistence.postgresql.foreign_key_reference_missing" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyViolation = "persistence.postgresql.foreign_key_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.InsufficientPrivilege = "persistence.postgresql.insufficient_privilege" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.LockTimeout = "persistence.postgresql.lock_timeout" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.NotNullViolation = "persistence.postgresql.not_null_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.StatementTimeout = "persistence.postgresql.statement_timeout" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.TransientConflict = "persistence.postgresql.transient_conflict" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.UniqueViolation = "persistence.postgresql.unique_violation" -> string!
+const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ValueTooLong = "persistence.postgresql.value_too_long" -> string!
+static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Audit(string! name) -> string!
+static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Migration(string! name) -> string!
+static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.ToKey(string! lockName) -> long
+static SharedKernel.Persistence.Npgsql.Errors.PostgresErrorMapping.TryAsync(System.Func<System.Threading.Tasks.Task!>! operation) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Persistence.Npgsql.Errors.PostgresErrorMapping.TryAsync(System.Func<System.Threading.Tasks.Task!>! operation, SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind foreignKeyViolationKind) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Persistence.Npgsql.Errors.PostgresErrorMapping.TryAsync<T>(System.Func<System.Threading.Tasks.Task<T>!>! operation) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Persistence.Npgsql.Errors.PostgresErrorMapping.TryAsync<T>(System.Func<System.Threading.Tasks.Task<T>!>! operation, SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind foreignKeyViolationKind) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Persistence.Npgsql.Errors.PostgresExceptionClassifier.Classify(Npgsql.PostgresException! exception, SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind foreignKeyViolationKind = SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.Unknown) -> SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification?
+static SharedKernel.Persistence.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! connectionStringName, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Persistence.NpgsqlPersistenceExtensions.AddSharedKernelNpgsql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section, string! name, System.Action<System.IServiceProvider!, Npgsql.NpgsqlDataSourceBuilder!>? configureDataSource = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Npgsql.Options.NpgsqlPersistenceOptions.SectionName.get -> string!

@@ -1,106 +1,69 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using SharedKernel.Application.Context;
+using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.MultiTenancy;
+using SharedKernel.Persistence.Npgsql.Connections;
 
 namespace SharedKernel.Persistence.EfCore.Seeding;
 
 /// <summary>
-/// Startup orchestration that applies pending EF Core migrations and runs registered
-/// <see cref="IDataSeeder{TContext}"/> implementations for <typeparamref name="TContext"/>,
-/// guarded by an <see cref="IMigrationLock"/> so multiple replicas racing on startup serialize to a
-/// single instance.
+/// Applies pending migrations and runs the registered seeders at startup, serialized across replicas.
+/// Registered only when <c>MigrateOnStartup()</c> or <c>AddSeeder&lt;T&gt;()</c> was called.
 /// </summary>
-/// <typeparam name="TContext">The <see cref="SharedKernelDbContext"/> subclass to migrate/seed.</typeparam>
 /// <remarks>
 /// <para>
-/// Registered by <c>EfCorePersistenceBuilder&lt;TContext&gt;.Build()</c> only when
-/// <c>.WithMigrationsOnStartup()</c> was called, or at least one seeder was registered via
-/// <c>.AddSeeder&lt;TSeeder&gt;()</c>.
+/// <strong>Locking.</strong> The whole sequence runs under the registered <see cref="IMigrationLock"/> (the
+/// Npgsql advisory lock), waiting up to <see cref="StartupOptions.LockTimeout"/> (default 2 minutes, set with
+/// <c>MigrateOnStartup(lockTimeout)</c>). Without a lock the sequence still runs and an Error is logged. Since EF Core 9,
+/// <c>Database.MigrateAsync</c> also takes its own database lock (Npgsql: an advisory lock held for the
+/// migration), so two replicas never apply the same migration twice even without this lock; what this lock adds
+/// is that seeders never run against a half-migrated schema and never run concurrently with each other. The two
+/// locks use different keys and are taken in the same order by every replica (ours first), so they cannot
+/// deadlock. Behind a transaction-mode pooler, set <c>MigrationConnectionString</c> to a direct connection: when
+/// that migration data source is registered, <c>MigrateAsync</c> runs over it.
 /// </para>
 /// <para>
-/// <strong>StartAsync sequence:</strong>
-/// <list type="number">
-/// <item><description>
-/// If an <see cref="IMigrationLock"/> is registered, acquire it (named after
-/// <typeparamref name="TContext"/>'s full type name) before doing anything else. If none is
-/// registered, log an Error-level warning — startup coordination across replicas
-/// is NOT guaranteed in that configuration — and proceed without a lock, rather than crash-looping
-/// a deliberately single-replica or non-PostgreSQL deployment.
-/// </description></item>
-/// <item><description>
-/// If migrations-on-startup was requested, resolve <see cref="IDbContextFactory{TContext}"/> and
-/// call <c>Database.MigrateAsync</c>.
-/// </description></item>
-/// <item><description>
-/// Run each registered seeder in registration order, each resolved in its own DI scope with its
-/// own <typeparamref name="TContext"/> instance via <see cref="IDbContextFactory{TContext}"/>.
-/// </description></item>
-/// <item><description>
-/// Release the lock (if acquired) by disposing its handle in a <c>finally</c> block.
-/// </description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <strong>Provider-neutral:</strong> no longer issues raw PostgreSQL <c>pg_advisory_lock</c> SQL
-/// directly — a hard violation of this package's "never provider-specific SQL" rule. The concrete
-/// PostgreSQL implementation (<c>NpgsqlAdvisoryMigrationLock</c>) lives in
-/// <c>SharedKernel.Persistence.Npgsql</c>. See <see cref="IMigrationLock"/>'s remarks for the full
-/// rationale, including the StartupGate/liveness-probe integration guidance.
-/// </para>
-/// <para>
-/// <see cref="StopAsync"/> is a no-op.
-/// </para>
-/// <para>
-/// Non-goals: this is not a migration-authoring tool (use <c>dotnet ef migrations add</c> as
-/// normal) and does not replace <c>.WithCompiledModel()</c> — compiled models and migrations
-/// operate independently.
+/// <strong>Seeders</strong> act as a system caller named <c>seeder:{Type}</c> (so audit columns show which
+/// seeder wrote a row). On a <see cref="TenantedDbContext"/> a seeder runs inside a cross-tenant scope entered
+/// with that caller: writes to any tenant pass the tenant write guard; reads still see the tenant filter, so a
+/// seeder that checks for existing rows queries with <c>IgnoreQueryFilters([PersistenceFilterNames.Tenant])</c>.
+/// With row-level security the seeder's context runs on the cross-tenant connection
+/// (<c>UseCrossTenantConnection()</c>), so the cross-tenant connection string must be configured.
 /// </para>
 /// </remarks>
 internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     where TContext : SharedKernelDbContext
 {
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(2);
-
     private readonly IServiceProvider _serviceProvider;
-    private readonly bool _runMigrations;
+    private readonly StartupOptions _options;
     private readonly IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps;
-    private readonly ILogger<MigrationAndSeedHostedService<TContext>> _logger;
+    private readonly ILogger _logger;
+    private readonly PersistenceStartupSignal? _startupSignal;
 
-    /// <summary>
-    /// Initialises a new <see cref="MigrationAndSeedHostedService{TContext}"/>.
-    /// </summary>
-    /// <param name="serviceProvider">The root service provider, used to create per-step DI scopes.</param>
-    /// <param name="runMigrations">Whether to call <c>Database.MigrateAsync</c> on startup.</param>
-    /// <param name="seedSteps">
-    /// One entry per registered <see cref="IDataSeeder{TContext}"/> — the seeder's own type name
-    /// (captured at <c>.AddSeeder&lt;TSeeder&gt;()</c> call time, for the <c>SeederApplied</c> log)
-    /// paired with a closed-generic delegate resolving its seeder from the supplied
-    /// scope's <see cref="IServiceProvider"/> and calling <see cref="IDataSeeder{TContext}.SeedAsync"/>
-    /// with the supplied context — no reflection is needed here.
-    /// </param>
-    /// <param name="logger">
-    /// Optional logger for the lifecycle Information/Warning/Error logs (EventIds <c>6001</c>-<c>6006</c>,
-    /// <c>6009</c>). Resolved by DI when registered; falls back to
-    /// <see cref="NullLogger{T}"/> otherwise.
-    /// </param>
     public MigrationAndSeedHostedService(
         IServiceProvider serviceProvider,
-        bool runMigrations,
+        StartupOptions options,
         IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> seedSteps,
-        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null)
+        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null,
+        PersistenceStartupSignal? startupSignal = null)
     {
+        _startupSignal = startupSignal;
         _serviceProvider = serviceProvider;
-        _runMigrations = runMigrations;
+        _options = options;
         _seedSteps = seedSteps;
-        _logger = logger ?? NullLogger<MigrationAndSeedHostedService<TContext>>.Instance;
+        _logger = (ILogger?)logger ?? NullLogger.Instance;
     }
 
-    /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var contextTypeName = typeof(TContext).Name;
@@ -115,7 +78,7 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         {
             if (migrationLock is not null)
             {
-                lockHandle = await migrationLock.AcquireAsync(lockKey, LockTimeout, cancellationToken);
+                lockHandle = await migrationLock.AcquireAsync(lockKey, _options.LockTimeout, cancellationToken);
                 PersistenceLog.AdvisoryLockAcquired(_logger, contextTypeName);
             }
             else
@@ -123,50 +86,106 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                 PersistenceLog.NoMigrationLockRegistered(_logger, contextTypeName);
             }
 
-            if (_runMigrations)
+            if (_options.MigrateOnStartup)
             {
-                // IDbContextFactory<TContext> is now registered SCOPED (it attaches the
-                // calling scope's actor/tenant identity — see TenantAwareDbContextFactory<TContext>),
-                // so it can no longer be resolved directly from the root _serviceProvider. A
-                // migration run has no meaningful tenant identity of its own — a fresh, empty scope
-                // gets the builder's fail-closed defaults, which is correct: schema migration touches
-                // no tenant-scoped rows.
-                await using var migrationScope = _serviceProvider.CreateAsyncScope();
-                var contextFactory = migrationScope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-                await using var migrationContext = await contextFactory.CreateDbContextAsync(cancellationToken);
-                await migrationContext.Database.MigrateAsync(cancellationToken);
+                await using var scope = _serviceProvider.CreateAsyncScope();
+                var migrationDataSource = scope.ServiceProvider.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.Migration);
+                await using var context = await CreateContextAsync(
+                    scope.ServiceProvider, AnonymousRequestContext.Instance, dedicated: migrationDataSource is not null, cancellationToken);
+
+                // Behind a transaction-mode pooler the migration needs a direct connection (one server session for
+                // EF Core's migration lock and the DDL); the configured migration data source provides it.
+                if (migrationDataSource is not null)
+                    context.Database.SetDbConnection(migrationDataSource.CreateConnection(), contextOwnsConnection: true);
+
+                await context.Database.MigrateAsync(cancellationToken);
             }
 
             foreach (var (seederTypeName, invoke) in _seedSteps)
             {
                 await using var scope = _serviceProvider.CreateAsyncScope();
-                var contextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-                await using var seedContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+                var seeder = new SystemRequestContext([], $"seeder:{seederTypeName}");
+                var tenanted = typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext));
+                var rowLevelSecurity = tenanted
+                    && scope.ServiceProvider.GetService<RowLevelSecurityCommandInterceptor>() is not null;
 
-                await invoke(scope.ServiceProvider, seedContext, cancellationToken);
+                await using var context = await CreateContextAsync(
+                    scope.ServiceProvider, seeder, dedicated: rowLevelSecurity, cancellationToken);
+
+                if (tenanted)
+                {
+                    // The context's own scope, attributed to the seeder (created by ICallerDbContextFactory).
+                    using (context.CrossTenantScope.Enter($"startup seeder {seederTypeName} for {contextTypeName}"))
+                    {
+                        // Under row-level security the application role only sees the bound tenant: a seeder that
+                        // writes across tenants runs on the cross-tenant role's connection.
+                        if (rowLevelSecurity)
+                            context.Database.UseCrossTenantConnection();
+
+                        await invoke(scope.ServiceProvider, context, cancellationToken);
+                    }
+                }
+                else
+                {
+                    await invoke(scope.ServiceProvider, context, cancellationToken);
+                }
 
                 PersistenceLog.SeederApplied(_logger, seederTypeName, contextTypeName);
             }
 
             PersistenceLog.MigrationAndSeedCompleted(_logger, contextTypeName);
+            _startupSignal?.Complete(typeof(TContext));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _startupSignal?.Cancel(typeof(TContext));
+            throw;
         }
         catch (Exception ex)
         {
-            PersistenceLog.MigrationAndSeedFailed(_logger, ex, contextTypeName);
+            PersistenceLog.MigrationAndSeedFailed(_logger, contextTypeName, ex.GetType().Name);
+            _startupSignal?.Fail(typeof(TContext), ex);
             throw;
         }
         finally
         {
             if (lockHandle is not null)
             {
-                // Release MUST use CancellationToken.None — an already-cancelled StartAsync token
-                // must never skip releasing a lock this instance successfully acquired.
                 await lockHandle.DisposeAsync();
                 PersistenceLog.AdvisoryLockReleased(_logger, contextTypeName);
             }
         }
     }
 
-    /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    // A context for one startup step, acting as caller. When the step swaps the connection (migration data source,
+    // cross-tenant connection) the context must not come from the DbContext pool — the swapped connection would
+    // outlive the lease — so a dedicated, unpooled copy with the same (already complete, frozen) options is built.
+    private static async Task<TContext> CreateContextAsync(
+        IServiceProvider services, IRequestContext caller, bool dedicated, CancellationToken cancellationToken)
+    {
+        var dispatcher = services.GetService<IDomainEventDispatcher>();
+        var leased = await services.GetRequiredService<ICallerDbContextFactory<TContext>>()
+            .CreateDbContextAsync(caller, dispatcher, cancellationToken);
+
+        var options = (DbContextOptions<TContext>)leased.GetService<IDbContextOptions>();
+        if (!dedicated || options.FindExtension<CoreOptionsExtension>()?.MaxPoolSize is null)
+            return leased;
+
+        await leased.DisposeAsync();
+
+        var builder = new DbContextOptionsBuilder<TContext>(options);
+        ((IDbContextOptionsBuilderInfrastructure)builder).AddOrUpdateExtension(
+            options.FindExtension<CoreOptionsExtension>()!.WithMaxPoolSize(null));
+        var unpooled = builder.Options;
+        unpooled.Freeze(); // the platform interceptors are already in the options; OnConfiguring must not add them twice
+
+        var context = ActivatorUtilities.CreateInstance<TContext>(services, unpooled);
+        context.AttachLease(caller, dispatcher, crossTenantScope: null);
+        return context;
+    }
+
+    /// <summary>What the startup sequence does.</summary>
+    internal sealed record StartupOptions(bool MigrateOnStartup, TimeSpan LockTimeout);
 }

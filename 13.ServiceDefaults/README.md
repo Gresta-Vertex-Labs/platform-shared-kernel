@@ -3,11 +3,12 @@
 Host composition layer for Platform.SharedKernel microservices.
 
 - **`SharedKernel.ServiceDefaults`** — the composition base: `AddServiceDefaults()`; OpenTelemetry tracing, metrics, and logging; health-check composition with a hard liveness/readiness split; startup-probe gating; every `WithXTelemetry()`; rate limiting. **References no other SharedKernel package** (WO-084).
-- **`SharedKernel.ServiceDefaults.*`** — thirteen integration packages, one per dependency, each referencing the base plus the one package it integrates. Add only the ones your service needs:
+- **`SharedKernel.ServiceDefaults.*`** — fourteen integration packages, one per dependency, each referencing the base plus the one package it integrates. Add only the ones your service needs:
 
   | Package | Provides |
   | --- | --- |
-  | `.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()` |
+  | `.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()`, `AddFieldEncryptionReadinessCheck()`, `AddAuditSealingReadinessCheck()` |
+  | `.Security` | `AddSharedKernelRequestContext()` — the `IRequestContext` over `12.Security` used by `05.Application` and `06.Persistence` |
   | `.Caching` | `AddCacheReadinessCheck()` |
   | `.Caching.Redis` | `AddRedisHealthCheck()` |
   | `.Messaging` | `AddMessagingReadinessCheck()` |

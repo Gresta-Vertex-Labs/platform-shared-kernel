@@ -22,8 +22,9 @@ composition root.
 
 **Hard rules**
 
-1. `SharedKernel.Application` references only `SharedKernel.Primitives`, `SharedKernel.Domain`, and
-   `MediatR`. Never `02.Caching`, `06.Persistence`, `07.Messaging`, `12.Security`, or any concrete
+1. `SharedKernel.Application.Abstractions` references only `SharedKernel.Primitives` — no MediatR, no ORM —
+   because `06.Persistence` and `13.ServiceDefaults` implement its contracts. `SharedKernel.Application` references
+   only `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Application.Abstractions` and `MediatR`. Never `02.Caching`, `06.Persistence`, `07.Messaging`, `12.Security`, or any concrete
    infrastructure package.
 2. `SharedKernel.Application.Behaviors` adds only `SharedKernel.Application`, `MediatR`,
    `FluentValidation`, and the `Microsoft.Extensions.*` abstractions/diagnostics packages it needs. It
@@ -37,9 +38,11 @@ composition root.
 5. AOT and trimming are **not** constraints here (user ruling, 2026-09-15). Reflection is used where it
    is the clearest code — see "Reflection use" below — never guarded behind `[RequiresUnreferencedCode]`
    gymnastics.
-6. Every local seam (`IRequestContext`, `IUnitOfWork`, `IRequestIdempotencyStore`, `IAuditTrailWriter`) is
-   a minimal interface *owned by this domain*. Adding a project reference from either package to the real
-   infrastructure package that seam bridges to — to "simplify" the bridge — is a hard violation.
+6. The shared contracts (`IRequestContext`, `IUnitOfWork`, `IAuditTrailWriter`, in `SharedKernel.Application.Abstractions`)
+   and the local seam `IRequestIdempotencyStore` are *owned by this domain*; infrastructure implements them
+   (`06.Persistence` directly, `13.ServiceDefaults.Security` for `IRequestContext`, `18.Idempotency` for the store).
+   A reference from any package here to the infrastructure that implements them is a hard violation, and
+   redeclaring one of the shared contracts elsewhere is refused by `00.Governance`'s `UnitOfWorkSeamRules` (P-558).
 7. Registration order in `ApplicationBehaviorsBuilder.Build()` is *not* the same thing as onion-wrap
    execution order for post-`next()` code: the first-registered behavior in a stage is outermost, so its
    code *after* `next()` returns runs **last**, after every later-registered (more-inner) behavior in
@@ -53,8 +56,9 @@ composition root.
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Application` | CQRS vocabulary (`ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`/`IStreamQuery<TResponse>`), the handler-alias interfaces, the `IRequestContext` seam, the domain-event-to-MediatR bridge | `SharedKernel.Primitives`, `SharedKernel.Domain`, `MediatR` |
-| `SharedKernel.Application.Behaviors` | Eight pipeline behaviors (Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing) plus `ApplicationBehaviorsBuilder`/`PipelineStage` | `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation` |
+| `SharedKernel.Application.Abstractions` | **New in P-558.** The contracts the pipeline and persistence share, MediatR-free: `IRequestContext` (+ `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext`), the one `IUnitOfWork` (+ `CommitOutcomeUnknownException`, `TransactionRolledBackException`), `IAuditTrailWriter`/`AuditEntry`/`AuditOutcome` | `SharedKernel.Primitives` |
+| `SharedKernel.Application` | CQRS vocabulary (`ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`/`IStreamQuery<TResponse>`), the handler-alias interfaces, the domain-event-to-MediatR bridge; `[TypeForwardedTo]` for the three context types that moved to `.Abstractions` | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Application.Abstractions`, `MediatR` |
+| `SharedKernel.Application.Behaviors` | Eight pipeline behaviors (Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing — auditing in two halves) plus `ApplicationBehaviorsBuilder`/`PipelineStage` | `SharedKernel.Application`, `SharedKernel.Application.Abstractions`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation` |
 | `SharedKernel.Application.Behaviors.Caching` | `CachingBehavior<,>` + `ICacheableQuery<TValue>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` — the **only** package in this domain permitted a `SharedKernel.Caching.Abstractions` reference | `SharedKernel.Application.Behaviors`, `SharedKernel.Caching.Abstractions` |
 
 Every test project is nested inside the package it tests and references **only that package** — never
@@ -89,11 +93,10 @@ services.AddValidatorsFromAssemblyContaining<Program>();
 services.AddSharedKernelApplication();                                   // domain-event-to-MediatR bridge
 services.AddDomainEventHandler<OrderPlacedDomainEvent, Handler>();
 
-// Local-seam bridges — implement each against real infrastructure at the composition root.
-services.AddScoped<IRequestContext, HttpRequestContext>();               // -> 12.Security.Abstractions
-services.AddScoped<IUnitOfWork, EfUnitOfWorkAdapter>();                  // -> 06.Persistence.Abstractions
+// The shared contracts are implemented by infrastructure directly — no adapters (P-558).
+services.AddSharedKernelRequestContext();                                // 13.ServiceDefaults.Security -> IRequestContext
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // 06 -> IUnitOfWork, IAuditTrailWriter
 services.AddScoped<IRequestIdempotencyStore, RedisIdempotencyStore>();   // -> 18.Idempotency, or your own
-services.AddScoped<IAuditTrailWriter, PersistenceAuditTrailWriterAdapter>(); // -> 06.Persistence.Abstractions
 services.AddSharedKernelCaching(o => o.ServiceName = "orders");         // 02.Caching.FusionCache — registers ICacheService
 
 services.AddSharedKernelApplicationBehaviors()
@@ -105,9 +108,12 @@ services.AddSharedKernelApplicationBehaviors()
     .AddCachingBehaviors()           // SharedKernel.Application.Behaviors.Caching — Query + Command stage
     .AddIdempotencyBehavior()        // requires IRequestIdempotencyStore
     .AddTransactionBehavior()        // requires IUnitOfWork
-    .AddAuditingBehavior()           // requires IAuditTrailWriter
+    .AddAuditingBehavior()           // requires IAuditTrailWriter; registers both auditing halves
     .Build();
 ```
+
+The full persistence composition, compiled and run by a test, is `06.Persistence/README.md` ("A multi-tenant
+service in 10 minutes").
 
 `AddDefaultBehaviors()` = `AddTracingBehavior().AddLoggingBehavior().AddMetricsBehavior().AddValidationBehavior()`
 — the only four behaviors with **zero** `Build()`-time missing-dependency guard, provably equivalent to
@@ -141,13 +147,26 @@ No other reflection appears in either package. `ApplicationBehaviorsBuilder.AddB
 
 ## Interface Contracts
 
+### `SharedKernel.Application.Abstractions` (P-558)
+
+| Namespace | Types |
+| --- | --- |
+| `Context` | `IRequestContext` — `IsAuthenticated`, `UserId`, `TenantId` (`Guid?`), `HasPermissionAsync`, plus default-implemented `ActorKind` (`User`/`Service`/`System`/`Anonymous`; an unauthenticated caller is `Anonymous`), `ClientId`, `SessionId`, `ImpersonatorId`; `SystemRequestContext` (authenticated, `System`); `AnonymousRequestContext` (`Anonymous`, singleton `.Instance`) |
+| `Transactions` | `IUnitOfWork` — `SaveChangesAsync`, `IsTransactionActive`, `ExecuteInTransactionAsync(op[, isolationLevel])`/`<TResult>`, `OnBeforeCommit(callback)`. Contract: the operation may run more than once (retry); a returned failed `Result` rolls back; a call inside an active transaction joins it and a joined failure makes it rollback-only (`TransactionRolledBackException` for an outer success); an ambiguous commit throws `CommitOutcomeUnknownException` and is never replayed; callbacks run after the last save, before commit, and are discarded with a retried attempt. No `BeginTransactionAsync` |
+| `Auditing` | `IAuditTrailWriter.RecordAsync(AuditEntry)`; `AuditEntry` (init record: `Action`, `ResourceType`, `ResourceId`, `Outcome`, optional snapshots, `ErrorCode`, `ApprovalId`, `IdempotencyKey` — never actor/tenant/time, the writer resolves those); `AuditOutcome` |
+
+Implemented by `06.Persistence` (`IUnitOfWork`: `EfUnitOfWork`, one transaction per DI scope; `IAuditTrailWriter`:
+the audit ledger) and `13.ServiceDefaults.Security` (`IRequestContext` over `12.Security`). The P-557
+`ITransactionalUnitOfWork`/`IPersistenceTransaction`/`Behaviors.Auditing.IAuditTrailWriter`/`AuditEntry(bool Succeeded)`
+seams and every bridge adapter were deleted.
+
 ### `SharedKernel.Application`
 
 | Namespace | Types |
 | --- | --- |
 | `Messaging` | `ICommandBase` (zero-member marker); `ICommand : ICommandBase, IRequest<Result>`; `ICommand<TResponse> : ICommandBase, IRequest<Result<TResponse>>`; `IQueryBase` (zero-member marker); `IQuery<TResponse> : IQueryBase, IRequest<Result<TResponse>>`; `ICommandHandler<TCommand>`, `ICommandHandler<TCommand,TResponse>`, `IQueryHandler<TQuery,TResponse>` — pure `IRequestHandler<,>` aliases |
 | `Streaming` | `IStreamQuery<TResponse> : IStreamRequest<TResponse>`; `IStreamQueryHandler<TQuery,TResponse> : IStreamRequestHandler<TQuery,TResponse>` — raw per-item payloads, **not** wrapped in `Result<T>`; no pipeline behavior applies (MediatR treats unary and streaming requests as disjoint generic hierarchies) |
-| `Context` | `IRequestContext` — `IsAuthenticated`, `UserId` (`string?`), `TenantId` (`Guid?`), `HasPermissionAsync(permission, ct)`; `SystemRequestContext` — always authenticated, caller-supplied identity (default `"system"`) and explicit permission set, for `17.Workflows`/`19.Scheduling` dispatch with no HTTP request behind it; `AnonymousRequestContext` — unauthenticated, no user/tenant/permissions, singleton `.Instance` |
+| `Context` | Type-forwarded to `SharedKernel.Application.Abstractions` (same namespace): `IRequestContext`, `SystemRequestContext` (for `17.Workflows`/`19.Scheduling` dispatch with no HTTP request behind it), `AnonymousRequestContext` |
 | `DomainEvents` | `IDomainEventHandler<in TDomainEvent>`; `DomainEventNotification<TDomainEvent>` (`INotification` wrapper); internal `DomainEventNotificationHandler<TDomainEvent>`; `MediatRDomainEventDispatcher` (serial-only `IDomainEventDispatcher`) |
 | `Extensions` | `AddSharedKernelApplication()` (no configure overload); `AddDomainEventHandler<TDomainEvent,THandler>()` |
 
@@ -162,8 +181,8 @@ No other reflection appears in either package. `ApplicationBehaviorsBuilder.AddB
 | `Validation` | `ValidationBehavior<,>` |
 | `Commands` | `ICommandScope` (`IsActive`, `IsNested`, `OnCompleted`); internal `CommandScope`; internal `CommandScopeBehavior<,>` |
 | `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, `Fingerprint` — optional, defaults to `null`); `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`); `IdempotencyBeginResult`, `IdempotencyBeginStatus`; `IdempotencyBehavior<,>`; internal `IdempotencyResponseSerializer`, `RequestFingerprint` |
-| `Transaction` | `IUnitOfWork` (`SaveChangesAsync`); `TransactionBehavior<,>` |
-| `Auditing` | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot`); `IAuditTrailWriter` (`RecordAsync`); `AuditEntry` (record, includes `Succeeded`/`ErrorCode`); `AuditingBehavior<,>` |
+| `Transaction` | `TransactionBehavior<,>` (over `Abstractions`' `IUnitOfWork`) |
+| `Auditing` | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot`); `AuditingBehavior<,>` (outer half) and internal `AuditingCommitBehavior<,>` (inner half), both registered by `AddAuditingBehavior()`; internal `AuditEntries` builder |
 | `Extensions` | `ApplicationBehaviorsBuilder` (`.AddXBehavior()` methods, `AddBehavior`, `AddDefaultBehaviors`, `Build`); `ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors()`; `PipelineStage` enum |
 | `Shared` (internal) | `FailureResponse`, `ResponseOutcome`, `RequestKind`, `ApplicationBehaviorsLoggingEventIds` |
 
@@ -229,8 +248,9 @@ Validation stage      5. ValidationBehavior
 Query stage            [custom Query-stage behaviors — e.g. CachingBehavior; no built-in of its own]
 Command stage          CommandScopeBehavior (always first when the command stage is active)
                         IdempotencyBehavior
-                        TransactionBehavior
-                        AuditingBehavior
+                        AuditingBehavior          (outer half: records Failed after rollback)
+                        TransactionBehavior       (runs the rest inside IUnitOfWork.ExecuteInTransactionAsync)
+                        AuditingCommitBehavior    (inner half: queues Succeeded on OnBeforeCommit)
                         [custom Command-stage behaviors — e.g. CacheInvalidationBehavior]
                        handler
 ```
@@ -252,14 +272,17 @@ registered so a handler may inject it regardless.
 | `ValidationBehavior` | calls `next()` when zero failures | short-circuits before `next()` with `Error.Validation(errors)`: each child coded by `failure.ErrorCode` with the field path in `MessageArguments[PropertyPath]` | never throws itself |
 | `CommandScopeBehavior` | runs queued `OnCompleted` callbacks (outermost frame only) after `next()` returns | discards the frame's callbacks | discards the frame's callbacks (depth reset in `finally` either way) |
 | `IdempotencyBehavior` | `CompleteAsync` (persists the serialized response, passing back the reservation token; a `false` result logs a `Warning` but still returns the response) | `ReleaseAsync` (never `CompleteAsync` — a failure must remain retryable) | `ReleaseAsync`, then rethrows |
-| `TransactionBehavior` | `IUnitOfWork.SaveChangesAsync` (outermost command only) | no commit | no commit — the exception propagates before this behavior's post-`next()` code runs |
-| `AuditingBehavior` | `RecordAsync` with `Succeeded=true`, `AfterSnapshot` computed | `RecordAsync` with `Succeeded=false`, `ErrorCode` = the response's `Error.Code`, `AfterSnapshot=null` | `RecordAsync` with `Succeeded=false`, `ErrorCode` = the exception type's full name, `AfterSnapshot=null`; a `RecordAsync` failure here is logged (`LogAuditWriteFailedDuringException`, EventId 5130), not propagated — the **original** exception always rethrows |
+| `TransactionBehavior` | runs the rest of the pipeline and the handler inside `IUnitOfWork.ExecuteInTransactionAsync` (outermost command; the strategy may replay it — handlers must be re-runnable; `OnCompleted` callbacks queued by a discarded attempt are dropped); saves, runs `OnBeforeCommit` callbacks, commits | rollback, nothing committed; a joined command's failure marks the outer transaction rollback-only | rollback, the exception propagates |
+| `AuditingBehavior` (outer, outside the transaction) + `AuditingCommitBehavior` (inner, inside it) | inner half queues `RecordAsync(Outcome = Succeeded, AfterSnapshot)` on `OnBeforeCommit` (written in the business transaction, commits with it; written directly when no transaction is active) | outer half, after rollback: `RecordAsync(Outcome = Failed, ErrorCode = Error.Code)` on the writer's own connection; a `RecordAsync` failure propagates | outer half, after rollback: `Failed` with `ErrorCode` = the exception type's full name — including a failure of the commit itself; a `RecordAsync` failure here is logged (EventId 5130), the **original** exception rethrows |
 | `CachingBehavior` (Query stage, `.Caching`) | runs the handler inside `GetOrSetAsync` (once per key across concurrent callers) and caches the response | returned to every waiting caller, never cached (`CacheFactoryContext.SkipCaching`) | propagates, nothing cached; the query policy's fail-safe may serve an expired entry instead |
 | `CacheInvalidationBehavior` (Command stage, `.Caching`) | registers an `ICommandScope.OnCompleted` callback that evicts after commit (`RemoveAsync` per key, `RemoveByTagAsync` per tag); keys and tags are scoped and validated **before** the handler runs, so an invalid key fails the command instead of the post-commit callback | nothing registered | nothing registered |
 
-A nested command (`ICommandScope.IsNested`) makes `IdempotencyBehavior` and `TransactionBehavior` call
-`next()` directly, skipping their own reservation/commit logic entirely — only the **outermost** command
-in a DI scope owns the idempotency key and the transaction.
+A nested command (`ICommandScope.IsNested`) makes `IdempotencyBehavior` call `next()` directly. `TransactionBehavior`
+joins an active transaction through `ExecuteInTransactionAsync` (so a nested failure marks it rollback-only)
+and calls `next()` directly only when nested with no active transaction — only the **outermost** command in
+a DI scope owns the idempotency key and commits. A nested audited command queues its `Succeeded` entry on the
+outer transaction; if the outer command fails, that entry rolls back and no separate `Failed` entry is
+written for the nested command.
 
 ---
 
@@ -334,14 +357,15 @@ short-circuits on the first held permission. Denial never echoes which permissio
 
 | Seam | Package | Bridges to |
 | --- | --- | --- |
-| `Context.IRequestContext` | `SharedKernel.Application` | `12.Security.Abstractions.IUserContext`/`ITenantProvider` |
-| `Transaction.IUnitOfWork` | `SharedKernel.Application.Behaviors` | `06.Persistence.Abstractions.IUnitOfWork` (`06.Persistence` may reference `05.Application`, so `EfUnitOfWork` may implement this directly instead of needing an adapter) |
+| `Context.IRequestContext` | `SharedKernel.Application.Abstractions` | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`'s `IUserContext`/`ITenantProvider`); `06.Persistence` uses the same instance for audit columns, tenant filters and the ledger |
+| `Transactions.IUnitOfWork` | `SharedKernel.Application.Abstractions` | `06.Persistence.EfCore`'s `EfUnitOfWork` implements it directly (no adapter) |
 | `Idempotency.IRequestIdempotencyStore` | `SharedKernel.Application.Behaviors` | `18.Idempotency`, or a consumer-supplied store |
-| `Auditing.IAuditTrailWriter` | `SharedKernel.Application.Behaviors` | `06.Persistence.Abstractions.IAuditTrailWriter` (a richer contract — the bridge adapter discards the persisted record this local seam never needs back) |
+| `Auditing.IAuditTrailWriter` | `SharedKernel.Application.Abstractions` | `06.Persistence.EfCore.Auditing` implements it directly (no adapter) |
 
-Each is a *minimal* interface, deliberately smaller than the real contract it bridges to — resolving
-identity, tenancy, timestamps, and hash-chain linkage is entirely the real implementation's job, never
-this domain's. This is the same pattern applied four times, not four different patterns.
+Each is a *minimal* interface — resolving identity, tenancy, timestamps and chain linkage is entirely the
+implementation's job, never this domain's. Three of them moved into `SharedKernel.Application.Abstractions` in P-558
+so that persistence can implement them without referencing MediatR; before that, each existed twice (here and in
+`06.Persistence`) with bridge adapters in `13.ServiceDefaults.Persistence` — all deleted.
 
 ---
 
@@ -422,10 +446,10 @@ Changes here that silently break another layer. Check the right column before me
 
 | If you change… | Also check |
 | --- | --- |
-| `Transaction.IUnitOfWork`'s shape | `06.Persistence`'s `EfUnitOfWork` bridge |
+| `Transactions.IUnitOfWork`'s shape or contract (retry, rollback-only, `OnBeforeCommit`) | `06.Persistence`'s `EfUnitOfWork`/`UnitOfWorkCoordinator`; both `FakeUnitOfWork`s (`16.Testing/SharedKernel.Persistence.Testing`, `Behaviors.Tests/Support`) |
 | `Idempotency.IRequestIdempotencyStore`'s contract | `18.Idempotency`'s store implementations; `16.Testing`'s fake (both migrated onto the stateless `reservationToken`/`bool`-returning shape, same day as `SK.05.P544`) |
-| `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence`'s real `IAuditTrailWriter` bridge adapter; `16.Testing`'s fake |
-| `Context.IRequestContext`'s shape | Every consuming service's composition-root bridge; `12.Security.Abstractions.IUserContext`/`ITenantProvider` mapping |
+| `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence.EfCore.Auditing`'s writer; `16.Testing`'s fakes |
+| `Context.IRequestContext`'s shape | `13.ServiceDefaults.Security`'s `SecurityRequestContext`; `06.Persistence` (actor, tenant, ledger identity); `16.Testing`'s `TestRequestContext` |
 | `ICacheableQuery<TValue>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format |
 | `ApplicationBehaviorsBuilder`'s registration order | `00.Governance`'s pipeline-order architecture test (mid-migration as of `SK.05.P544`) |
 | Any public API | `PublicAPI.Unshipped.txt` in the affected package, that package's own `README.md` |
@@ -513,3 +537,4 @@ Changes here that silently break another layer. Check the right column before me
   `IdempotencyBehavior` both constructor-inject `ILogger<T>`, and a bare `ServiceCollection` with no
   prior `AddLogging()` call would otherwise fail to resolve them at first dispatch instead of at this
   deterministic `Build()` call
+- [2026-09-21] P-558: `SharedKernel.Application.Abstractions` added (shared IRequestContext/IUnitOfWork/IAuditTrailWriter); TransactionBehavior runs the handler via ExecuteInTransactionAsync, auditing split in two halves, rollback-only joins (agent)

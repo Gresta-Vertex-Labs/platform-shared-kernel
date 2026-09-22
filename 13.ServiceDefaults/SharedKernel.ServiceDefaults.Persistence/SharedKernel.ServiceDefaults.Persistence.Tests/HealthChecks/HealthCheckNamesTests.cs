@@ -19,13 +19,13 @@ public sealed class HealthCheckNamesTests
     }
 
     [Fact]
-    public void AddDapperDatabaseReadinessCheck_DefaultName_MatchesHealthCheckNamesDatabase()
+    public void AddDapperDatabaseReadinessCheck_DefaultName_IsDistinctFromTheEfCoreCheck()
     {
         var services = new ServiceCollection();
 
         services.AddHealthChecks().AddDapperDatabaseReadinessCheck();
 
-        var registration = GetRegistration(services, HealthCheckNames.Database);
+        var registration = GetRegistration(services, HealthCheckNames.DapperDatabase);
         Assert.NotNull(registration);
     }
 

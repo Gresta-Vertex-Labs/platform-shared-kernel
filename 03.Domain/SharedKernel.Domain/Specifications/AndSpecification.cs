@@ -7,20 +7,16 @@ namespace SharedKernel.Domain.Specifications;
 /// <remarks>
 /// <para>
 /// <b>Criteria.</b> The left criteria AND the right criteria. An operand without criteria contributes no
-/// condition, so combining with <see cref="AllSpecification{T}"/> leaves the other operand's criteria
-/// unchanged; when neither operand has criteria, neither does the result.
+/// condition; when neither operand has criteria, neither does the result.
 /// </para>
 /// <para>
-/// <b>Query shape.</b> Copies the includes and string includes of both operands, left first (an include
-/// expression instance or an ordinally equal path already present is not added twice), and sets
-/// <see cref="ISpecification{T}.AsNoTracking"/>, <see cref="ISpecification{T}.AsSplitQuery"/> and
-/// <see cref="ISpecification{T}.IncludeDeleted"/> when either operand sets them.
+/// <b>Query shape.</b> Includes and string includes of both operands are combined (duplicates once), and
+/// Distinct, split-query and include-deleted are set when either operand sets them. The ordering of the one
+/// operand that declares a primary sort is carried over.
 /// </para>
 /// <para>
-/// <b>Pitfall.</b> Ordering, paging and <see cref="ISpecification{T}.IsDistinct"/> are never copied: two
-/// operands can disagree about them and no merge is correct in general. The result is unordered and unpaged.
-/// If either operand includes soft-deleted entities, the whole result bypasses the global query filters,
-/// tenant isolation included.
+/// <b>Throws instead of dropping.</b> Construction throws <see cref="InvalidOperationException"/> when both
+/// operands declare a primary sort or either declares Skip/Take; page at the call site instead.
 /// </para>
 /// </remarks>
 public sealed class AndSpecification<T> : Specification<T>
@@ -34,17 +30,19 @@ public sealed class AndSpecification<T> : Specification<T>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.
     /// </exception>
-    public AndSpecification(Specification<T> left, Specification<T> right)
+    /// <exception cref="InvalidOperationException">
+    /// Both operands declare a primary sort, or either declares Skip/Take.
+    /// </exception>
+    public AndSpecification(ISpecification<T> left, ISpecification<T> right)
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
 
         if (left.Criteria is not null)
-            AddCriteria(left.Criteria);
+            AddCriteriaCore(left.Criteria);
         if (right.Criteria is not null)
-            AddCriteria(right.Criteria);
+            AddCriteriaCore(right.Criteria);
 
-        CopyQueryShapeFrom(left);
-        CopyQueryShapeFrom(right);
+        SpecificationComposition.MergeShape(this, "And", left, right);
     }
 }

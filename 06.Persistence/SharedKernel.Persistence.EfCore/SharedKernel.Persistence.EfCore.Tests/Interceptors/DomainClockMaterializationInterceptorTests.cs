@@ -2,7 +2,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
 
@@ -104,7 +103,7 @@ public sealed class DomainClockMaterializationInterceptorTests
     {
         var original = TestDbContextFactory.CreateClock(SavedAt);
         var aggregate = new AuditableTestAggregate(TestId.New(), "x", original);
-        var interceptor = new DomainClockMaterializationInterceptor(TestDbContextFactory.CreateClock(DateTimeOffset.MaxValue));
+        var interceptor = SharedKernel.Persistence.EfCore.Interceptors.DomainClockMaterializationInterceptor.FromContext;
 
         interceptor.InitializedInstance(default, aggregate);
         aggregate.RaiseTestEvent();
@@ -115,7 +114,7 @@ public sealed class DomainClockMaterializationInterceptorTests
     [Fact]
     public void NonAggregateEntity_IsReturnedUntouched()
     {
-        var interceptor = new DomainClockMaterializationInterceptor(new SystemClock());
+        var interceptor = SharedKernel.Persistence.EfCore.Interceptors.DomainClockMaterializationInterceptor.FromContext;
         var entity = new object();
 
         interceptor.InitializedInstance(default, entity).Should().BeSameAs(entity);
@@ -135,9 +134,4 @@ public sealed class DomainClockMaterializationInterceptorTests
 
         secondModelSource.Should().BeSameAs(firstModelSource);
     }
-
-    [Fact]
-    public void NullClock_Throws() =>
-        FluentActions.Invoking(() => new DomainClockMaterializationInterceptor(null!))
-            .Should().Throw<ArgumentNullException>();
 }

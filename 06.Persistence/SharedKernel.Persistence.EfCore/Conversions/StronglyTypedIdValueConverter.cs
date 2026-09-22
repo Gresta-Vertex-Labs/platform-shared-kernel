@@ -26,13 +26,12 @@ namespace SharedKernel.Persistence.EfCore.Conversions;
 /// time and cached, so runtime cost is negligible.
 /// </para>
 /// <para>
-/// Register this converter globally using the
-/// <see cref="ModelConfigurationBuilderExtensions.ConfigureStronglyTypedIds"/> extension so that
-/// every <see cref="SharedKernel.Domain.Abstractions.IStronglyTypedId{TValue}"/> property is
-/// automatically mapped without per-aggregate configuration.
+/// Every <c>SharedKernelDbContext</c> registers this converter automatically for each strongly-typed id
+/// reachable from its <c>DbSet</c> properties or declared in its assembly; use it directly only for a
+/// hand-written mapping.
 /// </para>
 /// </remarks>
-public sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
+internal sealed class StronglyTypedIdValueConverter<TStronglyTypedId, TValue>
     : ValueConverter<TStronglyTypedId, TValue>
     where TStronglyTypedId : StronglyTypedId<TValue>
     where TValue : notnull

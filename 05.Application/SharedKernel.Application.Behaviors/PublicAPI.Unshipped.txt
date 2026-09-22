@@ -1,28 +1,7 @@
 #nullable enable
-SharedKernel.Application.Behaviors.Auditing.AuditEntry
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.<Clone>$() -> SharedKernel.Application.Behaviors.Auditing.AuditEntry!
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Action.get -> string!
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Action.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.AfterSnapshot.get -> string?
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.AfterSnapshot.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.AuditEntry(string! Action, string! ResourceType, string! ResourceId, string? BeforeSnapshot, string? AfterSnapshot, bool Succeeded, string? ErrorCode) -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.BeforeSnapshot.get -> string?
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.BeforeSnapshot.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Deconstruct(out string! Action, out string! ResourceType, out string! ResourceId, out string? BeforeSnapshot, out string? AfterSnapshot, out bool Succeeded, out string? ErrorCode) -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Equals(SharedKernel.Application.Behaviors.Auditing.AuditEntry? other) -> bool
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ErrorCode.get -> string?
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ErrorCode.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ResourceId.get -> string!
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ResourceId.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ResourceType.get -> string!
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.ResourceType.init -> void
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Succeeded.get -> bool
-SharedKernel.Application.Behaviors.Auditing.AuditEntry.Succeeded.init -> void
 SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>
-SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>.AuditingBehavior(SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter! auditTrailWriter, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>!>! logger) -> void
+SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>.AuditingBehavior(SharedKernel.Application.Auditing.IAuditTrailWriter! auditTrailWriter, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>!>! logger) -> void
 SharedKernel.Application.Behaviors.Auditing.AuditingBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter
-SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter.RecordAsync(SharedKernel.Application.Behaviors.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 SharedKernel.Application.Behaviors.Auditing.IAuditableRequest<TResponse>
 SharedKernel.Application.Behaviors.Auditing.IAuditableRequest<TResponse>.Action.get -> string!
 SharedKernel.Application.Behaviors.Auditing.IAuditableRequest<TResponse>.BeforeSnapshot.get -> string?
@@ -54,6 +33,7 @@ SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.AddTra
 SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.AddTransactionBehavior() -> SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder!
 SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.AddValidationBehavior() -> SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder!
 SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsServiceCollectionExtensions
 SharedKernel.Application.Behaviors.Extensions.PipelineStage
 SharedKernel.Application.Behaviors.Extensions.PipelineStage.Authorization = 1 -> SharedKernel.Application.Behaviors.Extensions.PipelineStage
@@ -100,25 +80,13 @@ SharedKernel.Application.Behaviors.Logging.LoggingBehavior<TRequest, TResponse>.
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Tracing.TracingBehavior<TRequest, TResponse>.TracingBehavior() -> void
-SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction
-SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction.CommitAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction.RollbackAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.Behaviors.Transaction.ITransactionalUnitOfWork
-SharedKernel.Application.Behaviors.Transaction.ITransactionalUnitOfWork.BeginTransactionAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Application.Behaviors.Transaction.IPersistenceTransaction!>!
-SharedKernel.Application.Behaviors.Transaction.IUnitOfWork
-SharedKernel.Application.Behaviors.Transaction.IUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TResponse>.TransactionBehavior(SharedKernel.Application.Behaviors.Transaction.IUnitOfWork! unitOfWork, SharedKernel.Application.Behaviors.Commands.ICommandScope! commandScope) -> void
+SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TResponse>.TransactionBehavior(SharedKernel.Application.Transactions.IUnitOfWork! unitOfWork, SharedKernel.Application.Behaviors.Commands.ICommandScope! commandScope) -> void
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>.ValidationBehavior(System.Collections.Generic.IEnumerable<FluentValidation.IValidator<TRequest>!>! validators) -> void
-override SharedKernel.Application.Behaviors.Auditing.AuditEntry.Equals(object? obj) -> bool
-override SharedKernel.Application.Behaviors.Auditing.AuditEntry.GetHashCode() -> int
-override SharedKernel.Application.Behaviors.Auditing.AuditEntry.ToString() -> string!
 override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.GetHashCode() -> int
-static SharedKernel.Application.Behaviors.Auditing.AuditEntry.operator !=(SharedKernel.Application.Behaviors.Auditing.AuditEntry? left, SharedKernel.Application.Behaviors.Auditing.AuditEntry? right) -> bool
-static SharedKernel.Application.Behaviors.Auditing.AuditEntry.operator ==(SharedKernel.Application.Behaviors.Auditing.AuditEntry? left, SharedKernel.Application.Behaviors.Auditing.AuditEntry? right) -> bool
 static SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder!
 static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.Completed(string! storedResponse) -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult
 static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.FingerprintMismatch() -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult
@@ -128,4 +96,3 @@ static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.ope
 static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.operator ==(SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult left, SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult right) -> bool
 ~override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.Equals(object obj) -> bool
 ~override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.ToString() -> string
-SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

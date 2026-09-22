@@ -247,7 +247,7 @@ Multi-tenant EF Core safety, and SQL-injection prevention in the Dapper read/com
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [SK0042](#sk0042-nonconstantdappersqlargument) | A non-constant `sql` argument on a Dapper query/command method | Fixed SQL text, values through parameters |
-| [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that drops the global tenant filter | Call `base.OnModelCreating` or `ApplyTenantFilters` |
+| [SK0201](#sk0201-tenanteddbcontextonmodelcreatingguard) | A tenanted `DbContext` that skips the platform model configuration | Call `base.OnModelCreating` |
 | [SK0202](#sk0202-ignorequeryfiltersoutsidetenantedrepository) | `IgnoreQueryFilters()` outside the permitted scope | Keep it inside the persistence layer or a `TenantedRepository` |
 
 #### Messaging
@@ -864,7 +864,7 @@ Set one primary sort direction per specification constructor.
 
 A specification has one primary sort. `Specification<T>` throws `InvalidOperationException` when a constructor applies a second one, so a constructor calling both `ApplyOrderBy` and `ApplyOrderByDescending` fails the first time the specification is created, typically at request time. This rule reports it at compile time instead.
 
-Secondary sorts belong in `ApplyThenBy(selector, descending)` or `ApplyThenByDescending(selector)`.
+Secondary sorts belong in `ApplyThenBy(selector)` or `ApplyThenByDescending(selector)`.
 
 #### What it flags
 
@@ -901,7 +901,7 @@ public sealed class ActiveOrdersSpec : Specification<Order>
     {
         AddCriteria(o => o.IsActive);
         ApplyOrderByDescending(o => o.Total);
-        ApplyThenBy(o => o.CreatedAt, descending: false);
+        ApplyThenBy(o => o.CreatedAt);
     }
 }
 ```
@@ -1461,34 +1461,39 @@ The `sql` argument passed to a `SharedKernel.Persistence.Dapper` query/command m
 
 #### Why it matters
 
-Every query/command method on `DapperReadService`/`DapperCommandService`, and every Dapper `SqlMapper` extension method, takes its SQL as a plain `string` parameter named `sql`. Nothing in the type system stops a caller from building that string with `$"...{value}..."` or string concatenation instead of a parameterized placeholder — the code compiles identically either way, and the difference only shows up as a SQL-injection vulnerability at runtime, against whichever value reaches the interpolated hole. `06.Persistence/CLAUDE.md`'s "parameterized queries only" rule was prose with no compiler enforcement behind it until this analyzer.
+`IDbSession.Command(sql, ...)` (the Dapper session of `SharedKernel.Persistence.Dapper`) and every Dapper `SqlMapper` extension method take their SQL as a plain `string` parameter named `sql`. Nothing in the type system stops a caller from building that string with `$"...{value}..."` or string concatenation instead of a parameterized placeholder — the code compiles identically either way, and the difference only shows up as a SQL-injection vulnerability at runtime, against whichever value reaches the interpolated hole. `06.Persistence/CLAUDE.md`'s "parameterized queries only" rule was prose with no compiler enforcement behind it until this analyzer.
 
 #### What it flags
 
 - An interpolated string passed as the `sql` argument of a matching method — always flagged, since an interpolated string is never a compile-time constant.
 - Any other `sql` argument expression the compiler cannot prove is a compile-time constant (`SemanticModel.GetConstantValue` returns no value) — a plain local variable built earlier by concatenation, a method call, a field that is not `const`, and so on.
-- Matched call sites: an invocation whose target method declares a `string sql` parameter, on `SharedKernel.Persistence.Dapper.ReadModels.DapperReadService`, `SharedKernel.Persistence.Dapper.ReadModels.DapperCommandService` (including through a subclass), or `Dapper.SqlMapper` itself (a caller that bypasses the base classes and calls Dapper directly).
+- Matched call sites: an invocation whose target method declares a `string sql` parameter, on `SharedKernel.Persistence.Dapper.Sessions.IDbSession` or a type implementing it, or on `Dapper.SqlMapper` itself (raw Dapper calls on the session's connection).
 
 #### What it does not flag
 
 - A string literal, a `const` field or local, or a concatenation of only such constants passed as `sql` — the exact case a parameterized query's fixed SQL text is written as.
-- A call to an unrelated method that happens to have a `string sql` parameter but is not declared on `DapperReadService`/`DapperCommandService`/`Dapper.SqlMapper`.
+- A call to an unrelated method that happens to have a `string sql` parameter but is not declared on an `IDbSession` type or `Dapper.SqlMapper`.
 - Every other argument to a matched method (the `parameters` argument is meant to carry caller-supplied values — that is the whole point of a parameterized query).
 
 #### Example
 
 ```csharp
-using SharedKernel.Persistence.Dapper.ReadModels;
+using Dapper;
+using SharedKernel.Persistence.Dapper.Sessions;
 
-public sealed class OrderReadService(IDbConnectionFactory factory) : DapperReadService(factory)
+public sealed class OrderQueries(IDbSessionFactory sessions)
 {
-    public Task<IReadOnlyList<OrderRow>> FindByStatusAsync(string status, CancellationToken ct) =>
-        // Flagged: SK0042 — string interpolation builds the SQL text itself
-        QueryAsync<OrderRow>($"SELECT * FROM orders WHERE status = '{status}'", null, ct: ct);
+    public async Task<IEnumerable<OrderRow>> FindByStatusAsync(string status, CancellationToken ct)
+    {
+        await using var session = await sessions.OpenReadOnlyAsync(ct);
 
-    public Task<IReadOnlyList<OrderRow>> FindByStatusFixedAsync(string status, CancellationToken ct) =>
+        // Flagged: SK0042 — string interpolation builds the SQL text itself
+        // session.Command($"SELECT * FROM orders WHERE status = '{status}'", cancellationToken: ct)
+
         // Compliant — fixed SQL text, the value flows through a real parameter
-        QueryAsync<OrderRow>("SELECT * FROM orders WHERE status = @status", new { status }, ct: ct);
+        return await session.Connection.QueryAsync<OrderRow>(
+            session.Command("SELECT * FROM orders WHERE status = @status", new { status }, ct));
+    }
 }
 ```
 
@@ -2693,26 +2698,24 @@ warning SK0039: Type 'OrderPlaced' has an invalid [IntegrationEvent] attribute: 
 
 **Category:** Design · **Default severity:** Warning
 
-An `OnModelCreating` override on a `TenantedDbContext` subclass must call `base.OnModelCreating(...)` or `ApplyTenantFilters(...)`.
+An `OnModelCreating` override on a `TenantedDbContext` subclass must call `base.OnModelCreating(...)`.
 
 #### Why it matters
 
-`TenantedDbContext.OnModelCreating` installs the global EF Core query filter that limits every query to the current tenant's rows. A subclass that overrides the method and never calls the base implementation removes that filter. Nothing fails: queries still run, they just return every tenant's data.
+`SharedKernelDbContext.OnModelCreating` applies the entity type configurations of the context's assembly, the registered model configurators, the `Money` mapping and client-side key generation. A subclass that overrides the method and never calls the base implementation silently drops all of them: the model builds, but no longer matches what the platform's tenant, audit and encryption configuration expects.
 
-This is a silent cross-tenant data leak, and it is easy to introduce when adding entity configuration to a context.
+The tenant query filter itself no longer depends on the base call — a model-finalizing convention installs it on every `IHasTenant` entity type and fails the model build for any entity type that is neither tenant-scoped nor marked `[TenantShared]`. The rule still guards the rest of the platform model configuration.
 
 #### What it flags
 
-- A method named `OnModelCreating` with the `override` modifier, declared in a class whose base list names `TenantedDbContext` (simple-name match, so `TenantedDbContext`, a qualified `SharedKernel.Persistence.EfCore.MultiTenancy.TenantedDbContext`, or a generic form all count). A nested class inside such a class is checked too.
-- The diagnostic is reported on the method name when its body (block or expression body) contains neither of these invocations:
-  - `base.OnModelCreating(...)`
-  - `ApplyTenantFilters(...)`, called by simple name or through any receiver such as `this.ApplyTenantFilters(...)`
+- A method named `OnModelCreating` with the `override` modifier, declared in a class whose base list names `TenantedDbContext` (simple-name match, so `TenantedDbContext`, a qualified `SharedKernel.Persistence.EfCore.Context.TenantedDbContext`, or a generic form all count). A nested class inside such a class is checked too.
+- The diagnostic is reported on the method name when its body (block or expression body) contains no `base.OnModelCreating(...)` invocation.
 
 #### What it does not flag
 
 - Indirect inheritance. Only the class's own base list is inspected, so `OrderDbContext : AppDbContextBase` is not checked even when `AppDbContextBase : TenantedDbContext` is declared in the same file.
 - Overrides without a body (`abstract` or `extern`).
-- Ordering and reachability. The rule only checks that a qualifying call exists somewhere in the body. A call inside an `if` that never runs, or an `ApplyTenantFilters` call placed before your entity configuration, still passes. `ApplyTenantFilters` only covers the `IHasTenant` entity types already in the model when it runs, so call it after your own configuration.
+- Ordering and reachability. The rule only checks that the call exists somewhere in the body. Call it first.
 
 #### Example
 
@@ -2728,7 +2731,7 @@ public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 ```
 
 ```csharp
-// Compliant: the base call applies assembly configurations, then the tenant filter
+// Compliant: the base call applies the platform model configuration first
 public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -2739,31 +2742,19 @@ public sealed class OrderDbContext(/* ... */) : TenantedDbContext(/* ... */)
 }
 ```
 
-```csharp
-// Compliant: explicit filter registration after custom configuration
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.ApplyConfiguration(new OrderConfiguration());
-    ApplyTenantFilters(modelBuilder);
-}
-```
-
 #### Diagnostic
 
 ```text
-warning SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query filter will be silently removed
+warning SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' — the platform model configuration (entity configurations, Money mapping, key generation) is silently skipped
 ```
 
 #### Suppressing
 
-Suppress only when the tenant filter is installed by a mechanism the syntax check cannot see, and name that mechanism in the justification:
+Suppress only when the base call is made through a helper the syntax check cannot see, and name that helper in the justification:
 
 ```csharp
-#pragma warning disable SK0201 // Tenant filter installed by TenantFilterConvention, registered in ConfigureConventions
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.ApplyConfigurationsFromAssembly(typeof(OrderDbContext).Assembly);
-}
+#pragma warning disable SK0201 // base.OnModelCreating is called by ConfigureOrderingModel
+protected override void OnModelCreating(ModelBuilder modelBuilder) => ConfigureOrderingModel(modelBuilder);
 #pragma warning restore SK0201
 ```
 
@@ -3065,7 +3056,7 @@ A violation fails the test and names every offending type. Every rule is also an
 |---|---|
 | Layering | Dependencies flow downward only: the domain never reaches persistence or messaging, the application layer depends on abstractions |
 | Domain and contracts purity | No infrastructure, clock access or event handlers in the domain; contracts stay behaviour-free DTOs |
-| Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, transactions go through the abstraction |
+| Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, read repositories never track, the shared unit-of-work/caller/audit contracts exist once, persistence namespaces stay consolidated |
 | Provider topology | Abstractions stay free of vendor SDKs, and sibling provider packages (S3 and OBS, Meilisearch and ElasticSearch) never reference each other |
 | Security and cryptography | No per-request identity captured in a singleton, no raw cipher outside the cryptography package |
 | Host composition and health checks | Dependency checks gate readiness rather than liveness, and upward layering exceptions stay confined to their readiness probes |

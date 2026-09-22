@@ -12,13 +12,9 @@ namespace SharedKernel.Domain.Specifications;
 /// entity, so when either operand has no criteria the result has none and matches every entity.
 /// </para>
 /// <para>
-/// <b>Query shape.</b> Includes, string includes and the tracking, split-query and include-deleted flags are
-/// copied as in <see cref="AndSpecification{T}"/>.
-/// </para>
-/// <para>
-/// <b>Pitfall.</b> Ordering, paging and <see cref="ISpecification{T}.IsDistinct"/> are never copied, and the
-/// include-deleted flag of either operand removes every global query filter, tenant isolation included,
-/// from the whole result.
+/// <b>Query shape.</b> Merged exactly as in <see cref="AndSpecification{T}"/>: includes and flags combined,
+/// the single declared ordering carried over, and construction throws when both operands declare a primary
+/// sort or either declares Skip/Take.
 /// </para>
 /// </remarks>
 public sealed class OrSpecification<T> : Specification<T>
@@ -32,7 +28,10 @@ public sealed class OrSpecification<T> : Specification<T>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.
     /// </exception>
-    public OrSpecification(Specification<T> left, Specification<T> right)
+    /// <exception cref="InvalidOperationException">
+    /// Both operands declare a primary sort, or either declares Skip/Take.
+    /// </exception>
+    public OrSpecification(ISpecification<T> left, ISpecification<T> right)
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
@@ -41,10 +40,9 @@ public sealed class OrSpecification<T> : Specification<T>
         {
             var parameter = left.Criteria.Parameters[0];
             var rightBody = new ParameterReplacer(right.Criteria.Parameters[0], parameter).Visit(right.Criteria.Body);
-            AddCriteria(Expression.Lambda<Func<T, bool>>(Expression.OrElse(left.Criteria.Body, rightBody), parameter));
+            AddCriteriaCore(Expression.Lambda<Func<T, bool>>(Expression.OrElse(left.Criteria.Body, rightBody), parameter));
         }
 
-        CopyQueryShapeFrom(left);
-        CopyQueryShapeFrom(right);
+        SpecificationComposition.MergeShape(this, "Or", left, right);
     }
 }

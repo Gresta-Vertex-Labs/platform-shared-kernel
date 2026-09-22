@@ -129,7 +129,7 @@ The rest of the model, by role:
 | --- | --- |
 | Values | `ValueObject`, `SingleValueObject<TValue>`, `StronglyTypedId<TValue>`, `Money`, `Currency` |
 | Decisions | `IBusinessRule` (invariants), `IPolicy<T>` (decisions about a subject) |
-| Queries | `Specification<T>`, `PagedSpecification<T>`, `KeysetSpecification<T, TKey>` |
+| Queries | `Specification<T>`, `Spec.For<T>()`, `ProjectionSpecification<T, TResult>` (paging at the repository call site) |
 | Events | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, `[DomainEventVersion]` |
 | Ports | `IDomainEventDispatcher`, `IExchangeRateProvider` |
 

@@ -1,133 +1,179 @@
+using System.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Domain.Abstractions;
-using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Application.Transactions;
+using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Conventions;
 using SharedKernel.Persistence.EfCore.Diagnostics;
-using SharedKernel.Persistence.EfCore.Options;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
 /// <summary>
-/// EF Core implementation of the unit-of-work commit boundary.
-/// Delegates <see cref="SaveChangesAsync"/> to
-/// <see cref="SharedKernelDbContext.SaveChangesAsync(CancellationToken)"/>.
+/// The unit of work of one specific context. Inject it when a service registers more than one context and
+/// wants to start the transaction on a particular one; otherwise inject the plain <see cref="IUnitOfWork"/>,
+/// which resolves to the first registered context.
+/// </summary>
+/// <typeparam name="TContext">The context this unit of work starts transactions on.</typeparam>
+/// <remarks>
+/// <para>
+/// Every unit of work of a scope shares one transaction: whichever starts it, every context of the scope that
+/// reaches the same database joins it and is saved before the commit (see <see cref="IUnitOfWork"/>).
+/// </para>
+/// <para>
+/// Also resolvable as a keyed <see cref="IUnitOfWork"/> whose key is <c>typeof(TContext)</c>:
+/// <c>[FromKeyedServices(typeof(OrderDbContext))] IUnitOfWork unitOfWork</c>.
+/// </para>
+/// </remarks>
+public interface IUnitOfWork<TContext> : IUnitOfWork
+    where TContext : SharedKernelDbContext
+{
+}
+
+/// <summary>
+/// EF Core implementation of <see cref="IUnitOfWork"/> for one context — the single commit boundary.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the <strong>only</strong> permitted save boundary. Calling
-/// <c>DbContext.SaveChangesAsync</c> directly anywhere outside this class is a hard violation
-/// of the persistence architecture rules.
+/// <strong>Transactions run inside the execution strategy.</strong> <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},IsolationLevel?,CancellationToken)"/>
+/// runs the whole delegate per attempt, so the default Npgsql retry and explicit transactions coexist: a
+/// transient failure replays the delegate. An attempt begins the transaction on this context, moves every other
+/// context of the scope on the same database onto it, publishes it on <see cref="IAmbientDbTransaction"/> (Dapper
+/// and the audit writer enlist), runs the operation, saves every context with changes (each dispatches its domain
+/// events first), runs the <see cref="OnBeforeCommit"/> callbacks (saving again if they staged changes) and
+/// commits. A failed <c>Result</c> or an exception rolls back and clears the change trackers.
 /// </para>
 /// <para>
-/// All three EF Core interceptors (Audit, SoftDelete, Concurrency) fire automatically within
-/// this call before the database commit is issued.
-/// </para>
-/// <para>
-/// <strong>Domain event dispatch:</strong> <see cref="SaveChangesAsync"/> now
-/// dispatches domain events BEFORE the physical database save — see
-/// <see cref="DomainEventDispatchLoop"/> for the full rationale (hard-delete event loss,
-/// double-dispatch on handler failure, and dropped handler writes, all fixed by this reordering).
-/// </para>
-/// <para>
-/// <strong>Opt-in dispatcher:</strong> <c>IDomainEventDispatcher</c> is optional. If no
-/// implementation is registered in DI, events are cleared but not dispatched. The consuming
-/// service opts in by registering an <c>IDomainEventDispatcher</c> implementation alongside
-/// the persistence builder.
-/// </para>
-/// <para>
-/// <strong>Single constructor rule:</strong> This class has exactly one public
-/// constructor. <c>IDomainEventDispatcher?</c> is a nullable optional parameter resolved by the
-/// DI container — DI resolves <see langword="null"/> when no implementation is registered and
-/// resolves the registered implementation when present. Adding a second constructor is a hard
-/// violation: the DI container may silently select the shorter constructor and skip the dispatcher.
-/// </para>
-/// <para>
-/// <strong>05.Application bridge:</strong> this class no longer implements
-/// <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> directly — that dual-interface
-/// bridge moved to <c>13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence</c>,
-/// which is legally positioned to reference both this package and <c>05.Application.Behaviors</c>. Its
-/// adapter wraps this package's own <see cref="SharedKernel.Persistence.Abstractions.UnitOfWork.IUnitOfWork"/>
-/// rather than casting to a concrete type — the fix for a confirmed pre-existing defect where the old
-/// direct-cast registration threw <see cref="InvalidCastException"/> whenever
-/// <c>WithTransactionalUnitOfWork()</c> was also enabled (the resolved instance was an
-/// <see cref="EfTransactionalUnitOfWork"/>, which never implemented the dual interface).
-/// </para>
-/// <para>
-/// <strong>Transient-fault retry-exhaustion logging:</strong>
-/// <see cref="SaveChangesAsync"/> catches
-/// <see cref="Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException"/> — the exception
-/// type EF Core's own <c>ExecutionStrategy</c> throws (confirmed empirically) when the DbContext's
-/// configured retrying execution strategy exhausts every attempt, wrapping the final underlying
-/// failure as <see cref="Exception.InnerException"/> — logs a <c>TransientRetryExhausted</c>
-/// Warning (EventId <c>6008</c>), then rethrows unchanged. Catching this specific exception TYPE,
-/// rather than gating a broad <c>catch (Exception)</c> on <c>RetriesOnFailure</c>, is deliberate:
-/// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>-derived conflicts (and
-/// any other non-transient failure) are never retried by the execution strategy's own
-/// <c>ShouldRetryOn</c> predicate, so they never produce a <c>RetryLimitExceededException</c>
-/// wrapper — a broader catch would have misreported every concurrency conflict as a retry
-/// exhaustion whenever retry happened to be configured. This has no effect when no retrying
-/// execution strategy is configured at all — that shape of exception is never thrown in that case.
+/// <strong>Retry safety:</strong> the trackers are cleared before each retried attempt, never before the first.
+/// Under a retrying strategy, changes staged before the call would be lost on a retry, so the call refuses to
+/// start in that case. A <c>COMMIT</c> that fails without a server response is never retried
+/// (<see cref="CommitOutcomeUnknownException"/>).
 /// </para>
 /// </remarks>
-public sealed class EfUnitOfWork : IUnitOfWork
+#pragma warning disable RS0026 // Mirrors IUnitOfWork's overload set.
+internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
+    where TContext : SharedKernelDbContext
 {
-    private readonly SharedKernelDbContext _dbContext;
-    private readonly IDomainEventDispatcher? _dispatcher;
-    private readonly ILogger<EfUnitOfWork> _logger;
-    private readonly TransientFaultRetryOptions? _retryOptions;
+    private readonly TContext _dbContext;
+    private readonly ILogger _logger;
+    private readonly UnitOfWorkCoordinator _coordinator;
 
-    /// <summary>
-    /// Initialises a new <see cref="EfUnitOfWork"/>.
-    /// </summary>
-    /// <param name="dbContext">The scoped shared-kernel DB context.</param>
-    /// <param name="dispatcher">
-    /// Optional dispatcher for domain events raised during the save cycle.
-    /// Resolved by DI as a nullable service — <see langword="null"/> when
-    /// <c>IDomainEventDispatcher</c> is not registered; the concrete implementation when
-    /// registered. Never supply a second constructor — see class remarks.
-    /// </param>
-    /// <param name="logger">
-    /// Optional logger for the <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>).
-    /// Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/>
-    /// otherwise.
-    /// </param>
-    /// <param name="retryOptions">
-    /// Optional discoverability options registered by
-    /// <c>EfCorePersistenceBuilder.WithTransientFaultRetry(...)</c>, consulted only to compute the
-    /// <c>AttemptCount</c> value logged alongside <c>TransientRetryExhausted</c>
-    /// (<c>MaxRetryCount + 1</c>). When <see langword="null"/> (retry was enabled solely via
-    /// <c>UsePostgreSQL(..., maxRetryCount)</c> without also calling
-    /// <c>.WithTransientFaultRetry()</c>), <c>AttemptCount</c> is logged as <c>1</c> — the exact
-    /// configured count is not discoverable through any public EF Core API in that case.
-    /// </param>
     public EfUnitOfWork(
-        SharedKernelDbContext dbContext,
-        IDomainEventDispatcher? dispatcher = null,
-        ILogger<EfUnitOfWork>? logger = null,
-        TransientFaultRetryOptions? retryOptions = null)
+        TContext dbContext,
+        ILogger<EfUnitOfWork<TContext>>? logger = null,
+        IAmbientDbTransaction? ambientTransaction = null,
+        UnitOfWorkCoordinator? coordinator = null)
+        : this(dbContext, (ILogger?)logger ?? NullLogger.Instance, ambientTransaction, coordinator)
     {
+    }
+
+    internal EfUnitOfWork(TContext dbContext, ILogger logger, IAmbientDbTransaction? ambientTransaction, UnitOfWorkCoordinator? coordinator = null)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+
         _dbContext = dbContext;
-        _dispatcher = dispatcher;
-        _logger = logger ?? NullLogger<EfUnitOfWork>.Instance;
-        _retryOptions = retryOptions;
+        _logger = logger;
+        _coordinator = coordinator ?? new UnitOfWorkCoordinator(ambientTransaction as AmbientDbTransactionAccessor);
+        _coordinator.Track(dbContext);
     }
 
     /// <inheritdoc />
-    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        // Dispatch runs BEFORE the physical save — see DomainEventDispatchLoop.
-        await DomainEventDispatchLoop.RunAsync(_dbContext, _dispatcher, cancellationToken);
+    public bool IsTransactionActive => _coordinator.IsActive;
 
+    /// <inheritdoc />
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        WithRetryExhaustionLoggingAsync(() => _coordinator.SaveChangesAsync(_dbContext, cancellationToken), ConfiguredAttemptCount);
+
+    /// <inheritdoc />
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, isolationLevel: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        return ExecuteInTransactionAsync<object?>(
+            async token =>
+            {
+                await operation(token);
+                return null;
+            },
+            isolationLevel,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default)
+        => ExecuteInTransactionAsync(operation, isolationLevel: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        IsolationLevel? isolationLevel,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        return _coordinator.IsActive
+            ? _coordinator.ExecuteInTransactionAsync(_dbContext, operation, isolationLevel, cancellationToken)
+            : WithRetryExhaustionLoggingAsync(
+                () => _coordinator.ExecuteInTransactionAsync(_dbContext, operation, isolationLevel, cancellationToken),
+                ConfiguredAttemptCount);
+    }
+
+    /// <inheritdoc />
+    public void OnBeforeCommit(Func<CancellationToken, Task> callback) => _coordinator.OnBeforeCommit(callback);
+
+    private int ConfiguredAttemptCount()
+        => (_dbContext.GetService<IDbContextOptions>()
+            .FindExtension<PostgresConventionsOptionsExtension>()?.MaxRetryCount ?? 0) + 1;
+
+    // Only RetryLimitExceededException: a concurrency conflict or any other non-transient failure is never
+    // retried, so a broader catch would misreport it as a retry exhaustion.
+    private async Task<TResult> WithRetryExhaustionLoggingAsync<TResult>(Func<Task<TResult>> operation, Func<int> attemptCount)
+    {
         try
         {
-            return await _dbContext.SaveChangesAsync(cancellationToken);
+            return await operation();
         }
         catch (RetryLimitExceededException ex)
         {
-            PersistenceLog.TransientRetryExhausted(_logger, ex, (_retryOptions?.MaxRetryCount ?? 0) + 1);
+            PersistenceLog.TransientRetryExhausted(_logger, ex, attemptCount());
             throw;
         }
+    }
+}
+#pragma warning restore RS0026
+
+/// <summary>Non-generic construction helper for code that holds a context of a statically unknown type (tests, tools).</summary>
+internal sealed class EfUnitOfWork
+{
+    private EfUnitOfWork()
+    {
+    }
+
+    /// <summary>
+    /// Creates the unit of work of <paramref name="context"/>, attaching <paramref name="dispatcher"/> to the
+    /// context (domain events are dispatched by the context itself before each save).
+    /// </summary>
+    public static EfUnitOfWork<TContext> For<TContext>(
+        TContext context,
+        SharedKernel.Domain.Abstractions.IDomainEventDispatcher? dispatcher = null,
+        ILogger? logger = null,
+        IAmbientDbTransaction? ambientTransaction = null,
+        UnitOfWorkCoordinator? coordinator = null)
+        where TContext : SharedKernelDbContext
+    {
+        context.AttachLease(context.RequestContext, dispatcher, context.CrossTenantScope);
+        return new EfUnitOfWork<TContext>(context, logger ?? NullLogger.Instance, ambientTransaction, coordinator);
     }
 }

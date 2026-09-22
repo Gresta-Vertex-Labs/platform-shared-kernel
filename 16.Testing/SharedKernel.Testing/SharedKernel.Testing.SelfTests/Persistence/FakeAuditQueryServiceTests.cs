@@ -1,325 +1,123 @@
-using SharedKernel.Persistence.Abstractions.Auditing;
+using FluentAssertions;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Persistence.Abstractions.Context;
-using SharedKernel.Testing.Clocks;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Testing.SelfTests.Persistence;
 
-/// <summary>
-/// Proves <see cref="FakeAuditQueryService"/> against <c>06.Persistence.Abstractions</c>'s
-/// <c>IAuditQueryService</c> contract — no consuming domain has adopted this fake yet, so this
-/// self-test is the only behavioral proof today, per the SelfTests routing rule.
-/// </summary>
 public sealed class FakeAuditQueryServiceTests
 {
-    [Fact]
-    public async Task GetResourceHistoryAsync_ReturnsOnlyMatchingResource_OrderedOldestFirst()
+    private static readonly Guid TenantA = Guid.NewGuid();
+    private static readonly Guid TenantB = Guid.NewGuid();
+
+    private static async Task<FakeAuditTrailWriter> SeedAsync(FakeAuditActorContext context, params string[] resourceIds)
     {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-1"));
-        await writer.RecordAsync(Entry("Order", "order-2")); // different resource — excluded
-
-        var spec = new AuditResourceHistorySpecification(
-            "Order", "order-1", afterSequence: null, afterId: null, descending: false, take: 10);
-
-        var history = await query.GetResourceHistoryAsync(spec);
-
-        Assert.Equal(2, history.Items.Count);
-        Assert.Equal(first.Id, history.Items[0].Id);
-        Assert.Equal(second.Id, history.Items[1].Id);
-        Assert.False(history.HasMore);
-    }
-
-    [Fact]
-    public async Task GetResourceHistoryAsync_DifferentTenant_Excluded()
-    {
-        var writer = new FakeAuditTrailWriter(new FakeAuditActorContext(tenantId: Guid.NewGuid()));
-        await writer.RecordAsync(Entry("Order", "order-1"));
-
-        // A query service resolving a DIFFERENT tenant must see nothing — tenant scoping is applied
-        // by the query service itself, never by the (tenant-agnostic) specification.
-        var query = new FakeAuditQueryService(writer, new FakeAuditActorContext(tenantId: Guid.NewGuid()));
-        var spec = new AuditResourceHistorySpecification(
-            "Order", "order-1", afterSequence: null, afterId: null, descending: false, take: 10);
-
-        var history = await query.GetResourceHistoryAsync(spec);
-
-        Assert.Empty(history.Items);
-    }
-
-    [Fact]
-    public async Task GetResourceHistoryAsync_Descending_ReturnsNewestFirst()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-1"));
-
-        var spec = new AuditResourceHistorySpecification(
-            "Order", "order-1", afterSequence: null, afterId: null, descending: true, take: 10);
-
-        var history = await query.GetResourceHistoryAsync(spec);
-
-        Assert.Equal(second.Id, history.Items[0].Id);
-        Assert.Equal(first.Id, history.Items[1].Id);
-    }
-
-    [Fact]
-    public async Task GetResourceHistoryAsync_RespectsTake_AndReportsHasMore()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        for (var i = 0; i < 5; i++)
+        var writer = new FakeAuditTrailWriter(context);
+        foreach (var id in resourceIds)
         {
-            await writer.RecordAsync(Entry("Order", "order-1"));
+            await writer.RecordAsync(new AuditEntry { Action = "Updated", ResourceType = "Order", ResourceId = id, Outcome = AuditOutcome.Succeeded });
         }
 
-        var spec = new AuditResourceHistorySpecification(
-            "Order", "order-1", afterSequence: null, afterId: null, descending: false, take: 2);
-
-        var history = await query.GetResourceHistoryAsync(spec);
-
-        Assert.Equal(2, history.Items.Count);
-        Assert.True(history.HasMore);
+        return writer;
     }
 
     [Fact]
-    public async Task GetResourceHistoryAsync_CursorSeek_SkipsAlreadySeenPage()
+    public async Task QueryAsync_ReturnsOnlyTheCallersTenant()
     {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
+        var context = new FakeAuditActorContext(tenantId: TenantA);
+        var writer = await SeedAsync(context, "o-1");
+        context.TenantId = TenantB;
+        await writer.RecordAsync(new AuditEntry { Action = "Updated", ResourceType = "Order", ResourceId = "o-1", Outcome = AuditOutcome.Succeeded });
+        context.TenantId = TenantA;
 
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-1"));
-        var third = await writer.RecordAsync(Entry("Order", "order-1"));
+        var page = await new FakeAuditQueryService(writer, context).QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = "o-1" });
 
-        var firstPageSpec = new AuditResourceHistorySpecification(
-            "Order", "order-1", afterSequence: null, afterId: null, descending: false, take: 1);
-        var firstPage = await query.GetResourceHistoryAsync(firstPageSpec);
-        Assert.Equal(first.Id, firstPage.Items[0].Id);
-        Assert.True(firstPage.HasMore);
-
-        var secondPageSpec = new AuditResourceHistorySpecification(
-            "Order", "order-1",
-            afterSequence: firstPage.Items[0].Sequence, afterId: firstPage.Items[0].Id, descending: false, take: 10);
-        var secondPage = await query.GetResourceHistoryAsync(secondPageSpec);
-
-        Assert.Equal(2, secondPage.Items.Count);
-        Assert.Equal(second.Id, secondPage.Items[0].Id);
-        Assert.Equal(third.Id, secondPage.Items[1].Id);
-        Assert.False(secondPage.HasMore);
+        page.Items.Should().ContainSingle().Which.TenantId.Should().Be(TenantA);
     }
 
     [Fact]
-    public async Task GetActorActionsAsync_ReturnsOnlyMatchingActor()
+    public async Task QueryAsync_PagesWithCursor()
     {
-        var clock = new FakeClock();
-        var actorContext = new FakeAuditActorContext(actorId: "actor-1");
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext, clock);
-        var query = new FakeAuditQueryService(writer, actorContext);
+        var context = new FakeAuditActorContext(tenantId: TenantA);
+        var writer = await SeedAsync(context, "a", "b", "c");
+        var service = new FakeAuditQueryService(writer, context);
 
-        var recorded = await writer.RecordAsync(Entry("Order", "order-1"));
+        var first = await service.QueryAsync(new AuditRecordQuery { ResourceType = "Order", Limit = 2 });
+        var second = await service.QueryAsync(new AuditRecordQuery { ResourceType = "Order", Limit = 2, Cursor = first.NextCursor });
 
-        // Same writer/backing store, same tenant — a different actor's action must be excluded.
-        actorContext.ActorId = "actor-2";
-        clock.Advance(TimeSpan.FromMinutes(1));
-        await writer.RecordAsync(Entry("Order", "order-2"));
-
-        var spec = new AuditActorActionsSpecification(
-            "actor-1", afterKey: null, afterId: null, descending: false, take: 10);
-
-        var actions = await query.GetActorActionsAsync(spec);
-
-        Assert.Single(actions.Items);
-        Assert.Equal(recorded.Id, actions.Items[0].Id);
+        first.HasMore.Should().BeTrue();
+        second.Items.Should().ContainSingle();
+        first.Items.Concat(second.Items).Select(r => r.Id).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]
-    public async Task GetResourceHistoryAcrossTenantsAsync_WithoutActiveScope_Throws()
+    public async Task QueryAcrossTenantsAsync_RequiresAnActiveScope()
+    {
+        var context = new FakeAuditActorContext(tenantId: TenantA);
+        var writer = await SeedAsync(context, "a");
+
+        await new FakeAuditQueryService(writer, context)
+            .Invoking(s => s.QueryAcrossTenantsAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = "a" }))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        var active = new ActiveScope();
+        (await new FakeAuditQueryService(writer, context, active).QueryAcrossTenantsAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = "a" }))
+            .Items.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task VerifyChainAsync_ContiguousChain_IsIntact_AndCountsErasedPayloads()
+    {
+        var context = new FakeAuditActorContext(tenantId: TenantA);
+        var writer = await SeedAsync(context, "a", "b");
+        writer.ErasePayload(writer.Records[0].Id);
+        var service = new FakeAuditQueryService(writer, context);
+
+        var result = await service.VerifyChainAsync("Order");
+        result.IsIntact.Should().BeTrue();
+        result.ErasedPayloads.Should().Be(1);
+
+        (await service.VerifyChainAsync("Order", requirePayloads: true)).FailureKind.Should().Be(AuditVerificationFailureKind.PayloadErased);
+    }
+
+    [Fact]
+    public async Task VerifyChainAsync_Gap_ReportsSequenceGap()
+    {
+        var context = new FakeAuditActorContext(tenantId: TenantA);
+        var writer = await SeedAsync(context, "a", "b", "c");
+        writer.Seed(writer.Records.Where(r => r.Sequence != 2));
+
+        var result = await new FakeAuditQueryService(writer, context).VerifyChainAsync("Order");
+
+        result.Status.Should().Be(AuditVerificationStatus.Broken);
+        result.FailureKind.Should().Be(AuditVerificationFailureKind.SequenceGap);
+        result.FailedAtSequence.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task VerifyChainFromCheckpointAsync_IsNotSupported()
     {
         var writer = new FakeAuditTrailWriter();
-        var query = new FakeAuditQueryService(writer);
+        var checkpoint = new AuditChainCheckpoint
+        {
+            Id = Guid.NewGuid(), ResourceType = "Order", Sequence = 1, HeadMac = [1], CreatedOn = DateTimeOffset.UtcNow, SigningKeyId = "k", Signature = [1],
+        };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await query.GetResourceHistoryAcrossTenantsAsync("Order", "order-1", afterId: null, descending: false, take: 10));
+        await new FakeAuditQueryService(writer).Invoking(s => s.VerifyChainFromCheckpointAsync(checkpoint)).Should().ThrowAsync<NotSupportedException>();
     }
 
-    [Fact]
-    public async Task GetResourceHistoryAcrossTenantsAsync_WithActiveScope_SeesEveryTenant()
+    private sealed class ActiveScope : ICrossTenantScope
     {
-        var writerA = new FakeAuditTrailWriter(new FakeAuditActorContext(tenantId: Guid.NewGuid()));
-        var recordA = await writerA.RecordAsync(Entry("Order", "order-1"));
+        public bool IsActive => true;
 
-        var scope = new CrossTenantScope();
-        var query = new FakeAuditQueryService(writerA, crossTenantScope: scope);
+        public IDisposable Enter(string reason) => new NoopDisposable();
 
-        using (scope.Enter())
+        private sealed class NoopDisposable : IDisposable
         {
-            var result = await query.GetResourceHistoryAcrossTenantsAsync(
-                "Order", "order-1", afterId: null, descending: false, take: 10);
-
-            Assert.Single(result.Items);
-            Assert.Equal(recordA.Id, result.Items[0].Id);
+            public void Dispose()
+            {
+            }
         }
     }
-
-    [Fact]
-    public async Task ExportRangeAsync_StreamsChainInSequenceOrder()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-2"));
-
-        var exported = new List<AuditRecord>();
-        await foreach (var record in query.ExportRangeAsync(
-            "Order", DateTimeOffset.MinValue, DateTimeOffset.MaxValue))
-        {
-            exported.Add(record);
-        }
-
-        Assert.Equal(2, exported.Count);
-        Assert.Equal(first.Id, exported[0].Id);
-        Assert.Equal(second.Id, exported[1].Id);
-    }
-
-    [Fact]
-    public async Task VerifyFullChainAsync_IntactChain_ReportsIntact()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        await writer.RecordAsync(Entry("Order", "order-1"));
-        await writer.RecordAsync(Entry("Order", "order-2"));
-
-        var result = await query.VerifyFullChainAsync("Order");
-
-        Assert.True(result.IsIntact);
-        Assert.Equal(2, result.RecordsChecked);
-        Assert.Null(result.BrokenAtRecordId);
-    }
-
-    [Fact]
-    public async Task VerifyFullChainAsync_TamperedRecordHash_ReportsBroken()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var record = await writer.RecordAsync(Entry("Order", "order-1"));
-        var tampered = record with { ActorId = "someone-else" }; // RecordHash no longer matches recomputation
-        writer.Seed([tampered]);
-
-        var result = await query.VerifyFullChainAsync("Order");
-
-        Assert.False(result.IsIntact);
-        Assert.Equal(tampered.Id, result.BrokenAtRecordId);
-    }
-
-    [Fact]
-    public async Task VerifyFullChainAsync_BrokenLink_ReportsBrokenAtSecondRecord()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-2"));
-
-        // Re-seed the second record with a PreviousRecordHash that does not match the first's
-        // RecordHash — a broken link, distinct from a tampered-content break. RecordHash is left
-        // correctly recomputed so ONLY the link check (not the content-tamper check) can fire.
-        var brokenPreviousHash = "not-the-real-previous-hash";
-        var brokenSecond = second with { PreviousRecordHash = brokenPreviousHash };
-        // Recompute RecordHash so the forged record is internally self-consistent — proving
-        // VerifyFullChainAsync catches a broken CHAIN LINK specifically, not merely a
-        // corrupted-field hash mismatch (see FakeAuditTrailWriter.ComputeHash's own remarks).
-        brokenSecond = brokenSecond with { RecordHash = FakeAuditTrailWriter.ComputeHash(brokenSecond) };
-        writer.Seed([first, brokenSecond]);
-
-        var result = await query.VerifyFullChainAsync("Order");
-
-        Assert.False(result.IsIntact);
-        Assert.Equal(brokenSecond.Id, result.BrokenAtRecordId);
-        Assert.Equal(2, result.RecordsChecked);
-    }
-
-    [Fact]
-    public async Task VerifyFullChainAsync_GapInSequence_ReportsBroken()
-    {
-        var actorContext = new FakeAuditActorContext();
-        var writer = new FakeAuditTrailWriter(actorContext, actorContext);
-        var query = new FakeAuditQueryService(writer, actorContext);
-
-        var first = await writer.RecordAsync(Entry("Order", "order-1"));
-        var second = await writer.RecordAsync(Entry("Order", "order-2"));
-
-        // Delete the middle of a 3-record chain by seeding only records 1 and 3 (re-labelled 2 here
-        // for a simple 2-record scenario): a gap must be detected even though every remaining
-        // record's own hash and link are individually self-consistent.
-        var thirdLookingLikeSecond = second with { Sequence = 3 };
-        writer.Seed([first, thirdLookingLikeSecond with { RecordHash = FakeAuditTrailWriter.ComputeHash(thirdLookingLikeSecond) }]);
-
-        var result = await query.VerifyFullChainAsync("Order");
-
-        Assert.False(result.IsIntact);
-        Assert.Equal(2, result.BrokenAtSequence);
-    }
-
-    [Fact]
-    public async Task VerifyFullChainAsync_NoRecords_ReportsIntactZeroChecked()
-    {
-        var writer = new FakeAuditTrailWriter();
-        var query = new FakeAuditQueryService(writer);
-
-        var result = await query.VerifyFullChainAsync("Order");
-
-        Assert.True(result.IsIntact);
-        Assert.Equal(0, result.RecordsChecked);
-    }
-
-    [Fact]
-    public async Task VerifyChainFromCheckpointAsync_NotSupported_Throws()
-    {
-        var writer = new FakeAuditTrailWriter();
-        var query = new FakeAuditQueryService(writer);
-
-        await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await query.VerifyChainFromCheckpointAsync(
-                new AuditChainCheckpoint
-                {
-                    Id = Guid.NewGuid(),
-                    ResourceType = "Order",
-                    Sequence = 1,
-                    RecordHash = "hash",
-                    CreatedOn = DateTimeOffset.UtcNow,
-                    SigningKeyId = "test",
-                    Signature = [],
-                },
-                null));
-    }
-
-    [Fact]
-    public void Constructor_NullWriter_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new FakeAuditQueryService(null!));
-
-    private static AuditEntry Entry(string resourceType, string resourceId) => new()
-    {
-        Action = "Action",
-        ResourceType = resourceType,
-        ResourceId = resourceId,
-        Outcome = AuditOutcome.Succeeded,
-    };
 }

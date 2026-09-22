@@ -9,6 +9,7 @@ way a real microservice would.
 | Sample | Domains exercised | External infrastructure |
 |---|---|---|
 | [`OrderApi`](OrderApi/) | `01.Core`, `03.Domain`, `05.Application`, `13.ServiceDefaults`, `14.Presentation` | none |
+| [`BillingApi`](BillingApi/) | `06.Persistence` (all six packages + `SharedKernel.Persistence.Testing`), `01.Core`, `03.Domain`, `05.Application`, `12.Security`, `13.ServiceDefaults`, `14.Presentation` | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
 
 ## Why these use PackageReference
 

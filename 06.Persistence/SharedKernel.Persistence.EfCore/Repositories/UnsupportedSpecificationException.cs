@@ -1,5 +1,6 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Persistence.Abstractions.Repositories;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -8,7 +9,7 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// that have no meaning for a single server-side <c>ExecuteUpdate</c>/<c>ExecuteDelete</c> statement
 /// is passed to <see cref="IBulkMutationRepository{TAggregate, TId}"/>.
 /// </summary>
-public sealed class UnsupportedSpecificationException : SharedKernelException
+internal sealed class UnsupportedSpecificationException : SharedKernelException
 {
     /// <summary>
     /// Initialises a new <see cref="UnsupportedSpecificationException"/> with the given reason.

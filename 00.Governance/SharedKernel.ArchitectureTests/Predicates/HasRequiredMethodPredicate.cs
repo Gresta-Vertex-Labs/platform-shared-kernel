@@ -20,14 +20,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// as passing unconditionally — the predicate self-scopes.
 /// </para>
 /// <para>
-/// <strong>Prefix collision note:</strong> when using the prefix <c>"IRepository"</c>,
-/// the predicate will also match <c>"IReadRepository"</c>-implementing types because
-/// <c>"IReadRepository"</c> starts with <c>"IRepository"</c>. Callers that need to
-/// distinguish write-side from read-side must use the longer prefix <c>"IReadRepository"</c>
-/// for the read-side rule and rely on the longer prefix not matching write-side types. For
-/// the write-side rule, the implementation explicitly excludes <c>"IReadRepository"</c>
-/// implementors — see <see cref="Rules.RepositoryContractCompletenessRules"/> for the
-/// exact scoping.
+/// <strong>Prefix matching:</strong> ordinal <c>StartsWith</c> on the interface's simple name, so
+/// <c>"IReadRepository"</c> and <c>"IRepository"</c> select disjoint interface sets.
 /// </para>
 /// <para>
 /// <strong>Failure message:</strong>
@@ -42,7 +36,6 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
 {
     private readonly string _interfaceNamePrefix;
     private readonly string _requiredMethodName;
-    private readonly bool _excludeReadRepository;
 
     /// <summary>
     /// Initialises a new instance of <see cref="HasRequiredMethodPredicate"/>.
@@ -55,20 +48,12 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
     /// The exact method name that must be present in <see cref="TypeDefinition.Methods"/>
     /// (e.g., <c>"ExistsAsync"</c> or <c>"GetByIdsAsync"</c>).
     /// </param>
-    /// <param name="excludeReadRepository">
-    /// When <see langword="true"/>, types that implement an <c>IReadRepository</c>-prefixed
-    /// interface are excluded from the scope even if they also implement an
-    /// <c>IRepository</c>-prefixed interface. Set to <see langword="true"/> when using the
-    /// <c>"IRepository"</c> prefix to target write-side repositories only.
-    /// </param>
     public HasRequiredMethodPredicate(
         string interfaceNamePrefix,
-        string requiredMethodName,
-        bool excludeReadRepository = false)
+        string requiredMethodName)
     {
         _interfaceNamePrefix = interfaceNamePrefix;
         _requiredMethodName = requiredMethodName;
-        _excludeReadRepository = excludeReadRepository;
     }
 
     /// <summary>
@@ -83,17 +68,38 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
     /// </returns>
     public bool MeetsRule(TypeDefinition type)
     {
-        if (!ImplementsTargetInterface(type))
+        // Interfaces (e.g. IRepository : IReadRepository) are contracts, not implementations.
+        if (type.IsInterface || !ImplementsTargetInterface(type))
             return true;
 
-        foreach (var method in type.Methods)
+        // The method may be declared on the type or inherited from a base class (EfRepository inherits
+        // GetByIdsAsync from EfReadRepository). Explicit implementations are named "Namespace.IFoo.Method".
+        for (var current = type; current is not null; current = TryResolveBase(current))
         {
-            if (string.Equals(method.Name, _requiredMethodName, System.StringComparison.Ordinal))
-                return true;
+            foreach (var method in current.Methods)
+            {
+                if (string.Equals(method.Name, _requiredMethodName, System.StringComparison.Ordinal)
+                    || method.Name.EndsWith("." + _requiredMethodName, System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
         }
 
-        // Type is in scope but does not declare the required method — violation.
+        // Type is in scope but neither declares nor inherits the required method — violation.
         return false;
+    }
+
+    private static TypeDefinition? TryResolveBase(TypeDefinition type)
+    {
+        try
+        {
+            return type.BaseType?.Resolve();
+        }
+        catch (AssemblyResolutionException)
+        {
+            return null; // a base type outside the resolvable assemblies (e.g. System.Object's assembly)
+        }
     }
 
     private bool ImplementsTargetInterface(TypeDefinition type)
@@ -106,13 +112,6 @@ public sealed class HasRequiredMethodPredicate : ICustomRule
         foreach (var iface in type.Interfaces)
         {
             var ifaceName = iface.InterfaceType.Name;
-
-            // Optionally exclude IReadRepository implementors from write-side check.
-            if (_excludeReadRepository
-                && ifaceName.StartsWith("IReadRepository", System.StringComparison.Ordinal))
-            {
-                return false;
-            }
 
             if (ifaceName.StartsWith(_interfaceNamePrefix, System.StringComparison.Ordinal))
                 matchesPrefix = true;

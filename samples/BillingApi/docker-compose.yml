@@ -1,0 +1,51 @@
+# The BillingApi sample as it runs in production: four database roles (docker/init-roles.sql, the canonical script of
+# SharedKernel.Persistence.Npgsql), the service connecting as the least-privileged one, migrations applied at startup
+# by the owner role, the audit sealer on its own role, every startup check in fail-closed (Production) mode.
+#
+#   # 1. build the image from the packed SharedKernel packages (no Dockerfile: the .NET SDK builds it)
+#   dotnet publish BillingApi.csproj -c Release -t:PublishContainer -p:ContainerRepository=billing-api -p:ContainerImageTag=local
+#   # 2. run database + API on http://localhost:8080
+#   docker compose up -d
+#   # 3. exercise it end to end
+#   ./smoke-test.sh
+#
+# `docker compose up -d db` alone gives the database for `dotnet run` (appsettings.Development.json, port 5433).
+name: billing-sample
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres-dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./docker/init-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d billing"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: billing-api:local
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # A container network hop is not loopback, so TLS defaults to VerifyFull. This local database has no certificate:
+      # say so explicitly (SSL Mode=Disable) and acknowledge it per data source — production keeps VerifyFull.
+      ConnectionStrings__billing: "Host=db;Database=billing;Username=app_runtime;Password=runtime-dev;SSL Mode=Disable"
+      ConnectionStrings__audit-sealer: "Host=db;Database=billing;Username=app_audit_sealer;Password=sealer-dev;SSL Mode=Disable"
+      SharedKernel__Persistence__billing__MigrationConnectionString: "Host=db;Database=billing;Username=app_migrator;Password=migrator-dev;SSL Mode=Disable"
+      SharedKernel__Persistence__billing__RowLevelSecurity__CrossTenantConnectionString: "Host=db;Database=billing;Username=app_cross_tenant;Password=cross-tenant-dev;SSL Mode=Disable"
+      SharedKernel__Persistence__billing__AcknowledgeInsecureSslMode: "true"
+      SharedKernel__Persistence__audit-sealer__AcknowledgeInsecureSslMode: "true"
+      # DEVELOPMENT-ONLY key material (the same as appsettings.Development.json). Production: a secret store.
+      SharedKernel__Persistence__Auditing__Keys__k1__Material: "H01/neWL3422YSnGQOTmM1Td15lOJYeYDsrj2UOSGt8="
+      SharedKernel__Persistence__Encryption__Keys__Keys__root-1: "+vPQGz9zMkR9gSJzRGn36uuP1mkZZGeUi2YWStgLQgY="
+      SharedKernel__Persistence__Encryption__BlindIndexKeys__Keys__v1: "H95n4aIXS7S5WLI6SnwxNGQxbK4tuKxULEi9+hN7xKs="
+      Billing__MasterKey__Material: "bHwjyOgicu5MhRXmHD9NmoBrk5L6mitxctky6SDMtKU="

@@ -68,12 +68,13 @@ handler succeeds              -> commit, then audit, then cache eviction, in tha
 
 ## The packages
 
-Three packages, split strictly by what each one forces on a consumer. A service that only wants the vocabulary
+Four packages, split strictly by what each one forces on a consumer. A service that only wants the vocabulary
 should not inherit FluentValidation; a service that wants behaviors should not inherit a cache.
 
 | Package | What you get | Beyond `Microsoft.Extensions.*` |
 | --- | --- | --- |
-| [**Application**](SharedKernel.Application/README.md) | `ICommand`, `ICommand<T>`, `IQuery<T>`, `IStreamQuery<T>` and their handler aliases; the `IRequestContext` seam with ready-made `SystemRequestContext`/`AnonymousRequestContext`; the domain-event → MediatR bridge | MediatR, SharedKernel.Primitives, SharedKernel.Domain |
+| [**Application.Abstractions**](SharedKernel.Application.Abstractions/README.md) | The contracts the pipeline shares with infrastructure — `IRequestContext` (+ `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext`), the one `IUnitOfWork`, `IAuditTrailWriter`/`AuditEntry`. `06.Persistence` and `13.ServiceDefaults.Security` implement them, so nothing needs an adapter | SharedKernel.Primitives only |
+| [**Application**](SharedKernel.Application/README.md) | `ICommand`, `ICommand<T>`, `IQuery<T>`, `IStreamQuery<T>` and their handler aliases; the domain-event → MediatR bridge (it type-forwards `IRequestContext` and friends from `.Abstractions`) | MediatR, SharedKernel.Primitives, SharedKernel.Domain, SharedKernel.Application.Abstractions |
 | [**Application.Behaviors**](SharedKernel.Application.Behaviors/README.md) | Eight behaviors — Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing — plus `ICommandScope`, `PipelineStage` and `AddBehavior` for your own. **No cache, no Polly, no hosting** | FluentValidation |
 | [**Application.Behaviors.Caching**](SharedKernel.Application.Behaviors.Caching/README.md) | Query caching over `ICacheableQuery<TValue>` and post-commit eviction over `IInvalidatesCache`, partitioned by query type, tenant and caller | SharedKernel.Caching.Abstractions |
 
@@ -167,11 +168,10 @@ services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>()
 services.AddValidatorsFromAssemblyContaining<Program>();
 services.AddSharedKernelApplication();                                        // domain-event bridge
 
-// Bridge each local seam to real infrastructure — this is the only place the layers meet.
-services.AddScoped<IRequestContext, HttpRequestContext>();                    // -> 12.Security
-services.AddScoped<IUnitOfWork, EfUnitOfWork>();                              // -> 06.Persistence
+// Infrastructure implements the shared contracts itself — no adapters.
+services.AddSharedKernelRequestContext();                                     // 13.ServiceDefaults.Security -> IRequestContext
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // 06 -> IUnitOfWork, IAuditTrailWriter
 services.AddScoped<IRequestIdempotencyStore, RedisIdempotencyStore>();        // -> 18.Idempotency
-services.AddScoped<IAuditTrailWriter, PersistenceAuditTrailWriter>();         // -> 06.Persistence
 services.AddSharedKernelCaching(o => o.ServiceName = "orders");               // -> 02.Caching
 
 services.AddSharedKernelApplicationBehaviors()
@@ -209,7 +209,7 @@ flowchart TB
     Handler["Handler"]
 
     Req --> Tracing --> Logging --> Metrics --> Authz --> Valid --> QueryStage
-    QueryStage -->|command| Scope --> Idem --> Txn --> Audit --> CmdStage --> Handler
+    QueryStage -->|command| Scope --> Idem --> Audit --> Txn --> CmdStage --> Handler
     QueryStage -->|query, skips the command stage| Handler
 
     style Tracing fill:#512BD4,color:#fff,stroke:#2d1780
@@ -260,13 +260,13 @@ sequenceDiagram
     Txn->>H: next()
     H->>Sender: Send(InnerCommand)
     Sender->>Scope: Enter, depth 2, IsNested true
-    Scope->>H2: next() (Idempotency and Transaction skip straight through when IsNested)
+    Scope->>H2: next() (Idempotency skips when IsNested; Transaction joins the running transaction)
     H2->>Scope: OnCompleted(callback)
     H2-->>Sender: Result success
     Scope->>Scope: Exit, merges the callback into the depth-1 frame
     Sender-->>H: Result success
     H-->>Txn: Result success
-    Txn->>UoW: SaveChangesAsync
+    Txn->>UoW: ExecuteInTransactionAsync saves, then commits (the handler ran inside it)
     Txn-->>Idem: Result success
     Idem->>Idem: CompleteAsync stores the serialized response
     Idem-->>Scope: Result success
@@ -284,10 +284,10 @@ than the real contract it stands for. Your service implements the bridge at its 
 
 | Seam | In | Bridges to |
 | --- | --- | --- |
-| `IRequestContext` | Application | `12.Security.Abstractions`' `IUserContext` / `ITenantProvider` |
-| `IUnitOfWork` | Application.Behaviors | `06.Persistence.Abstractions.IUnitOfWork` |
+| `IRequestContext` | Application.Abstractions | `13.ServiceDefaults.Security` (`AddSharedKernelRequestContext()`, over `12.Security`), or your own |
+| `IUnitOfWork` | Application.Abstractions | `06.Persistence.EfCore` — implemented directly |
 | `IRequestIdempotencyStore` | Application.Behaviors | `18.Idempotency`, or your own store |
-| `IAuditTrailWriter` | Application.Behaviors | `06.Persistence.Abstractions.IAuditTrailWriter` |
+| `IAuditTrailWriter` | Application.Abstractions | `06.Persistence.EfCore.Auditing` — implemented directly |
 
 This is one pattern applied four times, not four patterns. It is what keeps this layer buildable and testable with
 no infrastructure package on disk — every test project here references only the package it tests.
@@ -374,10 +374,10 @@ services.AddDomainEventHandler<OrderPlacedDomainEvent, SendConfirmationHandler>(
 | **MediatR is the abstraction** | `ICommand`/`IQuery<T>` are thin vocabulary over `IRequest<TResponse>`. There is no second mediator underneath, and no wrapper you have to learn |
 | **No response envelope** | Handlers return `Result`/`Result<T>` only. `14.Presentation` maps a failure to RFC 9457 ProblemDetails; `11.Communication` maps it back |
 | **A short-circuit is a `Result` failure, never an exception** | Unauthorized, invalid and duplicate are foreseeable outcomes, not faults. Every behavior short-circuits by constructing a failed response |
-| **Local seams, never a reference to the real thing** | Four minimal interfaces this layer owns, bridged at your composition root |
+| **Seams, never a reference to the real thing** | Four minimal interfaces this layer owns; infrastructure implements them (three live in `.Abstractions` so persistence can, without MediatR) |
 | **Fixed pipeline order** | `Build()` registers in the same five-stage order whatever order you called things in |
 | **Missing prerequisites fail at startup** | Opting into an infrastructure-gated behavior without its seam throws at `Build()`, naming the type |
-| **Only the outermost command commits** | Nested commands skip idempotency and transaction logic entirely; one logical operation, one commit |
+| **Only the outermost command commits** | Nested commands skip idempotency and join the running transaction (a nested failure makes it rollback-only); one logical operation, one commit |
 | **Structured logging** | `[LoggerMessage]` with `EventId`s from this layer's range, 5000-5999, one 100-wide block per package |
 | **Documented, tracked public API** | Every package ships XML docs and fails the build on an undocumented public member or an untracked API change |
 
@@ -452,14 +452,14 @@ VOCABULARY  ICommand : IRequest<Result>          ICommand<T> : IRequest<Result<T
             IQuery<T> : IRequest<Result<T>>      IStreamQuery<T> (no behaviors apply)
             ICommandBase / IQueryBase = zero-member markers behaviors constrain on.
             Handlers: ICommandHandler<C> | ICommandHandler<C,T> | IQueryHandler<Q,T>. ALWAYS return Result/Result<T>.
-SEAMS       IRequestContext (Application) -> 12.Security. IUnitOfWork, IRequestIdempotencyStore, IAuditTrailWriter
-            (Behaviors) -> 06.Persistence / 18.Idempotency. Bridge each at the composition root.
+SEAMS       IRequestContext, IUnitOfWork, IAuditTrailWriter (Application.Abstractions) -> implemented by 13.ServiceDefaults
+            .Security / 06.Persistence directly. IRequestIdempotencyStore (Behaviors) -> 18.Idempotency.
 PIPELINE    Fixed order, outermost first, independent of call order:
               Observability : Tracing, Logging, Metrics
               Authorization : AuthorizationBehavior
               Validation    : ValidationBehavior
               Query         : caching behavior (custom Query-stage behaviors)
-              Command       : CommandScope, Idempotency, Transaction, Auditing, cache invalidation
+              Command       : CommandScope, Idempotency, Auditing (Failed), Transaction, Auditing (Succeeded), cache invalidation
             Queries SKIP the command stage. Registration order != post-next() execution order: first registered is
             outermost, so its post-next() code runs LAST.
 REGISTER    services.AddSharedKernelApplicationBehaviors()

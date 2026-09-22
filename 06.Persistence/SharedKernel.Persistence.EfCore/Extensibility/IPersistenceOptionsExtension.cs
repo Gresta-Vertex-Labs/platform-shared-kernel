@@ -16,7 +16,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// this interface) only when <c>!optionsBuilder.Options.IsFrozen</c> — true for a non-pooled context,
 /// never for a pooled one, since a pooled context's options are frozen before
 /// <see cref="Context.SharedKernelDbContext.OnConfiguring"/> ever runs.
-/// <c>EfCorePersistenceBuilder{TContext}.Build()</c>'s pooled-factory callback calls the SAME
+/// the pooled-factory callback of <c>AddSharedKernelPostgres</c> calls the SAME
 /// <c>PersistenceContextDependencies.ApplyTo</c> method directly instead, against the pool's own
 /// <c>optionsAction</c>, before freezing — so both paths funnel through the identical application
 /// logic and cannot silently drift apart. <c>SharedKernel.Persistence.EfCore.Encryption</c> uses this
@@ -25,7 +25,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// <see cref="Context.SharedKernelDbContext"/> knowing encryption exists.
 /// </para>
 /// </remarks>
-public interface IPersistenceOptionsExtension
+internal interface IPersistenceOptionsExtension
 {
     /// <summary>Applies this extension's mutation to <paramref name="optionsBuilder"/>.</summary>
     void Apply(DbContextOptionsBuilder optionsBuilder);

@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Specifications;
-using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -278,213 +277,6 @@ public sealed class BulkWriteTests
 // Projection read tests (C-35, T-19)
 // ---------------------------------------------------------------------------
 
-internal sealed class TestProjectionSpec : Specification<TestAggregate>,
-    IProjectionSpecification<TestAggregate, TestAggregateDto>
-{
-    public System.Linq.Expressions.Expression<Func<TestAggregate, TestAggregateDto>> Selector { get; }
-        = e => new TestAggregateDto(e.Name);
-
-    public TestProjectionSpec(string? nameFilter = null)
-    {
-        if (nameFilter is not null)
-            AddCriteria(e => e.Name == nameFilter);
-        ApplyNoTracking();
-    }
-}
-
-internal sealed class PagedProjectionSpec : PagedSpecification<TestAggregate>,
-    IProjectionSpecification<TestAggregate, TestAggregateDto>
-{
-    public System.Linq.Expressions.Expression<Func<TestAggregate, TestAggregateDto>> Selector { get; }
-        = e => new TestAggregateDto(e.Name);
-
-    public PagedProjectionSpec(int page, int pageSize) : base(page, pageSize)
-    {
-        ApplyOrderBy(e => e.Name!);
-        ApplyNoTracking();
-    }
-}
-
-public sealed class ProjectionReadTests
-{
-    [Fact]
-    public async Task ListProjectedAsync_ReturnsProjectedResults()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        ctx.TestAggregates.AddRange(
-            new TestAggregate(TestId.New(), "P1", new SystemClock()),
-            new TestAggregate(TestId.New(), "P2", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListProjectedAsync(new TestProjectionSpec());
-
-        result.Should().HaveCount(2);
-        result.Should().AllBeOfType<TestAggregateDto>();
-    }
-
-    [Fact]
-    public async Task GetBySpecProjectedAsync_WithMatch_ReturnsProjectedResult()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        ctx.TestAggregates.Add(new TestAggregate(TestId.New(), "Target", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.GetBySpecProjectedAsync(new TestProjectionSpec("Target"));
-
-        result.Should().NotBeNull();
-        result!.Name.Should().Be("Target");
-    }
-
-    [Fact]
-    public async Task GetBySpecProjectedAsync_WithNoMatch_ReturnsNull()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.GetBySpecProjectedAsync(new TestProjectionSpec("DoesNotExist"));
-
-        result.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task ListProjectedAsync_PagedSpec_SelectAppliedAfterPaging()
-    {
-        // 10 items, page 2 of size 3 → items 4,5,6
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        for (var i = 1; i <= 10; i++)
-            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i:D2}", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListProjectedAsync(new PagedProjectionSpec(page: 2, pageSize: 3));
-
-        result.Should().HaveCount(3);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ListPagedAsync tests (C-37, T-20)
-// ---------------------------------------------------------------------------
-
-internal sealed class AllItemsPagedSpec : PagedSpecification<TestAggregate>
-{
-    public AllItemsPagedSpec(int page, int pageSize) : base(page, pageSize)
-    {
-        ApplyOrderBy(e => e.Name!);
-    }
-}
-
-internal sealed class AllItemsUnpagedSpec : Specification<TestAggregate>
-{
-    public AllItemsUnpagedSpec() => ApplyOrderBy(e => e.Name!);
-}
-
-internal sealed class AllItemsSkipTakeSpec : Specification<TestAggregate>
-{
-    public AllItemsSkipTakeSpec(int skip, int take)
-    {
-        ApplyOrderBy(e => e.Name!);
-        ApplyPaging(skip, take);
-    }
-}
-
-public sealed class ListPagedAsyncTests
-{
-    [Fact]
-    public async Task ListPagedAsync_ReturnsCorrectItemsAndTotalCount()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        for (var i = 1; i <= 10; i++)
-            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i:D2}", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListPagedAsync(new AllItemsPagedSpec(page: 1, pageSize: 4));
-
-        result.Items.Should().HaveCount(4);
-        result.TotalCount.Should().Be(10);
-        result.Page.Should().Be(1);
-        result.PageSize.Should().Be(4);
-        result.HasNextPage.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task ListPagedAsync_EmptySet_TotalCountZero()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-
-        var result = await readRepo.ListPagedAsync(new AllItemsPagedSpec(page: 1, pageSize: 10));
-
-        result.TotalCount.Should().Be(0);
-        result.Items.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task ListPagedAsync_PageBeyondData_EmptyItemsCorrectTotal()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        ctx.TestAggregates.Add(new TestAggregate(TestId.New(), "Only1", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListPagedAsync(new AllItemsPagedSpec(page: 2, pageSize: 10));
-
-        result.Items.Should().BeEmpty();
-        result.TotalCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task ListPagedAsync_SpecWithoutTake_ReturnsEverythingAsOneFullPage()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        for (var i = 1; i <= 5; i++)
-            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i}", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListPagedAsync(new AllItemsUnpagedSpec());
-
-        result.Items.Should().HaveCount(5);
-        result.Page.Should().Be(1);
-        result.PageSize.Should().Be(5, "a specification with no Take is reported as a single page");
-        result.TotalCount.Should().Be(5L);
-        result.HasNextPage.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task ListPagedAsync_SkipTakeSpec_DerivesPageFromSkipAndTake()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        for (var i = 1; i <= 10; i++)
-            ctx.TestAggregates.Add(new TestAggregate(TestId.New(), $"Item{i:D2}", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.ListPagedAsync(new AllItemsSkipTakeSpec(skip: 4, take: 2));
-
-        result.Items.Should().HaveCount(2);
-        result.Page.Should().Be(3);
-        result.PageSize.Should().Be(2);
-        result.TotalCount.Should().Be(10L);
-        result.TotalPages.Should().Be(5L);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// IncludeDeleted evaluator tests (C-39, T-22)
-// ---------------------------------------------------------------------------
-
 public sealed class IncludeDeletedTests
 {
     [Fact]
@@ -545,45 +337,6 @@ public sealed class IncludeDeletedTests
 // ByIdSpecification tests (C-40, T-23)
 // ---------------------------------------------------------------------------
 
-public sealed class ByIdSpecificationTests
-{
-    [Fact]
-    public async Task ByIdSpecification_MatchesCorrectAggregate()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-        var id = TestId.New();
-        ctx.TestAggregates.AddRange(
-            new TestAggregate(id, "Target", new SystemClock()),
-            new TestAggregate(TestId.New(), "Other", new SystemClock()));
-        await ctx.SaveChangesAsync();
-        ctx.ChangeTracker.Clear();
-
-        var result = await readRepo.GetBySpecAsync(
-            new SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TestAggregate, TestId>(id));
-
-        result.Should().NotBeNull();
-        result!.Id.Should().Be(id);
-        result.Name.Should().Be("Target");
-    }
-
-    [Fact]
-    public async Task ByIdSpecification_NoMatch_ReturnsNull()
-    {
-        using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new ExtendedTestReadRepository(ctx);
-
-        var result = await readRepo.GetBySpecAsync(
-            new SharedKernel.Persistence.Abstractions.Specifications.ByIdSpecification<TestAggregate, TestId>(TestId.New()));
-
-        result.Should().BeNull();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Domain event dispatch tests (C-38, T-21)
-// ---------------------------------------------------------------------------
-
 public sealed class DomainEventDispatchTests
 {
     [Fact]
@@ -592,7 +345,7 @@ public sealed class DomainEventDispatchTests
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatched = new List<IDomainEvent>();
         var dispatcher = new CaptureDispatcher(dispatched);
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "EventTest", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -608,7 +361,7 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_WithoutDispatcher_ClearsEventsWithoutDispatch()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx);
+        var uow = EfUnitOfWork.For(ctx);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "NoDispatch", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -630,7 +383,7 @@ public sealed class DomainEventDispatchTests
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatchCounts = new List<int>();
         var dispatcher = new CountingDispatcher(dispatchCounts);
-        var uow = new EfUnitOfWork(ctx, dispatcher);
+        var uow = EfUnitOfWork.For(ctx, dispatcher);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "DoubleDispatch", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -660,7 +413,7 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_DispatchFailure_NothingIsCommitted()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new EfUnitOfWork(ctx, new ThrowingDispatcher());
+        var uow = EfUnitOfWork.For(ctx, new ThrowingDispatcher());
 
         var id = TestId.New();
         var aggregate = new AuditableTestAggregate(id, "DispatchFail", new SystemClock());
@@ -689,7 +442,7 @@ public sealed class DomainEventDispatchTests
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
         var dispatched = new List<IDomainEvent>();
-        var uow = new EfUnitOfWork(ctx, new CaptureDispatcher(dispatched));
+        var uow = EfUnitOfWork.For(ctx, new CaptureDispatcher(dispatched));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "ToHardDelete", new SystemClock());
         ctx.AuditableAggregates.Add(aggregate);

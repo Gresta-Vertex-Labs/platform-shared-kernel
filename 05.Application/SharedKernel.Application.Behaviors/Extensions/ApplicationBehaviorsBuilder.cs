@@ -8,9 +8,11 @@ using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
 using SharedKernel.Application.Behaviors.Metrics;
+using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Behaviors.Validation;
 using SharedKernel.Application.Context;
+using SharedKernel.Application.Transactions;
 
 namespace SharedKernel.Application.Behaviors.Extensions;
 
@@ -270,14 +272,14 @@ public sealed class ApplicationBehaviorsBuilder
         if (_transaction && !IsRegistered(typeof(IUnitOfWork)))
         {
             throw new InvalidOperationException(
-                "AddTransactionBehavior() requires SharedKernel.Application.Behaviors.Transaction.IUnitOfWork " +
+                "AddTransactionBehavior() requires SharedKernel.Application.Transactions.IUnitOfWork " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 
         if (_auditing && !IsRegistered(typeof(IAuditTrailWriter)))
         {
             throw new InvalidOperationException(
-                "AddAuditingBehavior() requires SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter " +
+                "AddAuditingBehavior() requires SharedKernel.Application.Auditing.IAuditTrailWriter " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 
@@ -328,9 +330,11 @@ public sealed class ApplicationBehaviorsBuilder
         // ---- Query stage: no built-in of its own — custom entries only (e.g. CachingBehavior). ----
         RegisterCustom(PipelineStage.Query);
 
-        // ---- Command stage: CommandScope, then Idempotency, Transaction, Auditing, then custom
-        // entries (e.g. CacheInvalidationBehavior). CommandScopeBehavior is registered only when
-        // the command stage is genuinely active — with nothing in it, there is nothing to sequence.
+        // ---- Command stage: CommandScope, Idempotency, Auditing (failures — outside the
+        // transaction), Transaction, AuditingCommit (success — inside the transaction, via the unit
+        // of work's pre-commit hook), then custom entries (e.g. CacheInvalidationBehavior).
+        // CommandScopeBehavior is registered only when the command stage is genuinely active — with
+        // nothing in it, there is nothing to sequence.
         var commandStageActive = _idempotency || _transaction || _auditing
             || _customBehaviors[PipelineStage.Command].Count > 0;
 
@@ -340,11 +344,14 @@ public sealed class ApplicationBehaviorsBuilder
         if (_idempotency)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehavior<,>));
 
+        if (_auditing)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));
+
         if (_transaction)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
         if (_auditing)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingCommitBehavior<,>));
 
         RegisterCustom(PipelineStage.Command);
 

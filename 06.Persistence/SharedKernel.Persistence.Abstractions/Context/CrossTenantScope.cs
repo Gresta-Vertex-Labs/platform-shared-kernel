@@ -1,59 +1,81 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Application.Context;
+
 namespace SharedKernel.Persistence.Abstractions.Context;
 
 /// <summary>
-/// <see cref="System.Threading.AsyncLocal{T}"/>-backed default implementation of
-/// <see cref="ICrossTenantScope"/>.
+/// The default <see cref="ICrossTenantScope"/>: the active state belongs to this instance — one per
+/// dependency-injection scope — and the actor is taken from that scope's <see cref="IRequestContext"/>.
 /// </summary>
 /// <remarks>
-/// BCL-only, zero reflection. <see cref="Enter(string?)"/> is the sole way to activate the scope —
-/// the returned <see cref="IDisposable"/> deactivates it on disposal, and nested calls compose
-/// (the innermost disposal only deactivates the scope once every entry has been disposed).
-/// Registered as a singleton by <c>EfCorePersistenceBuilder.Build()</c> unless the consuming service
-/// already registered its own <see cref="ICrossTenantScope"/>.
+/// <para>
+/// The state is a counter on the instance, not a flow-local (<see cref="AsyncLocal{T}"/>) value, so an entry
+/// made anywhere in the scope — including inside an awaited helper method — is visible to every component of
+/// that scope (repositories, the EF Core context, Dapper sessions, the audit services) until the handle is
+/// disposed, and never to another scope. The former flow-local design lost an entry made inside an
+/// <see langword="async"/> method as soon as that method returned.
+/// </para>
+/// <para>
+/// The container creates one per scope (<c>AddSharedKernelCrossTenantScope</c>, called by
+/// <c>AddSharedKernelPostgres</c> and <c>AddSharedKernelDapper</c>). Constructing one yourself creates an
+/// independent bypass that only what you hand it to observes; a context created through
+/// <c>ICallerDbContextFactory</c> already carries its own (<c>SharedKernelDbContext.CrossTenantScope</c>).
+/// </para>
+/// <para>
+/// Each <see cref="Enter(string)"/> is logged at Information level (EventId 6150) with the actor, its
+/// kind, the tenant it acted from and the reason, and counted on the <c>"SharedKernel.Persistence"</c>
+/// meter (<c>persistence.cross_tenant_scope_entries</c>, tagged with the actor kind only, which keeps the
+/// cardinality bounded). Thread-safe.
+/// </para>
 /// </remarks>
 public sealed class CrossTenantScope : ICrossTenantScope
 {
-    private readonly AsyncLocal<int> _depth = new();
+    private readonly IRequestContext _requestContext;
+    private readonly ILogger _logger;
+    private int _depth;
+
+    /// <summary>Initialises a new, inactive <see cref="CrossTenantScope"/>.</summary>
+    /// <param name="requestContext">The caller that enters the bypass.</param>
+    /// <param name="logger">Optional logger for the entry record.</param>
+    /// <remarks>The container creates one per scope (<c>AddSharedKernelCrossTenantScope</c>); construct one yourself only in tests.</remarks>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public CrossTenantScope(IRequestContext requestContext, ILogger<CrossTenantScope>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        _requestContext = requestContext;
+        _logger = logger ?? (ILogger)NullLogger.Instance;
+    }
 
     /// <inheritdoc />
-    public bool IsActive => _depth.Value > 0;
+    public bool IsActive => Volatile.Read(ref _depth) > 0;
 
-    /// <summary>
-    /// Activates the cross-tenant bypass for the scope of the returned <see cref="IDisposable"/>.
-    /// </summary>
-    /// <param name="actorId">
-    /// The identity of the caller requesting the bypass (e.g. an admin user id, or a background job's
-    /// name), recorded on the <c>"SharedKernel.Persistence"</c> meter's
-    /// <c>persistence.cross_tenant_scope_entries</c> counter as the
-    /// <c>persistence.actor_id</c> tag. <see langword="null"/> is recorded as <c>"unknown"</c> — still
-    /// counted, but with no attribution, so a caller that skips this parameter is visible as a gap in
-    /// its own audit trail rather than silently uncounted.
-    /// </param>
-    /// <returns>A handle that deactivates the bypass when disposed.</returns>
-    /// <remarks>
-    /// Every call is recorded — including a nested/re-entrant call while a scope is already active —
-    /// because each call site represents an independent decision to request the bypass, not merely a
-    /// depth-counter increment.
-    /// </remarks>
-    public IDisposable Enter(string? actorId = null)
+    /// <inheritdoc />
+    public IDisposable Enter(string reason)
     {
-        _depth.Value++;
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        var actorId = _requestContext.UserId is { Length: > 0 } userId ? userId : "anonymous";
+        var actorKind = _requestContext.ActorKind;
+
+        Interlocked.Increment(ref _depth);
+
+        CrossTenantScopeLog.Entered(_logger, actorId, actorKind, _requestContext.TenantId, reason);
         CrossTenantScopeDiagnostics.ScopeEntries.Add(
-            1, new KeyValuePair<string, object?>(CrossTenantScopeDiagnostics.ActorIdTag, actorId ?? "unknown"));
+            1, new KeyValuePair<string, object?>(CrossTenantScopeDiagnostics.ActorKindTag, actorKind.ToString()));
+
         return new ScopeHandle(this);
     }
 
     private sealed class ScopeHandle(CrossTenantScope owner) : IDisposable
     {
-        private bool _disposed;
+        private int _disposed;
 
         public void Dispose()
         {
-            if (_disposed)
-                return;
-
-            _disposed = true;
-            owner._depth.Value--;
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                Interlocked.Decrement(ref owner._depth);
         }
     }
 }

@@ -1,6 +1,8 @@
 using System.Data;
-using Dapper;
+using System.Text.Json.Serialization;
 using FluentAssertions;
+using Npgsql;
+using NpgsqlTypes;
 using NSubstitute;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.Dapper.TypeHandlers;
@@ -8,23 +10,19 @@ using SharedKernel.Primitives.Enums;
 
 namespace SharedKernel.Persistence.Dapper.Tests.TypeHandlers;
 
-// ---------------------------------------------------------------------------
-// Test strongly-typed ID
-// ---------------------------------------------------------------------------
-
 public sealed record TestOrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 {
     public static TestOrderId New() => new(Guid.NewGuid());
 }
 
-public sealed class TestOrderIdHandler : StronglyTypedIdTypeHandler<TestOrderId, Guid>
+public sealed record TestSequenceId : StronglyTypedId<long>
 {
-    protected override TestOrderId FromValue(Guid value) => new(value);
-}
+    private TestSequenceId(long value) : base(value)
+    {
+    }
 
-// ---------------------------------------------------------------------------
-// Test SmartEnum
-// ---------------------------------------------------------------------------
+    public static TestSequenceId From(long value) => new(value);
+}
 
 public sealed class TestStatus : SmartEnum<TestStatus, int>
 {
@@ -34,93 +32,88 @@ public sealed class TestStatus : SmartEnum<TestStatus, int>
     private TestStatus(string name, int value) : base(name, value) { }
 }
 
-public sealed class TestStatusHandler : SmartEnumTypeHandler<TestStatus, int> { }
+public sealed record TestAddress(string Street, string City);
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+[JsonSerializable(typeof(TestAddress))]
+public sealed partial class TestJsonContext : JsonSerializerContext;
 
-/// <summary>
-/// T-39(5-6): StronglyTypedIdTypeHandler and SmartEnumTypeHandler unit tests.
-/// </summary>
+/// <summary>The generic Dapper type handlers and <see cref="DapperConfiguration"/>.</summary>
+[Collection(DapperConfigurationCollection.Name)]
 public sealed class TypeHandlerTests
 {
-    // -----------------------------------------------------------------------
-    // StronglyTypedIdTypeHandler
-    // -----------------------------------------------------------------------
+    [Fact]
+    public void StronglyTypedId_DefaultFactory_UsesThePublicConstructor()
+    {
+        var handler = new StronglyTypedIdTypeHandler<TestOrderId, Guid>();
+        var value = Guid.NewGuid();
+
+        handler.Parse(value).Should().Be(new TestOrderId(value));
+    }
 
     [Fact]
-    public void StronglyTypedIdTypeHandler_SetValue_Writes_UnderlyingValue()
+    public void StronglyTypedId_WithoutAPublicConstructor_RequiresAFactory()
     {
-        var handler = new TestOrderIdHandler();
+        var act = () => new StronglyTypedIdTypeHandler<TestSequenceId, long>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*factory*");
+        new StronglyTypedIdTypeHandler<TestSequenceId, long>(TestSequenceId.From).Parse(7).Value.Should().Be(7);
+    }
+
+    [Fact]
+    public void StronglyTypedId_ConvertsAWiderProviderValue_AndWritesTheUnderlyingValue()
+    {
+        var handler = new StronglyTypedIdTypeHandler<TestSequenceId, long>(TestSequenceId.From);
+        handler.Parse(7).Value.Should().Be(7L);
+
         var parameter = Substitute.For<IDbDataParameter>();
-        var id = new TestOrderId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
+        handler.SetValue(parameter, TestSequenceId.From(9));
+        parameter.Received(1).Value = 9L;
 
-        handler.SetValue(parameter, id);
-
-        parameter.Received(1).Value = Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+        handler.SetValue(parameter, null);
+        parameter.Received(1).Value = DBNull.Value;
     }
 
     [Fact]
-    public void StronglyTypedIdTypeHandler_Parse_Returns_CorrectId()
+    public void SmartEnum_RoundTrips_AndRejectsUnknownValues()
     {
-        var handler = new TestOrderIdHandler();
-        var expectedGuid = Guid.NewGuid();
-
-        var result = handler.Parse(expectedGuid);
-
-        result.Should().BeOfType<TestOrderId>();
-        result.Value.Should().Be(expectedGuid);
-    }
-
-    // -----------------------------------------------------------------------
-    // SmartEnumTypeHandler
-    // -----------------------------------------------------------------------
-
-    [Fact]
-    public void SmartEnumTypeHandler_SetValue_Writes_UnderlyingValue()
-    {
-        var handler = new TestStatusHandler();
+        var handler = new SmartEnumTypeHandler<TestStatus, int>();
         var parameter = Substitute.For<IDbDataParameter>();
 
         handler.SetValue(parameter, TestStatus.Active);
-
-        parameter.Received(1).Value = (object)1;
-    }
-
-    [Fact]
-    public void SmartEnumTypeHandler_Parse_Returns_CorrectMember()
-    {
-        var handler = new TestStatusHandler();
-
-        var result = handler.Parse(2);
-
-        result.Should().NotBeNull();
-        result.Name.Should().Be("Inactive");
-        result.Value.Should().Be(2);
-    }
-
-    [Fact]
-    public void SmartEnumTypeHandler_Parse_UnknownValue_Throws()
-    {
-        var handler = new TestStatusHandler();
+        parameter.Received(1).Value = 1;
+        handler.Parse(2).Should().Be(TestStatus.Inactive);
+        handler.Parse(2L).Should().Be(TestStatus.Inactive);
 
         var act = () => handler.Parse(99);
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*TestStatus*99*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*TestStatus*99*");
     }
 
-    // -----------------------------------------------------------------------
-    // DapperTypeHandlers
-    // -----------------------------------------------------------------------
+    [Fact]
+    public void Jsonb_WritesJsonbTypedSourceGeneratedJson_AndReadsItBack()
+    {
+        var handler = new JsonbTypeHandler<TestAddress>(TestJsonContext.Default.TestAddress);
+        var parameter = new NpgsqlParameter();
+
+        handler.SetValue(parameter, new TestAddress("Main 1", "Izmir"));
+
+        parameter.NpgsqlDbType.Should().Be(NpgsqlDbType.Jsonb);
+        parameter.Value.Should().Be("""{"Street":"Main 1","City":"Izmir"}""");
+        handler.Parse("""{"Street":"Main 1","City":"Izmir"}""").Should().Be(new TestAddress("Main 1", "Izmir"));
+    }
 
     [Fact]
-    public void DapperTypeHandlers_Register_IsIdempotent()
+    public void Configuration_MatchNamesWithUnderscores_IsOnByDefault_AndCanBeTurnedOff()
     {
-        // Should not throw on repeated calls
-        DapperTypeHandlers.Register();
-        DapperTypeHandlers.Register();
-        DapperTypeHandlers.Register();
+        try
+        {
+            DapperConfiguration.Apply(b => b.MatchNamesWithUnderscores(false));
+            global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores.Should().BeFalse();
+        }
+        finally
+        {
+            DapperConfiguration.Apply();
+        }
+
+        global::Dapper.DefaultTypeMap.MatchNamesWithUnderscores.Should().BeTrue();
     }
 }

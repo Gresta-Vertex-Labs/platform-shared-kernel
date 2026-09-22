@@ -8,32 +8,26 @@ using SharedKernel.Persistence.Npgsql.Diagnostics;
 namespace SharedKernel.Persistence.Npgsql.Coordination;
 
 /// <summary>
-/// PostgreSQL implementation of <see cref="IMigrationLock"/> using session-level advisory locks
-/// (<c>pg_try_advisory_lock</c>/<c>pg_advisory_unlock</c>).
+/// PostgreSQL implementation of <see cref="IMigrationLock"/> using a session-level advisory lock
+/// (<c>pg_try_advisory_lock</c>/<c>pg_advisory_unlock</c>) held on one dedicated connection.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A session-level advisory lock is held by ONE dedicated
-/// connection for the lock's whole lifetime — it is released either explicitly
-/// (<c>pg_advisory_unlock</c>) or implicitly when that connection closes. This implementation opens
-/// a fresh connection per <see cref="AcquireAsync"/> call, outside the shared
-/// <see cref="NpgsqlDataSource"/> pool's normal open/close-per-operation lifecycle, and keeps it open
-/// for the returned handle's entire lifetime — releasing and closing it together in
-/// <see cref="IAsyncDisposable.DisposeAsync"/>.
+/// The lock name is namespaced with <see cref="AdvisoryLockKeys.MigrationNamespace"/> before hashing, so
+/// it never collides with an application's own advisory locks.
 /// </para>
 /// <para>
-/// <c>pg_advisory_lock</c> (the blocking form) has no built-in timeout, so this implementation polls
-/// <c>pg_try_advisory_lock</c> (the non-blocking form) at a short fixed interval until either the lock
-/// is acquired or <paramref name="timeout"/> in <see cref="AcquireAsync"/> elapses.
+/// A session-level lock needs the same server session for its whole lifetime, which a transaction-mode
+/// pooler (PgBouncer) does not guarantee. <c>AddSharedKernelNpgsql</c> therefore builds this lock on the
+/// <c>MigrationConnectionString</c> data source when one is configured — point it at the database
+/// directly, not at the pooler.
 /// </para>
 /// <para>
-/// <see cref="AcquireAsync"/>'s <c>lockKey</c> string is hashed deterministically to the
-/// <see cref="long"/> key PostgreSQL's advisory-lock functions require — the same string always
-/// produces the same key across process restarts and replicas, which is the whole point of a
-/// cross-replica coordination lock.
+/// The lock is polled with the non-blocking <c>pg_try_advisory_lock</c> until it is acquired or the
+/// timeout elapses.
 /// </para>
 /// </remarks>
-public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
+internal sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
@@ -41,8 +35,8 @@ public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
     private readonly ILogger<NpgsqlAdvisoryMigrationLock> _logger;
 
     /// <summary>Initialises a new <see cref="NpgsqlAdvisoryMigrationLock"/>.</summary>
-    /// <param name="dataSource">The data source a dedicated lock-holding connection is opened from.</param>
-    /// <param name="logger">Optional logger. Falls back to <see cref="NullLogger{T}"/>.</param>
+    /// <param name="dataSource">The data source the dedicated lock-holding connection is opened from.</param>
+    /// <param name="logger">Optional logger.</param>
     public NpgsqlAdvisoryMigrationLock(
         NpgsqlDataSource dataSource,
         ILogger<NpgsqlAdvisoryMigrationLock>? logger = null)
@@ -60,33 +54,34 @@ public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(lockKey);
 
-        long key = AdvisoryLockKeyHasher.Compute(lockKey);
-        var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var lockName = AdvisoryLockKeys.Migration(lockKey);
+        var key = AdvisoryLockKeys.ToKey(lockName);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var stopwatch = Stopwatch.StartNew();
         try
         {
             while (true)
             {
-                if (await TryAdvisoryLockAsync(connection, key, cancellationToken))
+                if (await TryAdvisoryLockAsync(connection, key, cancellationToken).ConfigureAwait(false))
                 {
-                    _logger.AdvisoryMigrationLockAcquired(lockKey, stopwatch.ElapsedMilliseconds);
-                    return new NpgsqlAdvisoryLockHandle(connection, key, lockKey, _logger);
+                    _logger.AdvisoryMigrationLockAcquired(lockName, stopwatch.ElapsedMilliseconds);
+                    return new LockHandle(connection, key, lockName, _logger);
                 }
 
                 if (stopwatch.Elapsed >= timeout)
                 {
-                    _logger.AdvisoryMigrationLockTimedOut(lockKey, (long)timeout.TotalMilliseconds);
+                    _logger.AdvisoryMigrationLockTimedOut(lockName, (long)timeout.TotalMilliseconds);
                     throw new TimeoutException(
-                        $"Advisory migration lock '{lockKey}' was not acquired within {timeout}.");
+                        $"Advisory migration lock '{lockName}' was not acquired within {timeout}.");
                 }
 
-                await Task.Delay(PollInterval, cancellationToken);
+                await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
             }
         }
         catch
         {
-            await connection.DisposeAsync();
+            await connection.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -100,29 +95,17 @@ public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
         command.CommandText = "SELECT pg_try_advisory_lock($1)";
         command.Parameters.Add(new NpgsqlParameter { Value = key });
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is bool acquired && acquired;
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is true;
     }
 
-    private sealed class NpgsqlAdvisoryLockHandle : IAsyncDisposable
+    private sealed class LockHandle(
+        NpgsqlConnection connection,
+        long key,
+        string lockName,
+        ILogger logger) : IAsyncDisposable
     {
-        private readonly NpgsqlConnection _connection;
-        private readonly long _key;
-        private readonly string _lockKey;
-        private readonly ILogger _logger;
         private bool _disposed;
-
-        public NpgsqlAdvisoryLockHandle(
-            NpgsqlConnection connection,
-            long key,
-            string lockKey,
-            ILogger logger)
-        {
-            _connection = connection;
-            _key = key;
-            _lockKey = lockKey;
-            _logger = logger;
-        }
 
         public async ValueTask DisposeAsync()
         {
@@ -133,15 +116,15 @@ public sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
 
             try
             {
-                await using var command = _connection.CreateCommand();
+                await using var command = connection.CreateCommand();
                 command.CommandText = "SELECT pg_advisory_unlock($1)";
-                command.Parameters.Add(new NpgsqlParameter { Value = _key });
-                await command.ExecuteScalarAsync();
-                _logger.AdvisoryMigrationLockReleased(_lockKey);
+                command.Parameters.Add(new NpgsqlParameter { Value = key });
+                await command.ExecuteScalarAsync().ConfigureAwait(false);
+                logger.AdvisoryMigrationLockReleased(lockName);
             }
             finally
             {
-                await _connection.DisposeAsync();
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

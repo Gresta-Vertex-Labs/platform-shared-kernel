@@ -50,8 +50,8 @@ as errors) and fails the build on an undocumented public member.
   `AnonymousUserContext` **instance** descriptor is a placeholder (the persistence builder registers one) and every
   provider removes it first. Register placeholders only that way, with the non-generic
   `ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance)` so `00.Governance`'s
-  no-singleton-security-context rule stays meaningful. `WithMultiTenancy()` in `06.Persistence` falls back to the
-  same `UserContextTenantProvider`, for the same reason.
+  no-singleton-security-context rule stays meaningful. `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (the `IRequestContext` `06.Persistence` uses
+  since P-558) TryAdds the same `UserContextTenantProvider`, for the same reason.
 - **Inbound claim renaming is off.** `JwtBearerOptions.MapInboundClaims` defaults to `true` in .NET 10 and turns
   `sub`, `roles`, `email`, `amr`, `scp`, `tid` into long URIs. `ConfigureOidcJwtBearerOptions.PostConfigure` forces
   it off; everything in this domain and `SecurityClaimTypes` assumes the short names. The regression test drives a

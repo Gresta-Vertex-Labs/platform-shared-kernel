@@ -243,16 +243,21 @@ builder.Services.AddDomainEventHandler<OrderPlaced, SendOrderConfirmation>();
 You implement `IDomainEventHandler<TDomainEvent>` against the **raw domain event** — never MediatR's
 `INotificationHandler<>`. The wrapper is an implementation detail you should not have to name.
 
-**When events are dispatched.** `06.Persistence`'s `EfUnitOfWork.SaveChangesAsync` writes to the database
-**first**, then collects the events from tracked aggregates, dispatches them, and clears them. Two
-consequences worth internalising:
+**When events are dispatched.** `06.Persistence`'s `SharedKernelDbContext.SaveChangesAsync` collects the events
+from tracked aggregates and dispatches them **before** the physical save — on every save path (the unit of
+work, a seeder, a factory user) — repeating until handlers raise no more, then writes everything in one save.
+Consequences worth internalising:
 
 - **Dispatch is serial**, in list order, one handler chain at a time. There is no parallel mode: concurrent
   handlers would share one `DbContext`, which is not thread-safe.
-- **A handler exception propagates out of `SaveChangesAsync` after the write already committed.** The
-  exception fails the request, but it does not undo the row that was saved. A handler that must not be able
-  to fail the request — sending mail, calling another service — belongs behind an integration event
-  (`04.Contracts` + `07.Messaging`), not a domain-event handler.
+- **A handler's database changes join the same save and the same transaction.** Inside `TransactionBehavior`
+  they commit or roll back with the command.
+- **A handler exception abandons the save** (the change tracker is cleared) and fails the request; nothing is
+  written. Because dispatch happens before commit, a handler with an effect outside the database — sending mail,
+  calling another service — must not run here: put it behind an integration event (`04.Contracts` +
+  `07.Messaging`) or `ICommandScope.OnCompleted`, which runs after the commit.
+- **No dispatcher registered** (`AddSharedKernelApplication()` not called): the events are discarded with a
+  warning.
 
 ### 5. Streaming a large read
 

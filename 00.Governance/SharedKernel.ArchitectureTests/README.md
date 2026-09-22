@@ -171,7 +171,7 @@ references flow downward only.
 | `DomainNeverReferencesPersistence` | Hard rule — domain logic never couples to storage |
 | `DomainNeverReferencesMessaging` | Hard rule — the domain raises events, never dispatches them |
 | `ApplicationNeverReferencesConcreteInfrastructure` | Hard rule — the application layer depends on abstractions only |
-| `TestingNeverReferencedByProduction` | Hard rule — test helpers never appear as a production dependency |
+| `TestingNeverReferencedByProduction` | Hard rule — test helpers (`SharedKernel.Testing`, and the published `SharedKernel.Persistence.Testing`) never appear as a production dependency |
 
 ### Domain purity
 
@@ -206,7 +206,7 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
 | `SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application.Behaviors` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
 | `SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
-| `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct` | The application and persistence `IUnitOfWork` seams are never merged |
+| `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Application.Abstractions` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
 
 ### Persistence
@@ -217,15 +217,17 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `PersistenceLayerProtectionRules.OnlyEfUnitOfWorkMayCallSaveChanges` | `SaveChanges`/`SaveChangesAsync` is called in exactly one place |
 | `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable` | No `IQueryable` escapes a repository |
 | `PersistenceInterfaceOwnershipRules.IReadRepositoryMustNotExposeIQueryable` | Same, for the read side |
-| `PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository` | Write-path fetches never run through the read repository |
+| `PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack` | A read-repository implementation never returns tracked entities (IL scan, async state machines included) |
 | `PersistenceInterfaceOwnershipRules.IUserContextDeclaredOnlyInSecurityAbstractions` | `IUserContext` has exactly one declaring assembly |
 | `PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions` | Tenant-identity interfaces are never redeclared |
-| `RepositoryContractCompletenessRules.AllRepositoryImplementorsMustHaveExistsAsync` | Every repository implements the full contract |
+| `RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdAsync` | Every read repository implements the full contract |
 | `RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdsAsync` | Every read repository implements the full contract |
 | `EfCorePackageHygieneRules.NoDirectEfPropertyUsageInEfCoreAssembly` | No `EF.Property<T>` — use a typed expression |
 | `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly` | No `castclass` onto the specification evaluator |
 | `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` | One constructor, so DI resolution stays unambiguous |
 | `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction` | Transactions go through the abstraction, never `IDbContextTransaction` |
+| `SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity` + `PersistenceForbiddenAssemblyReferences` | `06.Persistence` reaches `05.Application` only through `SharedKernel.Application.Abstractions` — never MediatR, `SharedKernel.Application`, `.Behaviors` or `12.Security` (source and assembly level) |
+| `PersistenceNamespaceConventionRules.FindMisplacedExtensions` | Registration/builder extensions live in `SharedKernel.Persistence`, EF Core model/migration/query helpers in `SharedKernel.Persistence.EfCore` (receiver-type based) |
 
 ### Caching and Redis topology
 

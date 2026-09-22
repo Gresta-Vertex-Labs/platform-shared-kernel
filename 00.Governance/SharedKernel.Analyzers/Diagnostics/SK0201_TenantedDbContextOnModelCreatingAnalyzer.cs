@@ -9,15 +9,15 @@ namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
 /// SK0201 — Fires when a class that inherits from <c>TenantedDbContext</c> (by simple name)
-/// overrides <c>OnModelCreating</c> without calling <c>base.OnModelCreating(...)</c> or
-/// <c>ApplyTenantFilters(...)</c> inside the method body.
+/// overrides <c>OnModelCreating</c> without calling <c>base.OnModelCreating(...)</c> inside the method body.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>TenantedDbContext.OnModelCreating</c> registers the global tenant query filter. Any subclass
-/// that overrides the method and omits <c>base.OnModelCreating</c> (or a manual
-/// <c>ApplyTenantFilters</c> call) silently removes the filter, causing all queries to return
-/// rows across tenant boundaries — a silent multi-tenancy data leak.
+/// The tenant query filter itself is installed by a model-finalizing convention and survives a missing base call,
+/// but <c>SharedKernelDbContext.OnModelCreating</c> applies the entity type configurations of the context's
+/// assembly, the registered model configurators, the <c>Money</c> mapping and client-side key generation. An
+/// override that omits <c>base.OnModelCreating</c> silently drops all of them, so the model no longer matches what
+/// the platform (and its tenant, audit and encryption configuration) expects.
 /// </para>
 /// <para>
 /// <b>Limitation:</b> This analyzer performs a syntax-only check within a single file. If the
@@ -26,8 +26,8 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// inspected. Cross-file or cross-assembly ancestry is not resolved.
 /// </para>
 /// <para>
-/// Suppression: use <c>#pragma warning disable SK0201</c> at the method site when the tenant
-/// filter is intentionally re-applied via a different mechanism not detectable at syntax level.
+/// Suppression: use <c>#pragma warning disable SK0201</c> at the method site when the base call is made through a
+/// helper the syntax check cannot see.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -37,13 +37,12 @@ public sealed class TenantedDbContextOnModelCreatingAnalyzer : AnalyzerBase
 
     private const string TenantedDbContextSimpleName = "TenantedDbContext";
     private const string OnModelCreatingName = "OnModelCreating";
-    private const string ApplyTenantFiltersName = "ApplyTenantFilters";
 
     /// <summary>The diagnostic descriptor for SK0201.</summary>
     public static readonly DiagnosticDescriptor Rule = CreateDescriptor(
         id: DiagnosticId,
-        title: "TenantedDbContext.OnModelCreating override missing tenant-filter call",
-        messageFormat: "'{0}.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query filter will be silently removed",
+        title: "TenantedDbContext.OnModelCreating override missing base call",
+        messageFormat: "'{0}.OnModelCreating' overrides TenantedDbContext but does not call 'base.OnModelCreating' — the platform model configuration (entity configurations, Money mapping, key generation) is silently skipped",
         category: Design,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0201-tenanteddbcontextonmodelcreatingguard"
@@ -85,17 +84,17 @@ public sealed class TenantedDbContextOnModelCreatingAnalyzer : AnalyzerBase
         if (!InheritsTenantedDbContext(containingClass))
             return;
 
-        // Inspect the method body for base.OnModelCreating(...) or ApplyTenantFilters(...)
+        // Inspect the method body for base.OnModelCreating(...)
         if (method.Body is null && method.ExpressionBody is null)
         {
             // Abstract / extern — no body to check; skip
             return;
         }
 
-        if (BodyContainsTenantCall(method))
+        if (BodyCallsBase(method))
             return;
 
-        // Neither call found — report on the method identifier
+        // No base call found — report on the method identifier
         var className = containingClass.Identifier.Text;
         context.ReportDiagnostic(
             Diagnostic.Create(Rule, method.Identifier.GetLocation(), className)
@@ -137,40 +136,18 @@ public sealed class TenantedDbContextOnModelCreatingAnalyzer : AnalyzerBase
         return false;
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the method body contains either:
-    /// <list type="bullet">
-    ///   <item><c>base.OnModelCreating(...)</c> — a member-access on <c>base</c></item>
-    ///   <item><c>ApplyTenantFilters(...)</c> — a simple or member-access invocation</item>
-    /// </list>
-    /// </summary>
-    private static bool BodyContainsTenantCall(MethodDeclarationSyntax method)
+    /// <summary>Returns <see langword="true"/> when the method body contains <c>base.OnModelCreating(...)</c>.</summary>
+    private static bool BodyCallsBase(MethodDeclarationSyntax method)
     {
         SyntaxNode bodyRoot = (SyntaxNode?)method.Body ?? method.ExpressionBody!;
 
-        foreach (var invocation in bodyRoot.DescendantNodes().OfType<InvocationExpressionSyntax>())
-        {
-            switch (invocation.Expression)
-            {
-                // base.OnModelCreating(...)
-                case MemberAccessExpressionSyntax memberAccess
-                    when memberAccess.Expression is BaseExpressionSyntax
-                        && memberAccess.Name.Identifier.Text == OnModelCreatingName:
-                    return true;
-
-                // ApplyTenantFilters(...) — simple name call: ApplyTenantFilters(...)
-                case IdentifierNameSyntax identifierName
-                    when identifierName.Identifier.Text == ApplyTenantFiltersName:
-                    return true;
-
-                // this.ApplyTenantFilters(...) or any_obj.ApplyTenantFilters(...)
-                case MemberAccessExpressionSyntax memberAccess2
-                    when memberAccess2.Name.Identifier.Text == ApplyTenantFiltersName:
-                    return true;
-            }
-        }
-
-        return false;
+        return bodyRoot
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Any(invocation =>
+                invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                && memberAccess.Expression is BaseExpressionSyntax
+                && memberAccess.Name.Identifier.Text == OnModelCreatingName);
     }
 
     private static string GetSimpleTypeName(TypeSyntax typeSyntax) =>

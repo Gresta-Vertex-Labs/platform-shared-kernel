@@ -1,0 +1,73 @@
+#nullable enable
+SharedKernel.Application.Auditing.AuditEntry
+SharedKernel.Application.Auditing.AuditEntry.<Clone>$() -> SharedKernel.Application.Auditing.AuditEntry!
+SharedKernel.Application.Auditing.AuditEntry.Action.get -> string!
+SharedKernel.Application.Auditing.AuditEntry.Action.init -> void
+SharedKernel.Application.Auditing.AuditEntry.AfterSnapshot.get -> string?
+SharedKernel.Application.Auditing.AuditEntry.AfterSnapshot.init -> void
+SharedKernel.Application.Auditing.AuditEntry.ApprovalId.get -> string?
+SharedKernel.Application.Auditing.AuditEntry.ApprovalId.init -> void
+SharedKernel.Application.Auditing.AuditEntry.AuditEntry() -> void
+SharedKernel.Application.Auditing.AuditEntry.BeforeSnapshot.get -> string?
+SharedKernel.Application.Auditing.AuditEntry.BeforeSnapshot.init -> void
+SharedKernel.Application.Auditing.AuditEntry.Equals(SharedKernel.Application.Auditing.AuditEntry? other) -> bool
+SharedKernel.Application.Auditing.AuditEntry.ErrorCode.get -> string?
+SharedKernel.Application.Auditing.AuditEntry.ErrorCode.init -> void
+SharedKernel.Application.Auditing.AuditEntry.IdempotencyKey.get -> string?
+SharedKernel.Application.Auditing.AuditEntry.IdempotencyKey.init -> void
+SharedKernel.Application.Auditing.AuditEntry.Outcome.get -> SharedKernel.Application.Auditing.AuditOutcome
+SharedKernel.Application.Auditing.AuditEntry.Outcome.init -> void
+SharedKernel.Application.Auditing.AuditEntry.ResourceId.get -> string!
+SharedKernel.Application.Auditing.AuditEntry.ResourceId.init -> void
+SharedKernel.Application.Auditing.AuditEntry.ResourceType.get -> string!
+SharedKernel.Application.Auditing.AuditEntry.ResourceType.init -> void
+SharedKernel.Application.Auditing.AuditOutcome
+SharedKernel.Application.Auditing.AuditOutcome.Failed = 1 -> SharedKernel.Application.Auditing.AuditOutcome
+SharedKernel.Application.Auditing.AuditOutcome.Succeeded = 0 -> SharedKernel.Application.Auditing.AuditOutcome
+SharedKernel.Application.Auditing.IAuditTrailWriter
+SharedKernel.Application.Auditing.IAuditTrailWriter.RecordAsync(SharedKernel.Application.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.ActorKind.Service = 1 -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.ActorKind.System = 2 -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.ActorKind.User = 0 -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.AnonymousRequestContext
+SharedKernel.Application.Context.AnonymousRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.AnonymousRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Application.Context.AnonymousRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Application.Context.AnonymousRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Application.Context.AnonymousRequestContext.UserId.get -> string?
+SharedKernel.Application.Context.IRequestContext
+SharedKernel.Application.Context.IRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.IRequestContext.ClientId.get -> string?
+SharedKernel.Application.Context.IRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Application.Context.IRequestContext.ImpersonatorId.get -> string?
+SharedKernel.Application.Context.IRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Application.Context.IRequestContext.SessionId.get -> string?
+SharedKernel.Application.Context.IRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Application.Context.IRequestContext.UserId.get -> string?
+SharedKernel.Application.Context.SystemRequestContext
+SharedKernel.Application.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Application.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Application.Context.SystemRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Application.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", System.Guid? tenantId = null) -> void
+SharedKernel.Application.Context.SystemRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Application.Context.SystemRequestContext.UserId.get -> string?
+SharedKernel.Application.Transactions.IUnitOfWork
+SharedKernel.Application.Transactions.IUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Application.Transactions.IUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Application.Transactions.IUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Application.Transactions.IUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Application.Transactions.IUnitOfWork.IsTransactionActive.get -> bool
+SharedKernel.Application.Transactions.IUnitOfWork.OnBeforeCommit(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
+SharedKernel.Application.Transactions.IUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+override SharedKernel.Application.Auditing.AuditEntry.Equals(object? obj) -> bool
+override SharedKernel.Application.Auditing.AuditEntry.GetHashCode() -> int
+override SharedKernel.Application.Auditing.AuditEntry.ToString() -> string!
+static SharedKernel.Application.Auditing.AuditEntry.operator !=(SharedKernel.Application.Auditing.AuditEntry? left, SharedKernel.Application.Auditing.AuditEntry? right) -> bool
+static SharedKernel.Application.Auditing.AuditEntry.operator ==(SharedKernel.Application.Auditing.AuditEntry? left, SharedKernel.Application.Auditing.AuditEntry? right) -> bool
+static SharedKernel.Application.Context.AnonymousRequestContext.Instance.get -> SharedKernel.Application.Context.AnonymousRequestContext!
+SharedKernel.Application.Transactions.CommitOutcomeUnknownException
+SharedKernel.Application.Transactions.CommitOutcomeUnknownException.CommitOutcomeUnknownException(System.Exception! innerException) -> void
+SharedKernel.Application.Transactions.TransactionRolledBackException
+SharedKernel.Application.Transactions.TransactionRolledBackException.TransactionRolledBackException() -> void
+SharedKernel.Application.Context.ActorKind.Anonymous = 3 -> SharedKernel.Application.Context.ActorKind

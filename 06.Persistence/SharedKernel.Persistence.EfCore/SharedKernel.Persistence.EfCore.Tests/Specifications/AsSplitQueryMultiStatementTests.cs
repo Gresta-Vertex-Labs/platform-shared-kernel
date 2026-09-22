@@ -7,11 +7,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
-using SharedKernel.Persistence.Abstractions.Specifications;
-using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
-using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -43,7 +40,7 @@ public sealed class SplitTagChild
         ParentId = parentId;
     }
 
-    protected SplitTagChild() { } // ORM path
+    private SplitTagChild() { } // ORM path
 }
 
 public sealed class SplitNoteChild
@@ -59,7 +56,7 @@ public sealed class SplitNoteChild
         ParentId = parentId;
     }
 
-    protected SplitNoteChild() { } // ORM path
+    private SplitNoteChild() { } // ORM path
 }
 
 public sealed class SplitAggregate : AggregateRoot<SplitAggId>
@@ -73,14 +70,14 @@ public sealed class SplitAggregate : AggregateRoot<SplitAggId>
         Name = name;
     }
 
-    protected SplitAggregate() { } // ORM path
+    private SplitAggregate() { } // ORM path
 }
 
-public sealed class SplitAggregateConfig : EntityTypeConfigurationBase<SplitAggregate, SplitAggId>
+public sealed class SplitAggregateConfig : IEntityTypeConfiguration<SplitAggregate>
 {
-    public override void Configure(EntityTypeBuilder<SplitAggregate> builder)
+    public void Configure(EntityTypeBuilder<SplitAggregate> builder)
     {
-        base.Configure(builder);
+        builder.HasKey("Id");
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
         builder.HasMany(e => e.Tags).WithOne().HasForeignKey(t => t.ParentId).IsRequired();
         builder.HasMany(e => e.Notes).WithOne().HasForeignKey(n => n.ParentId).IsRequired();
@@ -122,7 +119,6 @@ public sealed class SplitQueryDbContext : SharedKernelDbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.ConfigureStronglyTypedId<SplitAggId, Guid>();
         base.ConfigureConventions(configurationBuilder);
     }
 
@@ -201,11 +197,9 @@ public sealed class AsSplitQueryMultiStatementTests
             .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var audit = new AuditInterceptor(actorContext, clock);
-        var softDelete = new SoftDeleteInterceptor(actorContext, clock);
-        var concurrency = new ConcurrencyInterceptor();
+        var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
-        var ctx = new SplitQueryDbContext(options, new PersistenceContextDependencies(audit, softDelete, concurrency));
+        var ctx = new SplitQueryDbContext(options, audit);
         ctx.Database.OpenConnection();
         ctx.Database.EnsureCreated();
 

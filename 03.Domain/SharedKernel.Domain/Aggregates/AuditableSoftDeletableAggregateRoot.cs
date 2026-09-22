@@ -86,5 +86,41 @@ public abstract class AuditableSoftDeletableAggregateRoot<TId> : AggregateRoot<T
     /// The deleted state is already set when it runs and stays set if it throws. It is not called when the
     /// persistence layer soft-deletes a removed aggregate.
     /// </remarks>
-    protected abstract void OnDelete();
+    protected virtual void OnDelete()
+    {
+    }
+
+    /// <summary>
+    /// Reverses a soft delete: clears <see cref="IsDeleted"/>, <see cref="DeletedOn"/> and
+    /// <see cref="DeletedBy"/>, then calls <see cref="OnRestore"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Usage.</b> Call it from a domain method such as <c>Reopen()</c>, and raise the restore event from
+    /// <see cref="OnRestore"/>. Load the aggregate with a specification that includes deleted entities, then save
+    /// through the unit of work; the change goes through the normal audit and domain-event pipeline.
+    /// </para>
+    /// <para>
+    /// <b>Idempotent.</b> Restoring an aggregate that is not deleted changes nothing and does not call
+    /// <see cref="OnRestore"/>.
+    /// </para>
+    /// </remarks>
+    protected void Restore()
+    {
+        if (!IsDeleted)
+            return;
+
+        IsDeleted = false;
+        DeletedOn = null;
+        DeletedBy = null;
+        OnRestore();
+    }
+
+    /// <summary>
+    /// Called once, right after <see cref="Restore"/> clears the deleted state; override it to raise the
+    /// restore event. Does nothing by default.
+    /// </summary>
+    protected virtual void OnRestore()
+    {
+    }
 }

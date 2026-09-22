@@ -1,4 +1,4 @@
-using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application.Auditing;
 
 namespace SharedKernel.Application.Behaviors.Tests.Support;
 
@@ -7,8 +7,13 @@ internal sealed class FakeAuditTrailWriter(List<string>? sequence = null) : IAud
 {
     public List<AuditEntry> RecordedEntries { get; } = [];
 
-    public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
+    public Exception? FailWith { get; set; }
+
+    public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
+        if (FailWith is not null)
+            throw FailWith;
+
         RecordedEntries.Add(entry);
         sequence?.Add("audit.record");
         return Task.CompletedTask;

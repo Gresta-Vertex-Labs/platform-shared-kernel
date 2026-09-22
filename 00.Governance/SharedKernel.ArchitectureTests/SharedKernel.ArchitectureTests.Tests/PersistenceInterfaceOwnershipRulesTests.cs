@@ -12,13 +12,13 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <c>IUserContextDeclaredOnlyInSecurityAbstractions</c>,
 /// <c>TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions</c>,
 /// <c>IReadRepositoryMustNotExposeIQueryable</c>, and
-/// <c>NoGetByIdAsyncOnReadRepository</c>.
+/// <c>ReadOnlyRepositoriesNeverTrack</c>.
 /// </summary>
 /// <remarks>
 /// T-52/T-53: Rule 1 — IUserContextDeclaredOnlyInSecurityAbstractions
 /// T-54/T-55: Rule 2 — TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions
 /// T-56/T-57: Rule 3 — IReadRepositoryMustNotExposeIQueryable
-/// T-58/T-59: Rule 4 — NoGetByIdAsyncOnReadRepository
+/// T-58/T-59: Rule 4 — ReadOnlyRepositoriesNeverTrack
 /// </remarks>
 public class PersistenceInterfaceOwnershipRulesTests
 {
@@ -287,125 +287,119 @@ public class PersistenceInterfaceOwnershipRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-58 — Rule 4 fire path: IReadRepository implementor with GetByIdAsync fails
+    // T-58 — Rule 4 fire path: a read-only repository that tracks fails
     // ---------------------------------------------------------------------------
 
+    private const string TrackingFixtureCommon = """
+        using System;
+        using System.Threading.Tasks;
+
+        namespace Persistence.Abstractions
+        {
+            public interface IReadRepository<TEntity, TId> { }
+            public interface IRepository<TEntity, TId> : IReadRepository<TEntity, TId> { }
+        }
+
+        namespace Domain
+        {
+            public class Order { public Guid Id { get; set; } }
+        }
+
+        namespace Microsoft.EntityFrameworkCore
+        {
+            // Stand-ins for EF Core's query and its tracking extensions; the rule matches the method name.
+            public sealed class Query<T>
+            {
+                public T? First() => default;
+            }
+
+            public static class EntityFrameworkQueryableExtensions
+            {
+                public static Query<T> AsTracking<T>(this Query<T> source) => source;
+                public static Query<T> AsNoTracking<T>(this Query<T> source) => source;
+            }
+        }
+        """;
+
     /// <summary>
-    /// T-58: A class implementing <c>IReadRepository&lt;Order, Guid&gt;</c> that declares
-    /// <c>GetByIdAsync</c> must fail
-    /// <see cref="PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository"/>.
+    /// T-58: a type implementing only <c>IReadRepository&lt;Order, Guid&gt;</c> that calls <c>AsTracking</c>
+    /// (inside an <c>async</c> method, i.e. in the compiler-generated state machine) must fail
+    /// <see cref="PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack"/>.
     /// </summary>
     [Fact]
-    public void NoGetByIdAsyncOnReadRepository_GetByIdAsyncDeclared_RuleFails()
+    public void ReadOnlyRepositoriesNeverTrack_AsTrackingInReadRepository_RuleFails()
     {
-        const string source = """
-            using System;
-            using System.Threading;
-            using System.Threading.Tasks;
-
-            namespace Domain
-            {
-                public class Order { public Guid Id { get; set; } }
-            }
-
-            namespace Persistence.Abstractions
-            {
-                public interface IReadRepository<TEntity, TId> { }
-            }
+        const string source = TrackingFixtureCommon + """
 
             namespace Persistence.Repositories
             {
-                // Violation: GetByIdAsync was removed from IReadRepository in P-080
-                public class OrderReadRepository
-                    : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
-                {
-                    // Offending method — re-introduces the anti-pattern removed in P-080
-                    public Task<Domain.Order?> GetByIdAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult<Domain.Order?>(null);
-                    }
+                using Microsoft.EntityFrameworkCore;
 
-                    // Correct alternative names
-                    public Task<Domain.Order?> GetAsync(
-                        Guid id, CancellationToken ct = default)
+                public class OrderReadRepository : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
+                {
+                    private readonly Query<Domain.Order> _orders = new();
+
+                    public async Task<Domain.Order?> GetByIdAsync(Guid id)
                     {
-                        return Task.FromResult<Domain.Order?>(null);
+                        await Task.Yield();
+                        return _orders.AsTracking().First();
                     }
                 }
             }
             """;
 
-        var assembly = CompileInMemory("GetByIdAsyncViolation", source);
+        var assembly = CompileInMemory("ReadRepositoryTracks", source);
 
         var result = PersistenceInterfaceOwnershipRules
-            .NoGetByIdAsyncOnReadRepository(assembly)
+            .ReadOnlyRepositoriesNeverTrack(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "OrderReadRepository declares GetByIdAsync, which was removed from " +
-                     "IReadRepository in P-080 — use FindByIdAsync or GetAsync instead");
+            because: "a read-only repository returns detached entities; AsTracking belongs to IRepository");
     }
 
     // ---------------------------------------------------------------------------
-    // T-59 — Rule 4 pass path: IReadRepository implementor without GetByIdAsync passes
+    // T-59 — Rule 4 pass path: untracked reads, and tracking on the write side
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-59: A class implementing <c>IReadRepository&lt;Order, Guid&gt;</c> that does not
-    /// declare <c>GetByIdAsync</c> must pass
-    /// <see cref="PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository"/>.
+    /// T-59: a read-only repository using <c>AsNoTracking</c> and a write-side repository (which extends the read
+    /// contract) using <c>AsTracking</c> both pass
+    /// <see cref="PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack"/>.
     /// </summary>
     [Fact]
-    public void NoGetByIdAsyncOnReadRepository_NoGetByIdAsyncMethod_RulePasses()
+    public void ReadOnlyRepositoriesNeverTrack_NoTrackingReads_AndTrackedWrites_RulePasses()
     {
-        const string source = """
-            using System;
-            using System.Collections.Generic;
-            using System.Threading;
-            using System.Threading.Tasks;
-
-            namespace Domain
-            {
-                public class Order { public Guid Id { get; set; } }
-            }
-
-            namespace Persistence.Abstractions
-            {
-                public interface IReadRepository<TEntity, TId> { }
-            }
+        const string source = TrackingFixtureCommon + """
 
             namespace Persistence.Repositories
             {
-                // Compliant: uses the correct P-080 method names — no GetByIdAsync
-                public class OrderReadRepository
-                    : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
-                {
-                    // Correct: GetAsync returns T?
-                    public Task<Domain.Order?> GetAsync(
-                        Guid id, CancellationToken ct = default)
-                    {
-                        return Task.FromResult<Domain.Order?>(null);
-                    }
+                using Microsoft.EntityFrameworkCore;
 
-                    // Correct: FindByIdAsync returns Result<T> equivalent
-                    public Task<IReadOnlyList<Domain.Order>> FindAsync(
-                        CancellationToken ct = default)
-                    {
-                        return Task.FromResult<IReadOnlyList<Domain.Order>>(new List<Domain.Order>());
-                    }
+                public class OrderReadRepository : Persistence.Abstractions.IReadRepository<Domain.Order, Guid>
+                {
+                    private readonly Query<Domain.Order> _orders = new();
+
+                    public Domain.Order? GetById(Guid id) => _orders.AsNoTracking().First();
+                }
+
+                public class OrderRepository : Persistence.Abstractions.IRepository<Domain.Order, Guid>
+                {
+                    private readonly Query<Domain.Order> _orders = new();
+
+                    public Domain.Order? GetById(Guid id) => _orders.AsTracking().First();
                 }
             }
             """;
 
-        var assembly = CompileInMemory("NoGetByIdAsyncClean", source);
+        var assembly = CompileInMemory("ReadRepositoryNoTracking", source);
 
         var result = PersistenceInterfaceOwnershipRules
-            .NoGetByIdAsyncOnReadRepository(assembly)
+            .ReadOnlyRepositoriesNeverTrack(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "OrderReadRepository uses GetAsync / FindAsync — no GetByIdAsync declared");
+            because: "the read-only repository never tracks and the write repository is out of scope");
     }
 
     // ---------------------------------------------------------------------------

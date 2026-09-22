@@ -134,7 +134,6 @@
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Dapper\SharedKernel.Persistence.Dapper.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Security.Abstractions/.Oidc assemblies in
          SecurityArchitectureRulesTests (WO-057 P-373, SK.00.SecurityContextGuard) — both

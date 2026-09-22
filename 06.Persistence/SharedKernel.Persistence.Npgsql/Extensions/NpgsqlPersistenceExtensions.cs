@@ -1,169 +1,159 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Pgvector.Npgsql;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
+using SharedKernel.Persistence.Npgsql;
 using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.Npgsql.Context;
 using SharedKernel.Persistence.Npgsql.Coordination;
 using SharedKernel.Persistence.Npgsql.Diagnostics;
 using SharedKernel.Persistence.Npgsql.Options;
+using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
-namespace SharedKernel.Persistence.Npgsql.Extensions;
+namespace SharedKernel.Persistence;
 
 /// <summary>
 /// DI extension methods for the SharedKernel Npgsql (EF-Core-free) persistence layer.
 /// </summary>
 #pragma warning disable RS0026 // Symbol has multiple public overloads with optional parameters.
-// The default-database AddSharedKernelNpgsql(IConfiguration, ...) overload and the second-database
-// AddSharedKernelNpgsql(IConfigurationSection, string name, ...) overload take incompatible required
-// leading parameters (IConfiguration vs. IConfigurationSection + a mandatory name) — a caller's
-// argument list already selects the correct overload; there is no shared call shape across the two
-// for a trailing optional parameter to ever disambiguate incorrectly.
+// The overloads differ in their required leading parameters (IConfiguration; IConfiguration + a
+// connection-string name; IConfigurationSection + a service key), which already select one overload.
 public static class NpgsqlPersistenceExtensions
 {
     private const string LoggerCategoryName = "SharedKernel.Persistence.Npgsql";
+    private const string DefaultDataSourceName = "default";
 
     /// <summary>
-    /// Registers the shared, options-bound <see cref="NpgsqlDataSource"/> — bound from
-    /// <see cref="NpgsqlPersistenceOptions.SectionName"/> and validated at host startup — plus
-    /// <see cref="IDbConnectionFactory"/>, <see cref="IMigrationLock"/>,
-    /// <see cref="ITenantSessionBinder"/>, and <see cref="IAdvisoryTransactionLock"/> (consumed by
-    /// <c>SharedKernel.Persistence.EfCore.Auditing</c>'s audit-chain writer).
+    /// Registers the default database without a connection name: an options-bound <see cref="NpgsqlDataSource"/>
+    /// (every setting, the connection string included, from <see cref="NpgsqlPersistenceOptions.SectionName"/>,
+    /// validated at startup), <see cref="IDbConnectionFactory"/>, <see cref="IMigrationLock"/>,
+    /// <see cref="IAdvisoryTransactionLock"/>, <see cref="ITenantSessionBinder"/>, the keyed secondary data sources of
+    /// <see cref="NpgsqlDataSourceKeys"/>, and the row-level security startup check.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configuration">
-    /// The root configuration to resolve <see cref="NpgsqlPersistenceOptions.SectionName"/> against.
-    /// </param>
+    /// <param name="configuration">The root configuration.</param>
     /// <param name="configureDataSource">
-    /// Optional hook applied last, after every other configuration step, so a caller can extend the
-    /// <see cref="NpgsqlDataSourceBuilder"/> with capabilities this method does not itself expose
-    /// (e.g. <c>MapEnum&lt;T&gt;</c>, <c>MapComposite&lt;T&gt;</c>, pgvector's <c>UseVector()</c> —
-    /// see <c>SharedKernel.Persistence.PostgreSQL</c>'s opt-in vector support for the recommended way
-    /// to enable that specifically).
+    /// Optional hook applied last to every <see cref="NpgsqlDataSourceBuilder"/> this registration builds,
+    /// with the resolving <see cref="IServiceProvider"/> — for <c>MapEnum&lt;T&gt;()</c>,
+    /// <c>UsePeriodicPasswordProvider</c> (Entra ID / RDS IAM tokens), and similar.
     /// </param>
-    /// <param name="periodicPasswordProvider">
-    /// Optional periodically-refreshed password provider (Entra ID / AWS RDS IAM tokens) — see
-    /// <see cref="NpgsqlPeriodicPasswordProviderOptions"/>.
-    /// </param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
+    /// <returns>The same <paramref name="services"/>.</returns>
     /// <remarks>
     /// <para>
-    /// <see cref="NpgsqlDataSource"/> is registered as a singleton, owned and disposed by the
-    /// container at shutdown. <see cref="IDbConnectionFactory"/> is registered as a singleton
-    /// (<see cref="NpgsqlConnectionFactory"/> itself is stateless — it only wraps the data source).
+    /// EF Core (<c>UsePostgreSQL(serviceProvider)</c>) resolves the same <see cref="NpgsqlDataSource"/>, so
+    /// EF Core and Dapper share one pool. The data source is a singleton owned by the container.
     /// </para>
     /// <para>
-    /// Downstream services using EF Core call <c>AddSharedKernelEfCore&lt;TContext&gt;((sp, options)
-    /// =&gt; options.UsePostgreSQL(sp))</c> — <c>SharedKernel.Persistence.PostgreSQL</c>'s
-    /// <c>IServiceProvider</c>-accepting overload resolves the SAME <see cref="NpgsqlDataSource"/>
-    /// this method registers, so EF Core and Dapper share one connection pool per database.
-    /// </para>
-    /// <para>
-    /// For a second database in the same service, use the
-    /// <see cref="AddSharedKernelNpgsql(IServiceCollection,IConfigurationSection,string,Action{NpgsqlDataSourceBuilder}?,NpgsqlPeriodicPasswordProviderOptions?)"/>
-    /// overload with a distinct section and a <c>name</c> — resolve that instance with
-    /// <c>serviceProvider.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(name)</c>/
-    /// <c>GetRequiredKeyedService&lt;IDbConnectionFactory&gt;(name)</c>.
-    /// <see cref="IMigrationLock"/>/<see cref="ITenantSessionBinder"/> are registered only for the
-    /// default (unnamed) database — a named second database wires those itself if it needs them.
+    /// <strong>PgBouncer (transaction mode)</strong> is supported: every SharedKernel tenant binding is
+    /// transaction-local. Point <see cref="NpgsqlPersistenceOptions.MigrationConnectionString"/> at the
+    /// database directly, because migrations and session-level advisory locks need one server session.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelNpgsql(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource = null,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        RegisterOptions(services, configuration.GetSection(NpgsqlPersistenceOptions.SectionName), name: null);
-        RegisterDefaultDataSource(services, configureDataSource, periodicPasswordProvider);
+        return RegisterDefault(services, configuration, NpgsqlPersistenceOptions.SectionName, connectionName: null, configureDataSource);
+    }
 
-        services.AddSingleton<IMigrationLock, NpgsqlAdvisoryMigrationLock>();
-        services.AddSingleton<ITenantSessionBinder>(sp =>
-            new NpgsqlTenantSessionBinder(
-                sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
-                    .Get(Microsoft.Extensions.Options.Options.DefaultName).CrossTenantEscapeToken));
-        services.AddSingleton<IAdvisoryTransactionLock, NpgsqlAdvisoryTransactionLock>();
+    /// <summary>
+    /// Registers the default database under a connection name — the same configuration shape as
+    /// <c>AddSharedKernelPostgres&lt;TContext&gt;(name)</c>: the connection string from
+    /// <c>ConnectionStrings:{<paramref name="connectionStringName"/>}</c> (the .NET Aspire and Testcontainers
+    /// convention) and every other setting from <c>SharedKernel:Persistence:{<paramref name="connectionStringName"/>}</c>
+    /// (see <see cref="NpgsqlPersistenceOptions"/>), where a <c>ConnectionString</c> key overrides
+    /// <c>ConnectionStrings</c>. Registers what the unnamed overload registers.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The root configuration.</param>
+    /// <param name="connectionStringName">The connection name, e.g. <c>"orders"</c>.</param>
+    /// <param name="configureDataSource">See the unnamed overload.</param>
+    /// <returns>The same <paramref name="services"/>.</returns>
+    public static IServiceCollection AddSharedKernelNpgsql(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string connectionStringName,
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionStringName);
 
+        return RegisterDefault(
+            services, configuration, NpgsqlPersistenceOptions.SectionFor(connectionStringName), connectionStringName, configureDataSource);
+    }
+
+    private static IServiceCollection RegisterDefault(
+        IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath,
+        string? connectionName,
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
+    {
+        RegisterOptions(services, configuration.GetSection(sectionPath), name: null);
+        services.AddOptions<NpgsqlPersistenceOptions>()
+            .Configure(options =>
+            {
+                options.SectionPath = sectionPath;
+                if (connectionName is not null)
+                    options.ConnectionStringName ??= connectionName;
+            })
+            .PostConfigure(options => ResolveConnectionString(options, configuration));
+
+        RegisterDefaultDatabase(services, configureDataSource);
         return services;
     }
 
     /// <summary>
-    /// Registers a second, independently-configured, keyed <see cref="NpgsqlDataSource"/> for a
-    /// service that talks to more than one PostgreSQL database.
+    /// Registers a second, independently configured database under the service key
+    /// <paramref name="name"/>: a keyed <see cref="NpgsqlDataSource"/> and <see cref="IDbConnectionFactory"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="section">The configuration section for this database's connection options.</param>
-    /// <param name="name">
-    /// The key this data source and connection factory are registered under. Resolve with
-    /// <c>GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(name)</c>/
-    /// <c>GetRequiredKeyedService&lt;IDbConnectionFactory&gt;(name)</c>.
-    /// </param>
+    /// <param name="section">The configuration section of this database's <see cref="NpgsqlPersistenceOptions"/>.</param>
+    /// <param name="name">The service key (and options name).</param>
     /// <param name="configureDataSource">See the primary overload.</param>
-    /// <param name="periodicPasswordProvider">See the primary overload.</param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
+    /// <returns>The same <paramref name="services"/>.</returns>
+    /// <remarks>
+    /// Secondary data sources, locks, the tenant binder and the row-level security check belong to the
+    /// default database only. <see cref="NpgsqlPersistenceOptions.ConnectionStringName"/> is resolved
+    /// against the <see cref="IConfiguration"/> registered in the container.
+    /// </remarks>
     public static IServiceCollection AddSharedKernelNpgsql(
         this IServiceCollection services,
         IConfigurationSection section,
         string name,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource = null,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider = null)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(section);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         RegisterOptions(services, section, name);
+        services.AddOptions<NpgsqlPersistenceOptions>(name)
+            .Configure(options => options.SectionPath = section.Path)
+            .PostConfigure<IServiceProvider>((options, sp) => ResolveConnectionString(options, sp.GetService<IConfiguration>()));
 
         services.AddKeyedSingleton(name, (sp, key) =>
-            BuildDataSource(
-                sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>().Get((string)key!),
-                sp,
-                configureDataSource,
-                periodicPasswordProvider));
+        {
+            var options = sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>().Get((string)key!);
+            return BuildDataSource(options, options.ConnectionString, (string)key!, sp, configureDataSource);
+        });
 
         services.AddKeyedSingleton<IDbConnectionFactory>(name, (sp, key) =>
             new NpgsqlConnectionFactory(sp.GetRequiredKeyedService<NpgsqlDataSource>(key)));
-
-        return services;
-    }
-
-    /// <summary>
-    /// Registers the shared <see cref="NpgsqlDataSource"/> and <see cref="IDbConnectionFactory"/>
-    /// from a raw connection string, applying only PostgreSQL's own defaults (no
-    /// <see cref="NpgsqlPersistenceOptions"/> validation, no statement/lock timeouts, no SSL-mode
-    /// enforcement beyond whatever the connection string itself specifies).
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="connectionString">The PostgreSQL connection string.</param>
-    /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
-    /// <remarks>
-    /// Kept for callers that have not yet migrated to configuration-bound options. Prefer
-    /// <see cref="AddSharedKernelNpgsql(IServiceCollection,IConfiguration,Action{NpgsqlDataSourceBuilder}?,NpgsqlPeriodicPasswordProviderOptions?)"/>
-    /// for startup-validated SSL/timeout/password-rotation configuration.
-    /// </remarks>
-    public static IServiceCollection AddSharedKernelNpgsql(
-        this IServiceCollection services,
-        string connectionString)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-
-        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-        dataSourceBuilder.EnableDynamicJson();
-
-        var dataSource = dataSourceBuilder.Build();
-
-        services.AddSingleton(dataSource);
-        services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
 
         return services;
     }
@@ -176,66 +166,123 @@ public static class NpgsqlPersistenceExtensions
             name: name);
     }
 
-    private static void RegisterDefaultDataSource(
-        IServiceCollection services,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider)
+    private static void ResolveConnectionString(NpgsqlPersistenceOptions options, IConfiguration? configuration)
     {
-        services.AddSingleton(sp =>
-            BuildDataSource(
-                sp.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
-                    .Get(Microsoft.Extensions.Options.Options.DefaultName),
-                sp,
-                configureDataSource,
-                periodicPasswordProvider));
+        if (!string.IsNullOrWhiteSpace(options.ConnectionString) || string.IsNullOrWhiteSpace(options.ConnectionStringName))
+            return;
 
-        services.AddSingleton<IDbConnectionFactory>(sp =>
-            new NpgsqlConnectionFactory(sp.GetRequiredService<NpgsqlDataSource>()));
+        options.ConnectionString = configuration?.GetConnectionString(options.ConnectionStringName) ?? string.Empty;
     }
 
-    // Builds one NpgsqlDataSource from validated options: forces PersistSecurityInfo=false and the
-    // configured SslMode, applies statement_timeout/lock_timeout/idle_in_transaction_session_timeout
-    // via the libpq "Options" startup keyword, wires a resolved ILoggerFactory when one is
-    // registered, wires an optional periodic password provider, and finally invokes the caller's own
-    // configureDataSource hook so it can extend the builder further.
+    private static void RegisterDefaultDatabase(
+        IServiceCollection services,
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
+    {
+        services.TryAddSingleton(sp =>
+        {
+            var options = DefaultOptions(sp);
+            return BuildDataSource(options, options.ConnectionString, DefaultDataSourceName, sp, configureDataSource);
+        });
+
+        services.TryAddSingleton<IDbConnectionFactory>(sp =>
+            new NpgsqlConnectionFactory(sp.GetRequiredService<NpgsqlDataSource>()));
+
+        // Secondary data sources are registered unconditionally; a factory returns null (GetKeyedService
+        // yields null) when its connection string is not configured.
+        RegisterOptionalDataSource(services, NpgsqlDataSourceKeys.Migration, o => o.MigrationConnectionString, configureDataSource);
+        RegisterOptionalDataSource(services, NpgsqlDataSourceKeys.ReadOnly, o => o.ReadOnlyConnectionString, configureDataSource);
+        RegisterOptionalDataSource(services, NpgsqlDataSourceKeys.CrossTenant, o => o.RowLevelSecurity.CrossTenantConnectionString, configureDataSource);
+
+        services.TryAddKeyedSingleton<IDbConnectionFactory>(NpgsqlDataSourceKeys.ReadOnly, (sp, _) =>
+            new NpgsqlConnectionFactory(ResolveReadOnlyDataSource(sp)));
+
+        services.TryAddKeyedSingleton<IDbConnectionFactory>(NpgsqlDataSourceKeys.CrossTenant, (sp, _) =>
+            sp.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.CrossTenant) is { } crossTenant
+                ? new NpgsqlConnectionFactory(crossTenant)
+                : null!);
+
+        services.TryAddSingleton<IMigrationLock>(sp => new NpgsqlAdvisoryMigrationLock(
+            sp.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.Migration) ?? sp.GetRequiredService<NpgsqlDataSource>(),
+            sp.GetService<ILogger<NpgsqlAdvisoryMigrationLock>>()));
+        services.TryAddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
+        services.TryAddSingleton<IAdvisoryTransactionLock, NpgsqlAdvisoryTransactionLock>();
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RowLevelSecurityStartupCheck>());
+    }
+
+    private static void RegisterOptionalDataSource(
+        IServiceCollection services,
+        string key,
+        Func<NpgsqlPersistenceOptions, string?> connectionString,
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
+    {
+        services.TryAddKeyedSingleton<NpgsqlDataSource>(key, (sp, _) =>
+        {
+            var options = DefaultOptions(sp);
+            return connectionString(options) is { Length: > 0 } value
+                ? BuildDataSource(options, value, key, sp, configureDataSource)
+                : null!;
+        });
+    }
+
+    // Read-only traffic: a configured replica, else a standby of a multi-host primary, else the primary.
+    private static NpgsqlDataSource ResolveReadOnlyDataSource(IServiceProvider serviceProvider)
+    {
+        if (serviceProvider.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.ReadOnly) is { } replica)
+            return replica;
+
+        var primary = serviceProvider.GetRequiredService<NpgsqlDataSource>();
+        return primary is NpgsqlMultiHostDataSource multiHost
+            ? multiHost.WithTargetSession(TargetSessionAttributes.PreferStandby)
+            : primary;
+    }
+
+    private static NpgsqlPersistenceOptions DefaultOptions(IServiceProvider serviceProvider) =>
+        serviceProvider.GetRequiredService<IOptionsMonitor<NpgsqlPersistenceOptions>>()
+            .Get(Microsoft.Extensions.Options.Options.DefaultName);
+
+    // Builds one data source: forces Persist Security Info off, the effective SSL mode and GSS encryption off unless
+    // the connection string asks for it, applies the server-side timeouts through the startup "Options" keyword,
+    // wires logging and the opt-in type mappings, then runs the caller's hook.
     private static NpgsqlDataSource BuildDataSource(
         NpgsqlPersistenceOptions options,
+        string connectionString,
+        string dataSourceName,
         IServiceProvider serviceProvider,
-        Action<NpgsqlDataSourceBuilder>? configureDataSource,
-        NpgsqlPeriodicPasswordProviderOptions? periodicPasswordProvider)
+        Action<IServiceProvider, NpgsqlDataSourceBuilder>? configureDataSource)
     {
-        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.ConnectionString)
+        var sslMode = NpgsqlConnectionStringPolicy.EffectiveSslMode(options, connectionString);
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
         {
-            SslMode = options.SslMode,
+            SslMode = sslMode,
+            GssEncryptionMode = NpgsqlConnectionStringPolicy.EffectiveGssEncryptionMode(connectionString),
             PersistSecurityInfo = false,
         };
 
         ApplyServerSideTimeouts(connectionStringBuilder, options);
 
-        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder.ConnectionString);
-        dataSourceBuilder.EnableDynamicJson();
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder.ConnectionString)
+        {
+            Name = dataSourceName,
+        };
+
+        if (options.EnableDynamicJson)
+            dataSourceBuilder.EnableDynamicJson();
+
+        if (options.UseVector)
+            dataSourceBuilder.UseVector();
 
         var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
         if (loggerFactory is not null)
-            dataSourceBuilder.UseLoggerFactory(loggerFactory);
+            dataSourceBuilder.UseLoggerFactory(new NpgsqlCommandLogLevel(loggerFactory));
 
-        if (periodicPasswordProvider is not null)
-        {
-            dataSourceBuilder.UsePeriodicPasswordProvider(
-                periodicPasswordProvider.Provider,
-                periodicPasswordProvider.SuccessRefreshInterval,
-                periodicPasswordProvider.FailureRefreshInterval);
-        }
-
-        if (options.SslMode < SslMode.VerifyFull && options.AcknowledgeInsecureSslMode)
+        if (sslMode < SslMode.VerifyFull && !NpgsqlConnectionStringPolicy.IsLoopback(connectionString))
         {
             var logger = loggerFactory?.CreateLogger(LoggerCategoryName) ?? NullLogger.Instance;
-            logger.InsecureSslModeAcknowledged(
-                connectionStringBuilder.Host ?? "unknown",
-                options.SslMode.ToString());
+            logger.InsecureSslMode(dataSourceName, sslMode.ToString());
         }
 
-        configureDataSource?.Invoke(dataSourceBuilder);
+        configureDataSource?.Invoke(serviceProvider, dataSourceBuilder);
 
         return dataSourceBuilder.Build();
     }

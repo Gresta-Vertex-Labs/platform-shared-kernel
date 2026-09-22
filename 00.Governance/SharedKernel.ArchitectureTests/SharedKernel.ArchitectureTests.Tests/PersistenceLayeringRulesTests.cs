@@ -43,7 +43,7 @@ public sealed class PersistenceLayeringRulesTests
     public void PersistenceNeverReferencesApplicationOrSecurity_ApplicationDependency_RuleFails()
     {
         const string violationSource = """
-            namespace SharedKernel.Application
+            namespace SharedKernel.Application.Behaviors.Transaction
             {
                 public interface IUnitOfWork { }
             }
@@ -52,8 +52,8 @@ public sealed class PersistenceLayeringRulesTests
             {
                 public sealed class RogueBridge
                 {
-                    private readonly SharedKernel.Application.IUnitOfWork _uow;
-                    public RogueBridge(SharedKernel.Application.IUnitOfWork uow) { _uow = uow; }
+                    private readonly SharedKernel.Application.Behaviors.Transaction.IUnitOfWork _uow;
+                    public RogueBridge(SharedKernel.Application.Behaviors.Transaction.IUnitOfWork uow) { _uow = uow; }
                 }
             }
             """;
@@ -65,7 +65,7 @@ public sealed class PersistenceLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "RogueBridge depends on SharedKernel.Application.IUnitOfWork — a dependency this domain removed");
+            because: "RogueBridge depends on SharedKernel.Application.Behaviors — the MediatR pipeline persistence must never reference");
     }
 
     [Fact]
@@ -98,23 +98,34 @@ public sealed class PersistenceLayeringRulesTests
     }
 
     [Fact]
-    public void PersistenceNeverReferencesApplicationOrSecurity_CleanAssembly_RulePasses()
+    public void PersistenceNeverReferencesApplicationOrSecurity_ApplicationAbstractionsDependency_RulePasses()
     {
+        // P-558: the shared contracts in SharedKernel.Application.Abstractions (namespaces .Context,
+        // .Transactions, .Auditing) are the one part of 05.Application persistence may depend on.
         const string cleanSource = """
-            namespace SharedKernel.Persistence.Abstractions.Context
+            namespace SharedKernel.Application.Context
             {
-                public interface ICurrentActorContext
-                {
-                    string ActorId { get; }
-                }
+                public interface IRequestContext { string? UserId { get; } }
+            }
+
+            namespace SharedKernel.Application.Transactions
+            {
+                public interface IUnitOfWork { }
+            }
+
+            namespace SharedKernel.Application.Auditing
+            {
+                public interface IAuditTrailWriter { }
             }
 
             namespace SharedKernel.Persistence.EfCore
             {
-                public sealed class LocalSeamConsumer
+                public sealed class SharedContractConsumer
                 {
-                    private readonly SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext _actor;
-                    public LocalSeamConsumer(SharedKernel.Persistence.Abstractions.Context.ICurrentActorContext actor) { _actor = actor; }
+                    public SharedContractConsumer(
+                        SharedKernel.Application.Context.IRequestContext context,
+                        SharedKernel.Application.Transactions.IUnitOfWork unitOfWork,
+                        SharedKernel.Application.Auditing.IAuditTrailWriter writer) { }
                 }
             }
             """;
@@ -126,7 +137,88 @@ public sealed class PersistenceLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "LocalSeamConsumer depends only on this domain's own local ICurrentActorContext seam");
+            because: "SharedContractConsumer depends only on SharedKernel.Application.Abstractions' namespaces");
+    }
+
+    [Fact]
+    public void PersistenceNeverReferencesApplicationOrSecurity_MediatRDependency_RuleFails()
+    {
+        const string violationSource = """
+            namespace MediatR
+            {
+                public interface ISender { }
+            }
+
+            namespace SharedKernel.Persistence.EfCore
+            {
+                public sealed class RogueDispatcher
+                {
+                    public RogueDispatcher(MediatR.ISender sender) { }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("PersistenceMediatRViolation", violationSource);
+
+        var result = SharedKernelLayeringRules
+            .PersistenceNeverReferencesApplicationOrSecurity(violationAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(because: "persistence must never depend on MediatR");
+    }
+
+    [Theory]
+    [MemberData(nameof(RealPersistenceProductionAssemblies))]
+    public void PersistenceForbiddenAssemblyReferences_RealProductionAssembly_IsEmpty(Assembly assembly)
+    {
+        SharedKernelLayeringRules.PersistenceForbiddenAssemblyReferences(assembly).Should().BeEmpty(
+            because: $"'{assembly.GetName().Name}' may reference SharedKernel.Application.Abstractions only");
+    }
+
+    [Fact]
+    public void EfCore_IsThePostgreSqlProvider()
+    {
+        // P-558: PostgreSQL-only. The former SharedKernel.Persistence.PostgreSQL package merged into EfCore,
+        // which now references the Npgsql EF Core provider and the shared SharedKernel.Persistence.Npgsql.
+        typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name)
+            .Should().Contain(["Npgsql.EntityFrameworkCore.PostgreSQL", "SharedKernel.Persistence.Npgsql"]);
+    }
+
+    [Fact]
+    public void Dapper_NeverReferencesEfCore()
+    {
+        typeof(SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name!)
+            .Should().NotContain(name =>
+                name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || name.StartsWith("SharedKernel.Persistence.EfCore", StringComparison.Ordinal),
+                because: "Dapper-only services must not pull in EF Core");
+    }
+
+    [Fact]
+    public void Npgsql_NeverReferencesEfCore()
+    {
+        typeof(SharedKernel.Persistence.NpgsqlPersistenceExtensions).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name!)
+            .Should().NotContain(name =>
+                name.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || name.StartsWith("SharedKernel.Persistence.EfCore", StringComparison.Ordinal),
+                because: "the shared data source and the SQLSTATE classifier serve Dapper as well");
+    }
+
+    [Fact]
+    public void PersistenceEfCore_ReferencesTheSharedApplicationAbstractions()
+    {
+        // P-558 (A): the audit contracts that used the shared enums left .Abstractions, so the EF Core package
+        // (EfUnitOfWork implements the shared IUnitOfWork) is now the one that proves the reference.
+        typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name)
+            .Should().Contain("SharedKernel.Application.Abstractions");
     }
 
     // ---------------------------------------------------------------------------
@@ -137,11 +229,10 @@ public sealed class PersistenceLayeringRulesTests
     {
         yield return [typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly];
-        yield return [typeof(SharedKernel.Persistence.EfCore.Auditing.Extensions.EfCorePersistenceBuilderAuditingExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.EfCore.Encryption.Extensions.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.Npgsql.Extensions.NpgsqlPersistenceExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.PostgreSQL.Extensions.PostgreSQLPersistenceExtensions).Assembly];
-        yield return [typeof(SharedKernel.Persistence.Dapper.ReadModels.DapperReadService).Assembly];
+        yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderEncryptionExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.NpgsqlPersistenceExtensions).Assembly];
+        yield return [typeof(SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory).Assembly];
     }
 
     /// <summary>
@@ -200,6 +291,7 @@ public sealed class PersistenceLayeringRulesTests
             // never mistaken for a real reference.
             var referencesForbiddenNamespace = root.DescendantNodes()
                 .OfType<NameSyntax>()
+                .Where(name => name.Parent is not QualifiedNameSyntax)
                 .Any(name => IsForbiddenNamespaceReference(name.ToString()));
 
             if (referencesForbiddenNamespace)
@@ -207,12 +299,15 @@ public sealed class PersistenceLayeringRulesTests
         }
 
         offendingFiles.Should().BeEmpty(
-            "no .cs file under 06.Persistence (production or test) may reference SharedKernel.Application " +
-                "or SharedKernel.Security — both dependencies were deliberately removed from this domain");
+            "no .cs file under 06.Persistence (production or test) may reference 05.Application beyond " +
+                "SharedKernel.Application.Abstractions, MediatR, or SharedKernel.Security");
     }
 
     private static bool IsForbiddenNamespaceReference(string nodeText) =>
-        nodeText.StartsWith("SharedKernel.Application", StringComparison.Ordinal)
+        (nodeText.StartsWith("SharedKernel.Application", StringComparison.Ordinal)
+            && !SharedKernelLayeringRules.ApplicationAbstractionsNamespaces.Any(allowed =>
+                nodeText == allowed || nodeText.StartsWith(allowed + ".", StringComparison.Ordinal)))
+            || nodeText.StartsWith("MediatR", StringComparison.Ordinal)
             || nodeText.StartsWith("SharedKernel.Security", StringComparison.Ordinal);
 
     private static bool ContainsBuildOutputSegment(string path) =>

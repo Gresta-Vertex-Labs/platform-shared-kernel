@@ -24,7 +24,7 @@ public class ApplyThenByDescendingTests
         public ProductsWithMixedThenBySpec()
         {
             ApplyOrderBy(p => p.Price);
-            ApplyThenBy(p => p.Name, descending: false);    // ascending
+            ApplyThenBy(p => p.Name);    // ascending
             ApplyThenByDescending(p => p.Quantity);          // descending alias
         }
     }

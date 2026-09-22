@@ -119,7 +119,7 @@ public static class StorageTopologyRules
     /// <remarks>
     /// <para>
     /// TWO NAMED <see cref="Assembly"/> parameters (not <c>params Assembly[]</c>) — deliberate,
-    /// mirroring <see cref="UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct"/>'s
+    /// mirroring <c>UnitOfWorkSeamRules</c>'s former <c>UnitOfWorkInterfacesRemainDistinct</c>'s
     /// two-named-parameter convention: the rule's whole purpose is comparing two specific, named
     /// packages, so positional <c>params</c> would obscure which assembly is expected to be which.
     /// Unlike <see cref="RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther"/> (which

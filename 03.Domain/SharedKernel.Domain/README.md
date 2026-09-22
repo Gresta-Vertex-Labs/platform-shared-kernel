@@ -18,7 +18,7 @@ dependency on persistence, messaging or dependency injection.
 | `TryCreate` returning `ValidationResult<T>` | Invalid input is a result, not an exception |
 | Business rules with a stable error `Code` | Clients branch on codes; localization looks messages up by them |
 | Strongly-typed identifiers | An `OrderId` can never be passed where a `CustomerId` is expected |
-| Specifications with offset and keyset paging | Queries are named, reusable and composable |
+| Specifications with an inline builder and typed `ThenInclude` | Queries are named, reusable and composable; paging stays at the call site |
 | `Money` with ISO 4217 minor units | Rounding, allocation and currency mismatches are handled once, correctly |
 
 ## Contents
@@ -116,8 +116,8 @@ result.Errors[0].Code;   // "invoice.amount_not_positive"
 | An invariant the aggregate must never break | `IBusinessRule` + `CheckRule` | `BusinessRules` |
 | A decision about any subject, with an explanation ("is this customer eligible?") | `IPolicy<T>` | `Policies` |
 | A reusable, named query | `Specification<T>` | `Specifications` |
-| A page of results by page number | `PagedSpecification<T>` | `Specifications` |
-| Stable pages over a large or changing table | `KeysetSpecification<T, TKey>` | `Specifications` |
+| A one-off query built inline | `Spec.For<T>()` | `Specifications` |
+| A query that projects to a DTO | `ProjectionSpecification<T, TResult>` or `Spec.For<T>()...Select(...)` | `Specifications` |
 | Logic that spans several aggregates and belongs to none | `DomainService` | `DomainServices` |
 | Creation that needs collaborators (uniqueness check, ID generator) | A class implementing `IAggregateFactory<TAggregate, TId>` | `Abstractions` |
 | A monetary amount | `Money` and `Currency` | `Monetary` |
@@ -298,15 +298,23 @@ public sealed class OrdersOfCustomer : Specification<Order>
     {
         AddCriteria(order => order.TenantId == tenantId);
         AddCriteria(order => order.CustomerId == customerId); // combined with AND
+        AddInclude(order => order.Lines); // continue a path with .ThenInclude(line => line.Nav)
         ApplyOrderByDescending(order => order.CreatedOn);
-        ApplyNoTracking();
+        ApplyThenByDescending(order => order.Id);
     }
 }
 
-public sealed class RecentOrders(DateTimeOffset? afterCreatedOn, object? afterId)
-    : KeysetSpecification<Order, DateTimeOffset>(
-        order => order.CreatedOn, order => order.Id, afterCreatedOn, afterId, descending: true, take: 50);
+// The same thing inline, for a one-off query:
+var spec = Spec.For<Order>()
+    .Where(order => order.CustomerId == customerId)
+    .Include(order => order.Lines)
+    .OrderByDescending(order => order.CreatedOn)
+    .ThenByDescending(order => order.Id);
 ```
+
+Paging is decided at the call site, not in the specification: the persistence repositories take a
+`PageRequest` (offset pages) or a `CursorPageRequest` plus a key selector (keyset pages) from
+`SharedKernel.Contracts`.
 
 ### 7. A policy
 
@@ -378,7 +386,7 @@ All namespaces start with `SharedKernel.Domain.`
 | `BusinessRules` | `IBusinessRule`, `AndBusinessRule`, `OrBusinessRule`, `NotBusinessRule`, `BusinessRuleExtensions` |
 | `ValueObjects` | `ValueObject`, `SingleValueObject<TValue>` |
 | `StronglyTypedIds` | `StronglyTypedId<TValue>`; `Serialization.StronglyTypedIdJsonConverterFactory` |
-| `Specifications` | `Specification<T>`, `PagedSpecification<T>`, `KeysetSpecification<T, TKey>`, `ReadOnlySpecification<T>`, `AllSpecification<T>`, `EmptySpecification<T>`, composites and `SpecificationExtensions` |
+| `Specifications` | `Specification<T>`, `Spec.For<T>()`/`SpecificationBuilder<T>`, `ProjectionSpecification<T, TResult>`, `AllSpecification<T>`, `EmptySpecification<T>`, composites and `SpecificationExtensions` |
 | `Policies` | `IPolicy<T>`, `AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>`, `PolicyExtensions` |
 | `DomainServices` | `DomainService` |
 | `Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` |
@@ -455,6 +463,9 @@ public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
 | Already deleted | Changes nothing and raises no second event |
 | Blank actor | Throws `DomainException` |
 | Entity (no clock) | `MarkAsDeleted(deletedBy, deletedOn)` takes the owning aggregate's time, which must be UTC |
+| Restore | `Restore()` clears `IsDeleted`, `DeletedOn` and `DeletedBy`, then calls `OnRestore`; load the aggregate with a specification that includes deleted rows first |
+
+`OnDelete` and `OnRestore` do nothing unless overridden; override them only to raise an event.
 
 ### Business rules
 
@@ -522,16 +533,14 @@ The factory supports any `TValue` that System.Text.Json can serialize.
 | Member | Behaviour |
 | --- | --- |
 | `AddCriteria` | Each call is combined with AND |
-| `ApplyOrderBy` / `ApplyOrderByDescending` | One primary sort; a second call throws. Add keys with `ApplyThenBy`. |
-| `ApplyPaging(skip, take)` | Rejects a negative `skip` and a `take` below 1 |
-| `AddInclude`, `AddStringInclude` | Eager loading; string paths for deep navigation |
-| `ApplyNoTracking`, `ApplySplitQuery`, `ApplyDistinct` | Query-shape flags for the evaluator |
-| `IncludeSoftDeleted()` | Bypasses **every** global query filter, including tenant isolation |
+| `ApplyOrderBy` / `ApplyOrderByDescending` | One primary sort; a second call throws. Add keys with `ApplyThenBy`, which throws without a primary sort. |
+| `ApplyPaging(skip, take)`, `ApplyTake(take)` | Fixed windows only ("the ten most recent"); page-by-page access takes a page request at the repository |
+| `AddInclude(...).ThenInclude(...)`, `AddStringInclude` | Eager loading; `ThenInclude` is type-checked through collections |
+| `ApplySplitQuery`, `ApplyDistinct` | Query-shape flags for the evaluator; tracking is decided by the repository |
+| `IncludeSoftDeleted()` | Returns soft-deleted rows too; tenant isolation stays |
 | `IsSatisfiedBy(entity)` | Evaluates the criteria in memory |
 | `Specification<T>.Create(criteria)` | An ad hoc specification without a subclass |
-| `a.And(b)`, `a.Or(b)`, `a.Not()` | Combine criteria, includes and the tracking, split-query and include-deleted flags; **drop** ordering, paging and `Distinct`. `Not` of a specification without criteria matches nothing. |
-| `PagedSpecification<T>(page, pageSize)` | 1-based pages, `pageSize` up to 1000, rejects an offset beyond `int.MaxValue` |
-| `KeysetSpecification<T, TKey>` | Seek paging on a value-type key with the `Id` as tiebreak, sorted in the same direction as the key |
+| `a.And(b)`, `a.Or(b)`, `a.Not()` | Combine criteria, includes and flags; carry the ordering of the one operand that has it; **throw** when both operands are ordered or either pages. `Not` of a specification without criteria matches nothing. |
 | `AllSpecification<T>`, `EmptySpecification<T>` | Match everything or nothing |
 
 ### Policies
@@ -593,10 +602,10 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | Load aggregates with your own mapper and call a method straight away | Call `IHasClock.AttachClock` as each one is created | Without a clock, reading the time throws `InvalidOperationException` |
 | Write a `ValueObject` constructor without `EnsureValid()` | End every constructor with `EnsureValid()` | Nothing else validates it; `SK0037` warns |
 | Keep an unsaved entity in a `HashSet` or dictionary across the save | Add it after the save, or key by something else | Its hash code changes when the database assigns its key |
-| Call `IncludeSoftDeleted()` and trust tenant isolation | Add `AddCriteria(x => x.TenantId == tenantId)` yourself | It bypasses every global query filter, tenancy included |
-| Put ordering or paging on the operands of `And`/`Or`/`Not` | Build one specification subclass that calls `AddCriteria` repeatedly | Composites drop ordering, paging and `Distinct` |
+| Assume `IncludeSoftDeleted()` widens the tenant too | Enter a cross-tenant scope when a query must see other tenants | It lifts only the soft-delete filter; the persistence tenant filter (and row-level security) still apply |
+| Put ordering on more than one operand of `And`/`Or`/`Not`, or paging on any | Order at most one operand; page at the repository call site | Composites carry the one ordering and throw `InvalidOperationException` for two orderings or any paging |
 | Remove an aggregate through the repository when others must react | Call a domain method such as `Close()` that raises an event | Repository deletion soft-deletes without a domain event |
-| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `AddSharedKernelApplication()`) | The unit of work clears events after the save even when nothing dispatched them |
+| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `AddSharedKernelApplication()`) | Persistence discards undispatched events at the save (with a warning) |
 | Compare or add `Money` of possibly different currencies | Check `Currency` first, or convert with `ConvertAsync` | Mismatches throw `BusinessRuleViolationException` |
 | Call `.Sum()` on a possibly empty list of `Money` | Call `.Sum(currency)` | An empty sequence has no currency to return |
 | Read `result.Value` without checking | Check `result.IsValid` first | `Value` on an invalid result throws |
@@ -627,8 +636,8 @@ VALUE OBJECT Extend ValueObject: assign members, call EnsureValid() LAST in ever
              with a public constructor : base(value) and Validate() only.
 ENTITY       Extend Entity<TId>; constructor (TId id, ...) : base(id); private parameterless constructor.
 SPECIFICATION Extend Specification<T>; call builders only in the constructor: AddCriteria (AND), one
-             ApplyOrderBy/ApplyOrderByDescending, ApplyThenBy, ApplyPaging, AddInclude, ApplyNoTracking.
-             Paging by page: PagedSpecification<T>(page, pageSize). Large tables: KeysetSpecification<T, TKey>.
+             ApplyOrderBy/ApplyOrderByDescending, ApplyThenBy, AddInclude(...).ThenInclude(...). Inline: Spec.For<T>().
+             Paging at the call site: ListPagedAsync(spec, PageRequest) / ListKeysetAsync(spec, CursorPageRequest, key).
 POLICY       class : IPolicy<T> { bool IsCompliant(T); string Explain(T) => "" when compliant }.
              Inside an aggregate: CheckRule(policy.ToRule(subject, "code")).
 MONEY        Money.Create(amount, Currency.Usd) returns ValidationResult<Money>. Never mix currencies.
