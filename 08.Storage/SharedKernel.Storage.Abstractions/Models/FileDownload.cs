@@ -1,28 +1,63 @@
-namespace SharedKernel.Storage.Abstractions.Models;
+namespace SharedKernel.Storage;
 
 /// <summary>
-/// A downloaded object returned by <see cref="Abstractions.IFileStorage.DownloadAsync"/>, wrapping
-/// the provider's network stream.
+/// An object opened for reading by <see cref="IFileStorage.DownloadAsync"/>: its content stream and properties.
+/// Dispose it to release the connection.
 /// </summary>
 /// <remarks>
-/// <see cref="Content"/> is provider-backed and caller-disposed — <see langword="await"/> <see langword="using"/>
-/// the <see cref="FileDownload"/> (or explicitly call <see cref="DisposeAsync"/>) to release the
-/// underlying network stream once consumption is complete.
+/// <see cref="Content"/> reads straight from the provider's response; nothing is buffered, and it is usually not
+/// seekable. Always use <c>await using</c>: an undisposed download keeps a pooled HTTP connection busy. Read the
+/// stream once; a failure while reading (for example a dropped connection) throws from the stream.
 /// </remarks>
-public sealed class FileDownload : IAsyncDisposable
+public sealed class FileDownload : IAsyncDisposable, IDisposable
 {
-    /// <summary>The downloaded object's payload, backed by the provider's network stream.</summary>
-    public required Stream Content { get; init; }
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileDownload"/> class. Used by providers and test doubles.
+    /// </summary>
+    /// <param name="content">The response stream; owned and disposed by this instance.</param>
+    /// <param name="properties">The properties of the whole object.</param>
+    /// <param name="length">The number of bytes <paramref name="content"/> will yield; not negative.</param>
+    /// <param name="range">The byte range returned, or <see langword="null"/> for the whole object.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="content"/> or <paramref name="properties"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="length"/> is negative.</exception>
+    public FileDownload(Stream content, FileProperties properties, long length, ByteRange? range = null)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(properties);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
 
-    /// <summary>The object's MIME type.</summary>
-    public required string ContentType { get; init; }
+        Content = content;
+        Properties = properties;
+        Length = length;
+        Range = range;
+    }
 
-    /// <summary>The object's size in bytes.</summary>
-    public required long ContentLength { get; init; }
+    /// <summary>Gets the content stream, positioned at the first byte of the object or range.</summary>
+    public Stream Content { get; }
 
-    /// <summary>User-supplied metadata stored alongside the object.</summary>
-    public required IReadOnlyDictionary<string, string> Metadata { get; init; }
+    /// <summary>
+    /// Gets the properties of the whole object, even for a range read: <see cref="FileProperties.ContentLength"/>
+    /// is the full object size and <see cref="FileProperties.ETag"/> identifies the content read.
+    /// </summary>
+    public FileProperties Properties { get; }
 
-    /// <summary>Releases the underlying provider network stream.</summary>
-    public async ValueTask DisposeAsync() => await Content.DisposeAsync().ConfigureAwait(false);
+    /// <summary>
+    /// Gets the number of bytes <see cref="Content"/> yields: the object size, or the length of the range returned.
+    /// </summary>
+    public long Length { get; }
+
+    /// <summary>
+    /// Gets the inclusive byte range returned — which may end earlier than requested when the request ran past the
+    /// end of the object — or <see langword="null"/> when the whole object was requested.
+    /// </summary>
+    public ByteRange? Range { get; }
+
+    /// <summary>Disposes <see cref="Content"/>, releasing the connection.</summary>
+    /// <returns>A task that completes when the stream is disposed.</returns>
+    public ValueTask DisposeAsync() => Content.DisposeAsync();
+
+    /// <summary>Disposes <see cref="Content"/>, releasing the connection.</summary>
+    public void Dispose() => Content.Dispose();
 }
