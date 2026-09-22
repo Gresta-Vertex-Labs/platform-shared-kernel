@@ -177,12 +177,14 @@ this package references.
 | `Search/` | `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor` |
 | `Security/` | `FakeUserContext`, `FakeTenantProvider`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `MtlsTestCertificateBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore` |
 | `ServiceDefaults/` | `InMemoryTenantCatalog`, `StaticTenantProvider`, `FakeTenantResolutionStrategy`, `HealthCheckAssertionExtensions` |
-| `Storage/` | `InMemoryFileStorage`, `InMemoryBlobUriGenerator` |
+| `Storage/` | `InMemoryFileStorage` (one store, presigning included), `InMemoryFileStorageOptions`, `AddInMemoryStore`/`AddInMemoryTenantStore` on `AddSharedKernelStorage()`, `GetInMemoryStore(name)`, `InMemoryStorage.CreateFactory(...)` for code that takes an `IFileStorageFactory` |
 | `Validation/` | `ValidationSampleGenerator` — checksum-correct valid and invalid IBAN, PAN, national-id and similar samples |
 | `Workflows/` | `InMemoryWorkflowDispatcher`, `InMemoryWorkflowHandle`, `InMemoryWorkflowHandle<TResult>`, `InMemoryWorkflowStartRecord` |
 
 Most areas also ship an `Add…` extension that registers their doubles in one call — `AddInMemoryMessageBus()`,
-`AddInMemoryFileStorage()`, `AddFakeCachingServices()`, `AddInMemoryWorkflowDispatcher()` and the rest.
+`AddFakeCachingServices()`, `AddInMemoryWorkflowDispatcher()` and the rest. Storage registers like a provider, so
+the real store registry (validation, tenant prefixes) sits in front of the fake:
+`services.AddSharedKernelStorage().AddInMemoryStore("invoices").AddInMemoryTenantStore("documents")`.
 
 ## The rules these doubles follow
 

@@ -19,7 +19,7 @@ See [`SharedKernel.Reporting.Abstractions`](../SharedKernel.Reporting.Abstractio
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("exports"); // any SharedKernel.Storage provider
 builder.Services.AddSpreadsheetReportExporter<Invoice>(builder.Configuration);
 
 var host = builder.Build();

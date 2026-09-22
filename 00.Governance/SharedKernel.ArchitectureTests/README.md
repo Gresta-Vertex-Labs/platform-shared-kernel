@@ -85,7 +85,7 @@ in this package requires you to inherit from anything.
 
 ### Rules marked `[]`
 
-Ten rules return `ConditionList[]` rather than a single `ConditionList`, because one NetArchTest
+Nine rules return `ConditionList[]` rather than a single `ConditionList`, because one NetArchTest
 condition cannot express "none of these N dependencies". Pass those to `AssertRules(...)`. They
 are marked `[]` in the catalog below.
 
@@ -252,13 +252,16 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 ### Provider topology
 
 Applies the same shape across the multi-provider domains: the abstraction stays clean, and
-siblings never see each other.
+siblings never see each other. Storage is the one exception: `SharedKernel.Storage.Obs` is built on
+`SharedKernel.Storage.S3` by design, so its rule forbids only the reverse direction.
 
 | Rule | Enforces |
 |---|---|
-| `StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies` | No cloud SDK leaks into the storage abstraction |
-| `StorageTopologyRules.ProviderPackagesNeverReferenceEachOther` `[]` | Storage providers stay independent |
-| `StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` | The S3 SDK stays inside its provider |
+| `StorageTopologyRules.AbstractionsHasNoThirdPartyDependencies` | No cloud SDK, provider package or `SharedKernel.Configuration` leaks into the storage abstraction (namespace half) |
+| `StorageTopologyRules.AbstractionsForbiddenAssemblyReferences` | The same, by referenced assembly name — returns the offending names, empty when clean |
+| `StorageTopologyRules.S3NeverReferencesObs` | The S3 provider never names OBS (namespace half) |
+| `StorageTopologyRules.S3ForbiddenAssemblyReferences` | The same, by referenced assembly name — returns the offending names, empty when clean |
+| `StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` | The S3 SDK stays inside the S3 and OBS providers |
 | `SearchTopologyRules.AbstractionsHasNoThirdPartyDependencies` | No engine SDK leaks into the search abstraction |
 | `SearchTopologyRules.ProviderPackagesNeverReferenceEachOther` `[]` | Search providers stay independent |
 | `IntelligenceTopologyRules.AbstractionsHasNoThirdPartyDependencies` | No model or vector-DB SDK leaks into the AI abstraction |
