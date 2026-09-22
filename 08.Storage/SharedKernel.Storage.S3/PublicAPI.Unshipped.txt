@@ -1,0 +1,69 @@
+#nullable enable
+const SharedKernel.Storage.S3StorageBuilderExtensions.S3ConnectionName = "S3" -> string!
+SharedKernel.Storage.S3.S3Compatibility
+SharedKernel.Storage.S3.S3Compatibility.ConditionalWrites.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.ConditionalWrites.set -> void
+SharedKernel.Storage.S3.S3Compatibility.KmsEncryption.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.KmsEncryption.set -> void
+SharedKernel.Storage.S3.S3Compatibility.ObjectTags.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.ObjectTags.set -> void
+SharedKernel.Storage.S3.S3Compatibility.PresignedPost.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.PresignedPost.set -> void
+SharedKernel.Storage.S3.S3Compatibility.S3Compatibility() -> void
+SharedKernel.Storage.S3.S3Compatibility.Sha256Checksums.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.Sha256Checksums.set -> void
+SharedKernel.Storage.S3.S3Encryption
+SharedKernel.Storage.S3.S3Encryption.BucketDefault = 0 -> SharedKernel.Storage.S3.S3Encryption
+SharedKernel.Storage.S3.S3Encryption.Kms = 2 -> SharedKernel.Storage.S3.S3Encryption
+SharedKernel.Storage.S3.S3Encryption.S3Managed = 1 -> SharedKernel.Storage.S3.S3Encryption
+SharedKernel.Storage.S3.S3StorageOptions
+SharedKernel.Storage.S3.S3StorageOptions.AccessKeyId.get -> string?
+SharedKernel.Storage.S3.S3StorageOptions.AccessKeyId.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.Compatibility.get -> SharedKernel.Storage.S3.S3Compatibility!
+SharedKernel.Storage.S3.S3StorageOptions.Compatibility.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.ForcePathStyle.get -> bool
+SharedKernel.Storage.S3.S3StorageOptions.ForcePathStyle.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.MaxRetries.get -> int
+SharedKernel.Storage.S3.S3StorageOptions.MaxRetries.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.Region.get -> string?
+SharedKernel.Storage.S3.S3StorageOptions.Region.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.RequestTimeout.get -> System.TimeSpan
+SharedKernel.Storage.S3.S3StorageOptions.RequestTimeout.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.S3StorageOptions() -> void
+SharedKernel.Storage.S3.S3StorageOptions.SecretAccessKey.get -> string?
+SharedKernel.Storage.S3.S3StorageOptions.SecretAccessKey.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.ServiceUrl.get -> string?
+SharedKernel.Storage.S3.S3StorageOptions.ServiceUrl.set -> void
+SharedKernel.Storage.S3.S3StorageOptions.SessionToken.get -> string?
+SharedKernel.Storage.S3.S3StorageOptions.SessionToken.set -> void
+SharedKernel.Storage.S3.S3StoreOptions
+SharedKernel.Storage.S3.S3StoreOptions.Bucket.get -> string!
+SharedKernel.Storage.S3.S3StoreOptions.Bucket.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.DefaultTier.get -> SharedKernel.Storage.StorageTier
+SharedKernel.Storage.S3.S3StoreOptions.DefaultTier.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.Encryption.get -> SharedKernel.Storage.S3.S3Encryption
+SharedKernel.Storage.S3.S3StoreOptions.Encryption.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.ExpectedBucketOwner.get -> string?
+SharedKernel.Storage.S3.S3StoreOptions.ExpectedBucketOwner.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.KeyPrefix.get -> string?
+SharedKernel.Storage.S3.S3StoreOptions.KeyPrefix.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.KmsKeyId.get -> string?
+SharedKernel.Storage.S3.S3StoreOptions.KmsKeyId.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.MaxPresignExpiry.get -> System.TimeSpan
+SharedKernel.Storage.S3.S3StoreOptions.MaxPresignExpiry.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.MultipartPartSize.get -> long
+SharedKernel.Storage.S3.S3StoreOptions.MultipartPartSize.set -> void
+SharedKernel.Storage.S3.S3StoreOptions.S3StoreOptions() -> void
+SharedKernel.Storage.S3StorageBuilder
+SharedKernel.Storage.S3StorageBuilder.AddStore(string! name, System.Action<SharedKernel.Storage.S3.S3StoreOptions!>? configure = null) -> SharedKernel.Storage.S3StorageBuilder!
+SharedKernel.Storage.S3StorageBuilder.AddTenantStore(string! name, System.Action<SharedKernel.Storage.S3.S3StoreOptions!>? configure = null) -> SharedKernel.Storage.S3StorageBuilder!
+SharedKernel.Storage.S3StorageBuilder.ConnectionName.get -> string!
+SharedKernel.Storage.S3StorageBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Storage.S3StorageBuilderExtensions
+static SharedKernel.Storage.S3.S3StorageOptions.SectionName.get -> string!
+static SharedKernel.Storage.S3.S3StoreOptions.SectionFor(string! storeName) -> string!
+static SharedKernel.Storage.S3StorageBuilderExtensions.AddS3(this SharedKernel.Storage.IStorageBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Storage.S3.S3StorageOptions!>? configure = null) -> SharedKernel.Storage.S3StorageBuilder!
+static SharedKernel.Storage.S3StorageBuilderExtensions.AddS3Compatible(this SharedKernel.Storage.IStorageBuilder! builder, string! connectionName, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Func<System.IServiceProvider!, (Amazon.S3.IAmazonS3! Client, SharedKernel.Storage.S3.S3Compatibility! Compatibility)>! clientFactory) -> SharedKernel.Storage.S3StorageBuilder!
+static SharedKernel.Storage.S3StorageBuilderExtensions.AddS3(this SharedKernel.Storage.IStorageBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! connectionName, System.Action<SharedKernel.Storage.S3.S3StorageOptions!>? configure = null) -> SharedKernel.Storage.S3StorageBuilder!
+SharedKernel.Storage.S3.S3Compatibility.ETagIsContentMd5.get -> bool
+SharedKernel.Storage.S3.S3Compatibility.ETagIsContentMd5.set -> void
