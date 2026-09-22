@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Dapper on PostgreSQL for SharedKernel: IDbSessionFactory (connection + transaction enlisted in the unit of work, tenant bound for row-level security, read-only and cross-tenant data sources), generic type handlers (SmartEnum, StronglyTypedId, jsonb via JsonTypeInfo, pgvector) and AddSharedKernelDapper.</Description>
-    <PackageTags>persistence;dapper;micro-orm;postgresql;shared-kernel</PackageTags>
+    <Description>Dapper on PostgreSQL for SharedKernel services: IDbSessionFactory opens a connection and transaction that join the current unit of work, bind the caller's tenant for row-level security, use the read replica for read-only sessions and the cross-tenant role inside a cross-tenant scope. Type handlers for strongly-typed ids, SmartEnums, jsonb via source-generated JSON and pgvector. Plain Dapper on top; no EF Core dependency.</Description>
+    <PackageTags>persistence;dapper;micro-orm;postgresql;row-level-security;multi-tenancy;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Tamper-evident, append-only audit ledger for SharedKernel on PostgreSQL: a plain-INSERT request path, a leader-elected background sealer that chains records with keyed MACs (AUDITv3), key rotation, signed checkpoints and GDPR-erasable payloads.</Description>
-    <PackageTags>persistence;postgresql;audit-trail;audit-log;tamper-evident;shared-kernel</PackageTags>
+    <Description>A tamper-evident, append-only audit ledger on PostgreSQL for SharedKernel services: one INSERT per audited command inside its transaction (Failed entries after a rollback), a background sealer that links records into per-tenant HMAC-SHA256 chains in commit-safe order, signed checkpoints, Intact/Broken/Unverifiable verification, key rotation and compromise recovery, GDPR-erasable snapshots, and a specified byte format (AUDITv3) with test vectors.</Description>
+    <PackageTags>persistence;postgresql;audit-trail;audit-log;tamper-evident;hash-chain;compliance;gdpr;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Zero-ORM persistence abstractions: IRepository, IReadRepository, IDbConnectionFactory, ISpecificationEvaluator, the audit-ledger read contracts and the ADO.NET coordination seams. The unit of work (IUnitOfWork), the caller (IRequestContext) and the audit writer (IAuditTrailWriter) are shared with the application pipeline through SharedKernel.Application.Abstractions. Implemented by SharedKernel.Persistence.EfCore.</Description>
-    <PackageTags>persistence;repository;unit-of-work;specification;shared-kernel</PackageTags>
+    <Description>ORM-free persistence contracts for SharedKernel services: IRepository (always tracks) and IReadRepository (never tracks) over domain specifications with offset, keyset and projected paging; EntityVersion for ETag/If-Match optimistic concurrency; set-based bulk updates and deletes; ICrossTenantScope for explicit, logged cross-tenant work; IDbConnectionFactory. No EF Core, Npgsql or Dapper dependency. Implemented by SharedKernel.Persistence.EfCore.</Description>
+    <PackageTags>persistence;repository;specification;optimistic-concurrency;etag;multi-tenancy;abstractions;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>

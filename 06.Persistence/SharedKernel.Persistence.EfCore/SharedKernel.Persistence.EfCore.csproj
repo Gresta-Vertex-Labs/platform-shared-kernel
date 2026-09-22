@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>EF Core 10 on PostgreSQL for SharedKernel services, registered with one call: builder.AddSharedKernelPostgres&lt;TContext&gt;("name"). Reads ConnectionStrings:{name}; snake_case naming, retry on transient failures, xmin optimistic concurrency on every aggregate root, SQLSTATE classification, strongly-typed id and Money conventions, audit/soft-delete/tenant columns by convention, one save interceptor (audit, soft delete, aggregate touch, tenant write guard), domain events on every save, unit of work per context, JSONB and pgvector helpers. Field encryption and the audit trail ship as sibling packages.</Description>
-    <PackageTags>persistence;efcore;entity-framework;postgresql;npgsql;jsonb;pgvector;repository;unit-of-work;shared-kernel</PackageTags>
+    <Description>EF Core 10 on PostgreSQL for multi-tenant services, registered with one call: builder.AddSharedKernelPostgres&lt;TContext&gt;("orders"). Conventions for snake_case, strongly-typed ids, Money, audit and soft-delete columns and xmin optimistic concurrency; open-generic repositories; a retry-safe unit of work with one transaction per scope; domain events on every save; tenant isolation by query filter, write guard and transaction-local row-level security; migrations and seeding across replicas; startup validation; JSONB and pgvector helpers.</Description>
+    <PackageTags>persistence;efcore;entity-framework-core;postgresql;npgsql;multi-tenancy;row-level-security;unit-of-work;repository;optimistic-concurrency;pgvector;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>

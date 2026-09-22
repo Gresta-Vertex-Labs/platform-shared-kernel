@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Field-level AES-256-GCM encryption for SharedKernel.Persistence.EfCore on PostgreSQL: .Encrypt()/.WithBlindIndex() on entity and nested complex-type properties, per-column derived keys, versioned blind indexes with WhereEncryptedEquals, a query guard, KMS key-ring bridging, a maintenance job (re-encrypt, recompute blind indexes, encrypt plaintext, verify) and per-tenant crypto-shredding.</Description>
-    <PackageTags>persistence;efcore;encryption;aes-gcm;shared-kernel</PackageTags>
+    <Description>Field-level AES-256-GCM encryption for SharedKernel.Persistence.EfCore: mark a property with .Encrypt("purpose") and it is stored as ciphertext bound to its row, column and tenant. Blind indexes for equality lookups (WhereEncryptedEquals), a guard that refuses queries leaking encrypted columns, KMS key providers, key rotation and plaintext migration jobs, and per-tenant data keys with crypto-shredding for GDPR/KVKK erasure.</Description>
+    <PackageTags>persistence;efcore;encryption;field-level-encryption;aes-gcm;blind-index;crypto-shredding;gdpr;postgresql;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>

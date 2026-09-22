@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Test-only helpers for services built on the SharedKernel persistence packages: an in-memory IRepository/IReadRepository that evaluates specifications, a fake IUnitOfWork with the real transaction semantics, a controllable ICrossTenantScope, an IRequestContext builder, and a PostgreSQL Testcontainers fixture that provisions the canonical roles and applies the RLS, audit-ledger and encryption migration helpers. Reference it from test projects only.</Description>
-    <PackageTags>persistence;testing;test-doubles;testcontainers;postgresql;shared-kernel</PackageTags>
+    <Description>Test helpers for services built on the SharedKernel persistence packages — reference from test projects only. In-memory fakes that follow the production rules (specification evaluation, paging and cursors, a unit of work that rolls back and replays like the retrying strategy), a test IRequestContext, and a Testcontainers PostgreSQL fixture that provisions the production database roles and applies the row-level security, audit-ledger and encryption migration helpers.</Description>
+    <PackageTags>persistence;testing;test-doubles;fakes;testcontainers;postgresql;integration-testing;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
     <IsTestProject>false</IsTestProject>
