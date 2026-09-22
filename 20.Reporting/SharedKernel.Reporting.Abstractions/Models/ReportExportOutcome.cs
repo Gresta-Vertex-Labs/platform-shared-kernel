@@ -1,4 +1,4 @@
-using SharedKernel.Storage.Abstractions.Models;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Reporting.Abstractions.Models;
 
@@ -7,14 +7,18 @@ namespace SharedKernel.Reporting.Abstractions.Models;
 /// </summary>
 public sealed record ReportExportOutcome
 {
-    /// <summary>The durable handle to the stored exported object — persist this, not <see cref="DownloadUrl"/>.</summary>
+    /// <summary>
+    /// The durable handle to the stored exported object — its store, tenant and key — persist this, not
+    /// <see cref="DownloadUrl"/>. Open it later with <c>IFileStorageFactory.Open(StoredFile)</c>.
+    /// </summary>
     public required FileReference StoredFile { get; init; }
 
     /// <summary>
-    /// A presigned download URL for the exported object, populated only when the originating
-    /// <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> was non-<see langword="null"/>.
+    /// A presigned download request (URL, HTTP method and expiry) for the exported object, populated only
+    /// when the originating <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> was
+    /// non-<see langword="null"/>.
     /// </summary>
-    public PresignedUrl? DownloadUrl { get; init; }
+    public PresignedRequest? DownloadUrl { get; init; }
 
     /// <summary>
     /// The number of rows enumerated from the source during export, counted for free while

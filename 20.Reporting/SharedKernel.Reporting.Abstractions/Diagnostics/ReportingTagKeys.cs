@@ -18,6 +18,6 @@ public static class ReportingTagKeys
     /// <summary>The tag carrying <see cref="Models.ReportExportOutcome.RowCount"/> once export completes.</summary>
     public const string RowCount = "reporting.row_count";
 
-    /// <summary>The tag carrying the destination bucket an export was written to.</summary>
-    public const string Bucket = "reporting.destination_bucket";
+    /// <summary>The tag carrying the name of the destination store an export was written to.</summary>
+    public const string Store = "reporting.destination_store";
 }

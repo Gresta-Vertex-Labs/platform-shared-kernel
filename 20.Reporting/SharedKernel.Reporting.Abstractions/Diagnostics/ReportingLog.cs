@@ -19,18 +19,18 @@ internal static partial class ReportingLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Reporting + 0,
         Level = LogLevel.Debug,
-        Message = "Report export started to bucket '{Bucket}' key '{Key}'.")]
-    internal static partial void ExportStarted(ILogger logger, string bucket, string key);
+        Message = "Report export started to store '{Store}' key '{Key}'.")]
+    internal static partial void ExportStarted(ILogger logger, string store, string key);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Reporting + 1,
         Level = LogLevel.Information,
-        Message = "Report export completed to bucket '{Bucket}' key '{Key}': {RowCount} rows in {DurationMs}ms.")]
-    internal static partial void ExportCompleted(ILogger logger, string bucket, string key, long rowCount, double durationMs);
+        Message = "Report export completed to store '{Store}' key '{Key}': {RowCount} rows in {DurationMs}ms.")]
+    internal static partial void ExportCompleted(ILogger logger, string store, string key, long rowCount, double durationMs);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Reporting + 2,
         Level = LogLevel.Warning,
-        Message = "Report export failed to bucket '{Bucket}' key '{Key}'.")]
-    internal static partial void ExportFailed(ILogger logger, Exception exception, string bucket, string key);
+        Message = "Report export failed to store '{Store}' key '{Key}'.")]
+    internal static partial void ExportFailed(ILogger logger, Exception exception, string store, string key);
 }
