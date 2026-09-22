@@ -1,0 +1,147 @@
+#nullable enable
+abstract SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.ConsumeAsync(System.Collections.Generic.IReadOnlyList<TMessage!>! messages, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+abstract SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>.ConsumeAsync(TMessage! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+abstract SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConfigureConsumer(MassTransit.IReceiveEndpointConfigurator! endpointConfigurator, MassTransit.IConsumerConfigurator<TConsumer!>! consumerConfigurator, MassTransit.IBusRegistrationContext! context) -> void
+const SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.SectionName = "SharedKernel:Messaging:AzureServiceBus" -> string!
+const SharedKernel.Messaging.MassTransit.Options.BatchOptions.SectionName = "SharedKernel:Messaging:Batch" -> string!
+const SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.SectionName = "SharedKernel:Messaging:CircuitBreaker" -> string!
+const SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.SectionName = "SharedKernel:Messaging:DeadLetter" -> string!
+const SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.SectionName = "SharedKernel:Messaging:PayloadTransform" -> string!
+const SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.SectionName = "SharedKernel:Messaging:RabbitMq" -> string!
+override sealed SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConfigureConsumer(MassTransit.IReceiveEndpointConfigurator! endpointConfigurator, MassTransit.IConsumerConfigurator<TConsumer!>! consumerConfigurator, MassTransit.IRegistrationContext! context) -> void
+SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>
+SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.BatchConsumerBase(Microsoft.Extensions.Logging.ILogger! logger) -> void
+SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.Consume(MassTransit.ConsumeContext<MassTransit.Batch<TMessage!>!>! context) -> System.Threading.Tasks.Task!
+SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.Logger.get -> Microsoft.Extensions.Logging.ILogger!
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException() -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(string! message) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(string! message, System.Exception! innerException) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(System.Guid messageId, System.Type! messageType) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.MessageId.get -> System.Guid?
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.MessageType.get -> System.Type?
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>.Consume(MassTransit.ConsumeContext<TMessage!>! context) -> System.Threading.Tasks.Task!
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>.ConsumerBase(Microsoft.Extensions.Logging.ILogger! logger) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>.Logger.get -> Microsoft.Extensions.Logging.ILogger!
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>
+SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConsumerDefinitionBase() -> void
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddBatchConsumer<TConsumer>(System.Action<SharedKernel.Messaging.MassTransit.Options.BatchOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddConsumer<TConsumer, TConsumerDefinition>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddConsumer<TConsumer>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddFaultConsumer<TMessage, TFaultConsumer>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseAzureServiceBus(string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseAzureServiceBus(System.Action<SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseRabbitMq(string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseRabbitMq(System.Action<SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithAmbientCorrelationPropagation() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithCircuitBreaker(System.Action<SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithDeadLetterPolicy(System.Action<SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithDelayedDelivery() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithEntityFrameworkOutbox<TDbContext>(System.Action<SharedKernel.Messaging.MassTransit.Options.OutboxOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithHeaderPropagator<T>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithIdempotency() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithIdempotency(System.Action<SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithInboundRequestContext() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithPayloadTransform(System.Action<SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithRetry(System.Action<SharedKernel.Messaging.MassTransit.Options.RetryOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithSendEndpointRoute<T>(string! queueName) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithTenantContext<TAccessor>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithVersionTranslator<TOld, TNew, TTranslator>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions
+SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator
+SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.AmbientCorrelationHeaderPropagator() -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator
+SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Application.Context.IRequestContext? requestContext = null) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator
+SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor? tenantContextAccessor = null) -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.AzureServiceBusOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.get -> string?
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.get -> string?
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.get -> int
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.get -> Azure.Messaging.ServiceBus.ServiceBusTransportType
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.set -> void
+SharedKernel.Messaging.MassTransit.Options.BatchOptions
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.BatchOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.ConcurrencyLimit.get -> int
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.ConcurrencyLimit.set -> void
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.MessageLimit.get -> int
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.MessageLimit.set -> void
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.TimeLimit.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.BatchOptions.TimeLimit.set -> void
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.ActiveThreshold.get -> int
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.ActiveThreshold.set -> void
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.CircuitBreakerOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.ResetInterval.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.ResetInterval.set -> void
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.TrackingPeriod.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.TrackingPeriod.set -> void
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.TripThreshold.get -> int
+SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.TripThreshold.set -> void
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.DeadLetterOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.MessageTimeToLive.get -> System.TimeSpan?
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.MessageTimeToLive.set -> void
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.QueueNameSuffix.get -> string!
+SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.QueueNameSuffix.set -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.get -> int
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.set -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.set -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.OutboxOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.set -> void
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableCompression.get -> bool
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableCompression.set -> void
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableEncryption.get -> bool
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableEncryption.set -> void
+SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.PayloadTransformOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.get -> int?
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.get -> ushort
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RabbitMqBusOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.Attempts.get -> int
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.Attempts.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.ImmediateAttempts.get -> int
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.ImmediateAttempts.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.InitialInterval.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.InitialInterval.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.IntervalIncrement.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.IntervalIncrement.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.MaxInterval.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.MaxInterval.set -> void
+SharedKernel.Messaging.MassTransit.Options.RetryOptions.RetryOptions() -> void
+SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException
+SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException.PayloadTransformMismatchException(string! message, System.Exception! innerException) -> void
+static SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions.AddSharedKernelMessaging(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Messaging.Abstractions.Options.MessagingOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+static SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions.AddSharedKernelMessaging(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Messaging.Abstractions.Options.MessagingOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit.get -> int?
+virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.EndpointName.get -> string?
+virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.NonRetryableExceptions.get -> System.Collections.Generic.IReadOnlyList<System.Type!>!
+virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.PrefetchCount.get -> int?
