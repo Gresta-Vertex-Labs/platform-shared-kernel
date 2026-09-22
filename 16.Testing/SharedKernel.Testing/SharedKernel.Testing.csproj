@@ -88,8 +88,8 @@
     -->
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
     <!--
-      Storage in-memory doubles (S-23, P-269/WO-043): InMemoryFileStorage (IFileStorage),
-      InMemoryBlobUriGenerator (IBlobUriGenerator). Mechanically safe to add even while 08.Storage
+      Storage in-memory doubles (S-23, P-269/WO-043; redesigned with 08.Storage's named-store API):
+      InMemoryFileStorage (a raw IFileStorage provider store) + AddInMemoryStore/AddInMemoryTenantStore. Mechanically safe to add even while 08.Storage
       was originally an empty placeholder (a ProjectReference to a content-empty project always
       builds) — subsequently confirmed 2026-07-17 that SK.08.Core shipped real compiled types with
       zero drift from this package's Storage/ Interface Contracts target shape.
@@ -337,7 +337,7 @@
     <!--
       Containers/MinioContainerFixture's bucket-bootstrap step only (S-22, P-268/WO-043). Pinned to
       4.0.101.1 to match 08.Storage/SharedKernel.Storage.S3.csproj and .Obs.csproj exactly (both
-      confirmed on disk). Storage/InMemoryFileStorage and InMemoryBlobUriGenerator never reference
+      confirmed on disk). Storage/InMemoryFileStorage never references
       AWSSDK.S3 — this package reference is scoped to the one Containers/ fixture file.
     -->
     <PackageReference Include="AWSSDK.S3" />
