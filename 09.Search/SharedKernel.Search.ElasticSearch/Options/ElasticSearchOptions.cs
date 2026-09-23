@@ -82,6 +82,4 @@ public sealed class ElasticSearchOptions
     [Range(-1, 3600)]
     public int RefreshIntervalSeconds { get; set; } = 1;
 
-    /// <summary>Gets or sets a value indicating whether the connected engine's version is verified at startup.</summary>
-    public bool ValidateEngineVersionOnStart { get; set; } = true;
 }
