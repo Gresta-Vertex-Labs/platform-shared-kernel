@@ -1,4 +1,5 @@
 # samples
+| [`CatalogApi`](CatalogApi/) | `09.Search` (all three packages — both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones), `13.ServiceDefaults` (+`.Search`), `14.Presentation` | Meilisearch and Elasticsearch (Docker, see its README) |
 
 Runnable services built on the SharedKernel packages.
 
@@ -11,6 +12,7 @@ way a real microservice would.
 | [`OrderApi`](OrderApi/) | `01.Core`, `03.Domain`, `05.Application`, `13.ServiceDefaults`, `14.Presentation` | none |
 | [`BillingApi`](BillingApi/) | `06.Persistence` (all six packages + `SharedKernel.Persistence.Testing`), `01.Core`, `03.Domain`, `05.Application`, `12.Security`, `13.ServiceDefaults`, `14.Presentation` | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
 | [`DocumentsApi`](DocumentsApi/) | `08.Storage` (all three packages, two S3 connections + OBS, a tenant store), `13.ServiceDefaults`, `14.Presentation` | MinIO (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
+| [`CatalogApi`](CatalogApi/) | `09.Search` (all three packages — both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones), `13.ServiceDefaults` (+`.Search`), `14.Presentation` | Meilisearch and Elasticsearch (Docker, see its README) |
 | [`ShippingApi`](ShippingApi/) | `07.Messaging` (both packages — publish, send, delayed delivery, idempotency, inbound caller identity, retry, fault consumer, readiness), `04.Contracts`, `05.Application.Abstractions`, `13.ServiceDefaults`, `14.Presentation` | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin); Docker Compose for running it by hand |
 
 ## Why these use PackageReference
