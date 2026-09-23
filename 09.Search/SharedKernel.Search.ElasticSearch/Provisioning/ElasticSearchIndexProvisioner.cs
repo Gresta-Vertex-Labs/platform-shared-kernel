@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.IndexManagement;
+using Elastic.Clients.Elasticsearch.Analysis;
 using Elastic.Clients.Elasticsearch.Mapping;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Microsoft.Extensions.Logging;
@@ -21,19 +22,62 @@ namespace SharedKernel.Search.ElasticSearch.Provisioning;
 internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 {
     private const string FingerprintMetaKey = "sk_schema_fingerprint";
+    private const string TextAnalysisMetaKey = "sk_text_analysis_fingerprint";
+
+    /// <summary>
+    /// The name of the custom analyzer this provider installs on an index that declares synonyms or
+    /// stop words, and assigns to every <see cref="SearchFieldKind.Text"/> field.
+    /// </summary>
+    /// <remarks>
+    /// A single named analyzer covering every searchable field is what makes the neutral declaration
+    /// honest: Meilisearch applies its <c>synonyms</c>/<c>stopWords</c> settings index-wide, so
+    /// per-field analyzers would not be portable even though ElasticSearch supports them.
+    /// </remarks>
+    private const string AnalyzerName = "sharedkernel_text";
+
+    private const string SynonymFilterName = "sharedkernel_synonyms";
+    private const string StopFilterName = "sharedkernel_stop";
 
     private readonly ElasticsearchClient _client;
     private readonly ElasticSearchOptions _options;
+    private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _completionFields;
+    private readonly IReadOnlyDictionary<string, string> _writeAliases;
     private readonly ILogger<ElasticSearchIndexProvisioner> _logger;
     private readonly Lock _cacheLock = new();
     private readonly Dictionary<string, (SearchIndexHealth Health, DateTimeOffset ObservedAt)> _probeCache = [];
 
     /// <summary>Initializes a new <see cref="ElasticSearchIndexProvisioner"/>.</summary>
+    /// <param name="client">The shared ElasticSearch client.</param>
+    /// <param name="options">The validated provider options.</param>
+    /// <param name="registeredDefinitions">
+    /// Every index definition the composition root registered, keyed by index name — the input to
+    /// <see cref="VerifyRegisteredIndexesAsync"/>.
+    /// </param>
+    /// <param name="completionFields">
+    /// The ElasticSearch-exclusive completion (suggest) fields declared per index via
+    /// <c>ElasticSearchBuilder.WithCompletionField</c>, keyed by index name.
+    /// </param>
+    /// <param name="writeAliases">
+    /// The write alias each registered index was declared with, keyed by read alias. Checked by
+    /// <see cref="VerifyRegisteredIndexesAsync"/>, because ElasticSearch auto-creates an index on write:
+    /// a write alias that resolves to nothing lets every write succeed into a mapping-less index nobody
+    /// reads, with no error anywhere.
+    /// </param>
+    /// <param name="logger">The logger.</param>
     public ElasticSearchIndexProvisioner(
-        ElasticsearchClient client, ElasticSearchOptions options, ILogger<ElasticSearchIndexProvisioner> logger)
+        ElasticsearchClient client,
+        ElasticSearchOptions options,
+        IReadOnlyDictionary<string, SearchIndexDefinition> registeredDefinitions,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> completionFields,
+        IReadOnlyDictionary<string, string> writeAliases,
+        ILogger<ElasticSearchIndexProvisioner> logger)
     {
         _client = client;
         _options = options;
+        _registeredDefinitions = registeredDefinitions;
+        _completionFields = completionFields;
+        _writeAliases = writeAliases;
         _logger = logger;
     }
 
@@ -47,8 +91,13 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                 SearchWellKnown.ElasticSearchProviderName, "EnsureIndexAsync", existsResponse.DebugInformation));
         }
 
-        var properties = BuildProperties(definition);
-        var meta = new Dictionary<string, object> { [FingerprintMetaKey] = definition.Fingerprint };
+        var hasTextAnalysis = definition.Synonyms.Count > 0 || definition.StopWords.Count > 0;
+        var properties = BuildProperties(definition, hasTextAnalysis, GetCompletionFields(definition.Name));
+        var meta = new Dictionary<string, object>
+        {
+            [FingerprintMetaKey] = definition.ComputeFingerprint(),
+            [TextAnalysisMetaKey] = ComputeTextAnalysisFingerprint(definition),
+        };
 
         if (!existsResponse.Exists)
         {
@@ -63,6 +112,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                     RefreshInterval = _options.RefreshIntervalSeconds < 0
                         ? new Duration("-1")
                         : TimeSpan.FromSeconds(_options.RefreshIntervalSeconds),
+                    Analysis = hasTextAnalysis ? BuildAnalysis(definition) : null,
                 },
             };
 
@@ -74,7 +124,28 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             }
 
             _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
+            if (hasTextAnalysis)
+            {
+                _logger.ElasticSearchTextAnalysisApplied(
+                    definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
+            }
+
             return Result.Success();
+        }
+
+        // ElasticSearch cannot change an open index's analysis settings at all, so a changed synonym or
+        // stop-word list on a live index is a conflict, never an in-place update — and the Meilisearch
+        // sibling refuses the same change for the same reason even though its own engine would allow it,
+        // so the two providers stay observably identical. The remedy is the one an incompatible field
+        // mapping already has: provision a staging index, bulk-load it, then CutoverAsync.
+        if (hasTextAnalysis)
+        {
+            var analysisConflict = await DetectAnalysisConflictAsync(definition, cancellationToken)
+                .ConfigureAwait(false);
+            if (analysisConflict is not null)
+            {
+                return Result.Failure(analysisConflict);
+            }
         }
 
         // Additive-only: PUT the union mapping. ElasticSearch itself rejects an incompatible in-place
@@ -297,7 +368,11 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         return Result<SearchIndexHealth>.Success(health);
     }
 
-    private static Properties BuildProperties(SearchIndexDefinition definition)
+    private IReadOnlyList<string> GetCompletionFields(string indexName)
+        => _completionFields.TryGetValue(indexName, out var fields) ? fields : [];
+
+    private static Properties BuildProperties(
+        SearchIndexDefinition definition, bool hasTextAnalysis, IReadOnlyList<string> completionFields)
     {
         var propertiesDictionary = new Dictionary<PropertyName, IProperty>();
 
@@ -305,7 +380,12 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         {
             propertiesDictionary[field.Name] = field.Kind switch
             {
-                SearchFieldKind.Text => new TextProperty(),
+                // The custom analyzer is attached only to text fields, and only when the definition
+                // actually declares synonyms or stop words — an index that declares neither keeps
+                // ElasticSearch's standard analyzer and its existing mappings unchanged.
+                SearchFieldKind.Text => hasTextAnalysis
+                    ? new TextProperty { Analyzer = AnalyzerName }
+                    : new TextProperty(),
                 SearchFieldKind.Keyword => new KeywordProperty(),
                 SearchFieldKind.Integer => new IntegerNumberProperty(),
                 SearchFieldKind.Decimal => new DoubleNumberProperty(),
@@ -320,6 +400,280 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             propertiesDictionary[tenantField] = new KeywordProperty();
         }
 
+        foreach (var completionField in completionFields)
+        {
+            // The tenant field doubles as a category context on the completion mapping. The completion
+            // suggester runs against its own FST and ignores the surrounding query entirely, so a
+            // query-level tenant filter has no effect on it — a context is the only mechanism that can
+            // scope a suggestion, and declaring it here at provisioning time is what lets
+            // ISuggestSearch<TDocument> keep the same fail-closed tenant rule as every neutral read.
+            propertiesDictionary[completionField] = new CompletionProperty
+            {
+                Contexts = definition.TenantField is { } contextField
+                    ?
+                    [
+                        new SuggestContext
+                        {
+                            Name = contextField,
+                            Type = "category",
+                            Path = contextField,
+                        },
+                    ]
+                    : null,
+            };
+        }
+
         return new Properties(propertiesDictionary);
+    }
+
+    /// <summary>
+    /// Builds the index-level analysis chain implementing <paramref name="definition"/>'s neutral
+    /// synonym and stop-word declarations.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Synonyms are emitted in Solr explicit-mapping form (<c>term =&gt; term, replacement</c>), not
+    /// equivalence form (<c>term, replacement</c>).</b> Equivalence is two-way and has no Meilisearch
+    /// counterpart; explicit mapping is one-way, which is exactly what Meilisearch's own
+    /// <c>synonyms</c> setting does. The original term is repeated on the right-hand side because an
+    /// explicit mapping <em>replaces</em> the matched token — omitting it would stop the document
+    /// matching the very word the caller typed.
+    /// </para>
+    /// <para>
+    /// Filter order matters: lowercasing runs first so a capitalised query term still matches a
+    /// lower-case stop word or synonym key, then stop-word removal, then synonym expansion — expanding
+    /// before removal would reintroduce a stop word as a synonym replacement.
+    /// </para>
+    /// </remarks>
+    private static IndexSettingsAnalysis BuildAnalysis(SearchIndexDefinition definition)
+    {
+        var filterNames = new List<string> { "lowercase" };
+        var tokenFilters = new Dictionary<string, ITokenFilter>(StringComparer.Ordinal);
+
+        if (definition.StopWords.Count > 0)
+        {
+            tokenFilters[StopFilterName] = new StopTokenFilter
+            {
+                Stopwords = definition.StopWords.ToArray(),
+            };
+            filterNames.Add(StopFilterName);
+        }
+
+        if (definition.Synonyms.Count > 0)
+        {
+            tokenFilters[SynonymFilterName] = new SynonymTokenFilter
+            {
+                Synonyms = definition.Synonyms
+                    .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                    .Select(entry => $"{entry.Key} => {entry.Key}, {string.Join(", ", entry.Value)}")
+                    .ToArray(),
+            };
+            filterNames.Add(SynonymFilterName);
+        }
+
+        return new IndexSettingsAnalysis
+        {
+            TokenFilters = new TokenFilters(tokenFilters),
+            Analyzers = new Analyzers(new Dictionary<string, IAnalyzer>(StringComparer.Ordinal)
+            {
+                [AnalyzerName] = new CustomAnalyzer
+                {
+                    Tokenizer = "standard",
+                    Filter = filterNames,
+                },
+            }),
+        };
+    }
+
+    /// <summary>
+    /// Returns <see cref="SearchErrors.IndexDefinitionConflict"/> when the live index's text-analysis
+    /// settings do not match what <paramref name="definition"/> declares, and <see langword="null"/>
+    /// when they do.
+    /// </summary>
+    /// <remarks>
+    /// The comparison is made against a dedicated text-analysis fingerprint written into mapping
+    /// <c>_meta</c> at provisioning time, rather than by reading the live analyzer definition back and
+    /// comparing it structurally. Reading it back would compare ElasticSearch's own normalised,
+    /// defaults-filled rendering of the analysis chain against what this provider intended to send, and
+    /// those differ in ways that have nothing to do with the caller's declaration. Hashing the neutral
+    /// declaration is exact, and it is the same mechanism — and the same storage location — the whole
+    /// schema fingerprint already uses.
+    /// </remarks>
+    private async Task<Primitives.Errors.Error?> DetectAnalysisConflictAsync(
+        SearchIndexDefinition definition, CancellationToken cancellationToken)
+    {
+        var mappingResponse = await _client.Indices
+            .GetMappingAsync(definition.Name, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!mappingResponse.IsValidResponse)
+        {
+            return SearchErrors.EngineFault(
+                SearchWellKnown.ElasticSearchProviderName,
+                "EnsureIndexAsync",
+                mappingResponse.DebugInformation);
+        }
+
+        var liveFingerprint = mappingResponse.Mappings.Values.FirstOrDefault()?.Mappings.Meta is { } meta
+            && meta.TryGetValue(TextAnalysisMetaKey, out var value)
+                ? value?.ToString()
+                : null;
+
+        var expected = ComputeTextAnalysisFingerprint(definition);
+        if (string.Equals(liveFingerprint, expected, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        // A short, field-shaped token, not a sentence: SearchErrors.IndexDefinitionConflict renders its
+        // second argument as "Field '{0}' on index '{1}' conflicts with the live mapping", so a prose
+        // explanation here produces "Field 'the declared synonyms or stop words differ from…'" in an
+        // error a consumer reads. The factory's own message already carries the remedy.
+        return SearchErrors.IndexDefinitionConflict(
+            definition.Name,
+            liveFingerprint is null ? "analysis (never applied)" : "analysis (synonyms/stopWords)");
+    }
+
+    /// <summary>
+    /// Returns a drift description when the index's declared write alias does not resolve to something
+    /// this platform provisioned, and <see langword="null"/> when it does.
+    /// </summary>
+    /// <remarks>
+    /// Resolving is not enough on its own — an auto-created index also "exists". What is checked is that
+    /// the write target carries the <c>sk_schema_fingerprint</c> mapping metadata
+    /// <see cref="EnsureIndexAsync"/> writes, which an index ElasticSearch created implicitly on first
+    /// write never has. When the write alias is the read alias (the shape a service starts with), the
+    /// read-path fingerprint check above has already proved it and this is a no-op.
+    /// </remarks>
+    private async Task<string?> DetectWriteAliasDriftAsync(string indexName, CancellationToken cancellationToken)
+    {
+        if (!_writeAliases.TryGetValue(indexName, out var writeAlias)
+            || string.Equals(writeAlias, indexName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var mappingResponse = await _client.Indices.GetMappingAsync(writeAlias, cancellationToken).ConfigureAwait(false);
+        if (!mappingResponse.IsValidResponse)
+        {
+            return $"{indexName}: write alias '{writeAlias}' does not resolve — ElasticSearch auto-creates " +
+                   "an index on write, so writes would silently land in a mapping-less index nothing reads";
+        }
+
+        var hasFingerprint = mappingResponse.Mappings.Values.Any(
+            m => m.Mappings.Meta is { } meta && meta.ContainsKey(FingerprintMetaKey));
+
+        return hasFingerprint
+            ? null
+            : $"{indexName}: write alias '{writeAlias}' resolves to an index this platform never " +
+              "provisioned (no schema fingerprint) — most likely one ElasticSearch auto-created on a write";
+    }
+
+    /// <summary>
+    /// Hashes only the neutral text-analysis declaration, so a changed synonym or stop-word list is
+    /// detectable independently of an additive field change — which remains legal.
+    /// </summary>
+    private static string ComputeTextAnalysisFingerprint(SearchIndexDefinition definition)
+    {
+        var builder = new System.Text.StringBuilder();
+        foreach (var synonym in definition.Synonyms.OrderBy(s => s.Key, StringComparer.Ordinal))
+        {
+            builder.Append(synonym.Key).Append("=>");
+            foreach (var replacement in synonym.Value.OrderBy(v => v, StringComparer.Ordinal))
+            {
+                builder.Append(replacement).Append(',');
+            }
+
+            builder.Append('\n');
+        }
+
+        builder.Append("--\n");
+        foreach (var stopWord in definition.StopWords.OrderBy(w => w, StringComparer.Ordinal))
+        {
+            builder.Append(stopWord).Append('\n');
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexStringLower(hash);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_registeredDefinitions.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        var drifted = new List<string>();
+
+        foreach (var (indexName, definition) in _registeredDefinitions)
+        {
+            var probeResult = await ProbeAsync(indexName, cancellationToken).ConfigureAwait(false);
+            if (probeResult.IsFailure)
+            {
+                drifted.Add($"{indexName}: probe failed ({probeResult.Error.Code})");
+                continue;
+            }
+
+            var health = probeResult.Value;
+            if (!health.Reachable)
+            {
+                drifted.Add($"{indexName}: cluster unreachable");
+                continue;
+            }
+
+            if (!health.IndexAddressable)
+            {
+                drifted.Add($"{indexName}: alias or index not addressable with this service's credentials");
+                continue;
+            }
+
+            var expectedFingerprint = definition.ComputeFingerprint();
+            if (health.SchemaFingerprint is null)
+            {
+                drifted.Add(
+                    $"{indexName}: no schema fingerprint recorded — the index was never provisioned by EnsureIndexAsync");
+                continue;
+            }
+
+            if (!string.Equals(health.SchemaFingerprint, expectedFingerprint, StringComparison.Ordinal))
+            {
+                drifted.Add(
+                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'");
+                continue;
+            }
+
+            // The write path is checked separately from the read path, because on ElasticSearch they can
+            // legitimately address different concrete indexes — and because a broken write alias is
+            // invisible until someone reads. ElasticSearch auto-creates an index on write, so a write
+            // alias that resolves to nothing does not fail: every write lands in a brand-new,
+            // mapping-less, analysis-less index that no read ever touches. The bulk call reports success,
+            // the counts look plausible, and the data is simply not where the service is looking. Nothing
+            // else in this domain notices, which is exactly why it is checked here.
+            var writeAliasDrift = await DetectWriteAliasDriftAsync(indexName, cancellationToken)
+                .ConfigureAwait(false);
+            if (writeAliasDrift is not null)
+            {
+                drifted.Add(writeAliasDrift);
+            }
+        }
+
+        if (drifted.Count == 0)
+        {
+            foreach (var indexName in _registeredDefinitions.Keys)
+            {
+                _logger.ElasticSearchIndexVerified(indexName);
+            }
+
+            return Result.Success();
+        }
+
+        var detail = string.Join("; ", drifted);
+        _logger.ElasticSearchIndexDrifted(string.Join(", ", _registeredDefinitions.Keys), detail);
+        return Result.Failure(SearchErrors.ProbeFailed(
+            string.Join(", ", _registeredDefinitions.Keys),
+            $"{drifted.Count} of {_registeredDefinitions.Count} registered index(es) did not match: {detail}"));
     }
 }
