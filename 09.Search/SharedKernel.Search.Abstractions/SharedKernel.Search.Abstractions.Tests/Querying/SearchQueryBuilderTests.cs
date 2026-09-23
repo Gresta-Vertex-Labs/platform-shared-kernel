@@ -24,7 +24,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Matching_ReturnsNewInstance_LeavingSourceUnmodified()
     {
-        var original = SearchQuery.For<TestDocument>();
+        var original = SearchQuery.New();
 
         var modified = original.Matching("hello");
 
@@ -37,9 +37,9 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void EveryBuilderMethod_ReturnsNewInstance()
     {
-        var original = SearchQuery.For<TestDocument>();
+        var original = SearchQuery.New();
 
-        IQueryBuilder<TestDocument>[] results =
+        IQueryBuilder[] results =
         [
             original.Matching("x"),
             original.MatchAllTerms(true),
@@ -61,7 +61,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void PartiallyBuiltQuery_CanBeSafelyReusedAsATemplate()
     {
-        var template = SearchQuery.For<TestDocument>().Matching("shared");
+        var template = SearchQuery.New().Matching("shared");
 
         var first = template.Where(SearchFilter.Eq("tenant", SearchValue.From("a"))).Build().Value;
         var second = template.Where(SearchFilter.Eq("tenant", SearchValue.From("b"))).Build().Value;
@@ -78,7 +78,7 @@ public sealed class SearchQueryBuilderTests
         var first = SearchFilter.Eq("status", SearchValue.From("active"));
         var second = SearchFilter.Eq("tenant", SearchValue.From("acme"));
 
-        var request = SearchQuery.For<TestDocument>()
+        var request = SearchQuery.New()
             .Where(first)
             .Where(second)
             .Build()
@@ -95,7 +95,7 @@ public sealed class SearchQueryBuilderTests
         var b = SearchFilter.Eq("b", SearchValue.From(2L));
         var c = SearchFilter.Eq("c", SearchValue.From(3L));
 
-        var request = SearchQuery.For<TestDocument>().Where(a).Where(b).Where(c).Build().Value;
+        var request = SearchQuery.New().Where(a).Where(b).Where(c).Build().Value;
 
         // Where() combines via SearchFilter.All(_filter, filter), which nests rather than flattens
         // (AndFilter(AndFilter(a, b), c)) — AND is associative, so the tree shape is not the
@@ -124,7 +124,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void OrderByThenOrderByDescending_ProducesTwoSortsInCallOrder()
     {
-        var request = SearchQuery.For<TestDocument>()
+        var request = SearchQuery.New()
             .OrderBy("name")
             .OrderByDescending("createdAt")
             .Build()
@@ -140,7 +140,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithPageLessThanOne_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().Page(0, 20).Build();
+        var result = SearchQuery.New().Page(0, 20).Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -149,7 +149,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithPageSizeLessThanOne_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().Page(1, 0).Build();
+        var result = SearchQuery.New().Page(1, 0).Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -158,7 +158,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithPageSizeAboveMaxPageSize_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().Page(1, SearchWellKnown.MaxPageSize + 1).Build();
+        var result = SearchQuery.New().Page(1, SearchWellKnown.MaxPageSize + 1).Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -167,7 +167,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithEmptyFieldNameInSearchingIn_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().SearchingIn("name", "").Build();
+        var result = SearchQuery.New().SearchingIn("name", "").Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -176,7 +176,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithEmptyFieldNameInFaceting_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().Faceting("status", "  ").Build();
+        var result = SearchQuery.New().Faceting("status", "  ").Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -185,7 +185,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithDuplicateSortField_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>().OrderBy("name").OrderByDescending("name").Build();
+        var result = SearchQuery.New().OrderBy("name").OrderByDescending("name").Build();
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -194,7 +194,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithEmptyHighlightFieldList_ReturnsInvalidSearchRequest()
     {
-        var result = SearchQuery.For<TestDocument>()
+        var result = SearchQuery.New()
             .Highlighting(new HighlightRequest { Fields = [] })
             .Build();
 
@@ -205,7 +205,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Build_WithValidRequest_Succeeds()
     {
-        var result = SearchQuery.For<TestDocument>()
+        var result = SearchQuery.New()
             .Matching("hello")
             .MatchAllTerms(true)
             .SearchingIn("name", "description")
@@ -230,7 +230,7 @@ public sealed class SearchQueryBuilderTests
     [Fact]
     public void Default_Page_IsOneBased()
     {
-        var request = SearchQuery.For<TestDocument>().Build().Value;
+        var request = SearchQuery.New().Build().Value;
 
         request.Page.Should().Be(1);
     }
