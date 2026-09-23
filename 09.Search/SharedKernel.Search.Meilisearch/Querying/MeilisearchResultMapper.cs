@@ -98,6 +98,12 @@ internal static class MeilisearchResultMapper
         var rank = 0;
         foreach (var raw in rawHits)
         {
+            // Throwing here is deliberate and is not a Result-discipline violation: every call path into
+            // this mapper runs inside MeilisearchIndex<TDocument>.ExecuteAsync, which catches, classifies
+            // and returns it as a search.engine_fault failure. A null hit means the engine returned a JSON
+            // literal null where a document object belongs — unrepresentable in TDocument and not worth a
+            // Result-threaded signature through every private mapping helper for one impossible-by-contract
+            // case.
             var document = raw.Deserialize<TDocument>(DocumentSerializerOptions)
                 ?? throw new InvalidOperationException("Meilisearch returned a null document for a hit.");
 
