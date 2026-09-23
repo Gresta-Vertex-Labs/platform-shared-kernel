@@ -44,6 +44,8 @@ public sealed class ErrorCodesTests
             ErrorCodes.Forbidden.Default,
             ErrorCodes.Forbidden.InsufficientPermission,
             ErrorCodes.Unexpected.Default,
+            ErrorCodes.Unavailable.Default,
+            ErrorCodes.Timeout.Default,
             ErrorCodes.Domain.RuleViolated,
         };
 
@@ -95,6 +97,15 @@ public sealed class ErrorCodesTests
 
         Assert.Empty(forbidden.Intersect(unauthorized));
     }
+
+    // P-562: the general-purpose codes behind Error.Unavailable and Error.Timeout.
+    [Fact]
+    public void Unavailable_Default_HasCorrectValue()
+        => Assert.Equal("unavailable.default", ErrorCodes.Unavailable.Default);
+
+    [Fact]
+    public void Timeout_Default_HasCorrectValue()
+        => Assert.Equal("timeout.default", ErrorCodes.Timeout.Default);
 
     [Fact]
     public void Forbidden_Codes_UseTheDottedLowercaseConvention()

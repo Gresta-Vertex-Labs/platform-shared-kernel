@@ -294,8 +294,9 @@ these packages:
 ```text
 LAYER       01.Core references nothing else in the platform; every other domain may reference it. net10.0.
 RESULTS     Result<T> / Result / ValidationResult (Primitives). Error(Code, Message, Type): Error.Validation | NotFound |
-            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected. Codes dot.separated.lowercase, stable, never
-            interpolated; check ErrorCodes first. Error.None, never null. Value on a failure throws.
+            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected | Unavailable (503) | Timeout (504). Codes
+            dot.separated.lowercase, stable, never interpolated; check ErrorCodes first. Error.None, never null. Value on a
+            failure throws.
 CHAINING    Core: Map Bind Ensure Tap Match (sync, Task, ValueTask); ResultTry.Try/TryAsync; ResultCombine.Combine;
             Guard.Against.X(value) -> Error? (null = passed); Guard.Throw.X(value) throws DomainException.
 TIME / IDS  inject IClock (SK0001); IIdGenerator / UuidV7IdGenerator; LoggingEventIdRanges.Core = 1000.

@@ -13,13 +13,16 @@ namespace SharedKernel.Workflows.Temporal.Failures;
 /// <para>
 /// <see cref="ToFailure(Error)"/>/<see cref="ToFailure(Result)"/> map an expected <see cref="Error"/>
 /// raised inside an activity or workflow body onto an <see cref="ApplicationFailureException"/> so
-/// Temporal's retry, timeout, and compensation machinery is driven correctly:
-/// <see cref="ErrorType.Validation"/>/<see cref="ErrorType.NotFound"/>/<see cref="ErrorType.Conflict"/>/
-/// <see cref="ErrorType.Unauthorized"/>/<see cref="ErrorType.BusinessRule"/> map to
-/// <c>nonRetryable: true</c> with <c>errorType</c> set to <see cref="Error.Code"/>;
-/// <see cref="ErrorType.Unexpected"/> maps to <c>nonRetryable: false</c>. An unmapped exception
-/// escaping an activity stays retryable, matching Temporal's own semantics — this package never
-/// blanket-catches.
+/// Temporal's retry, timeout, and compensation machinery is driven correctly, always with
+/// <c>errorType</c> set to <see cref="Error.Code"/>. <see cref="ErrorType.Unexpected"/>,
+/// <see cref="ErrorType.Unavailable"/> and <see cref="ErrorType.Timeout"/> map to
+/// <c>nonRetryable: false</c> — a transient fault, a dependency that is down, and one that ran out
+/// of time are exactly what the retry policy exists for. Every other type
+/// (<see cref="ErrorType.Validation"/>/<see cref="ErrorType.NotFound"/>/<see cref="ErrorType.Conflict"/>/
+/// <see cref="ErrorType.Unauthorized"/>/<see cref="ErrorType.Forbidden"/>/<see cref="ErrorType.BusinessRule"/>)
+/// maps to <c>nonRetryable: true</c>, because repeating the same call cannot change the answer. An
+/// unmapped exception escaping an activity stays retryable, matching Temporal's own semantics — this
+/// package never blanket-catches.
 /// </para>
 /// <para>
 /// <see cref="ToError(Exception)"/> is the inverse, used at the dispatch site (e.g.
@@ -29,7 +32,8 @@ namespace SharedKernel.Workflows.Temporal.Failures;
 /// branchable at the dispatch site. The original <see cref="ErrorType"/> discriminator additionally
 /// survives when the failure originated from this same mapper, because it is stashed as a structured
 /// failure detail — a defensive best-effort decode, not a guarantee for failures Temporal itself
-/// produced from an unmapped exception.
+/// produced from an unmapped exception. That detail is the enum's numeric value, persisted in
+/// workflow history, which is why <see cref="ErrorType"/> members are never renumbered.
 /// </para>
 /// </remarks>
 internal static class WorkflowFailureMapper
@@ -38,9 +42,14 @@ internal static class WorkflowFailureMapper
     /// Maps an expected <see cref="Error"/> to the <see cref="ApplicationFailureException"/> that
     /// should be thrown from inside an activity or workflow body.
     /// </summary>
+    /// <remarks>
+    /// Retryable (<c>nonRetryable: false</c>) only for <see cref="ErrorType.Unexpected"/>,
+    /// <see cref="ErrorType.Unavailable"/> and <see cref="ErrorType.Timeout"/>; non-retryable for every
+    /// other type.
+    /// </remarks>
     public static ApplicationFailureException ToFailure(Error error)
     {
-        bool nonRetryable = error.Type != ErrorType.Unexpected;
+        bool nonRetryable = !IsRetryable(error.Type);
         return new ApplicationFailureException(
             message: error.Message,
             errorType: error.Code,
@@ -96,10 +105,21 @@ internal static class WorkflowFailureMapper
             ErrorType.NotFound => Error.NotFound(code, message),
             ErrorType.Conflict => Error.Conflict(code, message),
             ErrorType.Unauthorized => Error.Unauthorized(code, message),
+            ErrorType.Forbidden => Error.Forbidden(code, message),
             ErrorType.BusinessRule => Error.BusinessRule(code, message),
+            ErrorType.Unavailable => Error.Unavailable(code, message),
+            ErrorType.Timeout => Error.Timeout(code, message),
             _ => Error.Unexpected(code, message),
         };
     }
+
+    /// <summary>
+    /// Whether Temporal should retry a failure of <paramref name="type"/>: only when the same call
+    /// can succeed unchanged later — an unclassified fault, a dependency that is down, or one that ran
+    /// out of time.
+    /// </summary>
+    private static bool IsRetryable(ErrorType type) =>
+        type is ErrorType.Unexpected or ErrorType.Unavailable or ErrorType.Timeout;
 
     /// <summary>
     /// Best-effort decode of the original <see cref="ErrorType"/> stashed by

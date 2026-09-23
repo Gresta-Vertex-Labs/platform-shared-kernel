@@ -79,6 +79,7 @@ Order order = Find(id).GetValueOrThrow();   // throws NotFoundException for the 
 Error.Validation(ErrorCodes.Validation.Required, "Name is required.");
 Error.NotFound(...);   Error.Conflict(...);      Error.Unauthorized(...);
 Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
+Error.Unavailable(...);  Error.Timeout(...);
 ```
 
 **`Code` is the field that matters most.** It is the stable identity of the failure, and three separate things key off it: consumers branch on it, dashboards and alert rules filter on it, and `SharedKernel.Localization` looks up a translated message by it. So: dot-separated lowercase, general to specific; stable once shipped; never any interpolated data. Check `ErrorCodes` first — a suitable constant often already exists.
@@ -96,11 +97,14 @@ Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
 | `Conflict` | Clashes with existing state — duplicate, or concurrency | 409 |
 | `BusinessRule` | Well-formed, but violates a domain invariant | 422 |
 | `Unexpected` | Unclassified fault | 500 |
+| `Unavailable` | A dependency or the service is temporarily unable to serve — unreachable, throttling, failing; retry later | 503 |
+| `Timeout` | The operation ran out of time; its outcome may be unknown | 504 |
 
-The two pairs people get wrong:
+The pairs people get wrong:
 
 - **`Unauthorized` vs `Forbidden`** — "who are you?" versus "may you do *this*?". Substituting one makes an authorization failure indistinguishable from a missing credential in logs, and tells the client to re-authenticate when that cannot help.
 - **`Validation` vs `BusinessRule`** — if the caller could fix it by correcting a field, it's validation. If the request is well-formed and the domain is refusing, it's a business rule.
+- **`Unexpected` vs `Unavailable`/`Timeout`** — a dependency that is down or too slow is an operational condition the caller can retry, not a defect. `Unavailable` when it refused the call or could not be reached; `Timeout` when it ran out of time, so a write may still have landed. Reporting either as `Unexpected` turns every outage into a 500 that reads like a bug.
 
 ### `ValidationResult` — many errors, not one
 

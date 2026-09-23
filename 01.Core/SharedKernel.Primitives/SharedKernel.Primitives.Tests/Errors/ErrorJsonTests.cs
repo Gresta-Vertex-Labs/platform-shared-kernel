@@ -147,6 +147,21 @@ public sealed class ErrorJsonTests
         Assert.Equal(ErrorType.Forbidden, roundTripped!.Type);
     }
 
+    [Theory]
+    [InlineData(ErrorType.Unavailable, 8)]
+    [InlineData(ErrorType.Timeout, 9)]
+    public void ErrorType_NewMembers_SerializeAsTheirPinnedIntegers_AndRoundTrip(ErrorType type, int expected)
+    {
+        var error = new Error("dependency.down", "The dependency is down.", type);
+
+        var json = JsonSerializer.Serialize(error);
+
+        Assert.Contains($"\"Type\":{expected}", json);
+
+        var roundTripped = JsonSerializer.Deserialize<Error>(json);
+        Assert.Equal(error, roundTripped);
+    }
+
     [Fact]
     public void ErrorType_RoundTripsAsStringWhenCallerOptsIntoJsonStringEnumConverter()
     {

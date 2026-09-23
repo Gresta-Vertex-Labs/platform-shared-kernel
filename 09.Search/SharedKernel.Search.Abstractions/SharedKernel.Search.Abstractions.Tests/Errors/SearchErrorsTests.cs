@@ -9,7 +9,8 @@ namespace SharedKernel.Search.Abstractions.Tests.Errors;
 /// <see cref="ErrorType"/> and a dot-separated-lowercase code, and the factory-choice tally is
 /// asserted explicitly against the live <see cref="Error"/> API: <see cref="ErrorType.NotFound"/> x2,
 /// <see cref="ErrorType.Validation"/> x12, <see cref="ErrorType.Conflict"/> x4,
-/// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x8,
+/// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x6,
+/// <see cref="ErrorType.Unavailable"/> x1, <see cref="ErrorType.Timeout"/> x1,
 /// <see cref="ErrorType.BusinessRule"/> x0.
 /// </summary>
 public sealed class SearchErrorsTests
@@ -220,26 +221,33 @@ public sealed class SearchErrorsTests
     }
 
     // ---------------------------------------------------------------------------
-    // Error.Unexpected (x8)
+    // Error.Unavailable (x1) and Error.Timeout (x1) — P-562: an engine that is down or too slow is
+    // retryable, so it reaches the HTTP boundary as 503/504, not 500. Codes unchanged.
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void Unreachable_ReturnsUnexpected()
+    public void Unreachable_ReturnsUnavailable()
     {
         var error = SearchErrors.Unreachable("meilisearch", "http://localhost:7700");
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Unavailable);
         error.Code.Should().Be("search.unreachable");
+        error.Message.Should().Contain("meilisearch").And.Contain("http://localhost:7700");
     }
 
     [Fact]
-    public void Timeout_ReturnsUnexpected()
+    public void Timeout_ReturnsTimeout()
     {
         var error = SearchErrors.Timeout("search", TimeSpan.FromSeconds(30));
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Timeout);
         error.Code.Should().Be("search.timeout");
+        error.Message.Should().Contain("search");
     }
+
+    // ---------------------------------------------------------------------------
+    // Error.Unexpected (x6)
+    // ---------------------------------------------------------------------------
 
     [Fact]
     public void WriteRejected_ReturnsUnexpected()
@@ -251,11 +259,11 @@ public sealed class SearchErrorsTests
     }
 
     [Fact]
-    public void WriteTimeout_ReturnsUnexpected_StatingWriteMayStillLand()
+    public void WriteTimeout_ReturnsTimeout_StatingWriteMayStillLand()
     {
         var error = SearchErrors.WriteTimeout("my-index", TimeSpan.FromSeconds(120));
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Timeout);
         error.Code.Should().Be("search.write_timeout");
         error.Message.Should().Contain("may still land");
     }
@@ -340,7 +348,9 @@ public sealed class SearchErrorsTests
         errors.Count(e => e.Type == ErrorType.Validation).Should().Be(12);
         errors.Count(e => e.Type == ErrorType.Conflict).Should().Be(4);
         errors.Count(e => e.Type == ErrorType.Unauthorized).Should().Be(2);
-        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(8);
+        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(5);
+        errors.Count(e => e.Type == ErrorType.Unavailable).Should().Be(1);
+        errors.Count(e => e.Type == ErrorType.Timeout).Should().Be(2);
         errors.Count(e => e.Type == ErrorType.BusinessRule).Should().Be(0);
         errors.Count(e => e.Type == ErrorType.None).Should().Be(0);
 

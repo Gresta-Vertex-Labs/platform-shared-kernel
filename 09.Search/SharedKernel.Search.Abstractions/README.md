@@ -13,7 +13,7 @@ Application code should always inject `ISearchIndex<TDocument>` / `ISearchIndexP
 - `IQueryBuilder` / `SearchQueryBuilder` / `SearchQuery.New()` — the fluent, immutable query-building entry point. Non-generic: a `SearchRequest` is document-type-independent, and because fields are strings by design a `TDocument` parameter here would constrain nothing
 - `SearchFilter` — closed 8-node AST (`Eq`/`Ne`/`In`/`Between`/`Exists`/`All`/`Any`/`Negate`) over the closed five-kind `SearchValue` scalar union (`String`/`Int64`/`Double`/`Boolean`/`DateTimeOffset`)
 - `Models/` — `SearchRequest`, `SearchResults<TDocument>`, `SearchHit<TDocument>`, `TenantScope`, `SearchWriteConsistency`, `SearchWriteReceipt`, `SearchBulkReceipt`, `SearchIndexDefinition` (fields, tenant field, ceilings, and index-level `Synonyms`/`StopWords`) + `SearchIndexDefinitionBuilder`, `SearchCount`, `SearchIndexHealth`, `IndexCutoverRequest`, `HighlightRequest`, `FacetResult`, `TotalHitsAccuracy`
-- `SearchErrors` — static `Error` factory covering not-found, validation, conflict, unauthorized, and unexpected outcomes
+- `SearchErrors` — static `Error` factory covering not-found, validation, conflict, unauthorized, unavailable (`search.unreachable`, HTTP 503), timeout (`search.timeout`, HTTP 504), and unexpected outcomes
 - `SearchWellKnown` — the domain-local named-constants holder (default field names, page-size/ceiling defaults, `ActivitySource`/`Meter` names, provider names, OTel tag keys)
 - `SearchStreamException` — the `Error`-carrying exception thrown from `EnumerateAsync`'s `MoveNextAsync`, the domain's one documented exception to the `Result`-first rule
 

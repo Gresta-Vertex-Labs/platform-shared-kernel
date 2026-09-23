@@ -77,11 +77,14 @@ Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` via `Prob
 mirroring the real wire shape `SharedKernel.Presentation.WebApi` produces: `errorCode` (falling back to
 `title`) → `Error.Code` — never `type`, which is an RFC 9457 status URI such as
 `"https://httpstatuses.io/404"`, not a machine code — and `detail` → `Error.Message`. The response's
-HTTP status maps back to an `ErrorType` (400 → Validation, 401 → Unauthorized, 403 → Forbidden,
-404 → NotFound, 409 → Conflict, 422 → BusinessRule, everything else → Unexpected) via
-`HttpStatusErrorTypeMap`, the reverse of `SharedKernel.Presentation.WebApi`'s
-`ErrorTypeStatusCodeMap.Resolve` — duplicated here rather than shared, since `11.Communication` may
-never reference `14.Presentation`. When the body carries the `errors` extension (a multi-field
+HTTP status maps back to an `ErrorType` (400, 413, 415, 428 → Validation, 401 → Unauthorized,
+403 → Forbidden, 404 → NotFound, 409, 412 → Conflict, 422 → BusinessRule, 429, 503 → Unavailable,
+504 → Timeout, everything else → Unexpected) via `HttpStatusErrorTypeMap`, the reverse of
+`SharedKernel.Presentation.WebApi`'s `ErrorTypeStatusCodeMap.Resolve` plus the statuses an HTTP
+boundary answers outside it (a failed `If-Match`, a payload or media-type rejection, rate limiting) —
+duplicated here rather than shared, since `11.Communication` may never reference `14.Presentation`.
+A downstream outage answered with a ProblemDetails body therefore comes back as `Unavailable` or
+`Timeout` rather than as an `Unexpected` fault. When the body carries the `errors` extension (a multi-field
 validation failure: keyed by field path, or by code for an error that names no field, each value an
 array of messages), every entry is rebuilt as its own `Error` and returned as one aggregate via
 `Error.Validation(IReadOnlyList<Error>)` — the same shape `ValidationException`/`Error.Details`
@@ -105,7 +108,8 @@ was retired for exactly that defect (P-361).
 `StandardResilienceHandler`'s default `RetryCount = 3` means every typed client already silently
 re-issues non-idempotent verbs (POST/PATCH/DELETE) on transient failure. `EnableIdempotencyKeyPropagation`
 converts that existing hazard into an explicit, downstream-consumable guarantee — a stable
-`x-idempotency-key` header attached once, before the first attempt, and preserved unchanged across
+`Idempotency-Key` header (`WellKnownHeaders.IdempotencyKey`, the name `SharedKernel.Presentation.WebApi`'s
+`[RequireIdempotencyKey]` reads) attached once, before the first attempt, and preserved unchanged across
 every Polly-driven retry of the same logical call:
 
 ```csharp
@@ -118,7 +122,7 @@ services
     });
 ```
 
-Disabled by default. A caller-supplied `x-idempotency-key` value is never overwritten.
+Disabled by default. A caller-supplied `Idempotency-Key` value is never overwritten.
 
 ## Layering
 

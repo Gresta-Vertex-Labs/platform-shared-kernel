@@ -7,11 +7,13 @@ namespace SharedKernel.Search.Abstractions.Errors;
 /// these — never an ad-hoc <see cref="Error"/> value constructed inline.
 /// </summary>
 /// <remarks>
-/// Only the six real <see cref="SharedKernel.Primitives.Errors.Error"/> factories are used:
-/// <see cref="Error.Unexpected"/>, <see cref="Error.Validation"/>, <see cref="Error.NotFound"/>,
-/// <see cref="Error.Conflict"/>, <see cref="Error.Unauthorized"/>. <see cref="Error.BusinessRule"/> is
-/// used zero times in this domain — nothing in a capability package is a domain rule.
-/// <see cref="Error.None"/> is never returned by any member here.
+/// Only real <see cref="SharedKernel.Primitives.Errors.Error"/> factories are used:
+/// <see cref="Error.Unexpected"/>, <see cref="Error.Validation(string, string)"/>, <see cref="Error.NotFound"/>,
+/// <see cref="Error.Conflict"/>, <see cref="Error.Unauthorized"/>, and — for an engine that is down or
+/// too slow — <see cref="Error.Unavailable"/> (<see cref="Unreachable"/>) and <see cref="Error.Timeout"/>
+/// (<see cref="Timeout"/>). <see cref="Error.BusinessRule"/> is used zero times in this domain —
+/// nothing in a capability package is a domain rule. <see cref="Error.None"/> is never returned by any
+/// member here.
 /// </remarks>
 public static class SearchErrors
 {
@@ -168,24 +170,31 @@ public static class SearchErrors
             TenantScopeMissingCode,
             $"Index '{indexName}' declares a TenantField; TenantScope.None is not permitted.");
 
-    /// <summary>The search provider could not be reached.</summary>
+    /// <summary>
+    /// The search provider could not be reached, or refused the call as overloaded — an
+    /// <see cref="ErrorType.Unavailable"/> error, so the HTTP boundary answers 503 and the caller
+    /// knows a retry may succeed.
+    /// </summary>
     public static Error Unreachable(string providerName, string endpoint) =>
-        Error.Unexpected(UnreachableCode, $"Search provider '{providerName}' at '{endpoint}' is unreachable.");
+        Error.Unavailable(UnreachableCode, $"Search provider '{providerName}' at '{endpoint}' is unreachable.");
 
-    /// <summary>The operation exceeded its allotted time.</summary>
+    /// <summary>
+    /// The operation exceeded its allotted time — an <see cref="ErrorType.Timeout"/> error, so the
+    /// HTTP boundary answers 504. A timed-out write may still have been applied.
+    /// </summary>
     public static Error Timeout(string operation, TimeSpan elapsed) =>
-        Error.Unexpected(TimeoutCode, $"Operation '{operation}' timed out after {elapsed}.");
+        Error.Timeout(TimeoutCode, $"Operation '{operation}' timed out after {elapsed}.");
 
     /// <summary>The provider rejected the write outright.</summary>
     public static Error WriteRejected(string indexName, string reason) =>
         Error.Unexpected(WriteRejectedCode, $"Write to index '{indexName}' was rejected: {reason}");
 
     /// <summary>
-    /// Waiting for a write to become searchable timed out. The write may still land — this is
-    /// distinct from <see cref="WriteRejected"/>, and callers must not retry blindly.
+    /// Waiting for a write to become searchable timed out (<see cref="ErrorType.Timeout"/>). The write may
+    /// still land — this is distinct from <see cref="WriteRejected"/>, and callers must not retry blindly.
     /// </summary>
     public static Error WriteTimeout(string indexName, TimeSpan elapsed) =>
-        Error.Unexpected(
+        Error.Timeout(
             WriteTimeoutCode,
             $"Waiting for a write on index '{indexName}' to become searchable timed out after {elapsed}. " +
             "The write may still land — do not retry blindly.");

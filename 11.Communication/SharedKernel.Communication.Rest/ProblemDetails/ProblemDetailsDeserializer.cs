@@ -156,6 +156,8 @@ internal static class ProblemDetailsDeserializer
             ErrorType.NotFound => Error.NotFound(code, message),
             ErrorType.Conflict => Error.Conflict(code, message),
             ErrorType.BusinessRule => Error.BusinessRule(code, message),
+            ErrorType.Unavailable => Error.Unavailable(code, message),
+            ErrorType.Timeout => Error.Timeout(code, message),
             _ => Error.Unexpected(code, message),
         };
     }

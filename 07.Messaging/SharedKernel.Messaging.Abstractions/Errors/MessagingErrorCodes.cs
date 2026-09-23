@@ -21,7 +21,8 @@ public static class MessagingErrorCodes
 {
     /// <summary>
     /// The broker could not be reached, timed out, or refused the operation for a transient reason.
-    /// Retryable: the same call may succeed later with no change to the message.
+    /// Retryable: the same call may succeed later with no change to the message. Carried by an
+    /// <see cref="SharedKernel.Primitives.Errors.ErrorType.Unavailable"/> error (HTTP 503).
     /// </summary>
     public const string Unavailable = "messaging.unavailable";
 

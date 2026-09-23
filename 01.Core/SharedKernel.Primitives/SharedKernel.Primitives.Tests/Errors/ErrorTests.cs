@@ -145,4 +145,47 @@ public sealed class ErrorTests
         var b = Error.Forbidden("approval.self_approval_denied", "msg");
         Assert.Equal(a, b);
     }
+
+    // P-562: Error.Unavailable / Error.Timeout — outages get their own types instead of Unexpected.
+    [Fact]
+    public void Unavailable_SetsCorrectType()
+    {
+        var error = Error.Unavailable("storage.unavailable", "The store is unavailable; retry later.");
+        Assert.Equal(ErrorType.Unavailable, error.Type);
+        Assert.Equal("storage.unavailable", error.Code);
+        Assert.Equal("The store is unavailable; retry later.", error.Message);
+        Assert.Empty(error.Details);
+        Assert.Empty(error.MessageArguments);
+    }
+
+    [Fact]
+    public void Timeout_SetsCorrectType()
+    {
+        var error = Error.Timeout("search.timeout", "The search timed out.");
+        Assert.Equal(ErrorType.Timeout, error.Type);
+        Assert.Equal("search.timeout", error.Code);
+        Assert.Equal("The search timed out.", error.Message);
+        Assert.Empty(error.Details);
+        Assert.Empty(error.MessageArguments);
+    }
+
+    [Fact]
+    public void Unavailable_AndTimeout_AreDistinctFromUnexpected_AndFromEachOther()
+    {
+        var unavailable = Error.Unavailable("e.code", "same message");
+        var timeout = Error.Timeout("e.code", "same message");
+        var unexpected = Error.Unexpected("e.code", "same message");
+
+        Assert.NotEqual(unavailable, unexpected);
+        Assert.NotEqual(timeout, unexpected);
+        Assert.NotEqual(unavailable, timeout);
+    }
+
+    [Fact]
+    public void Unavailable_AndTimeout_RecordEquality_SameCodeMessageType_AreEqual()
+    {
+        Assert.Equal(Error.Unavailable("e.u", "msg"), Error.Unavailable("e.u", "msg"));
+        Assert.Equal(Error.Timeout("e.t", "msg"), Error.Timeout("e.t", "msg"));
+        Assert.Equal(Error.Timeout("e.t", "msg").GetHashCode(), Error.Timeout("e.t", "msg").GetHashCode());
+    }
 }

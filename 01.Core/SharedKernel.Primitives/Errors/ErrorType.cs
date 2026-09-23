@@ -19,6 +19,8 @@ namespace SharedKernel.Primitives.Errors;
 ///   <item><term><see cref="Conflict"/></term><description>Clashes with existing state; duplicate or concurrency — 409</description></item>
 ///   <item><term><see cref="BusinessRule"/></term><description>Well-formed but violates a domain invariant — 422</description></item>
 ///   <item><term><see cref="Unexpected"/></term><description>Unclassified fault — 500</description></item>
+///   <item><term><see cref="Unavailable"/></term><description>A dependency or the service is temporarily unable to serve; retry later — 503</description></item>
+///   <item><term><see cref="Timeout"/></term><description>The operation ran out of time; its outcome may be unknown — 504</description></item>
 /// </list>
 /// <para>
 /// <b>Numeric values are a wire contract.</b> They are explicit, and must never be renumbered or
@@ -30,7 +32,7 @@ namespace SharedKernel.Primitives.Errors;
 /// <c>switch</c> over this enum and no discard arm stops compiling when a member is added. That is
 /// a compile-time signal rather than a runtime failure — add a <c>_ =&gt;</c> arm to stay
 /// future-proof — but it means new members ship in a MAJOR release note, as
-/// <see cref="Forbidden"/> did.
+/// <see cref="Forbidden"/>, <see cref="Unavailable"/> and <see cref="Timeout"/> did.
 /// </para>
 /// </remarks>
 public enum ErrorType
@@ -45,7 +47,8 @@ public enum ErrorType
     /// <remarks>
     /// The fallback when nothing else fits, so an <see cref="Error"/> is never left uncategorised.
     /// A high rate of these in production usually means a real failure class is missing its own
-    /// member, not that the system is merely unlucky.
+    /// member, not that the system is merely unlucky. A dependency that is down, throttling, or too
+    /// slow is not unclassified: that is <see cref="Unavailable"/> or <see cref="Timeout"/>.
     /// </remarks>
     Unexpected = 1,
 
@@ -107,4 +110,29 @@ public enum ErrorType
     /// <see cref="BusinessRule"/>.
     /// </remarks>
     Forbidden = 7,
+
+    /// <summary>
+    /// A dependency, or the service itself, is temporarily unable to serve the request — a broker
+    /// or engine that cannot be reached, a provider that is throttling or failing. Retrying later
+    /// may succeed. Maps to HTTP 503 and gRPC <c>Unavailable</c>.
+    /// </summary>
+    /// <remarks>
+    /// An operational condition, not a defect: the request itself was fine, and the same call can
+    /// succeed unchanged once the dependency recovers. That is what separates it from
+    /// <see cref="Unexpected"/>. If the operation ran out of time rather than being refused, so its
+    /// outcome may be unknown, the member you want is <see cref="Timeout"/>.
+    /// </remarks>
+    Unavailable = 8,
+
+    /// <summary>
+    /// The operation exceeded its time budget, and its outcome may be unknown — the work may still
+    /// complete after the caller stopped waiting. Maps to HTTP 504 and gRPC
+    /// <c>DeadlineExceeded</c>.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Unavailable"/>, where the dependency refused the call or could not
+    /// be reached, so nothing happened. After a timeout a write may have landed: retry only an
+    /// idempotent operation, or check the outcome first.
+    /// </remarks>
+    Timeout = 9,
 }

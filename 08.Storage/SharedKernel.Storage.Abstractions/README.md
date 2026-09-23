@@ -358,7 +358,7 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | `storage.checksum_mismatch` | Validation (400) | The provider received bytes that do not match `ChecksumSha256` |
 | `storage.invalid_range` | Validation (400) | The range starts beyond the end of the object |
 | `storage.not_supported` | Unexpected (500) | The store's provider lacks the feature; nothing was sent |
-| `storage.unavailable` | Unexpected (500) | Unreachable, throttled or failing after the provider SDK's retries — retry later |
+| `storage.unavailable` | Unavailable (503) | Unreachable, throttled or failing after the provider SDK's retries — retry later |
 | `storage.provider_error` | Unexpected (500) | Any other rejection; details are logged, never returned |
 
 ### Exceptions

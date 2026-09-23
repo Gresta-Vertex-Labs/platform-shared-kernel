@@ -8,9 +8,11 @@ using Temporalio.Exceptions;
 namespace SharedKernel.Workflows.Temporal.Tests.Failures;
 
 /// <summary>
-/// T-03 — the <see cref="WorkflowFailureMapper"/> table, asserted exhaustively row by row: all five
-/// expected <see cref="ErrorType"/> values map to <c>nonRetryable: true</c> with <c>errorType == Error.Code</c>;
-/// <see cref="ErrorType.Unexpected"/> maps to <c>nonRetryable: false</c>. Plus the inverse round trip.
+/// T-03 — the <see cref="WorkflowFailureMapper"/> table, asserted exhaustively row by row: the six
+/// deterministic <see cref="ErrorType"/> values map to <c>nonRetryable: true</c> with
+/// <c>errorType == Error.Code</c>; <see cref="ErrorType.Unexpected"/>, <see cref="ErrorType.Unavailable"/>
+/// and <see cref="ErrorType.Timeout"/> map to <c>nonRetryable: false</c>. Plus the inverse round trip,
+/// which preserves every type.
 /// </summary>
 public sealed class WorkflowFailureMapperTests
 {
@@ -19,8 +21,18 @@ public sealed class WorkflowFailureMapperTests
         { ErrorType.Validation, Error.Validation("wf.validation", "invalid input") },
         { ErrorType.NotFound, Error.NotFound("wf.not_found", "missing") },
         { ErrorType.Conflict, Error.Conflict("wf.conflict", "already exists") },
-        { ErrorType.Unauthorized, Error.Unauthorized("wf.unauthorized", "forbidden") },
+        { ErrorType.Unauthorized, Error.Unauthorized("wf.unauthorized", "not signed in") },
+        { ErrorType.Forbidden, Error.Forbidden("wf.forbidden", "forbidden") },
         { ErrorType.BusinessRule, Error.BusinessRule("wf.business_rule", "rule violated") },
+    };
+
+    // P-562: a dependency that is down, or one that ran out of time, succeeds on retry like an
+    // unclassified transient fault does — so all three are retryable.
+    public static TheoryData<ErrorType, Error> RetryableRows() => new()
+    {
+        { ErrorType.Unexpected, Error.Unexpected("wf.unexpected", "transient fault") },
+        { ErrorType.Unavailable, Error.Unavailable("wf.unavailable", "dependency down") },
+        { ErrorType.Timeout, Error.Timeout("wf.timeout", "dependency too slow") },
     };
 
     [Theory]
@@ -67,6 +79,51 @@ public sealed class WorkflowFailureMapperTests
 
         roundTripped.Code.Should().Be(error.Code);
         roundTripped.Type.Should().Be(ErrorType.Unexpected);
+    }
+
+    [Theory]
+    [MemberData(nameof(RetryableRows))]
+    public void ToFailure_TransientErrorTypes_AreRetryable_WithErrorTypeEqualToCode(ErrorType errorType, Error error)
+    {
+        ApplicationFailureException failure = WorkflowFailureMapper.ToFailure(error);
+
+        failure.NonRetryable.Should().BeFalse(because: $"{errorType} can succeed unchanged on a later attempt");
+        failure.ErrorType.Should().Be(error.Code);
+        failure.Message.Should().Be(error.Message);
+    }
+
+    [Theory]
+    [MemberData(nameof(RetryableRows))]
+    public void ToFailure_ThenToError_TransientErrorTypes_RoundTripTheSameError(ErrorType errorType, Error error)
+    {
+        Error roundTripped = WorkflowFailureMapper.ToError(WorkflowFailureMapper.ToFailure(error));
+
+        roundTripped.Should().Be(error, because: $"{errorType} must reach the dispatch site as itself, not as Unexpected");
+    }
+
+    [Fact]
+    public void ToFailure_ThenToError_Forbidden_IsNoLongerFlattenedToUnexpected()
+    {
+        // Regression (P-562): the reverse mapping had no Forbidden arm, so a 403-class refusal raised
+        // inside an activity reached the dispatch site as an Unexpected (500-class) fault.
+        Error error = Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission, "Not permitted.");
+
+        Error roundTripped = WorkflowFailureMapper.ToError(WorkflowFailureMapper.ToFailure(error));
+
+        roundTripped.Should().Be(error);
+        roundTripped.Type.Should().Be(ErrorType.Forbidden);
+    }
+
+    [Fact]
+    public void ToError_WorkflowFailedException_UnwrapsInnerUnavailableFailure_KeepingItsType()
+    {
+        var inner = new ApplicationFailureException(
+            "store down", errorType: "storage.unavailable", nonRetryable: false, details: [(int)ErrorType.Unavailable]);
+
+        Error mapped = WorkflowFailureMapper.ToError(new WorkflowFailedException(inner));
+
+        mapped.Code.Should().Be("storage.unavailable");
+        mapped.Type.Should().Be(ErrorType.Unavailable);
     }
 
     [Fact]

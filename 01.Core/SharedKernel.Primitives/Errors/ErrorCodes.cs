@@ -127,6 +127,42 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Codes for failures where a dependency, or the service itself, is temporarily unable to serve
+    /// the request.
+    /// </summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.Unavailable"/> errors, which map to HTTP 503 at the presentation layer.
+    /// A capability package usually has its own, more specific code — <c>storage.unavailable</c>,
+    /// <c>messaging.unavailable</c> — and this is the general-purpose fallback.
+    /// </remarks>
+    public static class Unavailable
+    {
+        /// <summary>
+        /// A dependency, or the service itself, is temporarily unable to serve the request; retrying
+        /// later may succeed. The general-purpose code for any
+        /// <see cref="Error.Unavailable(string, string)"/> call site that has no more specific code of
+        /// its own.
+        /// </summary>
+        public const string Default = "unavailable.default";
+    }
+
+    /// <summary>Codes for failures where an operation exceeded its time budget.</summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.Timeout"/> errors, which map to HTTP 504 at the presentation layer.
+    /// </remarks>
+    public static class Timeout
+    {
+        /// <summary>
+        /// The operation exceeded its time budget and its outcome may be unknown. The
+        /// general-purpose code for any <see cref="Error.Timeout(string, string)"/> call site that
+        /// has no more specific code of its own.
+        /// </summary>
+        public const string Default = "timeout.default";
+    }
+
+    /// <summary>
     /// Codes for domain invariant and business rule violations.
     /// </summary>
     /// <remarks>

@@ -18,9 +18,16 @@ public sealed class ProblemDetailsDeserializerTests
     [InlineData(HttpStatusCode.Forbidden, ErrorType.Forbidden)]
     [InlineData(HttpStatusCode.NotFound, ErrorType.NotFound)]
     [InlineData(HttpStatusCode.Conflict, ErrorType.Conflict)]
+    [InlineData(HttpStatusCode.PreconditionFailed, ErrorType.Conflict)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.UnsupportedMediaType, ErrorType.Validation)]
     [InlineData(HttpStatusCode.UnprocessableEntity, ErrorType.BusinessRule)]
+    [InlineData(HttpStatusCode.PreconditionRequired, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.TooManyRequests, ErrorType.Unavailable)]
     [InlineData(HttpStatusCode.InternalServerError, ErrorType.Unexpected)]
     [InlineData(HttpStatusCode.BadGateway, ErrorType.Unexpected)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, ErrorType.Timeout)]
     public async Task DeserializeAsync_EachMappedStatusCode_ProducesExpectedErrorType(
         HttpStatusCode statusCode,
         ErrorType expectedType)
@@ -40,6 +47,65 @@ public sealed class ProblemDetailsDeserializerTests
         error.Type.Should().Be(expectedType);
         error.Code.Should().Be("some.code");
         error.Message.Should().Be("some message");
+    }
+
+    // -----------------------------------------------------------------------
+    // P-562: a downstream outage round-trips as Unavailable / Timeout, not Unexpected
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task DeserializeAsync_503ProblemDetails_RoundTripsAsTheSameUnavailableError()
+    {
+        // Arrange — what the server's HTTP boundary writes for Error.Unavailable("storage.unavailable", …).
+        var sent = Error.Unavailable("storage.unavailable", "Store 'invoices' is unavailable; the upload can be retried later.");
+        var response = BuildProblemDetailsResponse(
+            HttpStatusCode.ServiceUnavailable,
+            body: $$"""
+                {"type":"https://httpstatuses.io/503","title":"{{sent.Code}}","errorCode":"{{sent.Code}}","detail":"{{sent.Message}}","status":503}
+                """);
+
+        // Act
+        var received = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert — equal by value: same code, message and type on both sides of the wire.
+        received.Should().Be(sent);
+        received.Type.Should().Be(ErrorType.Unavailable);
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_504ProblemDetails_RoundTripsAsTheSameTimeoutError()
+    {
+        // Arrange — what the server's HTTP boundary writes for Error.Timeout("search.timeout", …).
+        var sent = Error.Timeout("search.timeout", "Operation 'search' timed out after 00:00:30.");
+        var response = BuildProblemDetailsResponse(
+            HttpStatusCode.GatewayTimeout,
+            body: $$"""
+                {"type":"https://httpstatuses.io/504","title":"{{sent.Code}}","errorCode":"{{sent.Code}}","detail":"{{sent.Message}}","status":504}
+                """);
+
+        // Act
+        var received = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        received.Should().Be(sent);
+        received.Type.Should().Be(ErrorType.Timeout);
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_429ProblemDetails_IsUnavailable_SoTheCallerBacksOffAndRetries()
+    {
+        // Arrange — a rate-limit rejection: the same call succeeds once the caller backs off.
+        var response = BuildProblemDetailsResponse(
+            HttpStatusCode.TooManyRequests,
+            body: """{"type":"https://httpstatuses.io/429","title":"rate_limit.exceeded","errorCode":"rate_limit.exceeded","detail":"Too many requests.","status":429}""");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(ErrorType.Unavailable);
+        error.Code.Should().Be("rate_limit.exceeded");
+        error.Message.Should().Be("Too many requests.");
     }
 
     // -----------------------------------------------------------------------
