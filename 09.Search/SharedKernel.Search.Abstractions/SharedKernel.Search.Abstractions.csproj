@@ -5,6 +5,15 @@
     <Description>Full-text search abstraction contracts for Platform.SharedKernel microservices: ISearchIndex&lt;TDocument&gt; (index/delete/bulk/search/get/count/enumerate), ISearchIndexProvisioner (ensure/exists/delete/cutover/probe), ISearchProviderDescriptor (ceilings + zero-I/O pre-flight validation), IQueryBuilder&lt;TDocument&gt; over the closed 8-node SearchFilter AST and the closed five-kind SearchValue scalar union, plus the Result-valued SearchErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives and SharedKernel.Contracts. Implemented by SharedKernel.Search.Meilisearch and SharedKernel.Search.ElasticSearch.</Description>
     <PackageTags>search;full-text-search;meilisearch;elasticsearch;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Public API tracking (adopted in the pre-publish pass, mirroring 07.Messaging P-561): an addition,
+      removal or signature change fails the build until PublicAPI.*.txt is updated, so a breaking change
+      to a package hundreds of services consume is a reviewed diff rather than something noticed after
+      publish.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: optional CancellationToken and configure-callback parameters, the .NET convention. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!--
@@ -17,5 +26,10 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

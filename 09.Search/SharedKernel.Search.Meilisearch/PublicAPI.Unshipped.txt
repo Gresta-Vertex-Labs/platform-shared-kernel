@@ -1,0 +1,108 @@
+#nullable enable
+SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.AddIndex<TDocument>(string! indexName, System.Action<SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!>! configure) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.AllowRawClientAccess() -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.WithRankingRules(string! indexName, params SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule![]! rules) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.WithTenantTokens() -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions
+SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>
+SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.InstantAsync(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest! request, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
+SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.SearchFacetValuesAsync(string! facetField, string! facetQuery, SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.FacetValue>!>!>!
+SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
+SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy.All = 1 -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
+SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy.Frequency = 2 -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
+SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy.Last = 0 -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.<Clone>$() -> SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest!
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.AttributesToSearchOn.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.AttributesToSearchOn.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.CropLength.get -> int?
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.CropLength.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.CropMarker.get -> string!
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.CropMarker.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Equals(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? other) -> bool
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Filter.get -> SharedKernel.Search.Abstractions.Models.SearchFilter?
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Filter.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.FreeText.get -> string!
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.FreeText.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Highlight.get -> SharedKernel.Search.Abstractions.Models.HighlightRequest?
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Highlight.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.InstantSearchRequest() -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Limit.get -> int
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Limit.init -> void
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.MatchingStrategy.get -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
+SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.MatchingStrategy.init -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.ApiKey.get -> string!
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.ApiKey.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.ApiKeyUid.get -> string?
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.ApiKeyUid.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.DefaultBatchSize.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.DefaultBatchSize.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.HttpTimeoutSeconds.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.HttpTimeoutSeconds.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.MaxFacetValues.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.MaxFacetValues.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.MaxTotalHits.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.MaxTotalHits.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.MeilisearchOptions() -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.PooledConnectionLifetimeMinutes.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.PooledConnectionLifetimeMinutes.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TaskPollIntervalMilliseconds.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TaskPollIntervalMilliseconds.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TaskWaitTimeoutSeconds.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TaskWaitTimeoutSeconds.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TenantTokenMaxTtlMinutes.get -> int
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.TenantTokenMaxTtlMinutes.set -> void
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.Url.get -> string!
+SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.Url.set -> void
+SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule
+SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.<Clone>$() -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Equals(SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? other) -> bool
+SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Value.get -> string!
+SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor
+SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor.Client.get -> Meilisearch.MeilisearchClient!
+SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor.IndexHandle(string! indexName) -> Meilisearch.Index!
+SharedKernel.Search.Meilisearch.Tenancy.ITenantSearchTokenIssuer
+SharedKernel.Search.Meilisearch.Tenancy.ITenantSearchTokenIssuer.IssueAsync(SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, string! tenantField, System.Collections.Generic.IReadOnlyCollection<string!>! indexNames, System.TimeSpan ttl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken!>!>!
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.<Clone>$() -> SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken!
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Equals(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? other) -> bool
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ExpiresAt.get -> System.DateTimeOffset
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ExpiresAt.init -> void
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ScopedIndexes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ScopedIndexes.init -> void
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.TenantSearchToken() -> void
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Value.get -> string!
+SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Value.init -> void
+const SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.SectionName = "Search:Meilisearch" -> string!
+override SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Equals(object? obj) -> bool
+override SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.GetHashCode() -> int
+override SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.ToString() -> string!
+override SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Equals(object? obj) -> bool
+override SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.GetHashCode() -> int
+override SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.ToString() -> string!
+override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Equals(object? obj) -> bool
+override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.GetHashCode() -> int
+override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ToString() -> string!
+static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.IndexingTaskFailed(string! providerToken, string! engineErrorCode) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.TenantTokenIssuanceFailed(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.TenantTokenTtlOutOfRange(System.TimeSpan requested, int maxMinutes) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions.AddSharedKernelMeilisearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+static SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions.AddSharedKernelMeilisearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
+static SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.operator !=(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? left, SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? right) -> bool
+static SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.operator ==(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? left, SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? right) -> bool
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Ascending(string! field) -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Attribute.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Descending(string! field) -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Exactness.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Proximity.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Sort.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Typo.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.Words.get -> SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule!
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.operator !=(SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? left, SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? right) -> bool
+static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.operator ==(SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? left, SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? right) -> bool
+static SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.operator !=(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? left, SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? right) -> bool
+static SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.operator ==(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? left, SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? right) -> bool

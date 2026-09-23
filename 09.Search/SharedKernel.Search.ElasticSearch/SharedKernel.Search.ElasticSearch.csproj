@@ -32,6 +32,15 @@
     -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Public API tracking (adopted in the pre-publish pass, mirroring 07.Messaging P-561): an addition,
+      removal or signature change fails the build until PublicAPI.*.txt is updated, so a breaking change
+      to a package hundreds of services consume is a reviewed diff rather than something noticed after
+      publish.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: optional CancellationToken and configure-callback parameters, the .NET convention. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
@@ -69,5 +78,10 @@
       06.Persistence.EfCore / 13.ServiceDefaults / 15.Integration.Webhooks precedent.
     -->
     <InternalsVisibleTo Include="SharedKernel.Search.ElasticSearch.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>
