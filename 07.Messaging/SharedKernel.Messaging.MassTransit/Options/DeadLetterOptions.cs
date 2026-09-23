@@ -33,7 +33,7 @@ public sealed class DeadLetterOptions
     /// convention — the platform default changes nothing until explicitly overridden.
     /// </summary>
     /// <remarks>
-    /// <strong>MassTransit 9.1.2 capability note:</strong> MassTransit's public RabbitMQ transport
+    /// <strong>Capability note:</strong> MassTransit's public RabbitMQ transport
     /// API (<c>IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings</c> /
     /// <c>.ConfigureDeadLetterSettings</c>) lets a consuming service configure the <em>arguments</em>
     /// of the automatically-derived fault/dead-letter queue (e.g. <see cref="MessageTimeToLive"/> as

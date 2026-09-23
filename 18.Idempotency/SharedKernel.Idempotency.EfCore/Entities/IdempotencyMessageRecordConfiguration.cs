@@ -19,6 +19,8 @@ internal sealed class IdempotencyMessageRecordConfiguration : IEntityTypeConfigu
         builder.Property(x => x.MessageId).HasColumnName("message_id").IsRequired();
         builder.Property(x => x.ReservedAtUtc).HasColumnName("reserved_at_utc").IsRequired();
         builder.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc").IsRequired();
+        builder.Property(x => x.ReservationToken).HasColumnName("reservation_token").HasMaxLength(64).IsRequired();
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
 
         builder.HasIndex(x => x.ExpiresAtUtc).HasDatabaseName("ix_idempotency_messages_expires_at_utc");
     }

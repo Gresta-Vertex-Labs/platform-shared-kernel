@@ -118,56 +118,6 @@ public sealed class AmbientPropagationTests
     }
 
     [Fact]
-    public async Task RequestAsync_WithAmbientCorrelationPropagation_PopulatesCorrelationIdFromActivityTraceId()
-    {
-        // Arrange
-        ApRequestCorrelationCaptureStore.Reset();
-
-        var services = new ServiceCollection();
-        services.AddSharedKernelMessaging(o => o.ServiceName = "ap-request-service")
-            .WithAmbientCorrelationPropagation();
-
-        services.AddMassTransitTestHarness(cfg =>
-        {
-            cfg.AddConsumer<ApRequestRespondingConsumer>();
-            cfg.UsingInMemory((ctx, busCfg) => busCfg.ConfigureEndpoints(ctx));
-        });
-        services.AddSingleton<IReadOnlyDictionary<Type, string>>(
-            new ReadOnlyDictionary<Type, string>(new Dictionary<Type, string>()));
-        services.AddScoped<ConventionSendEndpointResolver>();
-        services.AddScoped<IMessageBus, MassTransitMessageBus>();
-
-        await using var provider = services.BuildServiceProvider(true);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-
-        await using var scope = provider.CreateAsyncScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // Act
-        using var activity = new Activity("ap-request-test").Start();
-        var expectedCorrelationId = Guid.Parse(activity.TraceId.ToString());
-
-        var response = await bus.RequestAsync<ApRequestMessage, ApResponseMessage>(
-            new ApRequestMessage("ping"),
-            cts.Token);
-
-        // Assert
-        response.Should().NotBeNull();
-        ApRequestCorrelationCaptureStore.CapturedCorrelationId.Should().Be(expectedCorrelationId,
-            "AmbientCorrelationHeaderPropagator must populate CorrelationId from Activity.Current.TraceId " +
-            "on RequestAsync, identically to PublishAsync/SendAsync");
-
-        await harness.Stop();
-    }
-
-    // -------------------------------------------------------------------------
-    // AP-11 / AP-12: WithTenantContext<TAccessor>() — envelope TenantId populated / no-op
-    // -------------------------------------------------------------------------
-
-    [Fact]
     public async Task PublishAsync_WithTenantContextRegistered_PopulatesEnvelopeTenantIdFromAccessor()
     {
         var services = new ServiceCollection();
@@ -284,8 +234,6 @@ public sealed class AmbientPropagationTests
 
 internal sealed record ApPublishTestMessage(string Text);
 internal sealed record ApSendTestCommand(string Text);
-internal sealed record ApRequestMessage(string Text);
-internal sealed record ApResponseMessage(string Reply);
 
 [IntegrationEvent("tests.messaging.ambient-propagation.integration-test")]
 internal sealed record ApIntegrationTestEvent(Guid EventId, DateTimeOffset OccurredOn) : IIntegrationEvent;
@@ -310,20 +258,7 @@ internal static class ApSendCorrelationCaptureStore
     public static void Reset() => _capturedCorrelationId = null;
 }
 
-internal static class ApRequestCorrelationCaptureStore
-{
-    private static Guid? _capturedCorrelationId;
-    public static Guid? CapturedCorrelationId => _capturedCorrelationId;
-    public static void Capture(Guid? correlationId) => _capturedCorrelationId = correlationId;
-    public static void Reset() => _capturedCorrelationId = null;
-}
 
-// ---------------------------------------------------------------------------
-// Fakes
-// ---------------------------------------------------------------------------
-
-/// Fixed-value ITenantContextAccessor fake — DI-instantiated via WithTenantContext<T>(), so its
-/// tenant identity must be a static well-known value rather than constructor-injected.
 internal sealed class ApFakeTenantContextAccessor : ITenantContextAccessor
 {
     public static readonly Guid FixedTenantId = Guid.NewGuid();
@@ -353,11 +288,3 @@ internal sealed class ApSendCapturingConsumer : IConsumer<ApSendTestCommand>
     }
 }
 
-internal sealed class ApRequestRespondingConsumer : IConsumer<ApRequestMessage>
-{
-    public async Task Consume(ConsumeContext<ApRequestMessage> context)
-    {
-        ApRequestCorrelationCaptureStore.Capture(context.CorrelationId);
-        await context.RespondAsync(new ApResponseMessage("pong"));
-    }
-}

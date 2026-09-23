@@ -1,13 +1,13 @@
 using Azure.Identity;
 using MassTransit;
-using MassTransit.QuartzIntegration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Context;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Messaging.Abstractions.Batch;
+using SharedKernel.Messaging.Abstractions.Context;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.Faults;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
@@ -17,13 +17,12 @@ using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Messaging.Abstractions.SchemaEvolution;
 using SharedKernel.Messaging.Abstractions.TenantContext;
 using SharedKernel.Messaging.MassTransit.Consumers;
+using SharedKernel.Messaging.MassTransit.Context;
 using SharedKernel.Messaging.MassTransit.DeadLetter;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.HeaderPropagation;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
-using SharedKernel.Messaging.MassTransit.RoutingSlips;
-using SharedKernel.Messaging.MassTransit.Sagas;
 using SharedKernel.Messaging.MassTransit.SchemaEvolution;
 using SharedKernel.Messaging.MassTransit.Serialization;
 using System.Linq;
@@ -32,15 +31,14 @@ using System.Linq;
 // enclosing namespace tree, SharedKernel.Messaging.MassTransit.*.
 using MtSystemTextJsonMessageSerializerFactory = MassTransit.Configuration.SystemTextJsonMessageSerializerFactory;
 
-// Alias our scheduling/batch options to disambiguate from same-named MassTransit types.
-using SkQuartzSchedulerOptions = SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions;
-using SkBatchOptions = SharedKernel.Messaging.Abstractions.Batch.BatchOptions;
+// Alias our batch options to disambiguate from the same-named MassTransit type.
+using SkBatchOptions = SharedKernel.Messaging.MassTransit.Options.BatchOptions;
 
 namespace SharedKernel.Messaging.MassTransit.Extensions;
 
 /// <summary>
 /// Fluent builder for configuring the MassTransit-backed messaging bus.
-/// Returned by <see cref="ServiceCollectionExtensions.AddSharedKernelMessaging"/>.
+/// Returned by <see cref="ServiceCollectionExtensions.AddSharedKernelMessaging(Microsoft.Extensions.DependencyInjection.IServiceCollection, Microsoft.Extensions.Configuration.IConfiguration, System.Action{SharedKernel.Messaging.Abstractions.Options.MessagingOptions})"/>.
 /// </summary>
 /// <remarks>
 /// Call exactly one transport method (<see cref="UseRabbitMq(string)"/> or
@@ -85,20 +83,18 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     private bool _withIdempotency;
     private IdempotencyOptions? _idempotencyOptions;
 
-    // Saga registrations — applied inside AddMassTransit during Build().
-    // Keyed by saga STATE type; WithEntityFrameworkSagaRepository overrides the repository.
-    private readonly Dictionary<Type, Action<IBusRegistrationConfigurator>> _sagaRegistrations = [];
-
-    // Scheduling kind tracking.
-    private enum SchedulingKind { None, InMemory, Quartz }
-    private SchedulingKind _scheduling = SchedulingKind.None;
-    private SkQuartzSchedulerOptions? _quartzOptions;
+    // Deferred delivery (P-127) — set by WithDelayedDelivery(). Backed entirely by the transport's
+    // own scheduled-delivery feature, so there is no second backend to select between (P-560).
+    private bool _withDelayedDelivery;
 
     // Dead-letter policy (P-343) — set by WithDeadLetterPolicy().
     private bool _withDeadLetterPolicy;
     private DeadLetterOptions? _deadLetterOptions;
 
     // Payload transform (P-346) — set by WithPayloadTransform().
+    // P-561: inbound/outbound caller identity across the bus.
+    private bool _withInboundRequestContext;
+
     private bool _withPayloadTransform;
     private PayloadTransformOptions? _payloadTransformOptions;
 
@@ -381,182 +377,38 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Wires the MassTransit in-memory message scheduler and registers
+    /// Enables deferred message delivery and registers
     /// <see cref="SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler"/> → <c>MassTransitMessageScheduler</c> as scoped.
     /// </summary>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// <strong>Process-restart warning:</strong> In-memory schedule tokens do not survive process
-    /// restarts. Any messages scheduled but not yet delivered are lost on restart.
-    /// For production workloads, use <see cref="WithQuartzScheduler"/> instead.
+    /// Delivery is deferred by the <strong>transport itself</strong>, not by this process:
+    /// RabbitMQ uses the delayed-message exchange (<c>UseDelayedMessageScheduler</c>), Azure Service
+    /// Bus uses native scheduled enqueue (<c>UseServiceBusMessageScheduler</c>). A scheduled message
+    /// is therefore held by the broker and <strong>survives a restart of the scheduling process</strong>.
     /// </para>
     /// <para>
-    /// Do not use <c>Task.Delay</c> inside consumers as a substitute for scheduling —
-    /// it blocks thread-pool threads and cannot survive restarts.
+    /// <strong>RabbitMQ prerequisite:</strong> the broker must have the
+    /// <c>rabbitmq_delayed_message_exchange</c> plugin enabled. Without it the delayed exchange
+    /// cannot be declared and the bus fails to start. Azure Service Bus needs no prerequisite.
+    /// </para>
+    /// <para>
+    /// This is deferred delivery of a <em>message</em>, not job scheduling. Recurring or cron-shaped
+    /// work belongs in <c>19.Scheduling</c>'s <c>IScheduledJobRegistry</c>, which owns that concern
+    /// for the platform. Never use <c>Task.Delay</c> inside a consumer as a substitute — it blocks a
+    /// thread-pool thread and does not survive a restart.
+    /// </para>
+    /// <para>
+    /// Renamed from <c>WithInMemoryScheduler()</c> in P-560. The old name was inaccurate: it never
+    /// wired MassTransit's in-memory scheduler on either transport, and the Quartz alternative it
+    /// pointed at for durability has been removed — it required a second relational database to
+    /// duplicate a guarantee both transports already provide.
     /// </para>
     /// </remarks>
-    public MessagingBusBuilder WithInMemoryScheduler()
+    public MessagingBusBuilder WithDelayedDelivery()
     {
-        _scheduling = SchedulingKind.InMemory;
-        return this;
-    }
-
-    /// <summary>
-    /// Wires the MassTransit Quartz.NET durable message scheduler and registers
-    /// <see cref="SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler"/> → <c>MassTransitMessageScheduler</c> as scoped.
-    /// </summary>
-    /// <param name="configure">
-    /// Optional action to configure <see cref="SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions"/>.
-    /// <see cref="SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions.ConnectionString"/> is required;
-    /// <c>Build()</c> throws <see cref="InvalidOperationException"/> at startup if it is null or empty.
-    /// </param>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// Schedule tokens survive process restarts. The Quartz.NET scheduler stores pending tokens
-    /// in the relational database specified by <see cref="SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions.ConnectionString"/>.
-    /// The consuming service must run Quartz.NET schema migrations before starting the bus.
-    /// </remarks>
-    public MessagingBusBuilder WithQuartzScheduler(Action<SkQuartzSchedulerOptions>? configure = null)
-    {
-        _scheduling = SchedulingKind.Quartz;
-        _quartzOptions = new SkQuartzSchedulerOptions();
-        configure?.Invoke(_quartzOptions);
-        return this;
-    }
-
-    // -------------------------------------------------------------------------
-    // Sagas (P-128)
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Registers a saga state machine and its state type with the default in-memory saga repository.
-    /// Suitable for development and testing; use
-    /// <see cref="WithEntityFrameworkSagaRepository{TDbContext, TSaga}"/> in production.
-    /// </summary>
-    /// <typeparam name="TStateMachine">
-    /// The saga state machine type. Must derive from <see cref="SagaStateMachineBase{TSaga}"/>.
-    /// </typeparam>
-    /// <typeparam name="TSaga">The saga state type. Must derive from <see cref="SagaStateBase"/>.</typeparam>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// MassTransit 9.x requires state machine sagas to be registered via
-    /// <c>AddSagaStateMachine&lt;TStateMachine, TSaga&gt;</c>. This method exposes that registration
-    /// with a SharedKernel-consistent name that enforces the <see cref="SagaStateMachineBase{TSaga}"/>
-    /// and <see cref="SagaStateBase"/> constraints. Call
-    /// <see cref="WithEntityFrameworkSagaRepository{TDbContext, TSaga}"/> after this method to
-    /// replace the in-memory repository with durable EF Core persistence.
-    /// </para>
-    /// </remarks>
-    public MessagingBusBuilder AddSaga<TStateMachine, TSaga>()
-        where TStateMachine : SagaStateMachineBase<TSaga>
-        where TSaga : SagaStateBase, new()
-    {
-        // Store keyed by saga STATE type so WithEntityFrameworkSagaRepository can override.
-        _sagaRegistrations[typeof(TSaga)] = cfg =>
-            cfg.AddSagaStateMachine<TStateMachine, TSaga>().InMemoryRepository();
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a saga state machine with an explicit saga definition for custom endpoint,
-    /// retry, or dead-letter configuration. Uses the in-memory repository by default.
-    /// </summary>
-    /// <typeparam name="TStateMachine">
-    /// The saga state machine type. Must derive from <see cref="SagaStateMachineBase{TSaga}"/>.
-    /// </typeparam>
-    /// <typeparam name="TSaga">The saga state type. Must derive from <see cref="SagaStateBase"/>.</typeparam>
-    /// <typeparam name="TDefinition">
-    /// The saga definition type. Must implement <c>ISagaDefinition&lt;TSaga&gt;</c>.
-    /// </typeparam>
-    /// <returns>This builder for fluent chaining.</returns>
-    public MessagingBusBuilder AddSaga<TStateMachine, TSaga, TDefinition>()
-        where TStateMachine : SagaStateMachineBase<TSaga>
-        where TSaga : SagaStateBase, new()
-        where TDefinition : class, ISagaDefinition<TSaga>
-    {
-        _sagaRegistrations[typeof(TSaga)] = cfg =>
-            cfg.AddSagaStateMachine<TStateMachine, TSaga, TDefinition>().InMemoryRepository();
-        return this;
-    }
-
-    /// <summary>
-    /// Wires the MassTransit EF Core saga repository for <typeparamref name="TSaga"/>
-    /// using the consuming service's <typeparamref name="TDbContext"/>.
-    /// When called after <see cref="AddSaga{TStateMachine, TSaga}()"/>, replaces the in-memory
-    /// repository with durable EF Core persistence.
-    /// </summary>
-    /// <typeparam name="TStateMachine">
-    /// The saga state machine type. Must derive from <see cref="SagaStateMachineBase{TSaga}"/>.
-    /// Must match the type used in the preceding <see cref="AddSaga{TStateMachine, TSaga}()"/> call.
-    /// </typeparam>
-    /// <typeparam name="TDbContext">
-    /// The consuming service's EF Core <see cref="DbContext"/> that includes the saga state entity.
-    /// </typeparam>
-    /// <typeparam name="TSaga">The saga state type. Must derive from <see cref="SagaStateBase"/>.</typeparam>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// No compile-time reference to <c>SharedKernel.Persistence.*</c> is introduced —
-    /// <typeparamref name="TDbContext"/> is a generic type parameter constrained to
-    /// <see cref="Microsoft.EntityFrameworkCore.DbContext"/> only.
-    /// </para>
-    /// <para>
-    /// The consuming service must add the saga state entity to <typeparamref name="TDbContext"/>
-    /// and run the required EF Core migrations before the bus starts.
-    /// </para>
-    /// </remarks>
-    public MessagingBusBuilder WithEntityFrameworkSagaRepository<TStateMachine, TDbContext, TSaga>()
-        where TStateMachine : SagaStateMachineBase<TSaga>
-        where TDbContext : DbContext
-        where TSaga : SagaStateBase, new()
-    {
-        // Override the in-memory registration (set by AddSaga) with EF Core repository.
-        // The state machine type is required to produce the typed ISagaRegistrationConfigurator<TSaga>
-        // needed for EntityFrameworkRepository extension method.
-        _sagaRegistrations[typeof(TSaga)] = cfg =>
-            cfg.AddSagaStateMachine<TStateMachine, TSaga>()
-               .EntityFrameworkRepository(r => r.ExistingDbContext<TDbContext>());
-        return this;
-    }
-
-    /// <summary>
-    /// Wires the MassTransit EF Core saga repository for <typeparamref name="TSaga"/>
-    /// using the consuming service's <typeparamref name="TDbContext"/>.
-    /// This overload uses the two-type signature matching the CLAUDE.md DI example;
-    /// internally replaces any prior in-memory registration for <typeparamref name="TSaga"/>
-    /// with an EF Core repository. Requires the saga to have been registered via
-    /// <see cref="AddSaga{TStateMachine, TSaga}()"/> before calling this method.
-    /// </summary>
-    /// <typeparam name="TDbContext">
-    /// The consuming service's EF Core <see cref="DbContext"/> that includes the saga state entity.
-    /// </typeparam>
-    /// <typeparam name="TSaga">The saga state type. Must derive from <see cref="SagaStateBase"/>.</typeparam>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// No compile-time reference to <c>SharedKernel.Persistence.*</c> is introduced —
-    /// <typeparamref name="TDbContext"/> is a generic type parameter constrained to
-    /// <see cref="Microsoft.EntityFrameworkCore.DbContext"/> only.
-    /// </para>
-    /// <para>
-    /// The consuming service must add the saga state entity to <typeparamref name="TDbContext"/>
-    /// and run the required EF Core migrations before the bus starts.
-    /// When the state machine type is known at call site, prefer the three-type overload
-    /// <see cref="WithEntityFrameworkSagaRepository{TStateMachine, TDbContext, TSaga}()"/>
-    /// which provides stronger compile-time safety.
-    /// </para>
-    /// </remarks>
-    public MessagingBusBuilder WithEntityFrameworkSagaRepository<TDbContext, TSaga>()
-        where TDbContext : DbContext
-        where TSaga : SagaStateBase, new()
-    {
-        // The saga must have already been registered via AddSaga<TStateMachine, TSaga>().
-        // Since the state machine type is not known here, we use SetEntityFrameworkSagaRepositoryProvider
-        // as a global EF Core repository provider for all unregistered sagas, covering TSaga.
-        _sagaRegistrations[typeof(TSaga)] = cfg =>
-            cfg.SetEntityFrameworkSagaRepositoryProvider(r => r.ExistingDbContext<TDbContext>());
+        _withDelayedDelivery = true;
         return this;
     }
 
@@ -571,11 +423,11 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// The batch consumer type. Must derive from <c>BatchConsumerBase&lt;TMessage&gt;</c>.
     /// </typeparam>
     /// <param name="configure">
-    /// Optional action to customise <see cref="SharedKernel.Messaging.Abstractions.Batch.BatchOptions"/>.
+    /// Optional action to customise <see cref="SharedKernel.Messaging.MassTransit.Options.BatchOptions"/>.
     /// When <c>null</c>, default options apply
-    /// (<see cref="SharedKernel.Messaging.Abstractions.Batch.BatchOptions.MessageLimit"/> = 10,
-    /// <see cref="SharedKernel.Messaging.Abstractions.Batch.BatchOptions.TimeLimit"/> = 1 s,
-    /// <see cref="SharedKernel.Messaging.Abstractions.Batch.BatchOptions.ConcurrencyLimit"/> = 1).
+    /// (<see cref="SharedKernel.Messaging.MassTransit.Options.BatchOptions.MessageLimit"/> = 10,
+    /// <see cref="SharedKernel.Messaging.MassTransit.Options.BatchOptions.TimeLimit"/> = 1 s,
+    /// <see cref="SharedKernel.Messaging.MassTransit.Options.BatchOptions.ConcurrencyLimit"/> = 1).
     /// </param>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
@@ -752,10 +604,11 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <remarks>
     /// Populates <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.CorrelationId"/>
     /// from the ambient <see cref="System.Diagnostics.Activity.Current"/> on every dispatch verb
-    /// (<c>PublishAsync</c>, <c>SendAsync</c>, <c>RequestAsync</c>). Distributed-trace correlation
-    /// identity needs no consuming-service-supplied dependency — it is one of two named, documented
-    /// exceptions to "never implement <see cref="IMessageHeaderPropagator"/> inside SharedKernel"
-    /// (P-345/WO-054).
+    /// (<c>PublishAsync</c>, <c>SendAsync</c>, and <c>IEventPublisher.PublishAsync</c>).
+    /// Distributed-trace correlation identity needs no consuming-service-supplied dependency — it
+    /// is one of three named, documented exceptions to "never implement
+    /// <see cref="IMessageHeaderPropagator"/> inside SharedKernel" (P-345/WO-054; the others are
+    /// <see cref="TenantHeaderPropagator"/> and <see cref="RequestContextHeaderPropagator"/>).
     /// </remarks>
     public MessagingBusBuilder WithAmbientCorrelationPropagation()
     {
@@ -793,6 +646,111 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         Services.AddScoped<ITenantContextAccessor, TAccessor>();
         Services.AddScoped<IMessageHeaderPropagator, TenantHeaderPropagator>();
         return this;
+    }
+
+    /// <summary>
+    /// Carries the calling identity across the bus: the publisher's tenant and actor are written
+    /// onto every outgoing message, and rebuilt on the consumer so that <c>IRequestContext</c>
+    /// resolves to the caller that caused the message instead of to nobody.
+    /// </summary>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// <strong>The problem it solves.</strong> A consumer runs with no HTTP request, so
+    /// <c>IRequestContext.TenantId</c> is <see langword="null"/> and <c>06.Persistence</c> — which
+    /// fails closed on a null tenant — rejects every tenant-scoped write and returns nothing for
+    /// every tenant-scoped read. Without this, handling an integration event in a multi-tenant
+    /// service means passing the tenant by hand through the message body and entering a
+    /// cross-tenant scope to act on it.
+    /// </para>
+    /// <para>
+    /// <strong>What it registers.</strong> Outbound, a
+    /// <see cref="RequestContextHeaderPropagator"/> writing the tenant
+    /// (<c>01.Core</c>'s <c>WellKnownHeaders.TenantId</c>) and the actor
+    /// (<c>MessageContextHeaders</c>). Inbound, a consume filter that reads them back and a
+    /// message-aware <c>IRequestContext</c> that answers from the message inside a consume and from
+    /// the service's own registration everywhere else — so one handler serves both paths without
+    /// branching.
+    /// </para>
+    /// <para>
+    /// <strong>Call it after the service's own <c>IRequestContext</c> registration</strong>
+    /// (typically <c>13.ServiceDefaults</c>' <c>AddSharedKernelRequestContext()</c>). The container
+    /// resolves the last registration, so the reverse order would silently leave consumers with no
+    /// tenant; a startup warning is logged if that happens.
+    /// </para>
+    /// <para>
+    /// <strong>Attribution, not authorization.</strong> A permission check inside a consume always
+    /// answers <see langword="false"/>, and the values are only as trustworthy as who can reach the
+    /// broker. See <see cref="MessageRequestContext"/> for the full trust boundary.
+    /// </para>
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddSharedKernelMessaging(o =&gt; o.ServiceName = "billing-service")
+    ///     .UseRabbitMq(connectionString)
+    ///     .WithInboundRequestContext()
+    ///     .AddConsumer&lt;OrderPlacedConsumer&gt;()
+    ///     .Build();
+    /// </code>
+    /// </example>
+    /// </remarks>
+    public MessagingBusBuilder WithInboundRequestContext()
+    {
+        if (_withInboundRequestContext)
+            return this;
+
+        _withInboundRequestContext = true;
+
+        // One holder per MassTransit delivery scope. Registered concretely as well as behind the
+        // interface so the consume filter can write to the very instance consumers read from.
+        Services.AddScoped<InboundMessageContextAccessor>();
+        Services.AddScoped<IInboundMessageContextAccessor>(
+            sp => sp.GetRequiredService<InboundMessageContextAccessor>());
+
+        Services.AddScoped(typeof(InboundRequestContextFilter<>));
+
+        CaptureExistingRequestContextRegistration();
+        Services.AddScoped<IRequestContext, MessageAwareRequestContext>();
+
+        Services.AddScoped<IMessageHeaderPropagator, RequestContextHeaderPropagator>();
+        Services.AddSingleton<IHostedService, RequestContextRegistrationAdvisoryHostedService>();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Re-registers whatever <c>IRequestContext</c> the service already had under
+    /// <see cref="HostRequestContextSource"/>, so the message-aware context about to shadow it can
+    /// still fall back to it outside a consume.
+    /// </summary>
+    /// <remarks>
+    /// The descriptor is turned back into a factory by hand because <c>IServiceCollection</c> holds
+    /// three shapes — instance, factory, implementation type — and only the first two are already
+    /// callable. The original lifetime is preserved, so a scoped HTTP-backed context is still built
+    /// once per request.
+    /// <para>
+    /// Keyed registrations are skipped: they are resolved by key, never by
+    /// <c>GetService&lt;IRequestContext&gt;()</c>, so they are not what a consumer would have got
+    /// anyway — and reading <c>ImplementationType</c> off a keyed descriptor throws.
+    /// </para>
+    /// </remarks>
+    private void CaptureExistingRequestContextRegistration()
+    {
+        var existing = Services.LastOrDefault(
+            d => d.ServiceType == typeof(IRequestContext) && !d.IsKeyedService);
+
+        if (existing is null)
+            return;
+
+        Func<IServiceProvider, object> factory =
+            existing.ImplementationInstance is { } instance ? _ => instance
+            : existing.ImplementationFactory is { } existingFactory ? existingFactory
+            : sp => ActivatorUtilities.CreateInstance(sp, existing.ImplementationType!);
+
+        Services.Add(new ServiceDescriptor(
+            typeof(HostRequestContextSource),
+            sp => new HostRequestContextSource((IRequestContext)factory(sp)),
+            existing.Lifetime));
     }
 
     // -------------------------------------------------------------------------
@@ -841,65 +799,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     }
 
     // -------------------------------------------------------------------------
-    // Routing Slips (P-139)
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Registers a MassTransit Courier routing slip activity.
-    /// </summary>
-    /// <typeparam name="TActivity">
-    /// The activity type. Must extend
-    /// <see cref="SharedKernel.Messaging.MassTransit.RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.
-    /// </typeparam>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// <see cref="SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder"/> is always
-    /// registered as a scoped service by <see cref="Build"/>, regardless of whether this method
-    /// has been called — the builder interface is usable independently of any registered activities.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown if <typeparamref name="TActivity"/> does not extend
-    /// <see cref="SharedKernel.Messaging.MassTransit.RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.
-    /// </exception>
-    public MessagingBusBuilder AddRoutingSlipActivity<TActivity>()
-        where TActivity : class
-    {
-        // RS-07: TArguments/TLog are not exposed as type parameters here — derive them by
-        // walking the base type chain to RoutingSlipActivityBase<TArguments, TLog> at
-        // registration time (model-build time only, not a hot path).
-        var activityType = typeof(TActivity);
-        var baseType = activityType.BaseType;
-
-        while (baseType is not null && (!baseType.IsGenericType
-            || baseType.GetGenericTypeDefinition() != typeof(RoutingSlipActivityBase<,>)))
-        {
-            baseType = baseType.BaseType;
-        }
-
-        if (baseType is null)
-            throw new InvalidOperationException(
-                $"{activityType.FullName} must extend RoutingSlipActivityBase<TArguments, TLog> " +
-                "to be registered via AddRoutingSlipActivity<TActivity>().");
-
-        var genericArgs = baseType.GetGenericArguments();
-        var argumentsType = genericArgs[0];
-        var logType = genericArgs[1];
-
-        var addActivityMethod = typeof(RegistrationConfiguratorExtensions)
-            .GetMethods()
-            .Single(m => m.Name == nameof(RegistrationConfiguratorExtensions.AddActivity)
-                && m.IsGenericMethodDefinition
-                && m.GetGenericArguments().Length == 3
-                && m.GetParameters().Length == 3)
-            .MakeGenericMethod(activityType, argumentsType, logType);
-
-        _consumerRegistrations.Add(cfg =>
-            addActivityMethod.Invoke(null, [cfg, null, null]));
-
-        return this;
-    }
-
-    // -------------------------------------------------------------------------
     // Dead-Letter Policy (P-343)
     // -------------------------------------------------------------------------
 
@@ -924,7 +823,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// filter classifies the exception as fatal.
     /// </para>
     /// <para>
-    /// <strong>MassTransit 9.1.2 capability note:</strong> see
+    /// <strong>Capability note:</strong> see
     /// <see cref="DeadLetterOptions.QueueNameSuffix"/> for why the suffix itself has no observable
     /// effect on the destination's name in the installed MassTransit version — only
     /// <see cref="DeadLetterOptions.MessageTimeToLive"/> is currently wired.
@@ -992,7 +891,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <b>STRUCTURAL LIMITATION — KMS/HSM-BACKED KEY PROVIDERS CANNOT BE USED WITH
     /// <see cref="PayloadTransformOptions.EnableEncryption"/>.</b> MassTransit's
     /// <c>IMessageSerializer.GetMessageBody&lt;T&gt;</c>/<c>IMessageDeserializer.Deserialize</c>
-    /// pipeline stage exposes no async member anywhere in MassTransit 9.1.2, so this feature uses
+    /// pipeline stage exposes no async member anywhere in MassTransit, so this feature uses
     /// <see cref="ISynchronousSymmetricEncryptionService"/>, which needs an
     /// <see cref="ISynchronousEncryptionKeyProvider"/> holding its keys in memory (for example
     /// <see cref="StaticEncryptionKeyProvider"/>) — never a KMS/HSM-backed provider (Azure Key
@@ -1044,15 +943,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         if (_transport == TransportKind.None)
             throw new InvalidOperationException(
                 "No transport configured. Call UseRabbitMq() or UseAzureServiceBus() before Build().");
-
-        // SC-07: Validate Quartz connection string eagerly if WithQuartzScheduler was called.
-        if (_scheduling == SchedulingKind.Quartz)
-        {
-            if (_quartzOptions is null || string.IsNullOrWhiteSpace(_quartzOptions.ConnectionString))
-                throw new InvalidOperationException(
-                    "QuartzSchedulerOptions.ConnectionString is required when WithQuartzScheduler() is called. " +
-                    "Configure a valid database connection string.");
-        }
 
         // ID-04 / P-134: Guard — WithIdempotency() requires IIdempotencyStore to be registered.
         if (_withIdempotency)
@@ -1110,13 +1000,22 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             _validatedServiceName = opts.ServiceName;
         }
         // C-23: Deferred path — no inline action, validation deferred to ValidateOnStart().
-        // We cannot determine the naming prefix at build time; use empty prefix as fallback.
-        // ValidateOnStart() will throw at startup if ServiceName is not configured correctly.
 
-        // Derive the endpoint name formatter prefix.
-        // In the inline-action path _validatedServiceName is set; in the deferred path it is null
-        // and we fall back to an empty prefix (ValidateOnStart catches misconfiguration at startup).
-        var serviceName = _validatedServiceName ?? string.Empty;
+        // The endpoint name formatter, resolved from the bound options rather than from anything
+        // captured here.
+        //
+        // P-561: it used to be built from _validatedServiceName, which is set only when an inline
+        // action was supplied — so a service that configured ServiceName through the
+        // SharedKernel:Messaging section got an EMPTY prefix and queues named "hold-shipment"
+        // instead of "orders-api-hold-shipment". Two services in one broker would then contend for
+        // the same queue. Nothing failed; the wrong queues were simply declared, which is why it
+        // survived until samples/ShippingApi ran against a real broker and the names were visible.
+        //
+        // The factory runs when the container is built, by which point configuration binding has
+        // happened, so both registration paths now produce the same name.
+        Services.AddSingleton<IEndpointNameFormatter>(sp => new KebabCaseEndpointNameFormatter(
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MessagingOptions>>().Value.ServiceName,
+            includeNamespace: false));
 
         // ID-05 / P-134: Register IdempotencyOptions if WithIdempotency(Action<>) overload was used.
         if (_withIdempotency && _idempotencyOptions is not null)
@@ -1150,16 +1049,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // not a new capability with its own configuration surface.
         Services.AddSingleton<Abstractions.MessageBus.IMessageBusProbe, MassTransitMessageBusProbe>();
 
-        // RS-07: Register IRoutingSlipBuilder as scoped, always — independent of whether
-        // AddRoutingSlipActivity<TActivity>() has been called.
-        Services.AddScoped<
-            SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder,
-            MassTransitRoutingSlipBuilder>();
-
-        // SC-06 / SC-07: Register IMessageScheduler → MassTransitMessageScheduler as scoped.
+        // SC-06: Register IMessageScheduler → MassTransitMessageScheduler as scoped.
         // Uses the fully qualified abstraction type to avoid IMessageScheduler ambiguity
         // between MassTransit.IMessageScheduler and SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler.
-        if (_scheduling != SchedulingKind.None)
+        if (_withDelayedDelivery)
             Services.AddScoped<
                 SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler,
                 MassTransitMessageScheduler>();
@@ -1186,10 +1079,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             Services.AddSingleton<IHostedService, DeadLetterPolicyAdvisoryHostedService>();
         }
 
-        // Capture Quartz queue name for use inside closures.
-        var quartzQueueName = _quartzOptions?.Schema ?? "quartz";
-        var quartzSchedulerUri = new Uri($"queue:{quartzQueueName}");
-
         // Register MassTransit with all configuration.
         Services.AddMassTransit(cfg =>
         {
@@ -1201,12 +1090,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             foreach (var registration in _versionTranslatorRegistrations)
                 registration(cfg);
 
-            // SA-03 / SA-04 / SA-05: Apply saga registrations.
-            // Each entry is keyed by state type; WithEntityFrameworkSagaRepository<TDbContext, TSaga>()
-            // overrides the in-memory entry for the same type with an EF Core repository.
-            foreach (var sagaRegistration in _sagaRegistrations.Values)
-                sagaRegistration(cfg);
-
             // Apply outbox configuration.
             _outboxConfigurator?.Invoke(cfg);
 
@@ -1214,7 +1097,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             // For RabbitMQ, use the delayed message scheduler (transport-delay header).
             // For Azure Service Bus, use the ASB-native scheduler (ScheduledEnqueueTimeUtc property).
             // Both register MassTransit.IMessageScheduler in DI, which MassTransitMessageScheduler wraps.
-            if (_scheduling == SchedulingKind.InMemory)
+            if (_withDelayedDelivery)
             {
                 if (_transport == TransportKind.AzureServiceBus)
                     cfg.AddServiceBusMessageScheduler();
@@ -1222,17 +1105,9 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     cfg.AddDelayedMessageScheduler();
             }
 
-            // SC-07: Wire Quartz-backed durable scheduler.
-            // AddQuartzConsumers registers the Quartz schedule/cancel/pause/resume consumers.
-            // AddMessageScheduler registers MassTransit.IMessageScheduler that routes to Quartz.
-            if (_scheduling == SchedulingKind.Quartz)
-            {
-                cfg.AddQuartzConsumers(o => o.QueueName = quartzQueueName);
-                cfg.AddMessageScheduler(quartzSchedulerUri);
-            }
-
-            // Set endpoint name formatter: {service-name}-{consumer-type} kebab-case.
-            cfg.SetEndpointNameFormatter(new KebabCaseEndpointNameFormatter(serviceName, includeNamespace: false));
+            // The formatter comes from DI (registered above), so it reads the bound ServiceName.
+            // SetEndpointNameFormatter is deliberately NOT called: it takes an instance, which
+            // would have to be constructed here — before configuration has been bound.
 
             // Configure transport.
             if (_transport == TransportKind.RabbitMq)
@@ -1241,13 +1116,16 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                 {
                     _rabbitMqBusConfigurator?.Invoke(ctx, busCfg);
 
-                    // SC-06: Wire transport-delay-based scheduler middleware for RabbitMQ.
-                    if (_scheduling == SchedulingKind.InMemory)
+                    // SC-06: Wire the RabbitMQ delayed-message exchange for deferred delivery.
+                    if (_withDelayedDelivery)
                         busCfg.UseDelayedMessageScheduler();
 
-                    // SC-07: Route scheduled messages to the Quartz scheduler endpoint.
-                    if (_scheduling == SchedulingKind.Quartz)
-                        busCfg.UseMessageScheduler(quartzSchedulerUri);
+                    // P-561: the inbound identity filter runs ahead of everything else, so a
+                    // tenant-partitioned idempotency store already knows the tenant when it
+                    // reserves the message id.
+                    if (_withInboundRequestContext)
+                        busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
+
 
                     // ID-03 / P-134: Wire global idempotency consume pipeline filter.
                     // UseConsumeFilter with the open generic type applies to all message types.
@@ -1273,14 +1151,16 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                 {
                     _asbBusConfigurator?.Invoke(ctx, busCfg);
 
-                    // SC-06: Wire ASB native message scheduler middleware.
-                    // UseServiceBusMessageScheduler uses Azure Service Bus built-in scheduled delivery.
-                    if (_scheduling == SchedulingKind.InMemory)
+                    // SC-06: Wire ASB native scheduled delivery (ScheduledEnqueueTimeUtc).
+                    if (_withDelayedDelivery)
                         busCfg.UseServiceBusMessageScheduler();
 
-                    // SC-07: Route scheduled messages to the Quartz scheduler endpoint.
-                    if (_scheduling == SchedulingKind.Quartz)
-                        busCfg.UseMessageScheduler(quartzSchedulerUri);
+                    // P-561: the inbound identity filter runs ahead of everything else, so a
+                    // tenant-partitioned idempotency store already knows the tenant when it
+                    // reserves the message id.
+                    if (_withInboundRequestContext)
+                        busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
+
 
                     // ID-03 / P-134: Wire global idempotency consume pipeline filter.
                     if (_withIdempotency)
@@ -1374,7 +1254,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // P-342/WO-054: Apply the bus-level receive endpoint concurrency default. Previously this
         // option was read into AzureServiceBusOptions but never consulted anywhere the bus was
         // actually built — setting it had zero observable effect.
-        // NOTE: IServiceBusEndpointConfigurator.MaxConcurrentCalls is obsolete in MassTransit 9.1.2
+        // NOTE: IServiceBusEndpointConfigurator.MaxConcurrentCalls is obsolete
         // ("Set ConcurrentMessageLimit instead (which is exactly what setting this property does)").
         // ConcurrentMessageLimit (from the core IBusFactoryConfigurator, shared with the RabbitMQ
         // transport) is the current API — setting it here is the transport-correct equivalent of
@@ -1406,7 +1286,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     // in isolation via a substituted IRabbitMqBusFactoryConfigurator (P-343/WO-054).
     internal static void ConfigureDeadLetterPolicy(IRabbitMqBusFactoryConfigurator cfg, DeadLetterOptions opts)
     {
-        // MassTransit 9.1.2 capability note: IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings/
+        // Capability note: IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings/
         // .ConfigureDeadLetterSettings configure the ARGUMENTS of the automatically-derived fault
         // ("_error") and dead-letter ("_skipped") queues — confirmed via reflection against
         // MassTransit.RabbitMqTransport 9.1.2 to be the same settings RabbitMqReceiveEndpointBuilder
@@ -1446,7 +1326,9 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // MassTransit's own default JSON (de)serializer, freshly constructed with default options —
         // matches exactly what the bus would otherwise use unconfigured, so wrapping it introduces
         // no independent behavior change beyond the compress/encrypt transform itself.
-        var innerFactory = new MtSystemTextJsonMessageSerializerFactory(configure: null);
+        // On the 8.5.x line this factory is parameterless; the 9.x `configure: null` argument this
+        // replaced meant "apply no configuration callback", i.e. the same default options (P-560).
+        var innerFactory = new MtSystemTextJsonMessageSerializerFactory();
 
         // ClearSerialization() is required, not optional: AddSerializer(factory, isSerializer: true)
         // alone only changes which serializer PRODUCES outgoing messages — MassTransit's own

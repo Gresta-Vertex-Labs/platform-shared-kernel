@@ -324,7 +324,21 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             result.Attempts,
             result.Error);
 
-        await _eventPublisher.PublishAsync(exhaustedEvent, ct).ConfigureAwait(false);
+        // P-560: IEventPublisher.PublishAsync returns Result, so this outcome has to be observed
+        // rather than discarded (SK0030). It must not throw: exhaustion notification is secondary to
+        // the delivery attempt that produced it, and propagating a broker failure from here would
+        // mask the webhook failure the caller actually needs to see.
+        var publishResult = await _eventPublisher.PublishAsync(exhaustedEvent, ct).ConfigureAwait(false);
+
+        if (publishResult.IsFailure)
+        {
+            Log.ExhaustionEventNotPublished(
+                _logger,
+                subscription.SubscriptionId,
+                eventType,
+                publishResult.Error.Code,
+                publishResult.Error.Message);
+        }
     }
 
     private async Task NotifyAttemptAsync(WebhookSubscription subscription, int attemptNumber, CancellationToken ct)
@@ -386,5 +400,11 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             Level = LogLevel.Warning,
             Message = "Webhook delivery to subscription {SubscriptionId} for event {EventType} was exhausted after {Attempts} attempt(s) without a successful response.")]
         public static partial void DeliveryExhausted(ILogger logger, Guid subscriptionId, string eventType, int attempts);
+
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Integration + 4,
+            Level = LogLevel.Error,
+            Message = "Webhook exhaustion event for subscription {SubscriptionId} / event {EventType} could not be published ({ErrorCode}): {ErrorMessage}. The delivery outcome stands; only the notification was lost.")]
+        public static partial void ExhaustionEventNotPublished(ILogger logger, Guid subscriptionId, string eventType, string errorCode, string errorMessage);
     }
 }

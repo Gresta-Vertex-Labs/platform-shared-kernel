@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using MassTransit;
-using MassTransit.Courier.Contracts;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,17 +15,14 @@ using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.Messaging.MassTransit.MessageBus;
-using SharedKernel.Messaging.MassTransit.RoutingSlips;
 using Activity = System.Diagnostics.Activity;
-using ISkRoutingSlipBuilder = SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder;
 using MsOptions = Microsoft.Extensions.Options.Options;
 
 namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 
 /// <summary>
 /// DC-06/DC-07: full-dispatch-surface diagnostics coverage tests (P-348/WO-054).
-/// DC-06 proves <c>MassTransitMessageBus.SendAsync</c>, <c>.RequestAsync</c>, and
-/// <c>.ExecuteRoutingSlipAsync</c> each emit an <see cref="Activity"/> with the correct
+/// DC-06 proves <c>MassTransitMessageBus.SendAsync</c> emits an <see cref="Activity"/> with the correct
 /// <see cref="Activity.OperationName"/> and tags — the three verbs that previously produced
 /// no activity at all. DC-07 proves each of <see cref="MessagingDiagnostics.Meter"/>'s five
 /// instruments records on its corresponding operation (publish, consume, duration, retry, fault).
@@ -83,122 +79,6 @@ public sealed class DiagnosticsCoverageTests
         sendActivity.GetTagItem("messaging.message_type").Should().Be(nameof(DcSendMessage));
     }
 
-    // -------------------------------------------------------------------------
-    // DC-06b: RequestAsync produces a "MessageBus.Request" activity
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task RequestAsync_ProducesMessageBusRequestActivity_WithRequestAndResponseTypeTags()
-    {
-        var capturedActivities = new List<Activity>();
-        var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == SourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activity =>
-            {
-                capturedActivities.Add(activity);
-                activityStopped.TrySetResult(true);
-            },
-        };
-        ActivitySource.AddActivityListener(listener);
-
-        var services = new ServiceCollection();
-        services.AddMassTransitTestHarness(cfg =>
-        {
-            cfg.AddConsumer<DcPingRequestConsumer>();
-            cfg.UsingInMemory((ctx, busCfg) => busCfg.ConfigureEndpoints(ctx));
-        });
-        services.Configure<MessagingOptions>(o => o.ServiceName = "dc-request-service");
-        services.AddSingleton<IReadOnlyDictionary<Type, string>>(
-            new System.Collections.ObjectModel.ReadOnlyDictionary<Type, string>(new Dictionary<Type, string>()));
-        services.AddScoped<ConventionSendEndpointResolver>();
-        services.AddScoped<IMessageBus, MassTransitMessageBus>();
-
-        await using var provider = services.BuildServiceProvider(true);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-
-        using var scope = provider.CreateScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var response = await bus.RequestAsync<DcRequestMessage, DcResponseMessage>(
-            new DcRequestMessage("request-activity-check"), cts.Token);
-
-        response.Reply.Should().Be("pong:request-activity-check");
-
-        await activityStopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await harness.Stop();
-
-        var requestActivity = capturedActivities.Should().ContainSingle(a =>
-                a.OperationName == "MessageBus.Request" &&
-                Equals(a.GetTagItem("messaging.request_type"), nameof(DcRequestMessage)))
-            .Subject;
-        requestActivity.GetTagItem("messaging.request_type").Should().Be(nameof(DcRequestMessage));
-        requestActivity.GetTagItem("messaging.response_type").Should().Be(nameof(DcResponseMessage));
-    }
-
-    // -------------------------------------------------------------------------
-    // DC-06c: ExecuteRoutingSlipAsync produces a "MessageBus.ExecuteRoutingSlip" activity
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task ExecuteRoutingSlipAsync_ProducesMessageBusExecuteRoutingSlipActivity_WithActivityCountTag()
-    {
-        var capturedActivities = new List<Activity>();
-        var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == SourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activity =>
-            {
-                capturedActivities.Add(activity);
-                activityStopped.TrySetResult(true);
-            },
-        };
-        ActivitySource.AddActivityListener(listener);
-
-        var sendEndpointProvider = Substitute.For<ISendEndpointProvider>();
-        var sendEndpoint = Substitute.For<ISendEndpoint>();
-        sendEndpointProvider.GetSendEndpoint(Arg.Any<Uri>()).Returns(Task.FromResult(sendEndpoint));
-        sendEndpoint.Send(Arg.Any<RoutingSlip>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-
-        var options = MsOptions.Create(new MessagingOptions { ServiceName = "dc-routing-slip-service" });
-        var bus = new MassTransitMessageBus(
-            publishEndpoint: Substitute.For<IPublishEndpoint>(),
-            sendEndpointProvider: sendEndpointProvider,
-            serviceProvider: Substitute.For<IServiceProvider>(),
-            routeMap: new Dictionary<Type, string>(),
-            resolver: new ConventionSendEndpointResolver(options));
-
-        ISkRoutingSlipBuilder slipBuilder = new MassTransitRoutingSlipBuilder();
-        var slip = slipBuilder
-            .AddActivity(
-                "dc-fake-activity-one",
-                new Uri("loopback://localhost/dc-fake-activity-one"),
-                new DcRoutingSlipArguments("first"))
-            .AddActivity(
-                "dc-fake-activity-two",
-                new Uri("loopback://localhost/dc-fake-activity-two"),
-                new DcRoutingSlipArguments("second"))
-            .Build();
-
-        await bus.ExecuteRoutingSlipAsync(slip, CancellationToken.None);
-
-        await activityStopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        var routingSlipActivity = capturedActivities.Should().ContainSingle(a =>
-                a.OperationName == "MessageBus.ExecuteRoutingSlip" &&
-                Equals(a.GetTagItem("messaging.routing_slip.activity_count"), 2))
-            .Subject;
-        routingSlipActivity.GetTagItem("messaging.routing_slip.activity_count").Should().Be(2,
-            "the tag must equal slip.Itinerary.Count — two activities were added to this slip");
-    }
 
     // -------------------------------------------------------------------------
     // DC-07a: messaging.publish.count records on IEventPublisher.PublishAsync
@@ -436,9 +316,6 @@ public sealed class DiagnosticsCoverageTests
 // ---------------------------------------------------------------------------
 
 internal sealed record DcSendMessage(string Text);
-internal sealed record DcRequestMessage(string Text);
-internal sealed record DcResponseMessage(string Reply);
-internal sealed record DcRoutingSlipArguments(string Note);
 internal sealed record DcMessageBusPublishMessage(string Text);
 internal sealed record DcConsumeMessage(string Text);
 internal sealed record DcRetryMessage(string Text);
@@ -453,12 +330,6 @@ internal sealed record DcPublishIntegrationEvent(Guid EventId, DateTimeOffset Oc
 // ---------------------------------------------------------------------------
 // Consumers
 // ---------------------------------------------------------------------------
-
-internal sealed class DcPingRequestConsumer : IConsumer<DcRequestMessage>
-{
-    public async Task Consume(ConsumeContext<DcRequestMessage> context) =>
-        await context.RespondAsync(new DcResponseMessage($"pong:{context.Message.Text}"));
-}
 
 internal sealed class DcConsumeMessageConsumer : ConsumerBase<DcConsumeMessage>
 {
@@ -505,6 +376,6 @@ internal sealed class DcNoOpFaultConsumer : SharedKernel.Messaging.Abstractions.
         Guid faultId,
         DateTimeOffset faultTimestamp,
         DcFaultMessage faultedMessage,
-        SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo[] exceptions,
+        IReadOnlyList<SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo> exceptions,
         CancellationToken ct) => Task.CompletedTask;
 }

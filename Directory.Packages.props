@@ -127,12 +127,23 @@
       SharedKernel.Consumer.Tests.
     -->
     <PackageVersion Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
-    <PackageVersion Include="MassTransit" Version="9.1.2" />
-    <PackageVersion Include="MassTransit.Azure.ServiceBus.Core" Version="9.1.2" />
-    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="9.1.2" />
-    <PackageVersion Include="MassTransit.Quartz" Version="9.1.2" />
-    <PackageVersion Include="MassTransit.RabbitMQ" Version="9.1.2" />
-    <PackageVersion Include="MassTransit.TestFramework" Version="9.1.2" />
+    <!--
+      MassTransit is pinned to the 8.5.x line — the last Apache-2.0 release series (P-560/WO-085).
+      From 9.0.0 the package is published by Massient, Inc. under a commercial licence
+      (nuspec carries a bare licenseUrl of https://massient.com/license and NO SPDX
+      <license type="expression">, where 8.5.10 carries <license type="expression">Apache-2.0</license>).
+      Directory.Build.props declares <PackageLicenseExpression>MIT</PackageLicenseExpression> for every
+      package in this repo, so shipping SharedKernel.Messaging.MassTransit on a 9.x pin would publish
+      a package that claims MIT while forcing a commercial obligation onto every consuming service —
+      the same bar that pinned MediatR to 12.4.1 below, and that made 20.Reporting decline EPPlus,
+      QuestPDF and iText7. 8.5.10 ships a native net10.0 target, so this costs no framework fidelity.
+      Do NOT bump this line to 9.x without an explicit licensing decision recorded in the root brain.
+    -->
+    <PackageVersion Include="MassTransit" Version="8.5.10" />
+    <PackageVersion Include="MassTransit.Azure.ServiceBus.Core" Version="8.5.10" />
+    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="8.5.10" />
+    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.10" />
+    <PackageVersion Include="MassTransit.TestFramework" Version="8.5.10" />
     <PackageVersion Include="MediatR" Version="12.4.1" />
     <PackageVersion Include="MeiliSearch" Version="0.20.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.Certificate" Version="10.0.0" />
@@ -285,6 +296,8 @@
     <PackageVersion Include="SharedKernel.FeatureManagement" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Linter" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Localization" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.Abstractions" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.MassTransit" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Dapper" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.EfCore" Version="$(SharedKernelPackageVersion)" />
@@ -296,6 +309,7 @@
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Security.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ServiceDefaults.Messaging" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Persistence" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Security" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Storage" Version="$(SharedKernelPackageVersion)" />

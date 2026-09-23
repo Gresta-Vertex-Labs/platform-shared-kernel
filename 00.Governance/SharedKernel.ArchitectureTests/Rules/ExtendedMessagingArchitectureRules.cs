@@ -5,10 +5,8 @@ using SharedKernel.ArchitectureTests.Predicates;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Pre-built NetArchTest predicates (SK0706–SK0707) that close the misuse vectors introduced by
-/// the messaging adapter chains: direct injection of
-/// <c>MassTransit.IMessageScheduler</c> outside the messaging boundary, and saga state classes
-/// that do not extend <c>SagaStateBase</c>.
+/// Pre-built NetArchTest predicate (SK0706) closing a misuse vector in the messaging adapter
+/// chain: direct injection of <c>MassTransit.IMessageScheduler</c> outside the messaging boundary.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,11 +22,6 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     <c>MassTransit.IMessageScheduler</c> injection outside <c>SharedKernel.Messaging.*</c>.
 ///     All other code must inject <c>SharedKernel.Messaging.Abstractions.IMessageScheduler</c>.
 ///   </description></item>
-///   <item><description>
-///     SK0707 (<see cref="SagaStatesMustExtendSagaStateBase"/>) — prevents saga state classes
-///     that implement <c>ISaga</c> from omitting <c>SagaStateBase</c> from their inheritance
-///     chain.
-///   </description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -41,9 +34,13 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     and all sub-namespaces.
 ///   </description></item>
 /// </list>
-/// SK0707 has no exemption list — every <c>ISaga</c> implementor must extend
-/// <c>SagaStateBase</c>. Any additional exemption must be documented in
-/// <c>00.Governance/CLAUDE.md</c> before it is applied in code.
+/// Any additional exemption must be documented in <c>00.Governance/CLAUDE.md</c> before it is
+/// applied in code.
+/// </para>
+/// <para>
+/// SK0707 (<c>SagaStatesMustExtendSagaStateBase</c>) was retired by P-560, which removed sagas
+/// from <c>07.Messaging</c> — durable orchestration is <c>17.Workflows</c>'s charter. The rule had
+/// no subject left to enforce against once <c>SagaStateBase</c> ceased to exist.
 /// </para>
 /// <para>
 /// Reference this class with <c>PrivateAssets="all"</c> so it never
@@ -94,39 +91,4 @@ public static class ExtendedMessagingArchitectureRules
             .Should()
             .MeetCustomRule(new NoDirectSchedulerInjectionOutsideMessagingPredicate());
     }
-
-    /// <summary>
-    /// Returns a <see cref="ConditionList"/> asserting that every type implementing
-    /// <c>ISaga</c> in the supplied assembly also extends <c>SagaStateBase</c>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>SagaStateBase</c> (from <c>SharedKernel.Messaging.MassTransit</c>) provides the
-    /// platform-standard <c>CorrelationId</c>, <c>Version</c> (optimistic concurrency counter),
-    /// <c>CreatedAt</c>, and <c>ModifiedAt</c> audit fields required for correct saga state
-    /// persistence and version-conflict resolution.
-    /// </para>
-    /// <para>
-    /// <strong>Offending pattern:</strong>
-    /// <code>class OrderSagaState : ISagaVersion { } // no SagaStateBase</code>
-    /// </para>
-    /// <para>
-    /// <strong>Compliant pattern:</strong>
-    /// <code>class OrderSagaState : SagaStateBase { }</code>
-    /// </para>
-    /// </remarks>
-    /// <param name="assembly">
-    /// The assembly to evaluate — supply via <c>typeof(SomeSagaState).Assembly</c>.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ConditionList"/> asserting every <c>ISaga</c> implementor extends
-    /// <c>SagaStateBase</c>.
-    /// </returns>
-    public static ConditionList SagaStatesMustExtendSagaStateBase(Assembly assembly) =>
-        Types
-            .InAssembly(assembly)
-            .That()
-            .HaveNameStartingWith(string.Empty)
-            .Should()
-            .MeetCustomRule(new SagaStateMustExtendSagaStateBasePredicate());
 }

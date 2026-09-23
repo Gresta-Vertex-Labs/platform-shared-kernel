@@ -72,54 +72,6 @@ public sealed class PropagationSymmetryTests
         await harness.Stop();
     }
 
-    // -------------------------------------------------------------------------
-    // PS-05: RequestAsync — registered propagator CorrelationId matches request message
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task RequestAsync_WithPropagator_CorrelationIdMatchesPropagatedValue()
-    {
-        // Arrange
-        PsRequestCorrelationCaptureStore.Reset();
-
-        await using var provider = new ServiceCollection()
-            .AddMassTransitTestHarness(cfg =>
-            {
-                cfg.AddConsumer<PsRequestRespondingConsumer>();
-                cfg.UsingInMemory((ctx, busCfg) => busCfg.ConfigureEndpoints(ctx));
-            })
-            .AddScoped<IMessageHeaderPropagator, PsCorrelationIdPropagator>()
-            .AddSingleton<IReadOnlyDictionary<Type, string>>(
-                new ReadOnlyDictionary<Type, string>(new Dictionary<Type, string>()))
-            .AddScoped<ConventionSendEndpointResolver>()
-            .AddScoped<IMessageBus, MassTransitMessageBus>()
-            .Configure<MessagingOptions>(o => o.ServiceName = "ps-request-service")
-            .BuildServiceProvider(true);
-
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-
-        await using var scope = provider.CreateAsyncScope();
-        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // Act
-        var response = await bus.RequestAsync<PsRequestMessage, PsResponseMessage>(
-            new PsRequestMessage("ping"),
-            cts.Token);
-
-        // Assert: the response arrived, and the request message's CorrelationId matches the value
-        // set by the registered propagator — RequestAsync must apply propagators identically to
-        // PublishAsync/SendAsync (P-341).
-        response.Should().NotBeNull();
-        PsRequestCorrelationCaptureStore.CapturedCorrelationId.Should().Be(
-            PsCorrelationIdPropagator.FixedCorrelationId,
-            "RequestAsync must run registered IMessageHeaderPropagators before dispatch, so the " +
-            "propagated CorrelationId reaches the request message's ConsumeContext.CorrelationId");
-
-        await harness.Stop();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -127,8 +79,6 @@ public sealed class PropagationSymmetryTests
 // ---------------------------------------------------------------------------
 
 internal sealed record PsSendTestCommand(string Text);
-internal sealed record PsRequestMessage(string Text);
-internal sealed record PsResponseMessage(string Reply);
 
 // ---------------------------------------------------------------------------
 // Static stores for cross-scope state capture
@@ -142,13 +92,6 @@ internal static class PsSendHeaderCaptureStore
     public static void Reset() => _headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
-internal static class PsRequestCorrelationCaptureStore
-{
-    private static Guid? _capturedCorrelationId;
-    public static Guid? CapturedCorrelationId => _capturedCorrelationId;
-    public static void Capture(Guid? correlationId) => _capturedCorrelationId = correlationId;
-    public static void Reset() => _capturedCorrelationId = null;
-}
 
 // ---------------------------------------------------------------------------
 // Propagators
@@ -160,13 +103,6 @@ internal sealed class PsSendHeaderPropagator : IMessageHeaderPropagator
         => context.WithHeader("x-sk-ps-send", "from-send-propagator");
 }
 
-internal sealed class PsCorrelationIdPropagator : IMessageHeaderPropagator
-{
-    public static readonly Guid FixedCorrelationId = Guid.NewGuid();
-
-    public void Propagate(MessagingPublishContext context)
-        => context.WithCorrelationId(FixedCorrelationId);
-}
 
 // ---------------------------------------------------------------------------
 // Consumers
@@ -187,11 +123,3 @@ internal sealed class PsSendCapturingConsumer : IConsumer<PsSendTestCommand>
 }
 
 /// Captures the incoming request's CorrelationId, then responds so RequestAsync completes.
-internal sealed class PsRequestRespondingConsumer : IConsumer<PsRequestMessage>
-{
-    public async Task Consume(ConsumeContext<PsRequestMessage> context)
-    {
-        PsRequestCorrelationCaptureStore.Capture(context.CorrelationId);
-        await context.RespondAsync(new PsResponseMessage("pong"));
-    }
-}

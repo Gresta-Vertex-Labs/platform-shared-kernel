@@ -43,15 +43,6 @@ public sealed class ContractShapeTests
     }
 
     [Fact]
-    public void IMessageBus_HasRequestAsync()
-    {
-        var methods = typeof(IMessageBus).GetMethods()
-            .Where(m => m.Name == nameof(IMessageBus.RequestAsync) && m.IsGenericMethodDefinition)
-            .ToList();
-        methods.Should().HaveCountGreaterThan(0);
-    }
-
-    [Fact]
     public void IEventPublisher_Exists_AndIsInterface()
     {
         typeof(IEventPublisher).IsInterface.Should().BeTrue();

@@ -6,7 +6,10 @@ using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
+using SharedKernel.Messaging.Abstractions.Errors;
+using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Primitives.Results;
 
 // Alias to disambiguate from MassTransit.PublishContext
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
@@ -26,7 +29,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
 {
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly MessagingOptions _messagingOptions;
-    private readonly IEnumerable<IMessageHeaderPropagator> _propagators;
+    private readonly IReadOnlyList<IMessageHeaderPropagator> _propagators;
 
     public MassTransitEventPublisher(
         IPublishEndpoint publishEndpoint,
@@ -35,39 +38,39 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
     {
         _publishEndpoint = publishEndpoint;
         _messagingOptions = messagingOptions.Value;
-        _propagators = propagators;
+        _propagators = [.. propagators];
     }
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
-        where TEvent : class, IIntegrationEvent =>
-        // HP-04: Run propagators first with no explicit configure callback.
-        PublishEnvelopeAsync(integrationEvent, ctx: BuildContextFromPropagators(configure: null), ct);
-
-    /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<MessagingPublishContext> configure, CancellationToken ct)
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
     {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+
+        // HP-04: Run propagators first with no explicit configure callback.
+        return PublishEnvelopeAsync(integrationEvent, BuildContext(configure: null), ct);
+    }
+
+    /// <inheritdoc />
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, Action<MessagingPublishContext> configure, CancellationToken ct)
+        where TEvent : class, IIntegrationEvent
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+        ArgumentNullException.ThrowIfNull(configure);
+
         // HP-04: Propagators run first; explicit configure callback runs after (explicit wins on same key).
-        var ctx = BuildContextFromPropagators(configure);
-        return PublishEnvelopeAsync(integrationEvent, ctx, ct);
+        return PublishEnvelopeAsync(integrationEvent, BuildContext(configure), ct);
     }
 
     /// Builds a <see cref="MessagingPublishContext"/> by running all registered propagators first,
     /// then applying the optional explicit configure callback (which wins on key conflicts).
-    private MessagingPublishContext? BuildContextFromPropagators(Action<MessagingPublishContext>? configure)
+    private MessagingPublishContext BuildContext(Action<MessagingPublishContext>? configure)
     {
-        var hasPropagators = _propagators.Any();
-        var hasExplicit = configure is not null;
-
-        if (!hasPropagators && !hasExplicit)
-            return null;
-
         var ctx = new MessagingPublishContext();
 
         // Propagators run first — their values can be overridden by the explicit callback.
-        foreach (var propagator in _propagators)
-            propagator.Propagate(ctx);
+        for (var i = 0; i < _propagators.Count; i++)
+            _propagators[i].Propagate(ctx);
 
         // Explicit callback runs last — its values overwrite anything set by propagators.
         configure?.Invoke(ctx);
@@ -75,25 +78,35 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         return ctx;
     }
 
-    private async Task PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext? ctx, CancellationToken ct)
+    private async Task<Result> PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext ctx, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
     {
-        ArgumentNullException.ThrowIfNull(integrationEvent);
 
         // The event's declared wire name — identical to the envelope's CloudEvents "type". Resolving it
         // before the activity starts means an event type with no valid [IntegrationEvent] attribute fails
         // fast, before any telemetry or transport work.
-        var eventTypeName = IntegrationEventDescriptor.For<TEvent>().Name;
+        string eventTypeName;
+        try
+        {
+            eventTypeName = IntegrationEventDescriptor.For<TEvent>().Name;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            // A missing or malformed [IntegrationEvent] attribute is a contract defect in the event
+            // type, reported as a Result so a caller can surface it without catching 04.Contracts'
+            // internal exception types (P-560).
+            return MessagingErrors.ContractViolation(typeof(TEvent).Name);
+        }
 
         // OT-04: child activity for the publish operation, disposed after the publish
         // call completes or throws. Independent of the EventEnvelope CorrelationId field —
         // this activity's TraceId/SpanId comes from the ambient Activity.Current chain.
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish");
-        activity?.SetTag("messaging.event_type", eventTypeName);
+        activity?.SetTag(MessagingTagKeys.EventType, eventTypeName);
 
         // Resolve CorrelationId: explicit override > ambient Activity.TraceId > new Guid.
         string correlationId;
-        if (ctx?.CorrelationId.HasValue == true)
+        if (ctx.CorrelationId.HasValue)
             correlationId = ctx.CorrelationId.Value.ToString("D");
         else if (Activity.Current is { TraceId: var traceId })
             correlationId = traceId.ToString();
@@ -101,49 +114,64 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             correlationId = Guid.NewGuid().ToString("D");
 
         // Resolve CausationId: explicit override only.
-        string? causationId = ctx?.CausationId.HasValue == true
+        string? causationId = ctx.CausationId.HasValue
             ? ctx.CausationId.Value.ToString("D")
             : null;
 
         // Resolve TenantId: explicit override only, no ambient fallback (P-340/WO-054).
-        Guid? tenantId = ctx?.TenantId;
+        Guid? tenantId = ctx.TenantId;
 
         // Build the CloudEvents-compliant envelope exclusively via EventEnvelope.Wrap<TEvent>()
         // (04.Contracts's mandated factory) — never a raw object-initializer construction
         // (P-340/WO-054, fixing a confirmed prior violation of that construction rule).
         // Every optional argument is passed by name: subject, correlationId and causationId are all
         // optional strings, so a positional call would silently swap them.
-        var envelope = EventEnvelope.Wrap(
-            integrationEvent,
-            source: _messagingOptions.ServiceName,
-            subject: ctx?.Subject,
-            tenantId: tenantId,
-            correlationId: correlationId,
-            causationId: causationId);
-
-        // P-344/WO-054: the pipe callback must also run when only PartitionKey is set (no headers).
-        if (ctx is { } publishContext && (publishContext.Headers.Count > 0 || publishContext.PartitionKey is not null))
+        EventEnvelope<TEvent> envelope;
+        try
         {
-            await _publishEndpoint.Publish(envelope, pipe =>
-            {
-                foreach (var (key, value) in publishContext.Headers)
-                    pipe.Headers.Set(key, value);
-
-                if (Guid.TryParse(correlationId, out var corrGuid))
-                    pipe.CorrelationId = corrGuid;
-
-                // Maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
-                pipe.ApplyPartitionKey(publishContext.PartitionKey);
-            }, ct).ConfigureAwait(false);
+            envelope = EventEnvelope.Wrap(
+                integrationEvent,
+                source: _messagingOptions.ServiceName,
+                subject: ctx.Subject,
+                tenantId: tenantId,
+                correlationId: correlationId,
+                causationId: causationId);
         }
-        else
+        catch (ArgumentException ex)
         {
-            await _publishEndpoint.Publish(envelope, ct).ConfigureAwait(false);
+            // Wrap rejects an event whose EventId or OccurredOn is unset, or whose TEvent is not the
+            // runtime type of the argument. Both are caller mistakes the caller can fix, so they are
+            // Result failures rather than exceptions (P-560).
+            return MessagingErrors.InvalidMessage(typeof(TEvent).Name, ex.Message);
+        }
+
+        // Parsed, not assumed: the resolved correlation id falls back to the ambient Activity's
+        // trace id, which is a 32-character hex string rather than a GUID literal.
+        Guid? transportCorrelationId = Guid.TryParse(correlationId, out var parsed) ? parsed : null;
+
+        try
+        {
+            // The callback always runs. P-561: the previous version skipped it entirely unless the
+            // caller had supplied a header or a partition key, which silently dropped the tenant
+            // header and the transport correlation id on the ordinary publish — the common case.
+            await _publishEndpoint.Publish(
+                envelope,
+                pipe => PublishContextPipe.Apply(pipe, ctx, transportCorrelationId),
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (MessagingExceptionClassifier.TryClassify(ex, eventTypeName, "publish") is { } error)
+                return error;
+
+            throw;
         }
 
         // P-348/WO-054: incremented only after the publish call above completes without
         // throwing — a faulted publish is never counted as published.
         MessagingDiagnostics.PublishCounter.Add(
-            1, new KeyValuePair<string, object?>("messaging.event_type", eventTypeName));
+            1, new KeyValuePair<string, object?>(MessagingTagKeys.EventType, eventTypeName));
+
+        return Result.Success();
     }
 }

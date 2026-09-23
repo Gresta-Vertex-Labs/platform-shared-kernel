@@ -40,8 +40,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class DeadLetterIntegrationTests : IAsyncLifetime
 {
-    private readonly RabbitMqContainer _container = new RabbitMqBuilder()
-        .WithImage("rabbitmq:3-management-alpine")
+    private readonly RabbitMqContainer _container = new RabbitMqBuilder("rabbitmq:3-management-alpine")
         .WithUsername("guest")
         .WithPassword("guest")
         .Build();
@@ -160,7 +159,7 @@ internal sealed class DlTrackingFaultConsumer : IFaultConsumer<DlPoisonMessage>
         Guid faultId,
         DateTimeOffset faultTimestamp,
         DlPoisonMessage faultedMessage,
-        FaultExceptionInfo[] exceptions,
+        IReadOnlyList<FaultExceptionInfo> exceptions,
         CancellationToken ct)
     {
         LastMessage = faultedMessage;

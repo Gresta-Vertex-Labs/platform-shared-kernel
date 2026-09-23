@@ -1,9 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>MassTransit 9.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing.</Description>
+    <Description>MassTransit 8.5.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, transport-native delayed delivery, atomic consumer idempotency, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing; dispatch failures are returned as messaging.* Result codes. Pinned to the 8.5.x line because that is the last Apache-2.0 MassTransit release.</Description>
     <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' "== empty"-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: optional CancellationToken and configure-callback parameters, the .NET convention. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!--
@@ -21,12 +31,35 @@
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Compression\SharedKernel.Compression.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <!--
+      SharedKernel.Configuration — AddValidatedOptions, the platform's only sanctioned options
+      registration (P-561). Deliberately referenced here and NOT from
+      SharedKernel.Messaging.Abstractions: that package is pure contracts, and a service that
+      consumes IMessageBus without composing a bus should not inherit a configuration binder.
+      AddSharedKernelMessaging(IConfiguration) reads MessagingOptions.SectionName itself, so no
+      call site names the section either way — the ISectionBoundOptions form would buy nothing
+      here and cost every downstream consumer a dependency.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- MassTransit 9.x transports and integrations -->
+    <!--
+      MassTransit transports and integrations, pinned to the 8.5.x line in
+      Directory.Packages.props because it is the last Apache-2.0 release; 9.x is commercially
+      licensed (P-560). Do not bump without a recorded licensing decision.
+    -->
     <PackageReference Include="MassTransit" />
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="MassTransit.Azure.ServiceBus.Core" />
+    <!--
+      Azure.Identity — DefaultAzureCredential, used directly by UseAzureServiceBus(...) to
+      authenticate a fully-qualified namespace with a managed identity instead of a connection
+      string. Declared explicitly (P-560): this package compiles against the type at a real call
+      site, so relying on it arriving transitively through MassTransit.Azure.ServiceBus.Core would
+      make the build depend on that package's private dependency graph, and a future MassTransit
+      bump that drops or retargets the reference would break this package with no local signal.
+    -->
+    <PackageReference Include="Azure.Identity" />
     <!--
       MassTransit.EntityFrameworkCore — EF Core outbox and saga persistence.
       Used via generic TDbContext type parameter in WithEntityFrameworkOutbox<TDbContext>().
@@ -40,11 +73,14 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!--
-      MassTransit.Quartz — durable deferred message scheduling via Quartz.NET.
-      Used by MessagingBusBuilder.WithQuartzScheduler() (P-127).
-      Only loaded at composition root; zero impact on Abstractions package.
+      MassTransit.Quartz was removed by P-560. Deferred delivery now runs entirely on the
+      transport's own scheduled-delivery feature (WithDelayedDelivery() -> the RabbitMQ
+      delayed-message exchange, or Azure Service Bus native scheduled enqueue), which is
+      broker-side and already survives a process restart. The Quartz path duplicated that
+      guarantee at the cost of a second relational database, its schema and its migrations,
+      inside a messaging package. Recurring/cron scheduling belongs to 19.Scheduling, which
+      deliberately reuses only Quartz's CronExpression parser and never its IScheduler/JobStore.
     -->
-    <PackageReference Include="MassTransit.Quartz" />
     <!--
       Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions — HealthCheckContext/
       HealthCheckResult/HealthStatus/HealthCheckRegistration types only, used by
@@ -61,5 +97,15 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Messaging.MassTransit.Tests</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Public API tracking: an addition, removal or signature change fails the build until
+      PublicAPI.*.txt is updated, so a breaking change to a package hundreds of services consume
+      is a reviewed diff rather than something noticed after publish (P-561).
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

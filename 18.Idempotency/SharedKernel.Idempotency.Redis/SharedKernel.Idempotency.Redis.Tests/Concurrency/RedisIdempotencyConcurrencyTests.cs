@@ -132,11 +132,16 @@ public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixtu
         var storeB = CreateMessageStore(multiplexer, tenantB);
         var sharedMessageId = Guid.NewGuid();
 
-        var hasProcessedA = await storeA.HasProcessedAsync(sharedMessageId, CancellationToken.None);
-        var hasProcessedB = await storeB.HasProcessedAsync(sharedMessageId, CancellationToken.None);
+        var reservationA = await storeA.TryBeginAsync(sharedMessageId, CancellationToken.None);
+        var reservationB = await storeB.TryBeginAsync(sharedMessageId, CancellationToken.None);
 
-        Assert.False(hasProcessedA);
-        Assert.False(hasProcessedB);
+        // Both tenants claim the same message id independently — the keys are tenant-scoped, so
+        // neither reservation observes the other.
+        Assert.Equal(IdempotencyReservationStatus.Started, reservationA.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, reservationB.Status);
+        Assert.NotNull(reservationA.ReservationToken);
+        Assert.NotNull(reservationB.ReservationToken);
+        Assert.NotEqual(reservationA.ReservationToken, reservationB.ReservationToken);
     }
 
     // A different fingerprint against an in-flight reservation is reported as FingerprintMismatch,

@@ -8,12 +8,16 @@ using Xunit;
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Tests for <see cref="ExtendedMessagingArchitectureRules"/> — covering both predicates
-/// (SK0706 and SK0707) introduced in WO-021 P-133.
+/// Tests for <see cref="ExtendedMessagingArchitectureRules"/> — covering SK0706, introduced in
+/// WO-021 P-133.
 /// </summary>
 /// <remarks>
 /// T-96/T-97: SK0706 — NoDirectMassTransitSchedulerInjection
-/// T-98/T-99: SK0707 — SagaStatesMustExtendSagaStateBase
+/// <para>
+/// T-98/T-99 covered SK0707 (SagaStatesMustExtendSagaStateBase) and were removed by P-560 with the
+/// rule itself: sagas left <c>07.Messaging</c> for <c>17.Workflows</c>, so <c>SagaStateBase</c> no
+/// longer exists for any type to extend.
+/// </para>
 /// </remarks>
 public class ExtendedMessagingArchitectureRulesTests
 {
@@ -117,107 +121,6 @@ public class ExtendedMessagingArchitectureRulesTests
         result.IsSuccessful.Should().BeTrue(
             because: "ReminderSchedulingService injects SharedKernel.Messaging.Abstractions.IMessageScheduler " +
                      "(not MassTransit.IMessageScheduler) — SK0706 only fires on the MassTransit namespace form");
-    }
-
-    // ---------------------------------------------------------------------------
-    // T-98 — SK0707 fire path: ISaga implementor not extending SagaStateBase fails
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// T-98: An assembly containing a class that implements <c>ISaga</c> but extends
-    /// <c>object</c> directly (no <c>SagaStateBase</c>) must fail
-    /// <see cref="ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase"/>.
-    /// The failure must reference the offending type.
-    /// </summary>
-    [Fact]
-    public void SagaStatesMustExtendSagaStateBase_IsSagaWithoutSagaStateBase_RuleFails()
-    {
-        // Arrange: saga state class implements ISaga but does not extend SagaStateBase
-        const string source = """
-            namespace SharedKernel.Messaging.MassTransit
-            {
-                // Stub simulating the MassTransit ISaga marker interface
-                public interface ISaga
-                {
-                    System.Guid CorrelationId { get; set; }
-                }
-            }
-
-            namespace Orders.Sagas
-            {
-                using SharedKernel.Messaging.MassTransit;
-
-                // Violation: implements ISaga but does not extend SagaStateBase
-                public class OrderSagaState : ISaga
-                {
-                    public System.Guid CorrelationId { get; set; }
-                }
-            }
-            """;
-
-        var assembly = CompileInMemory("SagaStateMissingBaseViolation", source);
-
-        var result = ExtendedMessagingArchitectureRules
-            .SagaStatesMustExtendSagaStateBase(assembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeFalse(
-            because: "OrderSagaState implements ISaga but does not extend SagaStateBase " +
-                     "— SK0707 requires every ISaga implementor to extend SagaStateBase");
-    }
-
-    // ---------------------------------------------------------------------------
-    // T-99 — SK0707 pass path: ISaga implementor extending SagaStateBase passes
-    // ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// T-99: An assembly containing a saga state class that implements <c>ISaga</c> and extends
-    /// <c>SagaStateBase</c> must pass
-    /// <see cref="ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase"/>.
-    /// </summary>
-    [Fact]
-    public void SagaStatesMustExtendSagaStateBase_IsSagaExtendingSagaStateBase_RulePasses()
-    {
-        // Arrange: saga state class implements ISaga and extends SagaStateBase
-        const string source = """
-            namespace SharedKernel.Messaging.MassTransit
-            {
-                // Stub simulating the MassTransit ISaga marker interface
-                public interface ISaga
-                {
-                    System.Guid CorrelationId { get; set; }
-                }
-
-                // Stub simulating the platform SagaStateBase abstract class
-                public abstract class SagaStateBase : ISaga
-                {
-                    public System.Guid CorrelationId { get; set; }
-                    public int Version { get; set; }
-                    public System.DateTimeOffset CreatedAt { get; set; }
-                    public System.DateTimeOffset ModifiedAt { get; set; }
-                }
-            }
-
-            namespace Orders.Sagas
-            {
-                using SharedKernel.Messaging.MassTransit;
-
-                // Compliant: extends SagaStateBase, which implements ISaga
-                public class OrderSagaState : SagaStateBase
-                {
-                }
-            }
-            """;
-
-        var assembly = CompileInMemory("SagaStateWithBaseCompliant", source);
-
-        var result = ExtendedMessagingArchitectureRules
-            .SagaStatesMustExtendSagaStateBase(assembly)
-            .GetResult();
-
-        result.IsSuccessful.Should().BeTrue(
-            because: "OrderSagaState implements ISaga (transitively, via SagaStateBase) and " +
-                     "extends SagaStateBase — SK0707 is satisfied");
     }
 
     // ---------------------------------------------------------------------------

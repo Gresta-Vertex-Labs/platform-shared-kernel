@@ -1,48 +1,57 @@
 namespace SharedKernel.Messaging.Abstractions.Faults;
 
 /// <summary>
-/// Contract for handling dead-lettered messages delivered as <c>Fault&lt;TMessage&gt;</c> events
-/// by the MassTransit fault pipeline.
+/// Observes a message that has failed every retry it was going to get, so the failure becomes
+/// visible instead of only ending up in a dead-letter queue nobody reads.
 /// </summary>
-/// <typeparam name="TMessage">The original message type that faulted.</typeparam>
+/// <typeparam name="TMessage">The message type that faulted.</typeparam>
 /// <remarks>
 /// <para>
-/// Implement this interface to perform compensating actions, alert operations teams, or triage
-/// dead-lettered messages. The adapter in the MassTransit package invokes
-/// <see cref="HandleAsync"/> when a <c>Fault&lt;TMessage&gt;</c> is delivered after the retry
-/// budget is exhausted.
+/// <strong>This is an observer, not a recovery mechanism.</strong> By the time it runs, the retry
+/// budget is exhausted and MassTransit has already moved the message to the error queue. Nothing a
+/// fault consumer does puts the message back. Use it to alert, to record the failure somewhere a
+/// human will look, or to compensate work the failed message had already half-completed.
 /// </para>
 /// <para>
-/// <strong>Registration rule:</strong> Implementations must be registered via
-/// <c>MessagingBusBuilder.AddFaultConsumer&lt;TMessage, TConsumer&gt;()</c>.
-/// Never register directly via <c>services.AddScoped</c> — the adapter wiring will be missing,
-/// and fault messages will not be routed to the handler.
+/// <strong>Register it with</strong>
+/// <c>MessagingBusBuilder.AddFaultConsumer&lt;TMessage, TConsumer&gt;()</c> — never a bare
+/// <c>services.AddScoped</c>. The builder also registers the adapter that consumes
+/// <c>Fault&lt;TMessage&gt;</c> and calls this interface; without it the type is registered and
+/// never invoked, which looks exactly like a message that never faulted.
 /// </para>
 /// <para>
-/// <strong>Exception policy:</strong> Exceptions must not be swallowed — rethrow to allow
-/// MassTransit fault tracking and enable alerting on repeated failures.
+/// <strong>Do not swallow exceptions.</strong> A fault consumer that throws is itself faulted and
+/// tracked by MassTransit, which is what makes "our alerting is broken" visible. Catching
+/// everything to be safe hides the second failure behind the first.
 /// </para>
 /// </remarks>
 public interface IFaultConsumer<TMessage>
     where TMessage : class
 {
     /// <summary>
-    /// Invoked when a <c>Fault&lt;TMessage&gt;</c> is delivered (dead-lettered message).
+    /// Handles one faulted message.
     /// </summary>
-    /// <param name="faultId">The unique identifier of the fault event assigned by MassTransit.</param>
-    /// <param name="faultTimestamp">The UTC timestamp when the fault was recorded by MassTransit.</param>
-    /// <param name="faultedMessage">The original message payload that caused the fault.</param>
-    /// <param name="exceptions">
-    /// Array of <see cref="FaultExceptionInfo"/> records, one per exception recorded during the
-    /// failed delivery attempts. Populated from <c>Fault&lt;TMessage&gt;.Exceptions</c> by the
-    /// <c>FaultConsumerAdapter</c> in the MassTransit package.
+    /// <param name="faultId">
+    /// MassTransit's identifier for this fault event. Useful as a deduplication key: a fault, like
+    /// any other message, can be delivered more than once.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task representing the asynchronous fault-handling operation.</returns>
+    /// <param name="faultTimestamp">When MassTransit recorded the fault (UTC).</param>
+    /// <param name="faultedMessage">
+    /// The original message. Deserialized from the fault event, so it is a copy — mutating it
+    /// affects nothing.
+    /// </param>
+    /// <param name="exceptions">
+    /// One entry per exception recorded across the failed delivery attempts, in the order
+    /// MassTransit recorded them, so the first is usually the original cause. Read-only since
+    /// P-560: an array in a public contract lets a handler mutate the caller's state, and nothing
+    /// downstream benefits from that.
+    /// </param>
+    /// <param name="ct">A token to observe for cancellation.</param>
+    /// <returns>A task that completes when the fault has been handled.</returns>
     Task HandleAsync(
         Guid faultId,
         DateTimeOffset faultTimestamp,
         TMessage faultedMessage,
-        FaultExceptionInfo[] exceptions,
+        IReadOnlyList<FaultExceptionInfo> exceptions,
         CancellationToken ct);
 }

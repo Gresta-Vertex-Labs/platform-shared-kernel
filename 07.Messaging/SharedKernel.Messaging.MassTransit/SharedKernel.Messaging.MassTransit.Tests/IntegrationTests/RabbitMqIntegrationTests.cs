@@ -18,8 +18,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class RabbitMqIntegrationTests : IAsyncLifetime
 {
-    private readonly RabbitMqContainer _container = new RabbitMqBuilder()
-        .WithImage("rabbitmq:3-management-alpine")
+    private readonly RabbitMqContainer _container = new RabbitMqBuilder("rabbitmq:3-management-alpine")
         .WithUsername("guest")
         .WithPassword("guest")
         .Build();

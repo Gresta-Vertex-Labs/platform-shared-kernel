@@ -19,7 +19,7 @@ internal static class PartitionKeySendContextExtensions
     /// <para>
     /// Both underlying MassTransit calls are applied unconditionally, independent of which transport
     /// is actually configured — neither throws when the corresponding transport-specific send-context
-    /// payload is unavailable (confirmed empirically against MassTransit 9.1.2's RabbitMQ, Azure
+    /// payload is unavailable (confirmed empirically against MassTransit's RabbitMQ, Azure
     /// Service Bus, and in-memory transports: <see cref="RoutingKeyExtensions.TrySetRoutingKey"/>
     /// never throws, and <see cref="ServiceBusSendContextExtensions.SetSessionId"/> is a silent no-op
     /// when the <see cref="ServiceBusSendContext"/> payload is not present). This lets

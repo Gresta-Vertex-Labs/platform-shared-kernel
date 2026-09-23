@@ -62,6 +62,7 @@
       "07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/SharedKernel.Messaging.Abstractions.Tests.csproj",
       "07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj",
       "07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj",
+      "07.Messaging/consumer-verify/consumer-verify.csproj",
       "08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.Tests/SharedKernel.Storage.Abstractions.Tests.csproj",
       "08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.csproj",
       "08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.csproj",

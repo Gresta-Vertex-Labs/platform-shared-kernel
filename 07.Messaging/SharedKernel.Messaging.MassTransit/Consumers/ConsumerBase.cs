@@ -7,18 +7,35 @@ using SharedKernel.Messaging.MassTransit.Logging;
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
 /// <summary>
-/// Base class for all MassTransit consumers in the platform.
-/// Handles CorrelationId propagation, structured error logging, and exception rethrow semantics.
+/// The base class every consumer in the platform derives from: write
+/// <see cref="ConsumeAsync"/> and get correlation, structured logging, tracing and metrics without
+/// writing any of them.
 /// </summary>
 /// <typeparam name="TMessage">The message type consumed by this consumer.</typeparam>
 /// <remarks>
 /// <para>
-/// Override <see cref="ConsumeAsync"/> with business logic only — no MassTransit concerns.
-/// Do not override or call <see cref="Consume"/> directly.
+/// <strong>Override <see cref="ConsumeAsync"/> and nothing else.</strong> It receives the
+/// deserialized message and a cancellation token — no <c>ConsumeContext</c>, no MassTransit types.
+/// That is deliberate: a consumer body that cannot reach the transport cannot accidentally depend
+/// on it, and the same body is testable by calling it directly.
 /// </para>
 /// <para>
-/// <strong>Exception policy:</strong> Unhandled exceptions from <see cref="ConsumeAsync"/> trigger
-/// MassTransit retry and fault policies. Never swallow exceptions inside <see cref="ConsumeAsync"/>.
+/// <strong>Never swallow an exception.</strong> Letting it propagate is how a consumer asks for a
+/// retry. A caught-and-logged exception acknowledges the message, which means the work is lost and
+/// the queue looks healthy — the failure mode this platform cares most about avoiding. If a failure
+/// is genuinely not worth retrying, declare its type in
+/// <c>ConsumerDefinitionBase.NonRetryableExceptions</c> so it goes straight to the error queue
+/// rather than being hidden.
+/// </para>
+/// <para>
+/// <strong>Assume at-least-once delivery.</strong> Every broker can deliver the same message twice;
+/// a consumer whose work is not naturally idempotent needs
+/// <c>MessagingBusBuilder.WithIdempotency()</c>.
+/// </para>
+/// <para>
+/// With <c>WithInboundRequestContext()</c> enabled, injecting <c>IRequestContext</c> into a
+/// consumer resolves to the caller that published the message, so tenant-scoped persistence works
+/// from a consumer exactly as it does from an HTTP handler.
 /// </para>
 /// </remarks>
 public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
@@ -77,9 +94,9 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     {
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume");
         var messageTypeName = typeof(TMessage).Name;
-        activity?.SetTag("messaging.message_type", messageTypeName);
+        activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
 
-        var metricTag = new KeyValuePair<string, object?>("messaging.message_type", messageTypeName);
+        var metricTag = new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName);
 
         // P-348/WO-054: GetRetryAttempt() > 0 identifies this invocation as a retry-filter
         // re-delivery (0 on the original delivery, and safely 0 — never throws — when no
@@ -94,11 +111,11 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
         // OT-03: additive messaging.destination / messaging.message_type entries.
         var scopeState = MessagingLogScope.Create(context.CorrelationId);
         scopeState["MessageType"] = messageTypeName;
-        scopeState["messaging.message_type"] = messageTypeName;
+        scopeState[MessagingTagKeys.MessageType] = messageTypeName;
 
         var destination = context.DestinationAddress?.AbsolutePath;
         if (destination is not null)
-            scopeState["messaging.destination"] = destination;
+            scopeState[MessagingTagKeys.Destination] = destination;
 
         // Extract headers whose key starts with "x-sk-" (case-insensitive) into the log scope.
         foreach (var header in context.Headers.GetAll())

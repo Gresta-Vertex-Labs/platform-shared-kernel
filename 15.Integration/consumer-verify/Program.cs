@@ -185,13 +185,13 @@ internal sealed class NoSubscriptionsStore : IWebhookSubscriptionStore
 // surface; the real IEventPublisher wiring belongs to 07.Messaging and is out of scope here. ────
 internal sealed class NoOpEventPublisher : IEventPublisher
 {
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
-        => Task.CompletedTask;
+        => Task.FromResult(Result.Success());
 
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
-        => Task.CompletedTask;
+        => Task.FromResult(Result.Success());
 }
 
 // ── WO-072: minimal INotificationSenderIdentityResolver stand-in for Surface 3 (Surface 4

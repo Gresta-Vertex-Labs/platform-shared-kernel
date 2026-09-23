@@ -137,7 +137,7 @@ public sealed class OTelInstrumentationTests
     }
 
     [Fact]
-    public async Task PublishAsync_WhenEnvelopeConstructionThrows_StillDisposesActivity()
+    public async Task PublishAsync_WhenEnvelopeConstructionFails_StillDisposesActivity()
     {
         var capturedActivities = new List<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -169,13 +169,15 @@ public sealed class OTelInstrumentationTests
         // EventEnvelope.Wrap rejects the event.
         var invalidEvent = new OTelInvalidIntegrationEvent(Guid.Empty, DateTimeOffset.UtcNow);
 
-        var act = async () => await publisher.PublishAsync(invalidEvent, CancellationToken.None);
+        // P-560: envelope rejection is a Result failure now, not an exception — but the activity
+        // must still be started, tagged and disposed on that path.
+        var result = await publisher.PublishAsync(invalidEvent, CancellationToken.None);
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        result.IsFailure.Should().BeTrue();
         await activityStopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await harness.Stop();
 
-        // The activity must still be started (and disposed) even though the publish call throws.
+        // The activity must still be started (and disposed) even though the publish fails.
         // Filter by the event-type tag (set before envelope construction runs) rather than
         // asserting global singularity — see note in PublishAsync_ProducesEventPublisherPublishActivity...
         capturedActivities.Should().ContainSingle(a =>

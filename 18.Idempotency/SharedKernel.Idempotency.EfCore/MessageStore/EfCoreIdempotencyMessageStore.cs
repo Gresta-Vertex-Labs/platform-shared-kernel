@@ -69,52 +69,117 @@ public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> HasProcessedAsync(Guid messageId, CancellationToken ct)
+    /// <inheritdoc />
+    public async Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
     {
         var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
         var options = _efCoreOptions.Value;
         var now = _clock.UtcNow;
         var expiresAt = now + options.InFlightTtl;
+        var token = Guid.NewGuid().ToString("N");
 
         try
         {
+            // One statement, so the claim is atomic. The DO UPDATE fires only for a row whose lease
+            // has lapsed and which never completed; a completed row and a live in-flight row both
+            // fall through to the conflict with no rows affected.
             var affected = await _context.Database.ExecuteSqlInterpolatedAsync(
                     $"""
-                    INSERT INTO idempotency_messages (tenant_id, message_id, reserved_at_utc, expires_at_utc)
-                    VALUES ({tenantId}, {messageId}, {now}, {expiresAt})
+                    INSERT INTO idempotency_messages
+                        (tenant_id, message_id, reserved_at_utc, expires_at_utc, reservation_token, completed_at_utc)
+                    VALUES ({tenantId}, {messageId}, {now}, {expiresAt}, {token}, NULL)
                     ON CONFLICT (tenant_id, message_id) DO UPDATE
-                    SET reserved_at_utc = EXCLUDED.reserved_at_utc,
-                        expires_at_utc = EXCLUDED.expires_at_utc
-                    WHERE idempotency_messages.expires_at_utc < {now}
+                    SET reserved_at_utc   = EXCLUDED.reserved_at_utc,
+                        expires_at_utc    = EXCLUDED.expires_at_utc,
+                        reservation_token = EXCLUDED.reservation_token
+                    WHERE idempotency_messages.completed_at_utc IS NULL
+                      AND idempotency_messages.expires_at_utc < {now}
                     """,
                     ct)
                 .ConfigureAwait(false);
 
-            return affected == 0;
+            if (affected > 0)
+                return IdempotencyReservation.Started(token);
+
+            // Nothing was written, so a row already holds this id. Read it to say which case it is.
+            var existing = await _context.IdempotencyMessages
+                .AsNoTracking()
+                .Where(x => x.TenantId == tenantId && x.MessageId == messageId)
+                .Select(x => new { x.CompletedAtUtc })
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            // A row that vanished between the two statements means another delivery released it;
+            // treating that as in-progress lets the broker redeliver rather than dropping it.
+            return existing?.CompletedAtUtc is not null
+                ? IdempotencyReservation.AlreadyProcessed()
+                : IdempotencyReservation.InProgress();
         }
         catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
         {
-            return HandleStoreUnavailable(ex, nameof(HasProcessedAsync), fallback: false, options);
+            // Fail-open means "let the consumer run", i.e. a Started reservation.
+            return HandleStoreUnavailable(
+                ex, nameof(TryBeginAsync), IdempotencyReservation.Started(token), options);
         }
     }
 
     /// <inheritdoc />
-    public async Task MarkProcessedAsync(Guid messageId, CancellationToken ct)
+    public async Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct)
     {
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+
         var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
         var options = _efCoreOptions.Value;
-        var expiresAt = _clock.UtcNow + _messagingOptions.Value.ExpiryWindow;
+        var now = _clock.UtcNow;
+        var expiresAt = now + _messagingOptions.Value.ExpiryWindow;
 
         try
         {
+            // The token predicate stops a stale holder — one whose lease lapsed and whose id was
+            // re-claimed by a redelivery — from marking the new holder's work complete.
             await _context.IdempotencyMessages
-                .Where(x => x.TenantId == tenantId && x.MessageId == messageId)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ExpiresAtUtc, expiresAt), ct)
+                .Where(x => x.TenantId == tenantId
+                            && x.MessageId == messageId
+                            && x.ReservationToken == reservationToken)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.CompletedAtUtc, now)
+                        .SetProperty(x => x.ExpiresAtUtc, expiresAt),
+                    ct)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
         {
-            HandleStoreUnavailable(ex, nameof(MarkProcessedAsync), fallback: false, options);
+            HandleStoreUnavailable(ex, nameof(CompleteAsync), fallback: false, options);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+
+        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var options = _efCoreOptions.Value;
+
+        try
+        {
+            // Delete rather than expire, so the broker's redelivery can claim the id immediately.
+            // Guarded on the token and on the row still being in flight, so a release can never
+            // erase a completed record.
+            await _context.IdempotencyMessages
+                .Where(x => x.TenantId == tenantId
+                            && x.MessageId == messageId
+                            && x.ReservationToken == reservationToken
+                            && x.CompletedAtUtc == null)
+                .ExecuteDeleteAsync(ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
+        {
+            // Safe to swallow: an unreleased row expires with its lease, so the message is retried
+            // slightly later rather than lost, and the consumer's real failure keeps propagating.
+            HandleStoreUnavailable(ex, nameof(ReleaseAsync), fallback: false, options);
         }
     }
 

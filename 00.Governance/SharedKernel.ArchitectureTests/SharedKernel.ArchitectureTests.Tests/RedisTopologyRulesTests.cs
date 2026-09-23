@@ -298,7 +298,7 @@ public class RedisTopologyRulesTests
     [Fact]
     public void MessagingNeverReferencesCaching_RealMessagingAssemblies_RulePasses()
     {
-        var messagingAbstractionsAssembly = typeof(Messaging.Abstractions.Batch.BatchOptions).Assembly;
+        var messagingAbstractionsAssembly = typeof(Messaging.Abstractions.MessageBus.IMessageBus).Assembly;
         var massTransitAssembly = typeof(Messaging.MassTransit.Consumers.ConsumerBase<>).Assembly;
 
         var conditionList = RedisTopologyRules.MessagingNeverReferencesCaching(

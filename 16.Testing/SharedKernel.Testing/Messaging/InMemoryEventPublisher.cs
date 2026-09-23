@@ -3,6 +3,8 @@ using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 
+using SharedKernel.Primitives.Results;
+
 namespace SharedKernel.Testing.Messaging;
 
 /// <summary>
@@ -60,17 +62,17 @@ public sealed class InMemoryEventPublisher : IEventPublisher
     public IReadOnlyList<object> Published => _published.Select(p => p.Event).ToArray();
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var context = BuildContext(configure: null);
         _published.Enqueue((integrationEvent, context));
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
     /// <inheritdoc />
-    public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
+    public Task<Result> PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
         where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
@@ -78,7 +80,7 @@ public sealed class InMemoryEventPublisher : IEventPublisher
 
         var context = BuildContext(configure);
         _published.Enqueue((integrationEvent, context));
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
     /// <summary>Returns every published event of type <typeparamref name="TEvent"/>, in publish order.</summary>

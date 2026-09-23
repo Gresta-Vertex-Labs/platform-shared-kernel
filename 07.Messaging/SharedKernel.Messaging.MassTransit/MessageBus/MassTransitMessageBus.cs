@@ -1,29 +1,23 @@
 using MassTransit;
-using MassTransit.Courier.Contracts;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Messaging.Abstractions.Errors;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
+using SharedKernel.Messaging.MassTransit.Internal;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Results;
 
 // Alias to disambiguate from MassTransit.PublishContext
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
 
 namespace SharedKernel.Messaging.MassTransit.MessageBus;
 
-/// <summary>
-/// MassTransit implementation of <see cref="IMessageBus"/>.
-/// Delegates publish to <see cref="IPublishEndpoint"/> and send to <see cref="ISendEndpointProvider"/>
-/// with convention-based endpoint resolution, supporting per-type route overrides.
-/// <see cref="SendAsync{T}"/>, <see cref="RequestAsync{TRequest, TResponse}"/>, and
-/// <see cref="ExecuteRoutingSlipAsync"/> each start their own child <see cref="System.Diagnostics.Activity"/>
-/// via <see cref="MessagingDiagnostics.ActivitySource"/> (P-348/WO-054); <see cref="PublishAsync{T}(T, CancellationToken)"/>
-/// increments <see cref="MessagingDiagnostics.PublishCounter"/> on successful publish.
-/// </summary>
 internal sealed class MassTransitMessageBus : IMessageBus
 {
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ISendEndpointProvider _sendEndpointProvider;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IReadOnlyList<IMessageHeaderPropagator> _propagators;
     private readonly IReadOnlyDictionary<Type, string> _routeMap;
     private readonly ConventionSendEndpointResolver _resolver;
 
@@ -36,196 +30,142 @@ internal sealed class MassTransitMessageBus : IMessageBus
     {
         _publishEndpoint = publishEndpoint;
         _sendEndpointProvider = sendEndpointProvider;
-        _serviceProvider = serviceProvider;
         _routeMap = routeMap;
         _resolver = resolver;
+
+        // Resolved once per scope rather than per dispatch; an empty set is the common case.
+        // GetService (not GetServices/GetRequiredService): a real Microsoft.Extensions.DependencyInjection
+        // container always resolves IEnumerable<T> to at least an empty sequence, but a substituted
+        // IServiceProvider — which several tests inject — returns null for anything unregistered, and
+        // the throwing overloads turn that into a constructor failure.
+        _propagators = [.. serviceProvider.GetService<IEnumerable<IMessageHeaderPropagator>>() ?? []];
     }
 
-    /// <inheritdoc />
-    public async Task PublishAsync<T>(T message, CancellationToken ct) where T : class
+    public Task<Result> PublishAsync<T>(T message, CancellationToken ct) where T : class
     {
-        // HP-03: Run propagators first with no explicit configure callback.
-        var ctx = BuildContextFromPropagators(configure: null);
+        ArgumentNullException.ThrowIfNull(message);
+        return PublishCoreAsync(message, configure: null, ct);
+    }
 
-        if (ctx is null)
+    public Task<Result> PublishAsync<T>(T message, Action<MessagingPublishContext> configure, CancellationToken ct)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(configure);
+        return PublishCoreAsync(message, configure, ct);
+    }
+
+    private async Task<Result> PublishCoreAsync<T>(
+        T message,
+        Action<MessagingPublishContext>? configure,
+        CancellationToken ct)
+        where T : class
+    {
+        var messageTypeName = typeof(T).Name;
+
+        // P-560: Publish now emits its own span, matching SendAsync. Previously the platform's
+        // most-used dispatch verb was the only one producing no Activity of its own.
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.Publish");
+        activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
+
+        // HP-03: propagators run first; the explicit callback runs last so its values win.
+        var context = BuildContext(configure);
+
+        try
         {
-            await _publishEndpoint.Publish(message, ct).ConfigureAwait(false);
+            await _publishEndpoint.Publish(message, pipe => ApplyContext(pipe, context), ct).ConfigureAwait(false);
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await _publishEndpoint.Publish(message, pipe =>
-            {
-                if (ctx.CorrelationId.HasValue)
-                    pipe.CorrelationId = ctx.CorrelationId.Value;
-
-                foreach (var (key, value) in ctx.Headers)
-                    pipe.Headers.Set(key, value);
-
-                // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
-                pipe.ApplyPartitionKey(ctx.PartitionKey);
-            }, ct).ConfigureAwait(false);
-        }
-
-        // P-348/WO-054: incremented only after the publish call above completes without throwing.
-        MessagingDiagnostics.PublishCounter.Add(1, new KeyValuePair<string, object?>("messaging.message_type", typeof(T).Name));
-    }
-
-    /// <inheritdoc />
-    public async Task PublishAsync<T>(T message, Action<MessagingPublishContext> configure, CancellationToken ct) where T : class
-    {
-        // HP-03: Propagators run first; explicit configure callback runs after (explicit wins on same key).
-        // BuildContextFromPropagators always returns non-null when configure is non-null.
-        var ctx = BuildContextFromPropagators(configure)!;
-
-        await _publishEndpoint.Publish(message, pipe =>
-        {
-            if (ctx.CorrelationId.HasValue)
-                pipe.CorrelationId = ctx.CorrelationId.Value;
-
-            foreach (var (key, value) in ctx.Headers)
-                pipe.Headers.Set(key, value);
-
-            // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
-            pipe.ApplyPartitionKey(ctx.PartitionKey);
-        }, ct).ConfigureAwait(false);
-
-        // P-348/WO-054: incremented only after the publish call above completes without throwing.
-        MessagingDiagnostics.PublishCounter.Add(1, new KeyValuePair<string, object?>("messaging.message_type", typeof(T).Name));
-    }
-
-    /// Builds a <see cref="MessagingPublishContext"/> by running all registered propagators first,
-    /// then applying the optional explicit configure callback (which wins on key conflicts).
-    private MessagingPublishContext? BuildContextFromPropagators(Action<MessagingPublishContext>? configure)
-    {
-        var propagators = _serviceProvider.GetService<IEnumerable<IMessageHeaderPropagator>>();
-        var hasPropagators = propagators is not null;
-        var hasExplicit = configure is not null;
-
-        if (!hasPropagators && !hasExplicit)
-            return null;
-
-        var ctx = new MessagingPublishContext();
-
-        // Propagators run first — their values can be overridden by the explicit callback.
-        if (propagators is not null)
-        {
-            foreach (var propagator in propagators)
-                propagator.Propagate(ctx);
+            return Classify(ex, messageTypeName, "publish");
         }
 
-        // Explicit callback runs last — its values overwrite anything set by propagators.
-        configure?.Invoke(ctx);
+        // P-348/WO-054: incremented only after the publish above completes without throwing.
+        MessagingDiagnostics.PublishCounter.Add(
+            1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
 
-        return ctx;
+        return Result.Success();
     }
 
-    /// <inheritdoc />
-    public async Task SendAsync<T>(T command, CancellationToken ct) where T : class
+    public async Task<Result> SendAsync<T>(T command, CancellationToken ct) where T : class
     {
-        // P-348/WO-054: closes the completeness gap — prior to this phase, SendAsync produced
-        // no activity at all. Disposed after the send call completes or throws.
+        ArgumentNullException.ThrowIfNull(command);
+
+        var messageTypeName = typeof(T).Name;
+
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.Send");
-        activity?.SetTag("messaging.message_type", typeof(T).Name);
+        activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
 
-        // Check per-type route override first; fall back to convention-based resolver.
-        var queueName = _routeMap.TryGetValue(typeof(T), out var route)
-            ? route
+        // Per-type route override first; otherwise the convention-based resolver.
+        var endpointUri = _routeMap.TryGetValue(typeof(T), out var route)
+            ? new Uri($"queue:{route}")
             : _resolver.Resolve<T>();
-        var endpoint = await _sendEndpointProvider.GetSendEndpoint(new Uri($"queue:{queueName}")).ConfigureAwait(false);
 
-        // P-341: Run registered propagators before dispatch, identical precedence to PublishAsync.
-        // SendAsync has no Action<PublishContext> overload, so "explicit callback" reduces to "none" —
-        // propagator output alone determines CorrelationId/headers here.
-        var ctx = BuildContextFromPropagators(configure: null);
+        // P-341: propagators run before dispatch, identical precedence to PublishAsync. SendAsync
+        // exposes no configure callback, so propagator output alone shapes the context.
+        var context = BuildContext(configure: null);
 
-        if (ctx is null)
+        try
         {
-            await endpoint.Send(command, ct).ConfigureAwait(false);
-            return;
+            var endpoint = await _sendEndpointProvider.GetSendEndpoint(endpointUri).ConfigureAwait(false);
+            await endpoint.Send(command, pipe => ApplyContext(pipe, context), ct).ConfigureAwait(false);
+        }
+        catch (EndpointNotFoundException)
+        {
+            return MessagingErrors.EndpointNotFound(messageTypeName, endpointUri.ToString());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Classify(ex, messageTypeName, "send");
         }
 
-        await endpoint.Send(command, pipe =>
-        {
-            if (ctx.CorrelationId.HasValue)
-                pipe.CorrelationId = ctx.CorrelationId.Value;
+        // P-560: SendAsync previously produced an Activity but no counter, so send traffic was
+        // invisible to the same dashboards that charted publishes.
+        MessagingDiagnostics.SendCounter.Add(
+            1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
 
-            foreach (var (key, value) in ctx.Headers)
-                pipe.Headers.Set(key, value);
-
-            // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
-            pipe.ApplyPartitionKey(ctx.PartitionKey);
-        }, ct).ConfigureAwait(false);
+        return Result.Success();
     }
 
-    /// <inheritdoc />
-    public async Task<TResponse> RequestAsync<TRequest, TResponse>(TRequest request, CancellationToken ct)
-        where TRequest : class
-        where TResponse : class
+    /// <summary>
+    /// Maps a transport exception onto the <c>messaging.*</c> failure contract, rethrowing anything
+    /// the classifier does not recognise as an operational fault.
+    /// </summary>
+    private static Result Classify(Exception ex, string messageTypeName, string operation)
+        => MessagingExceptionClassifier.TryClassify(ex, messageTypeName, operation) is { } error
+            ? Result.Failure(error)
+            : throw ex;
+
+    /// <summary>
+    /// Builds the per-dispatch context: every registered propagator in registration order, then the
+    /// explicit callback last so it overrides them on any key both set.
+    /// </summary>
+    /// <remarks>
+    /// Always returns an instance. The previous version tested
+    /// <c>GetService&lt;IEnumerable&lt;IMessageHeaderPropagator&gt;&gt;() is not null</c> to skip
+    /// this allocation, but Microsoft.Extensions.DependencyInjection resolves
+    /// <c>IEnumerable&lt;T&gt;</c> to an empty sequence rather than <see langword="null"/>, so that
+    /// test was always true and the fast path it guarded was unreachable (P-560).
+    /// </remarks>
+    private MessagingPublishContext BuildContext(Action<MessagingPublishContext>? configure)
     {
-        // P-348/WO-054: closes the completeness gap — prior to this phase, RequestAsync produced
-        // no activity at all. Disposed after the request/response round-trip completes or throws.
-        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.Request");
-        activity?.SetTag("messaging.request_type", typeof(TRequest).Name);
-        activity?.SetTag("messaging.response_type", typeof(TResponse).Name);
+        var context = new MessagingPublishContext();
 
-        // P-341: Run registered propagators before dispatch, identical precedence to PublishAsync/SendAsync.
-        var ctx = BuildContextFromPropagators(configure: null);
+        for (var i = 0; i < _propagators.Count; i++)
+            _propagators[i].Propagate(context);
 
-        // Use IServiceProvider to resolve IRequestClient<TRequest> via MassTransit DI integration.
-        // The CancellationToken is passed via the ct parameter — callers must pass a timeout-bound token.
-        var client = _serviceProvider.CreateRequestClient<TRequest>();
-
-        if (ctx is null)
-        {
-            var response = await client.GetResponse<TResponse>(request, ct).ConfigureAwait(false);
-            return response.Message;
-        }
-
-        // IRequestClient<TRequest>.GetResponse does not accept the raw Action<SendContext<T>> pipe
-        // shape Send/Publish use — it exposes an IRequestPipeConfigurator<TRequest> callback instead.
-        // UseExecute() adds a synchronous execute filter over the underlying SendContext<TRequest>,
-        // giving the same CorrelationId/Headers access as the Send/Publish pipe callbacks.
-        var propagatedResponse = await client.GetResponse<TResponse>(request, requestPipeConfigurator =>
-        {
-            requestPipeConfigurator.UseExecute(sendContext =>
-            {
-                if (ctx.CorrelationId.HasValue)
-                    sendContext.CorrelationId = ctx.CorrelationId.Value;
-
-                foreach (var (key, value) in ctx.Headers)
-                    sendContext.Headers.Set(key, value);
-            });
-        }, ct).ConfigureAwait(false);
-
-        return propagatedResponse.Message;
+        configure?.Invoke(context);
+        return context;
     }
 
-    /// <inheritdoc />
-    public async Task ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct)
-    {
-        // P-348/WO-054: closes the completeness gap — prior to this phase, ExecuteRoutingSlipAsync
-        // produced no activity at all. Disposed after dispatch completes or throws, including the
-        // argument-validation throws below (the activity_count tag is populated once the itinerary
-        // is known — it cannot be set on the "not a RoutingSlip at all" throw path).
-        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.ExecuteRoutingSlip");
-
-        if (routingSlip is not RoutingSlip slip)
-            throw new ArgumentException(
-                $"The routingSlip argument must be a {typeof(RoutingSlip).FullName} produced by " +
-                $"{typeof(SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder).FullName}.Build(). " +
-                $"Received: {routingSlip?.GetType().FullName ?? "null"}.",
-                nameof(routingSlip));
-
-        activity?.SetTag("messaging.routing_slip.activity_count", slip.Itinerary.Count);
-
-        if (slip.Itinerary.Count == 0)
-            throw new ArgumentException(
-                "The routingSlip argument has an empty itinerary. " +
-                "Add at least one activity via IRoutingSlipBuilder.AddActivity() before calling Build().",
-                nameof(routingSlip));
-
-        // Courier dispatch: send the routing slip to the first activity's execute address.
-        var endpoint = await _sendEndpointProvider.GetSendEndpoint(slip.Itinerary[0].Address).ConfigureAwait(false);
-        await endpoint.Send<RoutingSlip>(slip, ct).ConfigureAwait(false);
-    }
+    /// <summary>
+    /// Writes the context onto the outgoing message.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <c>IEventPublisher</c> through <see cref="PublishContextPipe"/> since P-561: the
+    /// two paths each had their own copy and drifted, and the event one never wrote the tenant
+    /// header at all.
+    /// </remarks>
+    private static void ApplyContext(SendContext pipe, MessagingPublishContext context)
+        => PublishContextPipe.Apply(pipe, context, context.CorrelationId);
 }

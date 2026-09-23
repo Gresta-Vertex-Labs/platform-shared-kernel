@@ -1,139 +1,201 @@
 # SharedKernel.Messaging.Abstractions
 
-Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: `IMessageBus`,
-`IEventPublisher`, `PublishContext`, `IMessagingBuilder`, `MessagingOptions`, `IIdempotencyStore`,
-`IMessageHeaderPropagator`, `ITenantContextAccessor`, `IMessageScheduler`, `IMessageBusProbe`, and
-`IRoutingSlipBuilder` — the contracts every transport package
-([`SharedKernel.Messaging.MassTransit`](https://www.nuget.org/packages/SharedKernel.Messaging.MassTransit))
-implements. **Zero transport NuGet dependency** — references only
-`Microsoft.Extensions.DependencyInjection.Abstractions` and `SharedKernel.Contracts` (for
-`IIntegrationEvent`) — so `05.Application` and other upstream layers can depend on messaging
-contracts without pulling in MassTransit, RabbitMQ, or Azure Service Bus client libraries.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Transport dependencies: 0](https://img.shields.io/badge/transport%20dependencies-0-brightgreen)
+![Provider: neutral](https://img.shields.io/badge/provider-neutral-informational)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+
+> **Messaging contracts for .NET services: publish and send as `Result` values, at-most-once consumption through
+> an atomic reservation, and the publishing caller's tenant and actor available to the consumer.**
+
+Messaging goes wrong in quiet ways:
+
+- a consumer runs with no tenant, so every tenant-scoped write fails closed while the queue looks healthy;
+- a redelivered message runs the consumer twice, and the second charge goes out;
+- a broker outage throws a transport-specific exception nobody wrote a `catch` for, in the middle of a request;
+- a "have I processed this?" check and a "mark it processed" write race, and both deliveries run.
+
+This package defines the contracts that make those mistakes hard to write. Application code depends only on it;
+the host picks a transport — [`SharedKernel.Messaging.MassTransit`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit/README.md)
+for RabbitMQ and Azure Service Bus.
+
+| You get | So that |
+| --- | --- |
+| `IMessageBus` / `IEventPublisher`, every verb returning `Result` | An unreachable broker is a value you handle, not an exception you must know to catch |
+| `IIdempotencyStore`'s reserve / complete / release | A duplicate delivery is refused atomically; "in flight" and "already done" are different answers |
+| `MessageRequestContext` + `MessageContextHeaders` | A consumer knows which tenant and which actor caused the message |
+| `PublishContext` | Correlation, causation, tenant, subject, partition key and headers, per dispatch |
+| `IMessageHeaderPropagator` | Ambient values reach every message without a line at each call site |
+| `IMessageScheduler` | The broker holds a deferred message, so it survives this process restarting |
+| `IFaultConsumer` | A message that exhausted its retries becomes visible instead of only ending up in an error queue |
+| `IMessageBusProbe` | Kubernetes readiness over the real configured bus |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Which type do I need?](#which-type-do-i-need)
+- [Publishing](#publishing)
+- [Idempotency](#idempotency)
+- [The caller across the bus](#the-caller-across-the-bus)
+- [Errors](#errors)
+- [Dependencies](#dependencies)
 
 ## Install
 
-```
+```bash
 dotnet add package SharedKernel.Messaging.Abstractions
 ```
 
-```xml
-<PackageReference Include="SharedKernel.Messaging.Abstractions" Version="1.0.0" />
-```
+Your application and domain projects reference this package. Your **startup project** additionally references
+`SharedKernel.Messaging.MassTransit`, which registers the implementations. That split is what keeps the transport
+out of the type signatures your tests have to construct.
 
-## Usage
-
-Application code depends on `IMessageBus`/`IEventPublisher` only — never a concrete MassTransit type
-(`IBus`, `IPublishEndpoint`, `ISendEndpointProvider` must never appear in application code):
+## Quick start
 
 ```csharp
-public sealed class PlaceOrderHandler(IMessageBus bus, IEventPublisher publisher)
+// Publish a fact. Tenant, actor and correlation arrive on their own from registered propagators.
+public sealed class PlaceOrderHandler(IEventPublisher events)
 {
-    public async Task Handle(PlaceOrderCommand command, CancellationToken ct)
+    public async Task<Result> HandleAsync(PlaceOrder command, CancellationToken ct)
     {
-        // ... domain logic ...
+        // ... place the order ...
 
-        await bus.SendAsync(new ProcessPaymentCommand(command.OrderId), ct);
-
-        // Optional per-publish metadata; Subject becomes the CloudEvents "subject" attribute.
-        await publisher.PublishAsync(
-            new OrderPlaced(Guid.NewGuid(), DateTimeOffset.UtcNow, command.OrderId),
-            ctx => ctx.WithSubject($"order/{command.OrderId}"),
-            ct);
+        return await events.PublishAsync(
+            new OrderPlaced(Guid.CreateVersion7(), DateTimeOffset.UtcNow, command.OrderId), ct);
     }
 }
 
-// An integration event: a sealed record implementing IIntegrationEvent (SharedKernel.Contracts),
-// with a stable wire name. The name — never the class name — becomes the envelope's CloudEvents "type".
-[IntegrationEvent("orders.order-placed", Version = 1)]
-public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
-```
-
-`IEventPublisher.PublishAsync<TEvent>` is constrained to `class, IIntegrationEvent`: a domain event or
-a plain message type does not compile. An integration event type without a valid `[IntegrationEvent]`
-attribute compiles but throws `InvalidOperationException` at publish time. Plain messages go through
-`IMessageBus`.
-
-This package ships **no DI registration or transport wiring of its own** — a microservice's
-composition root wires a concrete transport that satisfies these contracts, e.g.
-[`SharedKernel.Messaging.MassTransit`](https://www.nuget.org/packages/SharedKernel.Messaging.MassTransit)'s
-`AddSharedKernelMessaging()` + `MessagingBusBuilder`.
-
-## Recipe: a working `IIdempotencyStore` implementation
-
-`IIdempotencyStore` is deliberately **not** provided by SharedKernel — consumer-side deduplication
-storage is a service-specific infrastructure decision (Redis? EF Core? a table with a unique index?).
-The consuming service registers its own implementation before calling
-`MessagingBusBuilder.WithIdempotency()`; `Build()` throws `InvalidOperationException` if none is
-registered. Below is a complete, working reference implementation backed by
-`IDistributedCache` (e.g. `Microsoft.Extensions.Caching.StackExchangeRedis`), sourcing its retention
-window from `IdempotencyOptions.ExpiryWindow`:
-
-```csharp
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Options;
-using SharedKernel.Messaging.Abstractions.Idempotency;
-
-/// <summary>
-/// Reference IIdempotencyStore implementation backed by IDistributedCache. A processed
-/// messageId is recorded as a cache entry whose presence alone signals "already handled" —
-/// the stored value carries no meaning beyond existence.
-/// </summary>
-public sealed class RedisIdempotencyStore(
-    IDistributedCache cache,
-    IOptions<IdempotencyOptions> options) : IIdempotencyStore
+// Send a command. Point-to-point: exactly one consumer, however many replicas are running.
+public sealed class HoldShipmentHandler(IMessageBus bus)
 {
-    private const string KeyPrefix = "idempotency:";
-
-    public async Task<bool> HasProcessedAsync(Guid messageId, CancellationToken ct)
-    {
-        var value = await cache.GetAsync(BuildKey(messageId), ct);
-        return value is not null;
-    }
-
-    public Task MarkProcessedAsync(Guid messageId, CancellationToken ct) =>
-        cache.SetAsync(
-            BuildKey(messageId),
-            value: [],
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = options.Value.ExpiryWindow,
-            },
-            ct);
-
-    private static string BuildKey(Guid messageId) => $"{KeyPrefix}{messageId:N}";
+    public Task<Result> HandleAsync(Guid shipmentId, CancellationToken ct) =>
+        bus.SendAsync(new HoldShipment(shipmentId, "customs"), ct);
 }
 ```
 
+## Which type do I need?
+
+| I want to… | Use |
+| --- | --- |
+| Tell everyone a fact happened | `IEventPublisher.PublishAsync` with an `IIntegrationEvent` — wrapped in a CloudEvents envelope |
+| Broadcast a message that is not an integration event | `IMessageBus.PublishAsync` |
+| Ask exactly one consumer to do something | `IMessageBus.SendAsync` |
+| Attach a tenant, correlation id, partition key or header to one dispatch | The `Action<PublishContext>` overload |
+| Deliver a message later | `IMessageScheduler.ScheduleAsync` |
+| Stop a duplicate delivery from running the consumer twice | Implement `IIdempotencyStore` — or use a ready-made store (below) |
+| Push an ambient value onto every outgoing message | Implement `IMessageHeaderPropagator` |
+| See what failed after its retries ran out | Implement `IFaultConsumer<TMessage>` |
+| Report bus health to Kubernetes | `IMessageBusProbe` |
+| Accept an old message shape during a rolling deploy | Implement `IMessageVersionTranslator<TOld, TNew>` |
+
+## Publishing
+
+Every verb returns `Result`. A transport being unreachable is an operational condition, not a defect:
+
 ```csharp
-// Composition root
-services.AddStackExchangeRedisCache(o => o.Configuration = configuration["Redis:ConnectionString"]);
-services.AddScoped<IIdempotencyStore, RedisIdempotencyStore>();
+Result published = await events.PublishAsync(orderPlaced, ct);
 
-services
-    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
-    .UseRabbitMq("rabbitmq://localhost")
-    .WithRetry()
-    .WithIdempotency(o => o.ExpiryWindow = TimeSpan.FromHours(48))
-    .AddConsumer<OrderPlacedConsumer>()
-    .Build();
+if (published.IsFailure)
+{
+    // published.Error.Code is a stable messaging.* string — branch on it, log it, or return it.
+    return published;
+}
 ```
 
-The `ExpiryWindow` should be set to at least as long as the transport's dead-letter retry budget —
-a shorter window risks a late redelivery being treated as novel and reprocessed. Never implement
-deduplication logic inline inside a `ConsumeAsync` body (e.g. a local `HashSet<Guid>` or an ad hoc
-database query) — `WithIdempotency()` + a registered `IIdempotencyStore` is the only approved
-mechanism.
+`PublishContext` carries everything about a dispatch that is not the message:
 
-## Layering
-
-```
-SharedKernel.Messaging.Abstractions  →  Microsoft.Extensions.DependencyInjection.Abstractions,
-                                         SharedKernel.Contracts (04.Contracts)
+```csharp
+await bus.PublishAsync(
+    reportRequested,
+    ctx => ctx.WithTenantId(tenantId)         // a background job acting for a tenant it is not scoped to
+              .WithPartitionKey(accountId)    // per-account ordering
+              .WithHeader("x-sk-priority", "high"),
+    ct);
 ```
 
-Target framework: `net10.0`. No MassTransit, RabbitMQ, or Azure Service Bus
-dependency — any transport NuGet reference leaking into this package is a hard architectural
-violation.
+**Propagators run first; your callback runs last.** An explicit value here always wins over the ambient one, so
+you never have to disable a propagator to override it once.
 
-For full documentation see
-[`07.Messaging/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/CLAUDE.md).
+## Idempotency
+
+Brokers deliver at least once. `IIdempotencyStore` is how a consumer refuses the second delivery — and the
+contract is deliberately a *reservation*, not a check followed by a write:
+
+```csharp
+Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct);
+Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct);
+Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct);
+```
+
+| `Status` | Meaning | What the filter does |
+| --- | --- | --- |
+| `Started` | This delivery now holds the reservation | Runs the consumer, then completes — or releases if it throws |
+| `InProgress` | Another delivery holds it right now | Leaves the message unacknowledged so the broker redelivers it |
+| `AlreadyProcessed` | A previous delivery consumed it to completion | Returns without running the consumer, acknowledging the message |
+
+> **`TryBeginAsync` must be one conditional write** — a Redis `SET NX`, an `INSERT … ON CONFLICT DO NOTHING` —
+> never a read followed by a write. No caller can make a check-then-act pair atomic from outside.
+>
+> The three-status answer is not ceremony. The previous two-method contract returned a boolean, which cannot
+> distinguish "in flight" from "completed": a redelivery following a **failed** attempt was reported as a
+> duplicate, acknowledged, and dropped. Silent message loss, in the component whose job is not losing messages.
+
+**Use a ready-made store** rather than writing one: `SharedKernel.Idempotency.Redis` (atomic Lua reservation) or
+`SharedKernel.Idempotency.EfCore` (`INSERT … ON CONFLICT` on a unique key). Both are tenant-scoped and both have
+been verified against real infrastructure.
+
+## The caller across the bus
+
+A consumer has no HTTP request, so `IRequestContext.TenantId` is `null` and tenant-scoped persistence fails
+closed. These three types are how the publisher's identity reaches it:
+
+| Type | Role |
+| --- | --- |
+| `MessageContextHeaders` | The header names the actor travels under (the tenant uses `01.Core`'s `WellKnownHeaders.TenantId`) |
+| `MessageRequestContext` | An `IRequestContext` rebuilt from those headers |
+| `IInboundMessageContextAccessor` | The current delivery's identity, or `null` outside a consume |
+
+Turn it on with `MessagingBusBuilder.WithInboundRequestContext()` in the transport package. After that,
+injecting `IRequestContext` into a consumer just works — it answers for the caller that published.
+
+> **Attribution, not authorization.** `MessageRequestContext.HasPermissionAsync` always returns `false`,
+> whatever the message said. Headers are attacker-controllable by anyone who can reach the broker, so a
+> permission carried on one would be a permission granted by the wire.
+
+## Errors
+
+`MessagingErrorCodes` — stable strings, safe to branch on and to alert on:
+
+| Code | Meaning |
+| --- | --- |
+| `messaging.unavailable` | Transport unreachable, or the connection dropped |
+| `messaging.endpoint_not_found` | A send addressed a queue that does not exist |
+| `messaging.serialization_failed` | The payload could not be serialized |
+| `messaging.publish_rejected` | The broker refused the message |
+| `messaging.invalid_message` | The event failed validation before dispatch |
+| `messaging.contract_violation` | The event type has no valid `[IntegrationEvent]` attribute |
+
+Only cancellation throws. Anything the transport package does not recognise as an operational fault is rethrown
+unchanged, so a bug in your code is never laundered into a failed `Result`.
+
+## Dependencies
+
+| Package | Why |
+| --- | --- |
+| `Microsoft.Extensions.DependencyInjection.Abstractions` | `IMessagingBuilder.Services` |
+| `SharedKernel.Primitives` | `Result` / `Error` |
+| `SharedKernel.Contracts` | The `IIntegrationEvent` constraint on `IEventPublisher` |
+| `SharedKernel.Application.Abstractions` | `IRequestContext` and `ActorKind` — the caller-identity contracts only |
+
+**No transport dependency, and no configuration binder.** A service that consumes `IMessageBus` without composing
+a bus inherits neither.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+See the [domain overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/README.md)
+for how the pieces fit together, and
+[samples/ShippingApi](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/ShippingApi/README.md)
+for a working service.
