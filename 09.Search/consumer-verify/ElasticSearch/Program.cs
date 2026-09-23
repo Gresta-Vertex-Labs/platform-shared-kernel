@@ -21,7 +21,7 @@
 // probe (IAnalyticsSearch<>/ICursorSearch<> unnameable from that side) and 09.Search/CLAUDE.md's
 // Published-phase changelog entry for both transcripts in full.
 //
-// Five surfaces:
+// Six surfaces:
 //   1. AddSharedKernelElasticSearchSearch(...).AddIndex<TDoc>(...).Build() resolves ISearchIndex<TDoc>,
 //      IAnalyticsSearch<TDoc>, ICursorSearch<TDoc>, ISearchIndexProvisioner and ISearchProviderDescriptor
 //      through a real IHost.StartAsync(), zero DI exceptions (P-05)
@@ -31,12 +31,14 @@
 //   5. A missing Search:ElasticSearch configuration section throws OptionsValidationException at
 //      IHost.StartAsync(), naming the missing Nodes property — not a silent default and not a
 //      first-query failure (P-07)
+//   6. .WithCompletionField<TDoc>(...) resolves ISuggestSearch<TDoc> — the ElasticSearch-exclusive
+//      completion suggester added by the pre-publish pass
 //
-// ValidateEngineVersionOnStart is explicitly set to false in every surface below — this harness proves
-// the DI composition shape, not live cluster connectivity (that real-backend guard is already covered
-// by SK.09.Tests' T-22 against a real Testcontainers Elasticsearch). Leaving it at its production
-// default of true would make this harness's pass/fail depend on Docker being available, which is
-// exactly the dependency a consumer-verify harness must not carry.
+// Every surface here proves the DI composition shape, not live cluster connectivity (that is covered by
+// the real-backend suites against a real Testcontainers Elasticsearch). This harness must never depend
+// on Docker being available — which is also why the engine-version check is no longer a side effect of
+// resolving the client: it is now the explicit, asynchronous VerifyElasticSearchEngineVersionAsync,
+// called from a startup task or a deployment smoke test rather than fired implicitly at first resolve.
 
 using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.Configuration;
@@ -52,16 +54,51 @@ using SharedKernel.Search.ElasticSearch.Cursors;
 using SharedKernel.Search.ElasticSearch.Extensions;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Raw;
+using SharedKernel.Search.ElasticSearch.Suggest;
 
 await Surface1_ResolvesWithZeroDiExceptions();
 await Surface2_ElasticsearchClientResolvesAsSingleton();
 await Surface3_RawClientAccessorNotResolvableByDefault();
 await Surface4_RawClientAccessorResolvableWhenAllowed();
 await Surface5_MissingConfigFailsAtHostStartAsync();
+await Surface6_CompletionFieldResolvesSuggestSearch();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify.ElasticSearch PASSED");
 return;
+
+// ── Surface 6: .WithCompletionField() resolves ISuggestSearch<TDoc> ─
+static async Task Surface6_CompletionFieldResolvesSuggestSearch()
+{
+    var builder = Host.CreateApplicationBuilder();
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
+    });
+    builder.Services.AddSingleton<IClock, SystemClock>();
+
+    builder.Services
+        .AddSharedKernelElasticSearchSearch(builder.Configuration)
+        .AddIndex<ProductDocument>("suggest-read", "suggest-write", index => index
+            .PrimaryKey("documentId")
+            .Field("name", SearchFieldKind.Text, searchable: true)
+            .Field("tenantId", SearchFieldKind.Keyword, filterable: true))
+        .WithCompletionField<ProductDocument>("suggest-read", "nameSuggest")
+        .Build();
+
+    using var host = builder.Build();
+    await host.StartAsync();
+
+    var suggest = host.Services.GetRequiredService<ISuggestSearch<ProductDocument>>();
+    if (suggest is null)
+    {
+        throw new InvalidOperationException("Surface 6 FAIL: ISuggestSearch<ProductDocument> did not resolve.");
+    }
+
+    await host.StopAsync();
+    Console.WriteLine(
+        "Surface 6 PASS: .WithCompletionField<TDoc>() resolves ISuggestSearch<TDoc> through a real IHost.StartAsync().");
+}
 
 // ── Surface 1: AddSharedKernelElasticSearchSearch().AddIndex().Build() — P-05 ─
 static async Task Surface1_ResolvesWithZeroDiExceptions()
@@ -70,7 +107,6 @@ static async Task Surface1_ResolvesWithZeroDiExceptions()
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
         [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
-        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
     });
 
     // AddSharedKernelElasticSearchSearch() deliberately does NOT self-register IClock — registration is
@@ -124,7 +160,6 @@ static async Task Surface2_ElasticsearchClientResolvesAsSingleton()
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
         [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
-        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
     });
 
     builder.Services
@@ -154,7 +189,6 @@ static async Task Surface3_RawClientAccessorNotResolvableByDefault()
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
         [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
-        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
     });
 
     // Deliberately does NOT call .AllowRawClientAccess().
@@ -181,7 +215,6 @@ static async Task Surface4_RawClientAccessorResolvableWhenAllowed()
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
         [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
-        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
     });
 
     builder.Services
