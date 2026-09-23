@@ -136,6 +136,8 @@
       "13.ServiceDefaults/consumer-verify/consumer-verify.csproj",
       "14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.Tests/SharedKernel.Presentation.Grpc.Tests.csproj",
       "14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.csproj",
+      "14.Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.Tests/SharedKernel.Presentation.OpenApi.Tests.csproj",
+      "14.Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.csproj",
       "14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj",
       "14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.csproj",
       "14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/SharedKernel.Presentation.WebApi.Tests.csproj",

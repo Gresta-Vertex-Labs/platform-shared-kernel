@@ -312,6 +312,7 @@
     <PackageVersion Include="SharedKernel.Persistence.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.Grpc" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Presentation.OpenApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.SignalR" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Search.Abstractions" Version="$(SharedKernelPackageVersion)" />
