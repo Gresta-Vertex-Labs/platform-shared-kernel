@@ -1,144 +1,111 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using SharedKernel.Presentation.SignalR.Options;
+using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.SignalR.Filters;
 
 /// <summary>
-/// Enforces per-connection hub-method invocation rate limiting and argument-payload shape
-/// validation, per <see cref="HubInvocationRateLimitOptions"/>.
+/// Refuses hub method invocations beyond <see cref="SharedKernelSignalROptions.InvocationRateLimit"/> before the hub
+/// method runs, with <c>rate_limit.exceeded: Too many requests.</c>
 /// </summary>
 /// <remarks>
 /// <para>
-/// Built on <see cref="System.Threading.RateLimiting"/> primitives — the same underlying library
-/// <c>13.ServiceDefaults</c>'s <c>AddSharedKernelRateLimiting()</c> wraps for HTTP, used here
-/// directly against a hub connection since ASP.NET Core's HTTP rate-limiting middleware does not
-/// apply to SignalR invocations. Confirmed via a real build probe (Scaffold, S-27) that
-/// <c>System.Threading.RateLimiting</c> ships transitively via the existing
-/// <c>FrameworkReference Microsoft.AspNetCore.App</c> on <c>net10.0</c> — no new
-/// <c>PackageReference</c> was required.
+/// One <see cref="PartitionedRateLimiter{TResource}"/> keyed by connection id serves every connection: each partition
+/// is a token bucket, and the partitioned limiter replenishes all of them from a single timer and drops a bucket once
+/// it has refilled and stayed idle. A limiter per connection would run a timer per connection. Nothing is stored on
+/// the connection, so nothing needs removing when it closes.
 /// </para>
 /// <para>
-/// A <see cref="TokenBucketRateLimiter"/> is created lazily per connection — stored in
-/// <see cref="HubCallerContext.Items"/>, mirroring <see cref="TenantContextHubFilter"/>'s existing
-/// per-connection storage pattern — and consulted in <see cref="InvokeMethodAsync"/> before the
-/// target method body runs. The limiter is disposed when the connection disconnects to avoid
-/// leaking its internal replenishment timer.
-/// </para>
-/// <para>
-/// A rejected invocation throws a <see cref="HubException"/> carrying a specific, caller-safe
-/// "too many requests" message. <see cref="HubExceptionMappingFilter"/> was extended (P-417, D-64)
-/// with a <c>catch (HubException) { throw; }</c> branch, checked first, so this filter's specific
-/// message always survives unchanged regardless of hub-filter registration order.
+/// With no <see cref="SignalRInvocationRateLimitOptions.PermitLimit"/> no limiter (and no timer) exists and every
+/// invocation passes straight through. The limiter is disposed with the service provider.
 /// </para>
 /// </remarks>
-public sealed class HubInvocationRateLimitFilter : IHubFilter
+internal sealed partial class HubInvocationRateLimitFilter : IHubFilter, IDisposable
 {
-    private const string RateLimiterItemsKey = "SharedKernel.HubInvocationRateLimiter";
-    private const string RateLimitExceededMessage = "Too many requests. Please slow down.";
+    private const string TooManyRequestsMessage = "Too many requests.";
 
-    private readonly HubInvocationRateLimitOptions _options;
+    private readonly ILogger<HubInvocationRateLimitFilter> _logger;
 
-    /// <summary>
-    /// Initialises a new <see cref="HubInvocationRateLimitFilter"/>.
-    /// </summary>
-    /// <param name="options">
-    /// The rate-limit/argument-validation configuration. When no
-    /// <see cref="HubInvocationRateLimitOptions"/> is registered in the container, a fresh default
-    /// (fully disabled) instance is used instead.
-    /// </param>
-    public HubInvocationRateLimitFilter(HubInvocationRateLimitOptions? options = null)
+    /// <summary>Initializes a new instance of the <see cref="HubInvocationRateLimitFilter"/> class.</summary>
+    /// <param name="options">The validated settings.</param>
+    /// <param name="logger">The logger; a missing logging registration never breaks rate limiting.</param>
+    public HubInvocationRateLimitFilter(
+        IOptions<SharedKernelSignalROptions> options,
+        ILogger<HubInvocationRateLimitFilter>? logger = null)
     {
-        _options = options ?? new HubInvocationRateLimitOptions();
+        ArgumentNullException.ThrowIfNull(options);
+
+        _logger = logger ?? NullLogger<HubInvocationRateLimitFilter>.Instance;
+        Limiter = CreateLimiter(options.Value.InvocationRateLimit);
     }
 
-    /// <summary>
-    /// Validates argument shape and enforces the per-connection invocation rate limit before
-    /// invoking the target hub method.
-    /// </summary>
-    /// <param name="invocationContext">The context for the current hub method invocation.</param>
-    /// <param name="next">The next delegate in the invocation pipeline.</param>
-    /// <returns>The hub method's result, or throws a <see cref="HubException"/> on rejection.</returns>
-    public async ValueTask<object?> InvokeMethodAsync(
+    /// <summary>Gets the limiter shared by every connection, or <see langword="null"/> when the limit is off.</summary>
+    internal PartitionedRateLimiter<string>? Limiter { get; }
+
+    /// <inheritdoc />
+    public ValueTask<object?> InvokeMethodAsync(
         HubInvocationContext invocationContext,
         Func<HubInvocationContext, ValueTask<object?>> next)
     {
-        ValidateArguments(invocationContext);
-
-        if (_options.PermitLimit is { } permitLimit && permitLimit > 0)
+        if (Limiter is null)
         {
-            var limiter = GetOrCreateLimiter(invocationContext.Context, permitLimit);
-            using var lease = limiter.AttemptAcquire();
+            return next(invocationContext);
+        }
 
+        using (var lease = Limiter.AttemptAcquire(invocationContext.Context.ConnectionId))
+        {
             if (!lease.IsAcquired)
             {
-                throw new HubException(RateLimitExceededMessage);
+                Log.InvocationRateLimited(_logger, invocationContext.Hub.GetType().Name, invocationContext.HubMethodName);
+                return ValueTask.FromException<object?>(new HubException(GetRejectionMessage(invocationContext.Context)));
             }
         }
 
-        return await next(invocationContext).ConfigureAwait(false);
+        return next(invocationContext);
     }
 
-    /// <summary>
-    /// Disposes the per-connection rate limiter, if one was created, when the connection
-    /// disconnects.
-    /// </summary>
-    /// <param name="context">The hub lifetime context for the disconnecting client.</param>
-    /// <param name="exception">The exception that caused the disconnect, if any.</param>
-    /// <param name="next">The next delegate in the disconnect pipeline.</param>
-    /// <returns>A task that completes when the disconnect pipeline has finished.</returns>
-    public Task OnDisconnectedAsync(HubLifetimeContext context, Exception? exception, Func<HubLifetimeContext, Exception?, Task> next)
+    /// <inheritdoc />
+    public void Dispose() => Limiter?.Dispose();
+
+    private static PartitionedRateLimiter<string>? CreateLimiter(SignalRInvocationRateLimitOptions settings)
     {
-        if (context.Context.Items.TryGetValue(RateLimiterItemsKey, out var value) && value is RateLimiter limiter)
+        if (settings.PermitLimit is not { } permitLimit)
         {
-            limiter.Dispose();
-            context.Context.Items.Remove(RateLimiterItemsKey);
+            return null;
         }
 
-        return next(context, exception);
-    }
-
-    private void ValidateArguments(HubInvocationContext invocationContext)
-    {
-        if (_options.MaxStringArgumentLength is { } maxLength)
-        {
-            foreach (var argument in invocationContext.HubMethodArguments)
-            {
-                if (argument is string stringArgument && stringArgument.Length > maxLength)
-                {
-                    throw new HubException(
-                        $"An argument to '{invocationContext.HubMethodName}' exceeds the maximum allowed length of {maxLength} characters.");
-                }
-            }
-        }
-
-        foreach (var validator in _options.ArgumentValidators)
-        {
-            var rejectionMessage = validator(invocationContext);
-
-            if (rejectionMessage is not null)
-            {
-                throw new HubException(rejectionMessage);
-            }
-        }
-    }
-
-    private RateLimiter GetOrCreateLimiter(HubCallerContext context, int permitLimit)
-    {
-        if (context.Items.TryGetValue(RateLimiterItemsKey, out var existing) && existing is RateLimiter existingLimiter)
-        {
-            return existingLimiter;
-        }
-
-        var created = new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+        var bucket = new TokenBucketRateLimiterOptions
         {
             TokenLimit = permitLimit,
             TokensPerPeriod = permitLimit,
-            ReplenishmentPeriod = _options.Window,
-            AutoReplenishment = true,
+            ReplenishmentPeriod = settings.Window,
             QueueLimit = 0,
-        });
 
-        context.Items[RateLimiterItemsKey] = created;
-        return created;
+            // The partitioned limiter's own timer replenishes every bucket; a bucket must not start one of its own.
+            AutoReplenishment = false,
+        };
+
+        return PartitionedRateLimiter.Create<string, string>(
+            connectionId => RateLimitPartition.GetTokenBucketLimiter(connectionId, _ => bucket),
+            StringComparer.Ordinal);
+    }
+
+    // Translated like every other client message; the rate-limit code is a client error, so it is never redacted.
+    private static string GetRejectionMessage(HubCallerContext context) =>
+        HubErrorMessage.For(Error.Validation(PresentationErrorCodes.RateLimitExceeded, TooManyRequestsMessage), context);
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 101,
+            Level = LogLevel.Warning,
+            Message = "Rate limiting refused an invocation of hub method {HubName}.{HubMethodName}.")]
+        public static partial void InvocationRateLimited(ILogger logger, string hubName, string hubMethodName);
     }
 }

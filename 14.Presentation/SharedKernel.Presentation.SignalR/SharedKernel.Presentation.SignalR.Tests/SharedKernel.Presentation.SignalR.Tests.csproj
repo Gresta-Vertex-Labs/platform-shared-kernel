@@ -7,6 +7,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR.csproj" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -21,7 +22,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="NSubstitute" />
+    <!-- Every test runs a real in-process host (TestServer) and a live HubConnection over it. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
