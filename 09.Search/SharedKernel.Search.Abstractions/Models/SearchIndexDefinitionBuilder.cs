@@ -14,6 +14,8 @@ public sealed class SearchIndexDefinitionBuilder
     private readonly List<SearchFieldDefinition> _fields = [];
     private string? _primaryKeyField;
     private string? _tenantField;
+    private readonly Dictionary<string, IReadOnlyList<string>> _synonyms = new(StringComparer.Ordinal);
+    private readonly List<string> _stopWords = [];
     private int? _maxTotalHits;
     private int? _maxFacetValues;
 
@@ -76,6 +78,32 @@ public sealed class SearchIndexDefinitionBuilder
         return this;
     }
 
+    /// <summary>
+    /// Declares a one-way synonym mapping: a query containing <paramref name="term"/> also matches
+    /// <paramref name="replacements"/>. Declare the reverse direction with a second call when you want
+    /// symmetry — see <see cref="SearchIndexDefinition.Synonyms"/> for why one-way is the portable
+    /// shape.
+    /// </summary>
+    /// <remarks>Calling this twice with the same <paramref name="term"/> replaces the earlier mapping.</remarks>
+    public SearchIndexDefinitionBuilder Synonym(string term, params string[] replacements)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(term);
+        ArgumentNullException.ThrowIfNull(replacements);
+        _synonyms[term] = replacements.ToArray();
+        return this;
+    }
+
+    /// <summary>
+    /// Declares stop words removed from free-text queries and indexed content across every searchable
+    /// field. Repeated calls accumulate. Supply the words already lowercased.
+    /// </summary>
+    public SearchIndexDefinitionBuilder StopWords(params string[] stopWords)
+    {
+        ArgumentNullException.ThrowIfNull(stopWords);
+        _stopWords.AddRange(stopWords);
+        return this;
+    }
+
     /// <summary>Builds the <see cref="SearchIndexDefinition"/>.</summary>
     /// <returns>
     /// A failed <see cref="Result{T}"/> with <see cref="SearchErrors.InvalidIndexDefinition"/> for a
@@ -89,6 +117,12 @@ public sealed class SearchIndexDefinitionBuilder
         if (fieldValidation is not null)
         {
             return Result<SearchIndexDefinition>.Failure(fieldValidation);
+        }
+
+        var textAnalysisValidation = SearchIndexDefinition.ValidateTextAnalysis(_synonyms, _stopWords);
+        if (textAnalysisValidation is not null)
+        {
+            return Result<SearchIndexDefinition>.Failure(textAnalysisValidation);
         }
 
         if (_tenantField is not null)
@@ -110,6 +144,8 @@ public sealed class SearchIndexDefinitionBuilder
             Fields = _fields.ToArray(),
             MaxTotalHits = _maxTotalHits ?? SearchWellKnown.DefaultMaxTotalHits,
             MaxFacetValues = _maxFacetValues ?? SearchWellKnown.DefaultMaxFacetValues,
+            Synonyms = new Dictionary<string, IReadOnlyList<string>>(_synonyms, StringComparer.Ordinal),
+            StopWords = _stopWords.ToArray(),
         });
     }
 }
