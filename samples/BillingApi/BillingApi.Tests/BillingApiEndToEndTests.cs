@@ -1,9 +1,13 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
+using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Primitives.Errors;
 using Xunit;
 
 namespace BillingApi.Tests;
@@ -109,11 +113,22 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
     [Fact]
     public async Task Anonymous_Is401_AndAMissingPermission_Is403()
     {
+        // Permissions declared by the command or query (IAuthorizeRequest), checked by the pipeline.
         (await fixture.Anonymous().GetAsync("/invoices?page=1")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         var readOnly = Tenant(Guid.NewGuid(), Http.Read);
         (await readOnly.PostAsJsonAsync("/customers", new { name = "x", email = "x@example.com" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await readOnly.GetAsync("/invoices?page=1")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // A permission declared on the route (RequirePermission), checked before any handler runs — same answers, as problems.
+        var anonymous = await fixture.Anonymous().GetAsync("/admin/reports/revenue-by-tenant");
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await anonymous.ErrorCodeAsync()).Should().Be(ErrorCodes.Unauthorized.Default);
+
+        var forbidden = await readOnly.GetAsync("/admin/reports/revenue-by-tenant");
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        forbidden.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        (await forbidden.ErrorCodeAsync()).Should().Be(ErrorCodes.Forbidden.InsufficientPermission);
     }
 
     // ---- Optimistic concurrency ---------------------------------------------------------------------------------
@@ -128,8 +143,16 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         var etag = read.Headers.ETag!;
         etag.Tag.Should().NotBe("\"0\"", "the version is the row's xmin, never a placeholder");
 
-        (await client.PutAsJsonAsync($"/customers/{id}/name", new { name = "No precondition" })).StatusCode
-            .Should().Be((HttpStatusCode)428);
+        // A client that already holds the current version is told so, without the body.
+        var revalidate = new HttpRequestMessage(HttpMethod.Get, $"/customers/{id}");
+        revalidate.Headers.IfNoneMatch.Add(etag);
+        var notModified = await client.SendAsync(revalidate);
+        notModified.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        notModified.Headers.ETag.Should().Be(etag);
+
+        var unconditional = await client.PutAsJsonAsync($"/customers/{id}/name", new { name = "No precondition" });
+        unconditional.StatusCode.Should().Be((HttpStatusCode)428);
+        (await unconditional.ErrorCodeAsync()).Should().Be(PresentationErrorCodes.PreconditionRequired);
 
         var rename = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Grace Hopper" }) };
         rename.Headers.IfMatch.Add(etag);
@@ -139,13 +162,23 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         var newTag = renamed.Headers.ETag!;
         newTag.Should().NotBe(etag);
 
+        // The save's ConflictException becomes 412 on an endpoint that requires If-Match, keeping its error code.
         var stale = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Lost update" }) };
         stale.Headers.IfMatch.Add(etag);
         var rejected = await client.SendAsync(stale);
         rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-        rejected.Headers.ETag.Should().Be(newTag, "the conflict carries the current version so the client can refetch");
+        rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        (await rejected.ErrorCodeAsync()).Should().Be(ConcurrencyVersion.ConflictErrorCode);
 
-        (await (await client.GetAsync($"/customers/{id}")).JsonAsync()).GetProperty("name").GetString().Should().Be("Grace Hopper");
+        // A tag this API never issued cannot name the current version either.
+        var unknown = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Guess" }) };
+        unknown.Headers.IfMatch.Add(new EntityTagHeaderValue("\"not-a-version\""));
+        (await client.SendAsync(unknown)).StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+
+        // The client re-reads for the current version and retries from there.
+        var current = await client.GetAsync($"/customers/{id}");
+        current.Headers.ETag.Should().Be(newTag);
+        (await current.JsonAsync()).GetProperty("name").GetString().Should().Be("Grace Hopper");
     }
 
     // ---- Commands: transactions, domain events, Dapper + EF Core in one unit of work ----------------------------
@@ -256,8 +289,14 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
     {
         var client = Tenant(Guid.NewGuid());
         var id = await client.RegisterCustomerAsync("Temp", "temp@example.com");
+        var etag = (await client.GetAsync($"/customers/{id}")).Headers.ETag!;
 
-        await (await client.DeleteAsync($"/customers/{id}")).EnsureAsync(HttpStatusCode.NoContent);
+        // Like a rename, a delete names the version it removes.
+        (await client.DeleteAsync($"/customers/{id}")).StatusCode.Should().Be((HttpStatusCode)428);
+
+        var delete = new HttpRequestMessage(HttpMethod.Delete, $"/customers/{id}");
+        delete.Headers.IfMatch.Add(etag);
+        await (await client.SendAsync(delete)).EnsureAsync(HttpStatusCode.NoContent);
 
         (await client.GetAsync($"/customers/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await client.GetAsync("/customers?email=temp@example.com")).StatusCode.Should().Be(HttpStatusCode.NotFound);

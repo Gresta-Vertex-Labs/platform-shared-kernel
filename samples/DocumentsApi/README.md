@@ -27,7 +27,7 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 
 | Endpoint | Storage call |
 | --- | --- |
-| `PUT /files/{store}/{**key}` | `UploadAsync` — the request body streamed straight in; `If-None-Match: *` = create only, `If-Match` = replace that version, `X-Checksum-Sha256` verified by the provider, `X-Meta-*` stored as metadata |
+| `PUT /files/{store}/{**key}` | `UploadAsync` — the request body streamed straight in, up to 1 GiB; `If-None-Match: *` = create only, `If-Match` = replace that version, `X-Checksum-Sha256` verified by the provider, `X-Meta-*` stored as metadata |
 | `GET /files/{store}/{**key}` | `DownloadAsync` — streamed back; a `Range` header returns 206 |
 | `GET /properties/{store}/{**key}` | `GetPropertiesAsync` |
 | `DELETE /files/{store}/{**key}` | `DeleteAsync` |
@@ -40,6 +40,30 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 
 The tenant comes from an `X-Tenant-Id` header so the tests can act as several tenants. A real service takes it from
 the authenticated principal, never from a header the caller controls.
+
+## The HTTP boundary
+
+`builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make the API's errors one shape. Every endpoint
+resolves the store, binds the storage call to it and maps the `Result` with one call — no `IsSuccess` branch:
+
+```csharp
+app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
+    Stores.Resolve(factory, store, http)                 // documents.unknown_store (404), documents.tenant_required (400)
+        .Bind(files => files.GetPropertiesAsync(key, ct))
+        .ToOk());
+```
+
+So an unknown store, a missing tenant and every `storage.*` failure reach the client as the same RFC 9457
+`application/problem+json` body with its `errorCode`: `storage.not_found` 404, `storage.already_exists` and
+`storage.precondition_failed` 409, `storage.checksum_mismatch` 400, `storage.unavailable` 503 (throttling or an
+outage), `storage.not_supported` 500 (OBS refusing a conditional write).
+
+Request bodies are capped at 4 MiB platform-wide (`SharedKernel:Presentation:WebApi:Limits:MaxRequestBodySize`).
+The upload endpoint lifts the cap for itself with `.WithRequestSizeLimit(FileEndpoints.MaxUploadBytes)` (1 GiB):
+its body streams into the store, so the limit bounds the object, not memory. Anything larger goes straight to the
+provider through the presigned multipart endpoints. Kestrel enforces the limits, which the in-memory test server
+does not run, so `FileScenarios.Only_the_upload_endpoint_lifts_the_request_body_limit` pins the override by its
+endpoint metadata.
 
 ## Run the tests
 

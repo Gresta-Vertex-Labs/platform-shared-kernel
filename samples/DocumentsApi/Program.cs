@@ -1,4 +1,5 @@
 using DocumentsApi;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
@@ -27,11 +28,16 @@ builder.Services.AddHealthChecks()
     .AddStorageReadinessCheck(Stores.Documents, "storage-documents")
     .AddStorageReadinessCheck(Stores.Archive, "storage-archive");
 
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every storage.* failure becomes
+// an RFC 9457 problem with its code — an outage (storage.unavailable) a 503 — and request bodies are capped at 4 MiB
+// except where an endpoint lifts the limit for itself (the upload endpoint, see FileEndpoints.MaxUploadBytes).
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelWebApi();
+
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 

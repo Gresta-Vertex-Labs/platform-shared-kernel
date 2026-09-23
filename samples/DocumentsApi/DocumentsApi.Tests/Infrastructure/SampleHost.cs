@@ -79,13 +79,20 @@ public sealed class SampleHost : WebApplicationFactory<Program>
 
     public static string Sha256(byte[] bytes) => Convert.ToBase64String(SHA256.HashData(bytes));
 
-    /// <summary>Reads the <c>errorCode</c> of a ProblemDetails response.</summary>
+    /// <summary>
+    /// Reads the <c>errorCode</c> of a problem response — every error the API returns is
+    /// <c>application/problem+json</c> and carries one.
+    /// </summary>
     public static async Task<string?> ErrorCodeAsync(HttpResponseMessage response)
     {
+        if (response.Content.Headers.ContentType?.MediaType != "application/problem+json")
+        {
+            throw new InvalidOperationException(
+                $"{(int)response.StatusCode} is not a problem response: {await response.Content.ReadAsStringAsync()}");
+        }
+
         using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return body.RootElement.TryGetProperty("errorCode", out JsonElement code) ? code.GetString()
-            : body.RootElement.TryGetProperty("title", out JsonElement title) ? title.GetString()
-            : null;
+        return body.RootElement.TryGetProperty("errorCode", out JsonElement code) ? code.GetString() : null;
     }
 
     public static async Task<T> ReadAsync<T>(HttpResponseMessage response)

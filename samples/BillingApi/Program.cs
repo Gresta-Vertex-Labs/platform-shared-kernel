@@ -7,7 +7,7 @@ using SharedKernel.Application.Extensions;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Persistence;
-using SharedKernel.Presentation.WebApi.ExceptionHandling;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Security;
@@ -66,15 +66,16 @@ builder.Services.AddHealthChecks()
     .AddAuditSealingReadinessCheck();
 builder.Services.AddHostedService<StartupGateRelease>();
 
-// 14.Presentation — RFC 9457 ProblemDetails for everything that escapes a handler (e.g. a concurrency conflict).
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every error — a failed Result,
+// an exception that escapes a handler, a rejected caller — is an RFC 9457 problem; authorization policies over
+// IUserContext for RequirePermission(); correlation ids, security headers and request limits.
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
-app.UseAuthentication();
-app.UseAuthorization();
+// Before any endpoint: correlation id, security headers, the exception handler, routing, authentication (the demo
+// scheme above) and authorization, in that order.
+app.UseSharedKernelWebApi();
 
 app.MapDefaultHealthCheckEndpoints();
 app.MapBillingEndpoints();

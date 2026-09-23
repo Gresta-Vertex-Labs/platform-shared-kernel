@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using SharedKernel.Application.Context;
 
 namespace ShippingApi.Tests;
@@ -44,7 +45,8 @@ public sealed class ShipmentScenarios
 
     /// <summary>
     /// The read endpoint is honest about asynchrony: a shipment nobody dispatched is a 404, so a
-    /// passing round-trip test cannot be passing on a stub.
+    /// passing round-trip test cannot be passing on a stub. Like every error of the API, it is an
+    /// RFC 9457 problem carrying its error code.
     /// </summary>
     [Fact]
     public async Task UnknownShipment_Is404()
@@ -54,6 +56,9 @@ public sealed class ShipmentScenarios
         HttpResponseMessage response = await api.GetAsync($"/shipments/{Guid.CreateVersion7()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        JsonElement problem = await response.Content.ReadFromJsonAsync<JsonElement>(SampleHost.Json);
+        problem.GetProperty("errorCode").GetString().Should().Be("shipment.not_found");
     }
 
     // -----------------------------------------------------------------------------------------
