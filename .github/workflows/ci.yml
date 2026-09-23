@@ -509,6 +509,7 @@ jobs:
             "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" \
             "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" \
             "samples/OrderApi/OrderApi.csproj" \
+            "samples/CatalogApi/CatalogApi.csproj" \
             "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" \
             "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" \
             "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" \
@@ -570,6 +571,7 @@ jobs:
       - name: Build samples against packed packages
         run: |
           dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+          dotnet build "samples/CatalogApi/CatalogApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
@@ -610,6 +612,8 @@ jobs:
           test -n "$id"
           curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
+          # No launch profile, so this runs in Production: the API documents must not be published by default.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/openapi/v1.json)" = 404
           echo "OrderApi sample smoke test passed"
 
       # SharedKernel.Caching.ConsumerVerify is a Testcontainers-backed 5-surface harness
