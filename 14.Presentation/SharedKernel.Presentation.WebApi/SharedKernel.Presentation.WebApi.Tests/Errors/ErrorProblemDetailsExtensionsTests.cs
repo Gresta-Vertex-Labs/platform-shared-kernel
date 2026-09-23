@@ -1,116 +1,72 @@
-using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Errors;
 
-public class ErrorProblemDetailsExtensionsTests
+/// <summary>Design D1 and B15: the problem body of an <see cref="Error"/>, built with the request at hand.</summary>
+public sealed class ErrorProblemDetailsExtensionsTests
 {
     [Fact]
-    public void ToProblemDetails_MapsTitleDetailAndStatus()
+    public void ToProblemDetails_HasTheD1Members()
     {
-        var error = Error.NotFound("order.not_found", "Order could not be found.");
+        var context = new DefaultHttpContext { RequestServices = new ServiceCollection().BuildServiceProvider() };
+        context.Request.Path = "/orders/42";
 
-        var problemDetails = error.ToProblemDetails();
+        var problem = TestErrors.OrderNotFound.ToProblemDetails(context);
 
-        problemDetails.Title.Should().Be(error.Code);
-        problemDetails.Detail.Should().Be(error.Message);
-        problemDetails.Status.Should().Be(StatusCodes.Status404NotFound);
-        problemDetails.Type.Should().Be("https://httpstatuses.io/404");
+        problem.Status.Should().Be(StatusCodes.Status404NotFound);
+        problem.Title.Should().Be("Not Found");
+        problem.Type.Should().Be("https://tools.ietf.org/html/rfc9110#section-15.5.5");
+        problem.Detail.Should().Be(TestErrors.OrderNotFound.Message);
+        problem.Instance.Should().Be("/orders/42");
+        problem.Extensions[ProblemDetailsExtensionNames.ErrorCode].Should().Be("order.not_found");
+        problem.Extensions[ProblemDetailsExtensionNames.TraceId].Should().NotBeNull();
+        problem.Extensions.Should().NotContainKey(ProblemDetailsExtensionNames.Errors);
+    }
+
+    [Theory]
+    [InlineData(ErrorType.Validation)]
+    [InlineData(ErrorType.NotFound)]
+    [InlineData(ErrorType.Conflict)]
+    [InlineData(ErrorType.Unexpected)]
+    [InlineData(ErrorType.Unavailable)]
+    [InlineData(ErrorType.Timeout)]
+    public void B15_TitleIsTheReasonPhrase_AndTypeIsNeverAThirdPartySite(ErrorType type)
+    {
+        var problem = new Error("some.code", "Message.", type).ToProblemDetails(new DefaultHttpContext());
+
+        problem.Title.Should().NotBe("some.code").And.NotBeNullOrWhiteSpace();
+        problem.Type.Should().StartWith("https://tools.ietf.org/").And.NotContain("httpstatuses");
     }
 
     [Fact]
-    public void ToProblemDetails_PopulatesErrorCodeExtension()
+    public void ToProblemDetails_ListsTheDetailsOfAnAggregate_ByField()
     {
-        var error = Error.Validation("field.required", "Field is required.");
+        var name = Error.Validation("customer.name_required", "Name is required.") with
+        {
+            MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "Name" },
+        };
+        var unnamed = Error.Validation("customer.blocked", "Customer is blocked.");
 
-        var problemDetails = error.ToProblemDetails();
+        var problem = Error.Validation([name, unnamed]).ToProblemDetails(new DefaultHttpContext());
 
-        problemDetails.Extensions["errorCode"].Should().Be(error.Code);
+        var errors = problem.Extensions[ProblemDetailsExtensionNames.Errors].Should().BeAssignableTo<IDictionary<string, string[]>>().Subject;
+        errors["Name"].Should().Equal("Name is required.");
+        errors["customer.blocked"].Should().Equal("Customer is blocked.");
+        var codes = problem.Extensions[ProblemDetailsExtensionNames.ErrorCodes].Should().BeAssignableTo<IDictionary<string, string[]>>().Subject;
+        codes["Name"].Should().Equal("customer.name_required");
     }
 
     [Fact]
-    public void ToProblemDetails_WithActiveActivity_PopulatesTraceIdFromActivity()
+    public void ToProblemDetails_RequiresTheRequest()
     {
-        using var activity = new Activity("test-activity").Start();
+        var act = () => TestErrors.OrderNotFound.ToProblemDetails(null!);
 
-        var error = Error.Conflict("order.conflict", "Order already exists.");
-
-        var problemDetails = error.ToProblemDetails();
-
-        problemDetails.Extensions["traceId"].Should().Be(Activity.Current!.Id);
-
-        activity.Stop();
-    }
-
-    [Fact]
-    public void ToProblemDetails_NoActivity_FallsBackToHttpContextTraceIdentifier()
-    {
-        var error = Error.Unexpected("system.failure", "Something went wrong.");
-        var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-123" };
-
-        var problemDetails = error.ToProblemDetails(httpContext);
-
-        problemDetails.Extensions["traceId"].Should().Be("trace-123");
-    }
-
-    [Fact]
-    public void ToProblemDetails_NoActivityAndNoContext_TraceIdIsNull()
-    {
-        var error = Error.Unexpected("system.failure", "Something went wrong.");
-
-        var problemDetails = error.ToProblemDetails();
-
-        problemDetails.Extensions["traceId"].Should().BeNull();
-    }
-
-    [Fact]
-    public void ToProblemDetails_AggregateValidationError_ResolvesStatus400()
-    {
-        var error = Error.Validation(
-        [
-            Error.Validation("name.required", "Name is required."),
-            Error.Validation("email.invalid", "Email is invalid."),
-        ]);
-
-        var problemDetails = error.ToProblemDetails();
-
-        problemDetails.Status.Should().Be(StatusCodes.Status400BadRequest);
-        problemDetails.Type.Should().Be("https://httpstatuses.io/400");
-        problemDetails.Title.Should().Be(error.Code);
-        problemDetails.Extensions["errorCode"].Should().Be(error.Code);
-    }
-
-    [Fact]
-    public void ToProblemDetails_AggregateValidationError_PopulatesErrorsGroupedByCode()
-    {
-        var error = Error.Validation(
-        [
-            Error.Validation("name.required", "Name is required."),
-            Error.Validation("name.required", "Name must not exceed 50 characters."),
-            Error.Validation("email.invalid", "Email is invalid."),
-        ]);
-
-        var problemDetails = error.ToProblemDetails();
-
-        var grouped = problemDetails.Extensions["errors"].Should().BeOfType<Dictionary<string, string[]>>().Subject;
-        grouped.Should().HaveCount(2);
-        grouped["name.required"].Should().BeEquivalentTo(
-            "Name is required.",
-            "Name must not exceed 50 characters.");
-        grouped["email.invalid"].Should().BeEquivalentTo("Email is invalid.");
-    }
-
-    [Fact]
-    public void ToProblemDetails_NoDetails_NeverPopulatesErrorsExtension()
-    {
-        var error = Error.Validation("field.required", "Field is required.");
-
-        var problemDetails = error.ToProblemDetails();
-
-        problemDetails.Extensions.Should().NotContainKey("errors");
+        act.Should().Throw<ArgumentNullException>();
     }
 }

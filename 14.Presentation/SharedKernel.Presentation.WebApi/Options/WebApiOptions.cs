@@ -1,0 +1,47 @@
+using SharedKernel.Configuration;
+
+namespace SharedKernel.Presentation.WebApi.Options;
+
+/// <summary>
+/// Settings for the HTTP API boundary set up by
+/// <see cref="WebApiHostBuilderExtensions.AddSharedKernelWebApi"/>, bound from
+/// <c>SharedKernel:Presentation:WebApi</c> and validated at startup.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every default is the secure, production-ready choice, so a service that configures nothing gets correlation
+/// ids, security headers, a 4 MiB request body limit, no cross-origin access and redacted server errors.
+/// </para>
+/// <para>
+/// The <c>configure</c> callback of <see cref="WebApiHostBuilderExtensions.AddSharedKernelWebApi"/> runs after
+/// binding, so code can override configuration. Configuration values for a list that has defaults (such as
+/// <see cref="WebApiCorsOptions.ExposedHeaders"/>) are added to the defaults; clear the list in the callback to
+/// replace them.
+/// </para>
+/// </remarks>
+public sealed class WebApiOptions : ISectionBoundOptions
+{
+    /// <summary>Gets the configuration section these settings bind from: <c>SharedKernel:Presentation:WebApi</c>.</summary>
+    public static string SectionName => "SharedKernel:Presentation:WebApi";
+
+    /// <summary>Gets the correlation id settings.</summary>
+    public WebApiCorrelationIdOptions CorrelationId { get; } = new();
+
+    /// <summary>Gets the cross-origin resource sharing settings. No origin is allowed by default.</summary>
+    public WebApiCorsOptions Cors { get; } = new();
+
+    /// <summary>Gets the security response header settings, HSTS included.</summary>
+    public WebApiSecurityHeadersOptions SecurityHeaders { get; } = new();
+
+    /// <summary>Gets the request limits.</summary>
+    public WebApiLimitsOptions Limits { get; } = new();
+
+    /// <summary>Gets the error response settings.</summary>
+    public WebApiProblemsOptions Problems { get; } = new();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Kestrel's <c>Server</c> response header is removed. Defaults to
+    /// <see langword="true"/>: naming the server software helps nobody but an attacker.
+    /// </summary>
+    public bool RemoveServerHeader { get; set; } = true;
+}

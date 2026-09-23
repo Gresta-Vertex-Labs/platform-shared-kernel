@@ -1,46 +1,61 @@
+using Microsoft.AspNetCore.Authorization;
+
 namespace SharedKernel.Presentation.WebApi.Authorization;
 
 /// <summary>
-/// Declares that an endpoint requires the caller to hold at least one of the specified roles.
+/// Requires the caller to hold at least one of the given roles. Works on MVC controllers and actions, minimal APIs
+/// (<c>RequireRole(…)</c>), SignalR hubs and hub methods, and gRPC services and methods.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Usable directly on an MVC controller/action — MVC auto-surfaces attributes as endpoint
-/// metadata — or attached to a Minimal API endpoint via
-/// <c>RouteHandlerBuilder.WithMetadata(new RequireRoleAttribute(...))</c>. See
-/// <see cref="AuthorizationEndpointFilterExtensions.RequireRole(Microsoft.AspNetCore.Builder.RouteHandlerBuilder, string[])"/>
-/// for the equivalent Minimal API sugar.
+/// A native ASP.NET Core authorization policy. Roles within one attribute are alternatives (OR); several attributes
+/// on one endpoint must all be satisfied (AND).
 /// </para>
 /// <para>
-/// Roles listed within <b>one</b> attribute instance are OR'd — the caller needs any one of
-/// them. Stacking multiple <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/>
-/// instances on the same endpoint is AND'd — the caller must satisfy every attached attribute.
-/// This is a fixed, documented composition rule; it is not configurable.
-/// </para>
-/// <para>
-/// Evaluated by <see cref="AuthorizationRequirementEndpointFilter"/> against
-/// <see cref="SharedKernel.Security.Abstractions.IUserContext.HasRole"/> — never
-/// <see cref="System.Security.Claims.ClaimTypes.Role"/> or the built-in ASP.NET Core
-/// <c>[Authorize(Roles = "...")]</c> attribute, which reads <c>ClaimTypes.Role</c> directly and
-/// bypasses this platform's claim-mapping-aware role resolution. Role names are compared ordinally (case-sensitive).
+/// Evaluated against <see cref="Security.Abstractions.IUserContext.HasRole"/>, never against
+/// <see cref="System.Security.Claims.ClaimTypes.Role"/> the way <c>[Authorize(Roles = …)]</c> does, which ignores how
+/// the authentication package maps roles. Names compare ordinally. An anonymous caller is answered 401, a caller
+/// without the role 403, whose message never names the role.
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
-public sealed class RequireRoleAttribute : Attribute
+public sealed class RequireRoleAttribute : Attribute, IAuthorizeData
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RequireRoleAttribute"/> class.
-    /// </summary>
-    /// <param name="roles">
-    /// The set of roles, any one of which satisfies this attribute instance (OR semantics).
-    /// </param>
+    private readonly string _policy;
+
+    /// <summary>Initializes a new instance of the <see cref="RequireRoleAttribute"/> class.</summary>
+    /// <param name="roles">The roles, any one of which is enough.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="roles"/> is empty, or contains a null, empty or white-space value, or a <c>|</c>.
+    /// </exception>
     public RequireRoleAttribute(params string[] roles)
     {
-        Roles = roles;
+        var values = SharedKernelPolicyNames.ValidateValues(roles, nameof(roles));
+        Roles = values;
+        _policy = SharedKernelPolicyNames.ForRoles(values);
     }
 
-    /// <summary>
-    /// Gets the roles, any one of which satisfies this attribute instance.
-    /// </summary>
+    /// <summary>Gets the roles, any one of which is enough.</summary>
     public IReadOnlyCollection<string> Roles { get; }
+
+    /// <inheritdoc />
+    string? IAuthorizeData.Policy
+    {
+        get => _policy;
+        set => throw new NotSupportedException(AuthorizeDataMessages.Fixed);
+    }
+
+    /// <inheritdoc />
+    string? IAuthorizeData.Roles
+    {
+        get => null;
+        set => throw new NotSupportedException(AuthorizeDataMessages.Fixed);
+    }
+
+    /// <inheritdoc />
+    string? IAuthorizeData.AuthenticationSchemes
+    {
+        get => null;
+        set => throw new NotSupportedException(AuthorizeDataMessages.Fixed);
+    }
 }
