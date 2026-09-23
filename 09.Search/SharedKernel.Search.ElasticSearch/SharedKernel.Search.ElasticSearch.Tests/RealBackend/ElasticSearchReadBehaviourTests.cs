@@ -199,30 +199,30 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     {
         var countA = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
         countA.IsSuccess.Should().BeTrue();
-        countA.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
+        countA.Value.IsExact.Should().BeTrue("the ElasticSearch _count API has no maxTotalHits ceiling, so this provider is always exact");
+        countA.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
 
         var countB = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB));
         countB.IsSuccess.Should().BeTrue();
-        countB.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantB).Count);
+        countB.Value.IsExact.Should().BeTrue();
+        countB.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantB).Count);
     }
 
     /// <summary>
-    /// The startup engine-version guard lives inside <c>ElasticSearchServiceCollectionExtensions</c>'s
-    /// private <c>ValidateEngineVersion</c>, reachable only from the DI-registered
-    /// <see cref="ElasticsearchClient"/> singleton factory's first resolution — so this ONE sub-test
-    /// deliberately goes through the real <c>AddSharedKernelElasticSearchSearch(...)</c> DI builder
-    /// instead of <see cref="ElasticsearchProviderFactory"/>. It points at
-    /// <c>http://127.0.0.1:1/</c> — a guaranteed-unreachable, syntactically valid URL (nothing listens
-    /// on port 1) — rather than standing up a second real ES 8.x container, which this domain's rules
-    /// forbid as a competing ad hoc container setup. An unreachable endpoint exercises the exact same
-    /// <c>catch</c> / <c>!IsValidResponse</c> path a genuinely unsupported server version would hit:
-    /// <c>ValidateEngineVersion</c> catches ALL exceptions from the synchronous, blocking
-    /// <c>InfoAsync().GetAwaiter().GetResult()</c> call and logs
-    /// <c>ElasticSearchEngineVersionUnsupported("unknown", "9.x or 10.x")</c> (EventId 9202, Error)
-    /// either way.
+    /// The engine-version check is now an explicit, asynchronous call
+    /// (<c>VerifyElasticSearchEngineVersionAsync</c>) rather than a blocking side effect of resolving
+    /// the <see cref="ElasticsearchClient"/> singleton. This test pins both halves of that change:
+    /// resolving the client performs no network I/O and therefore cannot block or fail on an
+    /// unreachable cluster, and the explicit call against an unreachable node returns a failed
+    /// <c>Result</c> carrying <c>search.unreachable</c> instead of merely logging.
     /// </summary>
+    /// <remarks>
+    /// It points at <c>http://127.0.0.1:1/</c> — a guaranteed-unreachable, syntactically valid URL
+    /// (nothing listens on port 1) — rather than standing up a second real ES container, which this
+    /// domain's rules forbid as a competing ad hoc container setup.
+    /// </remarks>
     [Fact]
-    public void EngineVersionGuard_UnreachableNode_LogsEngineVersionUnsupported_AndDoesNotThrow()
+    public async Task VerifyEngineVersion_UnreachableNode_FailsWithUnreachable_AndClientResolutionNeverBlocks()
     {
         var services = new ServiceCollection();
         services.AddInMemoryLoggerFactory();
@@ -231,7 +231,6 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
         var configValues = new Dictionary<string, string?>
         {
             ["Search:ElasticSearch:Nodes:0"] = "http://127.0.0.1:1/",
-            ["Search:ElasticSearch:ValidateEngineVersionOnStart"] = "true",
             ["Search:ElasticSearch:RequestTimeoutSeconds"] = "1",
             ["Search:ElasticSearch:PingTimeoutSeconds"] = "1",
         };
@@ -244,13 +243,19 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
 
         var provider = services.BuildServiceProvider();
 
+        // Resolving the client is pure construction — no Info round trip, so an unreachable cluster
+        // cannot stall a request that happens to be the first to resolve it.
         var act = () => provider.GetRequiredService<ElasticsearchClient>();
-
-        // The guard swallows the connectivity failure — resolving the client must not throw.
         act.Should().NotThrow();
+
+        var result = await provider.VerifyElasticSearchEngineVersionAsync();
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("search.unreachable");
 
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
         var clientLogger = loggerFactory.GetLogger(typeof(ElasticsearchClient).FullName!);
         clientLogger.Records.ShouldHaveLogged(new EventId(9202), LogLevel.Error);
     }
 }
+

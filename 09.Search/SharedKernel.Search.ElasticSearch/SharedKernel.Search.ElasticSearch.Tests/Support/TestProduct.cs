@@ -56,3 +56,26 @@ internal sealed class TestProduct : ISearchDocument
     [JsonPropertyName(TestProductFields.CreatedAt)]
     public required DateTimeOffset CreatedAt { get; init; }
 }
+
+/// <summary>
+/// A <see cref="TestProduct"/> variant carrying an ElasticSearch <c>completion</c>-typed suggest field,
+/// used by the <c>ISuggestSearch&lt;TDocument&gt;</c> real-backend tests. A completion field is a
+/// separate mapping field populated at index time — it is an FST input, not a searchable text field —
+/// so the document type must supply it explicitly.
+/// </summary>
+internal sealed class SuggestableProduct : ISearchDocument
+{
+    public const string SuggestField = "nameSuggest";
+
+    [JsonPropertyName(TestProductFields.DocumentId)]
+    public required string DocumentId { get; init; }
+
+    [JsonPropertyName(TestProductFields.TenantId)]
+    public required string TenantId { get; init; }
+
+    [JsonPropertyName(TestProductFields.Name)]
+    public required string Name { get; init; }
+
+    [JsonPropertyName(SuggestField)]
+    public required string NameSuggest { get; init; }
+}
