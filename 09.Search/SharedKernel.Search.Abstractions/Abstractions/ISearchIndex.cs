@@ -160,11 +160,19 @@ public interface ISearchIndex<TDocument>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the exact count of documents matching <paramref name="filter"/> (or the whole index
-    /// when <paramref name="filter"/> is <see langword="null"/>), scoped to
-    /// <paramref name="tenantScope"/>.
+    /// Counts the documents matching <paramref name="filter"/> (or the whole index when
+    /// <paramref name="filter"/> is <see langword="null"/>), scoped to <paramref name="tenantScope"/>.
     /// </summary>
-    Task<Result<long>> CountAsync(
+    /// <remarks>
+    /// <b>Check <see cref="SearchCount.Accuracy"/> before trusting the figure.</b> ElasticSearch
+    /// answers from its <c>_count</c> API and is always
+    /// <see cref="TotalHitsAccuracy.Exact"/>. Meilisearch has no count endpoint and must read
+    /// <c>totalHits</c> off a paginated search, which the engine caps at the index's
+    /// <see cref="SearchIndexDefinition.MaxTotalHits"/> — so a count that reaches that ceiling comes
+    /// back as <see cref="TotalHitsAccuracy.LowerBound"/> rather than being published as fact. See
+    /// <see cref="SearchCount"/>.
+    /// </remarks>
+    Task<Result<SearchCount>> CountAsync(
         SearchFilter? filter,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default);
