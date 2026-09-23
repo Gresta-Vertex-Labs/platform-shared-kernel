@@ -27,6 +27,13 @@
       reference; only this SelfTests project does, for this one interop proof.
     -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
+    <!--
+      P-562: test-only proof dependency mirroring the two precedents above — proves Grpc/TestServerCallContext
+      composes with SharedKernel.Presentation.Grpc (GetHttpContext() over the constructed request, and the rich
+      status GetValueOrThrow()/ThrowIfFailure() throw from a service method under test). SharedKernel.Testing itself
+      dropped its reference to that package in P-562; only this SelfTests project takes it.
+    -->
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Standard Test Package Set — direct package references; must never leak into SharedKernel.Testing.csproj itself. -->
