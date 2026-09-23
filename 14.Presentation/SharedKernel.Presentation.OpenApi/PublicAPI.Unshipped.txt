@@ -1,0 +1,22 @@
+#nullable enable
+SharedKernel.Presentation.OpenApi.OpenApiEndpointExtensions
+SharedKernel.Presentation.OpenApi.OpenApiHostBuilderExtensions
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.ApiKeyHeaderName.get -> string?
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.ApiKeyHeaderName.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Bearer.get -> bool
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Bearer.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Description.get -> string?
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Description.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.ExposeInProduction.get -> bool
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.ExposeInProduction.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.MutualTls.get -> bool
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.MutualTls.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.SharedKernelOpenApiOptions() -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Title.get -> string?
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Title.set -> void
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Versioning.get -> System.Action<Asp.Versioning.ApiVersioningOptions!>?
+SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.Versioning.set -> void
+static SharedKernel.Presentation.OpenApi.OpenApiEndpointExtensions.MapSharedKernelOpenApi(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints) -> Microsoft.AspNetCore.Builder.IEndpointConventionBuilder!
+static SharedKernel.Presentation.OpenApi.OpenApiHostBuilderExtensions.AddSharedKernelOpenApi(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions.SectionName.get -> string!
