@@ -53,8 +53,15 @@ internal static class MeilisearchProviderFactory
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> backed by a fresh client against <paramref name="fixture"/>.</summary>
     public static MeilisearchIndexProvisioner CreateProvisioner(
-        MeilisearchContainerFixture fixture, ILogger<MeilisearchIndexProvisioner>? logger = null) =>
-        new(CreateClient(fixture), CreateOptions(fixture), logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+        MeilisearchContainerFixture fixture,
+        ILogger<MeilisearchIndexProvisioner>? logger = null,
+        IReadOnlyDictionary<string, SearchIndexDefinition>? registeredDefinitions = null) =>
+        new(
+            CreateClient(fixture),
+            CreateOptions(fixture),
+            registeredDefinitions ?? EmptyDefinitions,
+            EmptyRankingRules,
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> authenticated with a specific (e.g. mis-scoped) API key.</summary>
     public static MeilisearchIndexProvisioner CreateProvisioner(
@@ -62,13 +69,48 @@ internal static class MeilisearchProviderFactory
     {
         var options = CreateOptions(fixture);
         options.ApiKey = apiKey;
-        return new MeilisearchIndexProvisioner(CreateClient(fixture, apiKey), options, logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+        return new MeilisearchIndexProvisioner(
+            CreateClient(fixture, apiKey),
+            options,
+            EmptyDefinitions,
+            EmptyRankingRules,
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
     }
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> from an already-built client/options pair.</summary>
     public static MeilisearchIndexProvisioner CreateProvisioner(
-        global::Meilisearch.MeilisearchClient client, MeilisearchOptions options, ILogger<MeilisearchIndexProvisioner>? logger = null) =>
-        new(client, options, logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+        global::Meilisearch.MeilisearchClient client,
+        MeilisearchOptions options,
+        ILogger<MeilisearchIndexProvisioner>? logger = null,
+        IReadOnlyDictionary<string, SearchIndexDefinition>? registeredDefinitions = null) =>
+        new(
+            client,
+            options,
+            registeredDefinitions ?? EmptyDefinitions,
+            EmptyRankingRules,
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+
+    /// <summary>
+    /// Creates a provisioner that will apply <paramref name="rankingRules"/> to
+    /// <paramref name="definition"/>, mirroring what <c>MeilisearchSearchBuilder.WithRankingRules</c>
+    /// wires at a real composition root.
+    /// </summary>
+    public static MeilisearchIndexProvisioner CreateProvisionerWithRankingRules(
+        MeilisearchContainerFixture fixture,
+        SearchIndexDefinition definition,
+        IReadOnlyList<string> rankingRules) =>
+        new(
+            CreateClient(fixture),
+            CreateOptions(fixture),
+            new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal) { [definition.Name] = definition },
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { [definition.Name] = rankingRules },
+            NullLogger<MeilisearchIndexProvisioner>.Instance);
+
+    private static readonly IReadOnlyDictionary<string, SearchIndexDefinition> EmptyDefinitions =
+        new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptyRankingRules =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
     /// <summary>Creates a <see cref="MeilisearchTenantTokenIssuer"/> backed by a fresh client against <paramref name="fixture"/>.</summary>
     /// <remarks>

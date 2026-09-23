@@ -55,8 +55,17 @@ public sealed class MeilisearchOptions
     public int TenantTokenMaxTtlMinutes { get; set; } = 15;
 
     /// <summary>
-    /// Gets or sets a value indicating whether index settings are verified against the registered
-    /// index definition at startup.
+    /// Gets or sets how long a pooled HTTP connection to Meilisearch is reused before it is recycled,
+    /// in minutes.
     /// </summary>
-    public bool ValidateIndexSettingsOnStart { get; set; } = true;
+    /// <remarks>
+    /// The <c>MeilisearchClient</c> is a singleton built once from a named
+    /// <c>IHttpClientFactory</c> client, so the handler it holds is never returned to the factory for
+    /// its usual rotation. Without an explicit connection lifetime that handler would cache a resolved
+    /// address for the life of the process, and a Meilisearch pod rescheduled onto a new IP would stay
+    /// unreachable until the service restarted. This setting is what keeps DNS honest; it is not a
+    /// request timeout.
+    /// </remarks>
+    [Range(1, 60)]
+    public int PooledConnectionLifetimeMinutes { get; set; } = 5;
 }

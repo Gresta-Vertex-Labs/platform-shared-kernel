@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,12 +39,25 @@ public static class MeilisearchServiceCollectionExtensions
 
         services.AddValidatedOptions<MeilisearchOptions>(section);
 
-        services.AddHttpClient(HttpClientName, (sp, client) =>
-        {
-            var options = sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value;
-            client.BaseAddress = new Uri(options.Url);
-            client.Timeout = TimeSpan.FromSeconds(options.HttpTimeoutSeconds);
-        });
+        services
+            .AddHttpClient(HttpClientName, (sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value;
+                client.BaseAddress = new Uri(options.Url);
+                client.Timeout = TimeSpan.FromSeconds(options.HttpTimeoutSeconds);
+            })
+            // The MeilisearchClient below is a singleton and holds this HttpClient for the life of the
+            // process, so IHttpClientFactory can never rotate its handler the way it does for a
+            // short-lived client. PooledConnectionLifetime is what restores the property that rotation
+            // normally provides: connections — and therefore the DNS resolution behind them — are
+            // recycled on a schedule, so a Meilisearch pod rescheduled onto a new address is picked up
+            // instead of being unreachable until the next deployment. SetHandlerLifetime would not help
+            // here; nothing returns this client to the factory for the handler to expire.
+            .ConfigurePrimaryHttpMessageHandler(sp => new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(
+                    sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value.PooledConnectionLifetimeMinutes),
+            });
 
         var builder = new MeilisearchSearchBuilder(services);
 
