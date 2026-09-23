@@ -147,8 +147,9 @@ internal static partial class ElasticSearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 221,
         Level = LogLevel.Warning,
-        Message = "No JsonSerializerContext registered via WithSourceSerializerContext(...) for document type '{DocumentTypeName}'.")]
-    public static partial void ElasticSearchSourceSerializerContextMissing(this ILogger logger, string documentTypeName);
+        Message = "No JsonSerializerContext was registered via WithSourceSerializerContext(...); the " +
+                  "client falls back to reflection-based serialization for all {IndexCount} registered index(es).")]
+    public static partial void ElasticSearchSourceSerializerContextMissing(this ILogger logger, int indexCount);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 222,
@@ -169,4 +170,39 @@ internal static partial class ElasticSearchLog
         Level = LogLevel.Debug,
         Message = "Bulk operation on index '{IndexName}' throttled: waiting {DelayMs}ms before the next batch.")]
     public static partial void ElasticSearchBulkThrottled(this ILogger logger, string indexName, double delayMs);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 225,
+        Level = LogLevel.Warning,
+        Message = "ElasticSearch operation '{Operation}' on index '{IndexName}' faulted and was mapped to " +
+                  "error code '{ErrorCode}'.")]
+    public static partial void ElasticSearchOperationFaulted(
+        this ILogger logger, string operation, string indexName, string errorCode);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 226,
+        Level = LogLevel.Information,
+        Message = "ElasticSearch index '{IndexName}' text analysis applied: {SynonymCount} synonym term(s), " +
+                  "{StopWordCount} stop word(s).")]
+    public static partial void ElasticSearchTextAnalysisApplied(
+        this ILogger logger, string indexName, int synonymCount, int stopWordCount);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 227,
+        Level = LogLevel.Warning,
+        Message = "ElasticSearch index '{IndexName}' drifted from the registered definition: {Detail}")]
+    public static partial void ElasticSearchIndexDrifted(this ILogger logger, string indexName, string detail);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 228,
+        Level = LogLevel.Information,
+        Message = "ElasticSearch index '{IndexName}' verified against the registered definition.")]
+    public static partial void ElasticSearchIndexVerified(this ILogger logger, string indexName);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 229,
+        Level = LogLevel.Debug,
+        Message = "ElasticSearch completion suggester on index '{IndexName}' returned {SuggestionCount} suggestion(s).")]
+    public static partial void ElasticSearchSuggestExecuted(
+        this ILogger logger, string indexName, int suggestionCount);
 }
