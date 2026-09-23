@@ -14,13 +14,13 @@ namespace SharedKernel.ServiceDefaults.RateLimiting;
 /// No new NuGet package — <c>Microsoft.AspNetCore.RateLimiting</c> ships inside the
 /// <c>Microsoft.AspNetCore.App</c> shared framework already referenced by this project. Entirely
 /// opt-in: never called from <c>AddServiceDefaults()</c>, and never references
-/// <c>14.Presentation</c> — a consuming service wanting an RFC 9457 <c>ProblemDetails</c>-shaped
-/// rejection body attaches its own <c>RateLimiterOptions.OnRejected</c> delegate via the
-/// <c>configure</c> parameter on <see cref="AddSharedKernelRateLimiting"/> (below), calling
-/// <c>14.Presentation.WebApi</c>'s own <c>RateLimitRejectionProblemDetails.Create(HttpContext,
-/// TimeSpan?)</c> helper — the platform's only sanctioned way to shape that body. Both type names
-/// are named here in documentation/example code only; this project takes no compiled reference to
-/// <c>SharedKernel.Presentation.WebApi</c> in either direction.
+/// <c>14.Presentation</c>. A service that also calls <c>SharedKernel.Presentation.WebApi</c>'s
+/// <c>AddSharedKernelWebApi()</c> gets the platform's RFC 9457 rejection body without writing any
+/// code: that package fills <see cref="RateLimiterOptions.OnRejected"/> when nothing else has, so a
+/// rejection becomes a 429 <c>application/problem+json</c> response with <c>errorCode</c>
+/// <c>rate_limit.exceeded</c> and a <c>Retry-After</c> header whenever the limiter suggests a delay.
+/// That package is named here in documentation only; this project takes no compiled reference to it
+/// in either direction.
 /// </remarks>
 public static class RateLimitingExtensions
 {
@@ -52,29 +52,31 @@ public static class RateLimitingExtensions
     /// <remarks>
     /// <para>
     /// <see cref="RateLimiterOptions.RejectionStatusCode"/> is set to
-    /// <see cref="StatusCodes.Status429TooManyRequests"/>; <see cref="RateLimiterOptions.OnRejected"/>
-    /// is left at the BCL default (a bare 429, no response body) unless <paramref name="configure"/>
-    /// sets one.
+    /// <see cref="StatusCodes.Status429TooManyRequests"/>. <see cref="RateLimiterOptions.OnRejected"/>
+    /// is deliberately left unset, which decides the rejection body:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item>With <c>SharedKernel.Presentation.WebApi</c>'s <c>AddSharedKernelWebApi()</c>
+    ///   (<c>14.Presentation</c>): the platform's RFC 9457 body — 429 <c>application/problem+json</c>,
+    ///   <c>errorCode</c> <c>rate_limit.exceeded</c>, and <c>Retry-After</c> in whole seconds when the
+    ///   rejected lease carries <c>MetadataName.RetryAfter</c>, as the fixed-window limiters this method
+    ///   installs do. Nothing to write.</item>
+    ///   <item>Without it: ASP.NET Core's default, a bare 429 with no body.</item>
+    ///   <item>An <see cref="RateLimiterOptions.OnRejected"/> set in <paramref name="configure"/> replaces
+    ///   both; <c>AddSharedKernelWebApi()</c> keeps a handler a service wrote itself.</item>
+    /// </list>
+    /// <para>
+    /// The limiter must also be in the request pipeline. <c>UseSharedKernelWebApi()</c> adds
+    /// <c>UseRateLimiter()</c> itself whenever rate limiting is registered — after authentication and
+    /// authorization, so a policy can partition by the caller — so a service using it calls nothing
+    /// more. Without it, call <c>app.UseRateLimiter()</c> after <c>builder.Build()</c>, after
+    /// <c>UseRouting()</c> when endpoints name a policy.
     /// </para>
     /// <para>
-    /// A service that also references <c>SharedKernel.Presentation.WebApi</c> (<c>14.Presentation</c>)
-    /// and wants an RFC 9457 <c>ProblemDetails</c>-shaped rejection body sets
-    /// <see cref="RateLimiterOptions.OnRejected"/> inside <paramref name="configure"/> to extract the
-    /// limiter's suggested delay via <c>context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var
-    /// retryAfterMetadata)</c> (BCL <c>System.Threading.RateLimiting.MetadataName</c>) and call
-    /// <c>RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfterMetadata as
-    /// TimeSpan?)</c> — the platform's only sanctioned way to shape that body; hand-rolling a raw
-    /// <c>ProblemDetails</c> literal instead reproduces the inline-construction anti-pattern this
-    /// platform forbids everywhere else. See this package's <c>README.md</c> "Rate limiting" section
-    /// for the full worked recipe, proven by a compiled test
-    /// (<c>RateLimitRejectionRecipeTests</c>) via a test-only reference from the test project — this
-    /// production project takes no compiled reference to <c>SharedKernel.Presentation.WebApi</c> in
-    /// either direction.
-    /// </para>
-    /// <para>
-    /// Entirely opt-in — must be paired with <c>app.UseRateLimiter()</c> after
-    /// <c>builder.Build()</c>. A host that never calls this method is byte-identical in behavior to
-    /// today.
+    /// Both compositions are proven by <c>RateLimitRejectionRecipeTests</c> through a test-only
+    /// reference; this production project takes no compiled reference to
+    /// <c>SharedKernel.Presentation.WebApi</c> in either direction. A host that never calls this method
+    /// is byte-identical in behavior to one without it.
     /// </para>
     /// </remarks>
     public static IHostApplicationBuilder AddSharedKernelRateLimiting(

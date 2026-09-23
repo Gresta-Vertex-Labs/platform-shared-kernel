@@ -93,7 +93,7 @@ builder.AddMtlsForwardedHeaderCertificate(o =>
 var app = builder.Build();
 
 app.UseAuthentication();
-app.UseRateLimiter();                                  // required when AddSharedKernelRateLimiting() is used
+app.UseRateLimiter();                                  // required when AddSharedKernelRateLimiting() is used — unless 14.Presentation's UseSharedKernelWebApi() already added it
 app.UseMiddleware<TenantResolutionMiddleware>();       // required when AddSharedKernelMultiTenancy() is used — must run after UseAuthentication()
 app.UseMiddleware<MtlsForwardedHeaderMiddleware>();    // [pkg .Security.Mtls] required when AddMtlsForwardedHeaderCertificate() is used — registering the options alone leaves this absent from the pipeline (silent no-op, not a crash)
 
@@ -115,7 +115,7 @@ app.Run();
 5. `app.UseMiddleware<TenantResolutionMiddleware>()` is **required** whenever `AddSharedKernelMultiTenancy()` is used, and **must** be placed after `app.UseAuthentication()` — `ClaimTenantResolutionStrategy` needs a populated `HttpContext.User`. Without this call, `AmbientTenantProvider.TenantId` stays permanently `Guid.Empty` (a silent, by-design failure mode, not a crash).
 6. `app.MapDefaultHealthCheckEndpoints(bool requireAuthorization = false)` maps `/health/live` (only `"live"`-tagged checks — process-alive signal only) and `/health/ready` (only `"ready"`-tagged checks — may depend on DB/cache/broker connectivity, gates load-balancer rotation, never restarts the pod). `requireAuthorization: true` chains `.RequireAuthorization()` onto both mappings — see "Health endpoint exposure" below for the required network-isolation guidance and a worked example.
 7. `AddMtlsClientCertificate()` / `AddMtlsForwardedHeaderCertificate()` are both optional and cover two mutually-exclusive TLS-termination topologies — a host MAY register both if its actual deployment genuinely varies by environment. `AddMtlsClientCertificate(mode)` is for hosts where TLS terminates directly at Kestrel: it wires `KestrelServerOptions.ConfigureHttpsDefaults` and needs no separate middleware registration. `AddMtlsForwardedHeaderCertificate(configure)` is for hosts where TLS terminates at an ingress/gateway that forwards the client certificate as a request header instead — it registers `MtlsForwardedHeaderOptions` (with `HeaderName` **required**, no platform default, since nginx-ingress/Envoy/Istio/HAProxy each use a different header name/encoding) and must be paired with an explicit `app.UseMiddleware<MtlsForwardedHeaderMiddleware>()` call, mirroring `AddSharedKernelMultiTenancy()`'s "register services here, wire the middleware separately" split. Neither surface reimplements X.509 chain/revocation validation — both delegate the accept/reject decision to `12.Security`'s `SharedKernel.Security.Mtls.IMtlsCertificateValidator`, which must already be registered (typically via `AddMtlsAuthentication<TValidator>()`); omitting it throws at the first TLS handshake (Kestrel path) or first request (forwarded-header path), not at startup. Because Kestrel's `ClientCertificateValidation` delegate is synchronous but `IMtlsCertificateValidator.ValidateAsync` is async-only, `AddMtlsClientCertificate` bridges the two with a blocking `.GetAwaiter().GetResult()` call inside the TLS handshake — a real latency/thread-pool-starvation cost under load, so a validator used on this path must resolve quickly (an in-memory allow-list or a cached trust decision) and must never make a slow remote call (CRL/OCSP, an external policy service). A host that calls neither method is byte-identical in behavior to today — Kestrel's default `ClientCertificateMode.NoCertificate` stays untouched and no new middleware enters the pipeline.
-8. `AddSharedKernelRateLimiting()` is optional. When used, `app.UseRateLimiter()` must also be added to the pipeline (typically before the tenant/mTLS middleware, so a rejected request never reaches them) — see "Rate limiting" below.
+8. `AddSharedKernelRateLimiting()` is optional. When used, `app.UseRateLimiter()` must also be added to the pipeline (typically before the tenant/mTLS middleware, so a rejected request never reaches them) — unless the service uses `14.Presentation`'s `UseSharedKernelWebApi()`, which adds it itself. See "Rate limiting" below.
 
 ### mTLS forwarded-header trust boundary
 
@@ -134,7 +134,7 @@ When `TrustedNetworks` is non-empty, `MtlsForwardedHeaderMiddleware` ignores —
 
 ### Rate limiting
 
-`AddSharedKernelRateLimiting()` wraps ASP.NET Core's own built-in `Microsoft.AspNetCore.RateLimiting` middleware (no new NuGet dependency) with a conservative default: a global fixed-window limiter partitioned by remote IP (100 requests/minute), plus a named `RateLimitPolicyNames.Authentication` policy (10 requests/minute) a consumer attaches to its own token/login routes:
+`AddSharedKernelRateLimiting()` wraps ASP.NET Core's own built-in `Microsoft.AspNetCore.RateLimiting` middleware (no new NuGet dependency) with a conservative default: a global fixed-window limiter partitioned by remote IP (100 requests/minute), plus a named `RateLimitPolicyNames.Authentication` policy (10 requests/minute) a consumer attaches to its own token/login routes. Without `14.Presentation`, add the middleware yourself:
 
 ```csharp
 builder.AddSharedKernelRateLimiting();
@@ -158,37 +158,24 @@ builder.AddSharedKernelRateLimiting(options =>
 });
 ```
 
-This domain never references `14.Presentation` — `RateLimiterOptions.OnRejected` is left at the BCL default (a bare `429`, no response body) unless a consumer supplies one. A service that also uses `14.Presentation.WebApi` and wants a consistent RFC 9457 `ProblemDetails` rejection body attaches its own `OnRejected` delegate via `configure`, in the SERVICE's own composition root — never a hard `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` — and calls that package's `RateLimitRejectionProblemDetails.Create(HttpContext, TimeSpan?)` helper to shape it. **This is the sanctioned way to build the rejection body — never hand-roll a raw `ProblemDetails` literal here**, mirroring `14.Presentation/CLAUDE.md`'s own "Rate-limit rejection bridge rules" (WO-062/P-408), which forbid exactly that construction pattern for every other 429 response on this platform:
+#### Rejection body
+
+This domain never references `14.Presentation`, and `AddSharedKernelRateLimiting()` leaves `RateLimiterOptions.OnRejected` unset. On its own that gives ASP.NET Core's default rejection: a bare `429` with no body. A service that also uses `14.Presentation`'s `SharedKernel.Presentation.WebApi` gets the platform's RFC 9457 body with nothing to write — `AddSharedKernelWebApi()` fills `OnRejected` whenever nothing else has — and `UseSharedKernelWebApi()` adds `UseRateLimiter()` to the pipeline itself, after authentication and authorization so a policy can partition by the caller:
 
 ```csharp
-using System.Threading.RateLimiting;
-using SharedKernel.Presentation.WebApi.RateLimiting;
+builder.AddSharedKernelWebApi();                       // 14.Presentation
+builder.AddSharedKernelRateLimiting();
 
-builder.AddSharedKernelRateLimiting(options =>
-{
-    options.OnRejected = async (context, ct) =>
-    {
-        // Recover the limiter's own suggested delay from the rejected lease (BCL
-        // System.Threading.RateLimiting.MetadataName) rather than inventing one.
-        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterMetadata)
-            ? retryAfterMetadata
-            : (TimeSpan?)null;
+var app = builder.Build();
+app.UseSharedKernelWebApi();                           // includes UseRateLimiter()
 
-        // The only sanctioned way to shape a rate-limit rejection into ProblemDetails — sets
-        // Status/Type/Extensions["traceId"] identically to every other error path, and — because
-        // retryAfter is supplied — also sets the real Retry-After response header itself.
-        var problemDetails = RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfter);
-
-        await context.HttpContext.Response.WriteAsJsonAsync(
-            problemDetails,
-            options: null,
-            contentType: "application/problem+json",
-            cancellationToken: ct);
-    };
-});
+app.MapPost("/auth/token", TokenEndpoint)
+    .RequireRateLimiting(RateLimitPolicyNames.Authentication);
 ```
 
-`RateLimitRejectionProblemDetails.Create` sets the `Retry-After` HTTP response header itself (in whole seconds) whenever `retryAfter` is non-null, so proxies and client SDKs that already understand `Retry-After` work unmodified — the raw hand-rolled `ProblemDetails` this recipe replaced never set that header at all. This recipe is proven by a genuine compiled test (`RateLimitRejectionRecipeTests`, `SharedKernel.ServiceDefaults.Tests`) driving a real host through both the rejected request (429, `application/problem+json`, a `RateLimitRejectionProblemDetails`-shaped body, a parseable `Retry-After` header) and the no-recipe call shape (still the byte-identical BCL default — empty body, no `Retry-After`), via a **test-only** `ProjectReference` from the test project to `SharedKernel.Presentation.WebApi` — the production `SharedKernel.ServiceDefaults.csproj` takes no reference to `14.Presentation` in either direction.
+A rejected request is then answered `429 Too Many Requests` with `Content-Type: application/problem+json`, `errorCode` `rate_limit.exceeded`, the same `traceId`/`correlationId` members as every other error response, and a `Retry-After` header in whole seconds whenever the limiter reports a delay — the fixed-window limiters this method installs always do. There is nothing to hand-roll: never write a `ProblemDetails` body yourself to get this shape. A service that needs a different rejection sets its own `OnRejected` in `configure`; `AddSharedKernelWebApi()` never overwrites a handler a service wrote.
+
+`RateLimitRejectionRecipeTests` (`SharedKernel.ServiceDefaults.Tests`) proves all of this against real hosts: a policy rejection and a global-limiter rejection (429, `application/problem+json`, `rate_limit.exceeded`, `Retry-After`), a service's own `OnRejected`, and a host without `14.Presentation` (a bare `429` — no body, no `Retry-After`). It reaches `SharedKernel.Presentation.WebApi` through a **test-only** `ProjectReference`; the production `SharedKernel.ServiceDefaults.csproj` takes no reference to `14.Presentation` in either direction.
 
 ### Secrets-manager configuration
 

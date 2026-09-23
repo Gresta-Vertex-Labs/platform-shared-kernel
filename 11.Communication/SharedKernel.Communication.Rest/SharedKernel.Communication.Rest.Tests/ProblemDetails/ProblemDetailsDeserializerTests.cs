@@ -357,11 +357,12 @@ public sealed class ProblemDetailsDeserializerTests
     }
 
     // -----------------------------------------------------------------------
-    // Non-JSON / empty / malformed bodies — never throw, still status-aware
+    // Non-JSON / empty / malformed bodies — never throw, still status-aware: the category comes
+    // from the status through HttpStatusErrorTypeMap, the code is http.{status}
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task DeserializeAsync_WithNonProblemJsonContentType_ReturnsStatusAwareUnexpectedError()
+    public async Task DeserializeAsync_WithNonProblemJsonContentType_ReturnsStatusAwareError()
     {
         // Arrange
         var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
@@ -372,9 +373,87 @@ public sealed class ProblemDetailsDeserializerTests
         // Act
         var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
-        // Assert
+        // Assert — 500 is a defect the caller cannot act on, so it stays Unexpected.
         error.Type.Should().Be(ErrorType.Unexpected);
         error.Code.Should().Be("http.500");
+        error.Message.Should().Be("HTTP 500 Internal Server Error");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.TooManyRequests, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, ErrorType.Timeout)]
+    public async Task DeserializeAsync_GatewayOutageWithHtmlBody_IsUnavailableOrTimeout_NotUnexpected(
+        HttpStatusCode statusCode,
+        ErrorType expectedType)
+    {
+        // Arrange — the common gateway outage: a load balancer or proxy answers for a service that is
+        // down, rate limited or slow, with its own HTML page instead of a ProblemDetails body.
+        var response = new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent("<html><body><h1>503 Service Temporarily Unavailable</h1></body></html>", Encoding.UTF8, "text/html"),
+        };
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert — the caller can retry it, exactly as it would a ProblemDetails outage.
+        error.Type.Should().Be(expectedType);
+        error.Code.Should().Be($"http.{(int)statusCode}");
+        error.Message.Should().StartWith($"HTTP {(int)statusCode} ");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.TooManyRequests, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, ErrorType.Timeout)]
+    public async Task DeserializeAsync_GatewayOutageWithEmptyBody_IsUnavailableOrTimeout_NotUnexpected(
+        HttpStatusCode statusCode,
+        ErrorType expectedType)
+    {
+        // Arrange
+        var response = new HttpResponseMessage(statusCode) { Content = new StringContent(string.Empty) };
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(expectedType);
+        error.Code.Should().Be($"http.{(int)statusCode}");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.Unauthorized, ErrorType.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden, ErrorType.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound, ErrorType.NotFound)]
+    [InlineData(HttpStatusCode.Conflict, ErrorType.Conflict)]
+    [InlineData(HttpStatusCode.PreconditionFailed, ErrorType.Conflict)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.UnsupportedMediaType, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.UnprocessableEntity, ErrorType.BusinessRule)]
+    [InlineData(HttpStatusCode.PreconditionRequired, ErrorType.Validation)]
+    [InlineData(HttpStatusCode.TooManyRequests, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.InternalServerError, ErrorType.Unexpected)]
+    [InlineData(HttpStatusCode.BadGateway, ErrorType.Unexpected)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, ErrorType.Timeout)]
+    [InlineData(HttpStatusCode.MethodNotAllowed, ErrorType.Unexpected)]
+    public async Task DeserializeAsync_WithoutABody_TakesTheCategoryOfItsStatus_WithAnHttpStatusCode(
+        HttpStatusCode statusCode,
+        ErrorType expectedType)
+    {
+        // Arrange — the same status with and without a body must read as the same category; only the
+        // code and the message differ (http.{status} and the status line when there is no body).
+        var response = new HttpResponseMessage(statusCode) { Content = new StringContent(string.Empty) };
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(expectedType);
+        error.Type.Should().Be(HttpStatusErrorTypeMap.Resolve((int)statusCode));
+        error.Code.Should().Be($"http.{(int)statusCode}");
     }
 
     [Fact]
@@ -395,7 +474,7 @@ public sealed class ProblemDetailsDeserializerTests
     }
 
     [Fact]
-    public async Task DeserializeAsync_WithEmptyBody_DoesNotThrow_AndReturnsStatusAwareUnexpectedError()
+    public async Task DeserializeAsync_WithEmptyBody_DoesNotThrow_AndReturnsStatusAwareError()
     {
         // Arrange
         var response = new HttpResponseMessage(HttpStatusCode.BadGateway)
@@ -406,14 +485,14 @@ public sealed class ProblemDetailsDeserializerTests
         // Act
         Func<Task<Error>> act = () => ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
-        // Assert
+        // Assert — 502 is outside the map, so it stays Unexpected.
         var error = await act.Should().NotThrowAsync();
         error.Subject.Type.Should().Be(ErrorType.Unexpected);
         error.Subject.Code.Should().Be("http.502");
     }
 
     [Fact]
-    public async Task DeserializeAsync_WithEmptyJsonObjectBody_NoRecognizableMembers_ReturnsStatusAwareUnexpectedError()
+    public async Task DeserializeAsync_WithEmptyJsonObjectBody_NoRecognizableMembers_ReturnsStatusAwareErrorOfItsStatus()
     {
         // Arrange — a well-formed JSON body that deserializes cleanly but carries none of the members
         // this deserializer maps from.
@@ -424,9 +503,25 @@ public sealed class ProblemDetailsDeserializerTests
         // Act
         var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
 
-        // Assert
-        error.Type.Should().Be(ErrorType.Unexpected);
+        // Assert — treated as no body: the category of 404, the code http.404 (until P-562: Unexpected).
+        error.Type.Should().Be(ErrorType.NotFound);
         error.Code.Should().Be("http.404");
+    }
+
+    [Fact]
+    public async Task DeserializeAsync_OutageWithEmptyJsonObjectBody_IsUnavailable()
+    {
+        // Arrange — a 503 whose JSON body carries nothing this deserializer maps from.
+        var response = BuildProblemDetailsResponse(
+            statusCode: HttpStatusCode.ServiceUnavailable,
+            body: "{}");
+
+        // Act
+        var error = await ProblemDetailsDeserializer.DeserializeAsync(response, CancellationToken.None);
+
+        // Assert
+        error.Type.Should().Be(ErrorType.Unavailable);
+        error.Code.Should().Be("http.503");
     }
 
     [Fact]

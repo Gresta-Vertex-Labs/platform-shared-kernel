@@ -103,6 +103,27 @@ public sealed class ReadResultAsyncTests
         result.Error.Code.Should().NotBeNullOrEmpty();
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, SharedKernel.Primitives.Errors.ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, SharedKernel.Primitives.Errors.ErrorType.Timeout)]
+    public async Task ReadResultAsync_TypeInfo_GatewayOutageWithHtmlBody_FailsAsARetryableOutage(
+        HttpStatusCode statusCode,
+        SharedKernel.Primitives.Errors.ErrorType expectedType)
+    {
+        // A gateway answering for a down or slow service with its own HTML page: the typed client's caller sees
+        // an outage it can retry (P-562), not an Unexpected defect.
+        var response = new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent("<html><body>Try again later</body></html>", Encoding.UTF8, "text/html")
+        };
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Type.Should().Be(expectedType);
+        result.Error.Code.Should().Be($"http.{(int)statusCode}");
+    }
+
     // -----------------------------------------------------------------------
     // JsonSerializerOptions? overload (R-16)
     // -----------------------------------------------------------------------

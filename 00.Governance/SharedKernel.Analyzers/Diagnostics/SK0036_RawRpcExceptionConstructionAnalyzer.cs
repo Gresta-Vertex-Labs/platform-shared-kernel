@@ -34,12 +34,15 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// (mirrors SK0029's one-owning-package shape, not SK0026's per-client-type mapping: gRPC server
 /// error mapping is one owning package). This single prefix already covers every real, sanctioned
 /// construction site in that package — the canonical mapping path
-/// (<c>SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions</c>) and the interceptors that
-/// legitimately construct a rejection/fault <c>RpcException</c> directly
-/// (<c>SharedKernel.Presentation.Grpc.Interceptors.GrpcExceptionInterceptor</c>/
-/// <c>GrpcAuthorizationInterceptor</c>) all live under sub-namespaces of
-/// <c>SharedKernel.Presentation.Grpc</c>, confirmed against the real, shipped package — no
-/// per-file exemption list is needed.
+/// (<c>SharedKernel.Presentation.Grpc.GrpcResultExtensions</c>: <c>ThrowIfFailure()</c> and
+/// <c>GetValueOrThrow()</c>), the rich-status factory behind it
+/// (<c>SharedKernel.Presentation.Grpc.Errors.RpcStatusFactory</c>) and the exception interceptor that maps a thrown
+/// exception (<c>SharedKernel.Presentation.Grpc.Interceptors.GrpcExceptionInterceptor</c>) all live in
+/// <c>SharedKernel.Presentation.Grpc</c> or its sub-namespaces, confirmed against the real package — no
+/// per-file exemption list is needed. The P-562 redesign moved the result extensions from
+/// <c>…Grpc.Results</c> to the root namespace, renamed <c>ToGrpcResult</c> to <c>ThrowIfFailure</c>/
+/// <c>GetValueOrThrow</c> and deleted the authorization interceptor; the prefix covers the new layout unchanged,
+/// so the rule's behavior did not change — only its message.
 /// </para>
 /// <para>
 /// Fires globally outside that namespace — no "must be inside a gRPC service method" scoping is
@@ -69,9 +72,9 @@ public sealed class RawRpcExceptionConstructionAnalyzer : AnalyzerBase
         id: DiagnosticId,
         title: "Raw RpcException/Status construction outside SharedKernel.Presentation.Grpc",
         messageFormat: "Direct construction of Grpc.Core.{0} is prohibited outside "
-            + "SharedKernel.Presentation.Grpc. Use "
-            + "SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/"
-            + ".ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of "
+            + "SharedKernel.Presentation.Grpc. Return a Result and call "
+            + "SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/"
+            + ".GetValueOrThrow() to map a failure to an RpcException instead of "
             + "hand-constructing one.",
         category: Usage,
         defaultSeverity: DiagnosticSeverity.Warning,

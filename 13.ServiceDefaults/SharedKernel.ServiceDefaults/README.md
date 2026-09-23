@@ -105,10 +105,12 @@ cannot present credentials, and readiness output can disclose your dependency to
 
 ## Rate limiting and ProblemDetails
 
-`AddSharedKernelRateLimiting()` leaves `OnRejected` at the ASP.NET Core bare-429 default and takes **no**
-reference to `14.Presentation`. For an RFC 9457 body, attach your own handler through the `configure`
-parameter and call `14.Presentation`'s `RateLimitRejectionProblemDetails.Create(...)`. That keeps the two
-packages independently referenceable.
+`AddSharedKernelRateLimiting()` leaves `OnRejected` unset and takes **no** reference to `14.Presentation`.
+On its own, a rejection is ASP.NET Core's bare 429. Together with `14.Presentation`'s
+`AddSharedKernelWebApi()`/`UseSharedKernelWebApi()` it is the platform's RFC 9457 body with nothing to write:
+429 `application/problem+json` with `errorCode` `rate_limit.exceeded` and `Retry-After`, and
+`UseSharedKernelWebApi()` adds `UseRateLimiter()` itself. An `OnRejected` you set through `configure` wins
+over both. The two packages stay independently referenceable.
 
 ## Why the base references nothing
 

@@ -23,6 +23,11 @@ namespace SharedKernel.Communication.Rest.ProblemDetails;
 /// as <see cref="ErrorType.Unavailable"/>, since the same call succeeds once the caller backs off.
 /// </para>
 /// <para>
+/// It applies whether or not the response carries a ProblemDetails body: an HTML page or an empty body
+/// from a gateway or proxy gets the same <see cref="ErrorType"/> for its status, with the code
+/// <c>http.{status}</c> (see <see cref="ProblemDetailsDeserializer"/>).
+/// </para>
+/// <para>
 /// <b>Why this table is duplicated here instead of shared:</b> <c>11.Communication</c> may only
 /// reference <c>01.Core</c>, <c>04.Contracts</c>, and <c>12.Security</c> abstractions — it must never
 /// reference <c>14.Presentation</c>, which is where the forward mapping actually lives. This is the

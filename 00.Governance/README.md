@@ -238,7 +238,7 @@ How every production log statement is written.
 | [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
 | [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
 | [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Classify the logging parameter, or mask it with `PiiMasking` |
-| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ToGrpcResult()` |
+| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ThrowIfFailure()` or `GetValueOrThrow()` |
 
 #### Persistence
 
@@ -2483,13 +2483,13 @@ warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [Lo
 
 **Category:** Usage · **Default severity:** Warning
 
-Return a `Result` and convert it with `ToGrpcResult()` instead of constructing `RpcException` or `Status` yourself.
+Return a `Result` and convert it with `ThrowIfFailure()` or `GetValueOrThrow()` instead of constructing `RpcException` or `Status` yourself.
 
 #### Why it matters
 
-`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place. A hand-built `RpcException` picks its own status code, so the same failure can reach clients as `NotFound` from one service and `Internal` from another. Clients then cannot rely on status codes for retries or error handling.
+`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place, and sends every failure as a rich `google.rpc.Status`: the client message (localized, and redacted for server errors outside Development), an `ErrorInfo` detail with the error code, the error domain and the trace and correlation ids, and a `BadRequest` detail listing every field error. A hand-built `RpcException` picks its own status code and carries none of that, so the same failure can reach clients as `NotFound` from one service and `Internal` from another, with no code to branch on. Clients then cannot rely on status codes for retries or error handling.
 
-`GrpcResultExtensions.ToGrpcResult()` and `ToGrpcResult<T>()` throw an `RpcException` with the mapped status code and the error message on failure, and return the value on success.
+`GrpcResultExtensions.ThrowIfFailure()` (for `Result`) and `GetValueOrThrow()` (for `Result<T>`, returning the value on success), and their `Task` overloads, throw that `RpcException` on failure. A client reads the details with `RpcException.GetRpcStatus()`.
 
 #### What it flags
 
@@ -2517,20 +2517,26 @@ public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallCon
 
 ```csharp
 // Compliant
-using SharedKernel.Presentation.Grpc.Results;
+using SharedKernel.Presentation.Grpc;
 
 public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
 {
     Result<OrderReply> result = await orders.GetAsync(request.OrderId, context.CancellationToken);
-    return result.ToGrpcResult();
+    return result.GetValueOrThrow();
+}
+
+public override async Task<Empty> CancelOrder(CancelOrderRequest request, ServerCallContext context)
+{
+    await orders.CancelAsync(request.OrderId, context.CancellationToken).ThrowIfFailure();
+    return new Empty();
 }
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
-warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
+warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and call SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/.GetValueOrThrow() to map a failure to an RpcException instead of hand-constructing one.
+warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and call SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/.GetValueOrThrow() to map a failure to an RpcException instead of hand-constructing one.
 ```
 
 ---

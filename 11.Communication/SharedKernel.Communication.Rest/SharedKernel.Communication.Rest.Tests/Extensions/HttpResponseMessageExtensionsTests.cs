@@ -66,6 +66,21 @@ public sealed class HttpResponseMessageExtensionsTests
         result.Error.Message.Should().Be("Name is required");
     }
 
+    [Fact]
+    public async Task EnsureSuccessOrErrorAsync_OnBodilessGatewayTimeout_FailsAsATimeout()
+    {
+        // Arrange — a proxy that gave up waiting: 504 with no body at all.
+        var response = new HttpResponseMessage(HttpStatusCode.GatewayTimeout) { Content = new StringContent(string.Empty) };
+
+        // Act
+        var result = await response.EnsureSuccessOrErrorAsync();
+
+        // Assert — a retryable timeout (P-562), not an Unexpected defect.
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Timeout);
+        result.Error.Code.Should().Be("http.504");
+    }
+
     /// <summary>
     /// T-37 (P-361/WO-056): the non-generic <c>EnsureSuccessOrErrorAsync</c> retired the misleading
     /// generic <c>EnsureSuccessOrErrorAsync&lt;T&gt;</c>, which returned <c>Result&lt;T&gt;.Success(default!)</c>
