@@ -1,4 +1,5 @@
-using SharedKernel.Presentation.WebApi.Results;
+using SharedKernel.Core.Extensions;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Analytics;
@@ -19,7 +20,7 @@ public static class BackOfficeEndpoints
         var backOffice = app.MapGroup("/back-office/{tenantId}").WithTags("Back office");
 
         // The same neutral contract the storefront uses, against a different engine and document type.
-        backOffice.MapGet("/order-lines/count", async (
+        backOffice.MapGet("/order-lines/count", (
             string tenantId,
             ISearchIndex<OrderLineDocument> index,
             string? region,
@@ -29,14 +30,13 @@ public static class BackOfficeEndpoints
                 ? null
                 : SearchFilter.Eq(OrderLineFields.Region, SearchValue.From(region));
 
-            var count = await index.CountAsync(filter, TenantScope.Of(tenantId), ct);
-            return count.ToProblemDetailsResult(c => Results.Ok(new
+            return index.CountAsync(filter, TenantScope.Of(tenantId), ct).ToOk(c => new
             {
                 value = c.Value,
                 accuracy = c.Accuracy.ToString(),
                 isExact = c.IsExact,
                 display = c.ToString(),
-            }));
+            });
         });
 
         // ── ElasticSearch-exclusive from here down ───────────────────────────────────────────────
@@ -44,7 +44,7 @@ public static class BackOfficeEndpoints
         // Structured aggregations. Meilisearch offers facet counts and numeric min/max and nothing
         // else — the gap is absence, not degree, which is why this contract lives in the provider
         // package rather than being watered down into the neutral surface.
-        backOffice.MapGet("/order-lines/revenue-by-region", async (
+        backOffice.MapGet("/order-lines/revenue-by-region", (
             string tenantId,
             IAnalyticsSearch<OrderLineDocument> analytics,
             CancellationToken ct) =>
@@ -59,10 +59,7 @@ public static class BackOfficeEndpoints
                 AggregationRequest.Cardinality("distinct_categories", OrderLineFields.Category),
             };
 
-            var result = await analytics.AggregateAsync(
-                filter: null, aggregations, TenantScope.Of(tenantId), ct);
-
-            return result.ToProblemDetailsResult(set =>
+            return analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(tenantId), ct).ToOk(set =>
             {
                 var regions = set.TryGetTerms("by_region", out var terms)
                     ? terms.Buckets.Select(b => new { region = b.Key, orders = b.DocCount })
@@ -72,7 +69,7 @@ public static class BackOfficeEndpoints
                     ? cardinality.Value
                     : 0;
 
-                return Results.Ok(new { regions, distinctCategories = distinct });
+                return new { regions, distinctCategories = distinct };
             });
         });
 
@@ -83,28 +80,29 @@ public static class BackOfficeEndpoints
         // walks and closes the point-in-time for you. The open/read/close trio below exists for an
         // export that must checkpoint its cursor across process restarts, which IAsyncEnumerable cannot
         // express; this endpoint uses it because a stateless HTTP endpoint is exactly that case.
-        backOffice.MapGet("/order-lines/cursor", async (
+        backOffice.MapGet("/order-lines/cursor", (
             string tenantId,
             ICursorSearch<OrderLineDocument> cursor,
             int size,
             CancellationToken ct) =>
-        {
-            var keepAlive = TimeSpan.FromMinutes(1);
-            var opened = await cursor.OpenCursorAsync(
-                new SearchRequest { PageSize = size <= 0 ? 5 : size },
-                TenantScope.Of(tenantId),
-                keepAlive,
-                ct);
-
-            if (opened.IsFailure)
-            {
-                return opened.ToProblemDetailsResult(_ => Results.Empty);
-            }
-
-            try
-            {
-                var page = await cursor.ReadCursorAsync(opened.Value, ct);
-                return page.ToProblemDetailsResult(p => Results.Ok(new
+            cursor.OpenCursorAsync(
+                    new SearchRequest { PageSize = size <= 0 ? 5 : size },
+                    TenantScope.Of(tenantId),
+                    TimeSpan.FromMinutes(1),
+                    ct)
+                .Bind(async opened =>
+                {
+                    try
+                    {
+                        return await cursor.ReadCursorAsync(opened, ct);
+                    }
+                    finally
+                    {
+                        // Always release the point-in-time; leaking one pins segments on the cluster.
+                        await cursor.CloseCursorAsync(opened, CancellationToken.None);
+                    }
+                })
+                .ToOk(p => new
                 {
                     exhausted = p.IsExhausted,
                     items = p.Hits.Select(h => new
@@ -114,13 +112,6 @@ public static class BackOfficeEndpoints
                         h.Document.Revenue,
                     }),
                 }));
-            }
-            finally
-            {
-                // Always release the point-in-time; leaking one pins segments on the cluster.
-                await cursor.CloseCursorAsync(opened.Value, CancellationToken.None);
-            }
-        });
 
         // The streaming shape, for comparison — no cursor bookkeeping at the call site at all.
         backOffice.MapGet("/order-lines/stream", (
@@ -140,24 +131,19 @@ public static class BackOfficeEndpoints
                 }
             }
 
-            return Results.Ok(WalkAsync());
+            return TypedResults.Ok(WalkAsync());
         });
 
         // The completion suggester. Returns suggestion STRINGS with weights, not documents — a
         // different data structure and a different result shape from Meilisearch's instant search,
         // which is exactly why neither was neutralised into a shared "type-ahead" contract.
-        backOffice.MapGet("/order-lines/suggest", async (
+        backOffice.MapGet("/order-lines/suggest", (
             string tenantId,
             ISuggestSearch<OrderLineDocument> suggest,
             string prefix,
             CancellationToken ct,
             bool fuzzy = false) =>
-        {
-            var suggestions = await suggest.SuggestAsync(
-                Catalog.OrderLineSuggestField, prefix, TenantScope.Of(tenantId), size: 5, fuzzy: fuzzy, ct);
-
-            return suggestions.ToProblemDetailsResult(list => Results.Ok(
-                list.Select(s => new { s.Text, s.DocumentId, s.Score })));
-        });
+            suggest.SuggestAsync(Catalog.OrderLineSuggestField, prefix, TenantScope.Of(tenantId), size: 5, fuzzy: fuzzy, ct)
+                .ToOk(list => list.Select(s => new { s.Text, s.DocumentId, s.Score })));
     }
 }

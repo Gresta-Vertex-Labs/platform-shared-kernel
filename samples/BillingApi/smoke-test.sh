@@ -41,6 +41,9 @@ expect 409 "duplicate email rejected"
 call GET "/customers/$CUSTOMER" "${A[@]}";                                  expect 200 "read customer with ETag"
 ETAG=$(grep -i '^etag:' <<<"$HEADERS" | cut -d' ' -f2 | tr -d '\r')
 [[ "$ETAG" != '"0"' ]] || { echo "FAIL ETag is a placeholder" >&2; exit 1; }
+call GET "/customers/$CUSTOMER" "${A[@]}" -H "If-None-Match: $ETAG";        expect 304 "unchanged customer revalidated without a body"
+call PUT "/customers/$CUSTOMER/name" "${A[@]}" "${JSON[@]}" -d '{"name":"No precondition"}'
+expect 428 "rename without If-Match refused"; contains '"errorCode":"precondition.required"' "428 is a problem with its code"
 call PUT "/customers/$CUSTOMER/name" "${A[@]}" "${JSON[@]}" -H "If-Match: $ETAG" -d '{"name":"Ada King"}'
 expect 200 "rename with If-Match"
 call PUT "/customers/$CUSTOMER/name" "${A[@]}" "${JSON[@]}" -H "If-Match: $ETAG" -d '{"name":"Lost update"}'
@@ -73,8 +76,12 @@ call GET "/audit/Invoice/$INVOICE" "${A[@]}";                               cont
 sleep 3
 call GET /audit/Invoice "${A[@]}";                                          contains '"status":"Intact"' "audit chain sealed and intact"
 
-call DELETE "/customers/$CUSTOMER" "${A[@]}";                               expect 204 "soft delete"
+call DELETE "/customers/$CUSTOMER" "${A[@]}";                               expect 428 "delete without If-Match refused"
+call GET "/customers/$CUSTOMER" "${A[@]}";                                  expect 200 "re-read the customer for its current ETag"
+ETAG=$(grep -i '^etag:' <<<"$HEADERS" | cut -d' ' -f2 | tr -d '\r')
+call DELETE "/customers/$CUSTOMER" "${A[@]}" -H "If-Match: $ETAG";          expect 204 "soft delete with If-Match"
 call GET "/customers/$CUSTOMER" "${A[@]}";                                  expect 404 "soft-deleted customer hidden"
+call POST "/admin/tenants/$TENANT_A/erase" "${A[@]}";                       expect 403 "erasure needs billing.admin (route policy)"
 call POST "/admin/tenants/$TENANT_A/erase" "${ADMIN[@]}";                   contains '"isComplete":true' "tenant crypto-shredded"
 call POST /customers "${A[@]}" "${JSON[@]}" -d '{"name":"Back","email":"back@example.com"}'
 expect 404 "erased tenant cannot write encrypted data"

@@ -1,10 +1,12 @@
 using FluentValidation;
 using MediatR;
+using OrderApi.Api;
 using OrderApi.Application;
 using OrderApi.Infrastructure;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Extensions;
-using SharedKernel.Presentation.WebApi.Results;
+using SharedKernel.Presentation.OpenApi;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -30,14 +32,29 @@ builder.Services.AddSharedKernelApplication();
 builder.Services.AddScoped<IValidator<PlaceOrderCommand>, PlaceOrderCommandValidator>();
 builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
 
-// 14.Presentation — RFC 9457 ProblemDetails for unhandled exceptions.
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call, configured from SharedKernel:Presentation:WebApi. Every error
+// response — a failed Result, a thrown exception, the framework's own 404/405/415 — is RFC 9457
+// application/problem+json with errorCode, traceId and correlationId; plus correlation ids, security headers,
+// request limits and authorization.
+builder.AddSharedKernelWebApi();
+
+// API versioning and one OpenAPI document per API version with a Scalar reference, configured from
+// SharedKernel:Presentation:OpenApi. The documents are served in Development only; ExposeInProduction publishes
+// them elsewhere, by decision rather than by default. This API authenticates nobody, so it declares no bearer
+// scheme; a protected operation would document its security requirement and 401/403 by itself.
+builder.AddSharedKernelOpenApi(options =>
+{
+    options.Title = "Orders API";
+    options.Bearer = false;
+});
 
 builder.Services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+// First, before any endpoint: correlation id, security headers, the exception handler, problem bodies for bodiless
+// error statuses, routing, authentication and authorization — in the order they must run.
+app.UseSharedKernelWebApi();
 
 // K8s liveness/readiness endpoints from 13.ServiceDefaults.
 app.MapDefaultHealthCheckEndpoints();
@@ -48,20 +65,10 @@ app.MapDefaultHealthCheckEndpoints();
 // immediately. Omitting this call leaves /health/ready at 503 forever.
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-// Result<T> -> HTTP is a single call. The endpoint never inspects IsSuccess and never
-// chooses a status code: Error.Validation becomes 400, Error.NotFound becomes 404, and
-// the body is RFC 9457 ProblemDetails in every failure case.
-app.MapPost("/orders", async (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
-{
-    var result = await sender.Send(command, ct);
-    return result.ToProblemDetailsResult(id => Results.Created($"/orders/{id}", new { id }));
-});
+app.MapOrderEndpoints();
 
-app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
-{
-    var result = await sender.Send(new GetOrderQuery(id), ct);
-    return result.ToProblemDetailsResult();
-});
+// /openapi/v1.json and the Scalar reference at /scalar in Development; outside it, nothing is mapped.
+app.MapSharedKernelOpenApi();
 
 await app.RunAsync();
 

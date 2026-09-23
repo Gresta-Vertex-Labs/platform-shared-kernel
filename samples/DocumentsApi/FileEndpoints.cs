@@ -1,11 +1,16 @@
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Results;
-using SharedKernel.Primitives.Results;
+using SharedKernel.Core.Extensions;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 
 namespace DocumentsApi;
 
-/// <summary>Server-side file operations: the bytes flow through the service, streamed in both directions.</summary>
+/// <summary>
+/// Server-side file operations: the bytes flow through the service, streamed in both directions. Every endpoint
+/// resolves the store (<see cref="Stores.Resolve"/>), binds the storage call to it and maps the
+/// <see cref="SharedKernel.Primitives.Results.Result{T}"/> to a typed result, so an unknown store, a missing tenant and
+/// every <c>storage.*</c> failure reach the client as the same RFC 9457 problem.
+/// </summary>
 public static class FileEndpoints
 {
     /// <summary>Request header carrying the expected base64 SHA-256 of an upload.</summary>
@@ -14,72 +19,69 @@ public static class FileEndpoints
     /// <summary>Prefix of request headers stored as user metadata, e.g. <c>X-Meta-Order-Id</c>.</summary>
     public const string MetadataHeaderPrefix = "X-Meta-";
 
+    /// <summary>
+    /// The largest file <c>PUT /files/…</c> accepts, 1 GiB. The platform caps every request body at 4 MiB
+    /// (<c>SharedKernel:Presentation:WebApi:Limits:MaxRequestBodySize</c>); the upload endpoint lifts that for itself
+    /// only. Its body streams straight into the store, so the limit caps the object, not memory. Larger files go
+    /// directly to the provider through the presigned multipart endpoints.
+    /// </summary>
+    public const long MaxUploadBytes = 1024L * 1024 * 1024;
+
     public static void MapFileEndpoints(this IEndpointRouteBuilder app)
     {
         // Upload: the request body is streamed straight into the store (never buffered).
         // If-None-Match: * → create only; If-Match: "etag" → replace only that version.
         app.MapPut("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                Result<FileReference> uploaded = await files.UploadAsync(key, http.Request.Body, UploadOptions(http.Request), ct);
-                return uploaded.ToProblemDetailsResult(reference => Results.Created($"/files/{store}/{key}", reference));
-            }));
+                Stores.Resolve(factory, store, http)
+                    .Bind(files => files.UploadAsync(key, http.Request.Body, UploadOptions(http.Request), ct))
+                    .ToCreated(_ => $"/files/{store}/{key}"))
+            .WithRequestSizeLimit(MaxUploadBytes);
 
         // Download: streamed back; a single Range header returns 206 with Content-Range.
         app.MapGet("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                var options = new FileDownloadOptions
-                {
-                    Range = ParseRange(http.Request.Headers.Range),
-                    IfMatch = http.Request.Headers.IfMatch.FirstOrDefault(),
-                };
-                Result<FileDownload> download = await files.DownloadAsync(key, options, ct);
-                return download.ToProblemDetailsResult(file => new FileDownloadResult(file));
-            }));
+            Stores.Resolve(factory, store, http)
+                .Bind(files => files.DownloadAsync(key, DownloadOptions(http.Request), ct))
+                .ToHttpResult(download => new FileDownloadResult(download)));
 
         app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files => (await files.GetPropertiesAsync(key, ct)).ToProblemDetailsResult()));
+            Stores.Resolve(factory, store, http)
+                .Bind(files => files.GetPropertiesAsync(key, ct))
+                .ToOk());
 
         app.MapDelete("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-                (await files.DeleteAsync(key, new FileDeleteOptions { IfMatch = http.Request.Headers.IfMatch.FirstOrDefault() }, ct))
-                    .ToProblemDetailsResult()));
+            Stores.Resolve(factory, store, http)
+                .Bind(files => files.DeleteAsync(key, new FileDeleteOptions { IfMatch = http.Request.Headers.IfMatch.FirstOrDefault() }, ct))
+                .ToNoContent());
 
         app.MapPost("/delete-many/{store}", (string store, string[] keys, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files => (await files.DeleteManyAsync(keys, ct)).ToProblemDetailsResult()));
+            Stores.Resolve(factory, store, http)
+                .Bind(files => files.DeleteManyAsync(keys, ct))
+                .ToOk());
 
         app.MapGet("/list/{store}", (string store, string? prefix, bool? recursive, int? pageSize, string? continuationToken, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                var request = new FileListRequest
-                {
-                    Prefix = prefix ?? string.Empty,
-                    Recursive = recursive ?? true,
-                    PageSize = pageSize ?? FileListRequest.MaxPageSize,
-                    ContinuationToken = continuationToken,
-                };
-                return (await files.ListPageAsync(request, ct)).ToProblemDetailsResult();
-            }));
+            Stores.Resolve(factory, store, http)
+                .Bind(files => files.ListPageAsync(
+                    new FileListRequest
+                    {
+                        Prefix = prefix ?? string.Empty,
+                        Recursive = recursive ?? true,
+                        PageSize = pageSize ?? FileListRequest.MaxPageSize,
+                        ContinuationToken = continuationToken,
+                    },
+                    ct))
+                .ToOk());
 
         // Copy within a store or into another one (server-side when both share a connection).
         app.MapPost("/copy", (CopyRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, request.FromStore, http, source => WithStore(factory, request.ToStore, http, async destination =>
-            {
-                var options = new FileCopyOptions { Condition = request.CreateOnly ? WriteCondition.IfNotExists : null };
-                Result<FileReference> copied = await source.CopyToAsync(request.FromKey, destination, request.ToKey, options, ct);
-                return copied.ToProblemDetailsResult();
-            })));
-    }
-
-    internal static async Task<IResult> WithStore(
-        IFileStorageFactory factory,
-        string storeName,
-        HttpContext http,
-        Func<IFileStorage, Task<IResult>> action)
-    {
-        Result<IFileStorage> store = Stores.Resolve(factory, storeName, http);
-        return store.IsSuccess ? await action(store.Value) : store.ToProblemDetailsResult();
+            Stores.Resolve(factory, request.FromStore, http)
+                .Bind(source => Stores.Resolve(factory, request.ToStore, http)
+                    .Bind(destination => source.CopyToAsync(
+                        request.FromKey,
+                        destination,
+                        request.ToKey,
+                        new FileCopyOptions { Condition = request.CreateOnly ? WriteCondition.IfNotExists : null },
+                        ct)))
+                .ToOk());
     }
 
     private static FileUploadOptions UploadOptions(HttpRequest request)
@@ -103,6 +105,12 @@ public static class FileEndpoints
                 : null,
         };
     }
+
+    private static FileDownloadOptions DownloadOptions(HttpRequest request) => new()
+    {
+        Range = ParseRange(request.Headers.Range),
+        IfMatch = request.Headers.IfMatch.FirstOrDefault(),
+    };
 
     private static ByteRange? ParseRange(string? header)
     {

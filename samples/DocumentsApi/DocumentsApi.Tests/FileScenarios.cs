@@ -3,6 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using DocumentsApi.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Storage;
 
 namespace DocumentsApi.Tests;
@@ -11,6 +14,25 @@ namespace DocumentsApi.Tests;
 [Collection(BackendsCollection.Name)]
 public sealed class FileScenarios(Backends backends)
 {
+    /// <summary>
+    /// The platform caps request bodies at 4 MiB, and Kestrel — which the in-memory test server does not run — enforces
+    /// it. So the one endpoint that lifts the cap is pinned by its metadata: without it, every upload above 4 MiB would
+    /// fail in production while these tests stayed green.
+    /// </summary>
+    [Fact]
+    public void Only_the_upload_endpoint_lifts_the_request_body_limit()
+    {
+        var limited = backends[Backends.MinIO].Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.Metadata.GetMetadata<IRequestSizeLimitMetadata>() is not null)
+            .ToList();
+
+        RouteEndpoint upload = limited.Should().ContainSingle().Subject;
+        upload.RoutePattern.RawText.Should().Be("/files/{store}/{**key}");
+        upload.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Should().Equal("PUT");
+        upload.Metadata.GetMetadata<IRequestSizeLimitMetadata>()!.MaxRequestBodySize.Should().Be(FileEndpoints.MaxUploadBytes);
+    }
+
     [Theory]
     [MemberData(nameof(Backends.AllStores), MemberType = typeof(Backends))]
     public async Task An_upload_round_trips_bytes_headers_and_metadata(string backend, string store)

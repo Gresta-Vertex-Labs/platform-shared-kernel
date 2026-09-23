@@ -1,4 +1,5 @@
 using CatalogApi;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
@@ -109,7 +110,15 @@ builder.Services
     .AddSearchReadinessCheck(Catalog.ProductsIndex, providerKey: SearchWellKnown.MeilisearchProviderName)
     .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
 
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every search failure is a
+// Result, and every Result failure an RFC 9457 problem: search.unreachable is 503, search.timeout and
+// search.write_timeout 504 — with the engine's own message, which names internal endpoints, shown only in Development.
+builder.AddSharedKernelWebApi();
+
 var app = builder.Build();
+
+// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelWebApi();
 
 // The telemetry probe listens from process start, not from the first call to /diagnostics/telemetry.
 // Resolving a singleton lazily means its constructor — and therefore its ActivityListener — does not

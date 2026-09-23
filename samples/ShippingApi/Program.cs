@@ -1,6 +1,7 @@
 using SharedKernel.Application.Context;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
@@ -58,11 +59,15 @@ builder.Services
 // Readiness fails while the bus is not connected, so a replica is not sent traffic it cannot serve.
 builder.Services.AddHealthChecks().AddMessagingReadinessCheck();
 
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every failed Result and every
+// exception becomes an RFC 9457 problem (messaging.unavailable a 503); correlation ids, security headers, limits.
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelWebApi();
+
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 

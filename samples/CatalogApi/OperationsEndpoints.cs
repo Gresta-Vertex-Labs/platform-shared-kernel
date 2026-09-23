@@ -1,13 +1,28 @@
-using SharedKernel.Presentation.WebApi.Results;
+using SharedKernel.Core.Extensions;
+using SharedKernel.Presentation.WebApi;
+using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 
 namespace CatalogApi;
 
+/// <summary>One index provider's answer to <c>GET /ops/verify</c>.</summary>
+/// <param name="Ok">Whether every index of the provider matches this build's definitions.</param>
+/// <param name="Error">The error code of the mismatch, when there is one.</param>
+/// <param name="Detail">What differs, as a client may see it.</param>
+public sealed record IndexVerification(bool Ok, string? Error, string? Detail);
+
 /// <summary>
 /// Provisioning, seeding and diagnostics — what a deployment pipeline and an operator would call,
 /// rather than what a user would.
 /// </summary>
+/// <remarks>
+/// The provision and verify reports list per-index outcomes in their own bodies, so they show each error's message
+/// through <see cref="ErrorPresentation.GetClientMessage"/> — the same text a problem response would carry: a
+/// definition conflict in full, an engine outage (whose message names internal endpoints) only in Development.
+/// </remarks>
 public static class OperationsEndpoints
 {
     public static void MapOperationsEndpoints(this WebApplication app)
@@ -19,6 +34,7 @@ public static class OperationsEndpoints
         ops.MapPost("/provision", async (
             IEnumerable<ISearchIndexProvisioner> provisioners,
             IEnumerable<ISearchProviderDescriptor> descriptors,
+            HttpContext http,
             CancellationToken ct) =>
         {
             // Two providers are registered, so ISearchIndexProvisioner resolves twice. A real service
@@ -42,12 +58,12 @@ public static class OperationsEndpoints
                         index = definition.Name,
                         ok = result.IsSuccess,
                         error = result.IsFailure ? result.Error.Code : null,
-                        message = result.IsFailure ? result.Error.Message : null,
+                        message = result.IsFailure ? ErrorPresentation.GetClientMessage(result.Error, http) : null,
                     });
                 }
             }
 
-            return Results.Ok(outcomes);
+            return TypedResults.Ok(outcomes);
         });
 
         // Drops every registered index so the sample can be re-provisioned from scratch — a convenience
@@ -75,53 +91,45 @@ public static class OperationsEndpoints
                 }
             }
 
-            return Results.Ok(outcomes);
+            return TypedResults.Ok(outcomes);
         });
 
         // Seeds both engines. SearchWriteConsistency.Searchable blocks until the write is visible, so
-        // the endpoints below can be called immediately afterwards without a sleep.
-        ops.MapPost("/seed", async (
+        // the endpoints below can be called immediately afterwards without a sleep. The order lines are
+        // written only once the products are; the first failure is the answer.
+        ops.MapPost("/seed", (
             ISearchIndex<ProductDocument> products,
             ISearchIndex<OrderLineDocument> orderLines,
             CancellationToken ct) =>
-        {
-            var productWrite = await products.IndexManyAsync(
-                SeedData.Products, SearchWriteConsistency.Searchable, ct);
-            if (productWrite.IsFailure)
-            {
-                return productWrite.ToProblemDetailsResult(_ => Results.Empty);
-            }
-
-            var orderWrite = await orderLines.IndexManyAsync(
-                SeedData.OrderLines, SearchWriteConsistency.Searchable, ct);
-
-            return orderWrite.ToProblemDetailsResult(orders => Results.Ok(new
-            {
-                products = new { submitted = SeedData.Products.Count, succeeded = productWrite.Value.SucceededCount },
-                orderLines = new { submitted = SeedData.OrderLines.Count, succeeded = orders.SucceededCount },
-            }));
-        });
+            products.IndexManyAsync(SeedData.Products, SearchWriteConsistency.Searchable, ct)
+                .Bind(productWrite => orderLines.IndexManyAsync(SeedData.OrderLines, SearchWriteConsistency.Searchable, ct)
+                    .Map(orderWrite => new
+                    {
+                        products = new { submitted = SeedData.Products.Count, succeeded = productWrite.SucceededCount },
+                        orderLines = new { submitted = SeedData.OrderLines.Count, succeeded = orderWrite.SucceededCount },
+                    }))
+                .ToOk());
 
         // The deployment check: does every live index still match what this build declares? Catches the
         // quiet failure where code ships declaring a field, synonym or stop word the index was never
         // rebuilt for, so filters silently match nothing while the index looks perfectly healthy.
+        // A report rather than one error: 200 when everything matches, 503 — failing a deployment gate —
+        // with every provider's outcome when something does not.
         ops.MapGet("/verify", async (
             IEnumerable<ISearchIndexProvisioner> provisioners,
+            HttpContext http,
             CancellationToken ct) =>
         {
-            var outcomes = new List<object>();
+            var outcomes = new List<IndexVerification>();
             foreach (var provisioner in provisioners)
             {
                 var result = await provisioner.VerifyRegisteredIndexesAsync(ct);
-                outcomes.Add(new
-                {
-                    ok = result.IsSuccess,
-                    error = result.IsFailure ? result.Error.Code : null,
-                    detail = result.IsFailure ? result.Error.Message : null,
-                });
+                outcomes.Add(result.IsSuccess
+                    ? new IndexVerification(Ok: true, Error: null, Detail: null)
+                    : new IndexVerification(Ok: false, result.Error.Code, ErrorPresentation.GetClientMessage(result.Error, http)));
             }
 
-            return outcomes.TrueForAll(o => (bool)o.GetType().GetProperty("ok")!.GetValue(o)!)
+            return outcomes.TrueForAll(outcome => outcome.Ok)
                 ? Results.Ok(outcomes)
                 : Results.Json(outcomes, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
@@ -131,26 +139,19 @@ public static class OperationsEndpoints
         // The provider is addressed by key rather than guessed at. Iterating every registered provisioner
         // and returning the first that answers would "work" here and be wrong in principle: it would
         // report an index as healthy because some *other* engine happens to have one by the same name.
-        ops.MapGet("/probe/{providerKey}/{indexName}", async (
+        ops.MapGet("/probe/{providerKey}/{indexName}", (
             string providerKey,
             string indexName,
             IServiceProvider services,
             CancellationToken ct) =>
-        {
-            var provisioner = services.GetKeyedService<ISearchIndexProvisioner>(providerKey);
-            if (provisioner is null)
-            {
-                return Results.NotFound(new { providerKey, reason = "no provider is registered under that key" });
-            }
-
-            var health = await provisioner.ProbeAsync(indexName, ct);
-            return health.ToProblemDetailsResult(h => Results.Ok(h));
-        });
+            ProvisionerFor(services, providerKey)
+                .Bind(provisioner => provisioner.ProbeAsync(indexName, ct))
+                .ToOk());
 
         // Proof that search telemetry is live. Both provider packages declared an ActivitySource and a
         // Meter and never wrote to either until the pre-publish pass, while WithSearchTelemetry()
         // subscribed to both — a green dashboard with no data.
-        app.MapGet("/diagnostics/telemetry", (TelemetryProbe probe) => Results.Ok(new
+        app.MapGet("/diagnostics/telemetry", (TelemetryProbe probe) => TypedResults.Ok(new
         {
             spanCount = probe.Spans.Count,
             measurementCount = probe.Measurements.Count,
@@ -158,6 +159,12 @@ public static class OperationsEndpoints
             measurements = probe.Measurements.TakeLast(20),
         })).WithTags("Operations");
     }
+
+    /// <summary>The provisioner registered under <paramref name="providerKey"/>, or a 404 naming the key.</summary>
+    private static Result<ISearchIndexProvisioner> ProvisionerFor(IServiceProvider services, string providerKey) =>
+        services.GetKeyedService<ISearchIndexProvisioner>(providerKey) is { } provisioner
+            ? Result<ISearchIndexProvisioner>.Success(provisioner)
+            : Error.NotFound("catalog.provider_not_registered", $"No search provider is registered under '{providerKey}'.");
 }
 
 /// <summary>

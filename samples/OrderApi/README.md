@@ -9,7 +9,8 @@ actually work for a consumer who only has the published artifacts?
 | Layer | Package | What the sample shows |
 |---|---|---|
 | Host | `SharedKernel.ServiceDefaults` | `AddServiceDefaults()` — OpenTelemetry and health wiring in one call; `MapDefaultHealthCheckEndpoints()`; the `StartupGate` readiness contract |
-| Presentation | `SharedKernel.Presentation.WebApi` | `Result<T>` → HTTP via `ToProblemDetailsResult()`; RFC 9457 error bodies |
+| Presentation | `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` — the whole HTTP boundary in two calls; `Result<T>` → typed results with `ToCreated()`/`ToOk()`; RFC 9457 error bodies on every path |
+| Presentation | `SharedKernel.Presentation.OpenApi` | `AddSharedKernelOpenApi()` + `MapSharedKernelOpenApi()` — a versioned API, one OpenAPI 3.1 document per version and a Scalar reference, in Development only |
 | Application | `SharedKernel.Application[.Behaviors]` | `ICommand<T>`/`IQuery<T>` handlers returning `Result<T>`; the `AddDefaultBehaviors().Build()` preset (tracing, logging, metrics, validation); a FluentValidation validator whose failures come back as a `Result`, not an exception |
 | Domain | `SharedKernel.Domain` | `AggregateRoot<TId>`, `StronglyTypedId`, `ValueObject`, a domain event |
 | Core | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock` |
@@ -18,13 +19,14 @@ actually work for a consumer who only has the published artifacts?
 
 ```bash
 dotnet pack Platform.SharedKernel.slnx -c Release   # samples consume packed output
-dotnet run --project samples/OrderApi
+dotnet run --project samples/OrderApi -- --urls http://localhost:5199 --environment Development
 ```
 
 ```bash
 curl -X POST http://localhost:5199/orders -H 'Content-Type: application/json' \
   -d '{"customer":"Acme Ltd","amount":149.50,"currency":"eur","lines":["Widget x2"]}'
-# 201 {"id":"01a03953-4f9b-7626-8a4e-adefdfbef579"}
+# 201, Location: /orders/01a03953-…
+# {"id":"01a03953-4f9b-7626-8a4e-adefdfbef579"}
 
 curl http://localhost:5199/orders/{id}
 # 200 {"id":"...","customer":"Acme Ltd","amount":149.50,"currency":"EUR","lines":["Widget x2"]}
@@ -33,28 +35,60 @@ curl http://localhost:5199/orders/{id}
 Note `"eur"` comes back as `"EUR"` — `Money` normalises and validates in its own constructor,
 so an invalid instance cannot exist.
 
+In Development the API describes itself: `http://localhost:5199/openapi/v1.json` is the OpenAPI
+document and `http://localhost:5199/scalar` the interactive reference. In any other environment
+neither is mapped — publishing an API description is a decision
+(`SharedKernel:Presentation:OpenApi:ExposeInProduction`), not a default.
+
 ## The parts worth reading
 
+**The HTTP boundary is two calls.** `builder.AddSharedKernelWebApi()` registers it and
+`app.UseSharedKernelWebApi()`, called before any endpoint is mapped, adds it to the pipeline:
+correlation ids (`X-Correlation-Id`, the trace id when the caller sends none), security headers,
+the exception handler, problem bodies for the framework's own error statuses (an unknown route,
+a wrong method), routing and authorization — in the order they must run.
+
 **Errors never choose a status code.** A handler returns `Error.NotFound(...)` or
-`Error.Validation(...)`; `ToProblemDetailsResult()` maps it. The endpoint never inspects
-`IsSuccess`:
+`Error.Validation(...)`; the endpoint maps the `Result` with one call and never inspects
+`IsSuccess` (`Api/OrderEndpoints.cs`):
+
+```csharp
+orders.MapPost("/", (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
+    sender.Send(command, ct).ToCreated(id => $"/orders/{id}", id => new OrderPlaced(id)));
+
+orders.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+    sender.Send(new GetOrderQuery(id), ct).ToOk());
+```
+
+The typed result (`Results<Created<OrderPlaced>, ErrorHttpResult>`) is also what lets the OpenAPI
+document state the 201 body without annotations. Every failure is an RFC 9457
+`application/problem+json` body with the error code, trace id and correlation id:
 
 ```json
-{"type":"https://httpstatuses.io/404","title":"order.notFound","status":404,
- "detail":"Order ... was not found.","traceId":"00-7642...","errorCode":"order.notFound"}
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"Not Found","status":404,
+ "detail":"Order 01999999-0000-7000-8000-000000000000 was not found.",
+ "instance":"/orders/01999999-0000-7000-8000-000000000000","errorCode":"order.notFound",
+ "correlationId":"d1a12575…","traceId":"00-d1a12575…-d6222221b369746b-01"}
 ```
 
 **Validation never throws.** `ValidationBehavior` runs `PlaceOrderCommandValidator` before the
 handler, collects every failing rule into one `Error.Validation(errors)`, and returns it as a
 failed `Result<Guid>`. The handler does the same with `Money.Create`'s errors, so both paths
-produce one 400 whose `errors` map lists each field:
+produce one 400 whose `errors` map lists each field, and `errorCodes` the code of each message:
 
 ```json
-{"type":"https://httpstatuses.io/400","title":"validation.failed","status":400,
- "detail":"3 validation errors occurred.","errorCode":"validation.failed",
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"Bad Request","status":400,
+ "detail":"3 validation errors occurred.","instance":"/orders","errorCode":"validation.failed",
+ "correlationId":"772e0498…","traceId":"00-772e0498…-01",
  "errors":{"Customer":["'Customer' must not be empty."],"Currency":["'Currency' must not be empty."],
-           "Lines":["'Lines' must not be empty."]}}
+           "Lines":["'Lines' must not be empty."]},
+ "errorCodes":{"Customer":["NotEmptyValidator"],"Currency":["NotEmptyValidator"],"Lines":["NotEmptyValidator"]}}
 ```
+
+**The API is versioned.** The endpoints belong to version 1.0 (`NewVersionedApi("Orders")` …
+`HasApiVersion(1.0)`). A request that names no version gets the default, so `/orders` works as it
+is; `X-Api-Version: 1.0` asks for it explicitly, every response reports `api-supported-versions`,
+and an unsupported version is a 400 problem like any other error.
 
 **`ValueObject` validates explicitly.** `Money` assigns every member in its constructor and calls
 `EnsureValid()` last, so `Validate()` sees the fully built object. `Money.Create` returns a
@@ -70,8 +104,9 @@ platform-wide.
 
 ## What it deliberately omits
 
-No database (`IOrderRepository` is an in-memory dictionary), no cache, no messaging, no auth.
-Each would pull in infrastructure and obscure the composition. For the same reason the pipeline
+No database (`IOrderRepository` is an in-memory dictionary), no cache, no messaging, no auth —
+so the OpenAPI document declares no security scheme (`Bearer = false`). Each would pull in
+infrastructure and obscure the composition. For the same reason the pipeline
 stops at the preset: `AddAuthorizationBehavior()`, `AddIdempotencyBehavior()`,
 `AddTransactionBehavior()`, `AddAuditingBehavior()` and `AddCachingBehaviors()` each need a seam
 (`IRequestContext`, `IRequestIdempotencyStore`, `IUnitOfWork`, `IAuditTrailWriter`,

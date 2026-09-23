@@ -1,5 +1,4 @@
 # samples
-| [`CatalogApi`](CatalogApi/) | `09.Search` (all three packages — both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones), `13.ServiceDefaults` (+`.Search`), `14.Presentation` | Meilisearch and Elasticsearch (Docker, see its README) |
 
 Runnable services built on the SharedKernel packages.
 
@@ -9,11 +8,29 @@ way a real microservice would.
 
 | Sample | Domains exercised | External infrastructure |
 |---|---|---|
-| [`OrderApi`](OrderApi/) | `01.Core`, `03.Domain`, `05.Application`, `13.ServiceDefaults`, `14.Presentation` | none |
+| [`OrderApi`](OrderApi/) | `01.Core`, `03.Domain`, `05.Application`, `13.ServiceDefaults`, `14.Presentation` (+ the OpenAPI add-on) | none |
 | [`BillingApi`](BillingApi/) | `06.Persistence` (all six packages + `SharedKernel.Persistence.Testing`), `01.Core`, `03.Domain`, `05.Application`, `12.Security`, `13.ServiceDefaults`, `14.Presentation` | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
 | [`DocumentsApi`](DocumentsApi/) | `08.Storage` (all three packages, two S3 connections + OBS, a tenant store), `13.ServiceDefaults`, `14.Presentation` | MinIO (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
 | [`CatalogApi`](CatalogApi/) | `09.Search` (all three packages — both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones), `13.ServiceDefaults` (+`.Search`), `14.Presentation` | Meilisearch and Elasticsearch (Docker, see its README) |
 | [`ShippingApi`](ShippingApi/) | `07.Messaging` (both packages — publish, send, delayed delivery, idempotency, inbound caller identity, retry, fault consumer, readiness), `04.Contracts`, `05.Application.Abstractions`, `13.ServiceDefaults`, `14.Presentation` | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin); Docker Compose for running it by hand |
+
+## The HTTP boundary, the same way in every sample
+
+Each service registers its HTTP boundary with `builder.AddSharedKernelWebApi()` and adds it to the pipeline with
+`app.UseSharedKernelWebApi()` before mapping any endpoint. Endpoints map the `Result` a command, query or storage,
+search or messaging call returns with one typed-result call — `ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`,
+`ToHttpResult` — and never branch on `IsSuccess` or choose a status code for a failure. Every error, returned or
+thrown, is an RFC 9457 `application/problem+json` body carrying `errorCode`, `traceId` and `correlationId`.
+
+Beyond that, each sample shows what its domain needs from the boundary:
+
+| Sample | Shows |
+|---|---|
+| `OrderApi` | A versioned API with OpenAPI documents and a Scalar reference (`AddSharedKernelOpenApi`, Development only) |
+| `BillingApi` | Optimistic concurrency (`ToOkWithETag`, `RequireIfMatch()`: 304, 428, 412); `RequirePermission()` on a route group |
+| `DocumentsApi` | Lifting the 4 MiB request-body limit for one streaming endpoint (`WithRequestSizeLimit`) |
+| `CatalogApi` | An engine outage as 503 and a timeout as 504, with internal detail shown only in Development |
+| `ShippingApi` | 202 Accepted with a `Location` for asynchronous work; a broker outage as 503 |
 
 ## Why these use PackageReference
 
@@ -28,11 +45,14 @@ That has two consequences, both deliberate:
    packages they consume have been packed, so a solution-wide build would fail on a clean
    checkout.
 2. CI builds and runs them in the `packaging-verify` job, after `dotnet pack` — the same
-   pattern the `consumer-verify` harnesses use.
+   pattern the `consumer-verify` harnesses use. `OrderApi` is smoke-tested over HTTP;
+   `BillingApi`, `DocumentsApi` and `ShippingApi` run their end-to-end test suites.
+   `CatalogApi` needs two search engines and has no test suite: run it by hand (its README).
 
-To run one locally, pack first:
+To run one locally, pack first and pass the packed version (see `CatalogApi`'s README for why
+the exact version matters):
 
 ```bash
 dotnet pack Platform.SharedKernel.slnx -c Release
-dotnet run --project samples/OrderApi
+dotnet run --project samples/OrderApi -p:SharedKernelPackageVersion=<the packed version> -- --environment Development
 ```

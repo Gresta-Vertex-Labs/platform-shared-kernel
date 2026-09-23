@@ -101,10 +101,10 @@ public sealed class RenameCustomerHandler(IRepository<Customer, CustomerId> cust
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Delete — soft delete (the row stays, filtered from every query)
+// Delete — soft delete (the row stays, filtered from every query), only of the version the client last read
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record DeleteCustomer(CustomerId Id) : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
+public sealed record DeleteCustomer(CustomerId Id, EntityVersion ExpectedVersion) : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
 {
     public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
     public PermissionMatch PermissionMatch => PermissionMatch.All;
@@ -124,7 +124,8 @@ public sealed class DeleteCustomerHandler(IRepository<Customer, CustomerId> cust
         if (customer is null)
             return Result.Failure(CustomerErrors.NotFound(command.Id));
 
-        await customers.DeleteAsync(customer, cancellationToken);
+        // Like the rename: a stale version fails the save with ConflictException (persistence.concurrency_conflict).
+        await customers.DeleteAsync(customer, command.ExpectedVersion, cancellationToken);
         return Result.Success();
     }
 }
