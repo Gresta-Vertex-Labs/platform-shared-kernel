@@ -1,0 +1,15 @@
+#nullable enable
+SharedKernel.Presentation.Grpc.Errors.GrpcStatusCodeMap
+SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions
+SharedKernel.Presentation.Grpc.GrpcResultExtensions
+SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions
+SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.ErrorDomain.get -> string!
+SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.ErrorDomain.set -> void
+SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.SharedKernelGrpcOptions() -> void
+static SharedKernel.Presentation.Grpc.Errors.GrpcStatusCodeMap.Resolve(SharedKernel.Primitives.Errors.ErrorType type) -> Grpc.Core.StatusCode
+static SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions.AddSharedKernelGrpc(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions!>? configure = null) -> Grpc.AspNetCore.Server.IGrpcServerBuilder!
+static SharedKernel.Presentation.Grpc.GrpcResultExtensions.GetValueOrThrow<T>(this SharedKernel.Primitives.Results.Result<T>! result) -> T
+static SharedKernel.Presentation.Grpc.GrpcResultExtensions.GetValueOrThrow<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result) -> System.Threading.Tasks.Task<T>!
+static SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure(this SharedKernel.Primitives.Results.Result result) -> void
+static SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>! result) -> System.Threading.Tasks.Task!
+static SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.SectionName.get -> string!

@@ -1,59 +1,59 @@
 using Grpc.Core;
 using Grpc.Core.Interceptors;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Errors;
+using SharedKernel.Presentation.Grpc.Options;
+using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.Grpc.Interceptors;
 
 /// <summary>
-/// Global server interceptor that converts unhandled exceptions thrown by a gRPC service method
-/// into safe <see cref="RpcException"/> instances — the gRPC counterpart to
-/// <c>SharedKernel.Presentation.WebApi.ExceptionHandling.SharedKernelExceptionHandler</c> /
-/// <c>SharedKernel.Presentation.SignalR.Filters.HubExceptionMappingFilter</c>.
+/// The server interceptor registered by <c>AddSharedKernelGrpc()</c>: turns every exception a gRPC service method
+/// throws into an <see cref="RpcException"/> with the platform's rich status — the gRPC counterpart of the HTTP
+/// exception handler, for all four call shapes.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Overrides all four server interceptor methods — <see cref="UnaryServerHandler{TRequest,TResponse}"/>,
-/// <see cref="ClientStreamingServerHandler{TRequest,TResponse}"/>,
-/// <see cref="ServerStreamingServerHandler{TRequest,TResponse}"/>,
-/// <see cref="DuplexStreamingServerHandler{TRequest,TResponse}"/> — never unary-only, since gRPC
-/// (unlike single-request/response HTTP) has three streaming call shapes that equally need
-/// exception mapping.
-/// </para>
-/// <para>
-/// Known <see cref="SharedKernelException"/> subtypes (<c>01.Core</c>) — including
-/// <see cref="ValidationException"/>, mapped via its inherited <c>Error</c> property — are
-/// rethrown as <see cref="RpcException"/> using <see cref="GrpcStatusCodeMap.Resolve"/> and
-/// <see cref="SharedKernel.Primitives.Errors.Error.Message"/> as the status detail — caller-safe,
-/// no stack trace, no internal type names. Unknown exceptions are logged at
-/// <see cref="LogLevel.Error"/> and rethrown as a generic <see cref="RpcException"/> with detail
-/// suppressed outside <see cref="IHostEnvironment.IsDevelopment"/>. An already-thrown
-/// <see cref="RpcException"/> is passed through unchanged. A non-<see cref="RpcException"/> must
-/// never cross this interceptor boundary.
-/// </para>
+/// <list type="bullet">
+///   <item>An <see cref="RpcException"/> the service built itself passes through unchanged.</item>
+///   <item>A failed result thrown by <see cref="GrpcResultExtensions"/> gets its status rebuilt with the call's
+///   request and error domain. It is an expected outcome and is not logged, like a result returned over HTTP.</item>
+///   <item>An <see cref="OperationCanceledException"/> after the client cancelled the call (or its deadline passed)
+///   ends as <see cref="StatusCode.Cancelled"/>, logged at Debug: nobody is left to read the answer, and it is not a
+///   failure of the service.</item>
+///   <item><see cref="ValidationException"/>: <see cref="StatusCode.InvalidArgument"/> with every field error as a
+///   field violation.</item>
+///   <item>Any other <see cref="SharedKernelException"/>: its <see cref="Error"/>.</item>
+///   <item>Anything else: <see cref="StatusCode.Internal"/> <c>unexpected.exception</c> with a generic message; in
+///   Development the exception message instead.</item>
+/// </list>
+/// Server errors (<see cref="ErrorPresentation.IsServerError"/>) are logged at Error with the exception, client
+/// errors at Debug. The status message is the one an HTTP client would get (translated, server errors redacted
+/// outside Development), and nothing about the exception reaches the client outside Development.
 /// </remarks>
-public sealed partial class GrpcExceptionInterceptor : Interceptor
+internal sealed partial class GrpcExceptionInterceptor : Interceptor
 {
-    private const string UnexpectedErrorMessage = "An unexpected error occurred.";
+    private const string UnexpectedMessage = "An unexpected error occurred.";
+
+    private const string CancelledMessage = "The call was cancelled.";
 
     private readonly ILogger<GrpcExceptionInterceptor> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly IOptions<SharedKernelGrpcOptions> _options;
 
-    /// <summary>
-    /// Initialises a new <see cref="GrpcExceptionInterceptor"/>.
-    /// </summary>
-    /// <param name="logger">The logger used to record unknown exceptions before redaction.</param>
-    /// <param name="environment">
-    /// The hosting environment, used to gate unknown-exception detail exposure to
-    /// <see cref="IHostEnvironment.IsDevelopment"/> only.
-    /// </param>
-    public GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor> logger, IHostEnvironment environment)
+    public GrpcExceptionInterceptor(
+        ILogger<GrpcExceptionInterceptor> logger,
+        IHostEnvironment environment,
+        IOptions<SharedKernelGrpcOptions> options)
     {
         _logger = logger;
         _environment = environment;
+        _options = options;
     }
 
     /// <inheritdoc />
@@ -66,9 +66,9 @@ public sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             return await continuation(request, context).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsMapped(exception))
         {
-            throw MapException(exception, context.Method);
+            throw Map(exception, context);
         }
     }
 
@@ -82,9 +82,9 @@ public sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             return await continuation(requestStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsMapped(exception))
         {
-            throw MapException(exception, context.Method);
+            throw Map(exception, context);
         }
     }
 
@@ -99,9 +99,9 @@ public sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             await continuation(request, responseStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsMapped(exception))
         {
-            throw MapException(exception, context.Method);
+            throw Map(exception, context);
         }
     }
 
@@ -116,40 +116,106 @@ public sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             await continuation(requestStream, responseStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsMapped(exception))
         {
-            throw MapException(exception, context.Method);
+            throw Map(exception, context);
         }
     }
 
-    private RpcException MapException(Exception exception, string methodName)
+    // An RpcException the service built itself is its deliberate answer and keeps its stack trace: it is never caught.
+    private static bool IsMapped(Exception exception) =>
+        exception is not RpcException rpcException || ResultFailures.TryGetError(rpcException, out _);
+
+    private RpcException Map(Exception exception, ServerCallContext context)
     {
+        var httpContext = FindHttpContext(context);
+        var domain = _options.Value.ErrorDomain;
+
         switch (exception)
         {
-            case RpcException rpcException:
-                // Already a safe, client-facing exception — pass it through unchanged.
-                return rpcException;
+            case RpcException rpcException when ResultFailures.TryGetError(rpcException, out var resultError):
+                return RpcStatusFactory.CreateException(resultError, httpContext, domain);
+
+            case OperationCanceledException when context.CancellationToken.IsCancellationRequested:
+                Log.CallCancelled(_logger, context.Method, exception);
+                return new RpcException(new Status(StatusCode.Cancelled, CancelledMessage));
+
+            case ValidationException validation:
+                // One field error keeps its own code and message; several are reported like a result carrying
+                // Error.Validation(errors). Either way every field error becomes a field violation — as over HTTP.
+                var error = validation.Errors.Count == 1 ? validation.Errors[0] : Error.Validation(validation.Errors);
+                var fieldErrors = error.Details.Count > 0 ? error.Details : validation.Errors;
+                Log.ClientError(_logger, context.Method, StatusCode.InvalidArgument, error.Code, exception);
+                return RpcStatusFactory.CreateException(error, httpContext, domain, fieldErrors, StatusCode.InvalidArgument);
 
             case SharedKernelException sharedKernelException:
-                var statusCode = GrpcStatusCodeMap.Resolve(sharedKernelException.Error.Type);
-                return new RpcException(new Status(statusCode, sharedKernelException.Error.Message));
+                LogFailure(context, sharedKernelException.Error, exception);
+                return RpcStatusFactory.CreateException(sharedKernelException.Error, httpContext, domain);
 
             default:
-                Log.UnhandledGrpcException(_logger, methodName, exception);
-                var detail = _environment.IsDevelopment() ? exception.Message : UnexpectedErrorMessage;
-                return new RpcException(new Status(StatusCode.Internal, detail));
+                Log.UnhandledException(_logger, context.Method, exception);
+                return RpcStatusFactory.CreateException(
+                    Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage),
+                    httpContext,
+                    domain,
+                    clientMessage: _environment.IsDevelopment() ? exception.Message : null);
         }
     }
 
-    /// <summary>
-    /// Source-generated log messages for <see cref="GrpcExceptionInterceptor"/>.
-    /// </summary>
+    private void LogFailure(ServerCallContext context, Error error, Exception exception)
+    {
+        var statusCode = GrpcStatusCodeMap.Resolve(error.Type);
+
+        if (ErrorPresentation.IsServerError(error.Type))
+        {
+            Log.ServerError(_logger, context.Method, statusCode, error.Code, exception);
+        }
+        else
+        {
+            Log.ClientError(_logger, context.Method, statusCode, error.Code, exception);
+        }
+    }
+
+    // A ServerCallContext built by hand (a unit test) has no request: messages are then untranslated and server errors
+    // redacted, as in production.
+    private static HttpContext? FindHttpContext(ServerCallContext context)
+    {
+        try
+        {
+            return context.GetHttpContext();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Presentation + 200,
             Level = LogLevel.Error,
             Message = "Unhandled exception in gRPC method {GrpcMethod}.")]
-        public static partial void UnhandledGrpcException(ILogger logger, string grpcMethod, Exception exception);
+        public static partial void UnhandledException(ILogger logger, string grpcMethod, Exception exception);
+
+        // 14201 was the refusal log of the deleted authorization interceptor; refusals are logged by the WebApi core's
+        // authorization (14002) now. Not reused.
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 202,
+            Level = LogLevel.Error,
+            Message = "gRPC method {GrpcMethod} failed with {StatusCode} {ErrorCode}.")]
+        public static partial void ServerError(ILogger logger, string grpcMethod, StatusCode statusCode, string errorCode, Exception exception);
+
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 203,
+            Level = LogLevel.Debug,
+            Message = "gRPC method {GrpcMethod} was rejected with {StatusCode} {ErrorCode}.")]
+        public static partial void ClientError(ILogger logger, string grpcMethod, StatusCode statusCode, string errorCode, Exception exception);
+
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 204,
+            Level = LogLevel.Debug,
+            Message = "The client cancelled the call to gRPC method {GrpcMethod} before it completed.")]
+        public static partial void CallCancelled(ILogger logger, string grpcMethod, Exception exception);
     }
 }

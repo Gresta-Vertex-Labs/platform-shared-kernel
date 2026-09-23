@@ -4,17 +4,21 @@ option csharp_namespace = "SharedKernel.Presentation.Grpc.Tests.Integration";
 
 package grpctest;
 
-// Minimal, test-only service used exclusively by this package's real-host integration tests
-// (T-70 through T-73, WO-074/P-468). Not a production contract.
+// Test-only service for this package's in-process host tests. Not a production contract.
 service TestService {
   rpc Echo (EchoRequest) returns (EchoReply);
-  rpc ThrowKnown (EchoRequest) returns (EchoReply);
-  rpc ThrowUnknown (EchoRequest) returns (EchoReply);
-  rpc StreamThrowKnown (EchoRequest) returns (stream EchoReply);
+  // Fails in the way request.value names; see TestServiceImpl.Failures.
+  rpc Fail (EchoRequest) returns (EchoReply);
+  // Writes one message, then fails in the way request.value names.
+  rpc StreamFail (EchoRequest) returns (stream EchoReply);
+  // Waits until the call is cancelled.
+  rpc WaitForCancellation (EchoRequest) returns (EchoReply);
+  // Reports the correlation id the service sees.
   rpc GetContext (EchoRequest) returns (ContextReply);
-  rpc RequireRoleMethod (EchoRequest) returns (EchoReply);
-  rpc RequireFreshAuthMethod (EchoRequest) returns (EchoReply);
-  rpc RequireAuthMethodMethod (EchoRequest) returns (EchoReply);
+  // [RequirePermission("orders.read")]
+  rpc ReadOrders (EchoRequest) returns (EchoReply);
+  // [RequireFreshAuthentication(60)]
+  rpc ApproveOrder (EchoRequest) returns (EchoReply);
 }
 
 message EchoRequest {
@@ -27,5 +31,5 @@ message EchoReply {
 
 message ContextReply {
   string correlation_id = 1;
-  string tenant_id = 2;
+  string baggage_correlation_id = 2;
 }

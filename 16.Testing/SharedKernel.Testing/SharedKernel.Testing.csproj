@@ -193,14 +193,14 @@
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.ApiKey\SharedKernel.Security.ApiKey.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
     <!--
-      gRPC server interceptor test harness (P-470/WO-074): Grpc/TestServerCallContext. First
-      ProjectReference from 16.Testing to 14.Presentation — the new Grpc/ capability folder, mapped
-      1:1 to SharedKernel.Presentation.Grpc. Also brings Microsoft.AspNetCore.App transitively (via
-      that project's own FrameworkReference), which is how DefaultHttpContext/IServiceCollection
-      resolve here with no additional direct PackageReference. NOT yet a Platform.SharedKernel.slnx
-      member as of this reference — a ProjectReference by path builds fine regardless.
+      gRPC server test harness (P-470/WO-074, P-562): Grpc/TestServerCallContext takes NO reference to
+      14.Presentation. Since P-562 SharedKernel.Presentation.Grpc has no public interceptors to compose,
+      so the harness needs only Grpc.Core.Api/Grpc.Core.Testing (PackageReferences below), the
+      X-Correlation-Id constant (SharedKernel.Primitives) and DefaultHttpContext/Endpoint from the
+      ASP.NET Core shared framework, which arrives transitively through the 12.Security and
+      13.ServiceDefaults references' FrameworkReference. Dropping the edge keeps every test project in
+      the repo from building the presentation packages through this one.
     -->
-    <ProjectReference Include="..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
     <!--
       Tenant catalog fake (P-473/WO-075): ServiceDefaults/InMemoryTenantCatalog (ITenantCatalog).
       SCOPE-LOCK REVISION, narrow and named (D-230): the ONE reference this domain takes to
