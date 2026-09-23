@@ -109,7 +109,7 @@ public sealed class MeilisearchCutoverAndProbeTests
             health.DocumentCount.Should().Be(TestProductCorpus.All.Count);
             health.Latency.Should().BeGreaterThan(TimeSpan.Zero);
             health.EngineVersion.Should().NotBeNullOrEmpty();
-            health.SchemaFingerprint.Should().Be(definition.Fingerprint);
+            health.SchemaFingerprint.Should().Be(definition.ComputeFingerprint());
         }
         finally
         {
@@ -164,7 +164,7 @@ public sealed class MeilisearchCutoverAndProbeTests
         // ProbeAsync itself never compares SchemaFingerprint against an expected value (it only reports
         // what is currently stored) — SearchErrors.SchemaFingerprintMismatch exists for the CALLER to
         // construct once it detects drift by comparing ProbeAsync's returned health record against its
-        // own held SearchIndexDefinition.Fingerprint. This test proves the comparison mechanics: two
+        // own held SearchIndexDefinition.ComputeFingerprint(). This test proves the comparison mechanics: two
         // definitions differing by one field role produce different fingerprints, and the canonical error
         // factory accepts exactly that (expected, actual) pair.
         var definitionA = new SearchIndexDefinitionBuilder("drift-test")
@@ -174,9 +174,9 @@ public sealed class MeilisearchCutoverAndProbeTests
             .Field("status", SearchFieldKind.Keyword, filterable: true, facetable: true)
             .Build().Value;
 
-        definitionA.Fingerprint.Should().NotBe(definitionB.Fingerprint);
+        definitionA.ComputeFingerprint().Should().NotBe(definitionB.ComputeFingerprint());
 
-        var error = SearchErrors.SchemaFingerprintMismatch("drift-test", definitionA.Fingerprint, definitionB.Fingerprint);
+        var error = SearchErrors.SchemaFingerprintMismatch("drift-test", definitionA.ComputeFingerprint(), definitionB.ComputeFingerprint());
         error.Code.Should().Be("search.schema_fingerprint_mismatch");
     }
 }
