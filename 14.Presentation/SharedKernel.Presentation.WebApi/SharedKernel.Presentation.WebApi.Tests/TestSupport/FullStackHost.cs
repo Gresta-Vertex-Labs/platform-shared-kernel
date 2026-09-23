@@ -100,6 +100,9 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapGet("/auth/perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
         app.MapGet("/auth/metadata-only", () => "ok").WithMetadata(new RequirePermissionAttribute("orders.read"));
         app.MapPost("/auth/grpc-like", () => "ok").RequirePermission("orders.read");
+        app.MapPost("/auth/grpc-like-fresh", () => "ok").RequireFreshAuthentication(300);
+        app.MapPost("/auth/grpc-like-mfa", () => "ok").RequireAuthenticationMethod("mfa", "hwk");
+        app.MapPost("/auth/grpc-like-perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
 
         var group = app.MapGroup("/auth/group").RequirePermission("orders.read");
         group.MapGet("/item", () => "ok");

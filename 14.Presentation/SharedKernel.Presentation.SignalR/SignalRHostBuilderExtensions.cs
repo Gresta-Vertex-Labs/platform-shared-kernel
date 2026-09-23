@@ -33,12 +33,15 @@ public static class SignalRHostBuilderExtensions
     ///   <c>"unexpected.exception: An unexpected error occurred."</c> (in Development, the exception's message). A
     ///   <see cref="HubException"/> the hub throws itself passes unchanged. A successful <c>Result&lt;T&gt;</c> returns
     ///   its value to the client. Server errors are logged at Error, client errors at Debug.</item>
-    ///   <item>Authorization: <c>AddSharedKernelAuthorization()</c>, so <c>[RequirePermission]</c>,
-    ///   <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and <c>[RequireAuthenticationMethod]</c> apply to a
-    ///   hub class and <c>MapHub&lt;T&gt;().RequirePermission(…)</c> (the connection is refused with 401 or 403) and to
-    ///   hub methods (the invocation is refused with <c>unauthorized.default</c>,
-    ///   <c>forbidden.insufficient_permission</c> or <c>unauthorized.step_up_required</c>). The host still calls
-    ///   <c>UseAuthentication()</c> and <c>UseAuthorization()</c>; <c>UseSharedKernelWebApi()</c> does both.</item>
+    ///   <item>Authorization: <c>AddSharedKernelAuthorization()</c>, which decodes the policies of
+    ///   <c>[RequirePermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
+    ///   <c>[RequireAuthenticationMethod]</c>. On a hub class and on <c>MapHub&lt;T&gt;().RequirePermission(…)</c> they
+    ///   guard the connection, which is refused with 401 or 403. They are <c>[Authorize]</c> attributes, so on a hub
+    ///   method SignalR checks them itself, before any hub filter runs: a refused invocation fails with SignalR's own
+    ///   <see cref="HubException"/> message, <c>"Failed to invoke '…' because user is unauthorized"</c>, never
+    ///   reaches the method, and neither passes through the error mapping nor counts against the rate limit. The host
+    ///   still calls <c>UseAuthentication()</c> and <c>UseAuthorization()</c>; <c>UseSharedKernelWebApi()</c> does
+    ///   both.</item>
     ///   <item>The invocation rate limit of <see cref="SharedKernelSignalROptions.InvocationRateLimit"/>, off unless
     ///   <see cref="SignalRInvocationRateLimitOptions.PermitLimit"/> is set.</item>
     /// </list>
@@ -65,16 +68,14 @@ public static class SignalRHostBuilderExtensions
 
             services.AddSingleton<HubExceptionMappingFilter>();
             services.AddSingleton<HubInvocationRateLimitFilter>();
-            services.AddSingleton<HubMethodAuthorizationFilter>();
 
-            // Order is nesting: the error mapping wraps everything, so it sees what the rate limit and authorization
-            // refuse as well as what the hub method returns or throws; the rate limit runs before authorization, so a
-            // flood of refused invocations is limited too.
+            // Order is nesting: the error mapping wraps the rate limit, so it sees what the rate limit refuses as well
+            // as what the hub method returns or throws. No filter authorizes: SignalR checks a hub method's
+            // [Authorize] attributes, the SharedKernel ones included, before any filter runs.
             services.Configure<HubOptions>(options =>
             {
                 options.AddFilter<HubExceptionMappingFilter>();
                 options.AddFilter<HubInvocationRateLimitFilter>();
-                options.AddFilter<HubMethodAuthorizationFilter>();
             });
         }
 

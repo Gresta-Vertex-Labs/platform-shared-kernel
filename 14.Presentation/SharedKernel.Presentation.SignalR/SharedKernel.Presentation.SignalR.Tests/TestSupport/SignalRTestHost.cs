@@ -28,9 +28,10 @@ internal static class SignalRTestHost
 
     /// <summary>
     /// Starts a <see cref="TestServer"/> host: test authentication, <c>AddSharedKernelWebApi</c> (unless
-    /// <paramref name="withWebApi"/> is false), <c>AddSharedKernelSignalR</c>, <paramref name="configureBuilder"/>,
-    /// then <c>UseSharedKernelWebApi()</c> (or plain routing, authentication and authorization) and
-    /// <paramref name="mapHubs"/>.
+    /// <paramref name="withWebApi"/> is false), <c>AddSharedKernelSignalR</c> (unless
+    /// <paramref name="withSharedKernelSignalR"/> is false, when <paramref name="configureBuilder"/> registers SignalR
+    /// itself), <paramref name="configureBuilder"/>, then <c>UseSharedKernelWebApi()</c> (or plain routing,
+    /// authentication and authorization) and <paramref name="mapHubs"/>.
     /// </summary>
     public static async Task<WebApplication> StartAsync(
         Action<WebApplication> mapHubs,
@@ -39,7 +40,8 @@ internal static class SignalRTestHost
         string environment = Production,
         IReadOnlyDictionary<string, string?>? configuration = null,
         InMemoryLoggerFactory? loggerFactory = null,
-        bool withWebApi = true)
+        bool withWebApi = true,
+        bool withSharedKernelSignalR = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.WebHost.UseTestServer();
@@ -63,7 +65,11 @@ internal static class SignalRTestHost
             builder.AddSharedKernelWebApi();
         }
 
-        builder.AddSharedKernelSignalR(configureSignalR);
+        if (withSharedKernelSignalR)
+        {
+            builder.AddSharedKernelSignalR(configureSignalR);
+        }
+
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
@@ -164,6 +170,26 @@ internal static class SignalRTestHost
 
         var exception = await act.Should().ThrowAsync<HubException>();
         return exception.Which.ServerMessage();
+    }
+
+    /// <summary>
+    /// The message SignalR itself sends when the caller does not satisfy the authorization attributes of hub method
+    /// <paramref name="method"/> (ASP.NET Core 10.0.11). SignalR authorizes before any hub filter runs, so the message
+    /// is SignalR's, never the platform's <c>"{code}: {message}"</c>, and names neither the caller nor the requirement.
+    /// </summary>
+    public static string UnauthorizedMessage(string method) => $"Failed to invoke '{method}' because user is unauthorized";
+
+    /// <summary>
+    /// Invokes <paramref name="method"/> expecting SignalR to refuse it for authorization, and returns the message of
+    /// the <see cref="HubException"/> the call failed with, as SignalR sent it.
+    /// </summary>
+    public static async Task<string> InvokeExpectingRefusalAsync(this HubConnection connection, string method)
+    {
+        var act = () => connection.InvokeCoreAsync<object?>(method, []);
+
+        var exception = await act.Should().ThrowAsync<HubException>();
+        exception.Which.Message.Should().Be(UnauthorizedMessage(method));
+        return exception.Which.Message;
     }
 
     /// <summary>Waits until <paramref name="condition"/> holds, for things the server does after answering.</summary>

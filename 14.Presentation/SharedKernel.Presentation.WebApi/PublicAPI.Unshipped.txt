@@ -1,14 +1,21 @@
 #nullable enable
 SharedKernel.Presentation.WebApi.Authorization.RequireAuthenticationMethodAttribute
 SharedKernel.Presentation.WebApi.Authorization.RequireAuthenticationMethodAttribute.Methods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.Authorization.RequireAuthenticationMethodAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.Authorization.RequireAuthenticationMethodAttribute.RequireAuthenticationMethodAttribute(params string![]! methods) -> void
+SharedKernel.Presentation.WebApi.Authorization.RequireAuthenticationMethodAttribute.Roles.get -> string?
 SharedKernel.Presentation.WebApi.Authorization.RequireFreshAuthenticationAttribute
 SharedKernel.Presentation.WebApi.Authorization.RequireFreshAuthenticationAttribute.MaxAge.get -> System.TimeSpan
+SharedKernel.Presentation.WebApi.Authorization.RequireFreshAuthenticationAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.Authorization.RequireFreshAuthenticationAttribute.RequireFreshAuthenticationAttribute(int maxAgeSeconds) -> void
+SharedKernel.Presentation.WebApi.Authorization.RequireFreshAuthenticationAttribute.Roles.get -> string?
 SharedKernel.Presentation.WebApi.Authorization.RequirePermissionAttribute
 SharedKernel.Presentation.WebApi.Authorization.RequirePermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.Authorization.RequirePermissionAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.Authorization.RequirePermissionAttribute.RequirePermissionAttribute(params string![]! permissions) -> void
+SharedKernel.Presentation.WebApi.Authorization.RequirePermissionAttribute.Roles.get -> string?
 SharedKernel.Presentation.WebApi.Authorization.RequireRoleAttribute
+SharedKernel.Presentation.WebApi.Authorization.RequireRoleAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.Authorization.RequireRoleAttribute.RequireRoleAttribute(params string![]! roles) -> void
 SharedKernel.Presentation.WebApi.Authorization.RequireRoleAttribute.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions

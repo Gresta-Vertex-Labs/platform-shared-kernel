@@ -25,8 +25,11 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 ///   <item>Signed in but not permitted: 403 <c>forbidden.insufficient_permission</c>. The message never names the
 ///   roles or permissions required.</item>
 /// </list>
-/// A gRPC call gets the framework's behavior unchanged — gRPC maps HTTP 401 and 403 to its own status codes — and
-/// no body. Every refusal is logged at Warning with the endpoint name and code, never with principal data.
+/// A gRPC call never gets a body: gRPC maps the HTTP status to its own code. Its step-up refusal is the same 401 and
+/// RFC 9470 challenge header, so it ends as <c>Unauthenticated</c> exactly as HTTP answers 401; every other gRPC
+/// refusal gets the framework's behavior unchanged (401 → <c>Unauthenticated</c>, 403 → <c>PermissionDenied</c>).
+/// Every refusal answered here — all of them over HTTP, the step-up over gRPC — is logged at Warning with the
+/// endpoint name and code, never with principal data.
 /// </remarks>
 internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
@@ -53,15 +56,23 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
     /// <inheritdoc />
     public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
-        if (authorizeResult.Succeeded || (!authorizeResult.Challenged && !authorizeResult.Forbidden) || RequestFacts.IsGrpcRequest(context))
+        if (authorizeResult.Succeeded || (!authorizeResult.Challenged && !authorizeResult.Forbidden))
         {
             await _inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
             return;
         }
 
+        var isGrpc = RequestFacts.IsGrpcRequest(context);
+
         if (authorizeResult.Forbidden && TryGetStepUp(authorizeResult.AuthorizationFailure, out var maxAge))
         {
-            await WriteStepUpAsync(context, maxAge).ConfigureAwait(false);
+            await WriteStepUpAsync(context, maxAge, writeBody: !isGrpc).ConfigureAwait(false);
+            return;
+        }
+
+        if (isGrpc)
+        {
+            await _inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
             return;
         }
 
@@ -114,7 +125,7 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             .ConfigureAwait(false);
     }
 
-    private async Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge)
+    private async Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge, bool writeBody)
     {
         var challenge = $"{GetRequestScheme(context)} error=\"insufficient_user_authentication\", error_description=\"{(maxAge is null ? MethodDescription : FreshnessDescription)}\"";
         if (maxAge is { } age)
@@ -124,6 +135,13 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
 
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.Append(HeaderNames.WWWAuthenticate, challenge);
+
+        if (!writeBody)
+        {
+            // gRPC: the status and the challenge header are the whole answer; the client maps 401 to Unauthenticated.
+            Log.AuthorizationRejected(_logger, RequestFacts.GetEndpointDisplayName(context), PresentationErrorCodes.StepUpRequired);
+            return;
+        }
 
         await WriteProblemAsync(
                 context,

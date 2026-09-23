@@ -4,5 +4,5 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 internal static class AuthorizeDataMessages
 {
     public const string Fixed =
-        "The policy of a SharedKernel authorization attribute is set by its constructor. Use [Authorize] for a named policy or schemes.";
+        "The policy and roles of a SharedKernel authorization attribute are fixed by its constructor. Use [Authorize(Policy = ...)] for a named policy and [RequireRole] for roles.";
 }

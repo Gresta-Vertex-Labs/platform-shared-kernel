@@ -15,8 +15,9 @@ namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 /// <summary>
 /// Design D3/D16: the authorization matrix on a minimal-API endpoint and on an MVC action — anonymous 401, missing
 /// permission 403, OR within an attribute, AND across attributes, and the RFC 9470 step-up challenge for freshness
-/// and authentication method. Regression tests for B1 (attributes enforced without extra registration), B2 (anonymous
-/// is 401, not 403) and B14 (platform codes, no requirement names in messages).
+/// and authentication method, which a gRPC call gets as the same 401 and header without a body (so it ends as
+/// Unauthenticated, not PermissionDenied). Regression tests for B1 (attributes enforced without extra registration),
+/// B2 (anonymous is 401, not 403) and B14 (platform codes, no requirement names in messages).
 /// </summary>
 public sealed class AuthorizationTests : IClassFixture<FullStackHost>
 {
@@ -208,10 +209,7 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
     [InlineData("orders.write", HttpStatusCode.Forbidden)]
     public async Task GrpcCall_IsRefused_WithTheStatusOnly(string? permission, HttpStatusCode expected)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/auth/grpc-like")
-        {
-            Content = new ByteArrayContent([]) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc") } },
-        };
+        using var request = GrpcRequest("/auth/grpc-like");
         if (permission is not null)
         {
             request.SignedIn(permissions: permission);
@@ -220,6 +218,44 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
         using var response = await _host.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(expected);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(
+        "/auth/grpc-like-fresh",
+        "Bearer error=\"insufficient_user_authentication\", error_description=\"More recent authentication is required\", max_age=\"300\"")]
+    [InlineData(
+        "/auth/grpc-like-mfa",
+        "Bearer error=\"insufficient_user_authentication\", error_description=\"A stronger authentication method is required\"")]
+    public async Task GrpcCall_NeedingStepUp_Is401_WithTheRfc9470Challenge_AndNoBody(string path, string challenge)
+    {
+        // 401, not 403: gRPC reports it as Unauthenticated, the way HTTP answers a step-up.
+        using var request = GrpcRequest(path).SignedIn(methods: "pwd", authTime: FullStackHost.Now.AddHours(-1));
+
+        using var response = await _host.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Be(challenge);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+
+        var logger = _host.Logs.GetLogger(typeof(SharedKernelAuthorizationResultHandler).FullName!);
+        logger.Records.Should().Contain(record =>
+            record.EventId.Id == LoggingEventIdRanges.Presentation + 2
+            && record.Message.Contains(path, StringComparison.Ordinal)
+            && record.Message.Contains(PresentationErrorCodes.StepUpRequired, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GrpcCall_MissingPermission_AndStaleAuthentication_IsRefused_NotAskedToStepUp()
+    {
+        using var request = GrpcRequest("/auth/grpc-like-perm-and-fresh")
+            .SignedIn(permissions: "orders.write", authTime: FullStackHost.Now.AddHours(-1));
+
+        using var response = await _host.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Headers.WwwAuthenticate.Should().BeEmpty();
         (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
@@ -243,6 +279,11 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
         record.Message.Should().Contain(ErrorCodes.Forbidden.InsufficientPermission);
         record.Message.Should().NotContain("alice-secret-id");
     }
+
+    private static HttpRequestMessage GrpcRequest(string path) => new(HttpMethod.Post, path)
+    {
+        Content = new ByteArrayContent([]) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc") } },
+    };
 
     private Task<HttpResponseMessage> SendAsync(string path, Func<HttpRequestMessage, HttpRequestMessage> configure)
     {

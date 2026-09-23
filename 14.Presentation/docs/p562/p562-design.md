@@ -110,10 +110,14 @@ MVC, same namespace: `IActionResult ToActionResult(this Result)` (204 | problem)
 
 - Attributes (namespace `…WebApi.Authorization`, names unchanged): `RequirePermissionAttribute(params string[])`,
   `RequireRoleAttribute(params string[])`, `RequireFreshAuthenticationAttribute(int maxAgeSeconds)`,
-  `RequireAuthenticationMethodAttribute(params string[])`. Each is `Attribute, IAuthorizeData` whose `Policy` is an
-  internal encoded name (prefix `SharedKernel:`); `Roles`/`AuthenticationSchemes` stay null. Semantics unchanged:
-  OR within one attribute, AND across attributes (the framework combines them). Constructor arguments are
-  validated (non-empty, no separator characters).
+  `RequireAuthenticationMethodAttribute(params string[])`. Each **derives from `AuthorizeAttribute`** (SignalR
+  authorizes hub *methods* only through `AuthorizeAttribute`, found in wave 3; an `IAuthorizeData`-only attribute
+  was silently ignored there). `Policy` is an internal encoded name (prefix `SharedKernel:`) held in a private
+  read-only field; read-only `new` members hide the base `Policy`/`Roles` so `[RequirePermission("x", Roles = …)]`
+  does not compile. `AuthenticationSchemes` stays settable (same meaning as on `[Authorize]`). Semantics
+  unchanged: OR within one attribute, AND across attributes (the framework combines them). Constructor arguments
+  are validated (non-empty, no separator characters). A refused hub-method call fails with SignalR's own
+  `HubException` message (SignalR authorizes before hub filters).
 - Conventions (root namespace, generic over `TBuilder : IEndpointConventionBuilder`): `RequirePermission(…)`,
   `RequireRole(…)`, `RequireFreshAuthentication(int seconds)` / `(TimeSpan)`, `RequireAuthenticationMethod(…)` →
   `RequireAuthorization(new …Attribute(…))`. They work on route handlers, groups, `MapControllers()`,
@@ -125,7 +129,9 @@ MVC, same namespace: `IActionResult ToActionResult(this Result)` (204 | problem)
   being authorized, identical for HTTP, SignalR and gRPC — never raw claims or `ClaimTypes.Role`. Freshness uses
   `IClock` (resolved only when needed) with `IsAuthenticationFresherThan`; methods use `WasAuthenticatedWith`.
   Every generated policy requires an authenticated user, so anonymous → challenge → 401.
-- Result handler (HTTP bodies; nothing is written for gRPC requests, which map HTTP 401/403 themselves):
+- Result handler (HTTP bodies; nothing is written for gRPC requests, which map HTTP 401/403 themselves — except
+  that a gRPC step-up failure is answered 401 with the RFC 9470 challenge and no body, so it surfaces as
+  `Unauthenticated` like HTTP's 401):
   - Challenge → the scheme's challenge (keeps `WWW-Authenticate`) + ProblemDetails 401 `ErrorCodes.Unauthorized.Default`.
   - Forbid → ProblemDetails 403 `ErrorCodes.Forbidden.InsufficientPermission`; the message never names roles or
     permissions.

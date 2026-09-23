@@ -128,27 +128,32 @@ public sealed class ContextHub : Hub
     }
 }
 
-/// <summary>Requirements on hub methods, which SignalR alone would not enforce.</summary>
+/// <summary>
+/// Requirements on hub methods. The attributes are <c>[Authorize]</c> attributes, so SignalR enforces them itself.
+/// Every method counts its runs, to prove a refused invocation never runs.
+/// </summary>
 public sealed class MethodAuthorizationHub(InvocationCounter counter) : Hub
 {
     [RequirePermission("orders.read", "orders.admin")]
-    public string ReadOrders()
-    {
-        counter.Increment();
-        return "orders";
-    }
+    public string ReadOrders() => Run("orders");
 
     [RequirePermission("orders.read")]
     [RequireRole("auditor")]
-    public string Audit() => "audited";
+    public string Audit() => Run("audited");
 
     [RequireFreshAuthentication(300)]
-    public string Transfer() => "transferred";
+    public string Transfer() => Run("transferred");
 
     [RequireAuthenticationMethod("mfa")]
-    public string ChangePassword() => "changed";
+    public string ChangePassword() => Run("changed");
 
-    public string Open() => "open";
+    public string Open() => Run("open");
+
+    private string Run(string result)
+    {
+        counter.Increment();
+        return result;
+    }
 }
 
 /// <summary>A requirement on the hub class, checked when the connection is opened.</summary>

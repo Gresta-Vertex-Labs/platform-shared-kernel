@@ -10,7 +10,8 @@ namespace SharedKernel.Presentation.Grpc.Tests.Integration;
 /// <summary>
 /// Design D3/D13/D16: the core's authorization attributes and conventions are native ASP.NET Core authorization, so
 /// they work on gRPC methods with no gRPC-specific code — an anonymous caller gets <see cref="StatusCode.Unauthenticated"/>
-/// (B2), a caller without the permission <see cref="StatusCode.PermissionDenied"/>, and the method never runs.
+/// (B2), a caller without the permission <see cref="StatusCode.PermissionDenied"/>, a caller whose sign-in is too old
+/// <see cref="StatusCode.Unauthenticated"/> (the RFC 9470 step-up, as over HTTP), and the method never runs.
 /// </summary>
 public sealed class AuthorizationTests
 {
@@ -49,7 +50,7 @@ public sealed class AuthorizationTests
     }
 
     [Fact]
-    public async Task RequireFreshAuthentication_StaleSignIn_IsPermissionDenied_AndARecentOneSucceeds()
+    public async Task RequireFreshAuthentication_StaleSignIn_IsUnauthenticated_AndARecentOneSucceeds()
     {
         await using var app = await GrpcTestHost.StartAsync();
         var client = app.CreateClient();
@@ -61,8 +62,9 @@ public sealed class AuthorizationTests
             new EchoRequest(),
             TestAuthentication.SignedIn(authTime: DateTimeOffset.UtcNow.AddSeconds(-5)));
 
-        // gRPC has no RFC 9470 challenge body: a step-up refusal is an HTTP 403, which gRPC reports as PermissionDenied.
-        (await stale.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        // A step-up refusal is HTTP 401 with the RFC 9470 challenge header and no body, as over HTTP, which gRPC
+        // reports as Unauthenticated: the caller has to authenticate again, not ask for a permission.
+        (await stale.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
         reply.Value.Should().Be("approved");
     }
 

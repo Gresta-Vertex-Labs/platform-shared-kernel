@@ -3,30 +3,24 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.SignalR.Filters;
+using SharedKernel.Presentation.SignalR.Options;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Primitives.Errors;
-using SharedKernel.Testing.Logging;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.Authorization;
 
 /// <summary>
-/// Design D3/D12/D16: the WebApi requirements on a hub method, on the hub class and on <c>MapHub&lt;T&gt;()</c>.
-/// SignalR on its own reads only <c>[Authorize]</c> on hub methods, so without this package's filter a
-/// <c>[RequirePermission]</c> there would let every connected caller through (the B1 fail-open class, on hubs).
+/// Design D3/D12/D16: the WebApi requirements on a hub method, on the hub class and on <c>MapHub&lt;T&gt;()</c>. The
+/// attributes are <c>[Authorize]</c> attributes, and SignalR authorizes a hub method only through those, so it
+/// enforces them itself — before any hub filter runs, with its own refusal — even in a host that never registers this
+/// package. A <c>[RequirePermission]</c> that is not an <c>[Authorize]</c> would let every connected caller through
+/// (the B1 fail-open class, on hubs), which the WebApi attribute tests pin at the source.
 /// </summary>
 public sealed class HubAuthorizationTests
 {
-    private const string Unauthenticated = $"{ErrorCodes.Unauthorized.Default}: Authentication is required to access this resource.";
-
-    private const string Forbidden = $"{ErrorCodes.Forbidden.InsufficientPermission}: You are not permitted to perform this operation.";
-
-    private const string StepUp = $"{PresentationErrorCodes.StepUpRequired}: This operation requires a more recent or stronger authentication.";
-
     [Theory]
     [InlineData("orders.read")]
     [InlineData("orders.admin")]
@@ -43,29 +37,28 @@ public sealed class HubAuthorizationTests
     }
 
     [Fact]
-    public async Task HubMethod_MissingPermission_IsRefused_WithoutRunningTheMethod_OrNamingThePermission()
+    public async Task HubMethod_MissingPermission_IsRefusedBySignalR_WithoutRunningTheMethod_OrNamingThePermission()
     {
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(
             HubPaths.MethodAuthorization,
             TestAuthentication.SignedIn(permissions: "orders.write"));
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        var message = await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
 
-        message.Should().Be(Forbidden);
         message.Should().NotContain("orders.read").And.NotContain("orders.admin");
-        app.Services.GetRequiredService<InvocationCounter>().Count.Should().Be(0);
+        InvocationCount(app).Should().Be(0);
     }
 
     [Fact]
-    public async Task HubMethod_AnonymousCaller_IsRefused_AsUnauthenticated()
+    public async Task HubMethod_AnonymousCaller_IsRefused_WithoutRunningTheMethod()
     {
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.MethodAuthorization);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
 
-        message.Should().Be(Unauthenticated);
+        InvocationCount(app).Should().Be(0);
     }
 
     [Theory]
@@ -82,24 +75,27 @@ public sealed class HubAuthorizationTests
         if (allowed)
         {
             (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Audit))).Should().Be("audited");
+            InvocationCount(app).Should().Be(1);
         }
         else
         {
-            (await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.Audit))).Should().Be(Forbidden);
+            await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.Audit));
+            InvocationCount(app).Should().Be(0);
         }
     }
 
     [Fact]
-    public async Task HubMethod_StaleAuthentication_IsAskedToStepUp()
+    public async Task HubMethod_StaleAuthentication_IsRefused_WithoutRunningTheMethod()
     {
+        // SignalR has no step-up answer: a stale sign-in gets the same refusal as a missing permission.
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(
             HubPaths.MethodAuthorization,
             TestAuthentication.SignedIn(authTime: DateTimeOffset.UtcNow.AddHours(-1)));
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.Transfer));
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.Transfer));
 
-        message.Should().Be(StepUp);
+        InvocationCount(app).Should().Be(0);
     }
 
     [Fact]
@@ -129,7 +125,8 @@ public sealed class HubAuthorizationTests
         }
         else
         {
-            (await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.ChangePassword))).Should().Be(StepUp);
+            await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ChangePassword));
+            InvocationCount(app).Should().Be(0);
         }
     }
 
@@ -143,19 +140,26 @@ public sealed class HubAuthorizationTests
     }
 
     [Fact]
-    public async Task HubMethod_Refusal_IsLoggedAtWarning_WithoutPrincipalData()
+    public async Task HubMethod_Refusal_HappensBeforeTheHubFilters_SoItSpendsNoRateLimitPermit()
     {
-        var loggerFactory = new InMemoryLoggerFactory();
-        await using var app = await StartAsync(loggerFactory: loggerFactory);
+        // SignalR authorizes before any hub filter runs: the refusals below never reach the rate limit (one permit per
+        // minute), so the permit is still there for the permitted invocation, and the message is SignalR's own, not the
+        // error mapping's "{code}: {message}".
+        await using var app = await StartAsync(configureSignalR: options =>
+        {
+            options.InvocationRateLimit.PermitLimit = 1;
+            options.InvocationRateLimit.Window = TimeSpan.FromMinutes(1);
+        });
         await using var connection = await app.ConnectAsync(
             HubPaths.MethodAuthorization,
-            TestAuthentication.SignedIn(user: "alice-the-user", permissions: "orders.write"));
+            TestAuthentication.SignedIn(permissions: "orders.write"));
 
-        await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
 
-        var record = loggerFactory.GetLogger(typeof(HubMethodAuthorizationFilter).FullName!).Records
-            .ShouldHaveLogged(new EventId(14105), LogLevel.Warning);
-        record.Message.Should().Contain(ErrorCodes.Forbidden.InsufficientPermission).And.NotContain("alice-the-user");
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Open))).Should().Be("open");
+        (await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.Open)))
+            .Should().Be($"{PresentationErrorCodes.RateLimitExceeded}: Too many requests.");
     }
 
     [Fact]
@@ -169,8 +173,46 @@ public sealed class HubAuthorizationTests
             HubPaths.MethodAuthorization,
             TestAuthentication.SignedIn(permissions: "orders.read"));
 
-        (await denied.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.ReadOrders))).Should().Be(Forbidden);
+        await denied.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
         (await allowed.InvokeAsync<string>(nameof(MethodAuthorizationHub.ReadOrders))).Should().Be("orders");
+        InvocationCount(app).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HubMethod_RequirementsAreEnforced_WithPlainSignalR_AndOnlyTheCoreAuthorization()
+    {
+        // No AddSharedKernelWebApi, no AddSharedKernelSignalR, so none of this package's hub filters: just SignalR and
+        // the policies behind the attributes. The enforcement is SignalR's own.
+        await using var app = await StartAsync(
+            withWebApi: false,
+            withSharedKernelSignalR: false,
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSignalR();
+                builder.Services.AddSharedKernelAuthorization();
+            });
+        app.Services.GetService<HubExceptionMappingFilter>().Should().BeNull("the platform's SignalR setup is not registered");
+
+        await using var anonymous = await app.ConnectAsync(HubPaths.MethodAuthorization);
+        await using var denied = await app.ConnectAsync(
+            HubPaths.MethodAuthorization,
+            TestAuthentication.SignedIn(permissions: "orders.write", authTime: DateTimeOffset.UtcNow.AddHours(-1)));
+        await using var allowed = await app.ConnectAsync(
+            HubPaths.MethodAuthorization,
+            TestAuthentication.SignedIn(permissions: "orders.read", roles: "auditor", methods: "mfa", authTime: DateTimeOffset.UtcNow));
+
+        await anonymous.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        await denied.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ReadOrders));
+        await denied.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.Audit));
+        await denied.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.Transfer));
+        await denied.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ChangePassword));
+        InvocationCount(app).Should().Be(0);
+
+        (await allowed.InvokeAsync<string>(nameof(MethodAuthorizationHub.ReadOrders))).Should().Be("orders");
+        (await allowed.InvokeAsync<string>(nameof(MethodAuthorizationHub.Audit))).Should().Be("audited");
+        (await allowed.InvokeAsync<string>(nameof(MethodAuthorizationHub.Transfer))).Should().Be("transferred");
+        (await allowed.InvokeAsync<string>(nameof(MethodAuthorizationHub.ChangePassword))).Should().Be("changed");
+        InvocationCount(app).Should().Be(4);
     }
 
     [Fact]
@@ -217,7 +259,13 @@ public sealed class HubAuthorizationTests
         (await connection.InvokeAsync<string>(nameof(PlainHub.Ping))).Should().Be("pong");
     }
 
-    private static Task<WebApplication> StartAsync(InMemoryLoggerFactory? loggerFactory = null, bool withWebApi = true) =>
+    private static int InvocationCount(WebApplication app) => app.Services.GetRequiredService<InvocationCounter>().Count;
+
+    private static Task<WebApplication> StartAsync(
+        Action<SharedKernelSignalROptions>? configureSignalR = null,
+        Action<WebApplicationBuilder>? configureBuilder = null,
+        bool withWebApi = true,
+        bool withSharedKernelSignalR = true) =>
         SignalRTestHost.StartAsync(
             app =>
             {
@@ -225,6 +273,8 @@ public sealed class HubAuthorizationTests
                 app.MapHub<ProtectedHub>(HubPaths.Protected);
                 app.MapHub<PlainHub>(HubPaths.Plain).RequirePermission("hub.connect");
             },
-            loggerFactory: loggerFactory,
-            withWebApi: withWebApi);
+            configureSignalR: configureSignalR,
+            configureBuilder: configureBuilder,
+            withWebApi: withWebApi,
+            withSharedKernelSignalR: withSharedKernelSignalR);
 }

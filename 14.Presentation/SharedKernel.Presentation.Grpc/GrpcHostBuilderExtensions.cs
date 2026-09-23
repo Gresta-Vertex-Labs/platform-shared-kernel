@@ -37,7 +37,9 @@ public static class GrpcHostBuilderExtensions
     ///   <c>[RequirePermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
     ///   <c>[RequireAuthenticationMethod]</c> work on a service class or method, and the same requirements as
     ///   conventions on <c>MapGrpcService&lt;T&gt;()</c>. An anonymous caller gets <c>Unauthenticated</c>, a caller
-    ///   without the permission <c>PermissionDenied</c>.</item>
+    ///   without the permission <c>PermissionDenied</c>, and a signed-in caller who fails only freshness or
+    ///   authentication-method requirements <c>Unauthenticated</c> with the RFC 9470 <c>WWW-Authenticate</c> step-up
+    ///   challenge, as over HTTP.</item>
     /// </list>
     /// <para>
     /// gRPC calls run through the HTTP pipeline, so <c>app.UseSharedKernelWebApi()</c> (after
