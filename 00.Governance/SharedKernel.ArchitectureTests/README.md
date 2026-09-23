@@ -281,7 +281,8 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 | `CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` | Filters/sorts extend the platform base, not HotChocolate directly |
 | `PresentationLayeringRules.GrpcNeverReferencesContracts` | Same contract rule, server side |
 | `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` | `ProblemDetails` is shaped in one place |
-| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary |
+| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary; map with the typed results (`ToOk`, `ToErrorResult`, …) |
+| `PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn` | API versioning, OpenAPI and Scalar stay in `SharedKernel.Presentation.OpenApi` |
 
 ### Security
 

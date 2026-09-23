@@ -83,8 +83,8 @@ HTTP status maps back to an `ErrorType` (400, 413, 415, 428 → Validation, 401 
 `SharedKernel.Presentation.WebApi`'s `ErrorTypeStatusCodeMap.Resolve` plus the statuses an HTTP
 boundary answers outside it (a failed `If-Match`, a payload or media-type rejection, rate limiting) —
 duplicated here rather than shared, since `11.Communication` may never reference `14.Presentation`.
-A downstream outage answered with a ProblemDetails body therefore comes back as `Unavailable` or
-`Timeout` rather than as an `Unexpected` fault. When the body carries the `errors` extension (a multi-field
+A downstream outage therefore comes back as `Unavailable` or `Timeout` rather than as an `Unexpected`
+fault — with a ProblemDetails body or without one (see below). When the body carries the `errors` extension (a multi-field
 validation failure: keyed by field path, or by code for an error that names no field, each value an
 array of messages), every entry is rebuilt as its own `Error` and returned as one aggregate via
 `Error.Validation(IReadOnlyList<Error>)` — the same shape `ValidationException`/`Error.Details`
@@ -92,10 +92,12 @@ produce on the server, round-tripping without losing any field. The parallel `er
 supplies each entry's real code, index by index; when it names a code different from the key, the key
 is kept as the field path in `MessageArguments[ErrorArgumentNames.PropertyPath]`. A body from an
 older server without `errorCodes` is read as before, each key taken as the code. A non-JSON body, an
-empty body, or a body with none of these recognizable members still yields
-an `Error.Unexpected` carrying the response status in its code/message (`"http.{status}"`) — never an
-unclassified, status-blind fallback. A 2xx response with an empty body, or one that deserializes to
-`null`, fails with the `http.empty-body` code.
+empty body, or a body with none of these recognizable members — typically a gateway, load balancer or
+proxy answering with its own HTML page for a service that is down or slow — still takes its `ErrorType`
+from the status through the same `HttpStatusErrorTypeMap`, with the code `"http.{status}"` and the status
+line as the message: a bodiless 429 or 503 is `Unavailable`, a 504 `Timeout`, a 500 or 502 `Unexpected`,
+a 404 `NotFound` — never an unclassified, status-blind fallback. A 2xx response with an empty body, or
+one that deserializes to `null`, fails with the `http.empty-body` code.
 
 This is the client half of the platform's error round trip: a handler returns `Result`/`Result<T>`,
 the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions`

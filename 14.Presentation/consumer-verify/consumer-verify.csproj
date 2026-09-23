@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
@@ -9,7 +9,23 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <!-- All four 14.Presentation packages, composed the way a service does (P-562). -->
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+    <ProjectReference Include="..\SharedKernel.Presentation.OpenApi\SharedKernel.Presentation.OpenApi.csproj" />
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR\SharedKernel.Presentation.SignalR.csproj" />
+    <ProjectReference Include="..\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      The clients a consuming service's callers use, so every check crosses a real connection: a SignalR
+      HubConnection and a Grpc.Net.Client channel against Kestrel on a loopback port. Grpc.AspNetCore is referenced
+      directly for Grpc.Tools, which generates the server base and the client from Protos\verify.proto.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Net.Client" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Protos\verify.proto" GrpcServices="Both" />
   </ItemGroup>
 </Project>

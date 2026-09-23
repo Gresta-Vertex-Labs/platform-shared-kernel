@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option csharp_namespace = "ConsumerVerify.Grpc";
+
+package consumerverify;
+
+// Verification-only service for 14.Presentation's consumer-verify harness. Not a production contract.
+service OrderService {
+  // Returns the order, or fails with order.not_found (Result<T>.GetValueOrThrow).
+  rpc GetOrder (GetOrderRequest) returns (OrderReply);
+  // Fails validation with one field violation per invalid field (Result.ThrowIfFailure).
+  rpc PlaceOrder (PlaceOrderRequest) returns (OrderReply);
+}
+
+message GetOrderRequest {
+  int32 id = 1;
+}
+
+message PlaceOrderRequest {
+  int32 quantity = 1;
+  string sku = 2;
+}
+
+message OrderReply {
+  int32 id = 1;
+  string status = 2;
+}

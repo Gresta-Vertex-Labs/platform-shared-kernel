@@ -194,6 +194,15 @@ jobs:
       - name: Run 07.Messaging consumer-verify
         run: dotnet run --project "07.Messaging/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
 
+      # Composes all four 14.Presentation packages as a service does and drives them over real loopback
+      # connections — HttpClient, a SignalR HubConnection and a Grpc.Net.Client channel against Kestrel —
+      # asserting the one problem+json shape, authorization, the required headers, CORS, the 429 body, the
+      # hub and gRPC error contracts. It also generates two versioned OpenAPI documents: Asp.Versioning.OpenApi
+      # reflects over Microsoft.AspNetCore.OpenApi internals, so an upgrade of either that breaks it fails here.
+      # No Docker daemon, so it belongs in the required lane.
+      - name: Run 14.Presentation consumer-verify
+        run: dotnet run --project "14.Presentation/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
