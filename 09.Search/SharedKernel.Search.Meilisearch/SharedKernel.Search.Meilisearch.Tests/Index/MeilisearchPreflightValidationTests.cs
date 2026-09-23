@@ -141,19 +141,32 @@ public sealed class MeilisearchPreflightValidationTests
     }
 
     [Fact]
-    public async Task TenantedIndex_WithTenantScopeSupplied_PassesTheTenantGuard()
+    public async Task TenantedIndex_WithTenantScopeSupplied_PassesTheTenantGuard_AndAnyFaultStaysAResult()
     {
-        // Sanity check that the guard is genuinely conditional on TenantScope.None rather than always
-        // failing — reaching the null client here would throw, proving the guard is the only thing
-        // stopping I/O in the prior test.
+        // Two assertions in one, and the second is the point of the pre-publish Result-discipline fix.
+        //
+        // (1) The guard is genuinely conditional on TenantScope.None rather than always failing: the
+        //     executor proceeds past it and reaches the unusable client, which is what distinguishes
+        //     "the guard stopped I/O" from "something unrelated short-circuited" in the prior test. The
+        //     distinguishing evidence is the error CODE — engine_fault, not tenant_scope_missing.
+        //
+        // (2) That fault comes back as a failed Result rather than escaping as an exception. Until the
+        //     pre-publish pass this test asserted ThrowAsync<NullReferenceException>, which documented
+        //     the exact defect the pass fixed: an exception escaping a Task<Result<T>>-returning member.
+        //     Every unexpected fault on this path — an unreachable Meilisearch included — is now
+        //     classified by MeilisearchFaultMapper and returned.
         var index = CreateIndexWithNoIoCapableClient(TenantedDefinition());
         var request = SearchRequest.Default;
 
         var act = async () => await index.SearchAsync(request, TenantScope.Of("tenant-a"));
 
-        await act.Should().ThrowAsync<NullReferenceException>(
-            "once the tenant guard passes, the executor proceeds to call the (null) client — proving " +
-            "the guard, not an unrelated short-circuit, is what stopped I/O in the None case");
+        var result = await act.Should().NotThrowAsync(
+            "every fault on a Result-returning member is classified and returned, never thrown");
+        result.Subject.IsFailure.Should().BeTrue();
+        result.Subject.Error.Code.Should().Be(
+            "search.engine_fault",
+            "the tenant guard passed and the executor reached the client — a tenant_scope_missing here " +
+            "would mean the guard fired when it should not have");
     }
 
     [Fact]

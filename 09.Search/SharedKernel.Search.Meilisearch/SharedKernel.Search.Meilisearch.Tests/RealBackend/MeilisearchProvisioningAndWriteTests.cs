@@ -98,6 +98,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         var first = TestProductCorpus.All[2] with { DocumentId = id, Name = "First Version" };
         var second = first with { Name = "Second Version" };
         var beforeCount = (await index.CountAsync(null, TenantScope.Of(first.TenantId))).Value;
+        beforeCount.IsExact.Should().BeTrue("the test corpus is far below the index maxTotalHits ceiling");
 
         await index.IndexAsync(first, SearchWriteConsistency.Searchable);
         await index.IndexAsync(second, SearchWriteConsistency.Searchable);
@@ -107,7 +108,8 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         getResult.Value.Name.Should().Be("Second Version");
 
         var afterCount = (await index.CountAsync(null, TenantScope.Of(first.TenantId))).Value;
-        afterCount.Should().Be(beforeCount + 1);
+        afterCount.IsExact.Should().BeTrue();
+        afterCount.Value.Should().Be(beforeCount.Value + 1);
     }
 
     [Fact]
@@ -179,7 +181,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
 
             clearResult.IsSuccess.Should().BeTrue();
             var countResult = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
-            countResult.Value.Should().Be(0);
+            countResult.Value.Value.Should().Be(0);
         }
         finally
         {
@@ -202,6 +204,6 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_document_id");
         var afterCount = (await index.CountAsync(null, TenantScope.Of(TestProductCorpus.TenantA))).Value;
-        afterCount.Should().Be(beforeCount);
+        afterCount.Value.Should().Be(beforeCount.Value);
     }
 }

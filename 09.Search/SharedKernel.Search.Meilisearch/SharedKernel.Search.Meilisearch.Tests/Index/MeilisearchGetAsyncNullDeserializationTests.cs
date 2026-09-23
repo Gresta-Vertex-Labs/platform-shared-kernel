@@ -76,7 +76,10 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
             "a null-deserialized document must surface as a Result failure, never an unhandled exception");
         result.Subject.IsFailure.Should().BeTrue();
         result.Subject.Error.Code.Should().Be("search.engine_fault");
-        result.Subject.Error.Message.Should().Contain("GetAsync").And.Contain("null document");
+        // The operation name in the error is the telemetry operation ("get"), not the C# member name —
+        // the same string the search.operation span tag and the duration histogram carry, so an error in
+        // a log can be joined to its metric series.
+        result.Subject.Error.Message.Should().Contain("'get'").And.Contain("null document");
         handler.RequestCount.Should().Be(1, "GetAsync issues exactly one HTTP call for a get-by-id");
     }
 }

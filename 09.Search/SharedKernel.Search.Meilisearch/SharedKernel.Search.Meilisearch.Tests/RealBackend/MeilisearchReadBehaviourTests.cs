@@ -182,8 +182,10 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
         var tenantBCount = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB));
 
         tenantACount.IsSuccess.Should().BeTrue();
-        tenantACount.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
+        tenantACount.Value.IsExact.Should().BeTrue("the corpus is far below the index maxTotalHits ceiling, so Meilisearch can answer exactly");
+        tenantACount.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
         tenantBCount.IsSuccess.Should().BeTrue();
-        tenantBCount.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantB).Count);
+        tenantBCount.Value.IsExact.Should().BeTrue();
+        tenantBCount.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantB).Count);
     }
 }
