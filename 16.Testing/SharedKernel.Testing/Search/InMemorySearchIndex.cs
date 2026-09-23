@@ -475,7 +475,15 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<long>> CountAsync(
+    /// <remarks>
+    /// Counts exactly, and reports <see cref="TotalHitsAccuracy.Exact"/> — this fake holds every
+    /// document in memory, so it has no equivalent of the Meilisearch <c>maxTotalHits</c> ceiling that
+    /// makes the real Meilisearch adapter report a <see cref="TotalHitsAccuracy.LowerBound"/>. A test
+    /// asserting a consuming service's handling of a truncated count must therefore construct that case
+    /// directly rather than expecting this fake to produce it; a fake that invented a ceiling would be
+    /// asserting against a number this platform never configured.
+    /// </remarks>
+    public Task<SharedKernel.Primitives.Results.Result<SearchCount>> CountAsync(
         SearchFilter? filter, TenantScope tenantScope, CancellationToken cancellationToken = default)
     {
         // Mirrors both real provider adapters' own CountAsync, which shares the identical
@@ -483,12 +491,14 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         // MeilisearchIndex<TDocument>.CountAsync and the ElasticSearch equivalent).
         if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<long>.Failure(SearchErrors.TenantScopeMissing(IndexName)));
+            return Task.FromResult(
+                SharedKernel.Primitives.Results.Result<SearchCount>.Failure(SearchErrors.TenantScopeMissing(IndexName)));
         }
 
         var effectiveFilter = ApplyTenantScope(filter, tenantScope);
         var count = _store.Values.LongCount(doc => effectiveFilter is null || Evaluate(effectiveFilter, doc));
-        return Task.FromResult(SharedKernel.Primitives.Results.Result<long>.Success(count));
+        return Task.FromResult(
+            SharedKernel.Primitives.Results.Result<SearchCount>.Success(SearchCount.Exact(count)));
     }
 
     /// <inheritdoc />

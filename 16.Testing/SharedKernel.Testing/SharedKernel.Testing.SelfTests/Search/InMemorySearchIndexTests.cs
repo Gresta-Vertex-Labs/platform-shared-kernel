@@ -478,7 +478,8 @@ public sealed class InMemorySearchIndexTests
         var result = await index.CountAsync(SearchFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(1, result.Value);
+        Assert.True(result.Value.IsExact);
+        Assert.Equal(1L, result.Value.Value);
     }
 
     [Fact]
