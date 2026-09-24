@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -34,6 +34,8 @@ public sealed class FullStackHost : IAsyncLifetime
     public FakeClock Clock { get; } = new(Now);
 
     public HttpClient Client { get; private set; } = null!;
+
+    public WebApplication App => _app!;
 
     public async Task InitializeAsync()
     {
@@ -82,15 +84,18 @@ public sealed class FullStackHost : IAsyncLifetime
                 MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "Email" },
             },
         ])).ToOk());
+        app.MapGet("/result-validation-single", () => Result<string>.Failure(Error.Validation("customer.name_required", "Name is required.")).ToOk());
         app.MapGet("/throw-known", IResult () => throw new NotFoundException(TestErrors.OrderNotFound));
         app.MapGet("/throw-validation", IResult () => throw new ValidationException(
         [
             Error.Validation("customer.name_required", "Name is required."),
             Error.Validation("customer.email_invalid", "Email is invalid."),
         ]));
+        app.MapGet("/throw-validation-single", IResult () => throw new ValidationException(Error.Validation("customer.name_required", "Name is required.")));
         app.MapGet("/throw-unknown", IResult () => throw new InvalidOperationException("Connection string Server=db;Password=secret is wrong."));
         app.MapGet("/only-get", () => "ok");
         app.MapPost("/json", ([FromBody] Payload payload) => payload.Name);
+        app.MapGet("/numbers", (int id) => id);
 
         app.MapGet("/auth/perm", () => "ok").RequirePermission("orders.read", "orders.admin");
         app.MapGet("/auth/perm-and-role", () => "ok").RequirePermission("orders.read").RequireRole("auditor");
@@ -108,14 +113,26 @@ public sealed class FullStackHost : IAsyncLifetime
         group.MapGet("/item", () => "ok");
 
         app.MapPut("/versioned", (HttpContext context) =>
-                context.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.VersionConflict).ToNoContent())
+                context.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent())
             .RequireIfMatch();
-        app.MapPut("/versioned-throw", IResult () => throw new ConflictException(TestErrors.VersionConflict)).RequireIfMatch();
-        app.MapPut("/not-versioned", () => Result.Failure(TestErrors.VersionConflict).ToNoContent());
+        app.MapPut("/versioned-attribute", [RequireIfMatch] (HttpContext context) =>
+            context.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent());
+        app.MapPut("/versioned-parameter", (IfMatch<EntityVersion> ifMatch) =>
+            ifMatch.Version == EntityVersion.FromRowVersion(1)
+                ? Result.Success().ToNoContent()
+                : Result.Failure(TestErrors.StaleVersion).ToNoContent());
+        app.MapPut("/versioned-throw", IResult () => throw new ConflictException(TestErrors.StaleVersion)).RequireIfMatch();
+        app.MapPut("/versioned-other-conflict", () => Result.Failure(TestErrors.VersionConflict).ToNoContent()).RequireIfMatch();
+        app.MapPut("/not-versioned", () => Result.Failure(TestErrors.StaleVersion).ToNoContent());
 
         app.MapPost("/idempotent", (HttpContext context) => context.GetIdempotencyKey()).RequireIdempotencyKey();
+        app.MapPost("/idempotent-attribute", [RequireIdempotencyKey] (HttpContext context) => context.GetIdempotencyKey());
+        app.MapPost("/idempotent-parameter", (IdempotencyKey key) => key.Value);
+        app.MapPost("/idempotent-and-versioned", () => "ok").RequireIdempotencyKey().RequireIfMatch();
+        app.MapPost("/idempotent-protected", () => "ok").RequirePermission("orders.write").RequireIdempotencyKey();
 
         app.MapGet("/limited", () => "ok").RequireRateLimiting(RateLimitPolicy);
+        app.MapGet("/limited-protected", () => "ok").RequirePermission("orders.read").RequireRateLimiting(RateLimitPolicy);
     }
 
     public sealed record Payload(string Name);

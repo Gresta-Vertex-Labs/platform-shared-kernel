@@ -8,7 +8,8 @@ namespace SharedKernel.Presentation.WebApi;
 /// The service-wide limit is <c>Limits:MaxRequestBodySize</c> (4 MiB by default). These conventions attach the
 /// framework's own <see cref="RequestSizeLimitAttribute"/> and <see cref="DisableRequestSizeLimitAttribute"/>
 /// metadata, which routing applies before the endpoint reads the body; MVC actions use the attributes directly.
-/// A body over the limit is answered 413 with the code <c>request.too_large</c>.
+/// A body over the limit is answered 413 with the code <c>request.too_large</c>. The limits are enforced by the server
+/// (Kestrel); an in-memory <c>TestServer</c> enforces none, so test them against Kestrel.
 /// </remarks>
 public static class RequestSizeLimitExtensions
 {

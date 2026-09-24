@@ -14,6 +14,10 @@ public sealed class PresentationErrorCodesTests
         PresentationErrorCodes.IdempotencyKeyRequired.Should().Be("idempotency.key_required");
         PresentationErrorCodes.IdempotencyKeyInvalid.Should().Be("idempotency.key_invalid");
         PresentationErrorCodes.PreconditionRequired.Should().Be("precondition.required");
+        PresentationErrorCodes.PreconditionInvalid.Should().Be("precondition.invalid");
+        PresentationErrorCodes.PreconditionFailed.Should().Be("precondition.failed");
+        PresentationErrorCodes.InvalidValue.Should().Be("validation.invalid_value");
+        PresentationErrorCodes.OriginNotAllowed.Should().Be("forbidden.origin_not_allowed");
         PresentationErrorCodes.RateLimitExceeded.Should().Be("rate_limit.exceeded");
         PresentationErrorCodes.StepUpRequired.Should().Be("unauthorized.step_up_required");
     }

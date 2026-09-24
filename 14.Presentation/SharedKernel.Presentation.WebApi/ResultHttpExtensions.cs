@@ -1,21 +1,21 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
-/// Maps a <see cref="Result"/> or <see cref="Result{T}"/> to a typed minimal-API result: the success response on
-/// success, an RFC 9457 <c>application/problem+json</c> <see cref="ErrorHttpResult"/> on failure.
+/// Maps a <see cref="Result"/> or <see cref="Result{T}"/> to a typed result: the success response on success, an
+/// RFC 9457 <c>application/problem+json</c> <see cref="ErrorHttpResult"/> on failure. The same methods serve minimal
+/// APIs and MVC controllers, whose actions return the typed result directly.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The typed union (<c>Results&lt;Ok&lt;T&gt;, ErrorHttpResult&gt;</c>) lets OpenAPI infer the success response
 /// without annotations. Every method also exists for <see cref="Task{TResult}"/>, so a handler can end with
-/// <c>sender.Send(command, ct).ToCreated(order =&gt; $"/orders/{order.Id}")</c>.
+/// <c>sender.Send(command, ct).ToCreated(order =&gt; $"/orders/{order.Id}")</c>. Where a method takes both a header
+/// value and a body map, the header comes first: <c>ToCreated(location, map)</c>, <c>ToOkWithETag(version, map)</c>.
 /// </para>
 /// <para>
 /// Never branch on <c>IsSuccess</c> to build a response by hand, and never wrap values in a response envelope:
@@ -75,17 +75,18 @@ public static class ResultHttpExtensions
     /// <typeparam name="T">The value type.</typeparam>
     /// <typeparam name="TOut">The body type.</typeparam>
     /// <param name="result">The result.</param>
-    /// <param name="map">Maps the value to the body.</param>
     /// <param name="version">Returns the version of the value, such as <c>EntityVersion.ToString()</c>.</param>
+    /// <param name="map">Maps the value to the body.</param>
     /// <returns>200 OK (or 304) with the <c>ETag</c>, or the error as a problem.</returns>
+    /// <remarks>Like <c>ToCreated(location, map)</c>, the header's selector comes first and the body's map last.</remarks>
     public static Results<OkWithETag<TOut>, ErrorHttpResult> ToOkWithETag<T, TOut>(
         this Result<T> result,
-        Func<T, TOut> map,
-        Func<T, string> version)
+        Func<T, string> version,
+        Func<T, TOut> map)
     {
         ArgumentNullException.ThrowIfNull(result);
-        ArgumentNullException.ThrowIfNull(map);
         ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(map);
 
         return result.IsSuccess
             ? new OkWithETag<TOut>(map(result.Value), version(result.Value))
@@ -141,6 +142,24 @@ public static class ResultHttpExtensions
             ? TypedResults.Accepted(location?.Invoke(result.Value), result.Value)
             : result.Error.ToErrorResult();
     }
+
+    /// <summary>Maps success to 201 Created with a <c>Location</c> header and no body.</summary>
+    /// <param name="result">The result.</param>
+    /// <param name="location">The URI of the created resource.</param>
+    /// <returns>201 Created, or the error as a problem.</returns>
+    public static Results<Created, ErrorHttpResult> ToCreated(this Result result, string location)
+    {
+        ArgumentNullException.ThrowIfNull(location);
+
+        return result.IsSuccess ? TypedResults.Created(location) : result.Error.ToErrorResult();
+    }
+
+    /// <summary>Maps success to 202 Accepted with no body and, when given, a <c>Location</c> header.</summary>
+    /// <param name="result">The result.</param>
+    /// <param name="location">The URI where the caller can follow the work, or <see langword="null"/> for none.</param>
+    /// <returns>202 Accepted, or the error as a problem.</returns>
+    public static Results<Accepted, ErrorHttpResult> ToAccepted(this Result result, string? location = null) =>
+        result.IsSuccess ? TypedResults.Accepted(location) : result.Error.ToErrorResult();
 
     /// <summary>Maps success to 204 No Content.</summary>
     /// <param name="result">The result.</param>
@@ -204,12 +223,12 @@ public static class ResultHttpExtensions
     public static async Task<Results<OkWithETag<T>, ErrorHttpResult>> ToOkWithETag<T>(this Task<Result<T>> result, Func<T, string> version) =>
         (await Await(result).ConfigureAwait(false)).ToOkWithETag(version);
 
-    /// <inheritdoc cref="ToOkWithETag{T, TOut}(Result{T}, Func{T, TOut}, Func{T, string})"/>
+    /// <inheritdoc cref="ToOkWithETag{T, TOut}(Result{T}, Func{T, string}, Func{T, TOut})"/>
     public static async Task<Results<OkWithETag<TOut>, ErrorHttpResult>> ToOkWithETag<T, TOut>(
         this Task<Result<T>> result,
-        Func<T, TOut> map,
-        Func<T, string> version) =>
-        (await Await(result).ConfigureAwait(false)).ToOkWithETag(map, version);
+        Func<T, string> version,
+        Func<T, TOut> map) =>
+        (await Await(result).ConfigureAwait(false)).ToOkWithETag(version, map);
 
     /// <inheritdoc cref="ToCreated{T}(Result{T}, Func{T, string})"/>
     public static async Task<Results<Created<T>, ErrorHttpResult>> ToCreated<T>(this Task<Result<T>> result, Func<T, string> location) =>
@@ -224,6 +243,18 @@ public static class ResultHttpExtensions
 
     /// <inheritdoc cref="ToAccepted{T}(Result{T}, Func{T, string})"/>
     public static async Task<Results<Accepted<T>, ErrorHttpResult>> ToAccepted<T>(this Task<Result<T>> result, Func<T, string>? location = null) =>
+        (await Await(result).ConfigureAwait(false)).ToAccepted(location);
+
+    /// <inheritdoc cref="ToCreated(Result, string)"/>
+    public static async Task<Results<Created, ErrorHttpResult>> ToCreated(this Task<Result> result, string location)
+    {
+        ArgumentNullException.ThrowIfNull(location);
+
+        return (await Await(result).ConfigureAwait(false)).ToCreated(location);
+    }
+
+    /// <inheritdoc cref="ToAccepted(Result, string)"/>
+    public static async Task<Results<Accepted, ErrorHttpResult>> ToAccepted(this Task<Result> result, string? location = null) =>
         (await Await(result).ConfigureAwait(false)).ToAccepted(location);
 
     /// <inheritdoc cref="ToNoContent(Result)"/>

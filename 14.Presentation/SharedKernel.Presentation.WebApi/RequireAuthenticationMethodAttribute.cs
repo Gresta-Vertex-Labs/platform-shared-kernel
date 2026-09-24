@@ -1,7 +1,8 @@
 using System.ComponentModel;
 using Microsoft.AspNetCore.Authorization;
+using SharedKernel.Presentation.WebApi.Authorization;
 
-namespace SharedKernel.Presentation.WebApi.Authorization;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Requires the caller to have authenticated with at least one of the given methods (<c>amr</c> values such as

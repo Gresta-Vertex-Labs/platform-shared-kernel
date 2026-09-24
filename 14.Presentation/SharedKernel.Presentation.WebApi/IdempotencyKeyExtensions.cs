@@ -12,21 +12,20 @@ public static class IdempotencyKeyExtensions
     /// without a valid key with 400 before the handler runs. Nothing else needs registering.
     /// </summary>
     /// <typeparam name="TBuilder">The endpoint convention builder type.</typeparam>
-    /// <param name="builder">A minimal-API endpoint or group. For MVC use <see cref="RequireIdempotencyKeyAttribute"/>.</param>
+    /// <param name="builder">An endpoint, group or controller mapping.</param>
     /// <returns>The same <paramref name="builder"/>.</returns>
     /// <remarks>
-    /// A missing header is answered <c>idempotency.key_required</c>; a key that is not 1 to 256 visible ASCII
-    /// characters (after removing one pair of surrounding double quotes) <c>idempotency.key_invalid</c>. The endpoint
-    /// also carries <see cref="IIdempotencyKeyRequiredMetadata"/>, from which the OpenAPI add-on documents the header.
+    /// Adds <see cref="RequireIdempotencyKeyAttribute"/> as endpoint metadata (<see cref="IIdempotencyKeyRequiredMetadata"/>),
+    /// which <c>UseSharedKernelWebApi()</c> enforces for every kind of endpoint and the OpenAPI add-on documents. A
+    /// missing header is answered <c>idempotency.key_required</c>; a key that is not 1 to 256 visible ASCII characters
+    /// (after removing one pair of surrounding double quotes) <c>idempotency.key_invalid</c>.
     /// </remarks>
     public static TBuilder RequireIdempotencyKey<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        return builder
-            .WithMetadata(new RequireIdempotencyKeyAttribute())
-            .AddEndpointFilter(IdempotencyKeyEndpointFilter.Instance);
+        return builder.WithMetadata(new RequireIdempotencyKeyAttribute());
     }
 
     /// <summary>Returns the idempotency key of the request.</summary>

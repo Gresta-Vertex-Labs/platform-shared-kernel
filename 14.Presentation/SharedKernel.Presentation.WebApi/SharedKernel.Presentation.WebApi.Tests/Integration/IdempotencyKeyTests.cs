@@ -1,9 +1,13 @@
 using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Testing.Logging;
@@ -12,11 +16,21 @@ using Xunit;
 namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 
 /// <summary>
-/// Design D9/D16: a required <c>Idempotency-Key</c> — one declaration for minimal APIs and MVC, 400 with a distinct code
-/// for a missing and a malformed key, the quoted IETF form accepted, and the key never logged.
+/// Design D9/D16 with R6 and R18: a required <c>Idempotency-Key</c> is enforced by one middleware for every kind of
+/// endpoint — the convention, the attribute on a minimal-API lambda, an <see cref="IdempotencyKey"/> parameter and an
+/// MVC action — with 400 and a distinct code for a missing and a malformed key, the quoted IETF form accepted, the key
+/// never logged, and the check made only after authorization.
 /// </summary>
 public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
 {
+    public static TheoryData<string> Endpoints => new()
+    {
+        "/idempotent",
+        "/idempotent-attribute",
+        "/idempotent-parameter",
+        "/mvc-api/idempotent",
+    };
+
     private readonly FullStackHost _host;
 
     public IdempotencyKeyTests(FullStackHost host)
@@ -25,8 +39,7 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     }
 
     [Theory]
-    [InlineData("/idempotent")]
-    [InlineData("/mvc-api/idempotent")]
+    [MemberData(nameof(Endpoints))]
     public async Task MissingKey_Is400_KeyRequired(string path)
     {
         using var response = await _host.Client.PostAsync(path, content: null);
@@ -38,6 +51,8 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     [InlineData("/idempotent", "has space")]
     [InlineData("/idempotent", "\"\"")]
     [InlineData("/idempotent", "é-not-ascii")]
+    [InlineData("/idempotent-attribute", "has space")]
+    [InlineData("/idempotent-parameter", "has space")]
     [InlineData("/mvc-api/idempotent", "has space")]
     public async Task MalformedKey_Is400_KeyInvalid(string path, string key)
     {
@@ -68,6 +83,8 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     [Theory]
     [InlineData("/idempotent", "8e03978e-40d5-43e8-bc93-6894a57f9324", "8e03978e-40d5-43e8-bc93-6894a57f9324")]
     [InlineData("/idempotent", "\"8e03978e-40d5-43e8-bc93-6894a57f9324\"", "8e03978e-40d5-43e8-bc93-6894a57f9324")]
+    [InlineData("/idempotent-attribute", "order-17", "order-17")]
+    [InlineData("/idempotent-parameter", "\"order-17\"", "order-17")]
     [InlineData("/mvc-api/idempotent", "\"order-17\"", "order-17")]
     public async Task ValidKey_ReachesTheHandler_WithoutQuotes(string path, string key, string expected)
     {
@@ -83,6 +100,41 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
         using var response = await SendAsync("/idempotent", new string('k', 256));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task R6_AnonymousCaller_IsToldToAuthenticate_BeforeTheHeaderIsChecked()
+    {
+        using var anonymous = await _host.Client.PostAsync("/idempotent-protected", content: null);
+        using var signedIn = await _host.Client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Post, "/idempotent-protected").SignedIn(permissions: "orders.write"));
+
+        await anonymous.ShouldBeProblemAsync(StatusCodes.Status401Unauthorized, ErrorCodes.Unauthorized.Default);
+        await signedIn.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, PresentationErrorCodes.IdempotencyKeyRequired);
+    }
+
+    [Fact]
+    public async Task R6_KeyAndIfMatch_AreBothRequired_TheKeyFirst()
+    {
+        using var noKey = await _host.Client.PostAsync("/idempotent-and-versioned", content: null);
+        using var noIfMatch = await SendAsync("/idempotent-and-versioned", "order-17");
+
+        await noKey.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, PresentationErrorCodes.IdempotencyKeyRequired);
+        await noIfMatch.ShouldBeProblemAsync(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired);
+    }
+
+    [Fact]
+    public async Task R6_GrpcCall_GetsTheStatus_WithoutABody()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/idempotent")
+        {
+            Content = new ByteArrayContent([]) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc") } },
+        };
+
+        using var response = await _host.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
     [Fact]
@@ -105,10 +157,48 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
         new DefaultHttpContext().GetIdempotencyKey().Should().BeNull();
     }
 
-    [Fact]
-    public void RequireIdempotencyKeyAttribute_IsTheOpenApiMarker()
+    [Theory]
+    [MemberData(nameof(Endpoints))]
+    public void R18_EveryDeclaration_CarriesTheMetadataOpenApiReads(string route)
     {
-        new RequireIdempotencyKeyAttribute().Should().BeAssignableTo<IIdempotencyKeyRequiredMetadata>();
+        var endpoint = _host.App.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .Single(candidate => "/" + candidate.RoutePattern.RawText!.TrimStart('/') == route);
+
+        endpoint.Metadata.GetMetadata<IIdempotencyKeyRequiredMetadata>().Should().NotBeNull();
+        endpoint.Metadata.GetMetadata<IIfMatchRequiredMetadata>().Should().BeNull();
+    }
+
+    [Fact]
+    public void R6_AttributesAreMetadataOnly()
+    {
+        typeof(RequireIdempotencyKeyAttribute).GetInterfaces().Should().Equal(typeof(IIdempotencyKeyRequiredMetadata));
+        typeof(RequireIfMatchAttribute).GetInterfaces().Should().Equal(typeof(IIfMatchRequiredMetadata));
+    }
+
+    [Fact]
+    public void R18_IdempotencyKey_IsConstructibleInUnitTests_AndValidatesItsValue()
+    {
+        var key = new IdempotencyKey("order-17");
+
+        key.Value.Should().Be("order-17");
+        key.ToString().Should().Be("order-17");
+        key.Should().Be(new IdempotencyKey("order-17"));
+        FluentActions.Invoking(() => new IdempotencyKey("has space")).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => new IdempotencyKey(new string('k', 257))).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => new IdempotencyKey(string.Empty)).Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task R18_IdempotencyKeyBinding_WithoutThePipeline_YieldsNothingForAnInvalidKey()
+    {
+        var valid = new DefaultHttpContext();
+        valid.Request.Headers[WellKnownHeaders.IdempotencyKey] = "\"order-17\"";
+        var invalid = new DefaultHttpContext();
+        invalid.Request.Headers[WellKnownHeaders.IdempotencyKey] = "has space";
+
+        (await IdempotencyKey.BindAsync(valid)).Should().Be(new IdempotencyKey("order-17"));
+        (await IdempotencyKey.BindAsync(invalid)).Should().BeNull();
     }
 
     private Task<HttpResponseMessage> SendAsync(string path, string key)

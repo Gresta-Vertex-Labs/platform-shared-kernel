@@ -23,9 +23,12 @@ public static class ErrorPresentation
     /// <param name="error">The error.</param>
     /// <param name="httpContext">The current request, or <see langword="null"/> outside a request.</param>
     /// <returns>
-    /// The status from <see cref="ErrorTypeStatusCodeMap.Resolve"/>, except that an <see cref="ErrorType.Conflict"/>
-    /// on an endpoint that requires <c>If-Match</c> is 412 Precondition Failed (RFC 9110 section 13.1.1): the
-    /// version the client sent is no longer current.
+    /// The status from <see cref="ErrorTypeStatusCodeMap.Resolve"/>, except for a version conflict of a conditional
+    /// request: an <see cref="ErrorType.Conflict"/> whose code is one of <c>Problems:PreconditionFailedErrorCodes</c>
+    /// (by default <c>persistence.concurrency_conflict</c>, <c>storage.precondition_failed</c> and
+    /// <c>storage.already_exists</c>), in a request carrying <c>If-Match</c> or <c>If-None-Match</c>, is 412
+    /// Precondition Failed (RFC 9110 section 13.1): the version the client named is not the current one. Every other
+    /// conflict stays 409.
     /// </returns>
     public static int GetStatusCode(Error error, HttpContext? httpContext)
     {
@@ -33,7 +36,8 @@ public static class ErrorPresentation
 
         if (error.Type == ErrorType.Conflict
             && httpContext is not null
-            && RequestFacts.GetEndpoint(httpContext)?.Metadata.GetMetadata<IIfMatchRequiredMetadata>() is not null)
+            && RequestFacts.IsConditionalRequest(httpContext.Request)
+            && RequestFacts.GetOptions(httpContext).Problems.PreconditionFailedErrorCodes.Contains(error.Code))
         {
             return StatusCodes.Status412PreconditionFailed;
         }

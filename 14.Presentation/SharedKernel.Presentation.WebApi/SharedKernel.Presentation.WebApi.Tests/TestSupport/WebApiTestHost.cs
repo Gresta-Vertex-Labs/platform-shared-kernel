@@ -20,25 +20,26 @@ internal static class WebApiTestHost
 
     /// <summary>
     /// Starts a <see cref="TestServer"/> host: <c>AddSharedKernelWebApi</c>, then <paramref name="configureBuilder"/>,
-    /// then <c>UseSharedKernelWebApi()</c>, then <paramref name="mapEndpoints"/>.
+    /// then <c>UseSharedKernelWebApi(configurePipeline)</c>, then <paramref name="mapEndpoints"/>.
     /// </summary>
     public static Task<WebApplication> StartAsync(
         Action<WebApplication> mapEndpoints,
         Action<WebApplicationBuilder>? configureBuilder = null,
-        Action<WebApiOptions>? configureOptions = null,
+        Action<SharedKernelWebApiOptions>? configureOptions = null,
         string environment = Production,
         IReadOnlyDictionary<string, string?>? configuration = null,
         InMemoryLoggerFactory? loggerFactory = null,
-        Action<WebApplicationBuilder>? configureBeforeWebApi = null) =>
-        StartCoreAsync(useKestrel: false, mapEndpoints, configureBuilder, configureOptions, environment, configuration, loggerFactory, configureBeforeWebApi);
+        Action<WebApplicationBuilder>? configureBeforeWebApi = null,
+        Action<WebApiPipeline>? configurePipeline = null) =>
+        StartCoreAsync(useKestrel: false, mapEndpoints, configureBuilder, configureOptions, environment, configuration, loggerFactory, configureBeforeWebApi, configurePipeline);
 
     /// <summary>Starts the same host on a real Kestrel listener at an ephemeral loopback port.</summary>
     public static Task<WebApplication> StartKestrelAsync(
         Action<WebApplication> mapEndpoints,
         Action<WebApplicationBuilder>? configureBuilder = null,
-        Action<WebApiOptions>? configureOptions = null,
+        Action<SharedKernelWebApiOptions>? configureOptions = null,
         string environment = Production) =>
-        StartCoreAsync(useKestrel: true, mapEndpoints, configureBuilder, configureOptions, environment, configuration: null, loggerFactory: null, configureBeforeWebApi: null);
+        StartCoreAsync(useKestrel: true, mapEndpoints, configureBuilder, configureOptions, environment, configuration: null, loggerFactory: null, configureBeforeWebApi: null, configurePipeline: null);
 
     /// <summary>Returns the base address of a host started with <see cref="StartKestrelAsync"/>.</summary>
     public static Uri GetKestrelAddress(this WebApplication app) =>
@@ -48,11 +49,12 @@ internal static class WebApiTestHost
         bool useKestrel,
         Action<WebApplication> mapEndpoints,
         Action<WebApplicationBuilder>? configureBuilder,
-        Action<WebApiOptions>? configureOptions,
+        Action<SharedKernelWebApiOptions>? configureOptions,
         string environment,
         IReadOnlyDictionary<string, string?>? configuration,
         InMemoryLoggerFactory? loggerFactory,
-        Action<WebApplicationBuilder>? configureBeforeWebApi)
+        Action<WebApplicationBuilder>? configureBeforeWebApi,
+        Action<WebApiPipeline>? configurePipeline)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
 
@@ -83,7 +85,7 @@ internal static class WebApiTestHost
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
-        app.UseSharedKernelWebApi();
+        app.UseSharedKernelWebApi(configurePipeline);
         mapEndpoints(app);
 
         await app.StartAsync();

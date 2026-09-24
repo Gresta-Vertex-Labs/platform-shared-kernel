@@ -14,11 +14,15 @@ internal static class ProblemResponseWriter
     /// <summary>The RFC 9457 media type of every error response.</summary>
     public const string ContentType = "application/problem+json";
 
+    /// <summary>The <c>Cache-Control</c> of every error response: an error must never be served from a cache.</summary>
+    public const string NoStore = "no-store";
+
     /// <summary>
-    /// Sets the status, adds <c>Retry-After</c> to a 503 when configured, and writes <paramref name="problem"/>
-    /// through <see cref="IProblemDetailsService"/>; when no writer accepts the request (its <c>Accept</c> header
-    /// excludes JSON) or a writer accepts it but writes nothing (MVC's writer does that for a controller without
-    /// <c>[ApiController]</c>), the problem is written as <c>application/problem+json</c> directly.
+    /// Sets the status and <c>Cache-Control: no-store</c>, adds <c>Retry-After</c> to a 503 when configured, and
+    /// writes <paramref name="problem"/> through <see cref="IProblemDetailsService"/>; when no writer accepts the
+    /// request (its <c>Accept</c> header excludes JSON) or a writer accepts it but writes nothing (MVC's writer does
+    /// that for a controller without <c>[ApiController]</c>), the problem is written as
+    /// <c>application/problem+json</c> directly.
     /// </summary>
     public static async Task WriteAsync(HttpContext httpContext, ProblemDetails problem)
     {
@@ -30,6 +34,7 @@ internal static class ProblemResponseWriter
         // The body is the problem, whatever the endpoint meant to send; clearing the type also tells a writer that
         // wrote something (it sets the type) apart from one that only claimed the problem.
         response.ContentType = null;
+        response.Headers.CacheControl = NoStore;
         AddRetryAfter(httpContext, statusCode);
 
         var service = httpContext.RequestServices.GetService<IProblemDetailsService>();

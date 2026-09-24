@@ -1,8 +1,7 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Presentation.WebApi.Authorization;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -11,34 +10,45 @@ namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;
 /// <summary>Errors shared by the test endpoints.</summary>
 public static class TestErrors
 {
+    /// <summary>The code 06.Persistence gives every stale row version (<c>ConcurrencyVersion.ConflictErrorCode</c>).</summary>
+    public const string ConcurrencyConflictCode = "persistence.concurrency_conflict";
+
     public static readonly Error OrderNotFound = Error.NotFound("order.not_found", "Order 42 was not found.");
 
+    /// <summary>A conflict that is not about versions: stays 409 whatever the request's headers.</summary>
     public static readonly Error VersionConflict = Error.Conflict("order.version_conflict", "Order 42 was changed by someone else.");
+
+    /// <summary>The persistence layer's stale-version conflict: 412 on a conditional request.</summary>
+    public static readonly Error StaleVersion = Error.Conflict(ConcurrencyConflictCode, "Order 42 was changed by someone else.");
 
     public static readonly Error SearchUnreachable =
         Error.Unavailable("search.unreachable", "Search engine at http://search.internal:7700 did not answer.");
 }
 
-/// <summary>An API controller (<c>[ApiController]</c>) exercising the MVC mapping.</summary>
+/// <summary>An API controller (<c>[ApiController]</c>) returning the same typed results as minimal APIs.</summary>
 [ApiController]
 [Route("mvc-api")]
 public sealed class ApiTestController : ControllerBase
 {
     [HttpGet("ok")]
-    public ActionResult<string> Ok_() => Result<string>.Success("value").ToActionResult();
+    public Results<Ok<string>, ErrorHttpResult> Ok_() => Result<string>.Success("value").ToOk();
 
     [HttpGet("failure")]
-    public ActionResult<string> Failure() => Result<string>.Failure(TestErrors.OrderNotFound).ToActionResult();
+    public Results<Ok<string>, ErrorHttpResult> Failure() => Result<string>.Failure(TestErrors.OrderNotFound).ToOk();
 
     [HttpDelete("done")]
-    public IActionResult Done() => Result.Success().ToActionResult();
+    public Results<NoContent, ErrorHttpResult> Done() => Result.Success().ToNoContent();
 
     [HttpDelete("failure")]
-    public IActionResult DeleteFailure() => Result.Failure(TestErrors.OrderNotFound).ToActionResult();
+    public Results<NoContent, ErrorHttpResult> DeleteFailure() => Result.Failure(TestErrors.OrderNotFound).ToNoContent();
 
     [HttpPost("created")]
-    public IActionResult Created_() =>
-        Result<string>.Success("7").ToActionResult(id => CreatedAtAction(nameof(Ok_), new { id }, id));
+    public Results<Created<string>, ErrorHttpResult> Created_() =>
+        Result<string>.Success("7").ToCreated(id => $"/mvc-api/orders/{id}");
+
+    [HttpGet("etag")]
+    public Task<Results<OkWithETag<string>, ErrorHttpResult>> ETag() =>
+        Task.FromResult(Result<string>.Success("value")).ToOkWithETag(_ => "5");
 
     [HttpGet("not-found")]
     public IActionResult FrameworkNotFound() => NotFound();
@@ -69,14 +79,16 @@ public sealed class ApiTestController : ControllerBase
 
     [HttpPut("versioned")]
     [RequireIfMatch]
-    public IActionResult Versioned() =>
-        HttpContext.GetIfMatch() == "1"
-            ? Result.Success().ToActionResult()
-            : Result.Failure(TestErrors.VersionConflict).ToActionResult();
+    public Results<NoContent, ErrorHttpResult> Versioned() =>
+        HttpContext.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent();
 
     [HttpPut("versioned-throw")]
     [RequireIfMatch]
-    public IActionResult VersionedThrow() => throw new ConflictException(TestErrors.VersionConflict);
+    public IActionResult VersionedThrow() => throw new ConflictException(TestErrors.StaleVersion);
+
+    [HttpPost("customers")]
+    public Results<Ok<string>, ErrorHttpResult> CreateCustomer([FromBody] CustomerRequest request) =>
+        Result<string>.Success(request.Name!).ToOk();
 }
 
 /// <summary>A controller without <c>[ApiController]</c>, for which MVC's problem writer writes nothing.</summary>
@@ -84,7 +96,7 @@ public sealed class ApiTestController : ControllerBase
 public sealed class PlainTestController : Controller
 {
     [HttpGet("failure")]
-    public IActionResult Failure() => Result.Failure(TestErrors.OrderNotFound).ToActionResult();
+    public Results<NoContent, ErrorHttpResult> Failure() => Result.Failure(TestErrors.OrderNotFound).ToNoContent();
 }
 
 /// <summary>Class-level and action-level requirements, which must both hold.</summary>
@@ -96,4 +108,14 @@ public sealed class AdminTestController : ControllerBase
     [HttpGet("report")]
     [RequirePermission("reports.read")]
     public string Report() => "ok";
+}
+
+/// <summary>A body validated by data annotations, for the model-state response.</summary>
+public sealed class CustomerRequest
+{
+    [Required]
+    public string? Name { get; set; }
+
+    [Range(18, 130)]
+    public int Age { get; set; }
 }

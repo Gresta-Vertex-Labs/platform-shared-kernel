@@ -4,10 +4,12 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Results;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Integration;
@@ -102,8 +104,113 @@ public sealed class ProblemShapeTests : IClassFixture<FullStackHost>
 
         using var response = await _host.Client.SendAsync(request);
 
-        await response.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, "order.version_conflict");
+        await response.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, TestErrors.ConcurrencyConflictCode);
     }
+
+    [Fact]
+    public async Task R9_MvcModelState_IsThePlatformsValidationShape_KeepingAttributeMessages()
+    {
+        using var response = await _host.Client.PostAsync("/mvc-api/customers", Json("{\"age\":5}"));
+
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, ErrorCodes.Validation.Failed);
+        var errors = problem.GetProperty(ProblemDetailsExtensionNames.Errors);
+        var codes = problem.GetProperty(ProblemDetailsExtensionNames.ErrorCodes);
+        errors.GetProperty("Name")[0].GetString().Should().Be("The Name field is required.");
+        codes.GetProperty("Name")[0].GetString().Should().Be(PresentationErrorCodes.InvalidValue);
+        errors.GetProperty("Age")[0].GetString().Should().Contain("18");
+        codes.GetProperty("Age")[0].GetString().Should().Be(PresentationErrorCodes.InvalidValue);
+    }
+
+    [Fact]
+    public async Task R9_MvcUnreadableJson_NamesTheField_WithoutDotNetTypeNames()
+    {
+        using var response = await _host.Client.PostAsync("/mvc-api/customers", Json("{\"name\":\"Ada\",\"age\":\"old\"}"));
+
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, ErrorCodes.Validation.Failed);
+        problem.GetProperty(ProblemDetailsExtensionNames.Errors).GetProperty("age")[0].GetString().Should().Be("The value is not valid.");
+        problem.GetProperty(ProblemDetailsExtensionNames.ErrorCodes).GetProperty("age")[0].GetString()
+            .Should().Be(ErrorCodes.Validation.InvalidFormat);
+        problem.GetRawText().Should().NotContain("System.").And.NotContain("Int32").And.NotContain("LineNumber");
+    }
+
+    [Theory]
+    [InlineData(WebApiTestHost.Production)]
+    [InlineData(WebApiTestHost.Development)]
+    public async Task R9_MinimalApiUnreadableJson_IsTheSameValidationShape_InEveryEnvironment(string environment)
+    {
+        await using var app = await StartBindingHostAsync(environment);
+
+        using var response = await app.GetTestClient().PostAsync("/json", Json("{\"name\":5}"));
+
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, ErrorCodes.Validation.Failed);
+        problem.GetProperty(ProblemDetailsExtensionNames.Errors).GetProperty("name")[0].GetString().Should().Be("The value is not valid.");
+        problem.GetProperty(ProblemDetailsExtensionNames.ErrorCodes).GetProperty("name")[0].GetString()
+            .Should().Be(ErrorCodes.Validation.InvalidFormat);
+        problem.GetRawText().Should().NotContain("System.").And.NotContain("Payload");
+    }
+
+    [Theory]
+    [InlineData(WebApiTestHost.Production)]
+    [InlineData(WebApiTestHost.Development)]
+    public async Task R9_MinimalApiParameterThatCannotBeBound_Is400_WithoutDotNetTypeNames(string environment)
+    {
+        await using var app = await StartBindingHostAsync(environment);
+
+        using var response = await app.GetTestClient().GetAsync("/numbers?id=abc");
+
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, ErrorCodes.Validation.InvalidFormat);
+        problem.Detail().Should().Be("The request is not valid.");
+        problem.GetRawText().Should().NotContain("Int32").And.NotContain("int id").And.NotContain("abc");
+    }
+
+    [Theory]
+    [InlineData("/throw-validation-single", "/result-validation-single")]
+    [InlineData("/throw-validation", "/result-validation-unnamed")]
+    public async Task R9_ThrownValidationException_WritesTheBodyOfTheReturnedError(string thrownPath, string returnedPath)
+    {
+        await using var app = await WebApiTestHost.StartAsync(app =>
+        {
+            app.MapGet("/throw-validation-single", IResult () => throw new ValidationException(Error.Validation("customer.name_required", "Name is required.")));
+            app.MapGet("/result-validation-single", () => Result<string>.Failure(Error.Validation("customer.name_required", "Name is required.")).ToOk());
+            app.MapGet("/throw-validation", IResult () => throw new ValidationException(
+                [Error.Validation("customer.name_required", "Name is required."), Error.Validation("customer.email_invalid", "Email is invalid.")]));
+            app.MapGet("/result-validation-unnamed", () => Result<string>.Failure(Error.Validation(
+                [Error.Validation("customer.name_required", "Name is required."), Error.Validation("customer.email_invalid", "Email is invalid.")])).ToOk());
+        });
+
+        using var thrown = await app.GetTestClient().GetAsync(thrownPath);
+        using var returned = await app.GetTestClient().GetAsync(returnedPath);
+
+        var thrownBody = Comparable(await thrown.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, await CodeOfAsync(returned)));
+        var returnedBody = Comparable(await returned.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, await CodeOfAsync(thrown)));
+        thrownBody.Should().Be(returnedBody);
+    }
+
+    private static StringContent Json(string json) => new(json, Encoding.UTF8, "application/json");
+
+    private static async Task<string> CodeOfAsync(HttpResponseMessage response)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty(ProblemDetailsExtensionNames.ErrorCode).GetString()!;
+    }
+
+    // The members that differ between any two requests are left out.
+    private static string Comparable(System.Text.Json.JsonElement problem)
+    {
+        var members = problem.EnumerateObject()
+            .Where(member => member.Name is not ("instance" or ProblemDetailsExtensionNames.TraceId or ProblemDetailsExtensionNames.CorrelationId))
+            .Select(member => $"{member.Name}={member.Value.GetRawText()}");
+        return string.Join("|", members);
+    }
+
+    private static Task<WebApplication> StartBindingHostAsync(string environment) =>
+        WebApiTestHost.StartAsync(
+            app =>
+            {
+                app.MapPost("/json", ([Microsoft.AspNetCore.Mvc.FromBody] FullStackHost.Payload payload) => payload.Name);
+                app.MapGet("/numbers", (int id) => id);
+            },
+            environment: environment);
 
     [Fact]
     public async Task RateLimitRejection_WritesProblem()

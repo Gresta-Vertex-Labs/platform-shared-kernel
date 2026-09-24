@@ -149,19 +149,40 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
             "Bearer error=\"insufficient_user_authentication\", error_description=\"A stronger authentication method is required\"");
     }
 
-    [Fact]
-    public async Task StepUpChallenge_UsesTheSchemeTheClientAuthenticatedWith()
+    [Theory]
+    [InlineData("DPoP some-token", "DPoP")]
+    [InlineData("dpop some-token", "DPoP")]
+    [InlineData("Bearer some-token", "Bearer")]
+    public async Task StepUpChallenge_UsesTheSchemeTheClientAuthenticatedWith(string authorization, string scheme)
     {
         using var response = await SendAsync(
             "/auth/fresh",
             request =>
             {
-                request.Headers.TryAddWithoutValidation(HeaderNames.Authorization, "DPoP some-token");
+                request.Headers.TryAddWithoutValidation(HeaderNames.Authorization, authorization);
                 return request.SignedIn(authTime: FullStackHost.Now.AddHours(-1));
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        response.Headers.WwwAuthenticate.ToString().Should().StartWith("DPoP error=\"insufficient_user_authentication\"");
+        response.Headers.WwwAuthenticate.ToString().Should().StartWith(scheme + " error=\"insufficient_user_authentication\"");
+    }
+
+    [Theory]
+    [InlineData("Basic dXNlcjpwYXNz")]
+    [InlineData("Evil-Scheme token")]
+    [InlineData("DPoPX token")]
+    public async Task R26_StepUpChallenge_NeverEchoesAnotherScheme(string authorization)
+    {
+        using var response = await SendAsync(
+            "/auth/fresh",
+            request =>
+            {
+                request.Headers.TryAddWithoutValidation(HeaderNames.Authorization, authorization);
+                return request.SignedIn(authTime: FullStackHost.Now.AddHours(-1));
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().StartWith("Bearer error=\"insufficient_user_authentication\"");
     }
 
     [Fact]

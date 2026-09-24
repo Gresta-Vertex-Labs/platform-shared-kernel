@@ -101,7 +101,7 @@ public sealed class KestrelLimitsTests
     private static Task<WebApplication> StartAsync(
         Action onHandled,
         string environment = WebApiTestHost.Production,
-        Action<WebApiOptions>? configure = null) =>
+        Action<SharedKernelWebApiOptions>? configure = null) =>
         WebApiTestHost.StartKestrelAsync(
             app =>
             {

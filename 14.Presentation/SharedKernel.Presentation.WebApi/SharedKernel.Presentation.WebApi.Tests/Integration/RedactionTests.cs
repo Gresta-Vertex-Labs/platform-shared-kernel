@@ -126,7 +126,7 @@ public sealed class RedactionTests
 
     private static Task<WebApplication> StartAsync(
         string environment,
-        Action<Options.WebApiOptions>? configureOptions = null,
+        Action<Options.SharedKernelWebApiOptions>? configureOptions = null,
         Action<WebApplicationBuilder>? configureBuilder = null) =>
         WebApiTestHost.StartAsync(
             app =>

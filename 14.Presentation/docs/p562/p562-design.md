@@ -9,6 +9,9 @@ Nothing in 14.Presentation is published → breaking changes are free. 01.Core, 
 additive changes only. No state-map phases; brains and READMEs are rewritten in the final wave. Code wins where this
 record and the code disagree.
 
+**Final-review remediation (stream A, R1–R28 of [`p562-final-review-findings.md`](p562-final-review-findings.md)).**
+The WebApi sections below (D0–D10, D15) are updated to the remediated design; each change is tagged with its R item.
+
 ## D0. Package layout
 
 | Package | References | Third-party packages |
@@ -23,9 +26,17 @@ record and the code disagree.
 - `[LoggerMessage]` EventId sub-blocks of `LoggingEventIdRanges.Presentation` (14000): WebApi 14000–14099,
   SignalR 14100–14199, Grpc 14200–14299, OpenApi 14300–14399. Keep existing ids where the log statement survives.
 - `.Grpc` still never references 04.Contracts (`GrpcNeverReferencesContracts`).
-- Everyday surface (setup, result mapping, endpoint conventions, accessors) lives in each package's **root
-  namespace**, so one `using` covers the common path. Types (options, attributes, result types) live in
-  sub-namespaces. Do not create a namespace named `Results` (it shadows `Microsoft.AspNetCore.Http.Results`).
+- Everyday surface lives in each package's **root namespace**, so one `using` covers the common path. For WebApi
+  (R21) that is setup, result mapping, conventions and accessors, and also the everyday types: the four
+  authorization attributes (names kept), `RequireIdempotencyKeyAttribute`, `RequireIfMatchAttribute`,
+  `ErrorHttpResult`, `OkWithETag<T>`, `IdempotencyKey`, `IfMatch<TVersion>` and `WebApiPipeline`. Options
+  (`…WebApi.Options`), the code/name constants and `ErrorPresentation`/`ErrorTypeStatusCodeMap`/
+  `ErrorProblemDetailsExtensions` (`…WebApi.Errors`) and the marker interfaces (`…WebApi.Http.IIfMatchRequiredMetadata`,
+  `…WebApi.Idempotency.IIdempotencyKeyRequiredMetadata`) stay in sub-namespaces. Do not create a namespace named
+  `Results` (it shadows `Microsoft.AspNetCore.Http.Results`).
+- WebApi EventIds in use: 14000–14013 (14009–14013 added by the remediation: missing `IUserContextMapper` at
+  request time, scheme without mapper at startup, pipeline never added, exception details outside Development,
+  WebSocket origin refused).
 
 ## D1. One error contract, one pipeline (B3–B6, B14, B15, F3, F8)
 
@@ -52,8 +63,9 @@ record and the code disagree.
   fall back to `Response.WriteAsJsonAsync(problem, …, contentType: "application/problem+json")`.
 - `ErrorPresentation` (public static, namespace `SharedKernel.Presentation.WebApi.Errors`) is the one place that
   decides status and client text, used by HTTP, SignalR and gRPC:
-  - `int GetStatusCode(Error error, HttpContext? httpContext)` — `ErrorTypeStatusCodeMap` plus the `If-Match`
-    rule (D10).
+  - `int GetStatusCode(Error error, HttpContext? httpContext)` — `ErrorTypeStatusCodeMap` plus the version-conflict
+    rule (D10, R7): a `Conflict` whose code is in `Problems:PreconditionFailedErrorCodes`, in a request carrying
+    `If-Match` or `If-None-Match`, is 412.
   - `string GetClientMessage(Error error, HttpContext? httpContext)` — culture from `IRequestCultureFeature`
     (falling back to `CultureInfo.CurrentUICulture`), translation via an optional `ILocalizationCatalog` from
     `RequestServices`, redaction of server categories outside Development (`IHostEnvironment` from
@@ -61,22 +73,44 @@ record and the code disagree.
   - `bool IsServerError(ErrorType type)`.
 - `ErrorTypeStatusCodeMap.Resolve`: add `Unavailable → 503`, `Timeout → 504`. A 503 gets `Retry-After` (whole
   seconds) when `Problems.UnavailableRetryAfter` is set.
-- `ErrorHttpResult` (public sealed, `…WebApi.Errors`): `IResult`, `IStatusCodeHttpResult`, `IContentTypeHttpResult`;
-  exposes `Error`; builds the ProblemDetails at `ExecuteAsync` time, with the `HttpContext` (fixes B3 by design).
-  `ErrorProblemDetailsExtensions.ToProblemDetails(this Error, HttpContext)` stays public with a **required**
-  context.
-- Exception handler (registered automatically; the type becomes internal):
-  - Client abort (`OperationCanceledException` while `RequestAborted` is cancelled) → status 499, no body, Debug log.
-  - `BadHttpRequestException` → its own status (413 → code `request.too_large`), its client-safe message.
-  - `ValidationException` → 400 with all field errors; other `SharedKernelException` → its `Error` via
-    `ErrorPresentation`.
-  - Anything else → 500 `ErrorCodes.Unexpected.Default`, generic detail; Development adds `exception`.
-  - Logging: server errors (≥ 500) at Error with the exception, 4xx at Debug. .NET 10's exception middleware no
-    longer logs handled exceptions, so this handler is the only log.
+- `ErrorHttpResult` (public sealed, root namespace since R21): `IResult`, `IStatusCodeHttpResult`,
+  `IContentTypeHttpResult`; exposes `Error`; builds the ProblemDetails at `ExecuteAsync` time, with the
+  `HttpContext` (fixes B3 by design). `StatusCode` is the status of the error type alone; a version conflict of a
+  conditional request is written as 412, which only the request decides (R28). `ErrorProblemDetailsExtensions.ToProblemDetails(this Error, HttpContext)`
+  stays public with a **required** context.
+- Exception handling (internal `SharedKernelExceptionHandler`), since R5 the **fallback**
+  `ExceptionHandlerOptions.ExceptionHandler` rather than an `IExceptionHandler`: a PostConfigure installs it unless the
+  service set its own `ExceptionHandler` or `ExceptionHandlingPath`, so every `IExceptionHandler` a service registers
+  runs first and the platform handles what they leave. It also sets `AllowStatusCode404Response` (a
+  `NotFoundException` is a legitimate 404, and a gRPC answer starts no response) and chains
+  `SuppressDiagnosticsCallback`: the middleware's own log is suppressed for every exception the platform handled
+  (marked on the request), the framework's default is kept for a service handler, and a service's own callback still
+  decides everything else.
+  - Client abort (R10): **any** exception while `RequestAborted` is cancelled → status 499, no body, Debug log (the
+    middleware answers an aborted `OperationCanceledException`/`IOException` itself before any handler).
+  - `TimeoutException`, or an `OperationCanceledException` the client did not cause → 504 `timeout.default` (R10).
+  - `BadHttpRequestException` 400 (a minimal API that could not bind a parameter or read the body) → the validation
+    problem of R9: `validation.invalid_format`, keyed by the JSON path when the body failed at a known member, generic
+    text — the framework's message names .NET types. Other statuses keep their status and client-safe message (413 →
+    `request.too_large`). `RouteHandlerOptions.ThrowOnBadRequest` is set so this happens in every environment.
+  - `ValidationException` → exactly the body a returned error gives (R9): one error is itself, several are
+    `Error.Validation(errors)`; always 400. Other `SharedKernelException` → its `Error` via `ErrorPresentation`.
+  - Anything else → 500 `ErrorCodes.Unexpected.Default`, generic detail; Development adds `exception`. A startup
+    warning (EventId 14012) fires when `Problems:IncludeExceptionDetails` is `true` outside Development (R23).
+  - Logging: server errors (≥ 500) at Error with the exception, 4xx at Debug — the only log of the exception.
+- MVC `[ApiController]` model-state 400s (R9): `ApiBehaviorOptions.InvalidModelStateResponseFactory` is replaced by the
+  platform's (MVC's own default only; a factory the service set is kept), which writes `Error.Validation(errors)` with
+  one field error per model error: an entry carrying an exception (a JSON conversion failure) is
+  `validation.invalid_format` with a generic message, anything else keeps the attribute's or binding rule's message
+  and is `validation.invalid_value`. JSON paths lose their `$.` prefix. MVC's `JsonOptions.AllowInputFormatterExceptionMessages`
+  is set to `false`, so System.Text.Json's messages (which name .NET types) never reach model state as text.
 - Status code pages produce the same shape for framework-generated empty 4xx/5xx responses, except gRPC requests
   (`Content-Type: application/grpc*`), which are left untouched.
+- Every problem response is `Cache-Control: no-store` (R27), set by the platform's writer and by the
+  `CustomizeProblemDetails` hook, whatever `SecurityHeaders:CacheControl` is.
 - Presentation-originated codes live in `PresentationErrorCodes` (public constants): `request.too_large`,
-  `idempotency.key_required`, `idempotency.key_invalid`, `precondition.required`, `rate_limit.exceeded`,
+  `idempotency.key_required`, `idempotency.key_invalid`, `precondition.required`, `precondition.invalid`,
+  `precondition.failed`, `validation.invalid_value`, `forbidden.origin_not_allowed`, `rate_limit.exceeded`,
   `unauthorized.step_up_required`, and `ForStatus(int)` → `http.{status}`. Platform codes come from `ErrorCodes`.
 
 ## D2. `Result` → HTTP (F2)
@@ -87,10 +121,12 @@ Minimal APIs, root namespace `SharedKernel.Presentation.WebApi`:
 Results<Ok<T>, ErrorHttpResult>            ToOk<T>(this Result<T> result)
 Results<Ok<TOut>, ErrorHttpResult>         ToOk<T, TOut>(this Result<T> result, Func<T, TOut> map)
 Results<OkWithETag<T>, ErrorHttpResult>    ToOkWithETag<T>(this Result<T> result, Func<T, string> version)                      // D10
-Results<OkWithETag<TOut>, ErrorHttpResult> ToOkWithETag<T, TOut>(this Result<T> result, Func<T, TOut> map, Func<T, string> version)
+Results<OkWithETag<TOut>, ErrorHttpResult> ToOkWithETag<T, TOut>(this Result<T> result, Func<T, string> version, Func<T, TOut> map)  // R20: header first
 Results<Created<T>, ErrorHttpResult>       ToCreated<T>(this Result<T> result, Func<T, string> location)
 Results<Created<TOut>, ErrorHttpResult>    ToCreated<T, TOut>(this Result<T> result, Func<T, string> location, Func<T, TOut> map)
+Results<Created, ErrorHttpResult>          ToCreated(this Result result, string location)                                       // R20
 Results<Accepted<T>, ErrorHttpResult>      ToAccepted<T>(this Result<T> result, Func<T, string>? location = null)
+Results<Accepted, ErrorHttpResult>         ToAccepted(this Result result, string? location = null)                              // R20
 Results<NoContent, ErrorHttpResult>        ToNoContent(this Result result)
 Results<NoContent, ErrorHttpResult>        ToNoContent<T>(this Result<T> result)
 Results<TSuccess, ErrorHttpResult>         ToHttpResult<T, TSuccess>(this Result<T> result, Func<T, TSuccess> onSuccess) where TSuccess : IResult
@@ -100,15 +136,16 @@ ErrorHttpResult                            ToErrorResult(this Error error)
 
 Every method also exists on `Task<Result<T>>`/`Task<Result>` (returning `Task<…>`), so handlers write
 `sender.Send(cmd, ct).ToCreated(o => $"/orders/{o.Id}")`. Typed unions let OpenAPI infer the success response.
+Where a method takes a header selector and a body map, the selector comes first (R20).
 
-MVC, same namespace: `IActionResult ToActionResult(this Result)` (204 | problem),
-`ActionResult<T> ToActionResult<T>(this Result<T>)` (200 | problem),
-`IActionResult ToActionResult<T>(this Result<T>, Func<T, IActionResult> onSuccess)`; failures run the same logic as
-`ErrorHttpResult`. `ToProblemDetailsResult` is deleted.
+MVC (R19): the `ToActionResult` family is deleted. Controller actions return the same typed results
+(`Results<Ok<T>, ErrorHttpResult> Get() => result.ToOk();`), which MVC executes as `IResult`s; the tests prove status,
+body, `[ApiController]` and plain controllers, and that MVC's API explorer reads the typed union's response
+metadata (the OpenAPI input). `ToProblemDetailsResult` is deleted.
 
 ## D3. Authorization — native policies (R1, B1, B2, B14)
 
-- Attributes (namespace `…WebApi.Authorization`, names unchanged): `RequirePermissionAttribute(params string[])`,
+- Attributes (root namespace since R21, names unchanged): `RequirePermissionAttribute(params string[])`,
   `RequireRoleAttribute(params string[])`, `RequireFreshAuthenticationAttribute(int maxAgeSeconds)`,
   `RequireAuthenticationMethodAttribute(params string[])`. Each **derives from `AuthorizeAttribute`** (SignalR
   authorizes hub *methods* only through `AuthorizeAttribute`, found in wave 3; an `IAuthorizeData`-only attribute
@@ -123,22 +160,34 @@ MVC, same namespace: `IActionResult ToActionResult(this Result)` (204 | problem)
   `RequireAuthorization(new …Attribute(…))`. They work on route handlers, groups, `MapControllers()`,
   `MapHub<T>()` and `MapGrpcService<T>()`.
 - `services.AddSharedKernelAuthorization()` (public, idempotent; called by the WebApi, SignalR and gRPC setup):
-  `AddAuthorization()`, a policy provider that decodes `SharedKernel:` names and delegates every other name to the
-  default provider, the requirement handlers, and an `IAuthorizationMiddlewareResultHandler` decorator.
+  `AddAuthorization()`, a policy provider that decodes `SharedKernel:` names and delegates every other name, the
+  requirement handlers, and an `IAuthorizationMiddlewareResultHandler` decorator.
+- R4: the policy provider and the result handler **decorate** the implementation registered before them — a
+  service's own when it registered one first, otherwise the framework default — in place and with its lifetime;
+  `AllowsCachingPolicies` follows the decorated provider. A startup check (`IHostedLifecycleService.StartingAsync`,
+  before the server listens) throws `InvalidOperationException` naming the offending type when a later registration
+  displaced either: a probe `SharedKernel:` policy name must still resolve to the platform's requirement, and the
+  resolved result handler must be the platform's decorator.
+- R16: a signed-in principal that no `IUserContextMapper` understands is refused (403) and the reason is logged at
+  Warning (EventId 14009, the identity's authentication type); at startup every authentication scheme without a
+  mapper is named in a warning (EventId 14010) — remote sign-in schemes and policy schemes are skipped.
 - Handlers evaluate `UserContextResolver.Resolve(context.User, IEnumerable<IUserContextMapper>)` — the principal
   being authorized, identical for HTTP, SignalR and gRPC — never raw claims or `ClaimTypes.Role`. Freshness uses
   `IClock` (resolved only when needed) with `IsAuthenticationFresherThan`; methods use `WasAuthenticatedWith`.
   Every generated policy requires an authenticated user, so anonymous → challenge → 401.
-- Result handler (HTTP bodies; nothing is written for gRPC requests, which map HTTP 401/403 themselves — except
-  that a gRPC step-up failure is answered 401 with the RFC 9470 challenge and no body, so it surfaces as
-  `Unauthenticated` like HTTP's 401):
+- Result handler (HTTP bodies; a gRPC request gets the same status and headers without a body — gRPC maps 401 to
+  `Unauthenticated` and 403 to `PermissionDenied`):
   - Challenge → the scheme's challenge (keeps `WWW-Authenticate`) + ProblemDetails 401 `ErrorCodes.Unauthorized.Default`.
+    With no authentication scheme registered: 401 with `WWW-Authenticate: Bearer` — for gRPC too (R15), where the
+    framework's challenge would otherwise throw.
   - Forbid → ProblemDetails 403 `ErrorCodes.Forbidden.InsufficientPermission`; the message never names roles or
     permissions.
   - Step-up (the failed requirements are freshness or authentication-method requirements) → 401 with
     `WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="…"` (+ `max_age` for
-    freshness) per RFC 9470, code `unauthorized.step_up_required`.
-  - Warning audit log (EventId 14002 kept): endpoint display name + code, no principal data.
+    freshness) per RFC 9470, code `unauthorized.step_up_required`. The challenge names `DPoP` when the request's
+    `Authorization` used that scheme, otherwise `Bearer` — never any other value taken from the request (R26).
+  - Warning audit log (EventId 14002 kept) for every refusal, gRPC included: endpoint display name + code, no
+    principal data.
 - Rules kept from the old brain: evaluation always through `IUserContext`; HTTP failures always carry ProblemDetails.
 - Deleted: `AuthorizationRequirementEndpointFilter`, `AddSharedKernelAuthorizationFilters`, the per-builder
   extension overloads, `GrpcAuthorizationInterceptor`.
@@ -146,35 +195,56 @@ MVC, same namespace: `IActionResult ToActionResult(this Result)` (204 | problem)
 ## D4. One-call setup (F1)
 
 ```csharp
-public static IHostApplicationBuilder AddSharedKernelWebApi(this IHostApplicationBuilder builder, Action<WebApiOptions>? configure = null)
-public static IApplicationBuilder UseSharedKernelWebApi(this IApplicationBuilder app)
+public static IHostApplicationBuilder AddSharedKernelWebApi(this IHostApplicationBuilder builder, Action<SharedKernelWebApiOptions>? configure = null)
+public static IApplicationBuilder UseSharedKernelWebApi(this IApplicationBuilder app, Action<WebApiPipeline>? configure = null)   // R2
 ```
 
-`WebApiOptions : ISectionBoundOptions` (`SharedKernel:Presentation:WebApi`), bound and validated at startup via
-`AddValidatedOptions` + `ValidateOnStart`; `configure` runs after binding. Idempotent.
+`SharedKernelWebApiOptions : ISectionBoundOptions` (renamed from `WebApiOptions` by R22, section unchanged:
+`SharedKernel:Presentation:WebApi`), bound and validated via `AddValidatedOptions` + `ValidateOnStart`; `configure`
+runs after binding. Idempotent. Invalid settings throw `OptionsValidationException` the first time they are read
+(R28): with Kestrel at `builder.Build()` (the server reads them), otherwise — `TestServer` — when
+`UseSharedKernelWebApi()` builds the pipeline, and at the latest when the host starts.
 
 ```text
-WebApiOptions
+SharedKernelWebApiOptions
   CorrelationId   { Enabled = true, MaxLength = 128, AllowedCharacterPattern = "^[A-Za-z0-9\-_:.]+$" }
   Cors            { AllowedOrigins = [], AllowedMethods = [], AllowedHeaders = [], ExposedHeaders = <platform set>,
                     AllowCredentials = false, PreflightMaxAge = 00:10:00 }
   SecurityHeaders { Enabled = true, Hsts = true, HstsMaxAge = 365 days, HstsIncludeSubDomains = true, HstsPreload = false,
                     ContentTypeOptions = "nosniff", FrameOptions = "DENY", ReferrerPolicy = "no-referrer",
                     PermissionsPolicy = "geolocation=(), microphone=(), camera=()",
-                    ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'" }   // null/empty = header off
-  Limits          { MaxRequestBodySize = 4 MiB (long?; null = server default), MaxJsonDepth = 32 }
-  Problems        { TypeBaseUri = null, IncludeExceptionDetails = null (= Development), UnavailableRetryAfter = null }
+                    ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'",   // null/empty = header off
+                    CacheControl = "no-store" }                                              // R27; null/empty = off
+  Limits          { MaxRequestBodySize = 4 MiB (long?; null = server default; enforced by Kestrel, not TestServer),
+                    MaxJsonDepth = null (int?; null = framework default 64 — R13: it also limits responses) }
+  Problems        { TypeBaseUri = null (normalized to end with "/", no query/fragment — R12),
+                    IncludeExceptionDetails = null (= Development), UnavailableRetryAfter = null,
+                    PreconditionFailedErrorCodes = [persistence.concurrency_conflict, storage.precondition_failed,
+                                                    storage.already_exists] }                // R7
   RemoveServerHeader = true
+  TrustInboundBaggage = false                                                                 // R3
 ```
 
-Registers: problem details (D1), exception handler, `AddSharedKernelAuthorization()` (D3), CORS policy when origins
-are configured (D7), the 429 body (D8), Kestrel (`AddServerHeader = false`, `Limits.MaxRequestBodySize`), JSON
-`MaxDepth` on both the minimal-API and MVC `JsonOptions`, HSTS options.
+Registers: problem details (D1), the fallback exception handler (D1, R5), `AddSharedKernelAuthorization()` (D3), CORS
+policy when origins are configured (D7), the 429 body (D8), Kestrel (`AddServerHeader = false`,
+`Limits.MaxRequestBodySize`), JSON `MaxDepth` on both the minimal-API and MVC `JsonOptions` when set, HSTS options,
+`RouteHandlerOptions.ThrowOnBadRequest = true` and the MVC model-state response (R9), the decorated hosting
+`DistributedContextPropagator` (R3), and startup diagnostics (R17, R23).
 
-`UseSharedKernelWebApi()` order: correlation → security headers → exception handler → status code pages →
-HSTS (not in Development) → `UseRouting` → CORS (when configured) → `UseAuthentication` (only when an
-authentication scheme provider is registered) → `UseAuthorization` → `UseRateLimiter` (only when rate limiting is
-configured). Services call it first, then map endpoints; custom middleware goes after it.
+`UseSharedKernelWebApi(configure)` order (R1, R2, R3, R6, R11, R25):
+inbound-baggage removal (unless `TrustInboundBaggage`) → **`AtStart` hooks** (forwarded headers) → correlation →
+HSTS (not in Development) → security headers → exception handler → status code pages → `UseRouting` → CORS and the
+WebSocket origin check (when configured) → **`BeforeAuthentication` hooks** (certificate forwarding) →
+`UseAuthentication` (only when an authentication scheme provider is registered) → **`BeforeAuthorization` hooks**
+(request localization, so 401/403/429 are translated) → `UseRateLimiter` (only when rate limiting is configured;
+before authorization so refused traffic is counted — R1) → `UseAuthorization` → the required-header middleware
+(D9, D10). Services call it first, then map endpoints; other middleware goes after it. `WebApiPipeline`
+(root namespace) exposes `AtStart`, `BeforeAuthentication`, `BeforeAuthorization`, each taking an
+`Action<IApplicationBuilder>`; registrations run in order. A second call has no effect, hooks included.
+
+Startup diagnostics (`IHostedLifecycleService`): a warning (EventId 14011) when `AddSharedKernelWebApi()` ran but
+`UseSharedKernelWebApi()` never did (checked after every hosted service started, so `Startup`-class hosts are covered —
+R17), and one (14012) when exception details are enabled outside Development (R23).
 
 ## D5. Correlation id (B11, F7)
 
@@ -184,6 +254,16 @@ configured). Services call it first, then map endpoints; custom middleware goes 
   pattern uses `[GeneratedRegex]`; a custom pattern is compiled once.
 - Accessor: `HttpContext.GetCorrelationId()` (root namespace, `string?`). The public `ItemsKey` and forwarding
   constants go.
+- Inbound baggage (R3): unless `TrustInboundBaggage` (default `false`), the caller's W3C baggage is refused twice.
+  (1) The `DistributedContextPropagator` in DI — the one ASP.NET Core hosting reads each request with, before any
+  middleware — is decorated so it extracts no baggage (trace context unchanged, outgoing `Inject` unchanged); without
+  this, hosting's own "Request starting" log record carried a forged item. (2) The first middleware removes every
+  baggage item still on the request `Activity`, before the correlation id is added. Baggage the service adds later
+  is kept. A regression test proves a forged item reaches neither the `Activity` nor any log record (through a
+  processor mirroring 13.ServiceDefaults' `BaggageLogRecordProcessor`), and that `TrustInboundBaggage = true` keeps
+  it. 13.ServiceDefaults' processor allow-list stays a follow-up (findings record). Open item: OpenTelemetry's ASP.NET
+  Core instrumentation fills OpenTelemetry's own `Baggage.Current` from the same header when its default propagator
+  is in use; this package cannot reach it (no OpenTelemetry reference) — 13.ServiceDefaults owns that wiring.
 - One middleware covers REST, SignalR (negotiate/connect) and gRPC — they share the pipeline. No protocol-specific
   correlation code remains.
 
@@ -192,18 +272,31 @@ configured). Services call it first, then map endpoints; custom middleware goes 
 - Internal middleware writes the configured headers at `OnStarting` unless the header is already set. Endpoint
   convention `WithContentSecurityPolicy(string? policy)` (root namespace; null omits CSP for that endpoint) — used
   by the OpenAPI add-on's UI endpoints.
-- HSTS: the framework's `UseHsts()`/`AddHsts` (HTTPS only, localhost excluded), never in Development.
+- HSTS: the framework's `UseHsts()`/`AddHsts` (HTTPS only, localhost excluded), never in Development. R11: it runs
+  before the exception handler, and — because the exception handler clears every response header before writing an
+  error — the security headers middleware right after it remembers the value HSTS set and writes it again when the
+  response starts. Moving `UseHsts()` alone would not have been enough (verified: the thrown-exception case lost the
+  header without the re-apply). Behind a TLS-terminating proxy, forwarded headers go in the `AtStart` hook.
+- Default `Cache-Control` (R27): `SecurityHeaders:CacheControl` (default `no-store`) is written when the response
+  sets neither `Cache-Control` nor `ETag`; `null` disables it. Problem responses are always `no-store` (D1).
 - Kestrel: `AddServerHeader = false`; global `MaxRequestBodySize`. Per endpoint: `WithRequestSizeLimit(long bytes)`
   and `DisableRequestSizeLimit()` conventions attaching the framework's `RequestSizeLimitAttribute` /
   `DisableRequestSizeLimitAttribute` metadata (enforced by routing since .NET 8); MVC uses the attributes directly.
-  413 → ProblemDetails `request.too_large` (D1).
+  413 → ProblemDetails `request.too_large` (D1). The limits are enforced by the server (Kestrel); `TestServer`
+  enforces none (R28).
 - Deleted: `SecurityHeadersOptions` family, `CspBuilder`, `PayloadLimits/*`.
 
 ## D7. CORS (R11)
 
-- `WebApiOptions.Cors`, configuration-bound. A single named policy is registered only when `AllowedOrigins` is
+- `SharedKernelWebApiOptions.Cors`, configuration-bound. A single named policy is registered only when `AllowedOrigins` is
   non-empty (deny by default) and applied globally by `UseSharedKernelWebApi()` (covers hubs too).
-- Startup validation fails `AllowCredentials` with empty or `*` origins.
+- Startup validation fails `AllowCredentials` with empty or `*` origins; the origin `null` in any environment; and,
+  outside Development, `AllowCredentials` with an `http://` origin (R24). Each failure is logged at Critical (14004).
+- WebSockets (R25): browsers apply no CORS to WebSockets, so when origins are configured a middleware right after
+  `UseCors` refuses a WebSocket request (HTTP/1.1 `Upgrade: websocket` or HTTP/2+ extended CONNECT) whose `Origin` the
+  policy does not allow — evaluated with the framework's `ICorsService` — with 403 `forbidden.origin_not_allowed` and a
+  Warning log (14013). A request without `Origin` (not a browser) passes. Covers SignalR's WebSocket transport; its
+  other transports are ordinary CORS requests. Without configured origins nothing is checked (no policy exists).
 - `ExposedHeaders` default: `X-Correlation-Id`, `ETag`, `Location`, `Retry-After`, `Sunset`, `Deprecation`, `Link`,
   `api-supported-versions`, `api-deprecated-versions`. Constants, never literals at call sites.
 - Deleted: `AddSharedKernelCors`, `CorsPolicyOptions`. SK0032 stays.
@@ -220,27 +313,50 @@ configured). Services call it first, then map endpoints; custom middleware goes 
 ## D9. Idempotency key (R7, F7)
 
 - Header `WellKnownHeaders.IdempotencyKey` (added in wave 1).
-- Minimal APIs: `RequireIdempotencyKey()` convention (root namespace) adds the metadata **and** the endpoint filter
-  — no separate registration. MVC: `[RequireIdempotencyKey]` (namespace `…WebApi.Idempotency`) implements
-  `IAsyncActionFilter`, so it applies itself, and doubles as the OpenAPI metadata.
+- R6: **one middleware** (internal `HeaderRequirementsMiddleware`, added by `UseSharedKernelWebApi()` right after
+  `UseAuthorization`) enforces `IIdempotencyKeyRequiredMetadata` from endpoint metadata for every kind of endpoint —
+  so an unauthenticated caller is told to authenticate first. The metadata comes from `[RequireIdempotencyKey]`
+  (root namespace, metadata only — on an MVC action or controller, or on a minimal-API lambda), the
+  `RequireIdempotencyKey()` convention (metadata only), or an `IdempotencyKey` parameter. The endpoint filter and the
+  attribute's action-filter implementation are deleted. A gRPC request gets the status without a body.
+- R18: `IdempotencyKey` (public `readonly record struct`, root namespace) is a bindable minimal-API parameter:
+  static `BindAsync(HttpContext)` and `IEndpointParameterMetadataProvider` adding the requirement metadata, so
+  declaring the parameter requires, validates and documents the header. `new IdempotencyKey("…")` validates the same
+  rule, for unit tests.
 - Valid key: after removing one pair of surrounding double quotes (the IETF draft sends a quoted structured-field
   string), 1–256 characters of visible ASCII (0x21–0x7E). Missing → 400 `idempotency.key_required`; malformed →
-  400 `idempotency.key_invalid`. Warning log (EventId 14003) without the value.
+  400 `idempotency.key_invalid` (the only two codes). Warning log (EventId 14003) without the value.
 - Accessor `HttpContext.GetIdempotencyKey()` → validated key or null.
-- Deleted: `AddSharedKernelIdempotencyFilters`, `TryGetIdempotencyKey`, the public filter type.
+- Deleted: `AddSharedKernelIdempotencyFilters`, `TryGetIdempotencyKey`, the public filter type, and (R6) the internal
+  endpoint filter and the attribute's `IAsyncActionFilter` implementation.
 
 ## D10. Conditional requests (B13, F6)
 
-- `RequireIfMatch()` convention (root) and `[RequireIfMatch]` MVC attribute (self-applying action filter): a missing
-  `If-Match` → 428 `precondition.required`.
-- `HttpContext.GetIfMatch()` → the first entity tag with quotes and `W/` removed, or null; handlers pass it to
-  `EntityVersion.TryParse`.
-- On an endpoint that requires `If-Match`, an `ErrorType.Conflict` failure (a `Result` or a thrown
-  `ConflictException`) is reported as **412 Precondition Failed** (RFC 9110 §13.1.1), keeping its error code.
+- R6/R8: the required `If-Match` is enforced by the same header-requirements middleware (after authorization) from
+  `IIfMatchRequiredMetadata`, added by `[RequireIfMatch]` (root namespace, metadata only — MVC or a minimal-API lambda),
+  the `RequireIfMatch()` convention (metadata only) or an `IfMatch<TVersion>` parameter. Rules (RFC 9110 §13.1.1):
+  missing or `*` → 428 `precondition.required` (a specific tag is required); malformed, or more than one tag → 400
+  `precondition.invalid`; a weak tag → 412 `precondition.failed` (strong comparison never matches it). The endpoint
+  filter and the attribute's action-filter implementation are deleted.
+- `HttpContext.GetIfMatch()` → the first entity tag with quotes and `W/` removed, `*`, or null (unchanged; on a
+  requiring endpoint it is the one strong tag). R8: `HttpContext.GetIfMatchTags()` →
+  `IReadOnlyList<EntityTagHeaderValue>` of every listed tag, parsed strictly (empty when missing or malformed), so a
+  handler can see several tags and their weakness.
+- R18: `IfMatch<TVersion>` (public `readonly record struct`, root namespace, `TVersion : IParsable<TVersion>`) is a
+  bindable minimal-API parameter: static `BindAsync(HttpContext)` parses the one strong tag as `TVersion`, and
+  `IEndpointParameterMetadataProvider` adds the requirement metadata together with an internal validator, so a
+  well-formed tag that does not parse as `TVersion` — and can therefore never be current — is answered 412
+  `precondition.failed` by the middleware before binding. `new IfMatch<TVersion>(version)` for unit tests.
+- R7: 412 is decided from the **error**, not the endpoint: a `Conflict` whose code is in
+  `Problems:PreconditionFailedErrorCodes` (default `persistence.concurrency_conflict`, `storage.precondition_failed`,
+  `storage.already_exists` — literals here, pinned to the owning 06/08 constants by a 00.Governance test), in a
+  request carrying `If-Match` or `If-None-Match`, is **412 Precondition Failed**, keeping its code — returned or thrown,
+  on any endpoint. Every other conflict stays 409, whatever headers the request carries.
   `ErrorPresentation.GetStatusCode` applies this rule, so every path agrees.
-- `ToOkWithETag(…)` returns `OkWithETag<T>` (public, `…WebApi.Http`): sets `ETag: "<version>"`; when the request's
-  `If-None-Match` matches (weak comparison, RFC 9110 §13.1.2) it answers 304 with the ETag and no body. It implements
-  `IEndpointMetadataProvider` (200 with `T`, 304).
+- `ToOkWithETag(…)` returns `OkWithETag<T>` (public, root namespace since R21): sets `ETag: "<version>"`; when the
+  request's `If-None-Match` matches (weak comparison, RFC 9110 §13.1.2) a `GET` or `HEAD` is answered 304 with the
+  ETag and no body. It implements `IEndpointMetadataProvider` (200 with `T`; 304 only when the endpoint answers `GET`
+  or `HEAD`, or all methods — R14).
 - `HttpResponse.SetETag(string version)` helper (root).
 - Deleted: `RowVersionETag`, `TryValidateIfMatch`.
 
@@ -339,7 +455,10 @@ WebApi: `Uploads/*`, `PayloadLimits/*`, `Versioning/*` and `OpenApi/*` (moved to
 deleted), `SecurityHeaders*` + `CspBuilder`, `AuthorizationRequirementEndpointFilter` + old extensions, the
 idempotency filter registration shape, public `RateLimitRejectionProblemDetails`, `RowVersionETag`,
 `ConditionalRequestExtensions.TryValidateIfMatch`, `ToProblemDetailsResult`, `Http/ProblemDetailsShaping`,
-public `ValidationProblemDetailsExtensions`, `Cors/*` (reworked).
+public `ValidationProblemDetailsExtensions`, `Cors/*` (reworked). Final review: `ResultActionResultExtensions`
+(the MVC `ToActionResult` family, R19), `IdempotencyKeyEndpointFilter` and `IfMatchEndpointFilter` and the two
+attributes' action-filter implementations (R6), the `IExceptionHandler` registration (R5); `WebApiOptions` renamed
+`SharedKernelWebApiOptions` (R22).
 SignalR: see D12. gRPC: see D13.
 
 ## D16. Tests, integration, docs
@@ -361,6 +480,15 @@ SignalR: see D12. gRPC: see D13.
   - OpenAPI: per-version documents, security only on protected operations, default problem response, required
     headers, docs not mapped in Production by default.
   - A regression test for every B finding.
+  - Final review (WebApi, R1–R28): refused traffic counted by rate limiting; hook positions; a forged baggage item
+    in neither the `Activity` nor any log record (and kept only with `TrustInboundBaggage`); both registration orders
+    of a service's policy provider and result handler; a service `IExceptionHandler` first and one log per
+    exception; required headers on a minimal-API lambda attribute, a convention, a parameter and an MVC action; the
+    412/409 matrix and the `If-Match` 428/400/412 rules; MVC model state and minimal-API binding without type names,
+    thrown and returned validation errors with identical bodies; 499/504; HSTS on exception responses (non-vacuous:
+    fails without the re-apply); `Cache-Control`; CORS `null`/`http://` origins and the WebSocket origin check; MVC
+    actions returning typed results, including API-explorer metadata; and a 00.Governance test pinning the
+    precondition codes to the 06/08 constants.
 - Samples: all five move to `AddSharedKernelWebApi`/`UseSharedKernelWebApi` and typed results
   (`AddSharedKernelOpenApi` where it helps). BillingApi's hand-written ETag/428/412 is replaced by `RequireIfMatch()`
   and `ToOkWithETag`. Their tests follow.

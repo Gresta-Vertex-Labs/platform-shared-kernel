@@ -1,7 +1,5 @@
 using System.Globalization;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +7,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Localization;
 using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
+using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using Xunit;
@@ -41,28 +39,53 @@ public sealed class ErrorPresentationTests
         ErrorPresentation.GetStatusCode(TestErrors.VersionConflict, httpContext: null).Should().Be(StatusCodes.Status409Conflict);
     }
 
-    [Fact]
-    public void GetStatusCode_OfAConflict_OnAnIfMatchEndpoint_Is412()
+    [Theory]
+    [InlineData("persistence.concurrency_conflict", "If-Match", StatusCodes.Status412PreconditionFailed)]
+    [InlineData("storage.precondition_failed", "If-Match", StatusCodes.Status412PreconditionFailed)]
+    [InlineData("storage.already_exists", "If-None-Match", StatusCodes.Status412PreconditionFailed)]
+    [InlineData("persistence.concurrency_conflict", null, StatusCodes.Status409Conflict)]
+    [InlineData("order.duplicate_number", "If-Match", StatusCodes.Status409Conflict)]
+    public void R7_GetStatusCode_Is412_ForAVersionConflictOfAConditionalRequest_Only(string code, string? header, int expected)
     {
         var context = new DefaultHttpContext();
-        context.SetEndpoint(EndpointWith(new RequireIfMatchAttribute()));
+        if (header is not null)
+        {
+            context.Request.Headers[header] = header == "If-None-Match" ? "*" : "\"1\"";
+        }
 
-        ErrorPresentation.GetStatusCode(TestErrors.VersionConflict, context).Should().Be(StatusCodes.Status412PreconditionFailed);
-        ErrorPresentation.GetStatusCode(TestErrors.OrderNotFound, context).Should().Be(StatusCodes.Status404NotFound);
+        ErrorPresentation.GetStatusCode(Error.Conflict(code, "Conflict."), context).Should().Be(expected);
     }
 
     [Fact]
-    public void GetStatusCode_FindsTheEndpoint_WhileTheExceptionHandlerRuns()
+    public void R7_GetStatusCode_OnlyTurnsConflictsInto412()
     {
-        // ASP.NET Core clears the endpoint before running exception handlers; the feature keeps it.
         var context = new DefaultHttpContext();
-        context.Features.Set<IExceptionHandlerFeature>(new ExceptionHandlerFeature
-        {
-            Error = new InvalidOperationException(),
-            Endpoint = EndpointWith(new RequireIfMatchAttribute()),
-        });
+        context.Request.Headers.IfMatch = "\"1\"";
 
-        ErrorPresentation.GetStatusCode(TestErrors.VersionConflict, context).Should().Be(StatusCodes.Status412PreconditionFailed);
+        ErrorPresentation.GetStatusCode(Error.NotFound("persistence.concurrency_conflict", "Gone."), context)
+            .Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [Fact]
+    public void R7_GetStatusCode_ReadsTheConfiguredCodes()
+    {
+        var options = new SharedKernelWebApiOptions();
+        options.Problems.PreconditionFailedErrorCodes.Clear();
+        options.Problems.PreconditionFailedErrorCodes.Add("orders.stale");
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddSingleton(Microsoft.Extensions.Options.Options.Create(options)).BuildServiceProvider(),
+        };
+        context.Request.Headers.IfMatch = "\"1\"";
+
+        ErrorPresentation.GetStatusCode(Error.Conflict("orders.stale", "Stale."), context).Should().Be(StatusCodes.Status412PreconditionFailed);
+        ErrorPresentation.GetStatusCode(TestErrors.StaleVersion, context).Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [Fact]
+    public void GetStatusCode_WithoutARequest_NeverAnswers412()
+    {
+        ErrorPresentation.GetStatusCode(TestErrors.StaleVersion, httpContext: null).Should().Be(StatusCodes.Status409Conflict);
     }
 
     [Theory]
@@ -140,9 +163,6 @@ public sealed class ErrorPresentationTests
 
         return new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
     }
-
-    private static Endpoint EndpointWith(object metadata) =>
-        new(_ => Task.CompletedTask, new EndpointMetadataCollection(metadata), "test");
 
     private sealed class TestEnvironment(string name) : IHostEnvironment
     {

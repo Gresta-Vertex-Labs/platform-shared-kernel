@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using SharedKernel.Presentation.WebApi.Options;
 
 namespace SharedKernel.Presentation.WebApi.Http;
@@ -14,7 +15,7 @@ internal static class RequestFacts
 {
     private const string GrpcContentTypePrefix = "application/grpc";
 
-    private static readonly WebApiOptions DefaultOptions = new();
+    private static readonly SharedKernelWebApiOptions DefaultOptions = new();
 
     /// <summary>
     /// Returns the endpoint the request was routed to. While the exception handler runs, ASP.NET Core has cleared the
@@ -23,13 +24,31 @@ internal static class RequestFacts
     public static Endpoint? GetEndpoint(HttpContext httpContext) =>
         httpContext.GetEndpoint() ?? httpContext.Features.Get<IExceptionHandlerFeature>()?.Endpoint;
 
-    /// <summary>Returns the registered <see cref="WebApiOptions"/>, or the defaults when none are registered.</summary>
-    public static WebApiOptions GetOptions(HttpContext? httpContext) =>
-        httpContext?.RequestServices?.GetService<IOptions<WebApiOptions>>()?.Value ?? DefaultOptions;
+    /// <summary>Returns the registered <see cref="SharedKernelWebApiOptions"/>, or the defaults when none are registered.</summary>
+    public static SharedKernelWebApiOptions GetOptions(HttpContext? httpContext) =>
+        httpContext?.RequestServices?.GetService<IOptions<SharedKernelWebApiOptions>>()?.Value ?? DefaultOptions;
 
     /// <summary>Returns <see langword="true"/> for a gRPC call, whose errors travel as gRPC status, never as a body.</summary>
     public static bool IsGrpcRequest(HttpContext httpContext) =>
         httpContext.Request.ContentType?.StartsWith(GrpcContentTypePrefix, StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>Returns <see langword="true"/> when the request carries a non-empty <c>If-Match</c> or <c>If-None-Match</c>.</summary>
+    public static bool IsConditionalRequest(HttpRequest request) =>
+        HasValue(request.Headers.IfMatch) || HasValue(request.Headers.IfNoneMatch);
+
+    /// <summary>Returns <see langword="true"/> when at least one value of a header is not white space.</summary>
+    public static bool HasValue(StringValues values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Returns the culture client messages are written in: the request culture chosen by request localization when

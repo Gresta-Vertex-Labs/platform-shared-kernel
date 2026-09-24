@@ -2,6 +2,7 @@ using System.Globalization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
@@ -20,6 +21,10 @@ namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 /// </summary>
 public sealed class LocalizationTests
 {
+    private const string LimitPolicy = "none-left";
+
+    private static readonly CultureInfo Turkish = new("tr-TR");
+
     private static readonly LocalizedMessage<int> OrderNotFound =
         LocalizedMessage.Define<int>("order.not_found", "Order {orderId} was not found.", "orderId");
 
@@ -84,6 +89,65 @@ public sealed class LocalizationTests
             CultureInfo.CurrentUICulture = original;
         }
     }
+
+    [Theory]
+    [InlineData("/protected", false, StatusCodes.Status401Unauthorized, "Kimlik doğrulaması gerekiyor.")]
+    [InlineData("/protected", true, StatusCodes.Status403Forbidden, "Bu işlem için yetkiniz yok.")]
+    [InlineData("/limited", false, StatusCodes.Status429TooManyRequests, "Çok fazla istek.")]
+    public async Task R2_RequestLocalization_BeforeAuthorization_TranslatesRefusals(string path, bool signedIn, int status, string expected)
+    {
+        await using var app = await WebApiTestHost.StartAsync(
+            app =>
+            {
+                app.MapGet("/protected", () => "ok").RequirePermission("orders.read");
+                app.MapGet("/limited", () => "ok").RequireRateLimiting(LimitPolicy);
+            },
+            builder =>
+            {
+                builder.AddTestAuthentication();
+                builder.Services.AddSingleton<ILocalizationCatalog>(new LocalizationCatalogBuilder()
+                    .Add(ErrorCodes.Unauthorized.Default, Turkish, "Kimlik doğrulaması gerekiyor.")
+                    .Add(ErrorCodes.Forbidden.InsufficientPermission, Turkish, "Bu işlem için yetkiniz yok.")
+                    .Add(PresentationErrorCodes.RateLimitExceeded, Turkish, "Çok fazla istek.")
+                    .Build());
+                AddCultures(builder);
+                builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter(LimitPolicy, limiter =>
+                {
+                    limiter.PermitLimit = 1;
+                    limiter.Window = TimeSpan.FromMinutes(10);
+                    limiter.QueueLimit = 0;
+                }));
+            },
+            configurePipeline: pipeline => pipeline.BeforeAuthorization(app => app.UseRequestLocalization()));
+        using var permitUsed = await app.GetTestClient().GetAsync("/limited");
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add(HeaderNames.AcceptLanguage, "tr-TR");
+        if (signedIn)
+        {
+            request.SignedIn(permissions: "orders.write");
+        }
+
+        using var response = await app.GetTestClient().SendAsync(request);
+
+        response.StatusCode.Should().Be((System.Net.HttpStatusCode)status);
+        (await response.ShouldBeProblemAsync(status, CodeFor(status))).Detail().Should().Be(expected);
+    }
+
+    private static string CodeFor(int status) => status switch
+    {
+        StatusCodes.Status401Unauthorized => ErrorCodes.Unauthorized.Default,
+        StatusCodes.Status403Forbidden => ErrorCodes.Forbidden.InsufficientPermission,
+        _ => PresentationErrorCodes.RateLimitExceeded,
+    };
+
+    private static void AddCultures(WebApplicationBuilder builder) =>
+        builder.Services.AddRequestLocalization(options =>
+        {
+            CultureInfo[] cultures = [new("en-US"), Turkish];
+            options.SupportedCultures = cultures;
+            options.SupportedUICultures = cultures;
+            options.SetDefaultCulture("en-US");
+        });
 
     private static Task<WebApplication> StartAsync() =>
         WebApiTestHost.StartAsync(

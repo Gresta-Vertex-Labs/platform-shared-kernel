@@ -13,6 +13,12 @@ internal static class EntityTags
     private const string PreconditionRequiredMessage =
         "This request requires an If-Match header with the entity tag of the version it changes.";
 
+    private const string PreconditionInvalidMessage =
+        "The If-Match header must name exactly one entity tag, such as \"42\".";
+
+    private const string PreconditionFailedMessage =
+        "The entity tag in If-Match does not match the current version.";
+
     /// <summary>Wraps <paramref name="version"/> in double quotes as a strong entity tag, after checking it can be one.</summary>
     public static string ToEntityTag(string version, string parameterName)
     {
@@ -44,9 +50,13 @@ internal static class EntityTags
             return Any;
         }
 
-        var tag = first.Tag;
-        return tag.Length > 2 ? tag.Subsegment(1, tag.Length - 2).ToString() : null;
+        var opaque = GetOpaqueTag(first);
+        return opaque.Length == 0 ? null : opaque;
     }
+
+    /// <summary>Returns every entity tag of <c>If-Match</c>, parsed strictly; empty when it is missing or malformed.</summary>
+    public static IReadOnlyList<EntityTagHeaderValue> GetIfMatchTags(HttpRequest request) =>
+        EntityTagHeaderValue.TryParseStrictList(request.Headers.IfMatch, out var tags) ? [.. tags] : [];
 
     /// <summary>
     /// Returns <see langword="true"/> when <c>If-None-Match</c> matches <paramref name="entityTag"/> under the weak
@@ -65,14 +75,45 @@ internal static class EntityTags
     }
 
     /// <summary>
-    /// Returns <see langword="null"/> when the request has a usable <c>If-Match</c>; otherwise the 428 Precondition
-    /// Required response to send.
+    /// Checks the <c>If-Match</c> of an endpoint that requires it (RFC 9110 section 13.1.1) and returns
+    /// <see langword="null"/> when it names one strong entity tag that every <see cref="IEntityTagValidator"/> of the
+    /// endpoint accepts; otherwise the response to send: 428 when it is missing or <c>*</c>, 400 when it is malformed
+    /// or names several tags, 412 when the tag is weak or not a version the endpoint uses.
     /// </summary>
-    public static IResult? CheckIfMatchPresent(HttpContext httpContext) =>
-        GetIfMatch(httpContext.Request) is null
-            ? new PresentationProblemResult(
-                StatusCodes.Status428PreconditionRequired,
-                PresentationErrorCodes.PreconditionRequired,
-                PreconditionRequiredMessage)
-            : null;
+    public static IResult? CheckRequiredIfMatch(HttpContext httpContext, EndpointMetadataCollection metadata)
+    {
+        var values = httpContext.Request.Headers.IfMatch;
+        if (!RequestFacts.HasValue(values))
+        {
+            return Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage);
+        }
+
+        if (!EntityTagHeaderValue.TryParseStrictList(values, out var tags) || tags.Count != 1)
+        {
+            return Reject(StatusCodes.Status400BadRequest, PresentationErrorCodes.PreconditionInvalid, PreconditionInvalidMessage);
+        }
+
+        var tag = tags[0];
+        if (tag.Equals(EntityTagHeaderValue.Any))
+        {
+            return Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage);
+        }
+
+        // If-Match compares strongly: a weak tag never matches the current version.
+        if (tag.IsWeak || metadata.GetOrderedMetadata<IEntityTagValidator>().Any(validator => !validator.IsValid(GetOpaqueTag(tag))))
+        {
+            return Reject(StatusCodes.Status412PreconditionFailed, PresentationErrorCodes.PreconditionFailed, PreconditionFailedMessage);
+        }
+
+        return null;
+    }
+
+    /// <summary>Returns the opaque value of <paramref name="tag"/>: its text without quotes and without <c>W/</c>.</summary>
+    public static string GetOpaqueTag(EntityTagHeaderValue tag)
+    {
+        var quoted = tag.Tag;
+        return quoted.Length >= 2 ? quoted.Subsegment(1, quoted.Length - 2).ToString() : string.Empty;
+    }
+
+    private static PresentationProblemResult Reject(int statusCode, string code, string message) => new(statusCode, code, message);
 }

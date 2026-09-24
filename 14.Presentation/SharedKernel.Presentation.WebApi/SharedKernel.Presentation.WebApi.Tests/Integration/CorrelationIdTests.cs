@@ -20,14 +20,19 @@ using Xunit;
 namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 
 /// <summary>
-/// Design D5/D16: a valid inbound correlation id is kept, an invalid one replaced (and never logged), a missing one
-/// becomes the trace id, and the id reaches the accessor, baggage, log records, the response header and error bodies.
+/// Design D5/D16 with R3: a valid inbound correlation id is kept, an invalid one replaced (and never logged), a missing
+/// one becomes the trace id, and the id reaches the accessor, baggage, log records, the response header and error
+/// bodies — while baggage the caller sent reaches neither the activity nor any log record unless trusted.
 /// </summary>
 public sealed class CorrelationIdTests
 {
     private const string TraceParentHeader = "traceparent";
 
     private const string TraceId = "0af7651916cd43dd8448eb211c80319c";
+
+    private const string BaggageHeader = "baggage";
+
+    private const string ForgedKey = "tenant.id";
 
     [Theory]
     [InlineData("abc-123")]
@@ -123,6 +128,79 @@ public sealed class CorrelationIdTests
     }
 
     [Fact]
+    public async Task R3_ForgedInboundBaggage_NeverReachesTheActivity_OrALogRecord()
+    {
+        using var listener = ListenToAspNetCore();
+        var captured = new List<IReadOnlyList<KeyValuePair<string, object?>>?>();
+        await using var app = await StartAsync(configureBuilder: builder => CaptureLogAttributes(builder, captured));
+
+        var (activityBaggage, response) = await SendWithForgedBaggageAsync(app);
+
+        response.EnsureSuccessStatusCode();
+        activityBaggage.Should().NotContain(ForgedKey).And.Contain(WellKnownBaggageKeys.CorrelationId);
+        captured.Should().NotBeEmpty();
+        captured.Should().NotContain(attributes => attributes != null && attributes.Any(attribute => attribute.Key == ForgedKey));
+        captured.Should().Contain(attributes => attributes != null && attributes.Any(attribute =>
+            attribute.Key == WellKnownBaggageKeys.CorrelationId && Equals(attribute.Value, "flow-13")));
+    }
+
+    [Fact]
+    public async Task R3_TrustInboundBaggage_KeepsTheCallersBaggage()
+    {
+        // The opt-in for services behind a sanitizing gateway — and the proof that the default test above is not vacuous.
+        using var listener = ListenToAspNetCore();
+        var captured = new List<IReadOnlyList<KeyValuePair<string, object?>>?>();
+        await using var app = await StartAsync(
+            options => options.TrustInboundBaggage = true,
+            configureBuilder: builder => CaptureLogAttributes(builder, captured));
+
+        var (activityBaggage, response) = await SendWithForgedBaggageAsync(app);
+
+        response.EnsureSuccessStatusCode();
+        activityBaggage.Should().Contain(ForgedKey);
+        captured.Should().Contain(attributes => attributes != null && attributes.Any(attribute => attribute.Key == ForgedKey));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void R3_HostingsPropagator_ReadsNoInboundBaggage_UnlessTrusted(bool trust, bool readsBaggage)
+    {
+        var options = new SharedKernelWebApiOptions { TrustInboundBaggage = trust };
+        var propagator = new InboundBaggagePropagator(DistributedContextPropagator.CreateDefaultPropagator(), Microsoft.Extensions.Options.Options.Create(options));
+        var headers = new Dictionary<string, string>
+        {
+            [TraceParentHeader] = $"00-{TraceId}-b7ad6b7169203331-01",
+            [BaggageHeader] = $"{ForgedKey}=forged-tenant",
+        };
+
+        void Getter(object? carrier, string name, out string? value, out IEnumerable<string>? values)
+        {
+            values = null;
+            value = ((Dictionary<string, string>)carrier!).GetValueOrDefault(name);
+        }
+
+        propagator.ExtractTraceIdAndState(headers, Getter, out var traceParent, out _);
+        var baggage = propagator.ExtractBaggage(headers, Getter);
+
+        traceParent.Should().Contain(TraceId, "trace context is always read");
+        (baggage?.Any(item => item.Key == ForgedKey) == true).Should().Be(readsBaggage);
+    }
+
+    [Fact]
+    public void R3_RemoveAll_RemovesEveryItem_DuplicatesIncluded()
+    {
+        using var activity = new Activity("request");
+        activity.AddBaggage("tenant.id", "a");
+        activity.AddBaggage("tenant.id", "b");
+        activity.AddBaggage("user.id", "c");
+
+        InboundBaggage.RemoveAll(activity);
+
+        activity.Baggage.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ErrorResponse_CarriesTheId_InHeaderAndBody()
     {
         await using var app = await StartAsync();
@@ -167,7 +245,7 @@ public sealed class CorrelationIdTests
     }
 
     private static Task<WebApplication> StartAsync(
-        Action<WebApiOptions>? configure = null,
+        Action<SharedKernelWebApiOptions>? configure = null,
         Action<WebApplicationBuilder>? configureBuilder = null,
         InMemoryLoggerFactory? loggerFactory = null) =>
         WebApiTestHost.StartAsync(
@@ -181,10 +259,33 @@ public sealed class CorrelationIdTests
                     return "ok";
                 });
                 app.MapGet("/failure", () => Result<string>.Failure(TestErrors.OrderNotFound).ToOk());
+                app.MapGet("/log-baggage", (ILoggerFactory factory) =>
+                {
+                    factory.CreateLogger("CorrelationIdTests").LogInformation("Handler ran.");
+                    return string.Join(",", Activity.Current?.Baggage.Select(item => item.Key) ?? []);
+                });
             },
             configureBuilder,
             configure,
             loggerFactory: loggerFactory);
+
+    private static void CaptureLogAttributes(WebApplicationBuilder builder, List<IReadOnlyList<KeyValuePair<string, object?>>?> captured) =>
+        builder.Logging.AddOpenTelemetry(options =>
+        {
+            options.AddProcessor(new BaggageToAttributesProcessor());
+            options.AddProcessor(new CapturingProcessor(captured));
+        });
+
+    private static async Task<(string[] ActivityBaggage, HttpResponseMessage Response)> SendWithForgedBaggageAsync(WebApplication app)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/log-baggage");
+        request.Headers.Add(WellKnownHeaders.CorrelationId, "flow-13");
+        request.Headers.Add(BaggageHeader, $"{ForgedKey}=forged-tenant");
+
+        var response = await app.GetTestClient().SendAsync(request);
+        var keys = await response.Content.ReadAsStringAsync();
+        return (keys.Split(',', StringSplitOptions.RemoveEmptyEntries), response);
+    }
 
     private static async Task<(string Header, string Accessor)> SendAsync(WebApplication app, string inbound)
     {

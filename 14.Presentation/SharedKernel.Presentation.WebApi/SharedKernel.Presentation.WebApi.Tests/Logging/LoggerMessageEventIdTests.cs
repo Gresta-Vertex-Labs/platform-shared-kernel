@@ -3,10 +3,12 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Presentation.WebApi.Correlation;
+using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.RateLimiting;
+using SharedKernel.Presentation.WebApi.Startup;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Logging;
@@ -27,6 +29,11 @@ public sealed class LoggerMessageEventIdTests
     [InlineData(typeof(CorrelationIdMiddleware), "CorrelationIdRejected", 14006, LogLevel.Warning)]
     [InlineData(typeof(SharedKernelExceptionHandler), "ClientError", 14007, LogLevel.Debug)]
     [InlineData(typeof(SharedKernelExceptionHandler), "RequestAborted", 14008, LogLevel.Debug)]
+    [InlineData(typeof(SharedKernelRequirementHandler), "NoUserContextMapper", 14009, LogLevel.Warning)]
+    [InlineData(typeof(SharedKernelAuthorizationStartupCheck), "SchemeWithoutMapper", 14010, LogLevel.Warning)]
+    [InlineData(typeof(WebApiStartupDiagnostics), "PipelineNotApplied", 14011, LogLevel.Warning)]
+    [InlineData(typeof(WebApiStartupDiagnostics), "ExceptionDetailsOutsideDevelopment", 14012, LogLevel.Warning)]
+    [InlineData(typeof(WebSocketOriginMiddleware), "WebSocketOriginRefused", 14013, LogLevel.Warning)]
     public void LogMethod_HasItsAssignedEventId(Type containingType, string method, int eventId, LogLevel level)
     {
         var attribute = GetAttribute(containingType, method);
@@ -46,7 +53,7 @@ public sealed class LoggerMessageEventIdTests
             .Select(attribute => attribute.EventId)
             .ToArray();
 
-        ids.Should().HaveCount(9).And.OnlyHaveUniqueItems();
+        ids.Should().HaveCount(14).And.OnlyHaveUniqueItems();
         ids.Should().OnlyContain(id => id >= 14000 && id <= 14099);
     }
 

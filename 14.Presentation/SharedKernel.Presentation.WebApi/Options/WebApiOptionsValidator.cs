@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -6,24 +7,35 @@ using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Options;
 
-/// <summary>Validates <see cref="WebApiOptions"/> at startup, so a misconfiguration stops the host instead of a request.</summary>
-internal sealed partial class WebApiOptionsValidator : IValidateOptions<WebApiOptions>
+/// <summary>
+/// Validates <see cref="SharedKernelWebApiOptions"/> before the service handles a request, so a misconfiguration
+/// stops the host instead of a request.
+/// </summary>
+internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKernelWebApiOptions>
 {
     internal const int MaxCorrelationIdLength = 1024;
 
     internal const string WildcardOrigin = "*";
 
+    /// <summary>The serialized origin of an opaque document (sandboxed frame, <c>file://</c>, data URL).</summary>
+    private const string NullOrigin = "null";
+
     private readonly ILogger<WebApiOptionsValidator> _logger;
+    private readonly IHostEnvironment? _environment;
 
     /// <summary>Initializes a new instance of the <see cref="WebApiOptionsValidator"/> class.</summary>
     /// <param name="logger">The logger; a missing logging registration never prevents validation.</param>
-    public WebApiOptionsValidator(ILogger<WebApiOptionsValidator>? logger = null)
+    /// <param name="environment">
+    /// The host environment; without one the environment is treated as production, the strict choice.
+    /// </param>
+    public WebApiOptionsValidator(ILogger<WebApiOptionsValidator>? logger = null, IHostEnvironment? environment = null)
     {
         _logger = logger ?? NullLogger<WebApiOptionsValidator>.Instance;
+        _environment = environment;
     }
 
     /// <inheritdoc />
-    public ValidateOptionsResult Validate(string? name, WebApiOptions options)
+    public ValidateOptionsResult Validate(string? name, SharedKernelWebApiOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -73,11 +85,29 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<WebApiOp
 
         if (options.AllowCredentials && noExplicitOrigin)
         {
-            const string Failure = "Cors:AllowCredentials requires explicit Cors:AllowedOrigins; browsers reject credentials "
-                + "with no origin or with '*'. List the origins, or set AllowCredentials to false.";
+            FailCors(
+                failures,
+                "Cors:AllowCredentials requires explicit Cors:AllowedOrigins; browsers reject credentials with no origin "
+                + "or with '*'. List the origins, or set AllowCredentials to false.");
+        }
 
-            Log.CorsConfigurationInvalid(_logger, Failure);
-            failures.Add(Failure);
+        if (options.AllowedOrigins.Any(origin => string.Equals(origin?.Trim(), NullOrigin, StringComparison.OrdinalIgnoreCase)))
+        {
+            FailCors(
+                failures,
+                "Cors:AllowedOrigins must not contain \"null\": sandboxed frames and file:// pages send that origin, so "
+                + "allowing it allows every one of them.");
+        }
+
+        if (options.AllowCredentials
+            && _environment?.IsDevelopment() != true
+            && options.AllowedOrigins.Any(origin => origin?.Trim().StartsWith(Uri.UriSchemeHttp + Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase) == true))
+        {
+            FailCors(
+                failures,
+                "Cors:AllowCredentials with an http:// origin is allowed only in the Development environment: a page "
+                + "served over plain HTTP can be altered on the network and would call the API with the user's "
+                + "credentials. Use https:// origins.");
         }
 
         if (options.PreflightMaxAge < TimeSpan.Zero)
@@ -101,9 +131,9 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<WebApiOp
             failures.Add("Limits:MaxRequestBodySize must be greater than zero, or null for the server default.");
         }
 
-        if (options.MaxJsonDepth < 1)
+        if (options.MaxJsonDepth is < 1)
         {
-            failures.Add("Limits:MaxJsonDepth must be at least 1.");
+            failures.Add("Limits:MaxJsonDepth must be at least 1, or null for the framework default.");
         }
     }
 
@@ -113,11 +143,26 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<WebApiOp
         {
             failures.Add("Problems:TypeBaseUri must be an absolute URI.");
         }
+        else if (options.TypeBaseUri is { } typeBaseUri && (typeBaseUri.Query.Length > 0 || typeBaseUri.Fragment.Length > 0))
+        {
+            failures.Add("Problems:TypeBaseUri must not have a query or a fragment: the error code is appended to it.");
+        }
 
         if (options.UnavailableRetryAfter < TimeSpan.Zero)
         {
             failures.Add("Problems:UnavailableRetryAfter must not be negative.");
         }
+
+        if (options.PreconditionFailedErrorCodes.Any(string.IsNullOrWhiteSpace))
+        {
+            failures.Add("Problems:PreconditionFailedErrorCodes must not contain an empty entry.");
+        }
+    }
+
+    private void FailCors(List<string> failures, string failure)
+    {
+        Log.CorsConfigurationInvalid(_logger, failure);
+        failures.Add(failure);
     }
 
     private static partial class Log

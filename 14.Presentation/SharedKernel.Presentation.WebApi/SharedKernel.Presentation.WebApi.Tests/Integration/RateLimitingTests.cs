@@ -16,8 +16,9 @@ using Xunit;
 namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 
 /// <summary>
-/// Design D8/D16: rate limiting configured without its own <c>OnRejected</c> answers 429 <c>rate_limit.exceeded</c>
-/// with the limiter's <c>Retry-After</c>, and logs the rejection; a service's own <c>OnRejected</c> is kept.
+/// Design D8/D16 and R1: rate limiting configured without its own <c>OnRejected</c> answers 429
+/// <c>rate_limit.exceeded</c> with the limiter's <c>Retry-After</c>, and logs the rejection; a service's own
+/// <c>OnRejected</c> is kept; and a request authorization refuses still counts against the limit.
 /// </summary>
 public sealed class RateLimitingTests
 {
@@ -76,6 +77,31 @@ public sealed class RateLimitingTests
 
         second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await second.Content.ReadAsStringAsync()).Should().Be("slow down");
+    }
+
+    [Fact]
+    public async Task R1_RefusedRequests_CountAgainstTheLimit_BecauseRateLimitingRunsBeforeAuthorization()
+    {
+        await using var app = await WebApiTestHost.StartAsync(
+            app => app.MapGet("/limited-protected", () => "ok").RequirePermission("orders.read").RequireRateLimiting(Policy),
+            builder =>
+            {
+                builder.AddTestAuthentication();
+                builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter(Policy, limiter =>
+                {
+                    limiter.PermitLimit = 1;
+                    limiter.Window = TimeSpan.FromMinutes(10);
+                    limiter.QueueLimit = 0;
+                }));
+            });
+        var client = app.GetTestClient();
+
+        using var refused = await client.GetAsync("/limited-protected");
+        using var permitted = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "/limited-protected").SignedIn(permissions: "orders.read"));
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await permitted.ShouldBeProblemAsync(StatusCodes.Status429TooManyRequests, PresentationErrorCodes.RateLimitExceeded);
     }
 
     [Fact]

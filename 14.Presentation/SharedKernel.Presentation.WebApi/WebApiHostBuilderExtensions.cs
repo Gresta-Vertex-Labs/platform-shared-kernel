@@ -1,31 +1,37 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Presentation.WebApi.Correlation;
 using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.RateLimiting;
+using SharedKernel.Presentation.WebApi.Startup;
 
 namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Registers the HTTP API boundary of a SharedKernel service.</summary>
 public static class WebApiHostBuilderExtensions
 {
-    private const string BindingReason = "Binds WebApiOptions from configuration by reflection.";
+    private const string BindingReason = "Binds SharedKernelWebApiOptions from configuration by reflection.";
 
     /// <summary>
     /// Registers everything <see cref="WebApiApplicationBuilderExtensions.UseSharedKernelWebApi"/> needs: one error
     /// contract, authorization, CORS, security headers and request limits, configured from
-    /// <c>SharedKernel:Presentation:WebApi</c> (<see cref="WebApiOptions"/>) and validated when the host starts.
+    /// <c>SharedKernel:Presentation:WebApi</c> (<see cref="SharedKernelWebApiOptions"/>) and validated.
     /// </summary>
     /// <param name="builder">The host builder, such as <c>WebApplication.CreateBuilder(args)</c>.</param>
     /// <param name="configure">Adjusts the settings after they are bound from configuration.</param>
@@ -34,49 +40,71 @@ public static class WebApiHostBuilderExtensions
     /// <para>Registers:</para>
     /// <list type="bullet">
     ///   <item>Problem details: every error response is RFC 9457 <c>application/problem+json</c> with <c>errorCode</c>,
-    ///   <c>traceId</c> and <c>correlationId</c>, including the framework's own (unmatched route, wrong method).</item>
-    ///   <item>An exception handler that turns thrown exceptions into that shape and logs them — 5xx at Error, 4xx at Debug.</item>
+    ///   <c>traceId</c> and <c>correlationId</c>, including the framework's own (unmatched route, wrong method, MVC model
+    ///   validation, minimal-API binding failures), and is never cached.</item>
+    ///   <item>The platform's exception handling as the fallback of <c>UseExceptionHandler()</c>: an
+    ///   <see cref="Microsoft.AspNetCore.Diagnostics.IExceptionHandler"/> the service registers runs first, and whatever it
+    ///   leaves becomes the problem shape, logged once — 5xx at Error, 4xx at Debug.</item>
     ///   <item><see cref="SharedKernelAuthorizationExtensions.AddSharedKernelAuthorization"/>.</item>
     ///   <item>A CORS policy, only when <c>Cors:AllowedOrigins</c> lists origins.</item>
     ///   <item>A 429 problem body for rate limiting that has no <c>OnRejected</c> of its own.</item>
     ///   <item>Kestrel without the <c>Server</c> header and with <c>Limits:MaxRequestBodySize</c>; <c>Limits:MaxJsonDepth</c>
-    ///   for minimal APIs and MVC; HSTS settings.</item>
+    ///   for minimal APIs and MVC when set; HSTS settings.</item>
+    ///   <item>Minimal APIs throw on a binding failure in every environment (as they do in Development), so each one
+    ///   gets the platform's validation problem; MVC keeps System.Text.Json's messages, which name .NET types, out of
+    ///   model state.</item>
+    ///   <item>Startup warnings when <c>UseSharedKernelWebApi()</c> is never called and when exception details are
+    ///   enabled outside Development.</item>
     /// </list>
     /// <para>Safe to call more than once; each <paramref name="configure"/> is applied.</para>
     /// </remarks>
-    /// <exception cref="OptionsValidationException">At host startup, when the settings are invalid.</exception>
+    /// <exception cref="OptionsValidationException">
+    /// When the settings are invalid: with Kestrel as soon as the host is built (the server reads them), otherwise —
+    /// for example with <c>TestServer</c> — when <c>UseSharedKernelWebApi()</c> builds the pipeline, and at the latest
+    /// when the host starts.
+    /// </exception>
     [RequiresUnreferencedCode(BindingReason)]
     [RequiresDynamicCode(BindingReason)]
-    public static IHostApplicationBuilder AddSharedKernelWebApi(this IHostApplicationBuilder builder, Action<WebApiOptions>? configure = null)
+    public static IHostApplicationBuilder AddSharedKernelWebApi(this IHostApplicationBuilder builder, Action<SharedKernelWebApiOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         var services = builder.Services;
 
-        if (!services.Any(descriptor => descriptor.ServiceType == typeof(WebApiServicesMarker)))
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(WebApiPipelineState)))
         {
-            services.AddSingleton<WebApiServicesMarker>();
-            services.AddValidatedOptions<WebApiOptions, WebApiOptionsValidator>(builder.Configuration);
+            services.AddSingleton<WebApiPipelineState>();
+            services.AddValidatedOptions<SharedKernelWebApiOptions, WebApiOptionsValidator>(builder.Configuration);
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, WebApiStartupDiagnostics>());
+            RefuseInboundBaggage(services);
 
             services.AddRouting();
             services.AddProblemDetails();
             services.AddOptions<ProblemDetailsOptions>().PostConfigure(ChainCustomization);
-            services.AddExceptionHandler<SharedKernelExceptionHandler>();
+
+            services.TryAddSingleton<SharedKernelExceptionHandler>();
+            services.AddOptions<ExceptionHandlerOptions>()
+                .PostConfigure<SharedKernelExceptionHandler>((options, handler) => handler.Install(options));
 
             services.AddSharedKernelAuthorization();
 
             services.AddCors();
             services.AddOptions<CorsOptions>()
-                .Configure<IOptions<WebApiOptions>>((cors, options) => CorsPolicyConfiguration.Configure(cors, options.Value.Cors));
+                .Configure<IOptions<SharedKernelWebApiOptions>>((cors, options) => CorsPolicyConfiguration.Configure(cors, options.Value.Cors));
 
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IPostConfigureOptions<RateLimiterOptions>, RateLimitRejectionPostConfigure>());
 
-            services.AddOptions<KestrelServerOptions>().Configure<IOptions<WebApiOptions>>(ConfigureKestrel);
+            services.AddOptions<KestrelServerOptions>().Configure<IOptions<SharedKernelWebApiOptions>>(ConfigureKestrel);
             services.AddOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>()
-                .Configure<IOptions<WebApiOptions>>((json, options) => json.SerializerOptions.MaxDepth = options.Value.Limits.MaxJsonDepth);
+                .Configure<IOptions<SharedKernelWebApiOptions>>(ConfigureMinimalApiJson);
             services.AddOptions<Microsoft.AspNetCore.Mvc.JsonOptions>()
-                .Configure<IOptions<WebApiOptions>>((json, options) => json.JsonSerializerOptions.MaxDepth = options.Value.Limits.MaxJsonDepth);
-            services.AddOptions<HstsOptions>().Configure<IOptions<WebApiOptions>>(ConfigureHsts);
+                .Configure<IOptions<SharedKernelWebApiOptions>>(ConfigureMvcJson);
+            services.AddOptions<HstsOptions>().Configure<IOptions<SharedKernelWebApiOptions>>(ConfigureHsts);
+
+            // A binding failure outside Development would otherwise be a bodiless 400; thrown, it reaches the platform's
+            // exception handling and becomes the same validation problem in every environment.
+            services.AddOptions<RouteHandlerOptions>().Configure(static options => options.ThrowOnBadRequest = true);
+            services.AddOptions<ApiBehaviorOptions>().PostConfigure(UsePlatformModelStateResponse);
         }
 
         if (configure is not null)
@@ -85,6 +113,26 @@ public static class WebApiHostBuilderExtensions
         }
 
         return builder;
+    }
+
+    // Hosting reads each request's trace context and baggage with the DI propagator before any middleware runs. The
+    // decorator refuses the caller's baggage there (unless TrustInboundBaggage), so not even hosting's own first log
+    // record carries it; the pipeline removes whatever reaches the activity another way.
+    private static void RefuseInboundBaggage(IServiceCollection services)
+    {
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(DistributedContextPropagator) && !descriptor.IsKeyedService))
+        {
+            ServiceDecoration.Decorate<DistributedContextPropagator>(
+                services,
+                static (provider, inner) => new InboundBaggagePropagator(inner, provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>()));
+        }
+        else
+        {
+            // Not yet registered (the web host adds it with TryAdd, and keeps this one).
+            services.AddSingleton<DistributedContextPropagator>(static provider => new InboundBaggagePropagator(
+                DistributedContextPropagator.Current,
+                provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>()));
+        }
     }
 
     // Runs after every other configuration of ProblemDetailsOptions, so a service's own CustomizeProblemDetails is
@@ -100,7 +148,17 @@ public static class WebApiHostBuilderExtensions
         };
     }
 
-    private static void ConfigureKestrel(KestrelServerOptions kestrel, IOptions<WebApiOptions> options)
+    // MVC's own factory (set by AddControllers, in MVC's assembly) is replaced; a factory the service set itself is kept.
+    private static void UsePlatformModelStateResponse(ApiBehaviorOptions options)
+    {
+        if (options.InvalidModelStateResponseFactory is null
+            || options.InvalidModelStateResponseFactory.Method.Module.Assembly == typeof(ApiBehaviorOptions).Assembly)
+        {
+            options.InvalidModelStateResponseFactory = RequestValidationErrors.CreateModelStateResponse;
+        }
+    }
+
+    private static void ConfigureKestrel(KestrelServerOptions kestrel, IOptions<SharedKernelWebApiOptions> options)
     {
         var settings = options.Value;
 
@@ -115,7 +173,27 @@ public static class WebApiHostBuilderExtensions
         }
     }
 
-    private static void ConfigureHsts(HstsOptions hsts, IOptions<WebApiOptions> options)
+    private static void ConfigureMinimalApiJson(Microsoft.AspNetCore.Http.Json.JsonOptions json, IOptions<SharedKernelWebApiOptions> options)
+    {
+        if (options.Value.Limits.MaxJsonDepth is { } maxDepth)
+        {
+            json.SerializerOptions.MaxDepth = maxDepth;
+        }
+    }
+
+    private static void ConfigureMvcJson(Microsoft.AspNetCore.Mvc.JsonOptions json, IOptions<SharedKernelWebApiOptions> options)
+    {
+        // Model state keeps the JsonException instead of its message ("could not be converted to System.Int32"), and
+        // the platform's model-state response writes a generic message for it.
+        json.AllowInputFormatterExceptionMessages = false;
+
+        if (options.Value.Limits.MaxJsonDepth is { } maxDepth)
+        {
+            json.JsonSerializerOptions.MaxDepth = maxDepth;
+        }
+    }
+
+    private static void ConfigureHsts(HstsOptions hsts, IOptions<SharedKernelWebApiOptions> options)
     {
         var settings = options.Value.SecurityHeaders;
 
@@ -124,6 +202,3 @@ public static class WebApiHostBuilderExtensions
         hsts.Preload = settings.HstsPreload;
     }
 }
-
-/// <summary>Marks a service collection <c>AddSharedKernelWebApi()</c> has already configured.</summary>
-internal sealed class WebApiServicesMarker;

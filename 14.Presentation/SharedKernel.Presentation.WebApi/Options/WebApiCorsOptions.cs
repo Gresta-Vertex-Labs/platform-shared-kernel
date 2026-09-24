@@ -11,8 +11,21 @@ namespace SharedKernel.Presentation.WebApi.Options;
 /// configuration, one list per environment, never code.
 /// </para>
 /// <para>
-/// <see cref="AllowCredentials"/> with no origin or with <c>*</c> fails at startup: browsers refuse that
-/// combination, and letting it reach production only moves the failure to the first credentialed request.
+/// Startup validation refuses settings a browser would reject or an attacker could use:
+/// </para>
+/// <list type="bullet">
+///   <item><see cref="AllowCredentials"/> with no origin or with <c>*</c>: browsers refuse that combination, and
+///   letting it reach production only moves the failure to the first credentialed request.</item>
+///   <item>The origin <c>null</c>, which sandboxed frames and <c>file://</c> pages send: allowing it allows them all.</item>
+///   <item>Outside the Development environment, <see cref="AllowCredentials"/> with an <c>http://</c> origin: anyone
+///   on the network path can inject script into a page served over plain HTTP and call the API with the user's
+///   cookies.</item>
+/// </list>
+/// <para>
+/// Browsers do not apply CORS to WebSockets. When origins are configured, a WebSocket request (a SignalR hub's
+/// WebSocket transport, for example) whose <c>Origin</c> the policy does not allow is therefore refused with 403
+/// <c>forbidden.origin_not_allowed</c> before it reaches the endpoint; a request without <c>Origin</c> — not a
+/// browser — is let through.
 /// </para>
 /// </remarks>
 public sealed class WebApiCorsOptions

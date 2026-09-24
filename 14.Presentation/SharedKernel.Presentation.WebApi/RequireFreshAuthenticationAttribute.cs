@@ -1,7 +1,8 @@
 using System.ComponentModel;
 using Microsoft.AspNetCore.Authorization;
+using SharedKernel.Presentation.WebApi.Authorization;
 
-namespace SharedKernel.Presentation.WebApi.Authorization;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Requires the caller to have authenticated recently — a step-up gate for sensitive operations such as changing

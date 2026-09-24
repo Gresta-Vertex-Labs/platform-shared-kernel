@@ -2,9 +2,11 @@ using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
+using SharedKernel.Presentation.WebApi.Http;
 
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// A 200 OK result carrying an <c>ETag</c>, which answers a <c>GET</c> or <c>HEAD</c> whose <c>If-None-Match</c>
@@ -13,8 +15,8 @@ namespace SharedKernel.Presentation.WebApi.Http;
 /// <typeparam name="TValue">The type of the response body.</typeparam>
 /// <remarks>
 /// <c>If-None-Match</c> uses the weak comparison of RFC 9110 section 13.1.2, so <c>W/"42"</c> matches <c>"42"</c>.
-/// For other methods the body is always sent: the request has already been carried out. OpenAPI documents the 200
-/// body and the 304.
+/// For every other method the body is always sent: the request has already been carried out. OpenAPI documents the
+/// 200 body, and the 304 only for an endpoint that answers <c>GET</c> or <c>HEAD</c>.
 /// </remarks>
 public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueHttpResult, IValueHttpResult<TValue>, IEndpointMetadataProvider
 {
@@ -42,7 +44,7 @@ public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueH
     /// <summary>Gets the version sent as the <c>ETag</c>, without quotes.</summary>
     public string Version { get; }
 
-    /// <summary>Gets 200, the status sent unless the client already has this version.</summary>
+    /// <summary>Gets 200, the status sent unless a <c>GET</c> or <c>HEAD</c> client already has this version (304).</summary>
     public int StatusCode => StatusCodes.Status200OK;
 
     /// <inheritdoc />
@@ -56,8 +58,7 @@ public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueH
         httpContext.Response.Headers[HeaderNames.ETag] = _entityTag;
 
         var request = httpContext.Request;
-        if ((HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
-            && EntityTags.IfNoneMatchMatches(request, _entityTag))
+        if (IsRead(request.Method) && EntityTags.IfNoneMatchMatches(request, _entityTag))
         {
             httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
             return Task.CompletedTask;
@@ -73,6 +74,15 @@ public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueH
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Metadata.Add(new ProducesResponseTypeMetadata(StatusCodes.Status200OK, typeof(TValue), [JsonContentType]));
-        builder.Metadata.Add(new ProducesResponseTypeMetadata(StatusCodes.Status304NotModified, typeof(void)));
+
+        // The HTTP methods are known when the route handler was mapped with them (MapGet, MapPut, MapMethods); an
+        // endpoint mapped for every method may answer a GET.
+        var methods = builder.Metadata.OfType<IHttpMethodMetadata>().LastOrDefault()?.HttpMethods;
+        if (methods is null || methods.Count == 0 || methods.Any(IsRead))
+        {
+            builder.Metadata.Add(new ProducesResponseTypeMetadata(StatusCodes.Status304NotModified, typeof(void)));
+        }
     }
+
+    private static bool IsRead(string method) => HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
 }

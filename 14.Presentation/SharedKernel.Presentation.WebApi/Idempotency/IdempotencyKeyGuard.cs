@@ -10,7 +10,10 @@ using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.WebApi.Idempotency;
 
-/// <summary>Reads and checks the <c>Idempotency-Key</c> header, for the endpoint filter and the MVC attribute alike.</summary>
+/// <summary>
+/// Reads and checks the <c>Idempotency-Key</c> header, for the header-requirements middleware, the
+/// <see cref="IdempotencyKey"/> parameter and <c>GetIdempotencyKey()</c> alike.
+/// </summary>
 internal static partial class IdempotencyKeyGuard
 {
     /// <summary>The longest key accepted.</summary>
@@ -79,7 +82,7 @@ internal static partial class IdempotencyKeyGuard
             candidate = candidate[1..^1];
         }
 
-        if (candidate.Length is 0 or > MaxLength || candidate.AsSpan().ContainsAnyExceptInRange('!', '~'))
+        if (!IsValid(candidate))
         {
             return KeyState.Invalid;
         }
@@ -87,6 +90,10 @@ internal static partial class IdempotencyKeyGuard
         key = candidate;
         return KeyState.Valid;
     }
+
+    /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is 1 to 256 visible ASCII characters (0x21–0x7E).</summary>
+    public static bool IsValid(string? key) =>
+        key is { Length: > 0 and <= MaxLength } && !key.AsSpan().ContainsAnyExceptInRange('!', '~');
 
     private static partial class Log
     {

@@ -29,7 +29,7 @@ internal sealed partial class CorrelationIdMiddleware
     private readonly int _maxLength;
     private readonly Regex _pattern;
 
-    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger, IOptions<WebApiOptions> options)
+    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger, IOptions<SharedKernelWebApiOptions> options)
     {
         _next = next;
         _logger = logger;

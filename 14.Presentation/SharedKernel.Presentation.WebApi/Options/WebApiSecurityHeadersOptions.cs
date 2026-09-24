@@ -9,14 +9,16 @@ namespace SharedKernel.Presentation.WebApi.Options;
 /// </para>
 /// <para>
 /// HSTS uses ASP.NET Core's own middleware: it is sent over HTTPS only, never to <c>localhost</c>, and never in the
-/// Development environment.
+/// Development environment. It runs before the exception handler and survives the handler clearing the response, so
+/// error responses carry it too. Behind a proxy that terminates TLS, add forwarded-headers handling with the
+/// <c>AtStart</c> hook of <c>UseSharedKernelWebApi</c>, or the request never looks like HTTPS.
 /// </para>
 /// </remarks>
 public sealed class WebApiSecurityHeadersOptions
 {
     /// <summary>
-    /// Gets or sets a value indicating whether security headers, HSTS included, are written. Defaults to
-    /// <see langword="true"/>.
+    /// Gets or sets a value indicating whether security headers, HSTS and the default <see cref="CacheControl"/>
+    /// included, are written. Defaults to <see langword="true"/>.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
@@ -54,4 +56,16 @@ public sealed class WebApiSecurityHeadersOptions
     /// which lets a browser load nothing from an API response and forbids framing it.
     /// </summary>
     public string? ContentSecurityPolicy { get; set; } = "default-src 'none'; frame-ancestors 'none'";
+
+    /// <summary>
+    /// Gets or sets the <c>Cache-Control</c> value written on a response that sets neither <c>Cache-Control</c> nor
+    /// <c>ETag</c>. Defaults to <c>no-store</c>, so browsers and shared proxies keep no copy of API data;
+    /// <see langword="null"/> or empty writes nothing.
+    /// </summary>
+    /// <remarks>
+    /// A response that sets its own <c>Cache-Control</c> keeps it, and one with an <c>ETag</c> (such as
+    /// <c>ToOkWithETag(…)</c>) is left alone so clients can revalidate it. Error responses
+    /// (<c>application/problem+json</c>) are always <c>no-store</c>, whatever this value is.
+    /// </remarks>
+    public string? CacheControl { get; set; } = "no-store";
 }

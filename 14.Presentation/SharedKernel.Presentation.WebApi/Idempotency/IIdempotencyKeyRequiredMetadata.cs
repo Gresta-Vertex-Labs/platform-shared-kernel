@@ -1,8 +1,12 @@
 namespace SharedKernel.Presentation.WebApi.Idempotency;
 
 /// <summary>
-/// Endpoint metadata stating that the endpoint requires an <c>Idempotency-Key</c> request header. Present on every
-/// endpoint marked with <c>RequireIdempotencyKey()</c> or <see cref="RequireIdempotencyKeyAttribute"/>, so tooling —
-/// such as the OpenAPI add-on — can document the header.
+/// Endpoint metadata stating that the endpoint requires an <c>Idempotency-Key</c> request header.
+/// <c>UseSharedKernelWebApi()</c> enforces it for every endpoint that carries it (400 before the endpoint runs);
+/// tooling such as the OpenAPI add-on reads it to document the header.
 /// </summary>
+/// <remarks>
+/// Added by <see cref="RequireIdempotencyKeyAttribute"/>, the <c>RequireIdempotencyKey()</c> convention and an
+/// <see cref="IdempotencyKey"/> parameter.
+/// </remarks>
 public interface IIdempotencyKeyRequiredMetadata;

@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Authorization;
@@ -100,7 +101,7 @@ public sealed class AuthorizationAttributeTests
     public async Task AuthenticationSchemes_CanBeSet_AndJoinThePolicy_WithoutReplacingTheRequirement()
     {
         var attribute = new RequirePermissionAttribute("orders.read") { AuthenticationSchemes = "ApiKey" };
-        var provider = new SharedKernelAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(new AuthorizationOptions()));
+        var provider = new SharedKernelAuthorizationPolicyProvider(new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(new AuthorizationOptions())));
 
         var policy = await AuthorizationPolicy.CombineAsync(provider, [attribute]);
 
@@ -114,7 +115,7 @@ public sealed class AuthorizationAttributeTests
     [MemberData(nameof(Attributes))]
     public async Task Policy_RequiresAnAuthenticatedUser_AndTheAttributesRequirement(IAuthorizeData attribute)
     {
-        var provider = new SharedKernelAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(new AuthorizationOptions()));
+        var provider = new SharedKernelAuthorizationPolicyProvider(new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(new AuthorizationOptions())));
 
         var policy = await provider.GetPolicyAsync(attribute.Policy!);
 
@@ -128,12 +129,27 @@ public sealed class AuthorizationAttributeTests
     {
         var options = new AuthorizationOptions();
         options.AddPolicy("service-policy", policy => policy.RequireClaim("scope", "orders"));
-        var provider = new SharedKernelAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(options));
+        var provider = new SharedKernelAuthorizationPolicyProvider(new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(options)));
 
         (await provider.GetPolicyAsync("service-policy")).Should().NotBeNull();
         (await provider.GetPolicyAsync("unknown")).Should().BeNull();
         (await provider.GetPolicyAsync("SharedKernel:permission:")).Should().BeNull();
         (await provider.GetDefaultPolicyAsync()).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task PolicyProvider_DecoratesTheProviderItWraps()
+    {
+        // R4: a service's own provider keeps answering its names, defaults and caching; the platform adds only its own.
+        var inner = new DynamicPolicyProvider(allowsCaching: false);
+        var provider = new SharedKernelAuthorizationPolicyProvider(inner);
+
+        (await provider.GetPolicyAsync("dynamic:orders")).Should().BeSameAs(inner.DynamicPolicy);
+        (await provider.GetDefaultPolicyAsync()).Should().BeSameAs(inner.DefaultPolicy);
+        (await provider.GetFallbackPolicyAsync()).Should().BeNull();
+        provider.AllowsCachingPolicies.Should().BeFalse("the decorated provider decides whether policies may be cached");
+        (await provider.GetPolicyAsync(new RequirePermissionAttribute("orders.read").Policy))!
+            .Requirements.Should().ContainSingle(requirement => requirement is PermissionRequirement);
     }
 
     [Fact]

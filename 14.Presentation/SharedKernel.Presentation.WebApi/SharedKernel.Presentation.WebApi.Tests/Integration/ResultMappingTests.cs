@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -44,7 +43,11 @@ public sealed class ResultMappingTests : IClassFixture<FullStackHost>, IAsyncLif
             app.MapGet("/ok-async", () => Task.FromResult(Result<Order>.Success(SampleOrder)).ToOk());
             app.MapGet("/ok-async-failure", () => Task.FromResult(Result<Order>.Failure(TestErrors.OrderNotFound)).ToOk());
             app.MapGet("/etag", () => Result<Order>.Success(SampleOrder).ToOkWithETag(order => order.Version.ToString()));
-            app.MapGet("/etag-async", () => Task.FromResult(Result<Order>.Success(SampleOrder)).ToOkWithETag(order => order.Id, order => order.Version.ToString()));
+            app.MapGet("/etag-async", () => Task.FromResult(Result<Order>.Success(SampleOrder)).ToOkWithETag(order => order.Version.ToString(), order => order.Id));
+            app.MapPost("/created-plain", () => Result.Success().ToCreated("/orders/7"));
+            app.MapPost("/created-plain-async", () => Task.FromResult(Result.Failure(TestErrors.OrderNotFound)).ToCreated("/orders/7"));
+            app.MapPost("/accepted-plain", () => Result.Success().ToAccepted());
+            app.MapPost("/accepted-plain-location", () => Task.FromResult(Result.Success()).ToAccepted("/jobs/7"));
             app.MapPost("/created", () => Result<Order>.Success(SampleOrder).ToCreated(order => $"/orders/{order.Id}"));
             app.MapPost("/created-mapped", () => Task.FromResult(Result<Order>.Success(SampleOrder)).ToCreated(order => $"/orders/{order.Id}", order => order.Id));
             app.MapPost("/accepted", () => Result<Order>.Success(SampleOrder).ToAccepted());
@@ -139,6 +142,38 @@ public sealed class ResultMappingTests : IClassFixture<FullStackHost>, IAsyncLif
         withLocation.Headers.Location.Should().Be(new Uri("/jobs/7", UriKind.Relative));
     }
 
+    [Fact]
+    public async Task R20_NonGenericToCreated_Is201_WithLocation_AndNoBody()
+    {
+        using var created = await Client.PostAsync("/created-plain", content: null);
+        using var failed = await Client.PostAsync("/created-plain-async", content: null);
+
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        created.Headers.Location.Should().Be(new Uri("/orders/7", UriKind.Relative));
+        (await created.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        await failed.ShouldBeProblemAsync(StatusCodes.Status404NotFound, "order.not_found");
+    }
+
+    [Fact]
+    public async Task R20_NonGenericToAccepted_Is202_WithOrWithoutLocation()
+    {
+        using var withoutLocation = await Client.PostAsync("/accepted-plain", content: null);
+        using var withLocation = await Client.PostAsync("/accepted-plain-location", content: null);
+
+        withoutLocation.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        withoutLocation.Headers.Location.Should().BeNull();
+        withLocation.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        withLocation.Headers.Location.Should().Be(new Uri("/jobs/7", UriKind.Relative));
+    }
+
+    [Fact]
+    public void R20_ToCreated_RequiresALocation()
+    {
+        var act = () => Result.Success().ToCreated(location: null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
     [Theory]
     [InlineData("/no-content")]
     [InlineData("/no-content-async")]
@@ -217,16 +252,41 @@ public sealed class ResultMappingTests : IClassFixture<FullStackHost>, IAsyncLif
     }
 
     [Fact]
-    public async Task Mvc_Success_MapsTo200_204_And201()
+    public async Task R19_MvcActions_ReturnTheSameTypedResults()
     {
         using var ok = await _host.Client.GetAsync("/mvc-api/ok");
         using var done = await _host.Client.DeleteAsync("/mvc-api/done");
         using var created = await _host.Client.PostAsync("/mvc-api/created", content: null);
+        using var etag = await _host.Client.GetAsync("/mvc-api/etag");
+        using var failure = await _host.Client.GetAsync("/mvc-api/failure");
+        using var plainFailure = await _host.Client.GetAsync("/mvc-plain/failure");
 
         ok.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await ok.Content.ReadAsStringAsync()).Should().Contain("value");
+        (await ok.Content.ReadFromJsonAsync<string>()).Should().Be("value");
         done.StatusCode.Should().Be(HttpStatusCode.NoContent);
         created.StatusCode.Should().Be(HttpStatusCode.Created);
+        created.Headers.Location.Should().Be(new Uri("/mvc-api/orders/7", UriKind.Relative));
+        (await created.Content.ReadFromJsonAsync<string>()).Should().Be("7");
+        etag.StatusCode.Should().Be(HttpStatusCode.OK);
+        etag.Headers.ETag!.Tag.Should().Be("\"5\"");
+        await failure.ShouldBeProblemAsync(StatusCodes.Status404NotFound, "order.not_found");
+        await plainFailure.ShouldBeProblemAsync(StatusCodes.Status404NotFound, "order.not_found");
+    }
+
+    [Theory]
+    [InlineData("mvc-api/ok", "GET", 200, typeof(string))]
+    [InlineData("mvc-api/created", "POST", 201, typeof(string))]
+    [InlineData("mvc-api/done", "DELETE", 204, typeof(void))]
+    [InlineData("mvc-api/etag", "GET", 304, typeof(void))]
+    public void R19_MvcTypedResults_DescribeTheirSuccessResponse_ForOpenApi(string route, string method, int statusCode, Type type)
+    {
+        var descriptions = _host.App.Services.GetRequiredService<Microsoft.AspNetCore.Mvc.ApiExplorer.IApiDescriptionGroupCollectionProvider>()
+            .ApiDescriptionGroups.Items.SelectMany(group => group.Items);
+
+        var description = descriptions.Single(candidate => candidate.RelativePath == route && candidate.HttpMethod == method);
+
+        description.SupportedResponseTypes.Should().Contain(response =>
+            response.StatusCode == statusCode && (response.Type ?? typeof(void)) == type);
     }
 
     [Fact]

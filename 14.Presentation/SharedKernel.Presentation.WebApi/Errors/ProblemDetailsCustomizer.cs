@@ -22,8 +22,19 @@ internal static class ProblemDetailsCustomizer
 
     private const string TooManyRequestsType = "https://tools.ietf.org/html/rfc6585#section-4";
 
-    /// <summary>The <see cref="ProblemDetailsOptions.CustomizeProblemDetails"/> entry point.</summary>
-    public static void Customize(ProblemDetailsContext context) => Apply(context.HttpContext, context.ProblemDetails);
+    /// <summary>
+    /// The <see cref="ProblemDetailsOptions.CustomizeProblemDetails"/> entry point: completes the problem and, since it
+    /// is about to be written, marks the response <c>Cache-Control: no-store</c>.
+    /// </summary>
+    public static void Customize(ProblemDetailsContext context)
+    {
+        Apply(context.HttpContext, context.ProblemDetails);
+
+        if (!context.HttpContext.Response.HasStarted)
+        {
+            context.HttpContext.Response.Headers.CacheControl = ProblemResponseWriter.NoStore;
+        }
+    }
 
     /// <summary>
     /// Adds <c>instance</c>, <c>errorCode</c> (<c>http.{status}</c> when the problem has none), <c>correlationId</c>,

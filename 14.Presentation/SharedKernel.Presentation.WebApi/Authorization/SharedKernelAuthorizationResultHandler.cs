@@ -15,25 +15,33 @@ using SharedKernel.Primitives.Logging;
 namespace SharedKernel.Presentation.WebApi.Authorization;
 
 /// <summary>
-/// Wraps ASP.NET Core's authorization result handling so every refusal carries the platform's problem body:
+/// Decorates the authorization result handler registered before the platform's — the service's own, or ASP.NET
+/// Core's default — so every refusal carries the platform's answer:
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item>Not signed in: the scheme's own challenge (its <c>WWW-Authenticate</c> header is kept) and 401 <c>unauthorized.default</c>.</item>
+///   <item>Not signed in: the scheme's own challenge (its <c>WWW-Authenticate</c> header is kept) and 401
+///   <c>unauthorized.default</c>. With no authentication scheme registered at all: 401 with
+///   <c>WWW-Authenticate: Bearer</c>.</item>
 ///   <item>Signed in, but the only unmet requirements are freshness or authentication-method ones: 401 with an RFC 9470
-///   <c>insufficient_user_authentication</c> challenge (plus <c>max_age</c> for freshness) and <c>unauthorized.step_up_required</c>.</item>
+///   <c>insufficient_user_authentication</c> challenge (plus <c>max_age</c> for freshness) and
+///   <c>unauthorized.step_up_required</c>. The challenge names <c>DPoP</c> when the request used that scheme, otherwise
+///   <c>Bearer</c>.</item>
 ///   <item>Signed in but not permitted: 403 <c>forbidden.insufficient_permission</c>. The message never names the
 ///   roles or permissions required.</item>
 /// </list>
-/// A gRPC call never gets a body: gRPC maps the HTTP status to its own code. Its step-up refusal is the same 401 and
-/// RFC 9470 challenge header, so it ends as <c>Unauthenticated</c> exactly as HTTP answers 401; every other gRPC
-/// refusal gets the framework's behavior unchanged (401 → <c>Unauthenticated</c>, 403 → <c>PermissionDenied</c>).
-/// Every refusal answered here — all of them over HTTP, the step-up over gRPC — is logged at Warning with the
-/// endpoint name and code, never with principal data.
+/// <para>
+/// A gRPC call gets the same statuses and headers but never a body: gRPC maps 401 to <c>Unauthenticated</c> and 403
+/// to <c>PermissionDenied</c> itself. Successful and unrelated results, and the challenge or forbid of a registered
+/// scheme, are passed to the decorated handler. Every refusal is logged at Warning with the endpoint name and code,
+/// never with principal data.
+/// </para>
 /// </remarks>
 internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
-    private const string DefaultChallengeScheme = "Bearer";
+    private const string BearerScheme = "Bearer";
+
+    private const string DPoPScheme = "DPoP";
 
     private const string UnauthorizedMessage = "Authentication is required to access this resource.";
 
@@ -45,11 +53,16 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
 
     private const string MethodDescription = "A stronger authentication method is required";
 
-    private readonly AuthorizationMiddlewareResultHandler _inner = new();
+    private readonly IAuthorizationMiddlewareResultHandler _inner;
     private readonly ILogger<SharedKernelAuthorizationResultHandler> _logger;
 
-    public SharedKernelAuthorizationResultHandler(ILogger<SharedKernelAuthorizationResultHandler>? logger = null)
+    public SharedKernelAuthorizationResultHandler(
+        IAuthorizationMiddlewareResultHandler inner,
+        ILogger<SharedKernelAuthorizationResultHandler>? logger = null)
     {
+        ArgumentNullException.ThrowIfNull(inner);
+
+        _inner = inner;
         _logger = logger ?? NullLogger<SharedKernelAuthorizationResultHandler>.Instance;
     }
 
@@ -62,30 +75,29 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             return;
         }
 
-        var isGrpc = RequestFacts.IsGrpcRequest(context);
+        var writeBody = !RequestFacts.IsGrpcRequest(context);
 
         if (authorizeResult.Forbidden && TryGetStepUp(authorizeResult.AuthorizationFailure, out var maxAge))
         {
-            await WriteStepUpAsync(context, maxAge, writeBody: !isGrpc).ConfigureAwait(false);
-            return;
-        }
-
-        if (isGrpc)
-        {
-            await _inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+            await WriteStepUpAsync(context, maxAge, writeBody).ConfigureAwait(false);
             return;
         }
 
         if (authorizeResult.Challenged)
         {
-            await ChallengeAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+            await ChallengeAsync(next, context, policy, authorizeResult, writeBody).ConfigureAwait(false);
             return;
         }
 
-        await ForbidAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+        await ForbidAsync(next, context, policy, authorizeResult, writeBody).ConfigureAwait(false);
     }
 
-    private async Task ChallengeAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    private async Task ChallengeAsync(
+        RequestDelegate next,
+        HttpContext context,
+        AuthorizationPolicy policy,
+        PolicyAuthorizationResult authorizeResult,
+        bool writeBody)
     {
         if (await HasSchemeAsync(context, policy, forbid: false).ConfigureAwait(false))
         {
@@ -94,19 +106,21 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
         }
         else
         {
+            // Without a scheme the framework's challenge would throw; answer the way a bearer scheme would.
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            context.Response.Headers.Append(HeaderNames.WWWAuthenticate, DefaultChallengeScheme);
+            context.Response.Headers.Append(HeaderNames.WWWAuthenticate, BearerScheme);
         }
 
-        await WriteProblemAsync(
-                context,
-                StatusCodes.Status401Unauthorized,
-                ErrorCodes.Unauthorized.Default,
-                UnauthorizedMessage)
+        await RefuseAsync(context, StatusCodes.Status401Unauthorized, ErrorCodes.Unauthorized.Default, UnauthorizedMessage, writeBody)
             .ConfigureAwait(false);
     }
 
-    private async Task ForbidAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    private async Task ForbidAsync(
+        RequestDelegate next,
+        HttpContext context,
+        AuthorizationPolicy policy,
+        PolicyAuthorizationResult authorizeResult,
+        bool writeBody)
     {
         if (await HasSchemeAsync(context, policy, forbid: true).ConfigureAwait(false))
         {
@@ -117,17 +131,13 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
         }
 
-        await WriteProblemAsync(
-                context,
-                StatusCodes.Status403Forbidden,
-                ErrorCodes.Forbidden.InsufficientPermission,
-                ForbiddenMessage)
+        await RefuseAsync(context, StatusCodes.Status403Forbidden, ErrorCodes.Forbidden.InsufficientPermission, ForbiddenMessage, writeBody)
             .ConfigureAwait(false);
     }
 
-    private async Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge, bool writeBody)
+    private Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge, bool writeBody)
     {
-        var challenge = $"{GetRequestScheme(context)} error=\"insufficient_user_authentication\", error_description=\"{(maxAge is null ? MethodDescription : FreshnessDescription)}\"";
+        var challenge = $"{GetChallengeScheme(context)} error=\"insufficient_user_authentication\", error_description=\"{(maxAge is null ? MethodDescription : FreshnessDescription)}\"";
         if (maxAge is { } age)
         {
             challenge += string.Create(CultureInfo.InvariantCulture, $", max_age=\"{(long)age.TotalSeconds}\"");
@@ -136,28 +146,17 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.Append(HeaderNames.WWWAuthenticate, challenge);
 
-        if (!writeBody)
-        {
-            // gRPC: the status and the challenge header are the whole answer; the client maps 401 to Unauthenticated.
-            Log.AuthorizationRejected(_logger, RequestFacts.GetEndpointDisplayName(context), PresentationErrorCodes.StepUpRequired);
-            return;
-        }
-
-        await WriteProblemAsync(
-                context,
-                StatusCodes.Status401Unauthorized,
-                PresentationErrorCodes.StepUpRequired,
-                StepUpMessage)
-            .ConfigureAwait(false);
+        return RefuseAsync(context, StatusCodes.Status401Unauthorized, PresentationErrorCodes.StepUpRequired, StepUpMessage, writeBody);
     }
 
-    private Task WriteProblemAsync(HttpContext context, int statusCode, string code, string message)
+    private Task RefuseAsync(HttpContext context, int statusCode, string code, string message, bool writeBody)
     {
         Log.AuthorizationRejected(_logger, RequestFacts.GetEndpointDisplayName(context), code);
 
-        // The scheme may have answered differently (a cookie scheme redirects to its sign-in page) or written the
-        // response itself; only a plain 401 or 403 gets the problem body.
-        if (context.Response.HasStarted || context.Response.StatusCode != statusCode)
+        // gRPC: the status and headers are the whole answer. Otherwise the scheme may have answered differently (a
+        // cookie scheme redirects to its sign-in page) or written the response itself; only a plain 401 or 403 gets
+        // the problem body.
+        if (!writeBody || context.Response.HasStarted || context.Response.StatusCode != statusCode)
         {
             return Task.CompletedTask;
         }
@@ -207,18 +206,17 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
         return true;
     }
 
-    // RFC 9470 answers in the scheme the client used (DPoP or Bearer); Bearer when the request carried no credentials.
-    private static string GetRequestScheme(HttpContext context)
+    // RFC 9470 answers in the token scheme the client used. Only the two schemes a step-up can apply to are echoed —
+    // DPoP when the request used it, otherwise Bearer — never an arbitrary value taken from the request.
+    private static string GetChallengeScheme(HttpContext context)
     {
-        var authorization = context.Request.Headers[HeaderNames.Authorization].ToString();
-        var end = authorization.IndexOf(' ', StringComparison.Ordinal);
-        var scheme = end > 0 ? authorization[..end] : authorization;
+        var authorization = context.Request.Headers.Authorization.ToString().AsSpan().TrimStart();
 
-        return scheme.Length > 0 && scheme.All(IsTokenCharacter) ? scheme : DefaultChallengeScheme;
+        return authorization.StartsWith(DPoPScheme, StringComparison.OrdinalIgnoreCase)
+            && (authorization.Length == DPoPScheme.Length || authorization[DPoPScheme.Length] is ' ' or '\t')
+                ? DPoPScheme
+                : BearerScheme;
     }
-
-    private static bool IsTokenCharacter(char c) =>
-        char.IsAsciiLetterOrDigit(c) || c is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~';
 
     private static partial class Log
     {

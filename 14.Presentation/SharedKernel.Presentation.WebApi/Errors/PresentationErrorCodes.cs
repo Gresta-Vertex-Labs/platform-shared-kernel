@@ -22,8 +22,41 @@ public static class PresentationErrorCodes
     /// <summary><c>idempotency.key_invalid</c>: the <c>Idempotency-Key</c> header is not 1 to 256 visible ASCII characters (400).</summary>
     public const string IdempotencyKeyInvalid = "idempotency.key_invalid";
 
-    /// <summary><c>precondition.required</c>: the endpoint requires an <c>If-Match</c> header and none was sent (428).</summary>
+    /// <summary>
+    /// <c>precondition.required</c>: the endpoint requires an <c>If-Match</c> header naming the version it changes, and
+    /// none was sent, or only <c>*</c> (428).
+    /// </summary>
     public const string PreconditionRequired = "precondition.required";
+
+    /// <summary>
+    /// <c>precondition.invalid</c>: the <c>If-Match</c> header of an endpoint that requires it is malformed or names
+    /// more than one entity tag (400).
+    /// </summary>
+    public const string PreconditionInvalid = "precondition.invalid";
+
+    /// <summary>
+    /// <c>precondition.failed</c>: the <c>If-Match</c> entity tag can never match the current version — it is weak
+    /// (<c>If-Match</c> compares strongly, RFC 9110 section 13.1.1) or not a version this endpoint uses (412).
+    /// </summary>
+    /// <remarks>
+    /// A version that is well formed but no longer current is reported with the application's own conflict code,
+    /// also as 412 (see <c>Problems:PreconditionFailedErrorCodes</c>).
+    /// </remarks>
+    public const string PreconditionFailed = "precondition.failed";
+
+    /// <summary>
+    /// <c>validation.invalid_value</c>: MVC model validation refused a value — a validation attribute such as
+    /// <c>[Required]</c> or a model-binding rule — and the message is that attribute's or the framework's (400, one
+    /// entry per field in <c>errors</c>). A value that could not be read at all is
+    /// <see cref="Primitives.Errors.ErrorCodes.Validation.InvalidFormat"/> instead.
+    /// </summary>
+    public const string InvalidValue = "validation.invalid_value";
+
+    /// <summary>
+    /// <c>forbidden.origin_not_allowed</c>: a WebSocket request came from a browser origin the CORS policy does not
+    /// allow (403). Browsers apply no CORS to WebSockets, so the server checks the origin itself.
+    /// </summary>
+    public const string OriginNotAllowed = "forbidden.origin_not_allowed";
 
     /// <summary><c>rate_limit.exceeded</c>: the caller sent too many requests (429).</summary>
     public const string RateLimitExceeded = "rate_limit.exceeded";

@@ -1,12 +1,13 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Options;
 
 namespace SharedKernel.Presentation.WebApi.Authorization;
 
 /// <summary>
 /// Builds the policy behind each <c>SharedKernel:</c> policy name the attributes produce, and leaves every other name
-/// — policies a service registers itself, the default and the fallback policy — to ASP.NET Core's default provider.
+/// — policies a service registers itself, the default and the fallback policy — to the provider it decorates: the
+/// service's own <see cref="IAuthorizationPolicyProvider"/> when one was registered first, otherwise ASP.NET Core's
+/// default provider.
 /// </summary>
 /// <remarks>
 /// Every generated policy requires an authenticated user, so an anonymous caller is challenged (401) before any
@@ -14,23 +15,28 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// </remarks>
 internal sealed class SharedKernelAuthorizationPolicyProvider : IAuthorizationPolicyProvider
 {
-    private readonly DefaultAuthorizationPolicyProvider _fallback;
+    private readonly IAuthorizationPolicyProvider _inner;
     private readonly ConcurrentDictionary<string, AuthorizationPolicy> _policies = new(StringComparer.Ordinal);
 
-    public SharedKernelAuthorizationPolicyProvider(IOptions<AuthorizationOptions> options)
+    public SharedKernelAuthorizationPolicyProvider(IAuthorizationPolicyProvider inner)
     {
-        _fallback = new DefaultAuthorizationPolicyProvider(options);
+        ArgumentNullException.ThrowIfNull(inner);
+
+        _inner = inner;
     }
 
     /// <inheritdoc />
-    public bool AllowsCachingPolicies => true;
+    /// <remarks>
+    /// The platform's policies never change, so caching is allowed exactly when the decorated provider allows it.
+    /// </remarks>
+    public bool AllowsCachingPolicies => _inner.AllowsCachingPolicies;
 
     /// <inheritdoc />
     public Task<AuthorizationPolicy?> GetPolicyAsync(string policyName)
     {
         if (!SharedKernelPolicyNames.IsSharedKernelPolicy(policyName))
         {
-            return _fallback.GetPolicyAsync(policyName);
+            return _inner.GetPolicyAsync(policyName);
         }
 
         if (_policies.TryGetValue(policyName, out var cached))
@@ -52,8 +58,8 @@ internal sealed class SharedKernelAuthorizationPolicyProvider : IAuthorizationPo
     }
 
     /// <inheritdoc />
-    public Task<AuthorizationPolicy> GetDefaultPolicyAsync() => _fallback.GetDefaultPolicyAsync();
+    public Task<AuthorizationPolicy> GetDefaultPolicyAsync() => _inner.GetDefaultPolicyAsync();
 
     /// <inheritdoc />
-    public Task<AuthorizationPolicy?> GetFallbackPolicyAsync() => _fallback.GetFallbackPolicyAsync();
+    public Task<AuthorizationPolicy?> GetFallbackPolicyAsync() => _inner.GetFallbackPolicyAsync();
 }
