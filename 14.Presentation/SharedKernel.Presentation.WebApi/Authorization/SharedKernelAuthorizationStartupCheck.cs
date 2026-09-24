@@ -17,7 +17,7 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// <para>
 /// <c>AddSharedKernelAuthorization()</c> decorates the <see cref="IAuthorizationPolicyProvider"/> and
 /// <see cref="IAuthorizationMiddlewareResultHandler"/> registered before it. One registered after it replaces the
-/// decorator, which would silently disable <c>[RequirePermission]</c> and its siblings or the problem bodies of
+/// decorator, which would silently disable <c>[RequireEndpointPermission]</c> and its siblings or the problem bodies of
 /// refusals. This check fails the start with an <see cref="InvalidOperationException"/> instead: a platform policy
 /// name must still resolve to the platform's requirement, and the resolved result handler must be the platform's.
 /// </para>
@@ -77,7 +77,7 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
 
         throw new InvalidOperationException(
             $"The IAuthorizationPolicyProvider in use ({provider.GetType().FullName}) does not resolve the policies of "
-            + "[RequirePermission], [RequireRole], [RequireFreshAuthentication] and [RequireAuthenticationMethod]: it was "
+            + "[RequireEndpointPermission], [RequireRole], [RequireFreshAuthentication] and [RequireAuthenticationMethod]: it was "
             + "registered after AddSharedKernelWebApi() or AddSharedKernelAuthorization() and replaced the platform's. "
             + "Register it before those calls, and the platform decorates it, passing every other policy name to it.");
     }
@@ -128,7 +128,7 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
             EventId = LoggingEventIdRanges.Presentation + 10,
             Level = LogLevel.Warning,
             Message = "Authentication scheme {SchemeName} has no IUserContextMapper: callers it authenticates are refused "
-                + "by every [RequirePermission], [RequireRole], [RequireFreshAuthentication] and "
+                + "by every [RequireEndpointPermission], [RequireRole], [RequireFreshAuthentication] and "
                 + "[RequireAuthenticationMethod] requirement. Register the mapper of the authentication package.")]
         public static partial void SchemeWithoutMapper(ILogger logger, string schemeName);
     }

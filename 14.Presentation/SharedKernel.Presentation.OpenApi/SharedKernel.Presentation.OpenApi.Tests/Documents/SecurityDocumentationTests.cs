@@ -122,7 +122,7 @@ public sealed class SecurityDocumentationTests
     public async Task ConventionsOnMapControllers_AreDocumented()
     {
         var document = await GetDocumentAsync(
-            app => app.MapControllers().RequirePermission(OrdersApi.AdminPermission),
+            app => app.MapControllers().RequireEndpointPermission(OrdersApi.AdminPermission),
             configureBuilder: builder => builder.Services.AddControllers().AddApplicationPart(typeof(OrdersApi).Assembly));
 
         var operation = document.Operation("/v1/mvc/orders", "get");

@@ -264,7 +264,7 @@ public sealed class WebApiSetupTests
     [Fact]
     public async Task WithoutAuthentication_ProtectedEndpoint_Is401_WithABearerChallenge()
     {
-        await using var app = await WebApiTestHost.StartAsync(app => app.MapGet("/secured", () => "ok").RequirePermission("orders.read"));
+        await using var app = await WebApiTestHost.StartAsync(app => app.MapGet("/secured", () => "ok").RequireEndpointPermission("orders.read"));
 
         using var response = await app.GetTestClient().GetAsync("/secured");
 
@@ -275,7 +275,7 @@ public sealed class WebApiSetupTests
     [Fact]
     public async Task R15_WithoutAuthentication_ProtectedGrpcCall_Is401_WithoutABody()
     {
-        await using var app = await WebApiTestHost.StartAsync(app => app.MapPost("/secured", () => "ok").RequirePermission("orders.read"));
+        await using var app = await WebApiTestHost.StartAsync(app => app.MapPost("/secured", () => "ok").RequireEndpointPermission("orders.read"));
         using var request = new HttpRequestMessage(HttpMethod.Post, "/secured")
         {
             Content = new ByteArrayContent([]) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc") } },
@@ -294,7 +294,7 @@ public sealed class WebApiSetupTests
         await using var app = await WebApiTestHost.StartAsync(
             app =>
             {
-                app.MapGet("/perm", () => "ok").RequirePermission("orders.read");
+                app.MapGet("/perm", () => "ok").RequireEndpointPermission("orders.read");
                 app.MapGet("/named", () => "ok").RequireAuthorization("service-policy");
             },
             builder =>
@@ -325,7 +325,7 @@ public sealed class WebApiSetupTests
         builder.AddSharedKernelWebApi();
         await using var app = builder.Build();
         app.UseSharedKernelWebApi();
-        app.MapGet("/perm", () => "ok").RequirePermission("orders.read");
+        app.MapGet("/perm", () => "ok").RequireEndpointPermission("orders.read");
         await app.StartAsync();
 
         using var forbidden = await app.GetTestClient().SendAsync(
@@ -450,7 +450,7 @@ public sealed class WebApiSetupTests
     {
         Type[] everyday =
         [
-            typeof(RequirePermissionAttribute), typeof(RequireRoleAttribute), typeof(RequireFreshAuthenticationAttribute),
+            typeof(RequireEndpointPermissionAttribute), typeof(RequireRoleAttribute), typeof(RequireFreshAuthenticationAttribute),
             typeof(RequireAuthenticationMethodAttribute), typeof(RequireIdempotencyKeyAttribute), typeof(RequireIfMatchAttribute),
             typeof(ErrorHttpResult), typeof(OkWithETag<>), typeof(IdempotencyKey), typeof(IfMatch<>), typeof(WebApiPipeline),
             typeof(ResultHttpExtensions), typeof(AuthorizationConventionExtensions), typeof(ConditionalRequestExtensions),
@@ -466,7 +466,7 @@ public sealed class WebApiSetupTests
         var seen = new List<string>();
 
         await using var app = await WebApiTestHost.StartAsync(
-            app => app.MapGet("/perm", () => "ok").RequirePermission("orders.read"),
+            app => app.MapGet("/perm", () => "ok").RequireEndpointPermission("orders.read"),
             builder => builder.AddTestAuthentication(),
             configurePipeline: pipeline => pipeline
                 .AtStart(app => app.Use((context, next) =>
@@ -535,7 +535,7 @@ public sealed class WebApiSetupTests
 
     private static void MapAuthorizationEndpoints(WebApplication app)
     {
-        app.MapGet("/perm", () => "ok").RequirePermission("orders.read");
+        app.MapGet("/perm", () => "ok").RequireEndpointPermission("orders.read");
         app.MapGet("/dynamic", () => "ok").RequireAuthorization(DynamicPolicyProvider.Prefix + "orders");
     }
 

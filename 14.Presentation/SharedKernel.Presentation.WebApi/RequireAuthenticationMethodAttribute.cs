@@ -7,7 +7,7 @@ namespace SharedKernel.Presentation.WebApi;
 /// <summary>
 /// Requires the caller to have authenticated with at least one of the given methods (<c>amr</c> values such as
 /// <c>mfa</c>, <c>otp</c> or <c>hwk</c>), no longer than <see cref="MaxAgeSeconds"/> ago when that is set. An
-/// <see cref="AuthorizeAttribute"/>, so it works natively wherever <see cref="RequirePermissionAttribute"/> does:
+/// <see cref="AuthorizeAttribute"/>, so it works natively wherever <see cref="RequireEndpointPermissionAttribute"/> does:
 /// minimal APIs (<c>RequireAuthenticationMethod(…)</c>), MVC, SignalR hubs and hub methods, and gRPC.
 /// </summary>
 /// <remarks>

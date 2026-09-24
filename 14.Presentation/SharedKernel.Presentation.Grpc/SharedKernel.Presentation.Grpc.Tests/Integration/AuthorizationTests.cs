@@ -16,7 +16,7 @@ namespace SharedKernel.Presentation.Grpc.Tests.Integration;
 public sealed class AuthorizationTests
 {
     [Fact]
-    public async Task B2_RequirePermission_AnonymousCaller_IsUnauthenticated()
+    public async Task B2_RequireEndpointPermission_AnonymousCaller_IsUnauthenticated()
     {
         await using var app = await GrpcTestHost.StartAsync();
 
@@ -26,7 +26,7 @@ public sealed class AuthorizationTests
     }
 
     [Fact]
-    public async Task RequirePermission_CallerWithoutThePermission_IsPermissionDenied()
+    public async Task RequireEndpointPermission_CallerWithoutThePermission_IsPermissionDenied()
     {
         await using var app = await GrpcTestHost.StartAsync();
 
@@ -38,7 +38,7 @@ public sealed class AuthorizationTests
     }
 
     [Fact]
-    public async Task RequirePermission_CallerWithThePermission_Succeeds()
+    public async Task RequireEndpointPermission_CallerWithThePermission_Succeeds()
     {
         await using var app = await GrpcTestHost.StartAsync();
 
@@ -82,7 +82,7 @@ public sealed class AuthorizationTests
     public async Task MapGrpcServiceConvention_ProtectsEveryMethodOfTheService()
     {
         await using var app = await GrpcTestHost.StartAsync(
-            configureService: service => service.RequirePermission(TestAuthentication.AdminPermission));
+            configureService: service => service.RequireEndpointPermission(TestAuthentication.AdminPermission));
         var client = app.CreateClient();
 
         var anonymous = async () => await client.EchoAsync(new EchoRequest());
@@ -99,7 +99,7 @@ public sealed class AuthorizationTests
     {
         // OR within one requirement, as over HTTP.
         await using var app = await GrpcTestHost.StartAsync(
-            configureService: service => service.RequirePermission(TestAuthentication.AdminPermission, "orders.support"));
+            configureService: service => service.RequireEndpointPermission(TestAuthentication.AdminPermission, "orders.support"));
         var client = app.CreateClient();
 
         var admin = await client.EchoAsync(new EchoRequest { Value = "a" }, TestAuthentication.SignedIn(permissions: TestAuthentication.AdminPermission));
@@ -131,7 +131,7 @@ public sealed class AuthorizationTests
     public async Task MapGrpcServiceConvention_AndMethodAttribute_BothApply()
     {
         await using var app = await GrpcTestHost.StartAsync(
-            configureService: service => service.RequirePermission(TestAuthentication.AdminPermission));
+            configureService: service => service.RequireEndpointPermission(TestAuthentication.AdminPermission));
         var client = app.CreateClient();
 
         var adminOnly = async () => await client.ReadOrdersAsync(new EchoRequest(), TestAuthentication.SignedIn(permissions: TestAuthentication.AdminPermission));

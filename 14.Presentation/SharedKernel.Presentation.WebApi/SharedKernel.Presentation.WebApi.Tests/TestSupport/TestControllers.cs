@@ -57,11 +57,11 @@ public sealed class ApiTestController : ControllerBase
     public IActionResult Throw() => throw new NotFoundException(TestErrors.OrderNotFound);
 
     [HttpGet("auth/perm")]
-    [RequirePermission("orders.read", "orders.admin")]
+    [RequireEndpointPermission("orders.read", "orders.admin")]
     public string Permission() => "ok";
 
     [HttpGet("auth/perm-and-role")]
-    [RequirePermission("orders.read")]
+    [RequireEndpointPermission("orders.read")]
     [RequireRole("auditor")]
     public string PermissionAndRole() => "ok";
 
@@ -120,7 +120,7 @@ public sealed class PlainTestController : Controller
 public sealed class AdminTestController : ControllerBase
 {
     [HttpGet("report")]
-    [RequirePermission("reports.read")]
+    [RequireEndpointPermission("reports.read")]
     public string Report() => "ok";
 }
 

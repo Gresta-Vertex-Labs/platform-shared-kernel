@@ -60,11 +60,11 @@ SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute
 SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute.RequireIdempotencyKeyAttribute() -> void
 SharedKernel.Presentation.WebApi.RequireIfMatchAttribute
 SharedKernel.Presentation.WebApi.RequireIfMatchAttribute.RequireIfMatchAttribute() -> void
-SharedKernel.Presentation.WebApi.RequirePermissionAttribute
-SharedKernel.Presentation.WebApi.RequirePermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Presentation.WebApi.RequirePermissionAttribute.Policy.get -> string!
-SharedKernel.Presentation.WebApi.RequirePermissionAttribute.RequirePermissionAttribute(params string![]! permissions) -> void
-SharedKernel.Presentation.WebApi.RequirePermissionAttribute.Roles.get -> string?
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Policy.get -> string!
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.RequireEndpointPermissionAttribute(params string![]! permissions) -> void
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Roles.get -> string?
 SharedKernel.Presentation.WebApi.RequireRoleAttribute
 SharedKernel.Presentation.WebApi.RequireRoleAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.RequireRoleAttribute.RequireRoleAttribute(params string![]! roles) -> void
@@ -178,7 +178,7 @@ static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.Requir
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string![]! methods) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, System.TimeSpan maxAge) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequirePermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireEndpointPermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireRole<TBuilder>(this TBuilder builder, params string![]! roles) -> TBuilder
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.AcceptIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.GetIfMatch(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?

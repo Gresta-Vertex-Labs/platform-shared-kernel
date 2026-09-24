@@ -30,7 +30,7 @@ namespace SharedKernel.Testing.Grpc;
 /// tenant or authorization interceptors: those concerns run in the HTTP pipeline (<c>UseSharedKernelWebApi()</c>),
 /// which a hand-built context never passes through. In particular <c>GetCorrelationId()</c> returns
 /// <see langword="null"/> here, because only the pipeline's correlation middleware stores the id — a test that needs
-/// the inbound value reads it from <see cref="ServerCallContext.RequestHeaders"/>. <c>[RequirePermission]</c> and its
+/// the inbound value reads it from <see cref="ServerCallContext.RequestHeaders"/>. <c>[RequireEndpointPermission]</c> and its
 /// siblings are enforced by ASP.NET Core authorization before a gRPC method runs; test them against a real in-process
 /// host, never through this context.
 /// </para>

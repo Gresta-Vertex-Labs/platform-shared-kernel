@@ -19,12 +19,12 @@ public static class AuthorizationConventionExtensions
     /// <param name="builder">The endpoint, group or mapping.</param>
     /// <param name="permissions">The permissions, any one of which is enough.</param>
     /// <returns>The same <paramref name="builder"/>.</returns>
-    public static TBuilder RequirePermission<TBuilder>(this TBuilder builder, params string[] permissions)
+    public static TBuilder RequireEndpointPermission<TBuilder>(this TBuilder builder, params string[] permissions)
         where TBuilder : IEndpointConventionBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        return builder.RequireAuthorization(new RequirePermissionAttribute(permissions));
+        return builder.RequireAuthorization(new RequireEndpointPermissionAttribute(permissions));
     }
 
     /// <summary>Requires the caller to hold at least one of <paramref name="roles"/>.</summary>

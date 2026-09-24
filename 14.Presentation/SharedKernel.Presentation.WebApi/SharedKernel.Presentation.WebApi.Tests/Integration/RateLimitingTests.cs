@@ -82,7 +82,7 @@ public sealed class RateLimitingTests
     public async Task R1_RefusedRequests_CountAgainstTheLimit_BecauseRateLimitingRunsBeforeAuthorization()
     {
         await using var app = await WebApiTestHost.StartAsync(
-            app => app.MapGet("/limited-protected", () => "ok").RequirePermission("orders.read").RequireRateLimiting(Policy),
+            app => app.MapGet("/limited-protected", () => "ok").RequireEndpointPermission("orders.read").RequireRateLimiting(Policy),
             builder =>
             {
                 builder.AddTestAuthentication();

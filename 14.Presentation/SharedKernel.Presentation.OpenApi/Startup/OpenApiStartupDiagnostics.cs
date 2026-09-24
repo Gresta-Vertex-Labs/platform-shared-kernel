@@ -77,7 +77,7 @@ internal sealed partial class OpenApiStartupDiagnostics : IHostedLifecycleServic
             Message = "The OpenAPI documents and API reference are served in the {EnvironmentName} environment to anyone "
                 + "who can reach the service: no authorization convention was applied to MapSharedKernelOpenApi() and no "
                 + "fallback authorization policy is set. Protect them, as in "
-                + "app.MapSharedKernelOpenApi().RequirePermission(\"docs.read\"), or call AllowAnonymous() on it if they "
+                + "app.MapSharedKernelOpenApi().RequireEndpointPermission(\"docs.read\"), or call AllowAnonymous() on it if they "
                 + "are meant to be public.")]
         public static partial void DocumentsServedWithoutAuthorization(ILogger logger, string environmentName);
     }

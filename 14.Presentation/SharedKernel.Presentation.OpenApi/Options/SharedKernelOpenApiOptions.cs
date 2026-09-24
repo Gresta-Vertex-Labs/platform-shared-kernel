@@ -71,7 +71,7 @@ public sealed class SharedKernelOpenApiOptions : ISectionBoundOptions
     /// </summary>
     /// <remarks>
     /// When the documents are exposed, protect them unless they are meant to be public, for example with
-    /// <c>app.MapSharedKernelOpenApi().RequirePermission("docs.read")</c>; documents meant to be public say so with
+    /// <c>app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")</c>; documents meant to be public say so with
     /// <c>.AllowAnonymous()</c>. When neither is applied and no fallback authorization policy is set, the host logs a
     /// warning when it starts.
     /// </remarks>

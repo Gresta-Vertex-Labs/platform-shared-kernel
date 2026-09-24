@@ -73,7 +73,7 @@ internal sealed class TestServiceImpl(CallProbe probe) : TestService.TestService
             BaggageCorrelationId = Activity.Current?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId) ?? string.Empty,
         });
 
-    [RequirePermission(TestAuthentication.ReadPermission)]
+    [RequireEndpointPermission(TestAuthentication.ReadPermission)]
     public override Task<EchoReply> ReadOrders(EchoRequest request, ServerCallContext context) =>
         Task.FromResult(new EchoReply { Value = "orders" });
 

@@ -98,7 +98,7 @@ public sealed class LocalizationTests
         await using var app = await WebApiTestHost.StartAsync(
             app =>
             {
-                app.MapGet("/protected", () => "ok").RequirePermission("orders.read");
+                app.MapGet("/protected", () => "ok").RequireEndpointPermission("orders.read");
                 app.MapGet("/limited", () => "ok").RequireRateLimiting(LimitPolicy);
             },
             builder =>

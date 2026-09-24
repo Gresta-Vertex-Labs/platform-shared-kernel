@@ -179,17 +179,17 @@ static async Task Surface1_WebApiOneCallSetup()
     // Native authorization: anonymous → 401, signed in without the permission → 403, with it → 200.
     using (var anonymous = await client.GetAsync("/orders/1/audit"))
     {
-        (await Check.ProblemAsync(anonymous, HttpStatusCode.Unauthorized, ErrorCodes.Unauthorized.Default, "RequirePermission, anonymous")).Dispose();
+        (await Check.ProblemAsync(anonymous, HttpStatusCode.Unauthorized, ErrorCodes.Unauthorized.Default, "RequireEndpointPermission, anonymous")).Dispose();
     }
 
     using (var forbidden = await client.SendAsync(HeaderAuthentication.SignedIn(HttpMethod.Get, "/orders/1/audit", permissions: "orders.read")))
     {
-        (await Check.ProblemAsync(forbidden, HttpStatusCode.Forbidden, ErrorCodes.Forbidden.InsufficientPermission, "RequirePermission, missing permission")).Dispose();
+        (await Check.ProblemAsync(forbidden, HttpStatusCode.Forbidden, ErrorCodes.Forbidden.InsufficientPermission, "RequireEndpointPermission, missing permission")).Dispose();
     }
 
     using (var allowed = await client.SendAsync(HeaderAuthentication.SignedIn(HttpMethod.Get, "/orders/1/audit", permissions: $"orders.read,{Values.AuditPermission}")))
     {
-        Check.Status(allowed, HttpStatusCode.OK, "RequirePermission, permission held");
+        Check.Status(allowed, HttpStatusCode.OK, "RequireEndpointPermission, permission held");
     }
 
     // An IdempotencyKey parameter requires the header: missing → 400, malformed → 400, valid (quoted or not) → the
@@ -638,7 +638,7 @@ internal static class OrdersHttpApi
     {
         app.MapGet("/orders/{id:int}", (int id) => OrderCatalog.Find(id).ToOk());
         app.MapPost("/orders", (OrderDto order) => Result<OrderDto>.Success(order).ToCreated(created => $"/orders/{created.Id}"));
-        app.MapGet("/orders/{id:int}/audit", (int id) => OrderCatalog.Find(id).ToOk()).RequirePermission(Values.AuditPermission);
+        app.MapGet("/orders/{id:int}/audit", (int id) => OrderCatalog.Find(id).ToOk()).RequireEndpointPermission(Values.AuditPermission);
 
         // Declaring the parameter requires, validates and documents the header; the handler always gets a valid key.
         app.MapPost("/payments", (IdempotencyKey key) => TypedResults.Ok(new { key = key.Value }));

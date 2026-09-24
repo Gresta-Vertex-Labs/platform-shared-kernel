@@ -245,10 +245,10 @@ public sealed class ContextHub : Hub
 /// </summary>
 public sealed class MethodAuthorizationHub(InvocationCounter counter) : Hub
 {
-    [RequirePermission("orders.read", "orders.admin")]
+    [RequireEndpointPermission("orders.read", "orders.admin")]
     public string ReadOrders() => Run("orders");
 
-    [RequirePermission("orders.read")]
+    [RequireEndpointPermission("orders.read")]
     [RequireRole("auditor")]
     public string Audit() => Run("audited");
 
@@ -271,13 +271,13 @@ public sealed class MethodAuthorizationHub(InvocationCounter counter) : Hub
 }
 
 /// <summary>A requirement on the hub class, checked when the connection is opened.</summary>
-[RequirePermission("hub.connect")]
+[RequireEndpointPermission("hub.connect")]
 public sealed class ProtectedHub : Hub
 {
     public string Ping() => "pong";
 }
 
-/// <summary>A hub without requirements of its own; tests protect it with <c>MapHub&lt;T&gt;().RequirePermission(…)</c>.</summary>
+/// <summary>A hub without requirements of its own; tests protect it with <c>MapHub&lt;T&gt;().RequireEndpointPermission(…)</c>.</summary>
 public sealed class PlainHub : Hub
 {
     public string Ping() => "pong";

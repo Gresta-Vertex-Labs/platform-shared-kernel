@@ -51,8 +51,8 @@ public static class SignalRHostBuilderExtensions
     ///   the reading of its stream. A <c>Result</c> is read only as the hub method's own return value; inside a stream
     ///   item or a collection it cannot be serialized.</item>
     ///   <item>Authorization: <c>AddSharedKernelAuthorization()</c>, which decodes the policies of
-    ///   <c>[RequirePermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
-    ///   <c>[RequireAuthenticationMethod]</c>. On a hub class and on <c>MapHub&lt;T&gt;().RequirePermission(…)</c> they
+    ///   <c>[RequireEndpointPermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
+    ///   <c>[RequireAuthenticationMethod]</c>. On a hub class and on <c>MapHub&lt;T&gt;().RequireEndpointPermission(…)</c> they
     ///   guard the connection, which is refused with 401 or 403. They are <c>[Authorize]</c> attributes, so on a hub
     ///   method SignalR checks them itself, before any hub filter runs: a refused invocation fails with SignalR's own
     ///   <see cref="HubException"/> message, <c>"Failed to invoke '…' because user is unauthorized"</c>, never

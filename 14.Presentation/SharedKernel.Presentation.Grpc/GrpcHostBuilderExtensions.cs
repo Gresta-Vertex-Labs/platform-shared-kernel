@@ -38,7 +38,7 @@ public static class GrpcHostBuilderExtensions
     ///   Error, client errors at Debug; any exception once the call is cancelled ends as <c>Cancelled</c>, logged at
     ///   Debug.</item>
     ///   <item><see cref="SharedKernelAuthorizationExtensions.AddSharedKernelAuthorization"/>, so
-    ///   <c>[RequirePermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
+    ///   <c>[RequireEndpointPermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
     ///   <c>[RequireAuthenticationMethod]</c> work on a service class or method, and the same requirements as
     ///   conventions on <c>MapGrpcService&lt;T&gt;()</c>. An anonymous caller gets <c>Unauthenticated</c>, a caller
     ///   without the permission <c>PermissionDenied</c>, and a signed-in caller who fails only freshness or

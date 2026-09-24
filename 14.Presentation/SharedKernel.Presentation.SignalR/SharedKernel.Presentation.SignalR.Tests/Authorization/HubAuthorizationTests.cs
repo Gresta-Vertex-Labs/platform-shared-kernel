@@ -16,7 +16,7 @@ namespace SharedKernel.Presentation.SignalR.Tests.Authorization;
 /// Design D3/D12/D16: the WebApi requirements on a hub method, on the hub class and on <c>MapHub&lt;T&gt;()</c>. The
 /// attributes are <c>[Authorize]</c> attributes, and SignalR authorizes a hub method only through those, so it
 /// enforces them itself — before any hub filter runs, with its own refusal — even in a host that never registers this
-/// package. A <c>[RequirePermission]</c> that is not an <c>[Authorize]</c> would let every connected caller through
+/// package. A <c>[RequireEndpointPermission]</c> that is not an <c>[Authorize]</c> would let every connected caller through
 /// (the B1 fail-open class, on hubs), which the WebApi attribute tests pin at the source. Every invocation is checked
 /// against the connection's principal, which is never refreshed while the connection stays open: freshness lapses,
 /// an authentication method without a maximum age holds (P-562 final review, S3).
@@ -308,7 +308,7 @@ public sealed class HubAuthorizationTests
     }
 
     [Fact]
-    public async Task MapHubRequirePermission_RefusesAnAnonymousConnection_AndAdmitsAPermittedOne()
+    public async Task MapHubRequireEndpointPermission_RefusesAnAnonymousConnection_AndAdmitsAPermittedOne()
     {
         await using var app = await StartAsync();
 
@@ -332,7 +332,7 @@ public sealed class HubAuthorizationTests
             {
                 app.MapHub<MethodAuthorizationHub>(HubPaths.MethodAuthorization);
                 app.MapHub<ProtectedHub>(HubPaths.Protected);
-                app.MapHub<PlainHub>(HubPaths.Plain).RequirePermission("hub.connect");
+                app.MapHub<PlainHub>(HubPaths.Plain).RequireEndpointPermission("hub.connect");
             },
             configureSignalR: configureSignalR,
             configureBuilder: configureBuilder,

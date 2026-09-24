@@ -9,11 +9,11 @@ using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Presentation.WebApi;
 
-/// <summary>Registers the authorization behind <see cref="RequirePermissionAttribute"/> and its siblings.</summary>
+/// <summary>Registers the authorization behind <see cref="RequireEndpointPermissionAttribute"/> and its siblings.</summary>
 internal static class SharedKernelAuthorizationExtensions
 {
     /// <summary>
-    /// Registers ASP.NET Core authorization with the policies behind <see cref="RequirePermissionAttribute"/>,
+    /// Registers ASP.NET Core authorization with the policies behind <see cref="RequireEndpointPermissionAttribute"/>,
     /// <see cref="RequireRoleAttribute"/>, <see cref="RequireFreshAuthenticationAttribute"/> and
     /// <see cref="RequireAuthenticationMethodAttribute"/>, and the problem responses for refused requests.
     /// </summary>

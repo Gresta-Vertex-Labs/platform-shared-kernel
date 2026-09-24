@@ -6,7 +6,7 @@ namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Requires the caller to hold at least one of the given permissions. An <see cref="AuthorizeAttribute"/>, so it works
-/// natively wherever ASP.NET Core authorizes: minimal APIs (<c>RequirePermission(…)</c>), MVC controllers and actions,
+/// natively wherever ASP.NET Core authorizes: minimal APIs (<c>RequireEndpointPermission(…)</c>), MVC controllers and actions,
 /// SignalR hubs and hub methods, and gRPC services and methods.
 /// </summary>
 /// <remarks>
@@ -30,16 +30,16 @@ namespace SharedKernel.Presentation.WebApi;
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
-public sealed class RequirePermissionAttribute : AuthorizeAttribute, IAuthorizeData
+public sealed class RequireEndpointPermissionAttribute : AuthorizeAttribute, IAuthorizeData
 {
     private readonly string _policy;
 
-    /// <summary>Initializes a new instance of the <see cref="RequirePermissionAttribute"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="RequireEndpointPermissionAttribute"/> class.</summary>
     /// <param name="permissions">The permissions, any one of which is enough.</param>
     /// <exception cref="ArgumentException">
     /// <paramref name="permissions"/> is empty, or contains a null, empty or white-space value, or a <c>|</c>.
     /// </exception>
-    public RequirePermissionAttribute(params string[] permissions)
+    public RequireEndpointPermissionAttribute(params string[] permissions)
     {
         var values = SharedKernelPolicyNames.ValidateValues(permissions, nameof(permissions));
         Permissions = values;

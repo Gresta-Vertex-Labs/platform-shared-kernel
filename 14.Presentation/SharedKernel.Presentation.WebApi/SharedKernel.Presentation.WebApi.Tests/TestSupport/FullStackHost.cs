@@ -101,8 +101,8 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapPost("/json", ([FromBody] Payload payload) => payload.Name);
         app.MapGet("/numbers", (int id) => id);
 
-        app.MapGet("/auth/perm", () => "ok").RequirePermission("orders.read", "orders.admin");
-        app.MapGet("/auth/perm-and-role", () => "ok").RequirePermission("orders.read").RequireRole("auditor");
+        app.MapGet("/auth/perm", () => "ok").RequireEndpointPermission("orders.read", "orders.admin");
+        app.MapGet("/auth/perm-and-role", () => "ok").RequireEndpointPermission("orders.read").RequireRole("auditor");
         app.MapGet("/auth/fresh", () => "ok").RequireFreshAuthentication(300);
         app.MapGet("/auth/fresh-timespan", () => "ok").RequireFreshAuthentication(TimeSpan.FromMinutes(5));
         app.MapGet("/auth/mfa", () => "ok").RequireAuthenticationMethod("mfa", "hwk");
@@ -110,15 +110,15 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapGet("/auth/otp-recent-and-fresh", () => "ok")
             .RequireAuthenticationMethod(TimeSpan.FromMinutes(10), "otp")
             .RequireFreshAuthentication(120);
-        app.MapGet("/auth/perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
-        app.MapGet("/auth/metadata-only", () => "ok").WithMetadata(new RequirePermissionAttribute("orders.read"));
-        app.MapPost("/auth/grpc-like", () => "ok").RequirePermission("orders.read");
+        app.MapGet("/auth/perm-and-fresh", () => "ok").RequireEndpointPermission("orders.read").RequireFreshAuthentication(300);
+        app.MapGet("/auth/metadata-only", () => "ok").WithMetadata(new RequireEndpointPermissionAttribute("orders.read"));
+        app.MapPost("/auth/grpc-like", () => "ok").RequireEndpointPermission("orders.read");
         app.MapPost("/auth/grpc-like-fresh", () => "ok").RequireFreshAuthentication(300);
         app.MapPost("/auth/grpc-like-mfa", () => "ok").RequireAuthenticationMethod("mfa", "hwk");
         app.MapPost("/auth/grpc-like-otp-recent", () => "ok").RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp");
-        app.MapPost("/auth/grpc-like-perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
+        app.MapPost("/auth/grpc-like-perm-and-fresh", () => "ok").RequireEndpointPermission("orders.read").RequireFreshAuthentication(300);
 
-        var group = app.MapGroup("/auth/group").RequirePermission("orders.read");
+        var group = app.MapGroup("/auth/group").RequireEndpointPermission("orders.read");
         group.MapGet("/item", () => "ok");
 
         app.MapPut("/versioned", (HttpContext context) =>
@@ -138,7 +138,7 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapPost("/idempotent-attribute", [RequireIdempotencyKey] (HttpContext context) => context.GetIdempotencyKey());
         app.MapPost("/idempotent-parameter", (IdempotencyKey key) => key.Value);
         app.MapPost("/idempotent-and-versioned", () => "ok").RequireIdempotencyKey().RequireIfMatch();
-        app.MapPost("/idempotent-protected", () => "ok").RequirePermission("orders.write").RequireIdempotencyKey();
+        app.MapPost("/idempotent-protected", () => "ok").RequireEndpointPermission("orders.write").RequireIdempotencyKey();
 
         // Accepted headers: optional, but refused when sent and unusable. Each handler records what it saw.
         app.MapPost("/idempotent-optional", (HttpContext context, HandlerCalls calls) =>
@@ -166,7 +166,7 @@ public sealed class FullStackHost : IAsyncLifetime
         ObliviousEndpoints.Map(app);
 
         app.MapGet("/limited", () => "ok").RequireRateLimiting(RateLimitPolicy);
-        app.MapGet("/limited-protected", () => "ok").RequirePermission("orders.read").RequireRateLimiting(RateLimitPolicy);
+        app.MapGet("/limited-protected", () => "ok").RequireEndpointPermission("orders.read").RequireRateLimiting(RateLimitPolicy);
     }
 
     public sealed record Payload(string Name);

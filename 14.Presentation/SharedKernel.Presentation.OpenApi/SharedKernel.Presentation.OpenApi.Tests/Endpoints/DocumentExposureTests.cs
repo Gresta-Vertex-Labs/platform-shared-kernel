@@ -52,12 +52,12 @@ public sealed class DocumentExposureTests
         var record = UnprotectedDocumentsWarnings(logs).Should().ContainSingle("one warning covers the documents and the reference").Subject;
         record.LogLevel.Should().Be(LogLevel.Warning);
         record.Message.Should().Contain("Production")
-            .And.Contain("RequirePermission(\"docs.read\")")
+            .And.Contain("RequireEndpointPermission(\"docs.read\")")
             .And.Contain("AllowAnonymous()");
     }
 
     [Theory]
-    [InlineData("RequirePermission")]
+    [InlineData("RequireEndpointPermission")]
     [InlineData("RequireRole")]
     [InlineData("RequireFreshAuthentication")]
     [InlineData("RequireAuthorization")]
@@ -111,10 +111,10 @@ public sealed class DocumentExposureTests
         {
             // A real endpoint has a display name before its conventions run; the probe has none.
             documents.Add(endpoint => _ = endpoint.DisplayName ?? throw new InvalidOperationException("Needs a real endpoint."));
-            documents.RequirePermission(DocsPermission);
+            documents.RequireEndpointPermission(DocsPermission);
         });
 
-        UnprotectedDocumentsWarnings(logs).Should().BeEmpty("RequirePermission is still read");
+        UnprotectedDocumentsWarnings(logs).Should().BeEmpty("RequireEndpointPermission is still read");
     }
 
     [Fact]
@@ -165,11 +165,11 @@ public sealed class DocumentExposureTests
     [Theory]
     [InlineData("/openapi/v1.json")]
     [InlineData("/scalar/")]
-    public async Task RequirePermission_OnTheReturnedBuilder_ProtectsTheDocumentsAndTheReference(string path)
+    public async Task RequireEndpointPermission_OnTheReturnedBuilder_ProtectsTheDocumentsAndTheReference(string path)
     {
         await using var app = await OpenApiTestHost.StartAsync(
             OrdersApi.Map,
-            configureDocuments: documents => documents.RequirePermission(DocsPermission));
+            configureDocuments: documents => documents.RequireEndpointPermission(DocsPermission));
         using var client = app.GetTestClient();
 
         using var anonymous = await client.GetAsync(path);
@@ -183,11 +183,11 @@ public sealed class DocumentExposureTests
     }
 
     [Fact]
-    public async Task RequirePermission_LeavesTheReferenceScriptsPublic()
+    public async Task RequireEndpointPermission_LeavesTheReferenceScriptsPublic()
     {
         await using var app = await OpenApiTestHost.StartAsync(
             OrdersApi.Map,
-            configureDocuments: documents => documents.RequirePermission(DocsPermission));
+            configureDocuments: documents => documents.RequireEndpointPermission(DocsPermission));
         using var client = app.GetTestClient();
 
         // The page's static script carries no API information; Scalar maps it anonymous.
@@ -200,7 +200,7 @@ public sealed class DocumentExposureTests
         await using var app = await OpenApiTestHost.StartAsync(
             OrdersApi.Map,
             environment: OpenApiTestHost.Production,
-            configureDocuments: documents => documents.RequirePermission(DocsPermission).WithMetadata(new object()));
+            configureDocuments: documents => documents.RequireEndpointPermission(DocsPermission).WithMetadata(new object()));
         using var client = app.GetTestClient();
 
         (await client.GetAsync("/openapi/v1.json")).StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -208,7 +208,7 @@ public sealed class DocumentExposureTests
 
     private static void ApplyAuthorization(IEndpointConventionBuilder documents, string convention) => _ = convention switch
     {
-        "RequirePermission" => documents.RequirePermission(DocsPermission),
+        "RequireEndpointPermission" => documents.RequireEndpointPermission(DocsPermission),
         "RequireRole" => documents.RequireRole("docs-reader"),
         "RequireFreshAuthentication" => documents.RequireFreshAuthentication(300),
         "RequireAuthorization" => documents.RequireAuthorization(),

@@ -7,7 +7,7 @@ namespace SharedKernel.Presentation.WebApi;
 /// <summary>
 /// Requires the caller to have authenticated recently — a step-up gate for sensitive operations such as changing
 /// payout details. An <see cref="AuthorizeAttribute"/>, so it works natively wherever
-/// <see cref="RequirePermissionAttribute"/> does: minimal APIs (<c>RequireFreshAuthentication(…)</c>), MVC, SignalR
+/// <see cref="RequireEndpointPermissionAttribute"/> does: minimal APIs (<c>RequireFreshAuthentication(…)</c>), MVC, SignalR
 /// hubs and hub methods, and gRPC.
 /// </summary>
 /// <remarks>

@@ -26,49 +26,49 @@ internal static class OrdersApi
 
         orders.MapGet("/", () => Result<Order[]>.Success([new Order(1)]).ToOk());
         orders.MapGet("/{id:int}", (int id) => Result<Order>.Success(new Order(id)).ToOk())
-            .RequirePermission(ReadPermission);
+            .RequireEndpointPermission(ReadPermission);
         orders.MapPost("/", (Order order) => Result<Order>.Success(order).ToCreated(created => $"/v1/orders/{created.Id}"))
-            .RequirePermission(WritePermission)
+            .RequireEndpointPermission(WritePermission)
             .RequireIdempotencyKey();
         orders.MapPut("/{id:int}", (int id, Order order) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission)
+            .RequireEndpointPermission(WritePermission)
             .RequireIfMatch();
         orders.MapGet("/export", () => "csv").MapToApiVersion(2.0);
 
         // The same requirements declared by a handler parameter or a lambda attribute instead of a convention.
         orders.MapPost("/{id:int}/payments", (int id, Order order, IdempotencyKey idempotencyKey) => Result.Success().ToAccepted())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
         orders.MapPost("/{id:int}/cancellation", (int id, IdempotencyKey idempotencyKey) => Result.Success().ToAccepted())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
         orders.MapPatch("/{id:int}", (int id, Order order, IfMatch<long> ifMatch) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
         orders.MapDelete("/{id:int}", [RequireIfMatch] (int id) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
 
         // Both headers at once.
         orders.MapPost("/{id:int}/refunds", (int id, IdempotencyKey idempotencyKey, IfMatch<long> ifMatch) => Result.Success().ToAccepted())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
 
         // The headers accepted rather than required: a convention, a nullable parameter or a lambda attribute.
         orders.MapPost("/{id:int}/notes", (int id) => Result.Success().ToAccepted())
-            .RequirePermission(WritePermission)
+            .RequireEndpointPermission(WritePermission)
             .AcceptIdempotencyKey();
         orders.MapPost("/{id:int}/reminders", (int id, IdempotencyKey? idempotencyKey) => Result.Success().ToAccepted())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
         orders.MapPut("/{id:int}/address", (int id, Order order) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission)
+            .RequireEndpointPermission(WritePermission)
             .AcceptIfMatch();
         orders.MapPatch("/{id:int}/address", (int id, Order order, IfMatch<long>? ifMatch) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
         orders.MapDelete("/{id:int}/address", [AcceptIfMatch] (int id) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission);
+            .RequireEndpointPermission(WritePermission);
 
         // Accepted and required at once: the requirement wins.
         orders.MapPut("/{id:int}/lines", (int id, IfMatch<long>? ifMatch) => Result.Success().ToNoContent())
-            .RequirePermission(WritePermission)
+            .RequireEndpointPermission(WritePermission)
             .RequireIfMatch();
 
-        var admin = orders.MapGroup("/admin").RequirePermission(AdminPermission);
+        var admin = orders.MapGroup("/admin").RequireEndpointPermission(AdminPermission);
         admin.MapGet("/stats", () => "stats");
         admin.MapGet("/ping", () => "pong").AllowAnonymous();
     }
@@ -89,7 +89,7 @@ public sealed class MvcOrdersController : ControllerBase
 
     /// <summary>Protected by an attribute; returns the typed results minimal APIs return.</summary>
     [HttpGet("{id:int}")]
-    [RequirePermission(OrdersApi.ReadPermission)]
+    [RequireEndpointPermission(OrdersApi.ReadPermission)]
     public Results<Ok<Order>, ErrorHttpResult> Get(int id) => Result<Order>.Success(new Order(id)).ToOk();
 
     /// <summary>Returns the order with its version as an ETag.</summary>

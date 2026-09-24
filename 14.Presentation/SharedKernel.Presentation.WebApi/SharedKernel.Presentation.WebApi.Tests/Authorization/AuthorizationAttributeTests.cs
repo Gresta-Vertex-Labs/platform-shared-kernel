@@ -17,7 +17,7 @@ public sealed class AuthorizationAttributeTests
 {
     public static TheoryData<IAuthorizeData> Attributes => new()
     {
-        new RequirePermissionAttribute("orders.read", "orders:admin"),
+        new RequireEndpointPermissionAttribute("orders.read", "orders:admin"),
         new RequireRoleAttribute("auditor"),
         new RequireFreshAuthenticationAttribute(300),
         new RequireAuthenticationMethodAttribute("mfa", "hwk"),
@@ -26,7 +26,7 @@ public sealed class AuthorizationAttributeTests
 
     public static TheoryData<IAuthorizeData, string> EncodedPolicies => new()
     {
-        { new RequirePermissionAttribute("orders.read", "orders:admin"), "SharedKernel:permission:orders.read|orders:admin" },
+        { new RequireEndpointPermissionAttribute("orders.read", "orders:admin"), "SharedKernel:permission:orders.read|orders:admin" },
         { new RequireRoleAttribute("auditor"), "SharedKernel:role:auditor" },
         { new RequireFreshAuthenticationAttribute(300), "SharedKernel:fresh:300" },
         { new RequireAuthenticationMethodAttribute("mfa", "hwk"), "SharedKernel:amr:mfa|hwk" },
@@ -70,14 +70,14 @@ public sealed class AuthorizationAttributeTests
     }
 
     [Theory]
-    [InlineData(typeof(RequirePermissionAttribute))]
+    [InlineData(typeof(RequireEndpointPermissionAttribute))]
     [InlineData(typeof(RequireRoleAttribute))]
     [InlineData(typeof(RequireFreshAuthenticationAttribute))]
     [InlineData(typeof(RequireAuthenticationMethodAttribute))]
     public void PolicyAndRoles_AreReadOnly_SoTheInheritedSettersCannotBeNamedArguments(Type attributeType)
     {
         // A named attribute argument binds to the most derived member of that name. These read-only members hide
-        // AuthorizeAttribute's setters, so [RequirePermission("x", Roles = "admin")] or Policy = "…" does not compile
+        // AuthorizeAttribute's setters, so [RequireEndpointPermission("x", Roles = "admin")] or Policy = "…" does not compile
         // (CS0617), while AuthenticationSchemes stays settable.
         foreach (var name in new[] { nameof(AuthorizeAttribute.Policy), nameof(AuthorizeAttribute.Roles) })
         {
@@ -102,7 +102,7 @@ public sealed class AuthorizationAttributeTests
     [Fact]
     public async Task AuthenticationSchemes_CanBeSet_AndJoinThePolicy_WithoutReplacingTheRequirement()
     {
-        var attribute = new RequirePermissionAttribute("orders.read") { AuthenticationSchemes = "ApiKey" };
+        var attribute = new RequireEndpointPermissionAttribute("orders.read") { AuthenticationSchemes = "ApiKey" };
         var provider = new SharedKernelAuthorizationPolicyProvider(new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(new AuthorizationOptions())));
 
         var policy = await AuthorizationPolicy.CombineAsync(provider, [attribute]);
@@ -150,7 +150,7 @@ public sealed class AuthorizationAttributeTests
         (await provider.GetDefaultPolicyAsync()).Should().BeSameAs(inner.DefaultPolicy);
         (await provider.GetFallbackPolicyAsync()).Should().BeNull();
         provider.AllowsCachingPolicies.Should().BeFalse("the decorated provider decides whether policies may be cached");
-        (await provider.GetPolicyAsync(new RequirePermissionAttribute("orders.read").Policy))!
+        (await provider.GetPolicyAsync(new RequireEndpointPermissionAttribute("orders.read").Policy))!
             .Requirements.Should().ContainSingle(requirement => requirement is PermissionRequirement);
     }
 
@@ -158,7 +158,7 @@ public sealed class AuthorizationAttributeTests
     public void Properties_ReadByTheGrpcPackage_AreKept()
     {
         new RequireRoleAttribute("a", "b").Roles.Should().Equal("a", "b");
-        new RequirePermissionAttribute("p").Permissions.Should().Equal("p");
+        new RequireEndpointPermissionAttribute("p").Permissions.Should().Equal("p");
         new RequireFreshAuthenticationAttribute(90).MaxAge.Should().Be(TimeSpan.FromSeconds(90));
         new RequireAuthenticationMethodAttribute("mfa").Methods.Should().Equal("mfa");
         new RequireAuthenticationMethodAttribute("mfa") { MaxAgeSeconds = 90 }.MaxAgeSeconds.Should().Be(90);
@@ -257,7 +257,7 @@ public sealed class AuthorizationAttributeTests
     [Fact]
     public void PermissionWithAColon_SurvivesThePolicyName()
     {
-        var attribute = new RequirePermissionAttribute("orders:read");
+        var attribute = new RequireEndpointPermissionAttribute("orders:read");
 
         SharedKernelPolicyNames.TryCreateRequirement(((IAuthorizeData)attribute).Policy!, out var requirement).Should().BeTrue();
         requirement.Should().BeOfType<PermissionRequirement>().Which.Permissions.Should().Equal("orders:read");
@@ -266,8 +266,8 @@ public sealed class AuthorizationAttributeTests
     [Fact]
     public void Arguments_AreValidated()
     {
-        FluentActions.Invoking(() => new RequirePermissionAttribute()).Should().Throw<ArgumentException>();
-        FluentActions.Invoking(() => new RequirePermissionAttribute(" ")).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => new RequireEndpointPermissionAttribute()).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => new RequireEndpointPermissionAttribute(" ")).Should().Throw<ArgumentException>();
         FluentActions.Invoking(() => new RequireRoleAttribute("a|b")).Should().Throw<ArgumentException>();
         FluentActions.Invoking(() => new RequireRoleAttribute(null!)).Should().Throw<ArgumentNullException>();
         FluentActions.Invoking(() => new RequireAuthenticationMethodAttribute("mfa", null!)).Should().Throw<ArgumentException>();
@@ -298,7 +298,7 @@ public sealed class AuthorizationAttributeTests
     // The Policy each attribute declares itself, which hides AuthorizeAttribute.Policy.
     private static string DeclaredPolicy(IAuthorizeData attribute) => attribute switch
     {
-        RequirePermissionAttribute permission => permission.Policy,
+        RequireEndpointPermissionAttribute permission => permission.Policy,
         RequireRoleAttribute role => role.Policy,
         RequireFreshAuthenticationAttribute fresh => fresh.Policy,
         RequireAuthenticationMethodAttribute method => method.Policy,

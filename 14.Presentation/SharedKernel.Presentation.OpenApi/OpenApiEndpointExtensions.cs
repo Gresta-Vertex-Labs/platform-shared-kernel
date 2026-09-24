@@ -27,7 +27,7 @@ public static partial class OpenApiEndpointExtensions
     /// <param name="endpoints">The application, such as the built <c>WebApplication</c>.</param>
     /// <returns>
     /// One convention builder for the documents and the API reference together, so
-    /// <c>app.MapSharedKernelOpenApi().RequirePermission("docs.read")</c> protects both. When nothing is mapped, the
+    /// <c>app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")</c> protects both. When nothing is mapped, the
     /// conventions applied to it have no effect.
     /// </returns>
     /// <remarks>
@@ -44,7 +44,7 @@ public static partial class OpenApiEndpointExtensions
     /// </para>
     /// <para>
     /// Outside Development, the host logs a warning when it starts (EventId 14301) if no convention applied to the
-    /// returned builder requires authorization — <c>RequirePermission(…)</c>, <c>RequireRole(…)</c>,
+    /// returned builder requires authorization — <c>RequireEndpointPermission(…)</c>, <c>RequireRole(…)</c>,
     /// <c>RequireAuthorization(…)</c> — and no fallback authorization policy is set: anyone who reaches the service can
     /// read its API description. Documents meant to be public say so with <c>AllowAnonymous()</c>, which silences it.
     /// Conventions of a route group the documents are mapped in are not seen; apply them to the returned builder.

@@ -266,7 +266,7 @@ public static class PresentationLayeringRules
     /// <c>SharedKernel.Presentation.Grpc</c> takes a deliberate <c>ProjectReference</c> on
     /// <c>SharedKernel.Presentation.WebApi</c>, for what every protocol on the shared pipeline must agree on:
     /// <c>ErrorPresentation</c> (status category, client message, localization, redaction),
-    /// <c>AddSharedKernelAuthorization</c> (the policies behind <c>RequirePermission</c> and its siblings) and the
+    /// <c>AddSharedKernelAuthorization</c> (the policies behind <c>RequireEndpointPermission</c> and its siblings) and the
     /// correlation id. Today neither package references <c>04.Contracts</c>, so no Contracts type is reachable, but
     /// any future reference added to <c>SharedKernel.Presentation.WebApi</c> would flow transitively into the gRPC
     /// package and a <c>using SharedKernel.Contracts;</c> inside a gRPC service method would compile. The Hard rule

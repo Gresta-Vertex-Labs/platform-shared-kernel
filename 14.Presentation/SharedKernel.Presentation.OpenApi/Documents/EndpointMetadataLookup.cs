@@ -9,7 +9,7 @@ namespace SharedKernel.Presentation.OpenApi.Documents;
 /// <remarks>
 /// <para>
 /// The API Explorer describes a minimal-API endpoint with a copy of the endpoint's metadata, but an MVC action with
-/// the action's own attributes only: conventions applied to the endpoints — <c>MapControllers().RequirePermission(…)</c>
+/// the action's own attributes only: conventions applied to the endpoints — <c>MapControllers().RequireEndpointPermission(…)</c>
 /// — are missing from <see cref="ActionDescriptor.EndpointMetadata"/>. The endpoint of an MVC action carries the
 /// <see cref="ActionDescriptor"/> itself, which is how it is found here.
 /// </para>
