@@ -34,7 +34,8 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 /// <c>IEncryptionKeyProvider</c> the service registers. The same version of the same aggregate always gives the same
 /// token. A version of another aggregate, an altered one, or one sealed with a key this process does not know (for
 /// example before a restart that rotated the key) is treated as stale: <see cref="ConflictException"/>
-/// (<see cref="ConflictErrorCode"/>), 412 on an endpoint that requires <c>If-Match</c> — never a server error. Keys the
+/// (<see cref="ConflictErrorCode"/>), which <c>14.Presentation</c> answers with 412 when the request carries
+/// <c>If-Match</c> — never a server error. Keys the
 /// process used before stay usable after a rotation. Without a registered key provider, reading or checking a version
 /// throws <see cref="InvalidOperationException"/> saying what to register.
 /// </para>

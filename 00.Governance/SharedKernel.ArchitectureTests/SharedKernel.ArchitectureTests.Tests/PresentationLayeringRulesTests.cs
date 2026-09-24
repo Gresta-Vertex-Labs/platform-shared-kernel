@@ -807,12 +807,12 @@ public class PresentationLayeringRulesTests
     /// <summary>
     /// T-361 (coordinator-directed extension, WO-074, folded into P-469): the real, currently-built
     /// <c>SharedKernel.Presentation.Grpc</c> assembly must pass
-    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations —
-    /// this is the empirical proof that NetArchTest's <c>NotHaveDependencyOn</c> correctly
-    /// distinguishes "reachable via the reference closure" (true today, because of the deliberate
-    /// <c>SharedKernel.Presentation.WebApi</c> reference) from "actually used by a type in this
-    /// assembly" (false today — no type does), so this rule is a sufficient mechanical lock without
-    /// requiring the <c>SharedKernel.Presentation.WebApi</c> reference itself to be removed.
+    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations.
+    /// When this test was written the WebApi core referenced <c>04.Contracts</c>, so the contracts
+    /// were reachable through the deliberate <c>SharedKernel.Presentation.WebApi</c> reference, and
+    /// the test proved NetArchTest's <c>NotHaveDependencyOn</c> tells "reachable" from "used by a type
+    /// in this assembly". Since P-562 the WebApi core references no <c>04.Contracts</c> at all; the
+    /// test stays as the lock should a reference ever return.
     /// </summary>
     [Fact]
     public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()

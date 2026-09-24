@@ -6,8 +6,8 @@ namespace SharedKernel.Messaging.Abstractions.Errors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These codes are a wire-visible contract: they reach callers, logs, dashboards and — through
-/// <c>14.Presentation</c>'s <c>Error.ToProblemDetails()</c> — HTTP responses. Treat a rename as a
+/// These codes are a wire-visible contract: they reach callers, logs, dashboards and — as the
+/// <c>errorCode</c> of <c>14.Presentation</c>'s problem responses — HTTP responses. Treat a rename as a
 /// breaking change; add a new member instead.
 /// </para>
 /// <para>

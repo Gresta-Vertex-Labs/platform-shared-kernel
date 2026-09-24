@@ -61,10 +61,12 @@ public static class KeyVaultKeyProviderExtensions
     /// </para>
     /// <para>
     /// <b>STANDING DESIGN NOTE — DO NOT MAKE THIS AUTOMATIC.</b> This method never wires the provider into
-    /// <c>06.Persistence</c>'s encryption on a consuming service's behalf. A service wanting KMS-backed
-    /// persistence-layer encryption opts in explicitly in its own <c>06.Persistence</c> builder chain, so
-    /// <c>.WithEncryption()</c> and this method can never silently collide on the one unkeyed
-    /// <see cref="IEncryptionKeyProvider"/> slot.
+    /// <c>06.Persistence</c>'s field encryption on a consuming service's behalf: a service wanting KMS-backed
+    /// column encryption opts in explicitly with <c>UseFieldEncryption(…)</c> in its own persistence registration.
+    /// The provider does fill the one unkeyed <see cref="IEncryptionKeyProvider"/> slot, which
+    /// <c>06.Persistence</c> uses as the root of its ETag key (P-562 X4) when no
+    /// <see cref="ISynchronousEncryptionKeyProvider"/> is registered — through an HKDF subkey of its own purpose, so
+    /// that sharing is safe and a service with ETags needs no second provider.
     /// </para>
     /// </remarks>
     /// <example>

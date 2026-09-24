@@ -22,7 +22,7 @@ internal static class PlatformBaggageKeys
 {
     /// <summary>
     /// The correlation id (<c>"correlation.id"</c>), set by <c>14.Presentation</c>'s correlation middleware to a
-    /// validated caller value or a new id.
+    /// validated caller value, otherwise the request's trace id.
     /// </summary>
     public const string CorrelationId = "correlation.id";
 

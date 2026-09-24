@@ -1310,8 +1310,9 @@ public class SecureDefaultsAssertionTests
     /// <summary>
     /// T-331 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): Re-points
     /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
-    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and confirms it still calls its own
-    /// private <c>IsValidFormat</c> format-validation helper.
+    /// <c>CorrelationIdMiddleware.Resolve</c> and confirms it still calls its own private
+    /// <c>IsValid</c> format-validation helper (named <c>ResolveCorrelationId</c>/<c>IsValidFormat</c>
+    /// before P-562; see the remarks).
     /// </summary>
     /// <remarks>
     /// <para>
