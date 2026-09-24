@@ -1141,7 +1141,8 @@ public class SecureDefaultsAssertionTests
     /// <para>
     /// <strong>Re-pointed for P-562.</strong> The presentation redesign deleted <c>AddSharedKernelCors</c>,
     /// <c>CorsPolicyOptions</c>, <c>CorsPolicyNames</c> and <c>CorsPolicyOptionsValidator</c>. CORS became
-    /// <c>WebApiOptions.Cors</c>, validated together with every other WebApi setting by the internal
+    /// <c>SharedKernelWebApiOptions.Cors</c> (<c>WebApiOptions</c> until the final review's R22 renamed it; the
+    /// validator kept its name), validated together with every other WebApi setting by the internal
     /// <c>WebApiOptionsValidator</c>, which <c>AddSharedKernelWebApi</c> registers through
     /// <c>SharedKernel.Configuration</c>'s <c>AddValidatedOptions</c> (bind + <c>ValidateOnStart</c>). The guard
     /// itself is unchanged — <c>AllowCredentials</c> with no explicit origin, or with <c>*</c>, fails at startup — so
@@ -1195,8 +1196,8 @@ public class SecureDefaultsAssertionTests
                 "Fail");
 
         registeredForStartupValidation.Should().NotThrow(
-            because: "AddSharedKernelWebApi registers WebApiOptions through AddValidatedOptions, which arms " +
-                     "ValidateOnStart (P-562 D4)");
+            because: "AddSharedKernelWebApi registers SharedKernelWebApiOptions through AddValidatedOptions, which " +
+                     "arms ValidateOnStart (P-562 D4)");
         validatesCors.Should().NotThrow(
             because: "WebApiOptionsValidator.Validate runs the CORS rules, where AllowCredentials without an " +
                      "explicit origin is refused (WO-062 P-404; P-562 D7)");

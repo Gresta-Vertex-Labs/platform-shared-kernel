@@ -157,9 +157,9 @@ public static class PresentationLayeringRules
     /// <code>return result.ToOk();</code>
     /// or, when the failure branch is written out, route it through the core:
     /// <code>if (result.IsFailure) return result.Error.ToErrorResult();</code>
-    /// A call to any member of <c>ResultHttpExtensions</c>, <c>ResultActionResultExtensions</c> or
-    /// <c>ErrorProblemDetailsExtensions</c>, or a construction of <c>ErrorHttpResult</c>, marks the method as
-    /// mapping through the WebApi core.
+    /// A call to any member of <c>ResultHttpExtensions</c> or <c>ErrorProblemDetailsExtensions</c>, or a construction
+    /// of <c>ErrorHttpResult</c>, marks the method as mapping through the WebApi core. MVC controllers use the same
+    /// typed results (R19 removed <c>ToActionResult</c>).
     /// </para>
     /// <para>
     /// The caller supplies every assembly to be checked EXCEPT <c>SharedKernel.Presentation.WebApi</c> itself — same

@@ -238,7 +238,7 @@ How every production log statement is written.
 | [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
 | [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
 | [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Classify the logging parameter, or mask it with `PiiMasking` |
-| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ThrowIfFailure()` or `GetValueOrThrow()` |
+| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and end it with `SharedKernel.Core`'s `ThrowIfFailure()` or `GetValueOrThrow()` |
 
 #### Persistence
 
@@ -2483,13 +2483,13 @@ warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [Lo
 
 **Category:** Usage · **Default severity:** Warning
 
-Return a `Result` and convert it with `ThrowIfFailure()` or `GetValueOrThrow()` instead of constructing `RpcException` or `Status` yourself.
+Return a `Result` and end it with `SharedKernel.Core`'s `ThrowIfFailure()` or `GetValueOrThrow()` instead of constructing `RpcException` or `Status` yourself.
 
 #### Why it matters
 
-`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place, and sends every failure as a rich `google.rpc.Status`: the client message (localized, and redacted for server errors outside Development), an `ErrorInfo` detail with the error code, the error domain and the trace and correlation ids, and a `BadRequest` detail listing every field error. A hand-built `RpcException` picks its own status code and carries none of that, so the same failure can reach clients as `NotFound` from one service and `Internal` from another, with no code to branch on. Clients then cannot rely on status codes for retries or error handling.
+`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place, and sends every failure as a rich `google.rpc.Status`: the client message (localized, and redacted for server errors outside Development), an `ErrorInfo` detail with the error code, the error domain and the trace and correlation ids, and a `BadRequest` detail listing every field error. A hand-built `RpcException` picks its own status code and carries none of that: the package's exception interceptor keeps only its status code (and, for a client error, its message), puts `grpc.{status}` where the error code belongs, and drops its trailers. So the same failure can reach clients as `NotFound` from one service and `Internal` from another, with no code to branch on. Clients then cannot rely on status codes for retries or error handling.
 
-`GrpcResultExtensions.ThrowIfFailure()` (for `Result`) and `GetValueOrThrow()` (for `Result<T>`, returning the value on success), and their `Task` overloads, throw that `RpcException` on failure. A client reads the details with `RpcException.GetRpcStatus()`.
+`ThrowIfFailure()` (for `Result`) and `GetValueOrThrow()` (for `Result<T>`, returning the value on success), with their `Task` and `ValueTask` overloads, are in `SharedKernel.Core.Extensions`. On failure they throw the error's `SharedKernelException`, and the exception interceptor turns it into that status. A client reads the details with `RpcException.GetRpcStatus()`. The gRPC package no longer has extensions of its own with these names: they had the same signatures as Core's, so a file importing both namespaces did not compile (P-562).
 
 #### What it flags
 
@@ -2500,7 +2500,7 @@ Return a `Result` and convert it with `ThrowIfFailure()` or `GetValueOrThrow()` 
 
 #### What it does not flag
 
-- Code inside a namespace declaration whose name starts with `SharedKernel.Presentation.Grpc`, where the sanctioned mapping and interceptors live. The match is a plain name prefix.
+- Code inside a namespace declaration whose name starts with `SharedKernel.Presentation.Grpc`, where the rich-status factory and the exception interceptor live. The match is a plain name prefix.
 - Target-typed construction, such as `Status status = new(StatusCode.NotFound, "...")`.
 - Static members such as `Status.DefaultSuccess`, and types derived from `RpcException`.
 - Generated code.
@@ -2517,7 +2517,7 @@ public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallCon
 
 ```csharp
 // Compliant
-using SharedKernel.Presentation.Grpc;
+using SharedKernel.Core.Extensions;   // GetValueOrThrow, ThrowIfFailure
 
 public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
 {
@@ -2535,8 +2535,8 @@ public override async Task<Empty> CancelOrder(CancelOrderRequest request, Server
 #### Diagnostic
 
 ```text
-warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and call SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/.GetValueOrThrow() to map a failure to an RpcException instead of hand-constructing one.
-warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and call SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/.GetValueOrThrow() to map a failure to an RpcException instead of hand-constructing one.
+warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and end it with ThrowIfFailure()/GetValueOrThrow() from SharedKernel.Core.Extensions: the SharedKernel.Presentation.Grpc exception interceptor turns the exception they throw into the platform's rich status, which a hand-constructed RpcException does not carry.
+warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and end it with ThrowIfFailure()/GetValueOrThrow() from SharedKernel.Core.Extensions: the SharedKernel.Presentation.Grpc exception interceptor turns the exception they throw into the platform's rich status, which a hand-constructed RpcException does not carry.
 ```
 
 ---

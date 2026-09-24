@@ -59,10 +59,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 ///   <item><description>
 ///     Escape-hatch signal — the method maps through the WebApi core: a <c>Call</c> or <c>Callvirt</c> to any member
 ///     of <c>SharedKernel.Presentation.WebApi.ResultHttpExtensions</c> (<c>ToOk</c>, <c>ToCreated</c>,
-///     <c>ToOkWithETag</c>, <c>ToAccepted</c>, <c>ToNoContent</c>, <c>ToHttpResult</c>, <c>ToErrorResult</c>),
-///     <c>SharedKernel.Presentation.WebApi.ResultActionResultExtensions</c> (<c>ToActionResult</c>) or
+///     <c>ToOkWithETag</c>, <c>ToAccepted</c>, <c>ToNoContent</c>, <c>ToHttpResult</c>, <c>ToErrorResult</c>) or
 ///     <c>SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions</c> (<c>ToProblemDetails</c>), or a
-///     <c>Newobj</c> constructing <c>SharedKernel.Presentation.WebApi.Errors.ErrorHttpResult</c>. Presence of this
+///     <c>Newobj</c> constructing <c>SharedKernel.Presentation.WebApi.ErrorHttpResult</c>. Presence of this
 ///     signal suppresses the violation regardless of signals 1 and 2, because the failure branch then carries the
 ///     platform's status, error code, localization and redaction.
 ///   </description></item>
@@ -78,6 +77,14 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// typed-results union is now the most likely violation and is detected. The escape hatch is matched by declaring
 /// type rather than by member name, so a service's own extension method that happens to be named <c>ToOk</c> does
 /// not pass for the platform mapping.
+/// </para>
+/// <para>
+/// <strong>Names are strings.</strong> This package references no runtime package, so the WebApi types are matched by
+/// full name, and a name that goes stale matches nothing. The final review of P-562 moved one and deleted another:
+/// R21 moved <c>ErrorHttpResult</c> from <c>…WebApi.Errors</c> to the root namespace (until this predicate followed,
+/// a compliant <c>new ErrorHttpResult(error)</c> was flagged), and R19 deleted <c>ResultActionResultExtensions</c>
+/// (<c>ToActionResult</c>), which is no longer listed. <c>PresentationLayeringRulesTests</c> compiles fixtures
+/// against the real WebApi assembly, so the next move fails a test instead.
 /// </para>
 /// <para>
 /// <strong>Offending pattern:</strong>
@@ -103,13 +110,12 @@ public sealed class NoInlineResultBranchBeforeHttpResultPredicate : ICustomRule
     private const string ActionResultOfTTypePrefix = "ActionResult`1";
     private const string TypedResultsNamespace = "Microsoft.AspNetCore.Http.HttpResults";
     private const string TypedResultsUnionTypePrefix = "Results`";
-    private const string ErrorHttpResultFullName = "SharedKernel.Presentation.WebApi.Errors.ErrorHttpResult";
+    private const string ErrorHttpResultFullName = "SharedKernel.Presentation.WebApi.ErrorHttpResult";
 
     /// <summary>The WebApi core types whose members map a <c>Result</c> or an <c>Error</c> to an HTTP response.</summary>
     private static readonly HashSet<string> MappingTypeFullNames = new(StringComparer.Ordinal)
     {
         "SharedKernel.Presentation.WebApi.ResultHttpExtensions",
-        "SharedKernel.Presentation.WebApi.ResultActionResultExtensions",
         "SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions",
     };
 

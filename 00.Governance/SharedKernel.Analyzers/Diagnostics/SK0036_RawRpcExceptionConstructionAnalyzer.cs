@@ -32,17 +32,26 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// <strong>Single shared exemption namespace prefix</strong> — <c>SharedKernel.Presentation.Grpc</c>
 /// (mirrors SK0029's one-owning-package shape, not SK0026's per-client-type mapping: gRPC server
-/// error mapping is one owning package). This single prefix already covers every real, sanctioned
-/// construction site in that package — the canonical mapping path
-/// (<c>SharedKernel.Presentation.Grpc.GrpcResultExtensions</c>: <c>ThrowIfFailure()</c> and
-/// <c>GetValueOrThrow()</c>), the rich-status factory behind it
-/// (<c>SharedKernel.Presentation.Grpc.Errors.RpcStatusFactory</c>) and the exception interceptor that maps a thrown
-/// exception (<c>SharedKernel.Presentation.Grpc.Interceptors.GrpcExceptionInterceptor</c>) all live in
-/// <c>SharedKernel.Presentation.Grpc</c> or its sub-namespaces, confirmed against the real package — no
-/// per-file exemption list is needed. The P-562 redesign moved the result extensions from
-/// <c>…Grpc.Results</c> to the root namespace, renamed <c>ToGrpcResult</c> to <c>ThrowIfFailure</c>/
-/// <c>GetValueOrThrow</c> and deleted the authorization interceptor; the prefix covers the new layout unchanged,
-/// so the rule's behavior did not change — only its message.
+/// error mapping is one owning package). This single prefix covers every real construction site in that
+/// package — the rich-status factory (<c>SharedKernel.Presentation.Grpc.Errors.RpcStatusFactory</c>) and the
+/// exception interceptor (<c>SharedKernel.Presentation.Grpc.Interceptors.GrpcExceptionInterceptor</c>), confirmed
+/// against the real package — so no per-file exemption list is needed.
+/// </para>
+/// <para>
+/// <strong>The sanctioned path.</strong> A service method ends a failed <c>Result</c> with
+/// <c>SharedKernel.Core.Extensions</c>' <c>ThrowIfFailure()</c>/<c>GetValueOrThrow()</c>, which throw
+/// <c>Error.ToException()</c>; the interceptor turns that exception into the platform's rich status (status code
+/// from the error type, client message, <c>ErrorInfo</c> with the error code, <c>BadRequest</c> with the field
+/// errors). An <c>RpcException</c> the service builds itself keeps only its status code and, for a client category,
+/// its message: the interceptor rebuilds it with <c>grpc.{status}</c> as the <c>ErrorInfo</c> reason, never an error
+/// code, and drops its trailers.
+/// </para>
+/// <para>
+/// <strong>P-562.</strong> The redesign first moved the gRPC package's result extensions to its root namespace as
+/// <c>ThrowIfFailure</c>/<c>GetValueOrThrow</c>; the final review (R32) then removed them, and the
+/// <c>ResultFailures</c> handoff behind them, because they had the same signatures as <c>SharedKernel.Core</c>'s and a
+/// file importing both namespaces failed with CS0121. The rule and its exemption prefix did not change; its message
+/// now names Core's extensions.
 /// </para>
 /// <para>
 /// Fires globally outside that namespace — no "must be inside a gRPC service method" scoping is
@@ -72,10 +81,10 @@ public sealed class RawRpcExceptionConstructionAnalyzer : AnalyzerBase
         id: DiagnosticId,
         title: "Raw RpcException/Status construction outside SharedKernel.Presentation.Grpc",
         messageFormat: "Direct construction of Grpc.Core.{0} is prohibited outside "
-            + "SharedKernel.Presentation.Grpc. Return a Result and call "
-            + "SharedKernel.Presentation.Grpc.GrpcResultExtensions.ThrowIfFailure()/"
-            + ".GetValueOrThrow() to map a failure to an RpcException instead of "
-            + "hand-constructing one.",
+            + "SharedKernel.Presentation.Grpc. Return a Result and end it with ThrowIfFailure()/"
+            + "GetValueOrThrow() from SharedKernel.Core.Extensions: the SharedKernel.Presentation.Grpc "
+            + "exception interceptor turns the exception they throw into the platform's rich status, "
+            + "which a hand-constructed RpcException does not carry.",
         category: Usage,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0036-rawrpcexceptionconstruction"
