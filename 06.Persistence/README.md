@@ -148,7 +148,7 @@ below is compiled and run against PostgreSQL by
 ```shell
 dotnet add package SharedKernel.Persistence.EfCore
 dotnet add package SharedKernel.Persistence.EfCore.Auditing
-dotnet add package SharedKernel.Application.Behaviors            # MediatR pipeline: transaction + auditing
+dotnet add package SharedKernel.Application                      # MediatR pipeline: transaction + auditing
 dotnet add package SharedKernel.ServiceDefaults.Security         # IRequestContext over the authenticated user
 dotnet add package SharedKernel.ServiceDefaults.Persistence      # readiness checks
 dotnet add package Microsoft.EntityFrameworkCore.Design          # dotnet ef (PrivateAssets="all")
@@ -250,13 +250,9 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .UseAuditTrail()                           // IAuditTrailWriter, sealer, self-check
     .MigrateOnStartup());                      // migrations + seeders, one replica at a time
 
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-builder.Services.AddSharedKernelApplication();                        // domain events -> MediatR
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()
-    .AddTransactionBehavior()                  // one retry-safe transaction per command
-    .AddAuditingBehavior()                     // Succeeded inside it, Failed after rollback
-    .Build();
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app   // handlers, validators, domain events
+    .WithTransactions()                        // one retry-safe transaction per command
+    .WithAuditing());                          // Succeeded inside it, Failed after rollback
 
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<OrderDbContext>()   // not ready until startup migrations finished

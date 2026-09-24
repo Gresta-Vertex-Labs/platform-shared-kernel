@@ -15,7 +15,7 @@ namespace SharedKernel.Analyzers.Tests;
 public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
 {
     private const string MarkerStubs = """
-        namespace SharedKernel.Application.Behaviors.Caching
+        namespace SharedKernel.Application.Caching
         {
             public interface ICacheableQuery<TValue> { }
         }
@@ -38,14 +38,14 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Orders
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:GetSummaryQuery|} : ICacheableQuery<int> { }
                 }
 
                 namespace Fixture.Billing
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:GetSummaryQuery|} : ICacheableQuery<string> { }
                 }
@@ -63,21 +63,21 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.A
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:LookupQuery|} : ICacheableQuery<int> { }
                 }
 
                 namespace Fixture.B
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:LookupQuery|} : ICacheableQuery<int> { }
                 }
 
                 namespace Fixture.C
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:LookupQuery|} : ICacheableQuery<int> { }
                 }
@@ -95,14 +95,14 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.A
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed record {|SK0041:ReportQuery|} : ICacheableQuery<int> { }
                 }
 
                 namespace Fixture.B
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class {|SK0041:ReportQuery|} : ICacheableQuery<int> { }
                 }
@@ -124,7 +124,7 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Orders
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class GetOrderQuery : ICacheableQuery<int> { }
                     public sealed class GetInvoiceQuery : ICacheableQuery<string> { }
@@ -146,7 +146,7 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Orders
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class GetSummaryQuery : ICacheableQuery<int> { }
                 }
@@ -169,7 +169,7 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Orders
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class LookupQuery : ICacheableQuery<int> { }
                     public sealed class LookupQuery<T> : ICacheableQuery<T> { }
@@ -191,14 +191,14 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.A
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public abstract class PagedQuery : ICacheableQuery<int> { }
                 }
 
                 namespace Fixture.B
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public sealed class PagedQuery : ICacheableQuery<int> { }
                 }
@@ -216,7 +216,7 @@ public class SK0041_DuplicateCacheableQueryNameAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Orders
                 {
-                    using SharedKernel.Application.Behaviors.Caching;
+                    using SharedKernel.Application.Caching;
 
                     public partial class GetOrderQuery : ICacheableQuery<int> { }
                     public partial class GetOrderQuery { }

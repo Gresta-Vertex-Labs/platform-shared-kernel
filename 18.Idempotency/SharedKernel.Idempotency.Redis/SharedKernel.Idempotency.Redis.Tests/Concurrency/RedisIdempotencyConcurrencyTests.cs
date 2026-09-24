@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using MsOptions = Microsoft.Extensions.Options.Options;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Idempotency.Redis.KeyStore;
 using SharedKernel.Idempotency.Redis.MessageStore;
 using SharedKernel.Idempotency.Redis.Options;

@@ -1,7 +1,7 @@
 using MediatR;
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Application.DomainEvents;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Adapts a <see cref="DomainEventNotification{TDomainEvent}"/> to the registered
@@ -12,7 +12,7 @@ namespace SharedKernel.Application.DomainEvents;
 /// Adapter only — unwraps <c>notification.DomainEvent</c> and forwards to the registered
 /// <see cref="IDomainEventHandler{TDomainEvent}"/>. Never registered directly by consuming code;
 /// always registered via
-/// <see cref="SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddDomainEventHandler{TDomainEvent,THandler}(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
+/// <see cref="ApplicationServiceCollectionExtensions.AddDomainEventHandler{TDomainEvent,THandler}(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
 /// Internal — not part of the public surface consuming services author against.
 /// </remarks>
 internal sealed class DomainEventNotificationHandler<TDomainEvent>(

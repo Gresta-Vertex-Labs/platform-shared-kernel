@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Idempotency.Redis.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;

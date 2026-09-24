@@ -1,4 +1,5 @@
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Testing.Application;
 
 namespace SharedKernel.Testing.SelfTests.Application;

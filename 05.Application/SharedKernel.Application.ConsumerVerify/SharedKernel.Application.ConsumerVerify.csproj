@@ -4,13 +4,12 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <!--
-    Consumer verification: resolves SharedKernel.Application and SharedKernel.Application.Behaviors as packages, never
+    Consumer verification: resolves SharedKernel.Application as a package, never
     as projects, to confirm the packed dependency graph and public API work for a real consumer. Point restore at the
     feed under test, and pin the version with -p:SharedKernelPackageVersion=<version>.
   -->
   <ItemGroup>
     <PackageReference Include="SharedKernel.Application" />
-    <PackageReference Include="SharedKernel.Application.Behaviors" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

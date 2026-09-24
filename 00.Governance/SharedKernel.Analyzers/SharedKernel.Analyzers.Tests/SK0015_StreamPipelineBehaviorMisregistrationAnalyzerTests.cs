@@ -102,7 +102,7 @@ public class SK0015_StreamPipelineBehaviorMisregistrationAnalyzerTests
                     using Fixture.Behaviors;
                     using MediatR;
 
-                    public static class ApplicationBehaviorsBuilder
+                    public static class ApplicationPipelineBuilder
                     {
                         public static void AddStreamingBehaviors(ServiceCollection services)
                         {

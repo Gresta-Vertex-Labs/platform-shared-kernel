@@ -4,13 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Behaviors.Auditing;
-using SharedKernel.Application.Behaviors.CacheInvalidation;
-using SharedKernel.Application.Behaviors.Caching;
-using SharedKernel.Application.Behaviors.Caching.Extensions;
-using SharedKernel.Application.Behaviors.Extensions;
+using SharedKernel.Application;
+using SharedKernel.Application.Caching;
 using SharedKernel.Application.Transactions;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Primitives.Results;
 using Xunit;
@@ -21,9 +17,9 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// Root Phase Backlog P-489 (WO-080), updated for P-544: a genuinely EXECUTED real-assembly lock —
 /// mirroring <c>SK.00.CacheEncryptionAndRedisValidationLock</c>'s T-337 "Technique A" precedent
 /// (the composed-pipeline test living directly in <c>SecureDefaultsAssertionTests.cs</c>) —
-/// proving, against the actual real, compiled <c>SharedKernel.Application.Behaviors</c> and
-/// <c>SharedKernel.Application.Behaviors.Caching</c> assemblies'
-/// <see cref="ApplicationBehaviorsBuilder"/> composition, that
+/// proving, against the actual real, compiled <c>SharedKernel.Application</c> and
+/// <c>SharedKernel.Application.Caching</c> assemblies'
+/// <c>AddSharedKernelApplication</c> composition, that
 /// <see cref="CacheInvalidationBehavior{TRequest,TResponse}"/>'s cache eviction executes only
 /// AFTER <see cref="IUnitOfWork.SaveChangesAsync"/>'s commit.
 /// </summary>
@@ -33,9 +29,9 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// P-544, this guarantee depended on <c>CacheInvalidationBehavior</c> being registered CLOSER to
 /// the outer edge of the pipeline than <c>TransactionBehavior</c> — a fragile relative-registration-
 /// order fact. As of P-544, <c>CacheInvalidationBehavior</c> no longer evicts directly from its own
-/// post-<c>next()</c> code at all: it registers an <see cref="SharedKernel.Application.Behaviors.Commands.ICommandScope.OnCompleted"/>
+/// post-<c>next()</c> code at all: it registers an <see cref="ICommandScope.OnCompleted"/>
 /// callback, and <c>CommandScopeBehavior</c> — always registered outermost among the command-stage
-/// behaviors by <see cref="ApplicationBehaviorsBuilder.Build"/> — runs every queued callback only
+/// behaviors by <c>AddSharedKernelApplication</c> — runs every queued callback only
 /// after the OUTERMOST command's <c>next()</c> (which includes <c>TransactionBehavior</c>'s commit)
 /// has already returned. The eviction-follows-commit guarantee is therefore now structural,
 /// independent of where <c>CacheInvalidationBehavior</c> itself sits in the Command-stage
@@ -47,10 +43,10 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <strong>Why this lives in 00.Governance, not only in 05.Application's own test suite.</strong>
 /// This is a deliberately INDEPENDENT, cross-domain proof on top of 05.Application's own in-domain
 /// regression tests — the whole point of P-489 is that a future well-intentioned edit inside
-/// <c>ApplicationBehaviorsBuilder</c>/<c>CommandScopeBehavior</c>/<c>CacheInvalidationBehavior</c>
+/// the registration/<c>CommandScopeBehavior</c>/<c>CacheInvalidationBehavior</c>
 /// must fail a build even if that domain's own tests were ever weakened or deleted. This test
-/// consumes the real, compiled <c>SharedKernel.Application.Behaviors.dll</c> and
-/// <c>SharedKernel.Application.Behaviors.Caching.dll</c> via test-only <c>ProjectReference</c>s
+/// consumes the real, compiled <c>SharedKernel.Application.dll</c> and
+/// <c>SharedKernel.Application.Caching.dll</c> via test-only <c>ProjectReference</c>s
 /// (<c>PrivateAssets="all"</c> — see <c>SharedKernel.ArchitectureTests.Tests.csproj</c>), never a
 /// source link or a hand-rolled substitute pipeline.
 /// </para>
@@ -60,7 +56,7 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// PROPERTY of MediatR's onion-wrapping order and the <c>ICommandScope</c> callback-queue
 /// mechanism, not something a static Mono.Cecil IL walk could honestly prove. This test therefore
 /// genuinely builds a real <see cref="IServiceCollection"/>, calls the real
-/// <c>AddSharedKernelApplicationBehaviors().AddCachingBehaviors().AddTransactionBehavior().Build()</c>
+/// <c>AddSharedKernelApplication(assembly, app => app.WithCaching().WithTransactions())</c>
 /// chain, registers the real MediatR pipeline, and dispatches a real command through it end to end
 /// via <see cref="ISender"/> — never a hand-rolled substitute pipeline.
 /// </para>
@@ -260,11 +256,11 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
 
     /// <summary>
     /// The default, documented registration path: only CacheInvalidation and Transaction opted in.
-    /// Against the REAL, shipped <c>SharedKernel.Application.Behaviors.dll</c>, eviction must
+    /// Against the REAL, shipped <c>SharedKernel.Application.dll</c>, eviction must
     /// observably follow the commit.
     /// </summary>
     [Fact]
-    public async Task RealApplicationBehaviorsBuilder_CacheInvalidationAndTransactionRegistered_EvictionObservablyFollowsCommit()
+    public async Task RealRegistration_CacheInvalidationAndTransactionRegistered_EvictionObservablyFollowsCommit()
     {
         var spy = new OrderRecordingSpy();
         var services = new ServiceCollection();
@@ -276,14 +272,9 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         services.AddSingleton<IRequestHandler<InvalidatingCommand, Result>>(
             sp => sp.GetRequiredService<InvalidatingCommandHandler>());
 
-        services
-            .AddSharedKernelApplicationBehaviors()
-            .AddCachingBehaviors()
-            .AddTransactionBehavior()
-            .Build();
-
-        services.AddMediatR(cfg =>
-            cfg.RegisterServicesFromAssemblyContaining<ApplicationBehaviorsCacheInvalidationOrderingLockTests>());
+        services.AddSharedKernelApplication(
+            typeof(ApplicationBehaviorsCacheInvalidationOrderingLockTests).Assembly,
+            app => app.WithCaching().WithTransactions());
         using var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<ISender>();
 
@@ -292,7 +283,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         result.IsSuccess.Should().BeTrue();
         spy.CallOrder.Should().Equal(
             [nameof(IUnitOfWork.SaveChangesAsync), OrderRecordingSpy.Commit, nameof(ICacheService.RemoveAsync), nameof(ICacheService.RemoveByTagAsync)],
-            "the real, compiled SharedKernel.Application.Behaviors.dll's ApplicationBehaviorsBuilder " +
+            "the real, compiled SharedKernel.Application.dll's registration " +
             "must register CacheInvalidationBehavior CLOSER to the outer edge of the pipeline than " +
             "TransactionBehavior so eviction observably follows the commit, never precedes it " +
             "(root Phase Backlog P-489/WO-080)");
@@ -308,7 +299,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
     /// that could pass while silently breaking Auditing's inner position, or vice versa.
     /// </summary>
     [Fact]
-    public async Task RealApplicationBehaviorsBuilder_AuditingTransactionAndCacheInvalidationAllRegistered_OrderIsRecordThenSaveThenEvict()
+    public async Task RealRegistration_AuditingTransactionAndCacheInvalidationAllRegistered_OrderIsRecordThenSaveThenEvict()
     {
         var spy = new OrderRecordingSpy();
         var services = new ServiceCollection();
@@ -321,15 +312,9 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         services.AddSingleton<IRequestHandler<AuditedInvalidatingCommand, Result>>(
             sp => sp.GetRequiredService<AuditedInvalidatingCommandHandler>());
 
-        services
-            .AddSharedKernelApplicationBehaviors()
-            .AddAuditingBehavior()
-            .AddTransactionBehavior()
-            .AddCachingBehaviors()
-            .Build();
-
-        services.AddMediatR(cfg =>
-            cfg.RegisterServicesFromAssemblyContaining<ApplicationBehaviorsCacheInvalidationOrderingLockTests>());
+        services.AddSharedKernelApplication(
+            typeof(ApplicationBehaviorsCacheInvalidationOrderingLockTests).Assembly,
+            app => app.WithAuditing().WithTransactions().WithCaching());
         using var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<ISender>();
 

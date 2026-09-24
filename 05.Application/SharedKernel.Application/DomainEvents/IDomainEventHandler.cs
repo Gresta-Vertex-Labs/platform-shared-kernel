@@ -1,6 +1,6 @@
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Application.DomainEvents;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Handles a single domain event of type <typeparamref name="TDomainEvent"/>.

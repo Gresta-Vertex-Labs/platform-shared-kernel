@@ -61,10 +61,8 @@
   <Folder Name="/05.Application/">
     <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.Tests/SharedKernel.Application.Abstractions.Tests.csproj" />
-    <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.csproj" />
-    <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.Tests/SharedKernel.Application.Behaviors.Caching.Tests.csproj" />
-    <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />
-    <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.Tests/SharedKernel.Application.Behaviors.Tests.csproj" />
+    <Project Path="05.Application/SharedKernel.Application.Caching/SharedKernel.Application.Caching.csproj" />
+    <Project Path="05.Application/SharedKernel.Application.Caching/SharedKernel.Application.Caching.Tests/SharedKernel.Application.Caching.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application/SharedKernel.Application.csproj" />
     <Project Path="05.Application/SharedKernel.Application/SharedKernel.Application.Tests/SharedKernel.Application.Tests.csproj" />
   </Folder>

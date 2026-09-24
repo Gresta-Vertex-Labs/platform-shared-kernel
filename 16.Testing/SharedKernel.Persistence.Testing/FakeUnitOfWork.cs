@@ -12,7 +12,7 @@ namespace SharedKernel.Persistence.Testing;
 /// <remarks>
 /// <para>
 /// P-558: one fake for the one unit-of-work contract the application pipeline and the persistence
-/// layer now share (the former <c>05.Application.Behaviors</c> and <c>06.Persistence</c> copies, and
+/// layer now share (the former <c>SharedKernel.Application</c> and <c>06.Persistence</c> copies, and
 /// their two same-named fakes, are gone).
 /// </para>
 /// <para>

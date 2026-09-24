@@ -25,6 +25,16 @@ public sealed class ErrorCodesTests
     public void Unauthorized_Default_IsNotNullOrEmpty()
         => Assert.False(string.IsNullOrWhiteSpace(ErrorCodes.Unauthorized.Default));
 
+    // The values are a wire contract: 14.Presentation answers the header checks and 05.Application
+    // the reservation with these exact strings, and clients branch on them.
+    [Theory]
+    [InlineData(ErrorCodes.Idempotency.KeyRequired, "idempotency.key_required")]
+    [InlineData(ErrorCodes.Idempotency.KeyInvalid, "idempotency.key_invalid")]
+    [InlineData(ErrorCodes.Idempotency.InProgress, "idempotency.in_progress")]
+    [InlineData(ErrorCodes.Idempotency.KeyReused, "idempotency.key_reused")]
+    public void Idempotency_Codes_HaveTheirWireValues(string actual, string expected)
+        => Assert.Equal(expected, actual);
+
     [Fact]
     public void AllCodes_AreUniqueAcrossCategories()
     {
@@ -46,6 +56,10 @@ public sealed class ErrorCodesTests
             ErrorCodes.Unexpected.Default,
             ErrorCodes.Unavailable.Default,
             ErrorCodes.Timeout.Default,
+            ErrorCodes.Idempotency.KeyRequired,
+            ErrorCodes.Idempotency.KeyInvalid,
+            ErrorCodes.Idempotency.InProgress,
+            ErrorCodes.Idempotency.KeyReused,
             ErrorCodes.Domain.RuleViolated,
         };
 

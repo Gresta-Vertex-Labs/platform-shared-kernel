@@ -1,19 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Application.Behaviors' IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
+    <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Application's IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
     <PackageTags>idempotency;redis;deduplication;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
       18.Idempotency layering (root CLAUDE.md / 18.Idempotency/CLAUDE.md): SharedKernel.Idempotency.Redis
-      may reference 01.Core, 02.Caching.Redis.Core only, 05.Application.Behaviors,
+      may reference 01.Core, 02.Caching.Redis.Core only, 05.Application (SharedKernel.Application),
       07.Messaging.Abstractions. Never 06.Persistence — anything.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>

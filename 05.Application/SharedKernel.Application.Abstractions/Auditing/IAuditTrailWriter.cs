@@ -6,7 +6,7 @@ namespace SharedKernel.Application.Auditing;
 /// <remarks>
 /// <para>
 /// One member, and it is not an update or a delete: nothing reachable through this contract can
-/// change or remove a recorded entry. <c>SharedKernel.Application.Behaviors</c>' <c>AuditingBehavior</c>
+/// change or remove a recorded entry. <c>SharedKernel.Application</c>' <c>AuditingBehavior</c>
 /// calls it for commands that opt in; <c>SharedKernel.Persistence.EfCore.Auditing</c> implements it.
 /// </para>
 /// <para>

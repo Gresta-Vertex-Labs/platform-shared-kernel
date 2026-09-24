@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MediatR;
-using SharedKernel.Application.DomainEvents;
 using SharedKernel.Domain.Events;
 
 namespace SharedKernel.Application.Tests.DomainEvents;

@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Streaming;
 
 namespace SharedKernel.Application.Tests.Streaming;
 

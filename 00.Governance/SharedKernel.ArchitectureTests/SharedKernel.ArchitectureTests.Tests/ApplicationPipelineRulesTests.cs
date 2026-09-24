@@ -38,7 +38,7 @@ public class ApplicationPipelineRulesTests
             """;
 
         const string behaviorSource = """
-            namespace SharedKernel.Application.Behaviors.Tracing
+            namespace SharedKernel.Application.Pipeline.Tracing
             {
                 public class TracingBehavior
                 {
@@ -96,7 +96,7 @@ public class ApplicationPipelineRulesTests
             """;
 
         const string behaviorsSource = """
-            namespace SharedKernel.Application.Behaviors.Tracing
+            namespace SharedKernel.Application.Pipeline.Tracing
             {
                 public class TracingBehavior
                 {
@@ -109,7 +109,7 @@ public class ApplicationPipelineRulesTests
                 }
             }
 
-            namespace SharedKernel.Application.Behaviors.CacheInvalidation
+            namespace SharedKernel.Application.Pipeline.CacheInvalidation
             {
                 public class CacheInvalidationBehavior
                 {
@@ -159,7 +159,7 @@ public class ApplicationPipelineRulesTests
             using System.Threading.Tasks;
             using MediatR;
 
-            namespace SharedKernel.Application.Behaviors.Violations
+            namespace SharedKernel.Application.Pipeline.Violations
             {
                 public class LooseStreamingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
                     where TRequest : notnull, IStreamRequest<TResponse>
@@ -206,7 +206,7 @@ public class ApplicationPipelineRulesTests
             using System.Threading.Tasks;
             using MediatR;
 
-            namespace SharedKernel.Application.Behaviors.Compliant
+            namespace SharedKernel.Application.Pipeline.Compliant
             {
                 public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
                     where TRequest : notnull, IRequest<TResponse>

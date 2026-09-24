@@ -1,9 +1,9 @@
 using MediatR;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using MsOptions = Microsoft.Extensions.Options.Options;
-using SharedKernel.Application.Behaviors.Commands;
-using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
+using SharedKernel.Application.Context;
 using SharedKernel.Idempotency.Redis.KeyStore;
 using SharedKernel.Idempotency.Redis.Options;
 using SharedKernel.Messaging.Abstractions.TenantContext;
@@ -27,23 +27,12 @@ public sealed class RedisIdempotencyCallerScopingTests(RedisContainerFixture fix
 {
     private sealed record PlaceOrder(string IdempotencyKey, string Body) : ICommand<string>, IIdempotentRequest;
 
-    private sealed class OutermostCommandScope : ICommandScope
-    {
-        public bool IsActive => true;
-
-        public bool IsNested => false;
-
-        public void OnCompleted(Func<CancellationToken, Task> callback)
-        {
-        }
-    }
-
     private sealed class FixedTenantAccessor(Guid? tenantId) : ITenantContextAccessor
     {
         public Guid? TenantId { get; } = tenantId;
     }
 
-    private static Task<Result<string>> SendAs(
+    private static async Task<Result<string>> SendAs(
         IConnectionMultiplexer multiplexer,
         TestRequestContext caller,
         PlaceOrder command,
@@ -54,13 +43,17 @@ public sealed class RedisIdempotencyCallerScopingTests(RedisContainerFixture fix
             new FixedTenantAccessor(caller.TenantId),
             MsOptions.Create(new RedisIdempotencyOptions()),
             new InMemoryLogger<RedisRequestIdempotencyStore>());
-        var behavior = new IdempotencyBehavior<PlaceOrder, Result<string>>(
-            store,
-            caller,
-            new OutermostCommandScope(),
-            NullLogger<IdempotencyBehavior<PlaceOrder, Result<string>>>.Instance);
+        // The behavior is internal to SharedKernel.Application: compose it the way a service does.
+        var services = new ServiceCollection();
+        services.AddSingleton<IRequestIdempotencyStore>(store);
+        services.AddSingleton<IRequestContext>(caller);
+        services.AddSharedKernelApplication(typeof(RedisIdempotencyCallerScopingTests).Assembly, app => app.WithIdempotency());
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var behavior = scope.ServiceProvider.GetServices<IPipelineBehavior<PlaceOrder, Result<string>>>()
+            .Single(b => b.GetType().Name.StartsWith("IdempotencyBehavior", StringComparison.Ordinal));
 
-        return behavior.Handle(command, handler, CancellationToken.None);
+        return await behavior.Handle(command, handler, CancellationToken.None);
     }
 
     private static List<string> StoredKeysOf(IConnectionMultiplexer multiplexer, Guid tenantId)

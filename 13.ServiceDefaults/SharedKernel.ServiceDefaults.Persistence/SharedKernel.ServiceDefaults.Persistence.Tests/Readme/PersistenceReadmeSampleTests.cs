@@ -4,11 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Auditing;
+using SharedKernel.Application;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Domain.Aggregates;
@@ -125,13 +122,9 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
             // Test harness only: every test builds its own model.
             .ConfigureDbContext((_, o) => o.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))));
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<PersistenceReadmeSampleTests>());
-        services.AddSharedKernelApplication();                          // domain events -> MediatR
-        services.AddSharedKernelApplicationBehaviors()
-            .AddDefaultBehaviors()
-            .AddTransactionBehavior()
-            .AddAuditingBehavior()
-            .Build();
+        services.AddSharedKernelApplication(typeof(PersistenceReadmeSampleTests).Assembly, app => app
+            .WithTransactions()
+            .WithAuditing());
 
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<OrderDbContext>()

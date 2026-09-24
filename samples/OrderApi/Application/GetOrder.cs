@@ -1,5 +1,5 @@
 using OrderApi.Domain;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 

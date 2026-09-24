@@ -3,7 +3,7 @@
     <!-- NuGet packaging metadata -->
     <Description>The contracts shared by the application pipeline and the persistence layer, with no MediatR and no ORM: who is calling (IRequestContext), how work commits (IUnitOfWork), and how an audited action is recorded (IAuditTrailWriter).
 
-SharedKernel.Application.Behaviors consumes these contracts and SharedKernel.Persistence.EfCore implements them, so a service wires its database once and both the transaction behavior and the audit behavior use it directly — no adapter, no bridge, no second copy of the same interface in another namespace.
+SharedKernel.Application consumes these contracts and SharedKernel.Persistence.EfCore implements them, so a service wires its database once and both the transaction behavior and the audit behavior use it directly — no adapter, no bridge, no second copy of the same interface in another namespace.
 
 IUnitOfWork runs a whole unit of work through ExecuteInTransactionAsync, so a retrying execution strategy can replay it, and lets code inside the transaction queue work to run just before commit (OnBeforeCommit). A failed Result returned by the operation rolls the transaction back. IRequestContext carries the caller's identity, tenant and actor kind; persistence attributes audit columns from it and filters tenant data by it, failing closed when no tenant is resolved.
 

@@ -114,19 +114,30 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
     [Fact]
     public async Task Anonymous_Is401_AndAMissingPermission_Is403()
     {
-        // Permissions declared by the command or query (IAuthorizeRequest), checked by the pipeline.
+        // Permissions declared by the command or query ([RequirePermission]), checked by the pipeline.
         (await fixture.Anonymous().GetAsync("/invoices?page=1")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         var readOnly = Tenant(Guid.NewGuid(), Http.Read);
         (await readOnly.PostAsJsonAsync("/customers", new { name = "x", email = "x@example.com" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await readOnly.GetAsync("/invoices?page=1")).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // A permission declared on the route (RequirePermission), checked before any handler runs — same answers, as problems.
-        var anonymous = await fixture.Anonymous().GetAsync("/admin/reports/revenue-by-tenant");
+        var anonymousQuery = await fixture.Anonymous().GetAsync("/admin/reports/revenue-by-tenant");
+        anonymousQuery.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await anonymousQuery.ErrorCodeAsync()).Should().Be("authorization.unauthenticated");
+
+        var forbiddenQuery = await readOnly.GetAsync("/admin/reports/revenue-by-tenant");
+        forbiddenQuery.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        forbiddenQuery.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        (await forbiddenQuery.ErrorCodeAsync()).Should().Be(ErrorCodes.Forbidden.InsufficientPermission);
+
+        // An endpoint that sends no command declares its permission on the route (RequirePermission), checked before
+        // the endpoint runs — same answers, as problems.
+        var erase = $"/admin/tenants/{Guid.NewGuid()}/erase";
+        var anonymous = await fixture.Anonymous().PostAsync(erase, content: null);
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await anonymous.ErrorCodeAsync()).Should().Be(ErrorCodes.Unauthorized.Default);
 
-        var forbidden = await readOnly.GetAsync("/admin/reports/revenue-by-tenant");
+        var forbidden = await readOnly.PostAsync(erase, content: null);
         forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         forbidden.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         (await forbidden.ErrorCodeAsync()).Should().Be(ErrorCodes.Forbidden.InsufficientPermission);

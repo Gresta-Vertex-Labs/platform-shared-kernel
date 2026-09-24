@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Quartz;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Jobs;
 

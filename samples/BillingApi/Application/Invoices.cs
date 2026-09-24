@@ -1,11 +1,8 @@
 using BillingApi.Domain;
 using Dapper;
 using MediatR;
-using SharedKernel.Application.Behaviors.Auditing;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.DomainEvents;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.Specifications;
@@ -53,12 +50,10 @@ public static class InvoiceMapping
 // Draft
 // ---------------------------------------------------------------------------------------------------------------
 
+[RequirePermission(Permissions.Write)]
 public sealed record DraftInvoice(InvoiceId Id, CustomerId CustomerId, string Currency, string TaxRateCode, IReadOnlyList<InvoiceLineInput> Lines)
-    : ICommand<InvoiceId>, IAuthorizeRequest, IAuditableRequest<Result<InvoiceId>>
+    : ICommand<InvoiceId>, IAuditableRequest<Result<InvoiceId>>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "invoice.drafted";
     public string ResourceType => nameof(Invoice);
     public string ResourceId => Id.Value.ToString();
@@ -107,11 +102,9 @@ public sealed class DraftInvoiceHandler(
 // Issue — raises InvoiceIssued, handled inside the same save
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record IssueInvoice(InvoiceId Id) : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
+[RequirePermission(Permissions.Write)]
+public sealed record IssueInvoice(InvoiceId Id) : ICommand, IAuditableRequest<Result>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "invoice.issued";
     public string ResourceType => nameof(Invoice);
     public string ResourceId => Id.Value.ToString();
@@ -151,11 +144,9 @@ public sealed class InvoiceIssuedHandler(IRepository<Customer, CustomerId> custo
 // Pay — a Dapper write and an EF Core write in ONE transaction
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record PayInvoice(InvoiceId Id, decimal Amount, string Reference) : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
+[RequirePermission(Permissions.Write)]
+public sealed record PayInvoice(InvoiceId Id, decimal Amount, string Reference) : ICommand, IAuditableRequest<Result>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "invoice.paid";
     public string ResourceType => nameof(Invoice);
     public string ResourceId => Id.Value.ToString();
@@ -202,11 +193,8 @@ public sealed class PayInvoiceHandler(IRepository<Invoice, InvoiceId> invoices, 
 // Bulk: expire stale drafts in one UPDATE, without loading them
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record ExpireStaleDrafts(DateTimeOffset DraftedBefore) : ICommand<int>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Write)]
+public sealed record ExpireStaleDrafts(DateTimeOffset DraftedBefore) : ICommand<int>;
 
 public sealed class ExpireStaleDraftsHandler(IBulkMutationRepository<Invoice, InvoiceId> bulk) : ICommandHandler<ExpireStaleDrafts, int>
 {
@@ -222,11 +210,8 @@ public sealed class ExpireStaleDraftsHandler(IBulkMutationRepository<Invoice, In
 // Queries: by id, offset pages, keyset (cursor) pages
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record GetInvoice(InvoiceId Id) : IQuery<InvoiceView>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record GetInvoice(InvoiceId Id) : IQuery<InvoiceView>;
 
 public sealed class GetInvoiceHandler(IReadRepository<Invoice, InvoiceId> invoices) : IQueryHandler<GetInvoice, InvoiceView>
 {
@@ -239,11 +224,8 @@ public sealed class GetInvoiceHandler(IReadRepository<Invoice, InvoiceId> invoic
     }
 }
 
-public sealed record ListInvoices(PageRequest Page, InvoiceStatus? Status) : IQuery<PagedList<InvoiceView>>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record ListInvoices(PageRequest Page, InvoiceStatus? Status) : IQuery<PagedList<InvoiceView>>;
 
 public sealed class ListInvoicesHandler(IReadRepository<Invoice, InvoiceId> invoices) : IQueryHandler<ListInvoices, PagedList<InvoiceView>>
 {
@@ -258,11 +240,8 @@ public sealed class ListInvoicesHandler(IReadRepository<Invoice, InvoiceId> invo
     }
 }
 
-public sealed record BrowseInvoices(CursorPageRequest Page) : IQuery<CursorPagedList<InvoiceView>>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record BrowseInvoices(CursorPageRequest Page) : IQuery<CursorPagedList<InvoiceView>>;
 
 public sealed class BrowseInvoicesHandler(IReadRepository<Invoice, InvoiceId> invoices) : IQueryHandler<BrowseInvoices, CursorPagedList<InvoiceView>>
 {

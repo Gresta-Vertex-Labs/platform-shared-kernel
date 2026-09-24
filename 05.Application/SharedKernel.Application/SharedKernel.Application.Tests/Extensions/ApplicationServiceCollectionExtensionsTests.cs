@@ -1,8 +1,6 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.DomainEvents;
-using SharedKernel.Application.Extensions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
@@ -25,9 +23,8 @@ public sealed class ApplicationServiceCollectionExtensionsTests
     public void AddSharedKernelApplication_RegistersDomainEventDispatcherAsMediatRDomainEventDispatcher()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IPublisher>(MediatRTestPublisher.Instance);
 
-        services.AddSharedKernelApplication();
+        services.AddSharedKernelApplication(typeof(ApplicationServiceCollectionExtensionsTests).Assembly);
 
         var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IDomainEventDispatcher>();
@@ -35,15 +32,14 @@ public sealed class ApplicationServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddSharedKernelApplication_DoesNotRegisterMediatRItself()
+    public void AddSharedKernelApplication_RegistersMediatR()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IPublisher>(MediatRTestPublisher.Instance);
 
-        services.AddSharedKernelApplication();
+        services.AddSharedKernelApplication(typeof(ApplicationServiceCollectionExtensionsTests).Assembly);
 
-        services.Any(d => d.ServiceType == typeof(IMediator)).Should().BeFalse();
-        services.Any(d => d.ServiceType == typeof(ISender)).Should().BeFalse();
+        services.Any(d => d.ServiceType == typeof(IMediator)).Should().BeTrue();
+        services.Any(d => d.ServiceType == typeof(ISender)).Should().BeTrue();
     }
 
     [Fact]
@@ -93,17 +89,5 @@ public sealed class ApplicationServiceCollectionExtensionsTests
             tcs.SetResult(domainEvent);
             return Task.CompletedTask;
         }
-    }
-
-    /// <summary>A minimal no-op <see cref="IPublisher"/> stand-in so <c>AddSharedKernelApplication</c> tests can build a provider.</summary>
-    private sealed class MediatRTestPublisher : IPublisher
-    {
-        public static readonly MediatRTestPublisher Instance = new();
-
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
-            where TNotification : INotification
-            => Task.CompletedTask;
     }
 }

@@ -1,10 +1,10 @@
 using System.Linq;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Behaviors.Idempotency;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Application;
@@ -43,7 +43,6 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().AddMetricsBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var result = await harness.SendAsync(new SucceedingCommand());
@@ -56,7 +55,6 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<FailingResultCommand, Result>, FailingResultCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var result = await harness.SendAsync(new FailingResultCommand());
@@ -69,7 +67,6 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<ThrowingCommand, Result>, ThrowingCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -83,7 +80,6 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness().WithActivityCapture();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddTracingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         await harness.SendAsync(new SucceedingCommand());
@@ -100,7 +96,6 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddMetricsBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         await harness.SendAsync(new SucceedingCommand());
@@ -115,16 +110,13 @@ public sealed class ApplicationPipelineTestHarnessTests
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().Build();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.SendAsync(new SucceedingCommand()));
     }
 
-    private sealed record AuthorizedCommand(string Permission) : ICommand, IAuthorizeRequest
-    {
-        public IReadOnlyCollection<string> RequiredPermissions => [Permission];
-    }
+    [RequirePermission("orders:create")]
+    private sealed record AuthorizedCommand : ICommand;
 
     private sealed class AuthorizedCommandHandler : IRequestHandler<AuthorizedCommand, Result>
     {
@@ -138,10 +130,10 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { IsAuthenticated = false });
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
+        harness.Configure(app => app.WithAuthorization());
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsFailure);
         Assert.Equal("authorization.unauthenticated", result.Error.Code);
@@ -153,10 +145,10 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext());
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
+        harness.Configure(app => app.WithAuthorization());
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorType.Forbidden, result.Error.Type);
@@ -168,10 +160,10 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders:create"] });
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
+        harness.Configure(app => app.WithAuthorization());
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsSuccess);
     }
@@ -202,7 +194,7 @@ public sealed class ApplicationPipelineTestHarnessTests
         harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
         harness.Services.AddSingleton<IRequestIdempotencyStore>(store ?? new FakeRequestIdempotencyStore());
         harness.Services.AddSingleton<IRequestContext>(caller);
-        harness.AddBehaviors().AddIdempotencyBehavior().Build();
+        harness.Configure(app => app.WithIdempotency());
         return harness.Build<ApplicationPipelineTestHarnessTests>();
     }
 
@@ -305,12 +297,13 @@ public sealed class ApplicationPipelineTestHarnessTests
     }
 
     [Fact]
-    public void AddIdempotencyBehavior_WithoutRequestContext_BuildThrows()
+    public void WithIdempotency_WithoutRequestContext_BuildFailsTheStartCheck()
     {
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
 
-        var exception = Assert.Throws<InvalidOperationException>(() => harness.AddBehaviors().AddIdempotencyBehavior().Build());
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => harness.Configure(app => app.WithIdempotency()).Build<ApplicationPipelineTestHarnessTests>());
 
         Assert.Contains(nameof(IRequestContext), exception.Message, StringComparison.Ordinal);
     }

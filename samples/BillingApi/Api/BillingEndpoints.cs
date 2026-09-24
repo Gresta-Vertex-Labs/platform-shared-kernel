@@ -46,7 +46,7 @@ public static class BillingEndpoints
     {
         MapCustomers(app.MapGroup("/customers"));
         MapInvoices(app.MapGroup("/invoices"));
-        MapAdministration(app.MapGroup("/admin").RequirePermission(Permissions.Admin));
+        MapAdministration(app.MapGroup("/admin"));
 
         app.MapGet("/reports/revenue", (ISender sender, CancellationToken ct) =>
             sender.Send(new GetRevenue(), ct).ToOk());
@@ -119,11 +119,10 @@ public static class BillingEndpoints
     }
 
     /// <summary>
-    /// The back office. Every endpoint here requires <c>billing.admin</c>, declared once on the group as a native
-    /// authorization policy over <c>IUserContext</c>: an anonymous caller gets 401 and a caller without the permission
-    /// 403, before any handler runs. The queries behind these endpoints still declare their own permissions
-    /// (<c>IAuthorizeRequest</c>), which hold on every path a query can take; the erasure runs no command, so the
-    /// group's requirement is the only one it has.
+    /// The back office; everything here requires <c>billing.admin</c>. A query declares that once, with
+    /// <c>[RequirePermission]</c>, and the pipeline enforces it on every path the query can take, so its endpoint does
+    /// not repeat it. The erasure sends no command, so it carries the requirement itself, as a native authorization
+    /// policy over <c>IUserContext</c>: an anonymous caller gets 401 and a caller without the permission 403.
     /// </summary>
     private static void MapAdministration(RouteGroupBuilder admin)
     {
@@ -142,7 +141,7 @@ public static class BillingEndpoints
                 var result = await keys.ShredTenantAsync(tenantId, cancellationToken: ct);
                 return TypedResults.Ok(new TenantErased(result.TenantId, result.IsComplete, result.BlindIndexValuesCleared));
             }
-        });
+        }).RequirePermission(Permissions.Admin);
     }
 
     /// <summary>Paging input validated at the edge: the request, or every problem with it in one 400.</summary>
