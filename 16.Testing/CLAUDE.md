@@ -54,7 +54,7 @@ SharedKernel.Testing/
   Caching/         — SharedKernel.Testing.Caching         — ICacheService / IDistributedLockService (+ FakeDistributedLock) / ICacheKeyProvider + ITenantCacheKeyProvider / ITenantCacheService / ICacheWarmupStrategy fakes (02.Caching.Abstractions), plus IRedisChannelService (Redis.PubSub) and IRedisHashService / ITypedHashStore<T> (Redis.HashStore) fakes (P-547)
   Domain/          — SharedKernel.Testing.Domain          — assertion helpers over 03.Domain primitives — DomainEventAssertions, BusinessRuleAssertions, SpecificationAssert, DomainVersionAssertions, SpecificationTestBuilder<T>, FakeDomainNotFoundException; MoneyFaker / FakeExchangeRateProvider implementing IExchangeRateProvider (P-441/WO-066, implemented 2026-09-04)
   Contracts/       — SharedKernel.Testing.Contracts       — DTO test helpers (04.Contracts) — PagedListBuilder<T>, PagedListAssertions (PagedList<T> and CursorPagedList<T>), IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>
-  Security/        — SharedKernel.Testing.Security        — IUserContext / ITenantProvider fakes (12.Security), plus SecurityTestContextBuilder (fluent ClaimsPrincipal/IUserContext test-fixture builder, P-382/WO-058) and FakeUserContext's AuthenticationMethods/AuthContextClassReference/AuthTime/WasAuthenticatedWith/IsAuthenticationFresherThan surface tracking 12.Security's step-up-authentication expansion (P-375/WO-058, implemented) — plus DpopTestProofBuilder and MtlsTestCertificateBuilder/MtlsTestCertificateAuthority (P-391/WO-060, implemented), BCL-only test-fixture builders for 12.Security's DPoP and mTLS validation; InMemoryApiKeyStore, InMemoryDpopReplayCache, InMemoryTotpStepUpStore and InMemoryRecoveryCodeStore (P-546) implementing the SharedKernel.Security.ApiKey/.Oidc/.Totp store seams (ApiKeyRotationScenarioBuilder and FakeTotpChallengeStore removed P-546)
+  Security/        — SharedKernel.Testing.Security        — IUserContext / ITenantProvider fakes (12.Security), plus SecurityTestContextBuilder (fluent ClaimsPrincipal/IUserContext test-fixture builder, P-382/WO-058) and FakeUserContext's AuthenticationMethods/AuthContextClassReference/AuthTime/WasAuthenticatedWith/IsAuthenticationFresherThan surface tracking 12.Security's step-up-authentication expansion (P-375/WO-058, implemented), plus per-method verification times — FakeUserContext.AuthenticationMethodTimes/GetAuthenticationMethodTime/WithAuthenticationMethodTime and SecurityTestContextBuilder.WithAuthenticationMethodTime emitting amr_time through AuthenticationMethodTimeClaim (P-562 X1) — plus DpopTestProofBuilder and MtlsTestCertificateBuilder/MtlsTestCertificateAuthority (P-391/WO-060, implemented), BCL-only test-fixture builders for 12.Security's DPoP and mTLS validation; InMemoryApiKeyStore, InMemoryDpopReplayCache, InMemoryTotpStepUpStore and InMemoryRecoveryCodeStore (P-546) implementing the SharedKernel.Security.ApiKey/.Oidc/.Totp store seams (ApiKeyRotationScenarioBuilder and FakeTotpChallengeStore removed P-546)
   Messaging/       — SharedKernel.Testing.Messaging       — IMessageBus / IEventPublisher in-memory doubles (07.Messaging), TestHarnessFactory
   Persistence/     — SharedKernel.Testing.Persistence     — EF Core test helpers, aggregate fakers, ledger-shaped audit doubles (06.Persistence); the contract fakes moved to SharedKernel.Persistence.Testing (P-558) — FakeDbConnectionFactory, FakeRepository<TAggregate,TId>, FakeUnitOfWork, FakePersistenceTransaction (all P-335/WO-053, implemented C-102–C-105/SK.16.Core), TestSharedKernelDbContext, AggregateRootFaker, EfContextExtensions, ProjectionSpecificationBuilder, BulkAggregateFaker, WithDeletedSpecification, PersistenceTestHelpers; FakeAuditTrailWriter / FakeAuditQueryService / FakeAuditActorContext implementing IAuditTrailWriter/IAuditQueryService/IAuditActorContext (the RICH 06.Persistence.Abstractions contract — see Application/ below for the DIFFERENT, smaller same-named local-seam contract) (P-459/WO-071, implemented 2026-09-04)
   Containers/      — SharedKernel.Testing.Containers      — Testcontainers IAsyncLifetime fixtures (PostgreSQL / Redis / RabbitMQ / MinIO / Meilisearch / Elasticsearch / Qdrant / Milvus)
@@ -72,7 +72,7 @@ SharedKernel.Testing/
   Validation/      — SharedKernel.Testing.Validation        — checksum-correct valid/invalid sample generators (01.Core/SharedKernel.Validation) — ValidationSampleGenerator (P-445/WO-067, implemented 2026-09-04)
   Notifications/   — SharedKernel.Testing.Notifications      — INotificationSender / INotificationDeliveryObserver in-memory doubles (15.Integration/SharedKernel.Integration.Notifications.Abstractions) — InMemoryNotificationSender, InMemoryNotificationDeliveryObserver, AddInMemoryNotificationSender()/AddInMemoryNotificationDeliveryObserver() (P-463/WO-072, implemented 2026-09-04)
   Scheduling/      — SharedKernel.Testing.Scheduling         — IScheduledJobRegistry in-memory double (19.Scheduling/SharedKernel.Scheduling) — InMemoryScheduledJobRegistry (manual TriggerAsync test driver, never a real timer/hosted loop) (P-467/WO-073, shipped)
-  Grpc/            — SharedKernel.Testing.Grpc                — server-side gRPC interceptor test harness (14.Presentation/SharedKernel.Presentation.Grpc) — TestServerCallContext (wraps Grpc.Core.Testing.TestServerCallContext.Create plus an HttpContext bridge via UserState["__HttpContext"], proven end to end against all four real interceptors) (P-470/WO-074, shipped)
+  Grpc/            — SharedKernel.Testing.Grpc                — server-side gRPC service test harness (for services built on 14.Presentation/SharedKernel.Presentation.Grpc, which it does not reference) — TestServerCallContext (wraps Grpc.Core.Testing.TestServerCallContext.Create plus an HttpContext bridge via UserState["__HttpContext"]) (P-470/WO-074; reworked P-562, when SharedKernel.Presentation.Grpc dropped its correlation, tenant and authorization interceptors)
   DataPrivacy/     — SharedKernel.Testing.DataPrivacy         — IDataSubjectRequestHandler fake + masking-assertion helpers (01.Core/SharedKernel.DataPrivacy) — RecordingDataSubjectRequestHandler, PiiMaskingAssertions (re-invokes the REAL PiiMasking.* function, never reimplements masking) (P-475/WO-076, implemented 2026-09-04)
   Reporting/       — SharedKernel.Testing.Reporting           — IReportExporter<TRow> in-memory double (20.Reporting/SharedKernel.Reporting.Abstractions) — InMemoryReportExporter<TRow> (fully drains the supplied IAsyncEnumerable<TRow> for assertion — a test-double convenience, NEVER implying .Spreadsheet/.Pdf are memory-bounded, which they are verified NOT to be) (P-481/WO-077, shipped)
   Localization/    — SharedKernel.Testing.Localization        — culture-context test helper (01.Core/SharedKernel.Localization) — CultureScope (IDisposable CultureInfo.CurrentCulture/.CurrentUICulture scoping, zero dependency on SharedKernel.Localization itself — see the AUDIT FINDING note below for why no InMemoryLocalizationCatalog fake is added here) (P-485/WO-078, implemented 2026-09-04)
@@ -563,6 +563,20 @@ FakeUserContext  (sealed class, implements IUserContext)
         Returns AuthTime.HasValue && (now - AuthTime.Value) <= maxAge — a PURE function, mirroring the real
         IUserContext.IsAuthenticationFresherThan contract verbatim: NEVER calls DateTimeOffset.UtcNow
         internally. A test proving both the fresh-accept and stale-reject branches must pass `now` explicitly.
+    .AuthenticationMethodTimes                                  → IReadOnlyDictionary<string, DateTimeOffset> (settable; default:
+                                                                   empty; when each method was verified)                      [P-562 X1]
+    .GetAuthenticationMethodTime(string method)                 → DateTimeOffset?  (overrides IUserContext's default-implemented
+                                                                   member, answering exactly as UserContext does: null unless
+                                                                   WasAuthenticatedWith(method); then its AuthenticationMethodTimes
+                                                                   entry, matched ordinally whatever the dictionary's comparer,
+                                                                   else AuthTime)                                              [P-562 X1]
+    .WithAuthenticationMethodTime(string method, DateTimeOffset verifiedAt) → FakeUserContext  (fluent, mutates and returns
+                                                                   this; adds or replaces one entry in a copy of the dictionary;
+                                                                   only DATES the method — list it in AuthenticationMethods too,
+                                                                   as on a real context)                                       [P-562 X1]
+        Lets a consumer test drive a step-up with a maximum age (14's [RequireAuthenticationMethod("otp",
+        MaxAgeSeconds = 300)]) fresh and expired from its FakeClock; proven in SelfTests against WebApi's own
+        requirement handler (AuthenticationMethodMaxAgeTests) and by parity with the real UserContext.
     NOTE: Distinct from 12.Security's AnonymousUserContext, which is an immutable production
           fallback sentinel (always IsAuthenticated == false). FakeUserContext defaults to an
           authenticated user so most test setups need zero configuration; set IdentityKind =
@@ -600,6 +614,10 @@ SecurityTestContextBuilder  (sealed class — fluent, new-able, NOT DI-registere
     .WithAuthenticationMethods(params string[])                 → SecurityTestContextBuilder (fluent)
     .WithAuthContextClassReference(string?)                     → SecurityTestContextBuilder (fluent)
     .WithAuthTime(DateTimeOffset?)                               → SecurityTestContextBuilder (fluent)
+    .WithAuthenticationMethodTime(string method, DateTimeOffset verifiedAt) → SecurityTestContextBuilder (fluent; replaces an
+                                                                   earlier time for the method; the amr_time claim is made by
+                                                                   AuthenticationMethodTimeClaim.Create — validated at the call,
+                                                                   never a retyped format; only dates the method)   [P-562 X1]
     .WithIdentityKind(IdentityKind)                             → SecurityTestContextBuilder (fluent)
     .Unauthenticated()                                          → SecurityTestContextBuilder (fluent; WithIdentityKind(IdentityKind.Anonymous))
     .WithClaim(string type, string value)                       → SecurityTestContextBuilder (fluent; additive — appends, never replaces)
@@ -608,7 +626,8 @@ SecurityTestContextBuilder  (sealed class — fluent, new-able, NOT DI-registere
         settings (inbound claim renaming off). Claim types come from SecurityClaimTypes' short names:
         "sub" (always), "azp" (client id), "tenant_id", "sid", "name", "email", "acr", "auth_time" (OIDC
         NumericDate via DateTimeOffset.ToUnixTimeSeconds()), ONE space-delimited "scope" claim for
-        permissions, ONE "roles" claim per role and ONE "amr" claim per authentication method. A
+        permissions, ONE "roles" claim per role, ONE "amr" claim per authentication method and ONE "amr_time"
+        claim per dated method ("{method} {unix seconds}", rounded down, as AuthenticationMethodTimeClaim writes it). A
         ServicePrincipal additionally gets "idtyp" = "app". Every WithClaim value is appended verbatim after
         the standard claims. Wraps into `new ClaimsIdentity(claims, authenticationType, "name", "roles")`
         with authenticationType "Bearer" — the Oidc mapper's scheme name, so UserContextResolver picks the
@@ -617,10 +636,12 @@ SecurityTestContextBuilder  (sealed class — fluent, new-able, NOT DI-registere
         Returns a `new FakeUserContext { ... }` populated by DIRECT property-to-property projection of the
         SAME fluent state .Build() reads — NEVER by constructing a ClaimsPrincipal first and mapping it back
         through an IUserContextMapper. SubjectId is set only for User/ServicePrincipal (null otherwise),
-        applying IUserContext's invariant; WithClaim values become FakeUserContext.Claims. .Build() and
-        .BuildUserContext() are two INDEPENDENT, PARALLEL projections of one shared fluent state.
+        applying IUserContext's invariant; WithClaim values become FakeUserContext.Claims; method times become
+        FakeUserContext.AuthenticationMethodTimes with the EXACT value (the claim of .Build() keeps whole seconds, as
+        auth_time does). .Build() and .BuildUserContext() are two INDEPENDENT, PARALLEL projections of one shared
+        fluent state.
     NOTE: The builder itself references SharedKernel.Security.Abstractions only (SecurityClaimTypes,
-          IdentityKind). A test proving the real claim mapping feeds .Build()'s principal through the real
+          IdentityKind, AuthenticationMethodTimeClaim). A test proving the real claim mapping feeds .Build()'s principal through the real
           authentication pipeline (12.Security's TestServer tests) rather than trusting this builder.
 
 DpopTestProofBuilder  (sealed class — fluent, new-able, NOT DI-registered)                                                     [P-391/WO-060]
@@ -2791,9 +2812,13 @@ SCOPE LOCK (P-467/WO-073): Scheduling/ references SharedKernel.Scheduling only (
     MediatR — needing no direct PackageReference of its own).
 ```
 
-### `Grpc/` — server-side gRPC interceptor test harness (14.Presentation/SharedKernel.Presentation.Grpc) — added P-470/WO-074
+### `Grpc/` — server-side gRPC service test harness (for 14.Presentation/SharedKernel.Presentation.Grpc services) — added P-470/WO-074, reworked P-562
 
-Shipped (P-470/WO-074, 2026-09-04), a CORRECTED shape from the original design draft — confirmed against the real `14.Presentation/SharedKernel.Presentation.Grpc` interceptors with zero drift beyond the correction noted below:
+Shipped (P-470/WO-074, 2026-09-04) against the then-public correlation, tenant and authorization interceptors of
+`SharedKernel.Presentation.Grpc`. P-562 removed those interceptors (correlation, tenant and authorization now run in
+the HTTP pipeline, `UseSharedKernelWebApi()`), the package's own `GetValueOrThrow()`/`ThrowIfFailure()` (R32, replaced
+by `SharedKernel.Core`'s) and this package's reference to it. The harness now serves a service's own methods and
+interceptors:
 
 ```text
 TestServerCallContext  (static class)
@@ -2802,26 +2827,25 @@ TestServerCallContext  (static class)
         Action<IServiceCollection>? configureServices = null, IEnumerable<object>? endpointMetadata = null,
         HttpContext? httpContext = null, string method = "test-method", string host = "localhost",
         DateTime? deadline = null, CancellationToken cancellationToken = default)   → ServerCallContext
-    NOTE: CORRECTED from the original "hand-subclass Grpc.Core.ServerCallContext" design — instead
-    wraps the official Grpc.Core.Testing.TestServerCallContext.Create(...) stub (the same low-level
-    primitive the pre-existing Communication/TestServerCallContext.cs already uses for gRPC CLIENT
-    interceptor testing) and additionally builds a Microsoft.AspNetCore.Http.HttpContext from
-    configureServices/endpointMetadata, bridged in via ServerCallContext.UserState["__HttpContext"]
-    — the empirically-verified (reflection+execution against the real Grpc.AspNetCore.Server/
-    Grpc.Core.Testing assemblies, not assumed from docs) ASP.NET Core gRPC hosting convention
-    GrpcTenantContextInterceptor/GrpcAuthorizationInterceptor both rely on to resolve
-    IUserContext/ITenantProvider/endpoint metadata from HttpContext.RequestServices/GetEndpoint().
-    DESIGN CORRECTION: only correlation-id is genuinely metadata-driven (GrpcCorrelationInterceptor
-    reads RequestHeaders directly) — GrpcAuthorizationInterceptor/GrpcTenantContextInterceptor read
-    endpoint metadata / RequestServices, never gRPC metadata, contra the original draft's
-    "authorization metadata entries" phrasing.
+    Wraps the official Grpc.Core.Testing.TestServerCallContext.Create(...) stub (the same low-level
+    primitive Communication/TestServerCallContext.cs uses for gRPC CLIENT interceptor testing) and
+    builds a Microsoft.AspNetCore.Http.HttpContext from configureServices/endpointMetadata, bridged in via
+    ServerCallContext.UserState["__HttpContext"] — the convention Grpc.AspNetCore.Server's
+    GetHttpContext() reads outside a host (verified by execution against the real assemblies), so code
+    under test resolves RequestServices and endpoint metadata as it would in a host.
+    correlationId is sent as the inbound WellKnownHeaders.CorrelationId header; GetCorrelationId() returns
+    null here, because only the HTTP pipeline's correlation middleware stores the id.
+    NOT SIMULATED: authorization ([RequirePermission] and its siblings are enforced by ASP.NET Core
+    authorization before a method runs — test them against an in-process host) and the platform's
+    exception interceptor. A failed Result ended with SharedKernel.Core's GetValueOrThrow()/ThrowIfFailure()
+    surfaces as Error.ToException() (the SharedKernelException of the error's type), never as an
+    RpcException with a google.rpc.Status: only the interceptor, in a host, makes that.
     SCOPE LOCK: deliberately does NOT default IUserContext/ITenantProvider to
     Security/FakeUserContext/FakeTenantProvider internally — unlike Clocks/FakeClock (an established
     repo-wide cross-folder exception), Security/ fakes have no such precedent; a consuming test
     supplies its own Security/ fake via configureServices.
-    Generic-shape-agnostic: the returned ServerCallContext drives UnaryServerHandler or any of the
-    three streaming handler shapes (GrpcExceptionInterceptor must handle all four — proven via a
-    ServerStreamingServerHandler test, D-228). No real network/Grpc.AspNetCore TestServer bootstrap.
+    Generic-shape-agnostic: the returned ServerCallContext drives a unary method or handler or any of the
+    three streaming shapes. No real network/Grpc.AspNetCore TestServer bootstrap.
 
 NAMESPACE GOTCHA (documented in both files' XML docs, mirroring the GreenDonut Result<T>/Error
     ambiguity precedent): once SharedKernel.Testing.Grpc exists, ANY file under SharedKernel.Testing.*
@@ -2830,8 +2854,10 @@ NAMESPACE GOTCHA (documented in both files' XML docs, mirroring the GreenDonut R
     namespace lookup walks the CURRENT file's own enclosing-namespace chain before falling back to
     global, and SharedKernel.Testing.Grpc now matches at the SharedKernel.Testing level.
 
-SCOPE LOCK (P-470/WO-074): Grpc/ references SharedKernel.Presentation.Grpc, Grpc.Core.Api, and
-    Grpc.Core.Testing only.
+SCOPE LOCK (P-470/WO-074, revised P-562): Grpc/ references Grpc.Core.Api, Grpc.Core.Testing,
+    SharedKernel.Primitives (WellKnownHeaders) and the ASP.NET Core HttpContext types only — never
+    14.Presentation. Only SharedKernel.Testing.SelfTests references SharedKernel.Presentation.Grpc
+    (test-only), to prove the harness with the real GetHttpContext().
 ```
 
 ### `DataPrivacy/` — `IDataSubjectRequestHandler` fake + masking-assertion helpers (01.Core/SharedKernel.DataPrivacy) — added P-475/WO-076
@@ -3197,3 +3223,4 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-09-18] P-555 (01.Core, coordinator): `FeatureManagement/` rewritten for `SharedKernel.FeatureManagement`'s OpenFeature redesign — `FakeFeatureManager`/`AddFakeFeatureManagement()` deleted with `IFeatureManager`; new `FakeFeatureClient` (an `IFeatureClient` serving typed `FeatureFlag<T>` values, rules over the evaluation context, `SetObject` for JSON flags, `FlagNotFound` for unset flags) and `AddFakeFeatureFlags()`. 9 self-tests; `SharedKernel.Testing.SelfTests` 1417/1417
 - [2026-09-21] P-558: `SharedKernel.Persistence.Testing` (published, test-only) added; persistence/application contract fakes moved there; stale Persistence/ and Application/ sections rewritten (agent)
 - [2026-09-22] Docs updated for `08.Storage`'s P-559 redesign: `Storage/` section rewritten (`InMemoryFileStorage` as a raw store behind the real registry, `AddInMemoryStore`/`AddInMemoryTenantStore`, `GetInMemoryStore`, `InMemoryStorage.CreateFactory`; `InMemoryBlobUriGenerator`/`AddInMemoryFileStorage()` gone); MinIO fixture and `InMemoryReportExporter` notes corrected (coordinator)
+- [2026-09-24] P-562 integration stream I4: `FakeUserContext` gains per-method verification times for 12.Security's X1 (`AuthenticationMethodTimes`, `GetAuthenticationMethodTime` answering as `UserContext` does, fluent `WithAuthenticationMethodTime`), and `SecurityTestContextBuilder.WithAuthenticationMethodTime` emits `amr_time` through `AuthenticationMethodTimeClaim.Create` (exact time in `BuildUserContext()`), so consumer tests drive `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` fresh and expired — proven by parity with `UserContext` and against WebApi's own requirement handler (`AuthenticationMethodMaxAgeTests`, through the SelfTests' test-only gRPC-package reference). Stale P-562 docs fixed: the `Grpc/` section and folder-map line (interceptors, result extensions and the 14 reference are gone), `TestServerCallContext`'s remarks and the SelfTests csproj comment (`GetValueOrThrow()`/`ThrowIfFailure()` are `SharedKernel.Core`'s and throw the error's exception) (agent)

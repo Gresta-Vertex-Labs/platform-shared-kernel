@@ -342,6 +342,10 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // one codec per service provider, shared by every context, so a version issued through one context opens in another.
         services.TryAddSingleton(sp => new EntityVersionCodec(new EntityVersionKeyRing(sp)));
 
+        // An asynchronous-only key provider (a KMS) gets its version key loaded before the host takes traffic, so no
+        // request blocks a thread on the provider. Does nothing otherwise, and readiness never waits for it.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, EntityVersionKeyWarmUp>());
+
         services.TryAddSingleton(sp => new PersistenceContextDependencies(
             sp.GetRequiredService<IClock>(),
             AnonymousRequestContext.Instance,

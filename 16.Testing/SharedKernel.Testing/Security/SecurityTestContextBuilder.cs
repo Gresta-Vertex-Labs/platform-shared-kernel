@@ -19,6 +19,7 @@ public sealed class SecurityTestContextBuilder
     private readonly List<string> _roles = [];
     private readonly List<string> _permissions = [];
     private readonly List<string> _authenticationMethods = [];
+    private readonly List<(string Method, DateTimeOffset VerifiedAt, Claim Claim)> _authenticationMethodTimes = [];
     private readonly List<KeyValuePair<string, string>> _additionalClaims = [];
 
     private string _subjectId = FakeUserContext.DefaultSubjectId;
@@ -119,6 +120,40 @@ public sealed class SecurityTestContextBuilder
         return this;
     }
 
+    /// <summary>
+    /// Records when an authentication method was verified (<c>amr_time</c>), as a step-up does next to its <c>amr</c>
+    /// value. Replaces an earlier time for the same method.
+    /// </summary>
+    /// <param name="method">The authentication method reference, such as <c>otp</c>.</param>
+    /// <param name="verifiedAt">
+    /// When it was verified; take it from the test's clock. <see cref="Build"/> records whole seconds, rounded down, as
+    /// the claim does; <see cref="BuildUserContext"/> keeps the exact value.
+    /// </param>
+    /// <returns>The same builder.</returns>
+    /// <remarks>
+    /// Only dates the method: list it with <see cref="WithAuthenticationMethods"/> too, or the mappers ignore the time.
+    /// The claim is written by <see cref="AuthenticationMethodTimeClaim.Create"/>, the helper every platform writer uses.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="method"/> is null, empty or white space.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="verifiedAt"/> is before the Unix epoch.</exception>
+    public SecurityTestContextBuilder WithAuthenticationMethodTime(string method, DateTimeOffset verifiedAt)
+    {
+        var claim = AuthenticationMethodTimeClaim.Create(method, verifiedAt);
+        var entry = (method, verifiedAt, claim);
+
+        int index = _authenticationMethodTimes.FindIndex(existing => string.Equals(existing.Method, method, StringComparison.Ordinal));
+        if (index >= 0)
+        {
+            _authenticationMethodTimes[index] = entry;
+        }
+        else
+        {
+            _authenticationMethodTimes.Add(entry);
+        }
+
+        return this;
+    }
+
     /// <summary>Sets the authentication context class (<c>acr</c>).</summary>
     /// <param name="authContextClassReference">The value, or <see langword="null"/>.</param>
     /// <returns>The same builder.</returns>
@@ -182,6 +217,7 @@ public sealed class SecurityTestContextBuilder
 
         claims.AddRange(_roles.Select(role => new Claim(SecurityClaimTypes.Roles, role)));
         claims.AddRange(_authenticationMethods.Select(method => new Claim(SecurityClaimTypes.AuthenticationMethod, method)));
+        claims.AddRange(_authenticationMethodTimes.Select(entry => new Claim(entry.Claim.Type, entry.Claim.Value)));
 
         if (_identityKind == IdentityKind.ServicePrincipal)
         {
@@ -218,6 +254,9 @@ public sealed class SecurityTestContextBuilder
             Roles = [.. _roles],
             Permissions = [.. _permissions],
             AuthenticationMethods = [.. _authenticationMethods],
+            AuthenticationMethodTimes = _authenticationMethodTimes
+                .ToDictionary(entry => entry.Method, entry => entry.VerifiedAt, StringComparer.Ordinal)
+                .AsReadOnly(),
             AuthContextClassReference = _authContextClassReference,
             AuthTime = _authTime,
             Claims = [.. Build().Claims.Select(claim => new KeyValuePair<string, string>(claim.Type, claim.Value))],
