@@ -8,7 +8,8 @@
 //      added to Problems.PreconditionFailedErrorCodes), both headers made optional by a nullable parameter (a missing
 //      header reaches the handler as null, an unusable one is refused before it), a Paging parameter answering invalid
 //      paging input with the validation problem before the handler, the exposed CORS headers, and the
-//      automatic 429 body for a limiter registered with AddRateLimiter.
+//      automatic 429 body for a limiter registered with AddRateLimiter, and an endpoint module mapped by the
+//      generated app.MapEndpoints().
 //   2. WebApi — settings that fail validation stop the host before it serves a request.
 //   3. OpenApi — AddSharedKernelOpenApi/MapSharedKernelOpenApi generate one document per API version, each carrying the
 //      ProblemDetails schema. Asp.Versioning.OpenApi reflects over Microsoft.AspNetCore.OpenApi internals, so a package
@@ -40,6 +41,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -128,6 +130,7 @@ static async Task Surface1_WebApiOneCallSetup()
     await using var app = builder.Build();
     app.UseSharedKernelWebApi();
     OrdersHttpApi.Map(app);
+    app.MapEndpoints();
     await app.StartAsync();
 
     using var client = new HttpClient { BaseAddress = Hosts.AddressOf(app) };
@@ -144,6 +147,14 @@ static async Task Surface1_WebApiOneCallSetup()
     {
         Check.Status(created, HttpStatusCode.Created, "POST /orders (ToCreated)");
         Check.That(created.Headers.Location?.OriginalString == "/orders/5", "ToCreated sets Location from the value");
+    }
+
+    // Endpoint modules: the generated MapEndpoints() maps every IEndpointModule of this assembly (P-563 P2).
+    using (var shipment = await client.GetAsync("/shipments/3"))
+    {
+        Check.Status(shipment, HttpStatusCode.OK, "GET /shipments/3 (an endpoint module mapped by MapEndpoints)");
+        using var body = await Check.JsonAsync(shipment);
+        Check.That(body.RootElement.GetProperty("id").GetInt32() == 3, "the module's endpoint answers");
     }
 
     // The one error shape: a failed Result<T> is application/problem+json with every D1 member.
@@ -341,7 +352,7 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.That(rejected.Headers.RetryAfter?.Delta is { } delay && delay > TimeSpan.Zero, "the 429 carries the limiter's Retry-After");
     }
 
-    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, optional headers, paging, CORS, 429");
+    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, optional headers, paging, CORS, 429, endpoint modules");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -611,6 +622,13 @@ internal static class OrderCatalog
 
         return errors.Count == 0 ? Result.Success() : Error.Validation(errors);
     }
+}
+
+/// <summary>An endpoint module, mapped by the generated <c>app.MapEndpoints()</c> (P-563 P2).</summary>
+internal sealed class ShipmentEndpoints : IEndpointModule
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGroup("/shipments").MapGet("/{id:int}", (int id) => Result<OrderDto>.Success(new OrderDto(id, "shipped")).ToOk());
 }
 
 /// <summary>The HTTP API, mapped with the WebApi core's typed results and endpoint conventions.</summary>

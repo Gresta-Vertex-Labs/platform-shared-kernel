@@ -185,6 +185,8 @@
     <Project Path="14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.Tests/SharedKernel.Presentation.Grpc.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/SharedKernel.Presentation.WebApi.Tests.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.Tests/SharedKernel.Presentation.WebApi.Generators.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.Tests/SharedKernel.Presentation.OpenApi.Tests.csproj" />
     <Project Path="14.Presentation/consumer-verify/consumer-verify.csproj" />
