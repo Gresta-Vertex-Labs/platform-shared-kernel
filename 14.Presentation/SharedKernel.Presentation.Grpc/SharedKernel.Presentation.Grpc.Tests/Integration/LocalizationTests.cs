@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Localization;
+using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
 using Xunit;
@@ -54,6 +55,17 @@ public sealed class LocalizationTests
             ("order.lines_empty", "An order needs at least one line.", "order.lines_empty"));
     }
 
+    [Fact]
+    public async Task R31_SummaryOfTheFieldViolationsLeftOut_IsTranslated_WithItsCount()
+    {
+        await using var app = await StartAsync();
+
+        var exception = await FailAsync(app, Failures.ManyViolations + 60, "tr-TR");
+
+        exception.ShouldHaveRichStatus(StatusCode.InvalidArgument).FieldViolations()[^1].Should().Be(
+            (GrpcErrorCodes.MoreFieldViolations, "… ve 10 alan hatası daha.", GrpcErrorCodes.MoreFieldViolations));
+    }
+
     private static Task<WebApplication> StartAsync() =>
         GrpcTestHost.StartAsync(
             configureBuilder: builder =>
@@ -62,6 +74,7 @@ public sealed class LocalizationTests
                     new LocalizationCatalogBuilder()
                         .Add("order.not_found", Turkish, "{orderId} numaralı sipariş bulunamadı.")
                         .Add("customer.name_required", Turkish, "Ad zorunludur.")
+                        .Add(GrpcErrorCodes.MoreFieldViolations, Turkish, "… ve {count} alan hatası daha.")
                         .Build());
                 builder.Services.AddRequestLocalization(options =>
                 {

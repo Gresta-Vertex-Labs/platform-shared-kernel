@@ -11,8 +11,13 @@ service TestService {
   rpc Fail (EchoRequest) returns (EchoReply);
   // Writes one message, then fails in the way request.value names.
   rpc StreamFail (EchoRequest) returns (stream EchoReply);
-  // Waits until the call is cancelled.
+  // Waits until the call is cancelled, then throws what request.value names (nothing more when empty); see
+  // TestServiceImpl.AfterCancellation.
   rpc WaitForCancellation (EchoRequest) returns (EchoReply);
+  // Writes one message, waits until the call is cancelled, then throws what request.value names.
+  rpc StreamUntilCancelled (EchoRequest) returns (stream EchoReply);
+  // Calls Fail on the downstream service with the same value and lets its RpcException propagate.
+  rpc Relay (EchoRequest) returns (EchoReply);
   // Reports the correlation id the service sees.
   rpc GetContext (EchoRequest) returns (ContextReply);
   // [RequirePermission("orders.read")]

@@ -14,8 +14,10 @@ namespace SharedKernel.Presentation.Grpc.Errors;
 /// across 409, 412 and 422).
 /// </para>
 /// <para>
-/// Every error the interceptor of <c>AddSharedKernelGrpc()</c> maps and every failure thrown by
-/// <see cref="GrpcResultExtensions"/> takes its code from here; never switch on <see cref="ErrorType"/> by hand.
+/// Every error the interceptor of <c>AddSharedKernelGrpc()</c> maps takes its code from here — thrown, or a failed
+/// result ended with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c>/<c>ThrowIfFailure()</c>; never switch on
+/// <see cref="ErrorType"/> by hand. An <c>RpcException</c> the service throws itself, or receives from another
+/// service, keeps its own code.
 /// </para>
 /// </remarks>
 public static class GrpcStatusCodeMap
