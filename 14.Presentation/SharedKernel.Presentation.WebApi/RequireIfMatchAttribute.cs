@@ -5,7 +5,8 @@ namespace SharedKernel.Presentation.WebApi;
 /// <summary>
 /// Requires an <c>If-Match</c> request header naming the version the request changes, for optimistic concurrency
 /// over HTTP. Works on MVC controllers and actions and on minimal-API handlers (<c>[RequireIfMatch]</c> on the
-/// lambda); the <c>RequireIfMatch()</c> convention and an <see cref="IfMatch{TVersion}"/> parameter do the same.
+/// lambda); the <c>RequireIfMatch()</c> convention and a not-null <see cref="IfMatch{TVersion}"/> parameter do the
+/// same. To let a request leave the header out, use <see cref="AcceptIfMatchAttribute"/>.
 /// </summary>
 /// <remarks>
 /// <para>

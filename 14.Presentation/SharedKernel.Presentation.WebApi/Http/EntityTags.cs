@@ -35,23 +35,24 @@ internal static class EntityTags
         return $"\"{version}\"";
     }
 
-    /// <summary>Returns the first entity tag of <c>If-Match</c> without quotes or <c>W/</c>, <c>*</c> for any, or <see langword="null"/>.</summary>
+    /// <summary>
+    /// Returns the opaque value of the one strong entity tag <c>If-Match</c> names, <c>*</c> for any, or
+    /// <see langword="null"/> when it is missing, malformed, weak or lists several tags.
+    /// </summary>
     public static string? GetIfMatch(HttpRequest request)
     {
-        var tags = request.GetTypedHeaders().IfMatch;
-        if (tags.Count == 0)
+        if (GetIfMatchTags(request) is not [var tag])
         {
             return null;
         }
 
-        var first = tags[0];
-        if (first.Equals(EntityTagHeaderValue.Any))
+        if (tag.Equals(EntityTagHeaderValue.Any))
         {
             return Any;
         }
 
-        var opaque = GetOpaqueTag(first);
-        return opaque.Length == 0 ? null : opaque;
+        // If-Match compares strongly: a weak tag never matches, so it names no version to act on.
+        return tag.IsWeak ? null : GetOpaqueTag(tag);
     }
 
     /// <summary>Returns every entity tag of <c>If-Match</c>, parsed strictly; empty when it is missing or malformed.</summary>
@@ -75,17 +76,20 @@ internal static class EntityTags
     }
 
     /// <summary>
-    /// Checks the <c>If-Match</c> of an endpoint that requires it (RFC 9110 section 13.1.1) and returns
+    /// Checks the <c>If-Match</c> of an endpoint that requires or accepts it (RFC 9110 section 13.1.1) and returns
     /// <see langword="null"/> when it names one strong entity tag that every <see cref="IEntityTagValidator"/> of the
-    /// endpoint accepts; otherwise the response to send: 428 when it is missing or <c>*</c>, 400 when it is malformed
-    /// or names several tags, 412 when the tag is weak or not a version the endpoint uses.
+    /// endpoint accepts, or is missing and not <paramref name="required"/>; otherwise the response to send. Missing or
+    /// <c>*</c> is 428 when the header is required; when it is only accepted, <c>*</c> is 400 like a malformed header or
+    /// several tags; a weak tag, or one that is not a version the endpoint uses, is 412.
     /// </summary>
-    public static IResult? CheckRequiredIfMatch(HttpContext httpContext, EndpointMetadataCollection metadata)
+    public static IResult? CheckIfMatch(HttpContext httpContext, EndpointMetadataCollection metadata, bool required)
     {
         var values = httpContext.Request.Headers.IfMatch;
         if (!RequestFacts.HasValue(values))
         {
-            return Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage);
+            return required
+                ? Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage)
+                : null;
         }
 
         if (!EntityTagHeaderValue.TryParseStrictList(values, out var tags) || tags.Count != 1)
@@ -96,7 +100,11 @@ internal static class EntityTags
         var tag = tags[0];
         if (tag.Equals(EntityTagHeaderValue.Any))
         {
-            return Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage);
+            // * asks for any current version. A required If-Match must name one; an accepted one names one or is left
+            // out, since the endpoint never checks for "any": read as missing, * would let a replace-only write create.
+            return required
+                ? Reject(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired, PreconditionRequiredMessage)
+                : Reject(StatusCodes.Status400BadRequest, PresentationErrorCodes.PreconditionInvalid, PreconditionInvalidMessage);
         }
 
         // If-Match compares strongly: a weak tag never matches the current version.
@@ -114,6 +122,13 @@ internal static class EntityTags
         var quoted = tag.Tag;
         return quoted.Length >= 2 ? quoted.Subsegment(1, quoted.Length - 2).ToString() : string.Empty;
     }
+
+    /// <summary>
+    /// Returns the exception an <see cref="IfMatch{TVersion}"/> parameter throws for an <c>If-Match</c> it cannot bind,
+    /// which <c>UseSharedKernelWebApi()</c> refuses before binding: 400, without the header's value.
+    /// </summary>
+    public static BadHttpRequestException UnusableIfMatch() =>
+        new(PreconditionInvalidMessage, StatusCodes.Status400BadRequest);
 
     private static PresentationProblemResult Reject(int statusCode, string code, string message) => new(statusCode, code, message);
 }

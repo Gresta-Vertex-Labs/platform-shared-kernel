@@ -174,6 +174,8 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     {
         typeof(RequireIdempotencyKeyAttribute).GetInterfaces().Should().Equal(typeof(IIdempotencyKeyRequiredMetadata));
         typeof(RequireIfMatchAttribute).GetInterfaces().Should().Equal(typeof(IIfMatchRequiredMetadata));
+        typeof(AcceptIdempotencyKeyAttribute).GetInterfaces().Should().Equal(typeof(IIdempotencyKeyAcceptedMetadata));
+        typeof(AcceptIfMatchAttribute).GetInterfaces().Should().Equal(typeof(IIfMatchAcceptedMetadata));
     }
 
     [Fact]
@@ -190,15 +192,21 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     }
 
     [Fact]
-    public async Task R18_IdempotencyKeyBinding_WithoutThePipeline_YieldsNothingForAnInvalidKey()
+    public async Task J1_IdempotencyKeyBinding_WithoutThePipeline_BindsAMissingKeyAsNull_AndRefusesAnInvalidOne()
     {
         var valid = new DefaultHttpContext();
         valid.Request.Headers[WellKnownHeaders.IdempotencyKey] = "\"order-17\"";
+        var missing = new DefaultHttpContext();
         var invalid = new DefaultHttpContext();
         invalid.Request.Headers[WellKnownHeaders.IdempotencyKey] = "has space";
 
         (await IdempotencyKey.BindAsync(valid)).Should().Be(new IdempotencyKey("order-17"));
-        (await IdempotencyKey.BindAsync(invalid)).Should().BeNull();
+        (await IdempotencyKey.BindAsync(missing)).Should().BeNull();
+
+        // Without UseSharedKernelWebApi() nothing refuses the key before binding; null would read it as missing, which
+        // a nullable parameter takes for "no idempotency", so a retry would run twice.
+        var bindInvalid = async () => await IdempotencyKey.BindAsync(invalid);
+        (await bindInvalid.Should().ThrowAsync<BadHttpRequestException>()).Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     private Task<HttpResponseMessage> SendAsync(string path, string key)

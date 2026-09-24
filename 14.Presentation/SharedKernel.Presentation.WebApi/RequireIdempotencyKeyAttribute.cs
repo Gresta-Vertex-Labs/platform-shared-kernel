@@ -4,8 +4,9 @@ namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Requires an <c>Idempotency-Key</c> request header. Works on MVC controllers and actions and on minimal-API
-/// handlers (<c>[RequireIdempotencyKey]</c> on the lambda); the <c>RequireIdempotencyKey()</c> convention and an
-/// <see cref="IdempotencyKey"/> parameter do the same.
+/// handlers (<c>[RequireIdempotencyKey]</c> on the lambda); the <c>RequireIdempotencyKey()</c> convention and a
+/// not-null <see cref="IdempotencyKey"/> parameter do the same. To let a request leave the header out, use
+/// <see cref="AcceptIdempotencyKeyAttribute"/>.
 /// </summary>
 /// <remarks>
 /// <para>

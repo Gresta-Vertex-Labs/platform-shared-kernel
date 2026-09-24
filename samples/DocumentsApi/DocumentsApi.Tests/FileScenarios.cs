@@ -166,21 +166,34 @@ public sealed class FileScenarios(Backends backends)
     }
 
     /// <summary>
-    /// A precondition the service cannot read is refused, never ignored: ignoring it would make the client's conditional
-    /// write unconditional. Here the client sends the ETag without its quotes, which is not an entity tag.
+    /// A precondition the service cannot use is refused, never ignored: ignoring it would make the client's conditional
+    /// write unconditional. The endpoint declares <c>If-Match</c> as a nullable <c>IfMatch&lt;string&gt;</c>, so the
+    /// platform refuses it before the endpoint runs: the ETag without its quotes (not an entity tag), <c>*</c> or a list
+    /// is 400, a weak tag — which <c>If-Match</c>'s strong comparison never matches — 412.
     /// </summary>
-    [Fact]
-    public async Task An_if_match_that_is_not_an_entity_tag_is_refused_not_ignored()
+    [Theory]
+    [InlineData("unquoted", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("any", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("list", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("weak", HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed)]
+    public async Task An_if_match_the_service_cannot_use_is_refused_not_ignored(string sent, HttpStatusCode status, string code)
     {
         using HttpClient api = backends[Backends.MinIO].Api();
         string key = SampleHost.NewKey();
         FileReference original = await SampleHost.ReadAsync<FileReference>(
             await api.PutAsync($"/files/{Stores.Assets}/{key}", new ByteArrayContent([1])));
+        string ifMatch = sent switch
+        {
+            "unquoted" => original.ETag!.Trim('"'),
+            "any" => "*",
+            "list" => $"{original.ETag}, \"another\"",
+            _ => $"W/{original.ETag}",
+        };
 
-        HttpResponseMessage unquoted = await PutConditionalAsync(api, Stores.Assets, key, [2], ifMatch: original.ETag!.Trim('"'));
+        HttpResponseMessage refused = await PutConditionalAsync(api, Stores.Assets, key, [2], ifMatch: ifMatch);
 
-        unquoted.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await SampleHost.ErrorCodeAsync(unquoted)).Should().Be(PresentationErrorCodes.PreconditionInvalid);
+        refused.StatusCode.Should().Be(status);
+        (await SampleHost.ErrorCodeAsync(refused)).Should().Be(code);
         (await api.GetByteArrayAsync($"/files/{Stores.Assets}/{key}")).Should().Equal(1);
     }
 

@@ -12,9 +12,10 @@ namespace SharedKernel.Presentation.WebApi;
 /// <remarks>
 /// The version is an opaque token, typically <c>EntityVersion.ToString()</c> from the persistence layer: a read
 /// returns it with <c>ToOkWithETag(…)</c>, an update requires it with <c>RequireIfMatch()</c> (or an
-/// <see cref="IfMatch{TVersion}"/> parameter) and reads it with <see cref="GetIfMatch"/>. When the update then fails
-/// because the version is no longer current (<c>persistence.concurrency_conflict</c>), the response is 412
-/// Precondition Failed.
+/// <see cref="IfMatch{TVersion}"/> parameter) — or accepts it with <c>AcceptIfMatch()</c> (or a nullable
+/// <see cref="IfMatch{TVersion}"/> parameter) when a request without it is unconditional — and reads it with
+/// <see cref="GetIfMatch"/>. When the update then fails because the version is no longer current
+/// (<c>persistence.concurrency_conflict</c>), the response is 412 Precondition Failed.
 /// </remarks>
 public static class ConditionalRequestExtensions
 {
@@ -37,17 +38,40 @@ public static class ConditionalRequestExtensions
         return builder.WithMetadata(new RequireIfMatchAttribute());
     }
 
+    /// <summary>
+    /// Accepts an optional <c>If-Match</c> header on the endpoints of <paramref name="builder"/>: a request without it
+    /// goes on, unconditional; one with it must name one strong entity tag, checked before the handler runs —
+    /// malformed, several tags or <c>*</c> is 400, a weak tag 412.
+    /// </summary>
+    /// <typeparam name="TBuilder">The endpoint convention builder type.</typeparam>
+    /// <param name="builder">An endpoint, group or controller mapping.</param>
+    /// <returns>The same <paramref name="builder"/>.</returns>
+    /// <remarks>
+    /// Adds <see cref="AcceptIfMatchAttribute"/> as endpoint metadata, which <c>UseSharedKernelWebApi()</c> enforces
+    /// for every kind of endpoint; see that attribute for the rules. <see cref="RequireIfMatch{TBuilder}"/> on the same
+    /// endpoint wins.
+    /// </remarks>
+    public static TBuilder AcceptIfMatch<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        return builder.WithMetadata(new AcceptIfMatchAttribute());
+    }
+
     /// <summary>Returns the version the request's <c>If-Match</c> header names.</summary>
     /// <param name="httpContext">The current request.</param>
     /// <returns>
-    /// The first entity tag without its quotes and without <c>W/</c> — ready for <c>EntityVersion.TryParse</c> —;
-    /// <c>*</c> when the header is <c>*</c> (any current version); <see langword="null"/> when the header is missing
-    /// or malformed.
+    /// The one strong entity tag the header names, without its quotes — ready for <c>EntityVersion.TryParse</c> —;
+    /// <c>*</c> when the header is <c>*</c> (any current version); otherwise <see langword="null"/>: the header is
+    /// missing, malformed, weak or lists several tags.
     /// </returns>
     /// <remarks>
-    /// On an endpoint that requires <c>If-Match</c> the header has already been checked, so this is the one strong
-    /// tag it names. Elsewhere it is read as sent; use <see cref="GetIfMatchTags"/> to see every tag and whether it
-    /// is weak.
+    /// On an endpoint that requires or accepts <c>If-Match</c> — <c>RequireIfMatch()</c>, <c>AcceptIfMatch()</c>,
+    /// their attributes or an <see cref="IfMatch{TVersion}"/> parameter — the header was validated before the handler
+    /// ran, so <see langword="null"/> means the request sent none. Elsewhere <see langword="null"/> also covers a header
+    /// that cannot be used, and reading it as "no precondition" would make a conditional request unconditional: declare
+    /// the header instead of reading it raw. <see cref="GetIfMatchTags"/> lists every tag and whether it is weak.
     /// </remarks>
     public static string? GetIfMatch(this HttpContext httpContext)
     {

@@ -49,6 +49,25 @@ internal static class OrdersApi
         orders.MapPost("/{id:int}/refunds", (int id, IdempotencyKey idempotencyKey, IfMatch<long> ifMatch) => Result.Success().ToAccepted())
             .RequirePermission(WritePermission);
 
+        // The headers accepted rather than required: a convention, a nullable parameter or a lambda attribute.
+        orders.MapPost("/{id:int}/notes", (int id) => Result.Success().ToAccepted())
+            .RequirePermission(WritePermission)
+            .AcceptIdempotencyKey();
+        orders.MapPost("/{id:int}/reminders", (int id, IdempotencyKey? idempotencyKey) => Result.Success().ToAccepted())
+            .RequirePermission(WritePermission);
+        orders.MapPut("/{id:int}/address", (int id, Order order) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission)
+            .AcceptIfMatch();
+        orders.MapPatch("/{id:int}/address", (int id, Order order, IfMatch<long>? ifMatch) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission);
+        orders.MapDelete("/{id:int}/address", [AcceptIfMatch] (int id) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission);
+
+        // Accepted and required at once: the requirement wins.
+        orders.MapPut("/{id:int}/lines", (int id, IfMatch<long>? ifMatch) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission)
+            .RequireIfMatch();
+
         var admin = orders.MapGroup("/admin").RequirePermission(AdminPermission);
         admin.MapGet("/stats", () => "stats");
         admin.MapGet("/ping", () => "pong").AllowAnonymous();
@@ -87,4 +106,14 @@ public sealed class MvcOrdersController : ControllerBase
     [HttpPut("{id:int}")]
     [RequireIfMatch]
     public IActionResult Update(int id, Order order) => NoContent();
+
+    /// <summary>Accepts an idempotency key.</summary>
+    [HttpPost("{id:int}/notes")]
+    [AcceptIdempotencyKey]
+    public IActionResult AddNote(int id) => Accepted();
+
+    /// <summary>Accepts If-Match.</summary>
+    [HttpPatch("{id:int}")]
+    [AcceptIfMatch]
+    public IActionResult Patch(int id, Order order) => NoContent();
 }

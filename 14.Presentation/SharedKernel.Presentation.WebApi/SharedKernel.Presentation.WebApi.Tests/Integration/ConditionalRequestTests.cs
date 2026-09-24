@@ -24,7 +24,9 @@ namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 /// Design D10/D16 and B13, refined by R6–R8, R14 and R18: ETag with 304 on reads; a required <c>If-Match</c> checked
 /// for every kind of endpoint (428 missing or <c>*</c>, 400 malformed or several tags, 412 weak or unparsable); and 412
 /// decided from the error — a version conflict of a conditional request — round-tripping the persistence layer's
-/// <see cref="EntityVersion"/>, whose text is an opaque token since P-562 X4 (<see cref="TestVersions"/>).
+/// <see cref="EntityVersion"/>, whose text is an opaque token since P-562 X4 (<see cref="TestVersions"/>). J1:
+/// <c>GetIfMatch()</c> returns one strong tag or nothing, and binding never reads an unusable header as a missing one
+/// (the accepted, optional form is in <see cref="OptionalHeaderTests"/>).
 /// </summary>
 public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsyncLifetime
 {
@@ -250,16 +252,25 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
         ifMatch.Version.Should().Be(CurrentVersion);
         ifMatch.ToString().Should().Be(TestVersions.Current);
         ifMatch.Should().Be(new IfMatch<EntityVersion>(EntityVersion.Parse(TestVersions.Current)));
+        FluentActions.Invoking(() => new IfMatch<string>(null!)).Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task R18_IfMatchBinding_WithoutThePipeline_YieldsTheVersionOfOneStrongParsableTag()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers.IfMatch = CurrentTag;
+
+        var bound = await IfMatch<EntityVersion>.BindAsync(context);
+
+        bound.Should().NotBeNull();
+        bound!.Version.Should().Be(CurrentVersion);
     }
 
     [Theory]
-    [InlineData(CurrentTag, true)]
-    [InlineData("W/" + CurrentTag, false)]
-    [InlineData("\"a\", " + CurrentTag, false)]
-    [InlineData("\"abc\"", false)]
-    [InlineData("\"42\"", false)] // X4: a raw row version is not a version
-    [InlineData(null, false)]
-    public async Task R18_IfMatchBinding_WithoutThePipeline_YieldsAVersionOnlyForOneStrongParsableTag(string? header, bool binds)
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task J1_IfMatchBinding_WithoutTheHeader_IsNull(string? header)
     {
         var context = new DefaultHttpContext();
         if (header is not null)
@@ -267,13 +278,26 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
             context.Request.Headers.IfMatch = header;
         }
 
-        var bound = await IfMatch<EntityVersion>.BindAsync(context);
+        (await IfMatch<EntityVersion>.BindAsync(context)).Should().BeNull();
+    }
 
-        bound.HasValue.Should().Be(binds);
-        if (binds)
-        {
-            bound!.Value.Version.Should().Be(CurrentVersion);
-        }
+    [Theory]
+    [InlineData("W/" + CurrentTag)]
+    [InlineData("\"a\", " + CurrentTag)]
+    [InlineData("\"abc\"")]
+    [InlineData("\"42\"")] // X4: a raw row version is not a version
+    [InlineData("*")]
+    [InlineData("unquoted")]
+    public async Task J1_IfMatchBinding_WithoutThePipeline_RefusesAnUnusableHeader_RatherThanBindItAsMissing(string header)
+    {
+        // Without UseSharedKernelWebApi() nothing refuses the header before binding; null would read it as missing,
+        // which a nullable parameter takes for "unconditional".
+        var context = new DefaultHttpContext();
+        context.Request.Headers.IfMatch = header;
+
+        var bind = async () => await IfMatch<EntityVersion>.BindAsync(context);
+
+        (await bind.Should().ThrowAsync<BadHttpRequestException>()).Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [Fact]
@@ -340,11 +364,13 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
 
     [Theory]
     [InlineData("\"42\"", "42")]
-    [InlineData("W/\"42\"", "42")]
-    [InlineData("\"a\", \"b\"", "a")]
+    [InlineData("\"\"", "")] // an empty strong tag names a version that is never current, never "no header"
     [InlineData("*", "*")]
+    [InlineData("W/\"42\"", "(none)")] // If-Match compares strongly: a weak tag names nothing to act on
+    [InlineData("\"a\", \"b\"", "(none)")] // never the first of several
+    [InlineData("*, \"42\"", "(none)")]
     [InlineData("unquoted", "(none)")]
-    public async Task GetIfMatch_ReturnsTheFirstEntityTag_WithoutQuotesOrWeakPrefix(string header, string expected)
+    public async Task J1_GetIfMatch_ReturnsTheOneStrongTag_OrStar_AndNothingElse(string header, string expected)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/if-match");
         request.Headers.TryAddWithoutValidation(HeaderNames.IfMatch, header);

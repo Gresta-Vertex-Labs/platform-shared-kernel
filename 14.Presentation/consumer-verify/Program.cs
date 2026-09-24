@@ -5,8 +5,9 @@
 //   1. WebApi — AddSharedKernelWebApi/UseSharedKernelWebApi: typed results, the one application/problem+json error
 //      shape, native authorization (401/403), an Idempotency-Key required by an IdempotencyKey parameter, ETag with
 //      304, If-Match required by an IfMatch<long> parameter with 428/412 (the service's own version-conflict code
-//      added to Problems.PreconditionFailedErrorCodes), the exposed CORS headers, and the automatic 429 body for a
-//      limiter registered with AddRateLimiter.
+//      added to Problems.PreconditionFailedErrorCodes), both headers made optional by a nullable parameter (a missing
+//      header reaches the handler as null, an unusable one is refused before it), the exposed CORS headers, and the
+//      automatic 429 body for a limiter registered with AddRateLimiter.
 //   2. WebApi — settings that fail validation stop the host before it serves a request.
 //   3. OpenApi — AddSharedKernelOpenApi/MapSharedKernelOpenApi generate one document per API version, each carrying the
 //      ProblemDetails schema. Asp.Versioning.OpenApi reflects over Microsoft.AspNetCore.OpenApi internals, so a package
@@ -248,6 +249,33 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.Status(updated, HttpStatusCode.NoContent, "IfMatch<long> parameter, current version");
     }
 
+    // An IdempotencyKey? parameter accepts the header without requiring it: missing → the handler runs with null; a
+    // valid key → the handler gets it; an invalid one → 400 before the handler runs, never read as "no key".
+    await OptionalHeaders.VerifyAsync(
+        client,
+        HttpMethod.Post,
+        "/transfers",
+        WellKnownHeaders.IdempotencyKey,
+        "IdempotencyKey? parameter",
+        (null, HttpStatusCode.OK, null, null),
+        ("\"pay-7f3a\"", HttpStatusCode.OK, "pay-7f3a", null),
+        ("not a valid key", HttpStatusCode.BadRequest, null, PresentationErrorCodes.IdempotencyKeyInvalid));
+
+    // An IfMatch<long>? parameter accepts If-Match the same way: missing → null (unconditional); one strong tag that is a
+    // long → its version; malformed or * → 400; weak, or a tag that is no version → 412; each before the handler runs.
+    await OptionalHeaders.VerifyAsync(
+        client,
+        HttpMethod.Delete,
+        "/documents/1",
+        HeaderNames.IfMatch,
+        "IfMatch<long>? parameter",
+        (null, HttpStatusCode.OK, null, null),
+        (Values.ETagOf(Values.CurrentDocumentVersion), HttpStatusCode.OK, Values.VersionText(Values.CurrentDocumentVersion), null),
+        (Values.VersionText(Values.CurrentDocumentVersion), HttpStatusCode.BadRequest, null, PresentationErrorCodes.PreconditionInvalid),
+        ("*", HttpStatusCode.BadRequest, null, PresentationErrorCodes.PreconditionInvalid),
+        ("W/" + Values.ETagOf(Values.CurrentDocumentVersion), HttpStatusCode.PreconditionFailed, null, PresentationErrorCodes.PreconditionFailed),
+        ("\"v6\"", HttpStatusCode.PreconditionFailed, null, PresentationErrorCodes.PreconditionFailed));
+
     // CORS from settings: the allowed origin gets the platform's exposed headers, another origin gets nothing.
     using (var request = new HttpRequestMessage(HttpMethod.Get, "/orders/1"))
     {
@@ -295,7 +323,7 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.That(rejected.Headers.RetryAfter?.Delta is { } delay && delay > TimeSpan.Zero, "the 429 carries the limiter's Retry-After");
     }
 
-    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, CORS, 429");
+    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, optional headers, CORS, 429");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -594,6 +622,12 @@ internal static class OrdersHttpApi
             return result.ToNoContent();
         });
 
+        // Declared nullable, the parameters accept the header without requiring it: the handler gets null only when the
+        // request sent none, and reports what it saw.
+        app.MapPost("/transfers", (IdempotencyKey? key) => OptionalHeaders.Seen(key?.Value));
+        app.MapDelete("/documents/{id:int}", (int id, IfMatch<long>? ifMatch) =>
+            OptionalHeaders.Seen(ifMatch is null ? null : Values.VersionText(ifMatch.Version)));
+
         app.MapGet("/limited", () => "ok").RequireRateLimiting(Values.OnePerWindowPolicy);
     }
 
@@ -813,6 +847,67 @@ internal static class GrpcChecks
             $"{host}: BadRequest lists every field violation with its code");
     }
 }
+
+/// <summary>
+/// The handlers that accept an optional header, and the checks that drive them. Each handler run is counted, so a check
+/// can tell that a refusal came before the handler.
+/// </summary>
+internal static class OptionalHeaders
+{
+    private static int _handlerRuns;
+
+    /// <summary>Counts a handler run and answers with the header value the handler saw (null when none was sent).</summary>
+    public static IResult Seen(string? value)
+    {
+        Interlocked.Increment(ref _handlerRuns);
+        return TypedResults.Ok(new SeenHeader(value));
+    }
+
+    /// <summary>
+    /// Sends one request per case — the header value to send (null: none), the expected status, and either the value the
+    /// handler must see or the code of the refusal — and checks that the handler ran exactly when the request passed.
+    /// </summary>
+    public static async Task VerifyAsync(
+        HttpClient client,
+        HttpMethod method,
+        string path,
+        string header,
+        string what,
+        params (string? Sent, HttpStatusCode Status, string? Seen, string? Code)[] cases)
+    {
+        foreach (var (sent, status, seen, code) in cases)
+        {
+            var runs = Volatile.Read(ref _handlerRuns);
+            using var request = new HttpRequestMessage(method, path);
+            if (sent is not null)
+            {
+                request.Headers.TryAddWithoutValidation(header, sent);
+            }
+
+            using var response = await client.SendAsync(request);
+            var label = sent is null ? $"{what}, no header" : $"{what}, header {sent}";
+
+            if (code is null)
+            {
+                Check.Status(response, status, label);
+                using var body = await Check.JsonAsync(response);
+                var actual = body.RootElement.GetProperty("seen");
+                Check.That(
+                    seen is null ? actual.ValueKind == JsonValueKind.Null : actual.GetString() == seen,
+                    $"{label}: the handler gets {seen ?? "null"}");
+                Check.That(Volatile.Read(ref _handlerRuns) == runs + 1, $"{label}: the handler runs");
+            }
+            else
+            {
+                (await Check.ProblemAsync(response, status, code, label)).Dispose();
+                Check.That(Volatile.Read(ref _handlerRuns) == runs, $"{label}: refused before the handler runs");
+            }
+        }
+    }
+}
+
+/// <summary>What a handler accepting an optional header saw: its value, or null when the request sent none.</summary>
+public sealed record SeenHeader(string? Seen);
 
 /// <summary>Assertions that stop the run with a message naming what failed.</summary>
 internal static class Check
