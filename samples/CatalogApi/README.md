@@ -75,7 +75,8 @@ curl -i localhost:5199/storefront/tenant-north/products?q=mouse
 answered 504. The engine's own message names internal endpoints (`Search provider 'meilisearch' at
 'http://localhost:7700' is unreachable.`), so it reaches the client only in Development; elsewhere the detail
 is generic and `errorCode` still says what happened. Set
-`SharedKernel:Presentation:WebApi:Problems:UnavailableRetryAfter` to add a `Retry-After` to every 503.
+`SharedKernel:Presentation:WebApi:Problems:UnavailableRetryAfter` to add a `Retry-After` to every 503 problem
+response (not to the `/ops/verify` report or `/health/ready`).
 
 ElasticSearch keeps serving. `/health/ready` reports the service unready while the index is not
 addressable. Restart the container and the storefront recovers with no intervention.

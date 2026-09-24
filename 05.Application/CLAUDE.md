@@ -180,7 +180,7 @@ seams and every bridge adapter were deleted.
 | `Authorization` | `AuthorizationBehavior<,>`; `IAuthorizeRequest` (`RequiredPermissions`, `PermissionMatch` defaulting to `All`); `PermissionMatch` enum (`All`/`Any`) |
 | `Validation` | `ValidationBehavior<,>` |
 | `Commands` | `ICommandScope` (`IsActive`, `IsNested`, `OnCompleted`); internal `CommandScope`; internal `CommandScopeBehavior<,>` |
-| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, `Fingerprint` — optional, defaults to `null`); `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`); `IdempotencyBeginResult`, `IdempotencyBeginStatus`; `IdempotencyBehavior<,>` (ctor `store, requestContext, commandScope, logger`); internal `IdempotencyKeyScope` (the per-tenant-and-caller key digest, see "The idempotency store contract"), `IdempotencyResponseSerializer`, `RequestFingerprint` |
+| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, `Fingerprint` — optional, defaults to `null`); `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`); `IdempotencyBeginResult`, `IdempotencyBeginStatus`; `IdempotencyErrorCodes` (`KeyRequired`, `InProgress`, `KeyReused`); `IdempotencyBehavior<,>` (ctor `store, requestContext, commandScope, logger`); internal `IdempotencyKeyScope` (the per-tenant-and-caller key digest, see "The idempotency store contract"), `IdempotencyResponseSerializer`, `RequestFingerprint` |
 | `Transaction` | `TransactionBehavior<,>` (over `Abstractions`' `IUnitOfWork`) |
 | `Auditing` | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot`); `AuditingBehavior<,>` (outer half) and internal `AuditingCommitBehavior<,>` (inner half), both registered by `AddAuditingBehavior()`; internal `AuditEntries` builder |
 | `Extensions` | `ApplicationBehaviorsBuilder` (`.AddXBehavior()` methods, `AddBehavior`, `AddDefaultBehaviors`, `Build`); `ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors()`; `PipelineStage` enum |
@@ -320,11 +320,11 @@ implements both in one file for a service that needs both).
   (`Started`) carries a `ReservationToken` — an opaque string the caller must pass back to
   `CompleteAsync`/`ReleaseAsync`; every other status leaves it `null`.
 - A key that is reserved but not yet completed returns `InProgress` — the behavior fails with
-  `Error.Conflict("idempotency.in_progress")` without calling `next()`.
+  `Error.Conflict(IdempotencyErrorCodes.InProgress)` (`idempotency.in_progress`) without calling `next()`.
 - A key already completed with the **same** fingerprint returns `Completed` with the stored response —
   deserialized and returned directly, replaying the original outcome, `next()` never called.
 - A key that exists (in-flight or completed) against a **different** fingerprint returns
-  `FingerprintMismatch` — `Error.Conflict("idempotency.key_reused")`.
+  `FingerprintMismatch` — `Error.Conflict(IdempotencyErrorCodes.KeyReused)` (`idempotency.key_reused`).
 - A reservation that is never completed or released expires after a store-defined in-flight TTL, so a
   crashed process can never permanently wedge a key.
 - `CompleteAsync(key, reservationToken, serializedResponse, ct)` and `ReleaseAsync(key, reservationToken, ct)`
@@ -368,7 +368,11 @@ SHA-256 digest, 64 lowercase hex characters.
 - **The layout is a stored format.** Changing a field, the order or the encoding orphans every stored reservation (a
   retry spanning the deploy runs again). A new layout needs a new label and an operational note. A golden-vector test
   (`Handle_ScopedKey_MatchesThePublishedV1Layout`, value computed outside .NET) pins it.
-- **Blank key → `idempotency.key_required`** (renamed from `idempotency.key_missing` to match `14.Presentation`).
+- **Blank key → `Error.Validation(IdempotencyErrorCodes.KeyRequired)`** (`idempotency.key_required`, renamed from
+  `idempotency.key_missing` to match `14.Presentation`). The three codes are the public constants of
+  `SharedKernel.Application.Behaviors.Idempotency.IdempotencyErrorCodes` (`KeyRequired`, `InProgress`, `KeyReused`);
+  clients and dashboards branch on them, so they never change. `00.Governance`'s `PresentationIdempotencyCodesTests`
+  pins `KeyRequired` to `14.Presentation`'s `PresentationErrorCodes.IdempotencyKeyRequired`.
 
 ---
 
@@ -480,6 +484,7 @@ Changes here that silently break another layer. Check the right column before me
 | `Transactions.IUnitOfWork`'s shape or contract (retry, rollback-only, `OnBeforeCommit`) | `06.Persistence`'s `EfUnitOfWork`/`UnitOfWorkCoordinator`; both `FakeUnitOfWork`s (`16.Testing/SharedKernel.Persistence.Testing`, `Behaviors.Tests/Support`) |
 | `Idempotency.IRequestIdempotencyStore`'s contract | `18.Idempotency`'s store implementations; `16.Testing`'s fake (both migrated onto the stateless `reservationToken`/`bool`-returning shape, same day as `SK.05.P544`) |
 | `IdempotencyKeyScope`'s layout (fields, order, encoding, label) or its 64-character output | Every reservation already stored in `18.Idempotency`'s Redis/PostgreSQL stores becomes unreachable on deploy (write an operational note); `18`'s EF Core `key` column (512) must still fit; the golden-vector test; `16.Testing`'s harness self-tests assert the 64-hex shape |
+| `IdempotencyErrorCodes`' values | `14.Presentation`'s `PresentationErrorCodes.IdempotencyKeyRequired` (pinned by `00.Governance`'s `PresentationIdempotencyCodesTests`); clients and dashboards that branch on the three codes |
 | `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence.EfCore.Auditing`'s writer; `16.Testing`'s fakes |
 | `Context.IRequestContext`'s shape | `13.ServiceDefaults.Security`'s `SecurityRequestContext`; `06.Persistence` (actor, tenant, ledger identity); `16.Testing`'s `TestRequestContext` |
 | `ICacheableQuery<TValue>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format |

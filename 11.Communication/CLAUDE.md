@@ -112,7 +112,8 @@ IdempotencyKeyDelegatingHandler  [internal sealed — transient]  (P-364/WO-056)
     // Opt-in only — added to the handler pipeline solely when
     // RestClientOptions.EnableIdempotencyKeyPropagation is true (default false).
     // Generates a hyphenated Guid.NewGuid().ToString() idempotency-key value and injects it
-    // under IdempotencyHeaders.IdempotencyKey ("x-idempotency-key") only when the header is
+    // under IdempotencyHeaders.IdempotencyKey ("Idempotency-Key" = 01.Core's
+    // WellKnownHeaders.IdempotencyKey, the name 14.Presentation reads; "x-idempotency-key" until P-562) only when the header is
     // not already present on the outgoing HttpRequestMessage. Never overwrites a
     // caller-supplied key.
     // StandardResilienceHandler retries re-send the SAME HttpRequestMessage instance, so the
@@ -419,7 +420,7 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - `AddSharedKernelGraphQL` must be called **before** any service-specific `AddGraphQL()` / `AddTypes()` calls — it establishes the base convention all types inherit.
 - `AllowIntrospection` must be `false` in non-development environments — consuming services are responsible for environment-gating this flag in their `Program.cs`.
 - `FilterBase<T>` and `SortBase<T>` are mandatory base classes. Direct registration of `FilterInputType<T>` or `SortInputType<T>` without the base wrapper is a platform violation.
-- GraphQL error responses must map to the same `ProblemDetails` shape as REST responses — `SharedKernelErrorFilter` handles this automatically when registered via `AddSharedKernelGraphQL`.
+- GraphQL errors get ProblemDetails-style extensions (`status`, `title`, `detail`, `type`) from `SharedKernelErrorFilter`, registered via `AddSharedKernelGraphQL`. This is not `14.Presentation`'s P-562 REST shape: `title` is the error message rather than the reason phrase, there is no `errorCode`, `detail` is the exception message in every environment (never redacted), and 412/429/503/504 fall back to the 500 `type`. Aligning the two is an open follow-up, not a guarantee.
 - `MaxPageSize` default is 100. Hard cap is 500 — `GraphQLOptions` validator rejects values above 500. Any override beyond 500 requires documented justification in the consuming service.
 - `AddSharedKernelGraphQL` is idempotent — calling it twice does not double-register conventions, error filters, or pagination settings.
 - **`GraphQLOptions` validation must run against the exact instance applied to HotChocolate (P-358/WO-056 correction):** `AddSharedKernelGraphQL` constructs `GraphQLOptions` locally and applies it directly to `ModifyPagingOptions`/`DisableIntrospection` — never via `IOptions<T>.Value` — so `GraphQLOptionsValidator`'s DI registration alone cannot fire. Call `GraphQLOptionsValidator`'s `Validate(name: null, options)` directly against the locally-constructed instance, immediately after `configure?.Invoke(options)` and before any HotChocolate configuration reads its values, throwing `OptionsValidationException` synchronously on failure. Same structural root cause and same fix pattern as `.Rest`'s `RestClientOptionsValidator`.
@@ -482,7 +483,8 @@ The following are unconditional violations that must be caught at design review:
 | Correlation-ID fallback (`.Rest` or `.Grpc`) synthesized via `Guid.NewGuid().ToString("N")` instead of `Guid.NewGuid().ToString()` (P-356/WO-056) | Hard violation — SK0011 non-canonical GUID format |
 | Direct `DateTime.UtcNow`/`DateTimeOffset.UtcNow` call anywhere in `.Internal` or `.Grpc` production code (e.g. computing a gRPC deadline instant) | Hard violation — SK0001; always inject `IClock` (P-357/P-359/WO-056) |
 | A generic `EnsureSuccessOrErrorAsync<T>`-shaped method reintroduced that returns a default/unpopulated value on success | Hard violation — P-361/WO-056 retired exactly this shape; use `ReadResultAsync<T>` for a deserialized payload, the non-generic `EnsureSuccessOrErrorAsync` for a status-check-only outcome |
-| `IdempotencyKeyDelegatingHandler` regenerates its key value on a Polly retry, or overwrites a caller-supplied `x-idempotency-key` header | Hard violation — P-364/WO-056; the same value must survive every retry of one logical call |
+| `IdempotencyKeyDelegatingHandler` regenerates its key value on a Polly retry, or overwrites a caller-supplied `Idempotency-Key` header | Hard violation — P-364/WO-056; the same value must survive every retry of one logical call |
+| The outbound idempotency header name retyped as a literal, or anything other than `WellKnownHeaders.IdempotencyKey` (`"Idempotency-Key"`) | Hard violation — P-562; `14.Presentation` reads only that name, so a key sent under another (the old `x-idempotency-key`) is never seen |
 | `Services.Any(d => ...)` called inside `AddRestClient` or `AddGrpcClient` per-registration (O(n) probe) | Violation — resolver presence captured once at builder construction |
 | `ServiceDiscoveryResolvingHandler` registered as a shared DI type when multiple clients need distinct service names | Hard violation — per-client closure factory required |
 | `SharedKernel.Contracts` project reference in `SharedKernel.Communication.Grpc.csproj` | Violation — gRPC package must not reference 04.Contracts |
@@ -609,7 +611,7 @@ services.AddSharedKernelRestCommunication()
 // On 2xx: Result<OrderDto>.Success(dto); on non-2xx: Result<OrderDto>.Failure(error from ProblemDetails)
 
 // REST client with opt-in idempotency-key propagation (P-364/WO-056) — attaches a stable
-// x-idempotency-key header before the first Polly attempt and reuses it across every retry
+// Idempotency-Key header (WellKnownHeaders.IdempotencyKey, P-562) before the first Polly attempt and reuses it across every retry
 services.AddSharedKernelRestCommunication()
         .AddRestClient<IPaymentServiceClient>(options => {
             options.BaseAddress = "http://payment-service";

@@ -30,7 +30,9 @@ builder.Services.AddSharedKernelMultiTenancy();
 builder.Services.Configure<TenantResolutionOptions>(
     builder.Configuration.GetSection(TenantResolutionOptions.SectionName));
 
-app.UseMiddleware<TenantResolutionMiddleware>();
+app.UseMiddleware<TenantResolutionMiddleware>();           // after UseAuthentication()
+// With 14.Presentation's UseSharedKernelWebApi(), in its hook instead:
+// app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));
 
 // Consume
 public class OrderService(ITenantProvider tenants)

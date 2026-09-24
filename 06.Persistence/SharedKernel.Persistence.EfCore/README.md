@@ -159,31 +159,41 @@ builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(new StaticEncry
 
 A KMS is asked for the key at startup, before the host takes traffic (at most 10 seconds; a slower answer is still
 used when it arrives), and again in the background every 5 minutes, so no request waits for the key service. If the
-key cannot be loaded at startup, a warning is logged (6025, 6026), the service starts anyway, and the first request
-that needs a version loads the key itself. Readiness does not wait for it: persistence works without the key, only
-ETags need it.
+key cannot be loaded at startup, a warning is logged (6025, 6026), the service starts anyway, and the next request
+that needs a version loads the key itself, blocking while it does. A failed load is not kept: while the key service
+stays down, every such request retries the load and fails with a server error. Readiness does not wait for it:
+persistence works without the key, only ETags need it.
 
-Read the version from a **tracked** instance:
+Read the version from a **tracked** instance, and let `SharedKernel.Presentation.WebApi` carry it over HTTP (as
+`samples/BillingApi` does):
 
 ```csharp
-// GET: IRepository tracks; IReadRepository never does, and the version lives in the change tracker.
+// Query handler: IRepository tracks; IReadRepository never does, and the version lives in the change tracker.
 var order = await orders.GetByIdAsync(id, ct);
-response.Headers.ETag = $"\"{ConcurrencyVersion.Get(db, order!)}\"";   // e.g. "AdU2…" — 28 characters, never a number
+return new VersionedOrder(order!.ToView(), ConcurrencyVersion.Get(db, order));   // "AdU2…": 28 characters, never a number
 
-// PUT with If-Match
-if (!EntityVersion.TryParse(request.Headers.IfMatch, out var ifMatch)) return Results.StatusCode(428);
-await orders.UpdateAsync(order, ifMatch, ct);      // stale → ConflictException at save
+// Endpoints
+app.MapGet("/orders/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+    sender.Send(new GetOrder(new OrderId(id)), ct)
+        .ToOkWithETag(found => found.Version.ToString(), found => found.Order));   // ETag; 304 on a matching If-None-Match
 
-catch (ConflictException ex) when (ConcurrencyVersion.TryGetCurrentVersion(ex, out var current))
-{
-    // 412 Precondition Failed, with the current version as the new ETag
-}
+// IfMatch<EntityVersion> requires If-Match before the handler runs: missing or * → 428, malformed or several
+// tags → 400, weak or not a version at all (a plain number) → 412.
+app.MapPut("/orders/{id:guid}", (Guid id, RenameOrderRequest body, IfMatch<EntityVersion> ifMatch, ISender sender,
+    CancellationToken ct) =>
+    sender.Send(new RenameOrder(new OrderId(id), body.Name, ifMatch.Version), ct).ToNoContent());
+
+// Command handler: a stale version fails the save with ConflictException (persistence.concurrency_conflict).
+await orders.UpdateAsync(order, command.ExpectedVersion, ct);
 ```
 
 The same version of the same aggregate always has the same ETag, so `If-None-Match` works. A token of another
 aggregate (even one with the same `xmin`), an altered token, or one sealed with a key the service does not know — for
-example issued before a restart that rotated the key — is a stale version: `ConflictException`, 412 on an endpoint that
-requires `If-Match`, never a 500. A running process keeps opening the tokens of the keys it used before a rotation.
+example issued before a restart that rotated the key — is a stale version: `ConflictException`
+(`persistence.concurrency_conflict`), never a 500. `SharedKernel.Presentation.WebApi` answers it 412 when the request
+carried `If-Match` or `If-None-Match`, and 409 otherwise; the 412 carries no ETag, so the client re-reads. A hand-written
+response can read the current version with `ConcurrencyVersion.TryGetCurrentVersion(exception, out var current)`. A
+running process keeps opening the tokens of the keys it used before a rotation.
 
 `ConcurrencyVersion.Get` throws for an entity the context does not track rather than inventing a version, and throws
 when no key provider is registered. A detached aggregate (deserialized, or loaded in another scope) must use
@@ -372,10 +382,10 @@ databases.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| ETag is `"0"` / every `If-Match` fails | The entity was read untracked. Read the version from `IRepository`, not `IReadRepository` — `ConcurrencyVersion.Get` now throws instead |
+| `InvalidOperationException` "… is not tracked by this context" from `ConcurrencyVersion.Get` | The entity was read untracked. Read the version from `IRepository`, not `IReadRepository` |
 | `InvalidOperationException` "no key provider is registered" from `ConcurrencyVersion.Get` | Versions are sealed with a subkey of the service's key provider. Register an `ISynchronousEncryptionKeyProvider` or `IEncryptionKeyProvider` (for example `AddSharedKernelKeyVaultKeyProvider()`) |
 | Every `If-Match` is 412 right after a deploy | The version key rotated: ETags issued before the restart are stale. Clients re-read and retry once |
-| Warning 6025 or 6026 at startup: the key that seals entity versions was not loaded | The KMS failed or was slow at startup. The service still runs; the first request that issues or checks an ETag loads the key, blocking once. Check the key service and its credentials |
+| Warning 6025 or 6026 at startup: the key that seals entity versions was not loaded | The KMS failed or was slow at startup. The service still runs; the next request that issues or checks an ETag loads the key, blocking while it does, and while the key service stays down every such request retries and fails with a server error. Check the key service and its credentials |
 | `dotnet ef migrations add` refuses an encrypted model | The design-time factory lacks `ConfigurePersistence` with `UseFieldEncryption()` |
 | Startup fails: "tenant tables are not protected" | A migration lacks `EnableTenantRowLevelSecurityForModel(TargetModel!)`, or a table was added later without `EnableTenantRowLevelSecurity("table")` |
 | Startup fails: runtime role can bypass row-level security | Connecting as a superuser or table owner. Use the role script; in local development set `RowLevelSecurity:PrivilegeCheck` to `Warn` |
@@ -406,8 +416,10 @@ WRITE        IRepository<T,TId> (always tracks): GetByIdAsync, AddAsync, UpdateA
 TRANSACTION  unitOfWork.ExecuteInTransactionAsync(async ct => { load + change inside }, ct). The delegate may run
              again: no HTTP calls or publishing inside; use OnBeforeCommit / ICommandScope.OnCompleted.
 ETAG         ConcurrencyVersion.Get(db, trackedEntity) -> EntityVersion; ToString() is the ETag value (an opaque
-             token, never xmin). EntityVersion.TryParse(ifMatch, out v); UpdateAsync(agg, v); catch ConflictException +
-             ConcurrencyVersion.TryGetCurrentVersion -> 412. Never Get on an IReadRepository result. Needs a registered
+             token, never xmin); with 14.Presentation .ToOkWithETag(x => x.Version.ToString(), map). Write: an
+             IfMatch<EntityVersion> parameter (or RequireIfMatch()) -> UpdateAsync/DeleteAsync(agg, ifMatch.Version);
+             stale/foreign/altered -> ConflictException -> 412 when the request carries If-Match/If-None-Match (409
+             otherwise); no catch needed. Never Get on an IReadRepository result. Needs a registered
              ISynchronousEncryptionKeyProvider/IEncryptionKeyProvider. Never build a version from a number.
 TENANT       Tenant comes from IRequestContext.TenantId; never from a header, route or body.
 CROSSTENANT  using (crossTenantScope.Enter("reason")) { db.Database.UseCrossTenantConnection(); ...

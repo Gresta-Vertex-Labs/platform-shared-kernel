@@ -57,7 +57,7 @@ public async Task<Result<Guid>> HandleAsync(CreatePayout command, CancellationTo
 | [**Validation.FluentValidation**](SharedKernel.Validation.FluentValidation/README.md) | A rule for every Validation type: `MustBeValidIban()`, `MustBeValidVatNumber(x => x.Country)` … | FluentValidation |
 | [**DataPrivacy**](SharedKernel.DataPrivacy/README.md) | 23 kinds of personal data, including every GDPR and KVKK special category, as attributes that mask values in logs; masking helpers, HMAC pseudonymization, idempotent data-subject export and erasure | — |
 | [**Localization**](SharedKernel.Localization/README.md) | Typed message definitions whose errors carry their values, named placeholders, one immutable catalog from JSON or `.resx`, validated at startup | — |
-| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
+| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant (from the accessor your service registers) applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
 
 Every package targets `net10.0`. A dash means the package needs nothing beyond the .NET runtime and
 `Microsoft.Extensions.*` abstractions.
@@ -220,7 +220,7 @@ return OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId);   // tr-TR c
 ```csharp
 public static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
 
-if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }   // targets the current user and tenant; never throws
+if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }   // targets the user and tenant your accessor reports; never throws
 ```
 
 **Compression: a cut-off payload is an error, not a shorter result.**
@@ -316,7 +316,8 @@ LOCALIZE    LocalizedMessage.Define<T..>(code, "text {name}", "name").ToError(ty
             AddLocalizationCatalog(c => c.AddJsonDirectory(path)), once.
 FLAGS       FeatureFlag.Boolean / String / Integer / Double / Object<T>; inject OpenFeature IFeatureClient (scoped);
             IsEnabledAsync / GetValueAsync / GetDetailsAsync;
-            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)).
+            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)); register your own
+            IFeatureTargetingContextAccessor for targeting (none by default; never read from baggage).
 DI          TryAdd everywhere: register overrides BEFORE the package call. AddLocalizationCatalog and
             AddSharedKernelFeatureManagement throw on a second call.
 FORBIDDEN   DateTime.UtcNow; throwing for expected failures; interpolated error codes; secrets in messages;

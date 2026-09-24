@@ -104,6 +104,24 @@ app.MapDefaultHealthCheckEndpoints();                  // "/health/live", "/heal
 app.Run();
 ```
 
+A service that also uses `14.Presentation`'s `app.UseSharedKernelWebApi()` does not call `UseAuthentication()`,
+`UseRateLimiter()` or `UseAuthorization()` itself: that method adds them, in a fixed order, and takes the middleware
+above in its hooks.
+
+```csharp
+app.UseSharedKernelWebApi(pipeline => pipeline
+    .AtStart(a =>
+    {
+        a.UseMiddleware<MtlsForwardedHeaderMiddleware>(); // [pkg .Security.Mtls] before UseForwardedHeaders() and authentication
+        a.UseForwardedHeaders();                          // when behind a proxy
+    })
+    .BeforeAuthorization(a =>
+    {
+        a.UseMiddleware<TenantResolutionMiddleware>();    // after authentication
+        a.UseRequestLocalization();                       // [pkg .Localization] so 401, 403 and 429 answers are translated
+    }));
+```
+
 ### Ordering rules
 
 1. `builder.AddServiceDefaults()` must be the **first** call in `Program.cs`, before any other `SharedKernel.*.Add...` extension. It wires OpenTelemetry and registers only the base health check infrastructure (the always-on `StartupGateHealthCheck` plus the `/health/live` and `/health/ready` endpoint mappings) — it never registers a dependency-specific check.
@@ -160,7 +178,7 @@ builder.AddSharedKernelRateLimiting(options =>
 
 #### Rejection body
 
-This domain never references `14.Presentation`, and `AddSharedKernelRateLimiting()` leaves `RateLimiterOptions.OnRejected` unset. On its own that gives ASP.NET Core's default rejection: a bare `429` with no body. A service that also uses `14.Presentation`'s `SharedKernel.Presentation.WebApi` gets the platform's RFC 9457 body with nothing to write — `AddSharedKernelWebApi()` fills `OnRejected` whenever nothing else has — and `UseSharedKernelWebApi()` adds `UseRateLimiter()` to the pipeline itself, after authentication and authorization so a policy can partition by the caller:
+This domain never references `14.Presentation`, and `AddSharedKernelRateLimiting()` leaves `RateLimiterOptions.OnRejected` unset. On its own that gives ASP.NET Core's default rejection: a bare `429` with no body. A service that also uses `14.Presentation`'s `SharedKernel.Presentation.WebApi` gets the platform's RFC 9457 body with nothing to write — `AddSharedKernelWebApi()` fills `OnRejected` whenever nothing else has — and `UseSharedKernelWebApi()` adds `UseRateLimiter()` to the pipeline itself: after authentication, so a policy can partition by the caller, and before authorization, so requests refused with 401 or 403 still count against the limit:
 
 ```csharp
 builder.AddSharedKernelWebApi();                       // 14.Presentation
@@ -235,11 +253,11 @@ Resolved as an **optional** DI service — `null` means "not registered," and th
 `[LoggerMessage]`-authored log record through the same OTLP pipeline as traces and metrics —
 `IncludeScopes` and `IncludeFormattedMessage` are both enabled, and a `BaggageLogRecordProcessor`
 copies the platform's two `System.Diagnostics.Activity` baggage items onto each log record's
-attributes at export time. No application-code call-site changes are needed to get this.
+attributes as the record is emitted, before export. No application-code call-site changes are needed to get this.
 
 | Log attribute | Written by |
 | --- | --- |
-| `correlation.id` | `14.Presentation`'s correlation-id middleware: the caller's `X-Correlation-Id` when valid, otherwise a new id — with **zero** `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` |
+| `correlation.id` | `14.Presentation`'s correlation-id middleware: the caller's `X-Correlation-Id` when it is a single valid value, otherwise the request's W3C trace id (a new GUID when there is no trace) — with **zero** `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` |
 | `TenantId` | `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware` (with `AddSharedKernelMultiTenancy()`): the resolved tenant, or `Guid.Empty` when none resolves, so log aggregation can tell "no tenant resolved" from "enrichment never wired" |
 
 **Nothing else is copied (P-562 X2).** Baggage also comes from outside: a caller's W3C `baggage`
@@ -253,8 +271,8 @@ you want on a log record belongs in the log statement itself.
 instrumentation used to read the request's `baggage` header into `Baggage.Current`, and the HttpClient and
 gRPC client instrumentations then sent it to every downstream service. `AddSharedKernelTelemetry`
 decorates the default propagator so a request's baggage is dropped there; trace context is still read,
-and baggage your service sets itself (`Baggage.SetBaggage`, or `Activity` baggage such as the correlation
-id) still leaves with outgoing calls. The request's `Activity` is the other store: `14.Presentation`'s
+and baggage your service sets itself still leaves with outgoing calls: `Baggage.SetBaggage` items and,
+while `Baggage.Current` is empty, `Activity` baggage such as the correlation id. The request's `Activity` is the other store: `14.Presentation`'s
 WebApi core clears the caller's items there (`TrustInboundBaggage`, off by default). A service serving
 HTTP without that package keeps the framework default, so a caller's `TenantId` or `correlation.id`
 item stays on the activity unless the middleware above replaces it.

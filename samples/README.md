@@ -21,6 +21,8 @@ Each service registers its HTTP boundary with `builder.AddSharedKernelWebApi()` 
 search or messaging call returns with one typed-result call — `ToOk`, `ToCreated`, `ToAccepted`, `ToNoContent`,
 `ToOkWithETag`, `ToHttpResult` — and never branch on `IsSuccess` or choose a status code for a failure. Every error,
 returned or thrown, is an RFC 9457 `application/problem+json` body carrying `errorCode`, `traceId` and `correlationId`.
+The one exception is CatalogApi's deployment reports (`/ops/provision`, `/ops/indexes`, `/ops/verify`), which list an
+outcome per index in their own body; `/ops/verify` answers 503 with that report when an index is not ready.
 A conflict that shows a precondition the request sent in a header (`If-Match`, `If-None-Match`) to be false — a stale
 version, a file that already exists — is 412; every other conflict is 409.
 

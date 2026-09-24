@@ -933,8 +933,11 @@ FakeRepository<TAggregate,TId> : IRepository<,>, IReadRepository<,>
     ctor(Func<TAggregate,TId> idSelector, IEnumerable<TAggregate>? seed = null); Items, Seed, Reset, SimulateFailure
     Evaluates specifications in memory with the production rules: soft-deleted rows hidden from id lookups, ordering
     before paging, call-site paging (ListPagedAsync/ListKeysetAsync with the production cursor encoding — a fake
-    cursor decodes on the real repository), projections, streams. Writes apply immediately (NOT rolled back by
-    FakeUnitOfWork — documented difference).
+    cursor decodes on the real repository), projections, streams. Writes apply immediately; registered next to a
+    FakeUnitOfWork, a rollback restores which aggregates it holds (not in-place changes to an aggregate object).
+    UpdateAsync/DeleteAsync(aggregate, expectedVersion) ignore the version: since P-562 X4 a real EntityVersion is an
+    opaque token only the real repository's keys issue, so a test passes EntityVersion.None and tests concurrency
+    and ETags against PostgreSQL.
 FakeUnitOfWork : IUnitOfWork (05.Application.Abstractions)
     ExecuteInTransactionAsync runs the operation, saves, runs OnBeforeCommit callbacks, commits; exception or failed
     Result rolls back; joined failure → rollback-only (TransactionRolledBackException); TransientFailures = n replays

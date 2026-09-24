@@ -37,7 +37,9 @@ builder.AddMtlsForwardedHeaderCertificate(o =>
 });
 
 var app = builder.Build();
-app.UseMiddleware<MtlsForwardedHeaderMiddleware>();        // you wire the middleware yourself
+app.UseMiddleware<MtlsForwardedHeaderMiddleware>();        // you wire the middleware yourself, before authentication
+// With 14.Presentation's UseSharedKernelWebApi(), in its first hook (before any UseForwardedHeaders()):
+// app.UseSharedKernelWebApi(p => p.AtStart(a => a.UseMiddleware<MtlsForwardedHeaderMiddleware>()));
 ```
 
 `HeaderName` has no default because nginx-ingress, Envoy, Istio, and HAProxy each use a different

@@ -72,7 +72,7 @@ app.Run();
 
 | Member | Purpose |
 | --- | --- |
-| `AddServiceDefaults()` | OpenTelemetry traces, metrics, and logs — with ambient `TenantId`/`CorrelationId` log enrichment — plus the base health checks. A caller's `baggage` header never fills OpenTelemetry's baggage store, and only the platform's two keys reach log records (see below) |
+| `AddServiceDefaults()` | OpenTelemetry traces, metrics, and logs — with ambient `correlation.id`/`TenantId` log enrichment — plus the base health checks. A caller's `baggage` header never fills OpenTelemetry's baggage store, and only the platform's two keys reach log records (see below) |
 | `MapDefaultHealthCheckEndpoints(requireAuthorization)` | Maps `/health/live` (`live`-tagged checks only) and `/health/ready` (`ready`-tagged checks only) |
 | `StartupGate` | Keeps `/health/ready` unhealthy until you call `MarkReady()` |
 | `HealthCheckNames`, `HealthCheckTags` | The shared names and tags every integration package uses |
@@ -99,8 +99,8 @@ W3C `baggage` is a request header like any other: an anonymous caller can send
   copied. Anything else you want on a log record belongs in the log statement.
 - **OpenTelemetry's `Baggage.Current`** is never filled from an incoming request, so the HttpClient and gRPC
   client instrumentations cannot forward a caller's items downstream. Trace context is still read.
-  Baggage your service sets itself — `Baggage.SetBaggage(...)`, or `Activity` baggage such as the
-  correlation id — still leaves with outgoing calls.
+  Baggage your service sets itself still leaves with outgoing calls: `Baggage.SetBaggage(...)` items and,
+  while `Baggage.Current` is empty, `Activity` baggage such as the correlation id.
 
 The request's `Activity` is cleared of the caller's items by `14.Presentation`'s WebApi core
 (`TrustInboundBaggage`, off by default); this package does not read that setting. Without that package, the
