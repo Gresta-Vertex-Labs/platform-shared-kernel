@@ -109,6 +109,7 @@ so the OpenAPI document declares no security scheme (`Bearer = false`). Each wou
 infrastructure and obscure the composition. For the same reason the pipeline
 stops at the preset: `AddAuthorizationBehavior()`, `AddIdempotencyBehavior()`,
 `AddTransactionBehavior()`, `AddAuditingBehavior()` and `AddCachingBehaviors()` each need a seam
-(`IRequestContext`, `IRequestIdempotencyStore`, `IUnitOfWork`, `IAuditTrailWriter`,
-`ICacheService`) registered first, and `Build()` throws if it is missing. A real service swaps
+(`IRequestContext`; `IRequestIdempotencyStore` and `IRequestContext`, since keys are reserved per
+tenant and caller; `IUnitOfWork`; `IAuditTrailWriter`; `ICacheService`) registered first, and
+`Build()` throws if it is missing. A real service swaps
 `InMemoryOrderRepository` for `SharedKernel.Persistence.EfCore`'s `EfRepository<Order, OrderId>`.

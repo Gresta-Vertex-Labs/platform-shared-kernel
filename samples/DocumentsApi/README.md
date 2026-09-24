@@ -28,9 +28,9 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 | Endpoint | Storage call |
 | --- | --- |
 | `PUT /files/{store}/{**key}` | `UploadAsync` — the request body streamed straight in, up to 1 GiB; `If-None-Match: *` = create only, `If-Match` = replace that version, `X-Checksum-Sha256` verified by the provider, `X-Meta-*` stored as metadata |
-| `GET /files/{store}/{**key}` | `DownloadAsync` — streamed back; a `Range` header returns 206 |
+| `GET /files/{store}/{**key}` | `DownloadAsync` — streamed back; a `Range` header returns 206; `If-Match` pins the version |
 | `GET /properties/{store}/{**key}` | `GetPropertiesAsync` |
-| `DELETE /files/{store}/{**key}` | `DeleteAsync` |
+| `DELETE /files/{store}/{**key}` | `DeleteAsync`; `If-Match` asks for a conditional delete (MinIO ignores it, see below) |
 | `POST /delete-many/{store}` | `DeleteManyAsync` |
 | `GET /list/{store}?prefix=&recursive=&pageSize=&continuationToken=` | `ListPageAsync` |
 | `POST /copy` | `CopyToAsync` — within a store, across stores and across providers |
@@ -54,9 +54,10 @@ app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext
 ```
 
 So an unknown store, a missing tenant and every `storage.*` failure reach the client as the same RFC 9457
-`application/problem+json` body with its `errorCode`: `storage.not_found` 404, `storage.already_exists` and
-`storage.precondition_failed` 409, `storage.checksum_mismatch` 400, `storage.unavailable` 503 (throttling or an
-outage), `storage.not_supported` 500 (OBS refusing a conditional write).
+`application/problem+json` body with its `errorCode`: `storage.not_found` 404, `storage.checksum_mismatch` 400,
+`storage.unavailable` 503 (throttling or an outage), `storage.not_supported` 500 (OBS refusing a conditional write).
+The two conflicts, `storage.already_exists` and `storage.precondition_failed`, are 412 or 409 depending on the request
+(below).
 
 Request bodies are capped at 4 MiB platform-wide (`SharedKernel:Presentation:WebApi:Limits:MaxRequestBodySize`).
 The upload endpoint lifts the cap for itself with `.WithRequestSizeLimit(FileEndpoints.MaxUploadBytes)` (1 GiB):
@@ -64,6 +65,26 @@ its body streams into the store, so the limit bounds the object, not memory. Any
 provider through the presigned multipart endpoints. Kestrel enforces the limits, which the in-memory test server
 does not run, so `FileScenarios.Only_the_upload_endpoint_lifts_the_request_body_limit` pins the override by its
 endpoint metadata.
+
+## Preconditions: 412 or 409
+
+`storage.already_exists` and `storage.precondition_failed` are conflicts. When the client sent the condition in a
+request header, the failure is exactly what 412 Precondition Failed means — the precondition it sent is false — so that
+is the answer; without such a header the same error is an ordinary 409. The endpoints never choose between the two:
+the status comes from the error and the request.
+
+| Request | Error | Answer |
+| --- | --- | --- |
+| `PUT` with `If-None-Match: *`, and the file exists | `storage.already_exists` | 412 |
+| `PUT` or `GET` with the `If-Match` of an older version | `storage.precondition_failed` | 412 |
+| `POST /copy` with `"createOnly": true`, and the destination exists (the condition is in the body) | `storage.already_exists` | 409 |
+| an `If-Match` that is not one strong entity tag: an ETag without its quotes, `*`, a list | `precondition.invalid` | 400 |
+
+The endpoints read `If-Match` with the presentation package's `GetIfMatchTags()` and refuse a header that does not name
+exactly one strong entity tag rather than ignore it: ignoring it would turn the client's conditional write into an
+unconditional one. A store that cannot honor a precondition refuses it too: OBS answers `storage.not_supported`. One
+gap is not the sample's to close: **MinIO ignores `If-Match` on deletes** (`RELEASE.2025-09-07`, the image the tests
+use), so a delete pinned to an older version removes the current file. The tests pin conditional reads and writes only.
 
 ## Run the tests
 

@@ -18,19 +18,21 @@ way a real microservice would.
 
 Each service registers its HTTP boundary with `builder.AddSharedKernelWebApi()` and adds it to the pipeline with
 `app.UseSharedKernelWebApi()` before mapping any endpoint. Endpoints map the `Result` a command, query or storage,
-search or messaging call returns with one typed-result call — `ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`,
-`ToHttpResult` — and never branch on `IsSuccess` or choose a status code for a failure. Every error, returned or
-thrown, is an RFC 9457 `application/problem+json` body carrying `errorCode`, `traceId` and `correlationId`.
+search or messaging call returns with one typed-result call — `ToOk`, `ToCreated`, `ToAccepted`, `ToNoContent`,
+`ToOkWithETag`, `ToHttpResult` — and never branch on `IsSuccess` or choose a status code for a failure. Every error,
+returned or thrown, is an RFC 9457 `application/problem+json` body carrying `errorCode`, `traceId` and `correlationId`.
+A conflict that shows a precondition the request sent in a header (`If-Match`, `If-None-Match`) to be false — a stale
+version, a file that already exists — is 412; every other conflict is 409.
 
 Beyond that, each sample shows what its domain needs from the boundary:
 
 | Sample | Shows |
 |---|---|
 | `OrderApi` | A versioned API with OpenAPI documents and a Scalar reference (`AddSharedKernelOpenApi`, Development only) |
-| `BillingApi` | Optimistic concurrency (`ToOkWithETag`, `RequireIfMatch()`: 304, 428, 412); `RequirePermission()` on a route group |
-| `DocumentsApi` | Lifting the 4 MiB request-body limit for one streaming endpoint (`WithRequestSizeLimit`) |
+| `BillingApi` | Optimistic concurrency with opaque versions (`ToOkWithETag`, an `IfMatch<EntityVersion>` parameter: 304, 428, 400, 412); `RequirePermission()` on a route group |
+| `DocumentsApi` | Lifting the 4 MiB request-body limit for one streaming endpoint (`WithRequestSizeLimit`); storage preconditions from `If-None-Match`/`If-Match` as 412, the same conflict without a header as 409 |
 | `CatalogApi` | An engine outage as 503 and a timeout as 504, with internal detail shown only in Development |
-| `ShippingApi` | 202 Accepted with a `Location` for asynchronous work; a broker outage as 503 |
+| `ShippingApi` | 202 Accepted with a `Location` for asynchronous work (`ToAccepted`); a broker outage as 503 |
 
 ## Why these use PackageReference
 
