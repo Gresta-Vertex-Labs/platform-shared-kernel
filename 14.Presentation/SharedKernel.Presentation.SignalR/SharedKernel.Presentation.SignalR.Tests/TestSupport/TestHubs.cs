@@ -43,6 +43,8 @@ public static class HubMessages
 
     public const string InternalDetail = "http://search.internal:9200 refused the connection.";
 
+    public const string TimeoutDetail = "The query to http://search.internal:9200 timed out after 30 s.";
+
     public const string Secret = "Server=db.internal;Password=secret";
 }
 
@@ -64,6 +66,11 @@ public sealed class ErrorsHub(InvocationCounter counter) : Hub
     public string ThrowUnavailable() => throw Error.Unavailable("search.unreachable", HubMessages.InternalDetail).ToException();
 
     public string ThrowUnknown() => throw new InvalidOperationException(HubMessages.Secret);
+
+    public string ThrowTimeout() => throw new TimeoutException(HubMessages.TimeoutDetail);
+
+    // A timeout inside the service, as HttpClient reports one: a cancellation the connection did not cause.
+    public string ThrowInternalCancellation() => throw new TaskCanceledException(HubMessages.TimeoutDetail);
 
     public string ThrowHubException() => throw new HubException("kept exactly as thrown");
 

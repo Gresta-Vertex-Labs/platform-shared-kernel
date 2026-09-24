@@ -14,6 +14,8 @@ SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions
 SharedKernel.Presentation.WebApi.Errors.ErrorTypeStatusCodeMap
 SharedKernel.Presentation.WebApi.Errors.PresentationErrorCodes
 SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames
+SharedKernel.Presentation.WebApi.Http.IETagResponseMetadata
+SharedKernel.Presentation.WebApi.Http.IETagResponseMetadata.StatusCodes.get -> System.Collections.Generic.IReadOnlyList<int>!
 SharedKernel.Presentation.WebApi.Http.IIfMatchRequiredMetadata
 SharedKernel.Presentation.WebApi.Idempotency.IIdempotencyKeyRequiredMetadata
 SharedKernel.Presentation.WebApi.IdempotencyKey
@@ -151,6 +153,7 @@ const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.Error
 const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.Errors = "errors" -> string!
 const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.Exception = "exception" -> string!
 const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.TraceId = "traceId" -> string!
+const SharedKernel.Presentation.WebApi.IdempotencyKey.MaxLength = 256 -> int
 const SharedKernel.Presentation.WebApi.Options.WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern = "^[A-Za-z0-9\\-_:.]+$" -> string!
 override SharedKernel.Presentation.WebApi.IdempotencyKey.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.IdempotencyKey.ToString() -> string!

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -71,6 +72,11 @@ public sealed class MvcOrdersController : ControllerBase
     [HttpGet("{id:int}")]
     [RequirePermission(OrdersApi.ReadPermission)]
     public Results<Ok<Order>, ErrorHttpResult> Get(int id) => Result<Order>.Success(new Order(id)).ToOk();
+
+    /// <summary>Returns the order with its version as an ETag.</summary>
+    [HttpGet("{id:int}/receipt")]
+    public Results<OkWithETag<Order>, ErrorHttpResult> Receipt(int id) =>
+        Result<Order>.Success(new Order(id)).ToOkWithETag(order => order.Id.ToString(CultureInfo.InvariantCulture));
 
     /// <summary>Requires an idempotency key.</summary>
     [HttpPost]

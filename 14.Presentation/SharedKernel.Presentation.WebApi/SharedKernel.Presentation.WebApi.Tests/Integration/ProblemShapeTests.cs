@@ -154,13 +154,16 @@ public sealed class ProblemShapeTests : IClassFixture<FullStackHost>
     [InlineData(WebApiTestHost.Development)]
     public async Task R9_MinimalApiParameterThatCannotBeBound_Is400_WithoutDotNetTypeNames(string environment)
     {
+        // Lower-case letters outside hexadecimal: the value cannot occur by chance in the body's random trace and
+        // correlation ids (hex digits, or an upper-case request id), so finding it would mean it was echoed.
+        const string unbindable = "seventeen";
         await using var app = await StartBindingHostAsync(environment);
 
-        using var response = await app.GetTestClient().GetAsync("/numbers?id=abc");
+        using var response = await app.GetTestClient().GetAsync($"/numbers?id={unbindable}");
 
         var problem = await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, ErrorCodes.Validation.InvalidFormat);
         problem.Detail().Should().Be("The request is not valid.");
-        problem.GetRawText().Should().NotContain("Int32").And.NotContain("int id").And.NotContain("abc");
+        problem.GetRawText().Should().NotContain("Int32").And.NotContain("int id").And.NotContain(unbindable);
     }
 
     [Theory]

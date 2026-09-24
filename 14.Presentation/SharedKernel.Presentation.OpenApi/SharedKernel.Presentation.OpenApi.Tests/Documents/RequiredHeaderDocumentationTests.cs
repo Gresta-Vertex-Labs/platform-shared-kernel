@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -6,22 +7,49 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Presentation.WebApi.Idempotency;
+using SharedKernel.Primitives.Propagation;
 using Xunit;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.Documents;
 
 /// <summary>
 /// The Idempotency-Key and If-Match headers the WebApi core requires, documented as required parameters with the
-/// responses that refuse a request without them — alike for a convention, an attribute and a handler parameter.
+/// responses that refuse a request without them — alike for a convention, an attribute and a handler parameter — and
+/// the Idempotency-Key schema admitting exactly the values the core accepts.
 /// </summary>
 public sealed class RequiredHeaderDocumentationTests
 {
     private const string IdempotencyKeyHeader = "Idempotency-Key";
 
     private const string IfMatchHeader = "If-Match";
+
+    /// <summary>Header values at the edges of the Idempotency-Key rule, with whether the server accepts each.</summary>
+    private static readonly (string Value, bool Accepted)[] IdempotencyKeyHeaderValues =
+    [
+        ("k", true),
+        ("pay-7f3a", true),
+        ("\"pay-7f3a\"", true),
+        (new string('k', IdempotencyKey.MaxLength), true),
+        ($"\"{new string('k', IdempotencyKey.MaxLength)}\"", true),
+        ("\"", true), // a one-character key
+        ("\"k", true), // a quote that encloses nothing is part of the key
+        ("k\"", true),
+        ("\"k\"k\"", true), // one pair of quotes removed: k"k
+        ("a,b;c=d", true),
+        (new string('k', IdempotencyKey.MaxLength + 1), false),
+        ($"\"{new string('k', IdempotencyKey.MaxLength + 1)}\"", false),
+        ($"\"{new string('k', IdempotencyKey.MaxLength)}", false), // not enclosed, so one character too long
+        ("\"\"", false), // encloses no key
+        (string.Empty, false),
+        ("has space", false),
+        ("\" k\"", false),
+        ("tab\tkey", false),
+        ("anahtar-ş", false),
+    ];
 
     [Fact]
     public async Task RequireIdempotencyKey_DocumentsARequiredHeader_And400()
@@ -33,7 +61,8 @@ public sealed class RequiredHeaderDocumentationTests
         parameter.Should().NotBeNull();
         parameter!["required"]!.GetValue<bool>().Should().BeTrue();
         parameter["schema"]!["type"]!.GetValue<string>().Should().Be("string");
-        parameter["schema"]!["maxLength"]!.GetValue<int>().Should().Be(256);
+        parameter["schema"]!["pattern"].Should().NotBeNull("the pattern states the characters and the length of a key");
+        parameter["schema"]!["maxLength"].Should().BeNull("a quoted key is longer than the key itself; the pattern bounds both forms");
 
         ProblemResponseDescription(operation, "400").Should()
             .Contain(PresentationErrorCodes.IdempotencyKeyRequired)
@@ -41,6 +70,25 @@ public sealed class RequiredHeaderDocumentationTests
             .And.NotContain(PresentationErrorCodes.PreconditionInvalid);
         operation["responses"]!["412"].Should().BeNull();
         operation["responses"]!["428"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task IdempotencyKeySchema_AdmitsExactlyTheHeaderValuesTheServerAccepts()
+    {
+        // A client that validates the header against the document must send every key the server takes and no other:
+        // a quoted key of IdempotencyKey.MaxLength characters is two characters longer than that.
+        var schema = HeaderParameter((await GetDocumentAsync()).Operation("/v1/orders", "post"), IdempotencyKeyHeader)!["schema"]!;
+        var pattern = new Regex(schema["pattern"]!.GetValue<string>(), RegexOptions.ECMAScript);
+
+        foreach (var (value, accepted) in IdempotencyKeyHeaderValues)
+        {
+            var request = new DefaultHttpContext();
+            request.Request.Headers[WellKnownHeaders.IdempotencyKey] = value;
+            var what = $"\"{value}\" ({value.Length} characters)";
+
+            (request.GetIdempotencyKey() is not null).Should().Be(accepted, $"the server {(accepted ? "accepts" : "refuses")} {what}");
+            pattern.IsMatch(value).Should().Be(accepted, $"the schema {(accepted ? "admits" : "refuses")} {what}, as the server does");
+        }
     }
 
     [Fact]

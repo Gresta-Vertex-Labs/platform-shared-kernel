@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi;
 using SharedKernel.Presentation.OpenApi.Routing;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Presentation.WebApi.Idempotency;
@@ -15,34 +16,33 @@ namespace SharedKernel.Presentation.OpenApi.Documents;
 
 /// <summary>
 /// Documents on every operation what the WebApi core enforces for its endpoint: the problem response of any error,
-/// the security requirement and 401/403 of a protected endpoint, and the <c>Idempotency-Key</c> and <c>If-Match</c>
-/// headers it requires, with the responses that refuse a request without them.
+/// the security requirement and 401/403 of a protected endpoint, the <c>Idempotency-Key</c> and <c>If-Match</c>
+/// headers it requires, with the responses that refuse a request without them, and the <c>ETag</c> header of the
+/// responses that carry one.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The header requirements are read from the endpoint's metadata, which the core adds alike for a convention
 /// (<c>RequireIdempotencyKey()</c>, <c>RequireIfMatch()</c>), an attribute and an <c>IdempotencyKey</c> or
 /// <c>IfMatch&lt;TVersion&gt;</c> handler parameter, so all of them are documented alike. The API Explorer does not
-/// describe such a parameter itself: a type bound by <c>BindAsync</c> is neither a body nor a query value.
+/// describe such a parameter itself: a type bound by <c>BindAsync</c> is neither a body nor a query value. The
+/// responses that carry an <c>ETag</c> are read from the <see cref="IETagResponseMetadata"/> an
+/// <c>OkWithETag&lt;T&gt;</c> result adds.
 /// </para>
-/// <para>Only adds: a response, parameter or security requirement the operation already declares is kept.</para>
+/// <para>Only adds: a response, parameter, header or security requirement the operation already declares is kept.</para>
 /// </remarks>
 internal sealed class PlatformOperationTransformer : IOpenApiOperationTransformer
 {
     /// <summary>The response key OpenAPI reserves for every status an operation does not list.</summary>
     internal const string DefaultResponseKey = "default";
 
-    private const string IdempotencyKeyDescription =
-        "Identifies this request, so that a retry of it is recognized: 1 to 256 visible ASCII characters, optionally "
-        + "enclosed in double quotes. A request without a valid key is answered 400.";
-
     private const string IfMatchDescription =
         "The entity tag of the version this request changes, as the ETag of a read returned it: exactly one strong "
         + "entity tag, such as \"42\".";
 
-    private const string IdempotencyKeyRefused =
-        $"The Idempotency-Key header is missing ({PresentationErrorCodes.IdempotencyKeyRequired}) or is not 1 to 256 "
-        + $"visible ASCII characters ({PresentationErrorCodes.IdempotencyKeyInvalid}).";
+    private const string ETagDescription =
+        "The version of the resource, as a strong entity tag such as \"42\". Send it in If-None-Match to have a read of "
+        + "the unchanged resource answered 304, or in If-Match to change this version.";
 
     private const string IfMatchMalformed =
         $"The If-Match header is malformed or names more than one entity tag ({PresentationErrorCodes.PreconditionInvalid}).";
@@ -55,6 +55,28 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
     private const string IfMatchMissing =
         $"The If-Match header is missing or * ({PresentationErrorCodes.PreconditionRequired}): the request must name "
         + "the version it changes.";
+
+    /// <summary>A key: 1 to <see cref="IdempotencyKey.MaxLength"/> visible ASCII characters (0x21–0x7E).</summary>
+    private static readonly string IdempotencyKeyCharacters =
+        string.Create(CultureInfo.InvariantCulture, $"[!-~]{{1,{IdempotencyKey.MaxLength}}}");
+
+    /// <summary>
+    /// The <c>pattern</c> of the <c>Idempotency-Key</c> schema, admitting exactly the values the core accepts: a key in
+    /// one pair of double quotes (two characters longer than the key) or a key alone, but never <c>""</c>, which
+    /// encloses no key. A JSON Schema pattern is an ECMA-262 regular expression.
+    /// </summary>
+    private static readonly string IdempotencyKeyPattern =
+        $"^(?!\"\"$)(?:\"{IdempotencyKeyCharacters}\"|{IdempotencyKeyCharacters})$";
+
+    private static readonly string IdempotencyKeyDescription = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Identifies this request, so that a retry of it is recognized: 1 to {IdempotencyKey.MaxLength} visible ASCII "
+        + $"characters, optionally enclosed in double quotes. A request without a valid key is answered 400.");
+
+    private static readonly string IdempotencyKeyRefused = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The Idempotency-Key header is missing ({PresentationErrorCodes.IdempotencyKeyRequired}) or is not 1 to "
+        + $"{IdempotencyKey.MaxLength} visible ASCII characters ({PresentationErrorCodes.IdempotencyKeyInvalid}).");
 
     private readonly SecuritySchemeSet _schemes;
 
@@ -81,7 +103,7 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
                 operation,
                 WellKnownHeaders.IdempotencyKey,
                 IdempotencyKeyDescription,
-                new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 256 });
+                new OpenApiSchema { Type = JsonSchemaType.String, Pattern = IdempotencyKeyPattern });
         }
 
         if (requiresIfMatch)
@@ -115,9 +137,32 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
             responses.TryAdd(Key(StatusCodes.Status428PreconditionRequired), ProblemResponse(document, IfMatchMissing));
         }
 
+        foreach (var statusCode in metadata.OfType<IETagResponseMetadata>().SelectMany(eTag => eTag.StatusCodes).Distinct())
+        {
+            AddETagHeader(responses, statusCode);
+        }
+
         responses.TryAdd(DefaultResponseKey, ProblemResponse(document, "An error, described as RFC 9457 problem details."));
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Declares the <c>ETag</c> header on the response of <paramref name="statusCode"/>, when the operation documents one.</summary>
+    private static void AddETagHeader(OpenApiResponses responses, int statusCode)
+    {
+        // The header describes a response the operation already lists (from the result type); it never adds one.
+        if (!responses.TryGetValue(Key(statusCode), out var response) || response is not OpenApiResponse documented)
+        {
+            return;
+        }
+
+        documented.Headers ??= new Dictionary<string, IOpenApiHeader>(StringComparer.OrdinalIgnoreCase);
+        documented.Headers.TryAdd(HeaderNames.ETag, new OpenApiHeader
+        {
+            Description = ETagDescription,
+            Required = true,
+            Schema = new OpenApiSchema { Type = JsonSchemaType.String },
+        });
     }
 
     /// <summary>Describes the 400 the core answers when a required header is missing or malformed.</summary>

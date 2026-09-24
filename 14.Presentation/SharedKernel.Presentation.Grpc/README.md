@@ -122,6 +122,7 @@ a merge, because gRPC and HTTP status codes do not correspond one to one.
 | `ValidationException` | `InvalidArgument`, exactly the status of a returned error of the same field errors: one error is itself, several are `Error.Validation(errors)` | Debug (14203) |
 | Any other `SharedKernelException` — including those of `GetValueOrThrow()`/`ThrowIfFailure()` | Its error's status | Debug (14203), or Error (14202) for `Unexpected`, `Unavailable`, `Timeout` |
 | `RpcException` (the service's own, or from a gRPC call to another service) | Rebuilt: its code, this service's `ErrorInfo` (`reason` = `grpc.{status}`), none of its trailers; its detail for a client category, the generic sentence outside Development for `Unknown`, `Internal`, `DataLoss`, `Unavailable`, `DeadlineExceeded` | Debug (14203), or Error (14202) for those five |
+| `TimeoutException`, or an `OperationCanceledException` while the call is not cancelled (a timeout inside the service) | `DeadlineExceeded` `timeout.default`, the generic sentence — the status of a returned `Error.Timeout`, as HTTP answers 504 | Error (14202) |
 | Anything else | `Internal` `unexpected.exception`, a generic message (the exception message in Development) | Error (14200) |
 
 The generic sentences are those of the HTTP core ("An unexpected error occurred.", "The service is temporarily

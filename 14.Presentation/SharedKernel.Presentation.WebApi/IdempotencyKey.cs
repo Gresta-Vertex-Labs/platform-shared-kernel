@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -16,8 +17,8 @@ namespace SharedKernel.Presentation.WebApi;
 /// adds <see cref="IIdempotencyKeyRequiredMetadata"/> to the endpoint, so <c>UseSharedKernelWebApi()</c> answers a
 /// missing key with 400 <c>idempotency.key_required</c> and a malformed one with 400 <c>idempotency.key_invalid</c>
 /// before the handler runs, and the OpenAPI add-on documents the header. The handler therefore always receives a
-/// valid key: 1 to 256 visible ASCII characters, one pair of surrounding double quotes (the IETF draft's
-/// structured-field string) removed.
+/// valid key: 1 to <see cref="MaxLength"/> visible ASCII characters, one pair of surrounding double quotes (the IETF
+/// draft's structured-field string) removed.
 /// </para>
 /// <para>
 /// Minimal APIs only; MVC actions use <see cref="RequireIdempotencyKeyAttribute"/> and <c>HttpContext.GetIdempotencyKey()</c>.
@@ -26,8 +27,18 @@ namespace SharedKernel.Presentation.WebApi;
 /// </remarks>
 public readonly record struct IdempotencyKey : IEndpointParameterMetadataProvider
 {
+    /// <summary>
+    /// The longest key accepted, in characters: 256. The pair of double quotes a client may enclose the key in does not
+    /// count, so the header value itself may be two characters longer.
+    /// </summary>
+    public const int MaxLength = 256;
+
+    private static readonly string InvalidKeyMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"An idempotency key must be 1 to {MaxLength} visible ASCII characters.");
+
     /// <summary>Initializes a new instance of the <see cref="IdempotencyKey"/> struct.</summary>
-    /// <param name="value">The key: 1 to 256 visible ASCII characters (0x21–0x7E).</param>
+    /// <param name="value">The key: 1 to <see cref="MaxLength"/> visible ASCII characters (0x21–0x7E).</param>
     /// <exception cref="ArgumentException"><paramref name="value"/> is not a valid idempotency key.</exception>
     public IdempotencyKey(string value)
     {
@@ -35,7 +46,7 @@ public readonly record struct IdempotencyKey : IEndpointParameterMetadataProvide
 
         if (!IdempotencyKeyGuard.IsValid(value))
         {
-            throw new ArgumentException("An idempotency key must be 1 to 256 visible ASCII characters.", nameof(value));
+            throw new ArgumentException(InvalidKeyMessage, nameof(value));
         }
 
         Value = value;

@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Interceptors;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
+using SharedKernel.Presentation.Grpc.Tests.TestSupport;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Testing.Logging;
 using Xunit;
@@ -16,7 +18,8 @@ namespace SharedKernel.Presentation.Grpc.Tests.Integration;
 /// service throws once its call is cancelled — the <see cref="OperationCanceledException"/> of a wait, the
 /// <see cref="IOException"/> of an aborted stream, the <see cref="InvalidOperationException"/> of a write to a
 /// completed call, a downstream call's <see cref="RpcException"/>, even a server error — is logged at Debug as a
-/// cancellation, never as an error.
+/// cancellation, never as an error. A timeout inside the service while the call is still open is no cancellation: it
+/// ends as <see cref="StatusCode.DeadlineExceeded"/> <c>timeout.default</c>, as HTTP answers it with 504.
 /// </summary>
 public sealed class CancellationTests
 {
@@ -63,6 +66,29 @@ public sealed class CancellationTests
 
         (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Cancelled);
         await ShouldBeLoggedAsACancellationOnlyAsync(logs, thrown);
+    }
+
+    [Theory]
+    [InlineData(Failures.TimeoutException, typeof(TimeoutException))]
+    [InlineData(Failures.InternalTimeout, typeof(TaskCanceledException))]
+    public async Task TimeoutInsideTheService_WhileTheCallIsOpen_IsDeadlineExceeded_WithTheTimeoutCode(string failure, Type thrown)
+    {
+        // Not a cancellation: the client is still waiting for the answer.
+        var logs = new InMemoryLoggerFactory();
+        await using var app = await GrpcTestHost.StartAsync(loggerFactory: logs);
+
+        var act = async () => await app.CreateClient().FailAsync(new EchoRequest { Value = failure });
+
+        var exception = (await act.Should().ThrowAsync<RpcException>()).Which;
+        var status = exception.ShouldHaveRichStatus(StatusCode.DeadlineExceeded);
+        status.Message.Should().Be("The operation did not complete in time.");
+        status.ErrorInfo().Reason.Should().Be(ErrorCodes.Timeout.Default);
+        exception.EverythingTheClientSees().Should().NotContain(Failures.TimeoutDetail);
+
+        var logged = logs.GetLogger(typeof(GrpcExceptionInterceptor).FullName!).Records.Should().ContainSingle().Subject;
+        logged.EventId.Id.Should().Be(LoggingEventIdRanges.Presentation + 202);
+        logged.LogLevel.Should().Be(LogLevel.Error);
+        logged.Exception.Should().BeOfType(thrown);
     }
 
     private static async Task ShouldBeLoggedAsACancellationOnlyAsync(InMemoryLoggerFactory logs, Type thrown)

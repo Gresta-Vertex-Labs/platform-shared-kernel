@@ -158,6 +158,12 @@ internal static class Failures
 
     public const string TimeoutResult = "timeout-result";
 
+    /// <summary>A <see cref="System.TimeoutException"/> of the service's own code.</summary>
+    public const string TimeoutException = "timeout-exception";
+
+    /// <summary>A wait the service cancels itself, as <c>HttpClient.Timeout</c> does: the call is not cancelled.</summary>
+    public const string InternalTimeout = "internal-timeout";
+
     public const string UnavailableTaskResult = "unavailable-task-result";
 
     public const string ConflictTaskResult = "conflict-task-result";
@@ -229,6 +235,8 @@ internal static class Failures
             SingleValidationResult => Throw(() => Result<string>.Failure(NameRequired).GetValueOrThrow()),
             UnavailableException => throw new DomainException(Error.Unavailable("search.unreachable", UnavailableDetail)),
             TimeoutResult => Throw(() => Result.Failure(Error.Timeout("search.timeout", TimeoutDetail)).ThrowIfFailure()),
+            TimeoutException => throw new TimeoutException(TimeoutDetail),
+            InternalTimeout => WaitForAnInternalTimeoutAsync(),
             UnavailableTaskResult => Task.FromResult(Result<string>.Failure(Error.Unavailable("search.unreachable", UnavailableDetail))).GetValueOrThrow(),
             ConflictTaskResult => Task.FromResult(Result.Failure(Error.Conflict("order.version_conflict", "The order was changed by someone else."))).ThrowIfFailure(),
             LocalizedResult => Throw(() => Result<string>.Failure(OrderNotFound.ToError(ErrorType.NotFound, 42)).GetValueOrThrow()),
@@ -249,6 +257,12 @@ internal static class Failures
 
     private static int Count(string failure, string prefix) =>
         int.Parse(failure.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture);
+
+    private static async Task WaitForAnInternalTimeoutAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(10));
+        await Task.Delay(Timeout.Infinite, timeout.Token);
+    }
 
     private static Error Field(Error error, string path) =>
         error with { MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = path } };

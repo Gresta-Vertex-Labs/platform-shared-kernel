@@ -21,8 +21,9 @@ namespace SharedKernel.Presentation.Grpc.Tests.Interceptors;
 
 /// <summary>
 /// The exception interceptor in isolation, driven through all four call shapes with a hand-built
-/// <see cref="ServerCallContext"/>: cancellation (P-562 R33), rebuilt <see cref="RpcException"/>s (R30), failed
-/// results ended with <c>SharedKernel.Core</c>'s extensions (R32), and a context without a request.
+/// <see cref="ServerCallContext"/>: cancellation (P-562 R33), a timeout inside the service (as HTTP's R10), rebuilt
+/// <see cref="RpcException"/>s (R30), failed results ended with <c>SharedKernel.Core</c>'s extensions (R32), and a
+/// context without a request.
 /// </summary>
 public sealed class GrpcExceptionInterceptorTests
 {
@@ -63,16 +64,46 @@ public sealed class GrpcExceptionInterceptorTests
         }
     }
 
-    [Fact]
-    public async Task OperationCanceled_WhileTheCallIsNotCancelled_IsAnUnexpectedError()
+    public static TheoryData<Exception> TimeoutsInsideTheService => new()
     {
-        // An internal timeout is a failure of the service, not a client that went away.
-        var context = TestServerCallContext.Create();
+        new TimeoutException("Query against replica db-7 timed out after 30 s."),
+        new TaskCanceledException("The request to db-7 was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."),
+        new OperationCanceledException("The wait for db-7 was cancelled by the service's own timeout."),
+    };
 
-        var exception = await ThrowsFromUnaryAsync(context, () => throw new TaskCanceledException("HttpClient timed out."));
+    [Theory]
+    [MemberData(nameof(TimeoutsInsideTheService))]
+    public async Task TimeoutOrCancellation_WhileTheCallIsNotCancelled_IsDeadlineExceeded_WithTheTimeoutCode(Exception thrown)
+    {
+        // A timeout inside the service, not a client that went away: HTTP answers it 504 timeout.default.
+        foreach (var shape in Enum.GetValues<CallShape>())
+        {
+            var logger = new InMemoryLogger<GrpcExceptionInterceptor>();
 
-        exception.ShouldHaveRichStatus(StatusCode.Internal).ErrorInfo().Reason.Should().Be(ErrorCodes.Unexpected.Default);
-        _logger.Records.Should().ContainSingle().Which.LogLevel.Should().Be(LogLevel.Error);
+            var exception = await ThrowsFromAsync(shape, TestServerCallContext.Create(), () => throw thrown, logger);
+
+            var status = exception.ShouldHaveRichStatus(StatusCode.DeadlineExceeded);
+            status.Message.Should().Be("The operation did not complete in time.", $"a {shape} call gets the generic sentence");
+            status.ErrorInfo().Should().BeEquivalentTo(new { Reason = ErrorCodes.Timeout.Default, Domain });
+            exception.EverythingTheClientSees().Should().NotContain("db-7");
+
+            var record = logger.Records.Should().ContainSingle().Subject;
+            record.LogLevel.Should().Be(LogLevel.Error);
+            record.EventId.Id.Should().Be(14202);
+            record.Exception.Should().BeSameAs(thrown);
+        }
+    }
+
+    [Fact]
+    public async Task TimeoutException_GetsTheStatusOfAReturnedTimeoutError()
+    {
+        var thrown = await ThrowsFromUnaryAsync(TestServerCallContext.Create(), () => throw new TimeoutException("Replica db-7 timed out."));
+        var returned = await ThrowsFromUnaryAsync(
+            TestServerCallContext.Create(),
+            () => Result.Failure(Error.Timeout(ErrorCodes.Timeout.Default, "Replica db-7 timed out.")).ThrowIfFailure());
+
+        thrown.ShouldHaveRichStatus(StatusCode.DeadlineExceeded).WithoutRequestIds()
+            .Should().Be(returned.ShouldHaveRichStatus(StatusCode.DeadlineExceeded).WithoutRequestIds());
     }
 
     [Fact]

@@ -29,7 +29,9 @@ public static class SignalRHostBuilderExtensions
     ///   <item>Error mapping. A <c>SharedKernelException</c>, or a failed <c>Result</c> or <c>Result&lt;T&gt;</c> a hub
     ///   method returns, becomes a <see cref="HubException"/> with the message <c>"{code}: {message}"</c>: the message
     ///   localized and, for server errors outside Development, replaced by a generic sentence, exactly like an HTTP
-    ///   problem response. Any other exception becomes <c>"unexpected.exception: An unexpected error occurred."</c> (in
+    ///   problem response. A <c>TimeoutException</c>, or an <c>OperationCanceledException</c> while the connection is
+    ///   open, becomes <c>"timeout.default: The operation did not complete in time."</c>, as HTTP answers it with 504.
+    ///   Any other exception becomes <c>"unexpected.exception: An unexpected error occurred."</c> (in
     ///   Development, the exception's message). A <see cref="HubException"/> the hub throws itself passes unchanged. A
     ///   successful <c>Result&lt;T&gt;</c> returns its value to the client. Server errors are logged at Error, client
     ///   errors at Debug. SignalR puts its own sentence in front of the message it sends, so a client receives
