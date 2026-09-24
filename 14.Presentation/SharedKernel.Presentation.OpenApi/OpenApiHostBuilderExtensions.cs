@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Presentation.OpenApi.Documents;
 using SharedKernel.Presentation.OpenApi.Options;
+using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.OpenApi.Versioning;
 
 namespace SharedKernel.Presentation.OpenApi;
@@ -39,8 +40,12 @@ public static class OpenApiHostBuilderExtensions
     ///   the documented URLs.</item>
     ///   <item>One OpenAPI 3.1 document per version, titled and described from the settings, in which every operation
     ///   documents the <c>application/problem+json</c> error shape, a protected operation its security requirement
-    ///   and 401/403, and a required <c>Idempotency-Key</c> or <c>If-Match</c> header its parameter (plus 412/428).</item>
+    ///   and 401/403, and a required <c>Idempotency-Key</c> or <c>If-Match</c> header its parameter and 400 (plus
+    ///   412/428 for <c>If-Match</c>) — whether a convention, an attribute or an <c>IdempotencyKey</c> or
+    ///   <c>IfMatch&lt;TVersion&gt;</c> handler parameter requires it.</item>
     ///   <item>The platform's problem shape for API versioning's own errors, such as an unsupported version.</item>
+    ///   <item>A startup warning when the documents are served outside Development and neither an authorization
+    ///   convention nor a fallback policy protects them (see <see cref="OpenApiEndpointExtensions.MapSharedKernelOpenApi"/>).</item>
     /// </list>
     /// <para>
     /// Call it with <c>AddSharedKernelWebApi()</c>, whose error responses the documents describe. Safe to call more
@@ -58,10 +63,11 @@ public static class OpenApiHostBuilderExtensions
 
         var services = builder.Services;
 
-        if (!services.Any(descriptor => descriptor.ServiceType == typeof(OpenApiServicesMarker)))
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(OpenApiSetupState)))
         {
-            services.AddSingleton<OpenApiServicesMarker>();
+            services.AddSingleton<OpenApiSetupState>();
             services.AddValidatedOptions<SharedKernelOpenApiOptions, SharedKernelOpenApiOptionsValidator>(builder.Configuration);
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, OpenApiStartupDiagnostics>());
 
             // Before AddOpenApi(), which registers its own transformer only when none is registered.
             services.TryAddTransient<XmlCommentsTransformer>(EntryAssemblyXmlComments.CreateTransformer);
@@ -88,6 +94,3 @@ public static class OpenApiHostBuilderExtensions
         return builder;
     }
 }
-
-/// <summary>Marks a service collection <c>AddSharedKernelOpenApi()</c> has already configured.</summary>
-internal sealed class OpenApiServicesMarker;

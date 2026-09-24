@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi.Errors;
 using Xunit;
@@ -97,5 +98,19 @@ public sealed class ProblemResponseDocumentationTests : IAsyncLifetime
 
         ok.Should().NotBeNull();
         ok!["content"]!["application/json"].Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task MvcActionsReturningTypedResults_AreDocumentedLikeMinimalApis()
+    {
+        await using var app = await OpenApiTestHost.StartAsync(
+            app => app.MapControllers(),
+            configureBuilder: builder => builder.Services.AddControllers().AddApplicationPart(typeof(OrdersApi).Assembly));
+        using var client = app.GetTestClient();
+        var responses = (await client.GetDocumentAsync("v1")).Operation("/v1/mvc/orders/{id}", "get")["responses"]!;
+
+        responses["200"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>()
+            .Should().Be("#/components/schemas/Order", "the typed union declares the success response");
+        responses["default"]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!.GetValue<string>().Should().Be(ProblemReference);
     }
 }

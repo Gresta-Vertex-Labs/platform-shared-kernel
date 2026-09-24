@@ -35,7 +35,7 @@ internal static class OpenApiTestHost
         Action<IEndpointConventionBuilder>? configureDocuments = null,
         IReadOnlyDictionary<string, string?>? configuration = null,
         InMemoryLoggerFactory? loggerFactory = null,
-        Action<WebApiOptions>? configureWebApi = null,
+        Action<SharedKernelWebApiOptions>? configureWebApi = null,
         bool openApiFirst = false)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });

@@ -11,6 +11,7 @@ using Scalar.AspNetCore;
 using SharedKernel.Presentation.OpenApi.Documents;
 using SharedKernel.Presentation.OpenApi.Options;
 using SharedKernel.Presentation.OpenApi.Routing;
+using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Logging;
 
@@ -42,6 +43,13 @@ public static partial class OpenApiEndpointExtensions
     /// cannot be loaded from the page; protect them with a scheme the browser sends by itself, such as a cookie, or
     /// behind a gateway.
     /// </para>
+    /// <para>
+    /// Outside Development, the host logs a warning when it starts (EventId 14301) if no convention applied to the
+    /// returned builder requires authorization — <c>RequirePermission(…)</c>, <c>RequireRole(…)</c>,
+    /// <c>RequireAuthorization(…)</c> — and no fallback authorization policy is set: anyone who reaches the service can
+    /// read its API description. Documents meant to be public say so with <c>AllowAnonymous()</c>, which silences it.
+    /// Conventions of a route group the documents are mapped in are not seen; apply them to the returned builder.
+    /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException"><c>AddSharedKernelOpenApi()</c> was not called.</exception>
     /// <exception cref="OptionsValidationException">The settings are invalid.</exception>
@@ -50,7 +58,7 @@ public static partial class OpenApiEndpointExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var services = endpoints.ServiceProvider;
-        if (services.GetService<OpenApiServicesMarker>() is null)
+        if (services.GetService<OpenApiSetupState>() is not { } state)
         {
             throw new InvalidOperationException(
                 "MapSharedKernelOpenApi() requires the services of AddSharedKernelOpenApi(). Call builder.AddSharedKernelOpenApi() first.");
@@ -69,8 +77,15 @@ public static partial class OpenApiEndpointExtensions
 
         var documents = endpoints.MapOpenApi().WithDocumentPerVersion();
         var reference = endpoints.MapScalarApiReference(ConfigureReference).WithContentSecurityPolicy(null);
+        var builder = new CompositeEndpointConventionBuilder(documents, reference);
 
-        return new CompositeEndpointConventionBuilder(documents, reference);
+        if (!environment.IsDevelopment())
+        {
+            // The startup check reads the conventions applied to the returned builder once they all are.
+            state.AddExposedDocuments(builder);
+        }
+
+        return builder;
     }
 
     /// <summary>
