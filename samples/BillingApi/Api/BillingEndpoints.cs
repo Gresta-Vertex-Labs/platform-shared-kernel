@@ -7,7 +7,6 @@ using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
@@ -37,16 +36,12 @@ public sealed record TenantErased(Guid TenantId, bool IsComplete, long BlindInde
 /// <summary>
 /// The HTTP surface. Endpoints translate HTTP to commands and queries and the <see cref="Result"/> they return into a
 /// typed result — <c>ToOk()</c>, <c>ToCreated()</c>, <c>ToNoContent()</c>, <c>ToOkWithETag()</c>. They never branch
-/// on <c>IsSuccess</c> and never choose a status code for a failure: the <see cref="Error"/> type does
-/// (400/401/403/404/409, and 412 on an endpoint that requires <c>If-Match</c>), and the body is an RFC 9457 problem.
+/// on <c>IsSuccess</c> and never choose a status code for a failure: the <see cref="Error"/> does (400/401/403/404/409,
+/// and 412 for a version conflict of a request that named its version in <c>If-Match</c>), and the body is an RFC 9457
+/// problem.
 /// </summary>
 public static class BillingEndpoints
 {
-    // A tag that is not a version (a plain number included) fails exactly like a stale version: the persistence layer's
-    // stale-version code, which an If-Match endpoint answers with 412.
-    private static readonly Error UnknownVersion = Error.Conflict(
-        ConcurrencyVersion.ConflictErrorCode, "If-Match does not name a version of this resource. Read it again for its current ETag.");
-
     public static void MapBillingEndpoints(this IEndpointRouteBuilder app)
     {
         MapCustomers(app.MapGroup("/customers"));
@@ -78,21 +73,20 @@ public static class BillingEndpoints
         customers.MapGet("/", ([FromQuery] string email, ISender sender, CancellationToken ct) =>
             sender.Send(new GetCustomerByEmail(email), ct).ToOk());
 
-        // Optimistic concurrency: the client sends back the ETag it read. RequireIfMatch() answers a request without
-        // If-Match with 428 before the handler runs, and a Conflict — here the ConflictException the save throws when
-        // another writer changed the customer first — with 412. Success returns the new version as the ETag.
-        customers.MapPut("/{id:guid}/name", (Guid id, RenameCustomerRequest body, HttpContext http, ISender sender, CancellationToken ct) =>
-                ExpectedVersion(http)
-                    .Bind(expected => sender.Send(new RenameCustomer(new CustomerId(id), body.Name, expected), ct))
-                    .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
-                    .ToOkWithETag(found => found.Version.ToString(), found => found.Customer))
-            .RequireIfMatch();
+        // Optimistic concurrency: the client sends back the ETag it read. Declaring IfMatch<EntityVersion> requires the
+        // header, so before the handler runs a request without it (or with "*", which names no version) gets 428, and a
+        // tag that is not an EntityVersion at all, such as a plain number, 412. A version that is not current — another
+        // writer saved first, or it belongs to another customer — fails the save with a ConflictException
+        // (persistence.concurrency_conflict), answered 412 because the request named its version in If-Match.
+        // Success returns the new version as the ETag.
+        customers.MapPut("/{id:guid}/name", (Guid id, RenameCustomerRequest body, IfMatch<EntityVersion> ifMatch, ISender sender, CancellationToken ct) =>
+            sender.Send(new RenameCustomer(new CustomerId(id), body.Name, ifMatch.Version), ct)
+                .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
+                .ToOkWithETag(found => found.Version.ToString(), found => found.Customer));
 
-        customers.MapDelete("/{id:guid}", (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
-                ExpectedVersion(http)
-                    .Bind(expected => sender.Send(new DeleteCustomer(new CustomerId(id), expected), ct))
-                    .ToNoContent())
-            .RequireIfMatch();
+        // A delete names the version it removes, the same way.
+        customers.MapDelete("/{id:guid}", (Guid id, IfMatch<EntityVersion> ifMatch, ISender sender, CancellationToken ct) =>
+            sender.Send(new DeleteCustomer(new CustomerId(id), ifMatch.Version), ct).ToNoContent());
     }
 
     private static void MapInvoices(RouteGroupBuilder invoices)
@@ -150,15 +144,6 @@ public static class BillingEndpoints
             }
         });
     }
-
-    /// <summary>
-    /// The version the client based its change on: its <c>If-Match</c>. <c>RequireIfMatch()</c> has already answered
-    /// 428 when the header is missing. A tag this API never issued cannot name the current version, so it fails like
-    /// a stale one: a Conflict, which an <c>If-Match</c> endpoint answers with 412. So does <c>*</c> ("any version"):
-    /// a change here must say which version it is based on, or it could overwrite one its client never saw.
-    /// </summary>
-    private static Result<EntityVersion> ExpectedVersion(HttpContext http) =>
-        EntityVersion.TryParse(http.GetIfMatch(), out var version) ? version : UnknownVersion;
 
     /// <summary>Paging input validated at the edge: the request, or every problem with it in one 400.</summary>
     private static Result<T> Validated<T>(ValidationResult<T> input) =>

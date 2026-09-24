@@ -37,8 +37,9 @@ public static class ShipmentErrors
 /// <summary>The HTTP surface of the sample.</summary>
 /// <remarks>
 /// Every messaging verb returns a <see cref="Result"/> — an unreachable broker is <c>messaging.unavailable</c>, not an
-/// exception — and each endpoint maps it with <c>ToHttpResult(…)</c>: 202 Accepted with a <c>Location</c> to watch on
-/// success, an RFC 9457 problem (503 for the outage) on failure. No endpoint branches on <c>IsSuccess</c>.
+/// exception — and each endpoint maps it with one call: <c>ToAccepted(location)</c>, or <c>ToHttpResult(…)</c> when the
+/// 202 carries a body. Success is 202 Accepted with a <c>Location</c> to watch, failure an RFC 9457 problem (503 for the
+/// outage). No endpoint branches on <c>IsSuccess</c>.
 /// </remarks>
 public static class ShipmentEndpoints
 {
@@ -84,7 +85,7 @@ public static class ShipmentEndpoints
             IMessageBus bus,
             CancellationToken ct) =>
             bus.SendAsync(new HoldShipment(id, request.Reason), ct)
-                .ToHttpResult(() => TypedResults.Accepted($"/shipments/{id}")));
+                .ToAccepted($"/shipments/{id}"));
 
         // Schedule: the broker holds the message until its time, so it survives this process exiting.
         app.MapPost("/shipments/{id:guid}/chase", async (
@@ -107,7 +108,7 @@ public static class ShipmentEndpoints
             IMessageBus bus,
             CancellationToken ct) =>
             bus.PublishAsync(new FailingShipmentCheck(id), ct)
-                .ToHttpResult(() => TypedResults.Accepted($"/shipments/{id}/fault")));
+                .ToAccepted($"/shipments/{id}/fault"));
 
         // What the fault consumer observed once retries were exhausted.
         app.MapGet("/shipments/{id:guid}/fault", (Guid id, FaultLog faults) =>

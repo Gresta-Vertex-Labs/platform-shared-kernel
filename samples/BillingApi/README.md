@@ -14,7 +14,7 @@ everything work together, through an HTTP API, the way a real service would use 
 | `SharedKernel.Persistence.Testing` | the end-to-end tests run against `PostgresTestServer` (Testcontainers, the same role split); a handler unit test over `FakeRepository`/`FakeUnitOfWork` with `TransientFailures` |
 | `SharedKernel.Application[.Behaviors]` | MediatR pipeline with authorization, transaction and auditing behaviors |
 | `SharedKernel.ServiceDefaults[.Security, .Persistence]` | `AddSharedKernelRequestContext()` over `IUserContext`, persistence readiness checks, the startup gate |
-| `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); `RequireIfMatch()` with `EntityVersion` (`ETag`, 304, 428, 412); `RequirePermission()` on the back office; every error an RFC 9457 problem |
+| `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); an `IfMatch<EntityVersion>` handler parameter (`ETag`, 304, 428, 400, 412); `RequirePermission()` on the back office; every error an RFC 9457 problem |
 
 ## Run it
 
@@ -70,7 +70,7 @@ curl -X DELETE localhost:8080/customers/{id} "${H[@]}" -H 'If-Match: "Ae0rT7…"
 
 | Endpoint | Permission | Shows |
 | --- | --- | --- |
-| `POST /customers`, `GET /customers/{id}`, `GET /customers?email=`, `PUT /customers/{id}/name`, `DELETE /customers/{id}` | write / read | encryption, blind index, `ETag`/`If-Match` (304, 428, 412), soft delete |
+| `POST /customers`, `GET /customers/{id}`, `GET /customers?email=`, `PUT /customers/{id}/name`, `DELETE /customers/{id}` | write / read | encryption, blind index, `ETag`/`If-Match` (304, 428, 400, 412), soft delete |
 | `POST /invoices`, `GET /invoices/{id}`, `GET /invoices?page=&pageSize=&status=`, `GET /invoices/browse?cursor=&limit=` | write / read | `Money`, child entities, offset and keyset paging |
 | `POST /invoices/{id}/issue`, `POST /invoices/{id}/payments`, `POST /invoices/expire-drafts` | write | domain events, Dapper + EF Core in one transaction, bulk update |
 | `GET /reports/revenue` | read | Dapper under row-level security |
@@ -93,24 +93,32 @@ Either way an anonymous caller gets 401 and a caller without the permission 403,
 
 The customer's version travels as its `ETag`, and changes require it back. It is an `EntityVersion`: PostgreSQL's
 `xmin` sealed with the customer's identity under a subkey of the service's key provider (registered in `Program.cs`), so
-the ETag never shows the database's transaction counter, and a plain number sent as `If-Match` is not a version (412):
+the ETag never shows the database's transaction counter. A change declares an `IfMatch<EntityVersion>` parameter:
 
 ```csharp
 customers.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
     sender.Send(new GetCustomer(new CustomerId(id)), ct)
         .ToOkWithETag(found => found.Version.ToString(), found => found.Customer));   // ETag; If-None-Match → 304
 
-customers.MapPut("/{id:guid}/name", (Guid id, RenameCustomerRequest body, HttpContext http, ISender sender, CancellationToken ct) =>
-        ExpectedVersion(http)                                   // EntityVersion.TryParse(http.GetIfMatch())
-            .Bind(expected => sender.Send(new RenameCustomer(new CustomerId(id), body.Name, expected), ct))
-            .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
-            .ToOkWithETag(found => found.Version.ToString(), found => found.Customer))
-    .RequireIfMatch();                                          // no If-Match → 428 before the handler runs
+customers.MapPut("/{id:guid}/name", (Guid id, RenameCustomerRequest body, IfMatch<EntityVersion> ifMatch, ISender sender, CancellationToken ct) =>
+    sender.Send(new RenameCustomer(new CustomerId(id), body.Name, ifMatch.Version), ct)   // always a parsed version
+        .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
+        .ToOkWithETag(found => found.Version.ToString(), found => found.Customer));
 ```
 
-Nothing catches the `ConflictException` the save throws when another writer got there first: on an endpoint with
-`RequireIfMatch()`, a `Conflict` — returned or thrown — is answered 412, keeping its code. The client reads the
-customer again for the current `ETag` and retries.
+The parameter requires the header, and `UseSharedKernelWebApi()` checks it before the handler runs (RFC 9110
+section 13.1.1), so the handler never parses a header itself:
+
+| `If-Match` | Answer | `errorCode` |
+| --- | --- | --- |
+| missing, or `*` (it names no version) | 428 | `precondition.required` |
+| malformed, or more than one tag | 400 | `precondition.invalid` |
+| a weak tag, or a tag that is not an `EntityVersion` (a plain number such as the raw `xmin`) | 412 | `precondition.failed` |
+| a version that is not current: another writer saved first, it is another customer's, or it was altered | 412 | `persistence.concurrency_conflict` |
+
+Nothing catches the `ConflictException` the save throws in the last case. It is a `Conflict` with the stale-version
+code, and the request named its version in `If-Match`, so it is answered 412, keeping its code; every other conflict
+(a duplicate email, say) stays 409. The client reads the customer again for the current `ETag` and retries.
 
 ```json
 {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.13","title":"Precondition Failed","status":412,
@@ -123,13 +131,13 @@ customer again for the current `ETag` and retries.
 | File | What it shows |
 | --- | --- |
 | `Program.cs` | the whole composition, one registration per concern |
-| `Api/BillingEndpoints.cs` | the HTTP surface: typed results, `RequireIfMatch()` + `ToOkWithETag()`, the `/admin` group's `RequirePermission()` |
+| `Api/BillingEndpoints.cs` | the HTTP surface: typed results, `IfMatch<EntityVersion>` + `ToOkWithETag()`, the `/admin` group's `RequirePermission()` |
 | `Infrastructure/BillingDbContext.cs` | the context, the only configuration conventions cannot know, `BillingDatabase.Configure` shared by `Program.cs` and the design-time factory |
 | `Infrastructure/Migrations/*_Initial.cs` | the generated migration plus the platform objects: RLS for the whole model, a Dapper-only table with its own policy, the audit ledger with a sealer role, the tenant key table |
 | `docker/init-roles.sql` | the canonical role script, as-is |
 | `Application/Invoices.cs` | `PayInvoiceHandler`: a Dapper session joining the command's transaction |
 | `Application/Reports.cs` | SQL with no tenant predicate; the cross-tenant scope |
-| `BillingApi.Tests/` | 15 end-to-end tests over HTTP in the Production environment, one unit test over the fakes |
+| `BillingApi.Tests/` | 16 end-to-end tests over HTTP in the Production environment, one unit test over the fakes |
 
 ## Adding a migration
 

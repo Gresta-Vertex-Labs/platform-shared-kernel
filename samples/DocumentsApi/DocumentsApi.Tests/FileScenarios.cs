@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Storage;
 
 namespace DocumentsApi.Tests;
@@ -128,8 +129,9 @@ public sealed class FileScenarios(Backends backends)
             return;
         }
 
+        // storage.already_exists is a conflict; the client asked for it with If-None-Match, so the answer is 412.
         first.StatusCode.Should().Be(HttpStatusCode.Created);
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        second.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
         (await SampleHost.ErrorCodeAsync(second)).Should().Be(StorageErrorCodes.AlreadyExists);
         (await api.GetByteArrayAsync($"/files/{store}/{key}")).Should().Equal(1);
     }
@@ -151,10 +153,57 @@ public sealed class FileScenarios(Backends backends)
             return;
         }
 
+        // storage.precondition_failed is a conflict; the client named the version in If-Match, so the answer is 412.
         update.StatusCode.Should().Be(HttpStatusCode.Created);
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        stale.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
         (await SampleHost.ErrorCodeAsync(stale)).Should().Be(StorageErrorCodes.PreconditionFailed);
         (await api.GetByteArrayAsync($"/files/{store}/{key}")).Should().Equal(2);
+
+        // A read pinned to the old version is refused the same way.
+        using HttpResponseMessage staleRead = await SendWithIfMatchAsync(api, HttpMethod.Get, $"/files/{store}/{key}", original.ETag!);
+        staleRead.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        (await SampleHost.ErrorCodeAsync(staleRead)).Should().Be(StorageErrorCodes.PreconditionFailed);
+    }
+
+    /// <summary>
+    /// A precondition the service cannot read is refused, never ignored: ignoring it would make the client's conditional
+    /// write unconditional. Here the client sends the ETag without its quotes, which is not an entity tag.
+    /// </summary>
+    [Fact]
+    public async Task An_if_match_that_is_not_an_entity_tag_is_refused_not_ignored()
+    {
+        using HttpClient api = backends[Backends.MinIO].Api();
+        string key = SampleHost.NewKey();
+        FileReference original = await SampleHost.ReadAsync<FileReference>(
+            await api.PutAsync($"/files/{Stores.Assets}/{key}", new ByteArrayContent([1])));
+
+        HttpResponseMessage unquoted = await PutConditionalAsync(api, Stores.Assets, key, [2], ifMatch: original.ETag!.Trim('"'));
+
+        unquoted.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await SampleHost.ErrorCodeAsync(unquoted)).Should().Be(PresentationErrorCodes.PreconditionInvalid);
+        (await api.GetByteArrayAsync($"/files/{Stores.Assets}/{key}")).Should().Equal(1);
+    }
+
+    /// <summary>
+    /// 412 answers a precondition the client sent in a header. A create-only copy asks for it in its body, so the same
+    /// <c>storage.already_exists</c> is an ordinary conflict: 409.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Backends.AllBackends), MemberType = typeof(Backends))]
+    public async Task A_create_only_copy_onto_an_existing_file_is_409(string backend)
+    {
+        using HttpClient api = backends[backend].Api();
+        string source = SampleHost.NewKey();
+        string destination = SampleHost.NewKey();
+        (await api.PutAsync($"/files/{Stores.Assets}/{source}", new ByteArrayContent([1]))).EnsureSuccessStatusCode();
+        (await api.PutAsync($"/files/{Stores.Assets}/{destination}", new ByteArrayContent([2]))).EnsureSuccessStatusCode();
+
+        using HttpResponseMessage copy = await api.PostAsJsonAsync(
+            "/copy", new CopyRequest(Stores.Assets, source, Stores.Assets, destination, CreateOnly: true));
+
+        copy.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await SampleHost.ErrorCodeAsync(copy)).Should().Be(StorageErrorCodes.AlreadyExists);
+        (await api.GetByteArrayAsync($"/files/{Stores.Assets}/{destination}")).Should().Equal(2);
     }
 
     [Theory]
@@ -266,6 +315,13 @@ public sealed class FileScenarios(Backends backends)
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         }
 
+        return api.SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> SendWithIfMatchAsync(HttpClient api, HttpMethod method, string url, string ifMatch)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         return api.SendAsync(request);
     }
 

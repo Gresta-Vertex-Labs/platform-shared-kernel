@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,8 +57,10 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         customer.GetProperty("email").GetString().Should().Be("Ada.Lovelace@Example.com");
         customer.GetProperty("taxNumber").GetString().Should().Be("TR-1234567890");
 
+        // A conflict that is not about a version the client named stays 409.
         var duplicate = await client.PostAsJsonAsync("/customers", new { name = "Again", email = "ADA.LOVELACE@example.com" });
         duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await duplicate.ErrorCodeAsync()).Should().Be("customer.email.taken");
     }
 
     // ---- Multi-tenancy ------------------------------------------------------------------------------------------
@@ -141,15 +142,11 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
 
         var read = await client.GetAsync($"/customers/{id}");
         var etag = read.Headers.ETag!;
-        etag.Tag.Should().NotBe("\"0\"", "the version is the row's xmin, never a placeholder");
 
         // P-562 X4: the ETag is an opaque token — the xmin sealed under the service's key — so it does not reveal how many
-        // transactions the shared database committed; and the raw xmin is not accepted as a version.
+        // transactions the shared database committed.
         var xmin = await fixture.ScalarAsAdminAsync<string>("SELECT xmin::text FROM customers WHERE id = @id", ("id", id));
         etag.Tag.Should().HaveLength(30).And.NotContain(xmin!);
-        var raw = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Raw" }) };
-        raw.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{xmin}\""));
-        (await client.SendAsync(raw)).StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
 
         // A client that already holds the current version is told so, without the body.
         var revalidate = new HttpRequestMessage(HttpMethod.Get, $"/customers/{id}");
@@ -158,8 +155,9 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         notModified.StatusCode.Should().Be(HttpStatusCode.NotModified);
         notModified.Headers.ETag.Should().Be(etag);
 
+        // A change must name the version it is based on: the IfMatch<EntityVersion> parameter answers 428 without it.
         var unconditional = await client.PutAsJsonAsync($"/customers/{id}/name", new { name = "No precondition" });
-        unconditional.StatusCode.Should().Be((HttpStatusCode)428);
+        unconditional.StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
         (await unconditional.ErrorCodeAsync()).Should().Be(PresentationErrorCodes.PreconditionRequired);
 
         var rename = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Grace Hopper" }) };
@@ -170,7 +168,8 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         var newTag = renamed.Headers.ETag!;
         newTag.Should().NotBe(etag);
 
-        // The save's ConflictException becomes 412 on an endpoint that requires If-Match, keeping its error code.
+        // The save's ConflictException is a Conflict with the stale-version code; the request named its version in
+        // If-Match, so the answer is 412, keeping that code.
         var stale = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Lost update" }) };
         stale.Headers.IfMatch.Add(etag);
         var rejected = await client.SendAsync(stale);
@@ -178,15 +177,53 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         (await rejected.ErrorCodeAsync()).Should().Be(ConcurrencyVersion.ConflictErrorCode);
 
-        // A tag this API never issued cannot name the current version either.
-        var unknown = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Guess" }) };
-        unknown.Headers.IfMatch.Add(new EntityTagHeaderValue("\"not-a-version\""));
-        (await client.SendAsync(unknown)).StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-
         // The client re-reads for the current version and retries from there.
         var current = await client.GetAsync($"/customers/{id}");
         current.Headers.ETag.Should().Be(newTag);
         (await current.JsonAsync()).GetProperty("name").GetString().Should().Be("Grace Hopper");
+    }
+
+    [Fact]
+    public async Task IfMatch_MustNameOneVersion_OfThisCustomer()
+    {
+        var client = Tenant(Guid.NewGuid());
+        var id = await client.RegisterCustomerAsync("Barbara", "barbara@example.com");
+        var other = await client.RegisterCustomerAsync("Frances", "frances@example.com");
+        var current = (await client.GetAsync($"/customers/{id}")).Headers.ETag!.Tag.ToString();
+        var othersVersion = (await client.GetAsync($"/customers/{other}")).Headers.ETag!.Tag.ToString();
+        var xmin = await fixture.ScalarAsAdminAsync<string>("SELECT xmin::text FROM customers WHERE id = @id", ("id", id));
+
+        // The If-Match header as sent, unvalidated, so a test can send what a careless client would.
+        async Task<(HttpStatusCode Status, string? ErrorCode)> RenameAsync(string ifMatch)
+        {
+            using var rename = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Refused" }) };
+            rename.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+            using var response = await client.SendAsync(rename);
+            return (response.StatusCode, await response.ErrorCodeAsync());
+        }
+
+        // Refused by the IfMatch<EntityVersion> parameter before the handler runs (RFC 9110 section 13.1.1). "*" names no
+        // version, so it counts as none; several tags, or an unquoted one, are not one version.
+        (await RenameAsync("*")).Should().Be((HttpStatusCode.PreconditionRequired, PresentationErrorCodes.PreconditionRequired));
+        (await RenameAsync($"{current}, {othersVersion}")).Should().Be((HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid));
+        (await RenameAsync(current.Trim('"'))).Should().Be((HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid));
+
+        // A weak tag never matches under If-Match's strong comparison, and a tag that is not an EntityVersion — the raw
+        // xmin (P-562 X4), made-up text — can never be the current version.
+        (await RenameAsync($"W/{current}")).Should().Be((HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed));
+        (await RenameAsync($"\"{xmin}\"")).Should().Be((HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed));
+        (await RenameAsync("\"not-a-version\"")).Should().Be((HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed));
+
+        // A well-formed version reaches the handler, and the save treats one that is not this customer's like any stale
+        // version: another customer's, or one the client altered (here its last character).
+        var altered = current[..^2] + (current[^2] == 'A' ? 'B' : 'A') + '"';
+        (await RenameAsync(othersVersion)).Should().Be((HttpStatusCode.PreconditionFailed, ConcurrencyVersion.ConflictErrorCode));
+        (await RenameAsync(altered)).Should().Be((HttpStatusCode.PreconditionFailed, ConcurrencyVersion.ConflictErrorCode));
+
+        // None of them changed anything: the version the client holds is still the current one.
+        var reread = await client.GetAsync($"/customers/{id}");
+        reread.Headers.ETag!.Tag.ToString().Should().Be(current);
+        (await reread.JsonAsync()).GetProperty("name").GetString().Should().Be("Barbara");
     }
 
     // ---- Commands: transactions, domain events, Dapper + EF Core in one unit of work ----------------------------
@@ -300,7 +337,7 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         var etag = (await client.GetAsync($"/customers/{id}")).Headers.ETag!;
 
         // Like a rename, a delete names the version it removes.
-        (await client.DeleteAsync($"/customers/{id}")).StatusCode.Should().Be((HttpStatusCode)428);
+        (await client.DeleteAsync($"/customers/{id}")).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
 
         var delete = new HttpRequestMessage(HttpMethod.Delete, $"/customers/{id}");
         delete.Headers.IfMatch.Add(etag);

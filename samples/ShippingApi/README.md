@@ -26,7 +26,7 @@ GET  /health/live /health/ready        → the bus-backed readiness probe
 | Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
 | Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
 | Readiness that actually gates traffic | `AddMessagingReadinessCheck()` |
-| `Result` at the HTTP boundary | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `publisher.PublishAsync(…).ToHttpResult(() => TypedResults.Accepted(…))` — 202 with a `Location` to watch, or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
+| `Result` at the HTTP boundary | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `bus.SendAsync(…).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(() => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
 
 The consumer is the point of the whole sample:
 
