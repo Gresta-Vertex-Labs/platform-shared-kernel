@@ -42,9 +42,10 @@ SharedKernel.Persistence.Abstractions.Repositories.BulkUpdateSetters<TAggregate>
 SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
 SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.EntityVersion() -> void
 SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion other) -> bool
-SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToRowVersion() -> ulong
 SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
 SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider) -> bool
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersionJsonConverter
+SharedKernel.Persistence.Abstractions.Repositories.EntityVersionJsonConverter.EntityVersionJsonConverter() -> void
 SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>
 SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecuteDeleteAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 SharedKernel.Persistence.Abstractions.Repositories.IBulkMutationRepository<TAggregate, TId>.ExecutePurgeAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
@@ -86,11 +87,12 @@ override SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResu
 override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Equals(object? obj) -> bool
 override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.GetHashCode() -> int
 override SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.ToString() -> string!
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersionJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
+override SharedKernel.Persistence.Abstractions.Repositories.EntityVersionJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion value, System.Text.Json.JsonSerializerOptions! options) -> void
 static SharedKernel.Persistence.CrossTenantScopeServiceCollectionExtensions.AddSharedKernelCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator !=(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult.operator ==(SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? left, SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult? right) -> bool
 static SharedKernel.Persistence.Abstractions.Diagnostics.DbConnectionFactoryDiagnosticsExtensions.CheckReadinessAsync(this SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory! factory, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Abstractions.Diagnostics.DatabaseReadinessResult!>!
-static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.FromRowVersion(ulong rowVersion) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.None.get -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! s, System.IFormatProvider? provider) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.Parse(string! value) -> SharedKernel.Persistence.Abstractions.Repositories.EntityVersion

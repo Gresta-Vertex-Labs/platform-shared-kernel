@@ -31,7 +31,7 @@ enforced twice (EF Core and PostgreSQL). Fail at startup, not at the first reque
 | --- | --- | --- |
 | `SharedKernel.Persistence.Abstractions` | ORM-free contracts: `IRepository<T,TId>`/`IReadRepository<T,TId>`, `EntityVersion`, `IBulkMutationRepository<T,TId>` + `BulkUpdateSetters<T>` + `AllRowsSpecification<T>`, `ICrossTenantScope` (+ its implementation `CrossTenantScope` and `AddSharedKernelCrossTenantScope()`), `IDbConnectionFactory` + readiness probe; infrastructure seams `ITenantSessionBinder`, `IAmbientDbTransaction`, `IMigrationLock`, `IAdvisoryTransactionLock` (`[EditorBrowsable(Never)]`) | `Primitives`, `Domain`, `Contracts`, `Application.Abstractions`, DI/Logging abstractions |
 | `SharedKernel.Persistence.Npgsql` | No EF Core. The `NpgsqlDataSource` per connection name (`AddSharedKernelNpgsql`), options + TLS policy, keyed secondary data sources (`NpgsqlDataSourceKeys.Migration`/`ReadOnly`/`CrossTenant`), `IDbConnectionFactory`, advisory locks + `AdvisoryLockKeys`, transaction-local tenant binding (`ITenantSessionBinder`), RLS privilege startup check + internal `RowLevelSecurityCatalog`, SQLSTATE classifier (`PostgresExceptionClassifier`, `PostgresErrorMapping`, `PostgresClassifiedErrorCodes`) | `Abstractions`, `Configuration`, `Npgsql`, `Pgvector` |
-| `SharedKernel.Persistence.EfCore` | **The PostgreSQL EF Core package** (the former `.PostgreSQL` package was merged in). `AddSharedKernelPostgres<TContext>` + `EfCorePersistenceBuilder<TContext>`, `SharedKernelDbContext`/`TenantedDbContext`, `PersistenceContextDependencies`, open-generic `EfRepository`/`EfReadRepository`, `TenantedRepository`, `EfUnitOfWork<TContext>` + `UnitOfWorkCoordinator`, the one save interceptor, conventions (snake_case via `EFCore.NamingConventions`, 63-byte identifiers, `xmin`, strongly-typed ids, `Money`, audit/soft-delete/tenant columns, tenant isolation), SQLSTATE classification, retry, RLS interceptors + migration helpers + coverage check, `ConcurrencyVersion`, `IPersistenceStartup`, migrations/seeding, `PostgresDesignTimeDbContextFactory<T>`, jsonb, pgvector | `Abstractions`, `Npgsql`, `Domain`, `Core`, `Configuration`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Pgvector.EntityFrameworkCore`, `EFCore.NamingConventions` |
+| `SharedKernel.Persistence.EfCore` | **The PostgreSQL EF Core package** (the former `.PostgreSQL` package was merged in). `AddSharedKernelPostgres<TContext>` + `EfCorePersistenceBuilder<TContext>`, `SharedKernelDbContext`/`TenantedDbContext`, `PersistenceContextDependencies`, open-generic `EfRepository`/`EfReadRepository`, `TenantedRepository`, `EfUnitOfWork<TContext>` + `UnitOfWorkCoordinator`, the one save interceptor, conventions (snake_case via `EFCore.NamingConventions`, 63-byte identifiers, `xmin`, strongly-typed ids, `Money`, audit/soft-delete/tenant columns, tenant isolation), SQLSTATE classification, retry, RLS interceptors + migration helpers + coverage check, `ConcurrencyVersion` + the internal version codec (opaque ETags, P-562 X4), `IPersistenceStartup`, migrations/seeding, `PostgresDesignTimeDbContextFactory<T>`, jsonb, pgvector | `Abstractions`, `Npgsql`, `Domain`, `Core`, `Configuration`, `Cryptography` (version keys), `Npgsql.EntityFrameworkCore.PostgreSQL`, `Pgvector.EntityFrameworkCore`, `EFCore.NamingConventions` |
 | `SharedKernel.Persistence.EfCore.Auditing` | Audit ledger v3 (AUDITv3): `UseAuditTrail()`, request-path writer (`IAuditTrailWriter`), background sealer, `IAuditQueryService`, `IAuditCheckpointService`/`IAuditCheckpointSink`, `IAuditLedgerMaintenance` (erasure, reseal), `IAuditRecordAuthenticator` (keyring), `IAuditSealingProbe`, self-check, `CreateAuditLedgerTable` migration helper, `AUDIT-FORMAT.md` (packed) | `EfCore` (exact version pin), `Cryptography`, `Configuration` |
 | `SharedKernel.Persistence.EfCore.Encryption` | Field encryption v3: `UseFieldEncryption()`, `.Encrypt(purpose)`/`.WithBlindIndex(...)`, `WhereEncryptedEquals`, query guard, `IEncryptionRotationJob` (maintenance modes), tenant data keys + `ITenantEncryptionKeyManager.ShredTenantAsync`, key ring + probe | `EfCore` (exact version pin), `Cryptography`, `Configuration` |
 | `SharedKernel.Persistence.Dapper` | `IDbSessionFactory`/`IDbSession` (connection + transaction that joins the unit of work, binds the tenant, picks the role), `DapperConfiguration`/`DapperConfigurationBuilder` type handlers, `AddSharedKernelDapper()` | `Npgsql` (never EF Core), `Configuration`, `Dapper` |
@@ -72,13 +72,13 @@ No `*.Extensions` namespace exists in this domain.
 | --- | --- |
 | ORM | `Microsoft.EntityFrameworkCore` 10 + `Npgsql.EntityFrameworkCore.PostgreSQL` |
 | Naming | `EFCore.NamingConventions` (`UseSnakeCaseNamingConvention(InvariantCulture)`) + internal `PostgresIdentifierLengthConvention` (63-byte UTF-8 cut + FNV-1a suffix) + `OwnedSharedTableKeyColumnConvention` |
-| Concurrency | PostgreSQL `xmin` (shadow `uint` on every aggregate root; `RowVersion` mapped to it for `IHasConcurrency`), exposed as opaque `EntityVersion` |
+| Concurrency | PostgreSQL `xmin` (shadow `uint` on every aggregate root; `RowVersion` mapped to it for `IHasConcurrency`), exposed only as an opaque `EntityVersion` token: `xmin` ‖ aggregate binding enciphered as one AES-256 block under an HKDF subkey of the service's key provider (P-562 X4) |
 | Retry | Npgsql execution strategy, **on by default** (`MaxRetryCount` 6, `MaxRetryDelay` 30 s; `ConfigureProvider(o => o.MaxRetryCount = 0)` turns it off) |
 | Micro-ORM | `Dapper` behind `IDbSession`; process-wide type map set only by `DapperConfiguration.Apply` |
 | Crypto | `01.Core` `SharedKernel.Cryptography` (`IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, `IHmacSigner`) + BCL `AesGcm`/HKDF |
 | Vectors | `Pgvector` / `Pgvector.EntityFrameworkCore` (opt-in `UseVector`) |
 | Telemetry | `ActivitySource`/`Meter` `"SharedKernel.Persistence"`, `"SharedKernel.Persistence.EfCore.Auditing"` (both), `Meter` `"SharedKernel.Persistence.EfCore.Encryption"`, Npgsql's own `"Npgsql"`; wired by `13.ServiceDefaults`' `WithPersistenceTelemetry()` by string name. Dapper emits no spans (Npgsql traces every command) |
-| Logging | `[LoggerMessage]`, `LoggingEventIdRanges.Persistence` + offset: EfCore 6000–6099 (context/UoW 6014–6021), Abstractions `CrossTenantScope` 6150, E2 range 6200–6299 reserved, Npgsql 6300–6399, EF RLS 6350–6351, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899 |
+| Logging | `[LoggerMessage]`, `LoggingEventIdRanges.Persistence` + offset: EfCore 6000–6099 (context/UoW 6014–6021, entity versions 6022–6024), Abstractions `CrossTenantScope` 6150, E2 range 6200–6299 reserved, Npgsql 6300–6399, EF RLS 6350–6351, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899 |
 
 ---
 
@@ -114,8 +114,13 @@ No `*.Extensions` namespace exists in this domain.
   `DeleteAsync(agg[, EntityVersion])`, `DeleteRangeAsync`. Paging is always at the call site; a specification that
   pages itself, an offset page without a primary sort, or a keyset spec that declares ordering throws
   `InvalidOperationException`; a malformed cursor throws `ValidationException(pagination.cursor.invalid)`.
-- **`EntityVersion`** — opaque readonly struct: `ToString()` is the ETag value (decimal), `Parse`/`TryParse` accept
-  `"…"` and `W/"…"`, `None`; `FromRowVersion`/`ToRowVersion` are the provider seam (`[EditorBrowsable(Never)]`).
+- **`EntityVersion`** — opaque readonly struct holding only a **sealed token** (21 bytes: format `0x01` + 20 provider
+  bytes), never a database value (P-562 X4). `ToString()`/`TryFormat` is the ETag value — 28 characters of unpadded
+  Base64Url; `Parse`/`TryParse` (and `IParsable`, so `IfMatch<EntityVersion>` binds) accept exactly that shape, quoted
+  or `W/`-prefixed, and **never a number**; `[JsonConverter(EntityVersionJsonConverter)]` writes the token string
+  (`None` → `null`) and reads the empty object `{}` the pre-X4 type always serialized to as `None` (documents stored
+  before the upgrade, e.g. replayed idempotent responses, keep deserializing). `None` = never saved, no text form. The former raw seam `FromRowVersion`/`ToRowVersion` is gone:
+  the only producer of tokens is EfCore's codec, reached through `ConcurrencyVersion`.
 - **Bulk.** `IBulkMutationRepository<T,TId>`: `ExecuteUpdateAsync(spec, Action<BulkUpdateSetters<T>>)`,
   `ExecuteDeleteAsync(spec)` (soft-deletes `ISoftDeletable` rows), `ExecutePurgeAsync(spec)` (always physical).
   The spec must carry `Criteria` or be `AllRowsSpecification<T>`.
@@ -203,7 +208,37 @@ a proven cross-tenant write is logged/counted but answered with the **same** Con
 `TryGetCurrentVersion(exception, out version)`, `ConflictErrorCode`. `UpdateAsync/DeleteAsync(detached)` on an
 aggregate whose version is a shadow `xmin` throws `InvalidOperationException` pointing at the `expectedVersion` overload
 (a detached root carries no version); aggregates with a CLR `RowVersion` attach as before. `Get` on an entity the context
-does not track (shadow `xmin`, e.g. loaded by `IReadRepository`) throws instead of reporting version 0.
+does not track (shadow `xmin`, e.g. loaded by `IReadRepository`) throws instead of reporting a version; `Get` on an entity
+never saved returns `EntityVersion.None`.
+
+**Opaque versions (P-562 X4, `Concurrency/EntityVersionCodec.cs`, `EntityVersionKeyRing.cs`).** The raw `xmin` is a
+transaction counter shared by the whole database, so it never leaves `ConcurrencyVersion`: every version is sealed.
+
+- *Construction* — encode-then-encipher with AES-256 as a single-block permutation: block = `BE32(xmin) ‖ binding[12]`,
+  binding = `SHA-256("SharedKernel.Persistence.EntityVersion.Binding/1" ‖ LP(root entity type name) ‖ LP(each primary-key
+  provider value))[..12]`; token = `0x01 ‖ key check value[4] ‖ AES-256(K, block)`. Opening deciphers with the key whose
+  check value matches and compares the 96-bit binding in fixed time (`FixedTimeComparison`) — a token of another aggregate
+  (even with the same `xmin`), an altered or forged one opens with probability 2^-96. Deterministic (one block: no nonce,
+  IV or padding), so the same version of the same aggregate always has the same ETag (`If-None-Match` works). Not
+  AES-GCM/`ISymmetricEncryptionService` (random nonce: not deterministic); not SIV/GCM-SIV (not in the BCL, and the
+  single-block PRP is the minimal deterministic AE for a one-block message); never XOR-with-a-keyed-hash (leaks `xmin`
+  differences). `xmin` 0 is never sealed.
+- *Keys* — `K` = HKDF-SHA256 subkey (`SubkeyDerivation`, purpose `"SharedKernel.Persistence.EntityVersion"` — what
+  `provider.ForPurpose(...)` returns) of the service's root key provider: the `ISynchronousEncryptionKeyProvider` in the
+  container, else the `IEncryptionKeyProvider` (used synchronously when it is also in-memory, e.g.
+  `StaticEncryptionKeyProvider`; otherwise bridged: current key loaded on first use, refreshed in the background every
+  5 min, a failed refresh keeps the key and logs 6023). The check value is a separate HKDF output (purpose `….KeyCheck`).
+  Root keys ≥ 32 bytes. One `EntityVersionCodec` singleton per service provider, attached to every context through
+  `PersistenceContextDependencies.EntityVersions`; `PersistenceContextDependencies.Create(..., entityVersionKeys:)` for
+  hand-built contexts.
+- *Rotation* — sealed with the current key; opened with any key that was current earlier **in this process** (the 64
+  most recent). Keys are never looked up by anything a client sends. A token under an unknown key (e.g. issued before a
+  restart that rotated the key) is a stale version: `ConflictException` → 412 on an `If-Match` endpoint, never a 500.
+- *Failure semantics* — `ResolveExpected` opens the version **before** the repository attaches a detached aggregate, so
+  a rejected version leaves the change tracker untouched; rejection is logged at Debug (6022, reason only, never the
+  token). No key provider registered: `Get`/`SetExpected` throw `InvalidOperationException` naming what to register; the
+  conflict translator then attaches no current version (`TryGetCurrentVersion` false) — a conflict is still a conflict.
+  Sealing inside the translator never throws (6024).
 
 **Repositories.** `EfReadRepository<T,TId>`/`EfRepository<T,TId>` are concrete and subclassable (public ctor
 `(SharedKernelDbContext)`, virtual members, `protected virtual IQueryable<T> AggregateQuery()` used by
@@ -446,6 +481,9 @@ anonymous `IRequestContext` and `ICrossTenantScope`, so a Dapper-only service wo
 - **Startup work that needs the schema waits for `IPersistenceStartup`** (audit self-check, sealer, RLS coverage
   check, database readiness).
 - **Sibling packages pin EfCore (and EfCore pins Npgsql) to the exact version** — they use each other's internals.
+- **The raw `xmin` never leaves `ConcurrencyVersion`** (P-562 X4). No public API creates an `EntityVersion` from a number
+  or reads one out of it; a new producer of versions (a projection, a Dapper read model) goes through the codec with the
+  same binding, never around it. Key lookups are never driven by client input (only keys the process made current).
 
 **Hard violations:**
 
@@ -481,6 +519,8 @@ The canonical composition (compiled and run by `13.ServiceDefaults/SharedKernel.
 builder.Services.AddOidcAuthentication(builder.Configuration);      // 12.Security
 builder.Services.AddSharedKernelRequestContext();                   // 13.ServiceDefaults.Security → IRequestContext
 builder.Services.AddSharedKernelCryptography(builder.Configuration);// IHmacSigner (audit), key providers (encryption)
+builder.AddSharedKernelKeyVaultKeyProvider();                       // the root IEncryptionKeyProvider: field encryption and
+                                                                    // entity versions (ETags) derive their own subkeys from it
 
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p     // ConnectionStrings:orders + SharedKernel:Persistence:orders
     .UseMultiTenancy(rowLevelSecurity: true)
@@ -531,6 +571,11 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
   `PostgresException`s or `DbTransactionInterceptor` failures, a transaction that commits late), never by a sequential
   stand-in.
 - Every finding fix carries a regression test (P-558 review IDs A*, C*, S*, F* appear in test names).
+- Entity versions (P-562 X4, test names prefixed `X4_`): `EfCore.Tests/Concurrency/EntityVersionCodecTests` proves the
+  construction in isolation — including a known-answer test that re-derives the token from the documented layout and
+  locks the version-1 wire format — and `EfCore.Integration.Tests/Postgres/EntityVersionPostgresTests` proves it end to
+  end (two rows sharing one `xmin`, tampering, rotation across a restart, no key provider). A wire-format change is a new
+  format byte, never a silent edit of the known answer.
 - README samples are compiled by tests: `PersistenceReadmeSampleTests` (domain README), `Encryption.Tests/Unit/ReadmeSampleTests`,
   `Auditing.Tests/Registration/ReadmeSampleTests`; `AuditFormatVectorTests` parses the packed `AUDIT-FORMAT.md`.
 - `SharedKernel.Persistence.ConsumerVerify` runs against the **packed** packages (not in CI yet — see the handoff):
@@ -566,6 +611,13 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
 - No real PgBouncer container test (simulated by one un-reset physical connection); a `FakeUnitOfWork` rollback restores
   which aggregates a `FakeRepository` holds, not in-place changes to an aggregate object.
 - `18.Idempotency.EfCore` runs its context with retry off on purpose (single atomic statements; fail-open must be fast).
+- **Entity versions (P-562 X4)**: a key rotation followed by a restart makes the ETags issued before it stale (412 once,
+  the client re-reads) — a process opens only keys it made current itself, by design (no client value selects a key);
+  there is no configured list of previous version keys. Versions are issued only for tracked aggregates through
+  `ConcurrencyVersion` (no public codec for projections or Dapper read models yet). The single-block AES call lives in
+  EfCore, a direct BCL `Aes` use outside `SharedKernel.Cryptography` like the encryption package's `AesGcm` —
+  `CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography` is not run against 06 assemblies; if it ever is, both
+  move behind a `SharedKernel.Cryptography` primitive.
 
 ---
 
@@ -575,3 +627,4 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
 
 - [2026-09-21] P-558 persistence gold-standard pass 2 — brain rewritten: PostgreSQL-only (`.PostgreSQL` merged into `.EfCore`), shared 05 contracts, one entry point, one transaction per scope, transaction-local RLS, encryption v3, audit ledger v3 with async sealer, `SharedKernel.Persistence.Testing` (agent)
 - [2026-09-22] P-558 verification via `samples/BillingApi`: design-time `ConfigurePersistence`; `SharedKernel:Persistence:Tenant` annotation so `EnableTenantRowLevelSecurityForModel(TargetModel)` works on real migrations (throws on zero tables); `ConcurrencyVersion.Get` refuses untracked entities; GSS encryption off unless configured; Testing fakes roll back repository writes. Record: `P-558-SESSION-HANDOFF.md` §7
+- [2026-09-24] P-562 X4 (owner-approved, from review finding S13): opaque ETags. `EntityVersion` holds only a sealed token (28-char Base64Url, never a number; JSON converter); `FromRowVersion`/`ToRowVersion` removed; EfCore seals `xmin` ‖ aggregate binding as one AES-256 block under an HKDF subkey of the service's key provider (new `SharedKernel.Cryptography` reference), opens it in `SetExpected`/`UpdateAsync`/`DeleteAsync` before attaching, treats foreign/altered/unknown-key tokens as stale (409/412), seals the conflict's current version; `PersistenceContextDependencies.Create(entityVersionKeys:)`; EventIds 6022–6024. **Breaking: every ETag value changes; services must register a key provider** (agent)

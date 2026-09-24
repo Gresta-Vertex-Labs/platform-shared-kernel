@@ -80,7 +80,7 @@ public sealed class ApiTestController : ControllerBase
     [HttpPut("versioned")]
     [RequireIfMatch]
     public Results<NoContent, ErrorHttpResult> Versioned() =>
-        HttpContext.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent();
+        HttpContext.GetIfMatch() == TestVersions.Current ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent();
 
     [HttpPut("versioned-throw")]
     [RequireIfMatch]

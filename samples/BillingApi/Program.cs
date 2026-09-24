@@ -4,9 +4,12 @@ using BillingApi.Infrastructure;
 using BillingApi.Security;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Extensions;
+using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence;
+using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -31,6 +34,16 @@ builder.Services.AddOptions<LocalMasterKeyOptions>()
     .Validate(o => o.Material.Length > 0, $"{LocalMasterKeyOptions.SectionName}:Material is required.")
     .ValidateOnStart();
 builder.Services.AddSingleton<IEnvelopeEncryptionProvider, LocalMasterKeyEnvelopeProvider>();
+
+// The service's root key provider. 06.Persistence seals every entity version (the ETag) with a subkey it derives from
+// it, so an ETag never shows PostgreSQL's xmin. Here: the root keys field encryption reads — every capability derives
+// its own subkey, so sharing the root key is safe. In production, a KMS: 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider().
+builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp =>
+{
+    var keys = sp.GetRequiredService<IOptions<EncryptionOptions>>().Value.Keys;
+    return new StaticEncryptionKeyProvider(
+        keys.CurrentKeyId!, keys.Keys.Select(key => new CryptographicKey(key.Key, Convert.FromBase64String(key.Value))));
+});
 
 // 06.Persistence — the whole stack in one registration. Reads ConnectionStrings:billing and
 // SharedKernel:Persistence:billing (migration role, cross-tenant role, row-level security settings).

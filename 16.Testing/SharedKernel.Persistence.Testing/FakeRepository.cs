@@ -266,7 +266,10 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
-    /// <remarks>The fake has no row versions; this behaves like the plain overload.</remarks>
+    /// <remarks>
+    /// The fake has no row versions; this behaves like the plain overload, whatever the version. A test passes
+    /// <see cref="EntityVersion.None"/> (versions are opaque tokens only the real repository's keys can issue).
+    /// </remarks>
     public Task UpdateAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default) =>
         UpdateAsync(aggregate, cancellationToken);
 
@@ -291,7 +294,7 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
-    /// <remarks>The fake has no row versions; this behaves like the plain overload.</remarks>
+    /// <remarks>The fake has no row versions; this behaves like the plain overload, whatever the version.</remarks>
     public Task DeleteAsync(TAggregate aggregate, EntityVersion expectedVersion, CancellationToken cancellationToken = default) =>
         DeleteAsync(aggregate, cancellationToken);
 

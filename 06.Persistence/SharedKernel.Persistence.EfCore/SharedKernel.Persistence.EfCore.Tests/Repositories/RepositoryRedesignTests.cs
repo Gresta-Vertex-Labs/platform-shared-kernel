@@ -505,7 +505,10 @@ public sealed class RepositoryRedesignTests
         using var __ = context;
         var repo = new EfRepository<ShopOrder, ShopOrderId>(context);
 
-        await FluentActions.Awaiting(() => repo.UpdateAsync(orders[0], expectedVersion: EntityVersion.FromRowVersion(7)))
+        // Any well-formed version: the missing token is reported before the version is looked at.
+        var version = EntityVersion.Parse("AQ" + new string('A', 26));
+
+        await FluentActions.Awaiting(() => repo.UpdateAsync(orders[0], expectedVersion: version))
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*xmin*");
     }
 

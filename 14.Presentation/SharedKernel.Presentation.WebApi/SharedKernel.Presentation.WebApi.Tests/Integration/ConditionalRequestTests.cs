@@ -24,11 +24,14 @@ namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 /// Design D10/D16 and B13, refined by R6–R8, R14 and R18: ETag with 304 on reads; a required <c>If-Match</c> checked
 /// for every kind of endpoint (428 missing or <c>*</c>, 400 malformed or several tags, 412 weak or unparsable); and 412
 /// decided from the error — a version conflict of a conditional request — round-tripping the persistence layer's
-/// <see cref="EntityVersion"/>.
+/// <see cref="EntityVersion"/>, whose text is an opaque token since P-562 X4 (<see cref="TestVersions"/>).
 /// </summary>
 public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsyncLifetime
 {
-    private static readonly EntityVersion CurrentVersion = EntityVersion.FromRowVersion(42);
+    private const string CurrentTag = "\"" + TestVersions.Current + "\"";
+    private const string StaleTag = "\"" + TestVersions.Stale + "\"";
+
+    private static readonly EntityVersion CurrentVersion = TestVersions.CurrentVersion;
 
     private readonly FullStackHost _host;
     private WebApplication? _app;
@@ -82,14 +85,16 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
         using var response = await Client.GetAsync("/orders/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.ETag.Should().Be(new EntityTagHeaderValue("\"42\""));
-        (await response.Content.ReadFromJsonAsync<Order>())!.Id.Should().Be("1");
+        response.Headers.ETag.Should().Be(new EntityTagHeaderValue(CurrentTag));
+        var body = (await response.Content.ReadFromJsonAsync<Order>())!;
+        body.Id.Should().Be("1");
+        body.Version.Should().Be(CurrentVersion, "a version in a body is its token too");
     }
 
     [Theory]
-    [InlineData("\"42\"")]
-    [InlineData("W/\"42\"")]
-    [InlineData("\"7\", \"42\"")]
+    [InlineData(CurrentTag)]
+    [InlineData("W/" + CurrentTag)]
+    [InlineData(StaleTag + ", " + CurrentTag)]
     [InlineData("*")]
     public async Task Read_WhoseIfNoneMatchNamesTheVersion_Is304_WithTheETag_AndNoBody(string ifNoneMatch)
     {
@@ -99,7 +104,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
         using var response = await Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotModified);
-        response.Headers.ETag.Should().Be(new EntityTagHeaderValue("\"42\""));
+        response.Headers.ETag.Should().Be(new EntityTagHeaderValue(CurrentTag));
         (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
@@ -107,7 +112,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     public async Task Read_WhoseIfNoneMatchNamesAnotherVersion_Is200()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/orders/1/summary");
-        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue("\"41\""));
+        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(StaleTag));
 
         using var response = await Client.SendAsync(request);
 
@@ -119,7 +124,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     public async Task NonReadMethod_IsNever304()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/orders/1/touch");
-        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue("\"42\""));
+        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(CurrentTag));
 
         using var response = await Client.SendAsync(request);
 
@@ -145,7 +150,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     [Fact]
     public async Task B13_Write_WithTheCurrentVersion_Succeeds()
     {
-        using var response = await PutAsync(Client, "/orders/1", "\"42\"");
+        using var response = await PutAsync(Client, "/orders/1", CurrentTag);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -153,7 +158,15 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     [Fact]
     public async Task Write_WithAStaleVersion_Is412_KeepingItsErrorCode()
     {
-        using var response = await PutAsync(Client, "/orders/1", "\"41\"");
+        using var response = await PutAsync(Client, "/orders/1", StaleTag);
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, TestErrors.ConcurrencyConflictCode);
+    }
+
+    [Fact]
+    public async Task X4_Write_WithARawRowVersion_Is412_ForItIsNotAVersion()
+    {
+        using var response = await PutAsync(Client, "/orders/1", "\"42\"");
 
         await response.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, TestErrors.ConcurrencyConflictCode);
     }
@@ -184,7 +197,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     [Fact]
     public async Task R8_Write_WithAWeakTag_Is412_BecauseIfMatchComparesStrongly()
     {
-        using var response = await PutAsync(Client, "/orders/1", "W/\"42\"");
+        using var response = await PutAsync(Client, "/orders/1", "W/" + CurrentTag);
 
         await response.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, PresentationErrorCodes.PreconditionFailed);
     }
@@ -197,9 +210,9 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     public async Task R6_RequiredIfMatch_IsEnforced_ForEveryKindOfEndpoint(string path)
     {
         using var missing = await PutAsync(_host.Client, path, ifMatch: null);
-        using var weak = await PutAsync(_host.Client, path, "W/\"1\"");
-        using var current = await PutAsync(_host.Client, path, "\"1\"");
-        using var stale = await PutAsync(_host.Client, path, "\"2\"");
+        using var weak = await PutAsync(_host.Client, path, "W/" + CurrentTag);
+        using var current = await PutAsync(_host.Client, path, CurrentTag);
+        using var stale = await PutAsync(_host.Client, path, StaleTag);
 
         await missing.ShouldBeProblemAsync(StatusCodes.Status428PreconditionRequired, PresentationErrorCodes.PreconditionRequired);
         await weak.ShouldBeProblemAsync(StatusCodes.Status412PreconditionFailed, PresentationErrorCodes.PreconditionFailed);
@@ -235,15 +248,16 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
         var ifMatch = new IfMatch<EntityVersion>(CurrentVersion);
 
         ifMatch.Version.Should().Be(CurrentVersion);
-        ifMatch.ToString().Should().Be("42");
-        ifMatch.Should().Be(new IfMatch<EntityVersion>(EntityVersion.FromRowVersion(42)));
+        ifMatch.ToString().Should().Be(TestVersions.Current);
+        ifMatch.Should().Be(new IfMatch<EntityVersion>(EntityVersion.Parse(TestVersions.Current)));
     }
 
     [Theory]
-    [InlineData("\"42\"", true)]
-    [InlineData("W/\"42\"", false)]
-    [InlineData("\"a\", \"42\"", false)]
+    [InlineData(CurrentTag, true)]
+    [InlineData("W/" + CurrentTag, false)]
+    [InlineData("\"a\", " + CurrentTag, false)]
     [InlineData("\"abc\"", false)]
+    [InlineData("\"42\"", false)] // X4: a raw row version is not a version
     [InlineData(null, false)]
     public async Task R18_IfMatchBinding_WithoutThePipeline_YieldsAVersionOnlyForOneStrongParsableTag(string? header, bool binds)
     {

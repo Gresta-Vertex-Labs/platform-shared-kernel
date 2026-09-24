@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Concurrency;
@@ -24,9 +25,13 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 /// answered with the same <see cref="ConflictException"/> (no version) as a deleted row, so the response never reveals
 /// that the id exists in another tenant;</description></item>
 /// <item><description>otherwise (the row changed, or was deleted, or is invisible under row-level security):
-/// <see cref="ConflictException"/> with the row's current version attached when it still exists.</description></item>
+/// <see cref="ConflictException"/> with the row's current version attached when it still exists — sealed like every
+/// version (<see cref="ConcurrencyVersion"/>), never the raw <c>xmin</c>.</description></item>
 /// </list>
-/// <para>If the row cannot be read (for example the connection broke) the result is a conflict without a version.</para>
+/// <para>
+/// If the row cannot be read (for example the connection broke), or the service registers no key provider to seal
+/// versions with, the result is a conflict without a version.
+/// </para>
 /// </remarks>
 internal static class ConcurrencyConflictTranslator
 {
@@ -39,7 +44,7 @@ internal static class ConcurrencyConflictTranslator
     {
         var entry = exception.Entries.FirstOrDefault();
         if (entry is null)
-            return ToConflict(null, null, exception, logger);
+            return ToConflict(context, null, null, exception, logger);
 
         PropertyValues? current;
         try
@@ -49,10 +54,10 @@ internal static class ConcurrencyConflictTranslator
         catch (Exception lookupFailure) when (lookupFailure is not OperationCanceledException)
         {
             PersistenceContextLog.ConflictRowLookupFailed(logger, lookupFailure, entry.Metadata.ClrType.Name);
-            return ToConflict(entry, null, exception, logger);
+            return ToConflict(context, entry, null, exception, logger);
         }
 
-        return Classify(entry, current, exception, logger);
+        return Classify(context, entry, current, exception, logger);
     }
 
     /// <summary>Translates <paramref name="exception"/>, reading the current row synchronously.</summary>
@@ -60,7 +65,7 @@ internal static class ConcurrencyConflictTranslator
     {
         var entry = exception.Entries.FirstOrDefault();
         if (entry is null)
-            return ToConflict(null, null, exception, logger);
+            return ToConflict(context, null, null, exception, logger);
 
         PropertyValues? current;
         try
@@ -70,13 +75,14 @@ internal static class ConcurrencyConflictTranslator
         catch (Exception lookupFailure)
         {
             PersistenceContextLog.ConflictRowLookupFailed(logger, lookupFailure, entry.Metadata.ClrType.Name);
-            return ToConflict(entry, null, exception, logger);
+            return ToConflict(context, entry, null, exception, logger);
         }
 
-        return Classify(entry, current, exception, logger);
+        return Classify(context, entry, current, exception, logger);
     }
 
     private static Exception Classify(
+        DbContext context,
         EntityEntry entry,
         PropertyValues? current,
         DbUpdateConcurrencyException exception,
@@ -97,14 +103,15 @@ internal static class ConcurrencyConflictTranslator
 
                 // Answered exactly like a row that does not exist: a different answer (403 vs 409) would let a caller probe
                 // which ids exist in other tenants. The violation is visible only in the log and the metric.
-                return ToConflict(entry, current: null, exception, logger);
+                return ToConflict(context, entry, current: null, exception, logger);
             }
         }
 
-        return ToConflict(entry, current, exception, logger);
+        return ToConflict(context, entry, current, exception, logger);
     }
 
     private static ConflictException ToConflict(
+        DbContext context,
         EntityEntry? entry,
         PropertyValues? current,
         DbUpdateConcurrencyException exception,
@@ -112,9 +119,11 @@ internal static class ConcurrencyConflictTranslator
     {
         var entityTypeName = entry?.Metadata.ClrType.Name ?? "entity";
 
-        uint? currentVersion = null;
+        // The row's current version, sealed like every version that leaves the persistence layer — never the raw xmin.
+        // No version when the row is gone, belongs to another tenant, or the service registers no key provider.
+        EntityVersion? currentVersion = null;
         if (entry is not null && current is not null && ConcurrencyVersion.FindToken(entry.Metadata) is { } token)
-            currentVersion = ConcurrencyVersion.ToVersion(current[token.Name]);
+            currentVersion = ConcurrencyVersion.TrySeal(context, entry, ConcurrencyVersion.ToVersion(current[token.Name]));
 
         PersistenceLog.ConcurrencyConflictDetected(logger, entityTypeName);
         PersistenceMeter.ConcurrencyConflicts.Add(1,

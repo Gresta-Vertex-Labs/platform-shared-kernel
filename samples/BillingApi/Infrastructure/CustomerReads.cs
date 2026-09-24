@@ -33,7 +33,8 @@ public sealed record GetCustomer(CustomerId Id) : IQuery<VersionedCustomer>, IAu
 /// <remarks>
 /// The version is PostgreSQL's <c>xmin</c>, kept by the change tracker — so this read goes through the tracking
 /// <see cref="IRepository{TAggregate, TId}"/>. <see cref="IReadRepository{TAggregate, TId}"/> never tracks, and
-/// <c>ConcurrencyVersion.Get</c> refuses an untracked entity rather than inventing a version.
+/// <c>ConcurrencyVersion.Get</c> refuses an untracked entity rather than inventing a version. What reaches the client
+/// is an opaque token: the <c>xmin</c> sealed with the customer's identity under the service's key.
 /// </remarks>
 public sealed class GetCustomerHandler(IRepository<Customer, CustomerId> customers, BillingDbContext db)
     : IQueryHandler<GetCustomer, VersionedCustomer>

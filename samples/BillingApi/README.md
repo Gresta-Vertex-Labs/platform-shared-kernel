@@ -61,11 +61,11 @@ H=(-H "X-Demo-User: alice" -H "X-Demo-Tenant: $T" -H "X-Demo-Permissions: billin
 curl -X POST localhost:8080/customers "${H[@]}" -H 'Content-Type: application/json' \
      -d '{"name":"Ada Lovelace","email":"ada@example.com","taxNumber":"TR-1234"}'          # 201 {"id":...}
 curl "localhost:8080/customers?email=ADA@example.com" "${H[@]}"                              # found through the blind index
-curl -i localhost:8080/customers/{id} "${H[@]}"                                              # ETag: "766"
-curl -i localhost:8080/customers/{id} "${H[@]}" -H 'If-None-Match: "766"'                    # 304, no body
-curl -X PUT localhost:8080/customers/{id}/name "${H[@]}" -H 'If-Match: "766"' \
+curl -i localhost:8080/customers/{id} "${H[@]}"                                              # ETag: "AdU2PjcYmR4Kx0aB9wFtLq3zVe8H"
+curl -i localhost:8080/customers/{id} "${H[@]}" -H 'If-None-Match: "AdU2PjcYmR4Kx0aB9wFtLq3zVe8H"'   # 304, no body
+curl -X PUT localhost:8080/customers/{id}/name "${H[@]}" -H 'If-Match: "AdU2PjcYmR4Kx0aB9wFtLq3zVe8H"' \
      -H 'Content-Type: application/json' -d '{"name":"Ada King"}'                            # 200, new ETag; no If-Match → 428, stale → 412
-curl -X DELETE localhost:8080/customers/{id} "${H[@]}" -H 'If-Match: "812"'                  # 204 — deletes name their version too
+curl -X DELETE localhost:8080/customers/{id} "${H[@]}" -H 'If-Match: "Ae0rT7…"'              # 204 — deletes name their version too
 ```
 
 | Endpoint | Permission | Shows |
@@ -91,18 +91,20 @@ Either way an anonymous caller gets 401 and a caller without the permission 403,
 
 ## Optimistic concurrency over HTTP
 
-The customer's version (PostgreSQL `xmin`, as `EntityVersion`) travels as its `ETag`, and changes require it back:
+The customer's version travels as its `ETag`, and changes require it back. It is an `EntityVersion`: PostgreSQL's
+`xmin` sealed with the customer's identity under a subkey of the service's key provider (registered in `Program.cs`), so
+the ETag never shows the database's transaction counter, and a plain number sent as `If-Match` is not a version (412):
 
 ```csharp
 customers.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
     sender.Send(new GetCustomer(new CustomerId(id)), ct)
-        .ToOkWithETag(found => found.Customer, found => found.Version.ToString()));   // ETag; If-None-Match → 304
+        .ToOkWithETag(found => found.Version.ToString(), found => found.Customer));   // ETag; If-None-Match → 304
 
 customers.MapPut("/{id:guid}/name", (Guid id, RenameCustomerRequest body, HttpContext http, ISender sender, CancellationToken ct) =>
         ExpectedVersion(http)                                   // EntityVersion.TryParse(http.GetIfMatch())
             .Bind(expected => sender.Send(new RenameCustomer(new CustomerId(id), body.Name, expected), ct))
             .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
-            .ToOkWithETag(found => found.Customer, found => found.Version.ToString()))
+            .ToOkWithETag(found => found.Version.ToString(), found => found.Customer))
     .RequireIfMatch();                                          // no If-Match → 428 before the handler runs
 ```
 

@@ -7,6 +7,7 @@ using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
@@ -41,8 +42,10 @@ public sealed record TenantErased(Guid TenantId, bool IsComplete, long BlindInde
 /// </summary>
 public static class BillingEndpoints
 {
+    // A tag that is not a version (a plain number included) fails exactly like a stale version: the persistence layer's
+    // stale-version code, which an If-Match endpoint answers with 412.
     private static readonly Error UnknownVersion = Error.Conflict(
-        "billing.version_unknown", "If-Match does not name a version of this resource. Read it again for its current ETag.");
+        ConcurrencyVersion.ConflictErrorCode, "If-Match does not name a version of this resource. Read it again for its current ETag.");
 
     public static void MapBillingEndpoints(this IEndpointRouteBuilder app)
     {
@@ -66,10 +69,11 @@ public static class BillingEndpoints
             sender.Send(new RegisterCustomer(CustomerId.New(), body.Name, body.Email, body.TaxNumber), ct)
                 .ToCreated(id => $"/customers/{id.Value}", id => new ResourceCreated(id.Value)));
 
-        // The customer's version travels as its ETag. A GET whose If-None-Match names the current version gets 304.
+        // The customer's version travels as its ETag — an opaque token, never PostgreSQL's xmin. A GET whose
+        // If-None-Match names the current version gets 304.
         customers.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
             sender.Send(new GetCustomer(new CustomerId(id)), ct)
-                .ToOkWithETag(found => found.Customer, found => found.Version.ToString()));
+                .ToOkWithETag(found => found.Version.ToString(), found => found.Customer));
 
         customers.MapGet("/", ([FromQuery] string email, ISender sender, CancellationToken ct) =>
             sender.Send(new GetCustomerByEmail(email), ct).ToOk());
@@ -81,7 +85,7 @@ public static class BillingEndpoints
                 ExpectedVersion(http)
                     .Bind(expected => sender.Send(new RenameCustomer(new CustomerId(id), body.Name, expected), ct))
                     .Bind(() => sender.Send(new GetCustomer(new CustomerId(id)), ct))
-                    .ToOkWithETag(found => found.Customer, found => found.Version.ToString()))
+                    .ToOkWithETag(found => found.Version.ToString(), found => found.Customer))
             .RequireIfMatch();
 
         customers.MapDelete("/{id:guid}", (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
