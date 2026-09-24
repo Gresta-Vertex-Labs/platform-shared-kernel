@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -136,6 +137,29 @@ public sealed class TotpStepUpEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AuthenticationMethodTime_AfterVerifyCode_IsTheVerificationTime_UntilTheWindowEnds()
+    {
+        // X1: the real OIDC mapper reads the time the transformation stamps; it stays the verification time as the
+        // clock moves, which is what lets a maximum age end the step-up on a long-lived connection.
+        DateTimeOffset verifiedAt = _clock.UtcNow;
+        string code = new TotpGenerator(_clock).GenerateCode(Secret);
+
+        string before = await GetAsync("/otp-time", FakeUserContext.DefaultSubjectId, "session-1");
+        await GetAsync($"/verify?code={code}", FakeUserContext.DefaultSubjectId, "session-1");
+        string justAfter = await GetAsync("/otp-time", FakeUserContext.DefaultSubjectId, "session-1");
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        string tenMinutesLater = await GetAsync("/otp-time", FakeUserContext.DefaultSubjectId, "session-1");
+        _clock.Advance(TimeSpan.FromMinutes(6));
+        string afterWindow = await GetAsync("/otp-time", FakeUserContext.DefaultSubjectId, "session-1");
+
+        string expected = verifiedAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        Assert.Equal("none", before);
+        Assert.Equal(expected, justAfter);
+        Assert.Equal(expected, tenMinutesLater);
+        Assert.Equal("none", afterWindow);
+    }
+
+    [Fact]
     public async Task UserContext_ResolvedByOidcMapper_KeepsPrimaryMethods()
     {
         string code = new TotpGenerator(_clock).GenerateCode(Secret);
@@ -170,6 +194,7 @@ public sealed class TotpStepUpEndToEndTests : IAsyncLifetime
         string body = context.Request.Path.Value switch
         {
             "/otp" => user.WasAuthenticatedWith("otp").ToString(),
+            "/otp-time" => user.GetAuthenticationMethodTime("otp")?.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture) ?? "none",
             "/methods" => string.Join(',', user.AuthenticationMethods.Order(StringComparer.Ordinal)),
             "/verify" => (await context.RequestServices.GetRequiredService<TotpChallengeService>()
                 .VerifyCodeAsync(user, Secret, context.Request.Query["code"].ToString(), cancellationToken: context.RequestAborted)).ToString(),

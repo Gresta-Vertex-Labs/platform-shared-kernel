@@ -9,7 +9,9 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// </summary>
 /// <remarks>
 /// A name is <c>SharedKernel:{kind}:{value}|{value}…</c>. Values are split on <c>|</c> only, so a permission such as
-/// <c>orders:read</c> survives; the attributes refuse values containing <c>|</c>.
+/// <c>orders:read</c> survives; the attributes refuse values containing <c>|</c>. An authentication-method requirement
+/// with a maximum age has its own kind and puts the age first, <c>SharedKernel:amr-max-age:{seconds}|{method}|…</c>, so a
+/// method that looks like a number is never read as the age.
 /// </remarks>
 internal static class SharedKernelPolicyNames
 {
@@ -27,6 +29,8 @@ internal static class SharedKernelPolicyNames
 
     private const string AuthenticationMethodKind = "amr";
 
+    private const string RecentAuthenticationMethodKind = "amr-max-age";
+
     public static string ForPermissions(IEnumerable<string> permissions) => Encode(PermissionKind, permissions);
 
     public static string ForRoles(IEnumerable<string> roles) => Encode(RoleKind, roles);
@@ -35,6 +39,9 @@ internal static class SharedKernelPolicyNames
         Encode(FreshAuthenticationKind, [maxAgeSeconds.ToString(CultureInfo.InvariantCulture)]);
 
     public static string ForAuthenticationMethods(IEnumerable<string> methods) => Encode(AuthenticationMethodKind, methods);
+
+    public static string ForAuthenticationMethods(IEnumerable<string> methods, int maxAgeSeconds) =>
+        Encode(RecentAuthenticationMethodKind, [maxAgeSeconds.ToString(CultureInfo.InvariantCulture), .. methods]);
 
     public static bool IsSharedKernelPolicy(string? policyName) =>
         policyName is not null && policyName.StartsWith(Prefix, StringComparison.Ordinal);
@@ -62,9 +69,10 @@ internal static class SharedKernelPolicyNames
             PermissionKind => new PermissionRequirement(values),
             RoleKind => new RoleRequirement(values),
             AuthenticationMethodKind => new AuthenticationMethodRequirement(values),
-            FreshAuthenticationKind when values.Length == 1
-                && int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
-                && seconds > 0 => new FreshAuthenticationRequirement(TimeSpan.FromSeconds(seconds)),
+            RecentAuthenticationMethodKind when values.Length > 1 && TryParseMaxAge(values[0], out var methodMaxAge) =>
+                new AuthenticationMethodRequirement(values[1..], methodMaxAge),
+            FreshAuthenticationKind when values.Length == 1 && TryParseMaxAge(values[0], out var maxAge) =>
+                new FreshAuthenticationRequirement(maxAge),
             _ => null,
         };
 
@@ -104,4 +112,12 @@ internal static class SharedKernelPolicyNames
 
     private static string Encode(string kind, IEnumerable<string> values) =>
         Prefix + kind + KindSeparator + string.Join(ValueSeparator, values);
+
+    // A whole number of seconds, greater than zero, written as the attributes write it: digits only.
+    private static bool TryParseMaxAge(string value, out TimeSpan maxAge)
+    {
+        var parsed = int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds > 0;
+        maxAge = parsed ? TimeSpan.FromSeconds(seconds) : default;
+        return parsed;
+    }
 }

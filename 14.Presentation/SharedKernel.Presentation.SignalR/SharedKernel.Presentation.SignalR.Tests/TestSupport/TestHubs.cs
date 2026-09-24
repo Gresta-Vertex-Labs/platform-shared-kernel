@@ -251,6 +251,9 @@ public sealed class MethodAuthorizationHub(InvocationCounter counter) : Hub
     [RequireAuthenticationMethod("mfa")]
     public string ChangePassword() => Run("changed");
 
+    [RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]
+    public string ApprovePayout() => Run("approved");
+
     public string Open() => Run("open");
 
     private string Run(string result)

@@ -150,6 +150,113 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
     }
 
     [Theory]
+    [InlineData(MinimalApi)]
+    [InlineData(Mvc)]
+    public async Task X1_StepUpMethodWithinMaxAge_IsAccepted(string prefix)
+    {
+        using var response = await SendAsync(
+            $"{prefix}/auth/otp-recent",
+            request => request.SignedIn(methods: "pwd,otp", methodTimes: [("otp", FullStackHost.Now.AddMinutes(-4))]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData(MinimalApi)]
+    [InlineData(Mvc)]
+    public async Task X1_StepUpMethodOlderThanMaxAge_IsAskedToStepUp_WithMaxAge(string prefix)
+    {
+        // The principal still carries amr=otp — as a long-lived connection's does after its step-up expired.
+        using var response = await SendAsync(
+            $"{prefix}/auth/otp-recent",
+            request => request.SignedIn(methods: "pwd,otp", methodTimes: [("otp", FullStackHost.Now.AddMinutes(-10))]));
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status401Unauthorized, PresentationErrorCodes.StepUpRequired);
+        response.Headers.WwwAuthenticate.ToString().Should().Be(
+            "Bearer error=\"insufficient_user_authentication\", error_description=\"A recent authentication with a stronger method is required\", max_age=\"300\"");
+    }
+
+    [Theory]
+    [InlineData(300, HttpStatusCode.OK)]
+    [InlineData(301, HttpStatusCode.Unauthorized)]
+    public async Task X1_MaxAge_IsInclusive(int secondsAgo, HttpStatusCode expected)
+    {
+        using var response = await SendAsync(
+            "/auth/otp-recent",
+            request => request.SignedIn(methods: "otp", methodTimes: [("otp", FullStackHost.Now.AddSeconds(-secondsAgo))]));
+
+        response.StatusCode.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(-60, HttpStatusCode.OK)]
+    [InlineData(-600, HttpStatusCode.Unauthorized)]
+    public async Task X1_MethodCarriedByTheCredential_DatesFromTheSignIn(int signedInSecondsAgo, HttpStatusCode expected)
+    {
+        using var response = await SendAsync(
+            "/auth/otp-recent",
+            request => request.SignedIn(methods: "pwd,otp", authTime: FullStackHost.Now.AddSeconds(signedInSecondsAgo)));
+
+        response.StatusCode.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task X1_MethodWithoutAnyTime_IsAskedToStepUp()
+    {
+        using var response = await SendAsync("/auth/otp-recent", request => request.SignedIn(methods: "pwd,otp"));
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status401Unauthorized, PresentationErrorCodes.StepUpRequired);
+    }
+
+    [Fact]
+    public async Task X1_RecentTimeWithoutTheMethod_IsAskedToStepUp()
+    {
+        using var response = await SendAsync(
+            "/auth/otp-recent",
+            request => request.SignedIn(methods: "pwd", methodTimes: [("otp", FullStackHost.Now)]));
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status401Unauthorized, PresentationErrorCodes.StepUpRequired);
+    }
+
+    [Theory]
+    [InlineData(60, HttpStatusCode.OK)]
+    [InlineData(86_400, HttpStatusCode.Unauthorized)]
+    public async Task X1_MethodTimeAheadOfTheClock_IsToleratedOnlyAsSkew(int secondsAhead, HttpStatusCode expected)
+    {
+        using var response = await SendAsync(
+            "/auth/otp-recent",
+            request => request.SignedIn(methods: "otp", methodTimes: [("otp", FullStackHost.Now.AddSeconds(secondsAhead))]));
+
+        response.StatusCode.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task X1_WithoutMaxAge_AStaleMethodStillCounts()
+    {
+        // Behaviour without a maximum age is unchanged.
+        using var response = await SendAsync(
+            "/auth/mfa",
+            request => request.SignedIn(methods: "pwd,mfa", methodTimes: [("mfa", FullStackHost.Now.AddDays(-1))]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task X1_StaleMethodAndStaleSignIn_ChallengeCarriesTheSmallestMaxAge()
+    {
+        using var response = await SendAsync(
+            "/auth/otp-recent-and-fresh",
+            request => request.SignedIn(
+                methods: "pwd,otp",
+                authTime: FullStackHost.Now.AddHours(-1),
+                methodTimes: [("otp", FullStackHost.Now.AddMinutes(-20))]));
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status401Unauthorized, PresentationErrorCodes.StepUpRequired);
+        response.Headers.WwwAuthenticate.ToString().Should().Be(
+            "Bearer error=\"insufficient_user_authentication\", error_description=\"A recent authentication with a stronger method is required\", max_age=\"120\"");
+    }
+
+    [Theory]
     [InlineData("DPoP some-token", "DPoP")]
     [InlineData("dpop some-token", "DPoP")]
     [InlineData("Bearer some-token", "Bearer")]
@@ -249,6 +356,9 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
     [InlineData(
         "/auth/grpc-like-mfa",
         "Bearer error=\"insufficient_user_authentication\", error_description=\"A stronger authentication method is required\"")]
+    [InlineData(
+        "/auth/grpc-like-otp-recent",
+        "Bearer error=\"insufficient_user_authentication\", error_description=\"A recent authentication with a stronger method is required\", max_age=\"300\"")]
     public async Task GrpcCall_NeedingStepUp_Is401_WithTheRfc9470Challenge_AndNoBody(string path, string challenge)
     {
         // 401, not 403: gRPC reports it as Unauthenticated, the way HTTP answers a step-up.

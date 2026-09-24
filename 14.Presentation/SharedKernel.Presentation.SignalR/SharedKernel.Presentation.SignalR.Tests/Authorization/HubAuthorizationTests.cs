@@ -171,6 +171,29 @@ public sealed class HubAuthorizationTests
     }
 
     [Fact]
+    public async Task X1_StepUpWithMaxAge_EndsOnAConnectionThatStaysOpen()
+    {
+        // Security review S3, probe P5: the connection keeps the principal it opened with — amr=otp and the step-up's
+        // time — however long it stays open. With a maximum age, SignalR's per-call authorization compares that time
+        // with the clock, so the step-up ends on the connection too.
+        var steppedUpAt = new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+        var clock = new FakeClock(steppedUpAt);
+        await using var app = await StartAsync(configureBuilder: builder => builder.Services.AddSingleton<IClock>(clock));
+        await using var connection = await app.ConnectAsync(
+            HubPaths.MethodAuthorization,
+            TestAuthentication.SignedIn(methods: "pwd,otp", methodTimes: [("otp", steppedUpAt)]));
+
+        clock.Set(steppedUpAt.AddMinutes(1));
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.ApprovePayout))).Should().Be("approved");
+
+        clock.Set(steppedUpAt.AddMinutes(60));
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.ApprovePayout));
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Open))).Should().Be("open", "the connection itself stays usable");
+
+        InvocationCount(app).Should().Be(2);
+    }
+
+    [Fact]
     public async Task HubMethod_WithoutRequirements_IsOpenToAnyConnectedCaller()
     {
         await using var app = await StartAsync();

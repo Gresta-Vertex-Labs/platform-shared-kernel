@@ -88,4 +88,40 @@ public sealed class ApiKeyUserContextMapperTests
     {
         Assert.Throws<ArgumentNullException>(() => _mapper.Map(null!));
     }
+
+    [Fact]
+    public void Map_MethodAddedAfterAuthentication_IsMappedWithItsTime()
+    {
+        // The handler issues no authentication method; a claims transformation may add one, with its time.
+        DateTimeOffset verifiedAt = DateTimeOffset.FromUnixTimeSeconds(1_790_000_000);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(SecurityClaimTypes.Subject, "billing-service"),
+                new Claim(SecurityClaimTypes.AuthenticationMethod, "hwk"),
+                AuthenticationMethodTimeClaim.Create("hwk", verifiedAt),
+            ],
+            ApiKeyAuthenticationDefaults.AuthenticationScheme);
+
+        IUserContext context = _mapper.Map(identity);
+
+        Assert.Equal(["hwk"], context.AuthenticationMethods);
+        Assert.True(context.WasAuthenticatedWith("hwk"));
+        Assert.Equal(verifiedAt, context.GetAuthenticationMethodTime("hwk"));
+    }
+
+    [Fact]
+    public void Map_TimeWithoutItsMethod_IsNotReported()
+    {
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(SecurityClaimTypes.Subject, "billing-service"),
+                AuthenticationMethodTimeClaim.Create("hwk", DateTimeOffset.FromUnixTimeSeconds(1_790_000_000)),
+            ],
+            ApiKeyAuthenticationDefaults.AuthenticationScheme);
+
+        IUserContext context = _mapper.Map(identity);
+
+        Assert.Empty(context.AuthenticationMethods);
+        Assert.Null(context.GetAuthenticationMethodTime("hwk"));
+    }
 }

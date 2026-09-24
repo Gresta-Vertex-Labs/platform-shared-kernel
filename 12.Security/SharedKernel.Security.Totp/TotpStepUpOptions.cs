@@ -9,6 +9,11 @@ public sealed class TotpStepUpOptions
     /// Gets or sets how long a successful code or recovery code counts as a step-up for the session, from one minute to
     /// 24 hours. Defaults to 15 minutes.
     /// </summary>
+    /// <remarks>
+    /// The window is applied when a request authenticates. A SignalR connection authenticates once, when it opens, and
+    /// keeps the method for as long as it stays open; there, a requirement with a maximum age no longer than this window
+    /// (<c>[RequireAuthenticationMethod("otp", MaxAgeSeconds = …)]</c>) ends the step-up at the same time as over HTTP.
+    /// </remarks>
     public TimeSpan FreshnessWindow { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>

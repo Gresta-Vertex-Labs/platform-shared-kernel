@@ -318,6 +318,56 @@ public sealed class OidcUserContextMapperTests
     }
 
     [Fact]
+    public void Map_AuthenticationMethodTimes_DateTheirMethods()
+    {
+        // amr_time is what a step-up adds next to its method; the other methods date from the sign-in.
+        IUserContext user = CreateMapper().Map(Identity(
+            ("sub", "user-1"),
+            ("amr", "pwd"),
+            ("amr", "otp"),
+            ("auth_time", "1700000000"),
+            ("amr_time", "otp 1700000600"),
+            ("amr_time", "otp 1700000300")));
+
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_600), user.GetAuthenticationMethodTime("otp"));
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), user.GetAuthenticationMethodTime("pwd"));
+        Assert.Null(user.GetAuthenticationMethodTime("hwk"));
+        Assert.Equal(["otp"], Assert.IsType<UserContext>(user).AuthenticationMethodTimes.Keys);
+    }
+
+    [Fact]
+    public void Map_AuthenticationMethodTimeForAMethodNotCarried_IsNotReported()
+    {
+        IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("amr", "pwd"), ("amr_time", "otp 1700000600")));
+
+        Assert.False(user.WasAuthenticatedWith("otp"));
+        Assert.Null(user.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void Map_MalformedAuthenticationMethodTime_FallsBackToTheSignIn()
+    {
+        IUserContext user = CreateMapper().Map(Identity(
+            ("sub", "user-1"),
+            ("amr", "otp"),
+            ("auth_time", "1700000000"),
+            ("amr_time", "otp soon")));
+
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), user.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void Map_CustomAuthenticationMethodClaimType_StillDatesMethodsFromAmrTime()
+    {
+        var options = new OidcAuthenticationOptions();
+        options.Claims.AuthenticationMethodClaimType = "methods";
+
+        IUserContext user = CreateMapper(options).Map(Identity(("sub", "user-1"), ("methods", "otp"), ("amr_time", "otp 1700000600")));
+
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_600), user.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
     public void Map_ClaimsAreExposedThroughFindClaim()
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("department", "risk"), ("department", "audit")));

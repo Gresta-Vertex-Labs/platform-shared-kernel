@@ -7,12 +7,22 @@ using SharedKernel.Security.Abstractions;
 namespace SharedKernel.Security.Totp;
 
 /// <summary>
-/// Adds the <c>otp</c> authentication method to the caller's identity while its session has a recent step-up.
+/// Adds the <c>otp</c> authentication method, and when it was verified, to the caller's identity while its session has
+/// a recent step-up.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Runs after authentication and before <see cref="IUserContext"/> is resolved, so
 /// <see cref="IUserContext.WasAuthenticatedWith"/> sees the method. It never changes <see cref="IUserContext.AuthTime"/>.
+/// </para>
+/// <para>
+/// Next to the method it adds an <see cref="SecurityClaimTypes.AuthenticationMethodTime"/> claim with the step-up's
+/// verification time (whole seconds), so <see cref="IUserContext.GetAuthenticationMethodTime"/> returns it. That time is
+/// what bounds a step-up on a long-lived connection: a SignalR connection keeps the principal it connected with, so the
+/// method stays on it after <see cref="TotpStepUpOptions.FreshnessWindow"/>, but a requirement with a maximum age
+/// (<c>[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]</c>) compares the time with the clock on every hub
+/// method call. When the credential already carries the method, only a step-up more recent than the time the identity
+/// already reports for it is added.
 /// </para>
 /// <para>
 /// ASP.NET Core resolves a single <see cref="IClaimsTransformation"/>. <c>AddTotpStepUp</c> wraps one registered
@@ -77,11 +87,6 @@ public sealed class TotpStepUpClaimsTransformation : IClaimsTransformation
         }
 
         TotpStepUpOptions options = _options.Value;
-        if (identity.HasClaim(options.AuthenticationMethodClaimType, options.AuthenticationMethod))
-        {
-            return principal;
-        }
-
         DateTimeOffset? verifiedAt = await _store.GetLastVerifiedAsync(subjectId, sessionId, CancellationToken.None).ConfigureAwait(false);
         DateTimeOffset now = _clock.UtcNow;
         if (verifiedAt is not { } at || at > now || now - at > options.FreshnessWindow)
@@ -89,7 +94,24 @@ public sealed class TotpStepUpClaimsTransformation : IClaimsTransformation
             return principal;
         }
 
-        var steppedUp = new ClaimsIdentity(identity, [new Claim(options.AuthenticationMethodClaimType, options.AuthenticationMethod)]);
+        // The claim records whole seconds; compare in the same unit, so a principal transformed twice is left alone.
+        DateTimeOffset stepUpTime = DateTimeOffset.FromUnixTimeSeconds(at.ToUnixTimeSeconds());
+        string method = options.AuthenticationMethod;
+        bool hasMethod = identity.HasClaim(options.AuthenticationMethodClaimType, method);
+        if (hasMethod && KnownTime(identity, user, method) >= stepUpTime)
+        {
+            return principal;
+        }
+
+        List<Claim> added = hasMethod ? [] : [new Claim(options.AuthenticationMethodClaimType, method)];
+        added.Add(AuthenticationMethodTimeClaim.Create(method, stepUpTime));
+
+        var steppedUp = new ClaimsIdentity(identity, added);
         return new ClaimsPrincipal(principal.Identities.Select(candidate => ReferenceEquals(candidate, identity) ? steppedUp : candidate));
     }
+
+    // When the identity already dates the method: the latest time recorded for it or, for a method the credential
+    // carried, the sign-in.
+    private static DateTimeOffset? KnownTime(ClaimsIdentity identity, IUserContext user, string method) =>
+        AuthenticationMethodTimeClaim.Read(identity.Claims).TryGetValue(method, out DateTimeOffset recorded) ? recorded : user.AuthTime;
 }
