@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;

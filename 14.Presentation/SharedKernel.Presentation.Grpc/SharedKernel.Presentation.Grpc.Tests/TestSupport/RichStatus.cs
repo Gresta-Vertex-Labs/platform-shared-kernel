@@ -3,7 +3,7 @@ using FluentAssertions;
 using Google.Protobuf.WellKnownTypes;
 using Google.Rpc;
 using Grpc.Core;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using RpcStatus = Google.Rpc.Status;
 
 namespace SharedKernel.Presentation.Grpc.Tests.TestSupport;

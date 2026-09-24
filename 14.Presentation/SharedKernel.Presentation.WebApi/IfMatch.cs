@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
 
 namespace SharedKernel.Presentation.WebApi;
 

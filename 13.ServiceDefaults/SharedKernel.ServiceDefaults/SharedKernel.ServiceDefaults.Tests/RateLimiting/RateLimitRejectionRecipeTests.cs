@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.ServiceDefaults.RateLimiting;
 
 namespace SharedKernel.ServiceDefaults.Tests.RateLimiting;

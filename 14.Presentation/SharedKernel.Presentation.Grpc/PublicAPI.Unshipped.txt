@@ -1,13 +1,10 @@
 #nullable enable
-const SharedKernel.Presentation.Grpc.Errors.GrpcErrorCodes.MoreFieldViolations = "grpc.more_field_violations" -> string!
-SharedKernel.Presentation.Grpc.Errors.GrpcErrorCodes
-SharedKernel.Presentation.Grpc.Errors.GrpcStatusCodeMap
+SharedKernel.Presentation.Grpc.GrpcErrorCodes
 SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions
-SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions
-SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.ErrorDomain.get -> string!
-SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.ErrorDomain.set -> void
-SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.SharedKernelGrpcOptions() -> void
-static SharedKernel.Presentation.Grpc.Errors.GrpcErrorCodes.ForStatus(Grpc.Core.StatusCode statusCode) -> string!
-static SharedKernel.Presentation.Grpc.Errors.GrpcStatusCodeMap.Resolve(SharedKernel.Primitives.Errors.ErrorType type) -> Grpc.Core.StatusCode
-static SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions.AddSharedKernelGrpc(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions!>? configure = null) -> Grpc.AspNetCore.Server.IGrpcServerBuilder!
-static SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions.SectionName.get -> string!
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.ErrorDomain.get -> string!
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.ErrorDomain.set -> void
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.SharedKernelGrpcOptions() -> void
+const SharedKernel.Presentation.Grpc.GrpcErrorCodes.MoreFieldViolations = "grpc.more_field_violations" -> string!
+static SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions.AddSharedKernelGrpc(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions!>? configure = null) -> Grpc.AspNetCore.Server.IGrpcServerBuilder!
+static SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.SectionName.get -> string!

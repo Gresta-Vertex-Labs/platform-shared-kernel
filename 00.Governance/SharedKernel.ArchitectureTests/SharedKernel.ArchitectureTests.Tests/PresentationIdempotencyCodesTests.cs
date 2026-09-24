@@ -1,6 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;

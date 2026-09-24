@@ -7,9 +7,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Presentation.OpenApi.Options;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.TestSupport;

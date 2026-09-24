@@ -3,9 +3,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
@@ -154,7 +151,7 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
         using var response = await SendAsync("/idempotent", SecretKey);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var logger = _host.Logs.GetLogger("SharedKernel.Presentation.WebApi.Idempotency.IdempotencyKeyGuard");
+        var logger = _host.Logs.GetLogger("SharedKernel.Presentation.WebApi.IdempotencyKeyGuard");
         var record = logger.Records.Last(r => r.EventId.Id == LoggingEventIdRanges.Presentation + 3);
         record.LogLevel.Should().Be(Microsoft.Extensions.Logging.LogLevel.Warning);
         record.Message.Should().Contain(PresentationErrorCodes.IdempotencyKeyInvalid).And.NotContain(SecretKey);

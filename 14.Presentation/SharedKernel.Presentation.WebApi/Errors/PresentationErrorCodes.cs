@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// The error codes this package itself produces at the HTTP boundary, for failures that happen before any
@@ -77,6 +77,6 @@ public static class PresentationErrorCodes
     /// <param name="statusCode">The HTTP status code.</param>
     /// <returns><c>http.{statusCode}</c>.</returns>
     /// <remarks><c>SharedKernel.Communication.Rest</c> produces the same code for a response without a body.</remarks>
-    public static string ForStatus(int statusCode) =>
+    internal static string ForStatus(int statusCode) =>
         HttpStatusPrefix + statusCode.ToString(CultureInfo.InvariantCulture);
 }

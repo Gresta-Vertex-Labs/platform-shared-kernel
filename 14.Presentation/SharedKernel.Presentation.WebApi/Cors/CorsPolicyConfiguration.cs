@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Cors.Infrastructure;
-using SharedKernel.Presentation.WebApi.Options;
 
 namespace SharedKernel.Presentation.WebApi.Cors;
 

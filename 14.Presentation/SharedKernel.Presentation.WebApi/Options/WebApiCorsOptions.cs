@@ -1,8 +1,7 @@
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Propagation;
 
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Cross-origin resource sharing settings, applied to every endpoint, hubs included.</summary>
 /// <remarks>

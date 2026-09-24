@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Idempotency;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Endpoint metadata stating that the endpoint accepts an optional <c>Idempotency-Key</c> request header: a request
@@ -11,4 +11,4 @@ namespace SharedKernel.Presentation.WebApi.Idempotency;
 /// <see cref="IdempotencyKey"/> parameter. On an endpoint that also carries
 /// <see cref="IIdempotencyKeyRequiredMetadata"/>, the requirement wins.
 /// </remarks>
-public interface IIdempotencyKeyAcceptedMetadata;
+internal interface IIdempotencyKeyAcceptedMetadata;

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.WebApi.Options;
 
 namespace SharedKernel.Presentation.WebApi.Correlation;
 

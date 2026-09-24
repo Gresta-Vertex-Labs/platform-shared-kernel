@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>The single source of truth for the HTTP status code of an <see cref="ErrorType"/>.</summary>
 /// <remarks>
@@ -10,7 +10,7 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// <see cref="ErrorType.Conflict"/> whose code is in <c>Problems:PreconditionFailedErrorCodes</c>, on a request that
 /// carries <c>If-Match</c> or <c>If-None-Match</c>, is 412.
 /// </remarks>
-public static class ErrorTypeStatusCodeMap
+internal static class ErrorTypeStatusCodeMap
 {
     /// <summary>Returns the HTTP status code for <paramref name="type"/>.</summary>
     /// <param name="type">The error type.</param>

@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Security response headers written on every response.</summary>
 /// <remarks>

@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Endpoint metadata stating that the endpoint requires an <c>If-Match</c> request header naming one strong entity
@@ -9,4 +9,4 @@ namespace SharedKernel.Presentation.WebApi.Http;
 /// Added by <see cref="RequireIfMatchAttribute"/>, the <c>RequireIfMatch()</c> convention and a not-null
 /// <see cref="IfMatch{TVersion}"/> parameter. It wins over <see cref="IIfMatchAcceptedMetadata"/> on the same endpoint.
 /// </remarks>
-public interface IIfMatchRequiredMetadata;
+internal interface IIfMatchRequiredMetadata;

@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Settings for the correlation id every request carries, read from and written to <c>X-Correlation-Id</c>.</summary>
 /// <remarks>

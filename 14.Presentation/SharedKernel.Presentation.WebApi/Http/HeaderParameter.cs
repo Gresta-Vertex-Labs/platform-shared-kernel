@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Tells from a handler parameter whether the header it binds is optional, for the <see cref="IdempotencyKey"/> and

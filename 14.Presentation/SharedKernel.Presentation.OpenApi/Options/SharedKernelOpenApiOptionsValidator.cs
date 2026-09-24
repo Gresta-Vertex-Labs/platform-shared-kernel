@@ -1,7 +1,7 @@
 using System.Buffers;
 using Microsoft.Extensions.Options;
 
-namespace SharedKernel.Presentation.OpenApi.Options;
+namespace SharedKernel.Presentation.OpenApi;
 
 /// <summary>Validates <see cref="SharedKernelOpenApiOptions"/> at startup, so a misconfiguration stops the host instead of a request.</summary>
 internal sealed class SharedKernelOpenApiOptionsValidator : IValidateOptions<SharedKernelOpenApiOptions>

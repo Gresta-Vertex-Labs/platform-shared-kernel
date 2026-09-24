@@ -3,7 +3,6 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
 

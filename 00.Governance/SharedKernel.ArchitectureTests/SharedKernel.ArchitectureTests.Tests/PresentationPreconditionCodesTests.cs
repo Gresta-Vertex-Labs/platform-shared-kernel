@@ -1,6 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Persistence.EfCore.Concurrency;
-using SharedKernel.Presentation.WebApi.Options;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 using Xunit;
 

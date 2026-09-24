@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Settings for RFC 9457 <c>application/problem+json</c> error responses.</summary>
 public sealed class WebApiProblemsOptions

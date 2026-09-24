@@ -8,7 +8,7 @@ namespace SharedKernel.Presentation.Grpc.Errors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The gRPC counterpart of <c>SharedKernel.Presentation.WebApi.Errors.ErrorTypeStatusCodeMap</c>, never a merge with
+/// The gRPC counterpart of <c>SharedKernel.Presentation.WebApi.ErrorTypeStatusCodeMap</c>, never a merge with
 /// it: both key off the same <see cref="ErrorType"/>, but HTTP and gRPC status codes do not correspond one to one
 /// (gRPC's <see cref="StatusCode.Aborted"/> and <see cref="StatusCode.FailedPrecondition"/> cover ground HTTP splits
 /// across 409, 412 and 422).
@@ -20,7 +20,7 @@ namespace SharedKernel.Presentation.Grpc.Errors;
 /// service, keeps its own code.
 /// </para>
 /// </remarks>
-public static class GrpcStatusCodeMap
+internal static class GrpcStatusCodeMap
 {
     /// <summary>Returns the gRPC status code for <paramref name="type"/>.</summary>
     /// <param name="type">The error type.</param>

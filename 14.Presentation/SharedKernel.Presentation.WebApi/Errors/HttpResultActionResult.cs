@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Runs an <see cref="IResult"/> as an MVC action result, so MVC failures take the minimal-API path.</summary>
 internal sealed class HttpResultActionResult : ActionResult, IStatusCodeActionResult

@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Presentation.OpenApi.Options;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;
 using Xunit;

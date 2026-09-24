@@ -9,7 +9,6 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Presentation.Grpc.Options;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;

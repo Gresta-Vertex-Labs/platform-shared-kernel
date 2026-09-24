@@ -6,7 +6,8 @@
 //      shape, native authorization (401/403), an Idempotency-Key required by an IdempotencyKey parameter, ETag with
 //      304, If-Match required by an IfMatch<long> parameter with 428/412 (the service's own version-conflict code
 //      added to Problems.PreconditionFailedErrorCodes), both headers made optional by a nullable parameter (a missing
-//      header reaches the handler as null, an unusable one is refused before it), the exposed CORS headers, and the
+//      header reaches the handler as null, an unusable one is refused before it), a Paging parameter answering invalid
+//      paging input with the validation problem before the handler, the exposed CORS headers, and the
 //      automatic 429 body for a limiter registered with AddRateLimiter.
 //   2. WebApi — settings that fail validation stop the host before it serves a request.
 //   3. OpenApi — AddSharedKernelOpenApi/MapSharedKernelOpenApi generate one document per API version, each carrying the
@@ -46,12 +47,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Presentation.Grpc;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.SignalR;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
@@ -161,7 +162,7 @@ static async Task Surface1_WebApiOneCallSetup()
     // A framework-generated error gets the same shape, with an http.{status} code.
     using (var unmatched = await client.GetAsync("/no-such-route"))
     {
-        (await Check.ProblemAsync(unmatched, HttpStatusCode.NotFound, PresentationErrorCodes.ForStatus(404), "an unmatched route")).Dispose();
+        (await Check.ProblemAsync(unmatched, HttpStatusCode.NotFound, "http.404", "an unmatched route")).Dispose();
     }
 
     // Native authorization: anonymous → 401, signed in without the permission → 403, with it → 200.
@@ -202,6 +203,23 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.Status(accepted, HttpStatusCode.OK, $"IdempotencyKey parameter, key {sent}");
         using var body = await Check.JsonAsync(accepted);
         Check.That(body.RootElement.GetProperty("key").GetString() == "pay-7f3a", $"the IdempotencyKey parameter carries the key sent as {sent}");
+    }
+
+    // A Paging parameter: absent parameters are the defaults; one out of range is the platform's validation problem,
+    // keyed by the query parameter, with 04.Contracts' pagination code.
+    using (var firstPage = await client.GetAsync("/orders"))
+    {
+        Check.Status(firstPage, HttpStatusCode.OK, "Paging parameter, defaults");
+        using var body = await Check.JsonAsync(firstPage);
+        Check.That(body.RootElement.GetProperty("page").GetInt32() == 1 && body.RootElement.GetProperty("pageSize").GetInt32() == PageRequest.DefaultPageSize, "Paging binds the defaults of PageRequest.Create");
+    }
+
+    using (var outOfRange = await client.GetAsync("/orders?pageSize=0"))
+    {
+        using var problem = await Check.ProblemAsync(outOfRange, HttpStatusCode.BadRequest, ErrorCodes.Validation.Failed, "Paging parameter, pageSize=0");
+        Check.That(
+            problem.RootElement.GetProperty(ProblemDetailsExtensionNames.ErrorCodes).GetProperty("pageSize")[0].GetString() == PaginationErrorCodes.PageSizeOutOfRange,
+            "an invalid pageSize is reported under pageSize with its pagination code");
     }
 
     // ETag and 304: ToOkWithETag answers a matching If-None-Match with 304 and no body.
@@ -323,7 +341,7 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.That(rejected.Headers.RetryAfter?.Delta is { } delay && delay > TimeSpan.Zero, "the 429 carries the limiter's Retry-After");
     }
 
-    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, optional headers, CORS, 429");
+    Console.WriteLine("Surface 1 PASSED — WebApi: typed results, problem+json, 401/403, Idempotency-Key, ETag/304, If-Match 428/412, optional headers, paging, CORS, 429");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -627,6 +645,9 @@ internal static class OrdersHttpApi
         app.MapPost("/transfers", (IdempotencyKey? key) => OptionalHeaders.Seen(key?.Value));
         app.MapDelete("/documents/{id:int}", (int id, IfMatch<long>? ifMatch) =>
             OptionalHeaders.Seen(ifMatch is null ? null : Values.VersionText(ifMatch.Version)));
+
+        // Paging binds page and pageSize into a validated PageRequest; invalid input is refused before the handler.
+        app.MapGet("/orders", (Paging paging) => TypedResults.Ok(new { page = paging.Request.Page, pageSize = paging.Request.PageSize }));
 
         app.MapGet("/limited", () => "ok").RequireRateLimiting(Values.OnePerWindowPolicy);
     }

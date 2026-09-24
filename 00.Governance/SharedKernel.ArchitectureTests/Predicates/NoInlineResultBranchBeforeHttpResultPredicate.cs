@@ -60,7 +60,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 ///     Escape-hatch signal — the method maps through the WebApi core: a <c>Call</c> or <c>Callvirt</c> to any member
 ///     of <c>SharedKernel.Presentation.WebApi.ResultHttpExtensions</c> (<c>ToOk</c>, <c>ToCreated</c>,
 ///     <c>ToOkWithETag</c>, <c>ToAccepted</c>, <c>ToNoContent</c>, <c>ToHttpResult</c>, <c>ToErrorResult</c>) or
-///     <c>SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions</c> (<c>ToProblemDetails</c>), or a
+///     <c>SharedKernel.Presentation.WebApi.ErrorProblemDetailsExtensions</c> (<c>ToProblemDetails</c>), or a
 ///     <c>Newobj</c> constructing <c>SharedKernel.Presentation.WebApi.ErrorHttpResult</c>. Presence of this
 ///     signal suppresses the violation regardless of signals 1 and 2, because the failure branch then carries the
 ///     platform's status, error code, localization and redaction.
@@ -116,7 +116,7 @@ public sealed class NoInlineResultBranchBeforeHttpResultPredicate : ICustomRule
     private static readonly HashSet<string> MappingTypeFullNames = new(StringComparer.Ordinal)
     {
         "SharedKernel.Presentation.WebApi.ResultHttpExtensions",
-        "SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions",
+        "SharedKernel.Presentation.WebApi.ErrorProblemDetailsExtensions",
     };
 
     /// <summary>

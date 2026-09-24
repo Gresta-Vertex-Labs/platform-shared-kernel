@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Logging;
 
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Validates <see cref="SharedKernelWebApiOptions"/> before the service handles a request, so a misconfiguration

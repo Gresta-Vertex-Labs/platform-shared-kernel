@@ -7,8 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
@@ -132,7 +130,7 @@ public sealed class CorsTests
         var act = () => app.StartAsync();
 
         (await act.Should().ThrowAsync<OptionsValidationException>()).Which.Message.Should().Contain("AllowCredentials");
-        var logger = logs.GetLogger("SharedKernel.Presentation.WebApi.Options.WebApiOptionsValidator");
+        var logger = logs.GetLogger("SharedKernel.Presentation.WebApi.WebApiOptionsValidator");
         logger.Records.Should().Contain(record =>
             record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Critical);
     }
@@ -157,7 +155,7 @@ public sealed class CorsTests
         var act = () => app.StartAsync();
 
         await act.Should().ThrowAsync<OptionsValidationException>();
-        logs.GetLogger("SharedKernel.Presentation.WebApi.Options.WebApiOptionsValidator").Records.Should().Contain(record =>
+        logs.GetLogger("SharedKernel.Presentation.WebApi.WebApiOptionsValidator").Records.Should().Contain(record =>
             record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Critical);
     }
 

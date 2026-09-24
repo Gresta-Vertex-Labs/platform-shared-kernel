@@ -4,12 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
 
-namespace SharedKernel.Presentation.WebApi.Idempotency;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Reads and checks the <c>Idempotency-Key</c> header, for the header-requirements middleware, the

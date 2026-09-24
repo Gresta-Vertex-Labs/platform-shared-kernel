@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
-using SharedKernel.Presentation.WebApi.Http;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// The status-code-pages handler: gives a bodiless 4xx or 5xx response the framework produced — an unmatched

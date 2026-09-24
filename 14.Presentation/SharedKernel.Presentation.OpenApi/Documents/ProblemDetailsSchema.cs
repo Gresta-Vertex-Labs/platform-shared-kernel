@@ -1,5 +1,5 @@
 using Microsoft.OpenApi;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 
 namespace SharedKernel.Presentation.OpenApi.Documents;
 

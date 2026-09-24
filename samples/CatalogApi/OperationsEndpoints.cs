@@ -1,6 +1,5 @@
 using SharedKernel.Core.Extensions;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -20,7 +19,7 @@ public sealed record IndexVerification(bool Ok, string? Error, string? Detail);
 /// </summary>
 /// <remarks>
 /// The provision and verify reports list per-index outcomes in their own bodies, so they show each error's message
-/// through <see cref="ErrorPresentation.GetClientMessage"/> — the same text a problem response would carry: a
+/// through <see cref="ErrorProblemDetailsExtensions.ToProblemDetails"/> (its <c>detail</c>) — the same text a problem response carries: a
 /// definition conflict in full, an engine outage (whose message names internal endpoints) only in Development.
 /// </remarks>
 public static class OperationsEndpoints
@@ -58,7 +57,7 @@ public static class OperationsEndpoints
                         index = definition.Name,
                         ok = result.IsSuccess,
                         error = result.IsFailure ? result.Error.Code : null,
-                        message = result.IsFailure ? ErrorPresentation.GetClientMessage(result.Error, http) : null,
+                        message = result.IsFailure ? result.Error.ToProblemDetails(http).Detail : null,
                     });
                 }
             }
@@ -126,7 +125,7 @@ public static class OperationsEndpoints
                 var result = await provisioner.VerifyRegisteredIndexesAsync(ct);
                 outcomes.Add(result.IsSuccess
                     ? new IndexVerification(Ok: true, Error: null, Detail: null)
-                    : new IndexVerification(Ok: false, result.Error.Code, ErrorPresentation.GetClientMessage(result.Error, http)));
+                    : new IndexVerification(Ok: false, result.Error.Code, result.Error.ToProblemDetails(http).Detail));
             }
 
             return outcomes.TrueForAll(outcome => outcome.Ok)

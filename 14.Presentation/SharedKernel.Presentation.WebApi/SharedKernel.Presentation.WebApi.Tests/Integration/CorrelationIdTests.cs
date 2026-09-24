@@ -8,8 +8,6 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OtelLogRecord = OpenTelemetry.Logs.LogRecord;
 using SharedKernel.Presentation.WebApi.Correlation;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;

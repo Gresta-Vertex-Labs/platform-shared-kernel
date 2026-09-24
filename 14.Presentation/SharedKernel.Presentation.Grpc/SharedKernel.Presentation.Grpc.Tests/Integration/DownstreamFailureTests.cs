@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Propagation;
 using Xunit;
 using RpcStatus = Google.Rpc.Status;

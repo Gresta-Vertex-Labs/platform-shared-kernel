@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
 
 namespace SharedKernel.Presentation.WebApi;
 
@@ -71,28 +70,13 @@ public static class ConditionalRequestExtensions
     /// their attributes or an <see cref="IfMatch{TVersion}"/> parameter — the header was validated before the handler
     /// ran, so <see langword="null"/> means the request sent none. Elsewhere <see langword="null"/> also covers a header
     /// that cannot be used, and reading it as "no precondition" would make a conditional request unconditional: declare
-    /// the header instead of reading it raw. <see cref="GetIfMatchTags"/> lists every tag and whether it is weak.
+    /// the header instead of reading it raw.
     /// </remarks>
     public static string? GetIfMatch(this HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
 
         return EntityTags.GetIfMatch(httpContext.Request);
-    }
-
-    /// <summary>Returns every entity tag the request's <c>If-Match</c> header lists.</summary>
-    /// <param name="httpContext">The current request.</param>
-    /// <returns>
-    /// The tags in the order sent, parsed strictly (<see cref="EntityTagHeaderValue.Any"/> for <c>*</c>); empty when the
-    /// header is missing or malformed. <see cref="EntityTagHeaderValue.Tag"/> keeps its quotes and
-    /// <see cref="EntityTagHeaderValue.IsWeak"/> tells a weak tag, which never matches under <c>If-Match</c>'s strong
-    /// comparison (RFC 9110 section 13.1.1).
-    /// </returns>
-    public static IReadOnlyList<EntityTagHeaderValue> GetIfMatchTags(this HttpContext httpContext)
-    {
-        ArgumentNullException.ThrowIfNull(httpContext);
-
-        return EntityTags.GetIfMatchTags(httpContext.Request);
     }
 
     /// <summary>Sets the <c>ETag</c> response header to <paramref name="version"/> as a strong entity tag.</summary>

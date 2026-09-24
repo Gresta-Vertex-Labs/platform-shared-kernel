@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// HTTP header names this package reads or writes that neither <see cref="Microsoft.Net.Http.Headers.HeaderNames"/>

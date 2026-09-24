@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Entity tag handling shared by the conditional-request helpers.</summary>
 internal static class EntityTags

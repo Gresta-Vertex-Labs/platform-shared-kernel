@@ -1,4 +1,3 @@
-using SharedKernel.Presentation.WebApi.Http;
 
 namespace SharedKernel.Presentation.WebApi;
 

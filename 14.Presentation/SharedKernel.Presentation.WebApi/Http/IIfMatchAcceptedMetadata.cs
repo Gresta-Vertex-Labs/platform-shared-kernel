@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Endpoint metadata stating that the endpoint accepts an optional <c>If-Match</c> request header: a request may leave
@@ -11,4 +11,4 @@ namespace SharedKernel.Presentation.WebApi.Http;
 /// <see cref="IfMatch{TVersion}"/> parameter. On an endpoint that also carries <see cref="IIfMatchRequiredMetadata"/>,
 /// the requirement wins.
 /// </remarks>
-public interface IIfMatchAcceptedMetadata;
+internal interface IIfMatchAcceptedMetadata;

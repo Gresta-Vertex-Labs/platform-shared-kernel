@@ -1,5 +1,4 @@
 using Microsoft.OpenApi;
-using SharedKernel.Presentation.OpenApi.Options;
 
 namespace SharedKernel.Presentation.OpenApi.Documents;
 

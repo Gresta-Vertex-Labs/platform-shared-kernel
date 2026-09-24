@@ -726,7 +726,6 @@ public class PresentationLayeringRulesTests
         using Microsoft.AspNetCore.Http;
         using Microsoft.AspNetCore.Http.HttpResults;
         using SharedKernel.Presentation.WebApi;
-        using SharedKernel.Presentation.WebApi.Errors;
         using SharedKernel.Primitives.Results;
 
         namespace Application.Endpoints

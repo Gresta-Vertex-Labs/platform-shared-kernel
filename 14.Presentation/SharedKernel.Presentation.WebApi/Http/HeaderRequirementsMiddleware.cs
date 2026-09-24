@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
+using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Enforces the request headers an endpoint requires or accepts through its metadata —
 /// <see cref="IIdempotencyKeyRequiredMetadata"/>, <see cref="IIdempotencyKeyAcceptedMetadata"/>,
-/// <see cref="IIfMatchRequiredMetadata"/> and <see cref="IIfMatchAcceptedMetadata"/> — after authorization and before
-/// the endpoint runs.
+/// <see cref="IIfMatchRequiredMetadata"/> and <see cref="IIfMatchAcceptedMetadata"/> — and the paging query parameters
+/// of a <see cref="Paging"/> or <see cref="CursorPaging"/> parameter (<see cref="PagingMetadata"/>), after
+/// authorization and before the endpoint runs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,7 +41,7 @@ internal sealed class HeaderRequirementsMiddleware
             return _next(context);
         }
 
-        var rejection = CheckIdempotencyKey(context, metadata) ?? CheckIfMatch(context, metadata);
+        var rejection = CheckIdempotencyKey(context, metadata) ?? CheckIfMatch(context, metadata) ?? CheckPaging(context, metadata);
         if (rejection is null)
         {
             return _next(context);
@@ -65,6 +66,20 @@ internal sealed class HeaderRequirementsMiddleware
         return metadata.GetMetadata<IIdempotencyKeyAcceptedMetadata>() is not null
             ? IdempotencyKeyGuard.Check(context, required: false)
             : null;
+    }
+
+    private static IResult? CheckPaging(HttpContext context, EndpointMetadataCollection metadata)
+    {
+        if (metadata.GetMetadata<PagingMetadata>() is not { } paging)
+        {
+            return null;
+        }
+
+        var errors = paging.IsCursor
+            ? PagingQuery.ReadCursor(context.Request.Query).Errors
+            : PagingQuery.ReadPage(context.Request.Query).Errors;
+
+        return errors.Count == 0 ? null : new ErrorHttpResult(Error.Validation(errors));
     }
 
     private static IResult? CheckIfMatch(HttpContext context, EndpointMetadataCollection metadata)
