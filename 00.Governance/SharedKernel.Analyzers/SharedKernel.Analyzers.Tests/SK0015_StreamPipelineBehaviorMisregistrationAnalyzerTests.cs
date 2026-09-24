@@ -9,9 +9,8 @@ namespace SharedKernel.Analyzers.Tests;
 /// <remarks>
 /// T-163: Fire path — a contrived <c>IStreamPipelineBehavior&lt;,&gt;</c> implementor registered
 /// via <c>AddTransient(typeof(IPipelineBehavior&lt;,&gt;), typeof(StreamFixtureBehavior&lt;,&gt;))</c>
-/// outside <c>AddStreamingBehaviors()</c> triggers SK0015.
-/// T-164: Pass path — the same registration inside a method named <c>AddStreamingBehaviors</c>,
-/// and a plain <c>IPipelineBehavior&lt;,&gt;</c>-only implementor registered anywhere, do not fire.
+/// triggers SK0015, including inside a method named <c>AddStreamingBehaviors</c> (no name-based exemption).
+/// T-164: Pass path — a plain <c>IPipelineBehavior&lt;,&gt;</c>-only implementor registered anywhere does not fire.
 /// </remarks>
 public class SK0015_StreamPipelineBehaviorMisregistrationAnalyzerTests
 {
@@ -38,7 +37,7 @@ public class SK0015_StreamPipelineBehaviorMisregistrationAnalyzerTests
 
     /// <summary>
     /// T-163: a type implementing <c>IStreamPipelineBehavior&lt;,&gt;</c> registered against
-    /// <c>IPipelineBehavior&lt;,&gt;</c> outside <c>AddStreamingBehaviors()</c> must trigger SK0015.
+    /// <c>IPipelineBehavior&lt;,&gt;</c> must trigger SK0015.
     /// </summary>
     [Fact]
     public async Task FirePath_StreamBehaviorRegisteredAgainstPipelineBehaviorOutsideStreamingMethod_ReportsDiagnostic()
@@ -78,12 +77,12 @@ public class SK0015_StreamPipelineBehaviorMisregistrationAnalyzerTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-164a: the identical registration inside a method literally named
-    /// <c>AddStreamingBehaviors</c> must NOT trigger SK0015 — the canonical builder method is the
-    /// single sanctioned call site.
+    /// T-164a: the identical registration inside a method named <c>AddStreamingBehaviors</c> still
+    /// triggers SK0015: the registration never runs wherever it is made, so no method name exempts it
+    /// (the exemption was removed in P-563).
     /// </summary>
     [Fact]
-    public async Task PassPath_SameRegistrationInsideAddStreamingBehaviorsMethod_NoDiagnostic()
+    public async Task FirePath_SameRegistrationInsideAddStreamingBehaviorsMethod_ReportsDiagnostic()
     {
         var test = new CSharpAnalyzerTest<StreamPipelineBehaviorMisregistrationAnalyzer, DefaultVerifier>
         {
@@ -106,7 +105,7 @@ public class SK0015_StreamPipelineBehaviorMisregistrationAnalyzerTests
                     {
                         public static void AddStreamingBehaviors(ServiceCollection services)
                         {
-                            services.AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamFixtureBehavior<,>));
+                            {|SK0015:services.AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamFixtureBehavior<,>))|};
                         }
                     }
                 }
