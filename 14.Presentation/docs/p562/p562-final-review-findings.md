@@ -104,6 +104,7 @@ All four shipped (merges `1cdfc1ba`, `7e82d802`, `0ae0249f`, `c759839e`). Detail
 | Timeout parity | gRPC and SignalR map a `TimeoutException`, or a cancellation while the call is still open, to `timeout.default` (`DeadlineExceeded`, a coded `HubException`), as HTTP answers 504. |
 | OpenAPI | `OkWithETag` adds `IETagResponseMetadata`, and the add-on documents the `ETag` response header. The `Idempotency-Key` schema admits exactly what the server accepts (a quoted key is 258 characters), from `IdempotencyKey.MaxLength`. |
 | Optional headers | Only required `If-Match`/`Idempotency-Key` headers were validated: on an endpoint where either is optional, `GetIfMatch()`/`GetIdempotencyKey()` returned null for a malformed header as for a missing one, turning a conditional write into an unconditional one, or dropping idempotency. Endpoints can now accept a header (validated when sent, answered 400/412 otherwise) as well as require it. |
+| Blank headers | A whitespace-only `Idempotency-Key` was invalid while a blank `If-Match` was missing; both now count as missing. |
 
 ## Follow-ups outside this pass
 
@@ -112,9 +113,13 @@ All four shipped (merges `1cdfc1ba`, `7e82d802`, `0ae0249f`, `c759839e`). Detail
 | The refusal log (14002) records no caller identity. | S14 | 14 (needs a privacy decision) |
 | A `ValidationResult<T>` → `Result<T>` bridge, and naming the field of a hand-made validation error. | D14 | 01.Core |
 | `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod` never matches methods on nested types. | wave 4 | 00.Governance |
-| Remaining outage errors that are still `Unexpected`: 10.Intelligence, 17's `workflow.service_unavailable`/`timed_out`, 06's statement timeouts, ElasticSearch 504 → `search.unreachable`. | wave 1 | 06, 09, 10, 17 |
+| Remaining outage errors that are still `Unexpected`: 10.Intelligence, 17's `workflow.service_unavailable`/`timed_out`, 06's statement timeouts, ElasticSearch 504 → `search.unreachable`, 01.DataPrivacy's `TemporarilyUnavailable`. | wave 1, D2 | 01, 06, 09, 10, 17 |
+| **Security:** 11.Communication's GraphQL `SharedKernelErrorFilter` copies exception messages into `detail` in every environment; HTTP, SignalR and gRPC redact server errors outside Development since P-562. | D2 | 11.Communication |
 | MinIO ignores `If-Match` on DELETE (a stale conditional delete returns 204 and removes the object; PUT is refused correctly), yet `S3Compatibility` has one `ConditionalWrites` flag for writes and deletes. A separate flag is needed, and AWS general-purpose buckets must be checked the same way. | samples (I2) | 08.Storage |
 | During a key service outage, every request that issues or checks an ETag retries the blocking key load in turn; a cooldown after a failed load would bound it. The warm-up timeout (10 s) is not configurable. | I4 | 06.Persistence |
 | Audit records store the `correlation.id` baggage item, which carries the same caveat as log records: a caller's value survives where nothing overwrites it. | X2 | 06.Persistence |
 | SK0032 would flag 14's own `CorsPolicyConfiguration.Configure` (both calls in one `AddPolicy` lambda, a combination startup validation forbids); no effect while analyzers do not run on the repo's own code. SK0002's test compares strings although its project comment claims a compiled-type lock. | I3 | 00.Governance |
-| `.claude/agents/application-phase-implementer.md` still names `idempotency.key_missing`. | X3 | owner (agent configuration) |
+| Agent configuration describes removed APIs: `.claude/agents/application-phase-implementer.md` names `idempotency.key_missing`; `presentation-arch-planner.md`/`presentation-phase-implementer.md` and five notes under `.claude/agent-memory/` name the deleted hub filters, `SharedKernelExceptionHandler`, `WithRedisBackplane` and `ToProblemDetailsResult`/`ToActionResult`. | X3, D2 | owner (agent configuration) |
+| The root `CLAUDE.md` publish states contradict each other (predates P-562): the 06 row says nothing is published and the 05 row asks for a republish, while the 07 row lists those packages in the `1.0.0-alpha.0.1171` closure. The feed decides. | D2 | owner |
+| A version deprecated only through an Asp.Versioning deprecation policy gets the `Deprecation` header but stays in `api-supported-versions`; it is not listed in `api-deprecated-versions`, which CORS exposes. | D1 | 14 (OpenApi) |
+| `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit` failed once in the full unit lane (a metric counted 1, expected 0) and passed in five isolated runs: a measurement from a parallel test likely reaches its listener. Code untouched by P-562. | final check | 02.Caching |

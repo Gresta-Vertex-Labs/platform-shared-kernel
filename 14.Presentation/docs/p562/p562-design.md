@@ -502,7 +502,8 @@ SignalR: see D12. gRPC: see D13.
 - Samples: all five move to `AddSharedKernelWebApi`/`UseSharedKernelWebApi` and typed results
   (`AddSharedKernelOpenApi` where it helps). BillingApi's hand-written ETag/428/412 is replaced by `RequireIfMatch()`
   and `ToOkWithETag`. Their tests follow.
-- consumer-verify is rebuilt on the one-call path against packed packages, including versioned document generation.
+- consumer-verify is rebuilt on the one-call path, including versioned document generation. It uses project
+  references and runs in CI's unit job; the samples are what is verified against packed packages.
 - 13.ServiceDefaults: the rate-limit docs and `RateLimitRejectionRecipeTests` change to the automatic 429.
   00.Governance: `PresentationLayeringRules` and tests are adjusted (new OpenApi package; SignalR now references
   WebApi); SK0032/SK0036 are unchanged.
