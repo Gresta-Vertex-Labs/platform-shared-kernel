@@ -152,6 +152,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddTestEntityVersionKeys();
         register(services);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

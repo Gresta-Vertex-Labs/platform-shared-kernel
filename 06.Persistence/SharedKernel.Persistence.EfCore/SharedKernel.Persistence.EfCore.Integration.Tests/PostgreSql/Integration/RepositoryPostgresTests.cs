@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -6,6 +5,7 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Repositories;
@@ -34,7 +34,10 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         builder.UsePostgres(TestNpgsqlDataSources.Get(ConnectionString));
         clock ??= new FakeClock();
 
-        return new ConcurrencyTestDbContext(builder.Options, PersistenceContextDependencies.Create(requestContext: new FakeAuditActorContext(), clock: clock));
+        return new ConcurrencyTestDbContext(
+            builder.Options,
+            PersistenceContextDependencies.Create(
+                requestContext: new FakeAuditActorContext(), clock: clock, entityVersionKeys: TestEntityVersionKeys.Provider));
     }
 
     private async Task<(ConcurrentPgId Id, EntityVersion Version)> SeedAsync(string name)
@@ -45,7 +48,7 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         var aggregate = new ConcurrentPgAggregate(id, name, new SystemClock());
         context.Aggregates.Add(aggregate);
         await context.SaveChangesAsync();
-        return (id, EntityVersion.FromRowVersion(BinaryPrimitives.ReadUInt32BigEndian(aggregate.RowVersion)));
+        return (id, ConcurrencyVersion.Get(context, aggregate));
     }
 
     [Fact]
@@ -103,7 +106,9 @@ public sealed class RepositoryPostgresTests(PostgreSqlContainerFixture fixture)
         {
             var repo = new EfRepository<ConcurrentPgAggregate, ConcurrentPgId>(context);
             snapshot.Rename("Detached edit");
-            await repo.UpdateAsync(snapshot, EntityVersion.FromRowVersion(BinaryPrimitives.ReadUInt32BigEndian(snapshot.RowVersion)));
+
+            // An IHasConcurrency aggregate carries its row version itself, so its version can be read detached.
+            await repo.UpdateAsync(snapshot, ConcurrencyVersion.Get(context, snapshot));
 
             await FluentActions.Awaiting(() => context.SaveChangesAsync()).Should().ThrowAsync<ConflictException>();
         }

@@ -131,7 +131,7 @@ That is the whole setup. Everything below is detail.
 | --- | --- |
 | `record OrderId(Guid Value) : StronglyTypedId<Guid>` | a `uuid` column, no converter to register |
 | `Money Total` | `total_amount numeric(19,4)` + `total_currency char(3)`; required unless `Money?` |
-| an aggregate root | PostgreSQL `xmin` as its concurrency token, exposed as `EntityVersion` |
+| an aggregate root | PostgreSQL `xmin` as its concurrency token, exposed as an opaque `EntityVersion` token |
 | `IHasAudit` / `ISoftDeletable` / `IHasTenant` | the columns, lengths and indexes; `CreatedBy`/`CreatedOn` written once and never updated |
 | `OrderLine` in `Order.Lines` | changing a line touches the root row and checks its version |
 | any name | `snake_case`, identifiers above 63 bytes truncated deterministically |
@@ -145,12 +145,23 @@ outcome is unknown throws `CommitOutcomeUnknownException` instead of being repla
 
 ### 1. Optimistic concurrency with ETag / If-Match
 
-The version is an opaque `EntityVersion` (PostgreSQL `xmin`). Read it from a **tracked** instance:
+The version is an opaque `EntityVersion`: PostgreSQL's `xmin` — a transaction counter the whole database shares —
+sealed together with the aggregate's identity, so an ETag never reveals it. Register the service's root key provider
+once; versions are sealed with a subkey derived from it (HKDF, purpose `SharedKernel.Persistence.EntityVersion`), so
+it can be the same one field encryption uses:
+
+```csharp
+builder.AddSharedKernelKeyVaultKeyProvider();                       // production: a KMS (13.ServiceDefaults)
+// or, keys already in memory (development, a secret store read at startup):
+builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(new StaticEncryptionKeyProvider("k1", [new("k1", key32)]));
+```
+
+Read the version from a **tracked** instance:
 
 ```csharp
 // GET: IRepository tracks; IReadRepository never does, and the version lives in the change tracker.
 var order = await orders.GetByIdAsync(id, ct);
-response.Headers.ETag = $"\"{ConcurrencyVersion.Get(db, order!)}\"";
+response.Headers.ETag = $"\"{ConcurrencyVersion.Get(db, order!)}\"";   // e.g. "AdU2…" — 28 characters, never a number
 
 // PUT with If-Match
 if (!EntityVersion.TryParse(request.Headers.IfMatch, out var ifMatch)) return Results.StatusCode(428);
@@ -162,9 +173,15 @@ catch (ConflictException ex) when (ConcurrencyVersion.TryGetCurrentVersion(ex, o
 }
 ```
 
-`ConcurrencyVersion.Get` throws for an entity the context does not track rather than inventing a version. A detached
-aggregate (deserialized, or loaded in another scope) must use `UpdateAsync(aggregate, expectedVersion)` /
-`DeleteAsync(aggregate, expectedVersion)`.
+The same version of the same aggregate always has the same ETag, so `If-None-Match` works. A token of another
+aggregate (even one with the same `xmin`), an altered token, or one sealed with a key the service does not know — for
+example issued before a restart that rotated the key — is a stale version: `ConflictException`, 412 on an endpoint that
+requires `If-Match`, never a 500. A running process keeps opening the tokens of the keys it used before a rotation.
+
+`ConcurrencyVersion.Get` throws for an entity the context does not track rather than inventing a version, and throws
+when no key provider is registered. A detached aggregate (deserialized, or loaded in another scope) must use
+`UpdateAsync(aggregate, expectedVersion)` / `DeleteAsync(aggregate, expectedVersion)`. A context built by hand passes
+its keys to `PersistenceContextDependencies.Create(..., entityVersionKeys: provider)`.
 
 ### 2. Queries, paging and projections
 
@@ -348,6 +365,8 @@ databases.
 | Symptom | Cause and fix |
 | --- | --- |
 | ETag is `"0"` / every `If-Match` fails | The entity was read untracked. Read the version from `IRepository`, not `IReadRepository` — `ConcurrencyVersion.Get` now throws instead |
+| `InvalidOperationException` "no key provider is registered" from `ConcurrencyVersion.Get` | Versions are sealed with a subkey of the service's key provider. Register an `ISynchronousEncryptionKeyProvider` or `IEncryptionKeyProvider` (for example `AddSharedKernelKeyVaultKeyProvider()`) |
+| Every `If-Match` is 412 right after a deploy | The version key rotated: ETags issued before the restart are stale. Clients re-read and retry once |
 | `dotnet ef migrations add` refuses an encrypted model | The design-time factory lacks `ConfigurePersistence` with `UseFieldEncryption()` |
 | Startup fails: "tenant tables are not protected" | A migration lacks `EnableTenantRowLevelSecurityForModel(TargetModel!)`, or a table was added later without `EnableTenantRowLevelSecurity("table")` |
 | Startup fails: runtime role can bypass row-level security | Connecting as a superuser or table owner. Use the role script; in local development set `RowLevelSecurity:PrivilegeCheck` to `Warn` |
@@ -377,9 +396,10 @@ WRITE        IRepository<T,TId> (always tracks): GetByIdAsync, AddAsync, UpdateA
              DeleteAsync(agg[, version]). Never call SaveChanges in a MediatR handler: TransactionBehavior commits.
 TRANSACTION  unitOfWork.ExecuteInTransactionAsync(async ct => { load + change inside }, ct). The delegate may run
              again: no HTTP calls or publishing inside; use OnBeforeCommit / ICommandScope.OnCompleted.
-ETAG         ConcurrencyVersion.Get(db, trackedEntity) -> EntityVersion; ToString() is the ETag value.
-             EntityVersion.TryParse(ifMatch, out v); UpdateAsync(agg, v); catch ConflictException +
-             ConcurrencyVersion.TryGetCurrentVersion -> 412. Never Get on an IReadRepository result.
+ETAG         ConcurrencyVersion.Get(db, trackedEntity) -> EntityVersion; ToString() is the ETag value (an opaque
+             token, never xmin). EntityVersion.TryParse(ifMatch, out v); UpdateAsync(agg, v); catch ConflictException +
+             ConcurrencyVersion.TryGetCurrentVersion -> 412. Never Get on an IReadRepository result. Needs a registered
+             ISynchronousEncryptionKeyProvider/IEncryptionKeyProvider. Never build a version from a number.
 TENANT       Tenant comes from IRequestContext.TenantId; never from a header, route or body.
 CROSSTENANT  using (crossTenantScope.Enter("reason")) { db.Database.UseCrossTenantConnection(); ...
              IgnoreQueryFilters([PersistenceFilterNames.Tenant]) }. Never the parameterless IgnoreQueryFilters().

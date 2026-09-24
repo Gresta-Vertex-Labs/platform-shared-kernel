@@ -7,16 +7,17 @@
   </PropertyGroup>
   <ItemGroup>
     <!--
-      P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions,
-      SharedKernel.Application.Behaviors, or SharedKernel.Cryptography — see
-      SharedKernel.Persistence.Abstractions.Context (IAuditActorContext/ICrossTenantScope) for the
-      local seams that replace the former direct Security.Abstractions dependency; see
-      13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence for the Application.Behaviors
-      bridge and the real IUserContext/ITenantProvider bridge; see
-      SharedKernel.Persistence.EfCore.Encryption for the former Cryptography-dependent surface.
-      06 must now reference only 01–05, and in practice only 01.Core (Domain/Core) + Abstractions.
+      P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions or
+      SharedKernel.Application.Behaviors — identity reaches it only through IRequestContext
+      (SharedKernel.Application.Abstractions). Field encryption lives in SharedKernel.Persistence.EfCore.Encryption.
     -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      P-562/X4: entity versions (ETags) are sealed with a subkey (HKDF, purpose "SharedKernel.Persistence.EntityVersion")
+      of the service's own key provider, the IEncryptionKeyProvider/ISynchronousEncryptionKeyProvider it registers.
+      SharedKernel.Cryptography has no third-party dependency.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <!-- P-557/W2: PersistenceServiceOptions implements ISectionBoundOptions. -->

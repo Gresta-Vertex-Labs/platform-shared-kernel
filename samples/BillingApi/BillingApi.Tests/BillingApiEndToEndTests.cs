@@ -143,6 +143,14 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         var etag = read.Headers.ETag!;
         etag.Tag.Should().NotBe("\"0\"", "the version is the row's xmin, never a placeholder");
 
+        // P-562 X4: the ETag is an opaque token — the xmin sealed under the service's key — so it does not reveal how many
+        // transactions the shared database committed; and the raw xmin is not accepted as a version.
+        var xmin = await fixture.ScalarAsAdminAsync<string>("SELECT xmin::text FROM customers WHERE id = @id", ("id", id));
+        etag.Tag.Should().HaveLength(30).And.NotContain(xmin!);
+        var raw = new HttpRequestMessage(HttpMethod.Put, $"/customers/{id}/name") { Content = JsonContent.Create(new { name = "Raw" }) };
+        raw.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{xmin}\""));
+        (await client.SendAsync(raw)).StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+
         // A client that already holds the current version is told so, without the body.
         var revalidate = new HttpRequestMessage(HttpMethod.Get, $"/customers/{id}");
         revalidate.Headers.IfNoneMatch.Add(etag);

@@ -15,9 +15,9 @@ against neither.
 
 | 📚 Repositories | 🏷️ Versions | 🧹 Bulk | 🏢 Tenants |
 | --- | --- | --- | --- |
-| `IReadRepository` never tracks, `IRepository` always does | `EntityVersion`: an opaque, ETag-ready row version | One-statement updates and deletes over a specification | `ICrossTenantScope`: explicit, reasoned, scoped bypass |
+| `IReadRepository` never tracks, `IRepository` always does | `EntityVersion`: an opaque, ETag-ready token — never the row version itself | One-statement updates and deletes over a specification | `ICrossTenantScope`: explicit, reasoned, scoped bypass |
 | Specifications in, `PagedList`/`CursorPagedList` out | `If-Match` in, `ConflictException` on a stale write | Protected columns cannot be set | Logged with the caller and the reason |
-| Streaming and projections | Parses `42` and `W/"42"` | Soft delete aware | Never leaks into another DI scope |
+| Streaming and projections | Bound to its aggregate; a number never parses | Soft delete aware | Never leaks into another DI scope |
 
 ## Contents
 
@@ -93,10 +93,20 @@ Soft-deleted aggregates are hidden unless the specification includes them.
 
 ### Versions — `EntityVersion`
 
-An opaque row version (PostgreSQL `xmin` in the EfCore implementation). `ToString()` is the ETag value;
-`Parse`/`TryParse` accept `"42"` and `W/"42"`; `EntityVersion.None` is "no version". Pass the client's `If-Match` to
-`UpdateAsync(aggregate, version)` / `DeleteAsync(aggregate, version)`; a stale version fails the save with
-`ConflictException` (`persistence.concurrency_conflict`).
+The version of an aggregate as an **opaque token**. The EfCore implementation seals PostgreSQL's `xmin` together with
+the aggregate's identity under a key derived from the service's key provider, so the token is meaningless without that
+key: an ETag never tells a client how many transactions the (shared, multi-tenant) database committed.
+
+- `ToString()` is the ETag value — 28 characters of unpadded Base64Url, the same for the same version of the same
+  aggregate (so `If-None-Match` works). String interpolation, `TryFormat` and JSON (a string; `None` is `null`) all
+  produce the token; nothing produces a number.
+- `Parse`/`TryParse` (and `IParsable`, so `IfMatch<EntityVersion>` binds) accept the token, quoted or `W/`-prefixed.
+  They check its shape only; a plain number such as `"42"` is never a version.
+- Pass the client's `If-Match` to `UpdateAsync(aggregate, version)` / `DeleteAsync(aggregate, version)`. A stale
+  version fails the save with `ConflictException` (`persistence.concurrency_conflict`); so does a token of another
+  aggregate, an altered token, or one sealed with a key the service no longer knows — never a server error.
+- `EntityVersion.None` is the version of an aggregate never saved; it has no text form.
+- In unit tests with `SharedKernel.Persistence.Testing`'s fakes, pass `EntityVersion.None`: the fakes check no version.
 
 ### Cross-tenant access — `SharedKernel.Persistence.Abstractions.Context`
 
@@ -175,8 +185,8 @@ READ         Inject IReadRepository<T,TId>. Never tracks. Spec.For<T>().Where(..
              PageRequest) | ListKeysetAsync(spec, CursorPageRequest, key, descending) | ListProjectedAsync(spec.Select(..)).
 WRITE        Inject IRepository<T,TId>. Always tracks. GetByIdAsync -> mutate -> (UpdateAsync(agg, version) for If-Match).
              Never call SaveChanges; the unit of work or TransactionBehavior commits.
-VERSION      EntityVersion.TryParse(ifMatch, out v); ToString() is the ETag value; stale -> ConflictException
-             (code persistence.concurrency_conflict).
+VERSION      EntityVersion.TryParse(ifMatch, out v); ToString() is the ETag value (an opaque token, never a number);
+             stale, foreign or altered -> ConflictException (code persistence.concurrency_conflict).
 BULK         IBulkMutationRepository<T,TId>.ExecuteUpdateAsync(spec-with-criteria, s => s.SetProperty(..)); no key,
              TenantId, CreatedBy/On, concurrency-token or encrypted setters.
 CROSSTENANT  using (crossTenantScope.Enter("reason")) { ... } — reason required; lasts for the DI scope.

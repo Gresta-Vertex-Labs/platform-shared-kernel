@@ -117,11 +117,14 @@ public class EfRepository<TAggregate, TId>
 
         return Traced(nameof(UpdateAsync), () =>
         {
+            // Opened before anything is attached: a version that is not one of this aggregate (another aggregate's,
+            // altered, or sealed with a key this service does not know) is a conflict and leaves the tracker untouched.
+            var expected = ConcurrencyVersion.ResolveExpected(DbContext, aggregate, expectedVersion);
             AttachIfDetached(aggregate);
 
             // The UPDATE's WHERE clause compares the version token's ORIGINAL value; an unchanged entity already loaded
             // at another version fails immediately. Either way the conflict carries the current version.
-            ConcurrencyVersion.SetExpected(DbContext, aggregate, expectedVersion);
+            ConcurrencyVersion.ApplyExpected(DbContext, aggregate, expected);
         });
     }
 
@@ -157,8 +160,9 @@ public class EfRepository<TAggregate, TId>
         ArgumentNullException.ThrowIfNull(aggregate);
         return Traced(nameof(DeleteAsync), () =>
         {
+            var expected = ConcurrencyVersion.ResolveExpected(DbContext, aggregate, expectedVersion);
             DbContext.Set<TAggregate>().Remove(aggregate);
-            ConcurrencyVersion.SetExpected(DbContext, aggregate, expectedVersion);
+            ConcurrencyVersion.ApplyExpected(DbContext, aggregate, expected);
         });
     }
 

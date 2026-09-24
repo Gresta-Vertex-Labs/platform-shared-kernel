@@ -156,4 +156,28 @@ internal static partial class PersistenceLog
         Level = LogLevel.Warning,
         Message = "The transaction of '{ContextType}' was rolled back: work that joined it failed.")]
     internal static partial void RolledBackAfterJoinedFailure(ILogger logger, string contextType);
+
+    /// <summary>
+    /// An expected version (an <c>If-Match</c>) did not open for the aggregate it was used with, so it was treated as
+    /// stale. Carries the aggregate type and why, never the token.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 22,
+        Level = LogLevel.Debug,
+        Message = "An expected version of '{EntityType}' was treated as stale: {Reason}.")]
+    internal static partial void EntityVersionRejected(ILogger logger, string entityType, string reason);
+
+    /// <summary>The asynchronous key provider could not be asked for its current key; the key already loaded stays in use.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 23,
+        Level = LogLevel.Warning,
+        Message = "The key that seals entity versions could not be refreshed; the current key stays in use and is asked for again later.")]
+    internal static partial void EntityVersionKeyRefreshFailed(ILogger logger, Exception exception);
+
+    /// <summary>The current version of a conflicting row could not be sealed, so the conflict carries no version.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 24,
+        Level = LogLevel.Warning,
+        Message = "The current version of '{EntityType}' could not be sealed; the conflict is reported without it.")]
+    internal static partial void EntityVersionNotSealed(ILogger logger, Exception exception, string entityType);
 }

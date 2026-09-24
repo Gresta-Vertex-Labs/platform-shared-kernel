@@ -118,12 +118,12 @@ public sealed class FullStackHost : IAsyncLifetime
         group.MapGet("/item", () => "ok");
 
         app.MapPut("/versioned", (HttpContext context) =>
-                context.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent())
+                context.GetIfMatch() == TestVersions.Current ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent())
             .RequireIfMatch();
         app.MapPut("/versioned-attribute", [RequireIfMatch] (HttpContext context) =>
-            context.GetIfMatch() == "1" ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent());
+            context.GetIfMatch() == TestVersions.Current ? Result.Success().ToNoContent() : Result.Failure(TestErrors.StaleVersion).ToNoContent());
         app.MapPut("/versioned-parameter", (IfMatch<EntityVersion> ifMatch) =>
-            ifMatch.Version == EntityVersion.FromRowVersion(1)
+            ifMatch.Version == TestVersions.CurrentVersion
                 ? Result.Success().ToNoContent()
                 : Result.Failure(TestErrors.StaleVersion).ToNoContent());
         app.MapPut("/versioned-throw", IResult () => throw new ConflictException(TestErrors.StaleVersion)).RequireIfMatch();
