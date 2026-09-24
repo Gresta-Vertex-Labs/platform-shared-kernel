@@ -31,6 +31,7 @@
 | `SK.14.Tests` | Tests | All tasks in Phase: Tests are `●` |
 | `SK.14.Docs` | Docs | All tasks in Phase: Docs are `●` |
 | `SK.14.Published` | Published | All tasks in Phase: Published are `●` |
+| `SK.14.P563` | P-563 (thin HTTP edge) | All tasks in Phase: P-563 are `●` |
 
 ---
 
@@ -67,6 +68,11 @@ Format when blocked — replace placeholder with table:
 > `SharedKernel.Presentation.OpenApi`; it ran without state-map phases (design D16), so no phase table below lists its
 > work. Its decisions are in [`docs/p562/`](docs/p562/), the current rules in [`CLAUDE.md`](CLAUDE.md), and every type
 > the older notes below name that no longer exists is listed in [`CLAUDE.history.md`](CLAUDE.history.md).
+>
+> **P-563 (2026-09-24):** the domain became the thin edge in front of `05.Application`'s use cases — endpoint modules
+> with a source generator shipped in WebApi, one public namespace per package with the add-on plumbing internal, and
+> `Paging`/`CursorPaging` parameters. Tracked in [Phase: P-563](#phase-p-563--presentation-the-thin-http-edge-breaking)
+> below; the design is [`05.Application/docs/p563/`](../05.Application/docs/p563/). All four packages remain unpublished.
 
 | Package | Current Phase | State | Notes |
 | --- | --- | --- | --- |
@@ -522,6 +528,25 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-563 — Presentation: the Thin HTTP Edge (BREAKING) <!-- phase-key: SK.14.P563 -->
+
+> **Origin:** owner decisions of 2026-09-24 ([`05.Application/docs/p563/design.md`](../05.Application/docs/p563/design.md)),
+> run as parallel streams ([`waves.md`](../05.Application/docs/p563/waves.md)). 05.Application's half (A1–A6) is tracked
+> in `05.Application/state-map.md`. None of the four packages had been published, so the breaking changes needed no shim.
+
+| ID | Task | Package(s) | State |
+| --- | --- | --- | --- |
+| P1 | WebApi stays independent of `05.Application` and MediatR; the command/query pattern is the one path the READMEs and samples show | all | `●` |
+| P2 | Endpoint modules: `IEndpointModule` (static abstract `Map`), `MapEndpoints()` generated per assembly by `SharedKernel.Presentation.WebApi.Generators` (netstandard2.0, SKEP001–SKEP004), packed under `analyzers/dotnet/cs` of WebApi; generator tests; consumer-verify uses a module (`69f7f1be`) | WebApi, Generators | `●` |
+| P3 | One public namespace per package (`.Errors`, `.Http`, `.Idempotency`, `.Options` folded); `ErrorPresentation`, `ErrorTypeStatusCodeMap`, `PresentationErrorCodes.ForStatus`, `AddSharedKernelAuthorization`, header metadata interfaces internal with `InternalsVisibleTo` to the add-ons; `GrpcStatusCodeMap`/`GrpcErrorCodes.ForStatus` internal; `GetIfMatchTags()` removed; idempotency code constants from `01.Core` (`3174cebb`, `7275b0da`) | WebApi, OpenApi, SignalR, Grpc | `●` |
+| P4 | `Paging`/`CursorPaging` parameters into `04.Contracts`' validated requests, refused with 400 and the `pagination.*` codes by `HeaderRequirementsMiddleware`, documented by OpenApi (`3174cebb`) | WebApi, OpenApi | `●` |
+| S1 | All five samples use endpoint modules and send commands and queries through `ISender`; permissions on the use cases (`906b78f3`) | samples | `●` |
+| REN | WebApi's `RequirePermissionAttribute` and `.RequirePermission(…)` renamed `RequireEndpointPermissionAttribute`/`.RequireEndpointPermission(…)`, so the edge attribute (hubs, gRPC, endpoints that send no command) no longer shares a name with 05.Application's `[RequirePermission]` on use cases (`52975eed`, owner decision) | WebApi, SignalR, Grpc, OpenApi | `●` |
+| DOC | Domain and package READMEs, `CONFIGURATION.md` and `CLAUDE.md` follow (docs stream D1) | 14.Presentation | `●` |
+| PUB | First publish of the four packages | all | `○` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -534,6 +559,7 @@ Format when blocked — replace placeholder with table:
 | `SK.14.Tests` | Tests | 80 | 67 | 13 | `◐` |
 | `SK.14.Docs` | Docs | 34 | 26 | 8 | `◐` |
 | `SK.14.Published` | Published | 28 | 24 | 4 | `◐` |
+| `SK.14.P563` | P-563 Thin HTTP Edge | 8 | 7 | 1 | `◐` |
 
 > **New work dispatched this session (WO-074/P-468, WO-078/P-484):** 66 new task rows added across all six phase keys (20 Design, 7 Scaffold, 13 Core, 13 Tests, 8 Docs, 4 Published), all `○`. P-468 (`SharedKernel.Presentation.Grpc`, a new third sibling package) is fully unblocked and ready to proceed phase by phase. P-484 (localized `Error.ToProblemDetails()`, `SharedKernel.Presentation.WebApi`) has its Design phase fully specifiable now, but Scaffold/Core/Tests/Docs/Published are recorded-but-blocked on `01.Core` shipping `SharedKernel.Localization` (P-482) — see Cross-Domain Dependencies. This does not regress WO-062/WO-063's prior 243/243 closure; those tasks remain `●` unchanged.
 
@@ -579,3 +605,4 @@ Format when blocked — replace placeholder with table:
 - [2026-08-21] WO-063 `SK.14.Published` shipped (P-17–P-24, 8/8) — the domain's final WO-063 phase, closing all six `SK.14.*` phase keys end to end (243/243 tasks across WO-062+WO-063 combined). **Blocker resolved, not worked around, per this phase's explicit instruction:** the prior Tests-phase session's flagged `consumer-verify` build failure (`TreatWarningsAsErrors=true` tripping on `NU1903`/`GHSA-v5pm-xwqc-g5wc`/`CVE-2026-49451`, a real CVSS-7.5 stack-overflow-DoS advisory on `Microsoft.OpenApi` 2.0.0) was investigated via the GitHub Advisory API (patched at `2.7.5`+ on the 2.x line) and via direct `.nuspec` inspection of `Microsoft.AspNetCore.OpenApi` 10.0.9/10.0.10/10.0.11 (only `10.0.11` — still `net10.0`, non-preview — declares `Microsoft.OpenApi [2.7.5, 3.0.0)` instead of a hard `2.0.0` pin). Fix: `SharedKernel.Presentation.WebApi`'s `Microsoft.AspNetCore.OpenApi` `PackageReference` bumped `10.0.9` → `10.0.11`; `dotnet list package --include-transitive` confirms `Microsoft.OpenApi` now resolves to `2.7.5`. `consumer-verify` now builds and runs with zero `NoWarn`/`WarningsNotAsErrors` overrides — this is Path 1 of the phase's three-path instruction (a patched version existed and was pinned), not Path 2 (scoped suppression) or Path 3 (escalate). `consumer-verify/Program.cs` gained the two explicitly-required new surfaces: **Surface 11** (P-18) — a real listening-Kestrel-host round trip generating the actual OpenAPI document with a non-default `Bearer`+`ApiKey`+`MutualTls` scheme combination, asserting the response body on all three scheme names plus the literal `"mutualTLS"` type value; **Surface 12** (P-22) — `AddSharedKernelUploadValidation()` DI composition mirroring Surface 9's idempotency-filter shape. All 12 surfaces PASS with zero DI exceptions and zero build warnings. `SharedKernel.Presentation.WebApi` re-packed once, `1.2.0` → `1.3.0` (single coherent minor bump covering P-411–P-416); `SharedKernel.Presentation.SignalR` re-packed once, `1.0.2` → `1.1.0` (single minor bump covering P-417/P-418). Both `dotnet pack` runs: 0 warnings, 0 errors. Technology Stack table's `Microsoft.AspNetCore.OpenApi` pinned-version row corrected `10.0.9` → `10.0.11`. Full regression: `SharedKernel.Presentation.WebApi.Tests` 186/186 green, `SharedKernel.Presentation.SignalR.Tests` 25/25 green — zero source-behavior change beyond the version bump. This closes WO-063 (P-411–P-418) end to end for `14.Presentation` (presentation-phase-implementer, state-map-phase, sync-brain)
 - [2026-08-26] WO-074/P-468 and WO-078/P-484 dispatched from the root `state-map.md` Phase Backlog, processed in dependency order (P-468 first, no dependencies; P-484 second, depends on `01.Core` P-482). **P-468:** new third `14.Presentation` sibling package `SharedKernel.Presentation.Grpc` (server-side gRPC inbound-boundary conventions — `GrpcStatusCodeMap` as a sibling to, never a merge with, `ErrorTypeStatusCodeMap`; `GrpcResultExtensions`; `GrpcExceptionInterceptor` covering all four gRPC server-interceptor call shapes; `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor` mirroring `CorrelationIdMiddleware`/`TenantContextHubFilter`; `GrpcAuthorizationInterceptor` reusing `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` verbatim from `.WebApi` via a new, deliberate intra-domain `ProjectReference` — the opposite call from `.SignalR`'s declined identical reference, D-74 records why both are correct; `AddSharedKernelGrpc`; zero `04.Contracts` reference, mirroring `SharedKernel.Communication.Grpc`'s P-163 rule; `EventId` sub-block `14200`–`14299` reserved). Fully unblocked — zero new cross-domain dependency. 46 new task rows across all six phases (D-67–D-79, S-29–S-34, C-75–C-84, T-68–T-75, DO-27–DO-32, P-25–P-27), all `○`. **P-484:** localized `Error.ToProblemDetails()`/`ValidationProblemDetailsExtensions` in the existing `SharedKernel.Presentation.WebApi` — an optional `ILocalizationCatalog` (`01.Core/SharedKernel.Localization`, P-482) lookup keyed by `(error.Code, CultureInfo.CurrentUICulture)`, falling back to `error.Message` verbatim when unregistered/untranslated; `01.Core.Primitives.Error` itself untouched; culture resolution stays `13.ServiceDefaults`'s concern (`AddSharedKernelLocalization()`, P-483, also `○` Pending), this package only ever reads the ambient `CurrentUICulture`. Design phase (D-80–D-86) is fully specified against `01.Core`'s already-locked upstream contract shape; Scaffold/Core/Tests/Docs/Published (S-35, C-85–C-87, T-76–T-80, DO-33–DO-34, P-28 — 12 task rows) are recorded but explicitly gated on `01.Core` shipping the real package — a new Cross-Domain Dependencies row added (`SK.14.Core` → `01.Core`, `Pending`), applying this domain's established "design now, code gated later" pattern (mirroring WO-058's `Error.Forbidden` gate). Package Board gained a new `SharedKernel.Presentation.Grpc` row and the `SharedKernel.Presentation.WebApi` row's Current Phase/State updated to reflect the new queued-but-blocked work without disturbing its fully-`●` WO-062/WO-063 history. Overall Progress table updated: 65 new `○` tasks added across all six phase keys (20/7/13/13/8/4), none regressing the prior 243/243 WO-062+WO-063 closure (presentation-arch-planner)
 - [2026-09-24] P-562 gold-standard pre-publish pass shipped without state-map phases (design D16): WebApi, SignalR and Grpc rewritten (breaking), `SharedKernel.Presentation.OpenApi` added, all four with tracked public APIs and packing clean, none published. Package Board corrected (it said "Published" for local packs); `CLAUDE.md` rewritten to rules, the old brain moved to `CLAUDE.history.md`; domain `README.md`, package READMEs and `CONFIGURATION.md` rewritten. Decisions: `docs/p562/p562-design.md` (D0–D16), `docs/p562/p562-final-review-findings.md` (R1–R38, X1–X4, integration round 2, follow-ups), `docs/p562/p562-review-findings.md` — P-562 docs stream D1
+- [2026-09-24] P-563 recorded as `SK.14.P563` (P1–P4, S1, DOC `●`; PUB `○`): endpoint modules with a generator packed in WebApi, one public namespace per package, add-on plumbing internal, `Paging`/`CursorPaging`, samples on modules and `ISender`. Package Board note added — docs stream D1
