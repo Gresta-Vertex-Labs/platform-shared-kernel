@@ -5,10 +5,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Presentation.OpenApi.Documents;
 using SharedKernel.Presentation.OpenApi.Options;
+using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;
 using Xunit;
@@ -104,6 +106,8 @@ public sealed class OpenApiSetupTests
         info["description"]!.GetValue<string>().Should().Be("Second");
         app.Services.GetServices<IConfigureOptions<Asp.Versioning.OpenApi.VersionedOpenApiOptions>>()
             .OfType<VersionedDocumentSetup>().Should().ContainSingle("the transformers are added once per document");
+        app.Services.GetServices<IHostedService>()
+            .OfType<OpenApiStartupDiagnostics>().Should().ContainSingle("the startup check runs once");
     }
 
     [Fact]

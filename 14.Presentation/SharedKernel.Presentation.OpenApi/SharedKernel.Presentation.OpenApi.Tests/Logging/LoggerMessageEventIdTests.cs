@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Presentation.OpenApi.Startup;
 using Xunit;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.Logging;
@@ -13,6 +14,7 @@ public sealed class LoggerMessageEventIdTests
 {
     [Theory]
     [InlineData(typeof(OpenApiEndpointExtensions), "DocumentsNotMapped", 14300, LogLevel.Information)]
+    [InlineData(typeof(OpenApiStartupDiagnostics), "DocumentsServedWithoutAuthorization", 14301, LogLevel.Warning)]
     public void LogMethod_HasItsAssignedEventId(Type containingType, string method, int eventId, LogLevel level)
     {
         var logType = containingType.GetNestedType("Log", BindingFlags.NonPublic | BindingFlags.Static);
@@ -36,7 +38,7 @@ public sealed class LoggerMessageEventIdTests
             .Select(attribute => attribute.EventId)
             .ToArray();
 
-        ids.Should().HaveCount(1).And.OnlyHaveUniqueItems();
+        ids.Should().HaveCount(2).And.OnlyHaveUniqueItems();
         ids.Should().OnlyContain(id => id >= 14300 && id <= 14399);
     }
 }

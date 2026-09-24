@@ -1,10 +1,8 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Authorization;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.TestSupport;
@@ -36,6 +34,20 @@ internal static class OrdersApi
             .RequireIfMatch();
         orders.MapGet("/export", () => "csv").MapToApiVersion(2.0);
 
+        // The same requirements declared by a handler parameter or a lambda attribute instead of a convention.
+        orders.MapPost("/{id:int}/payments", (int id, Order order, IdempotencyKey idempotencyKey) => Result.Success().ToAccepted())
+            .RequirePermission(WritePermission);
+        orders.MapPost("/{id:int}/cancellation", (int id, IdempotencyKey idempotencyKey) => Result.Success().ToAccepted())
+            .RequirePermission(WritePermission);
+        orders.MapPatch("/{id:int}", (int id, Order order, IfMatch<long> ifMatch) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission);
+        orders.MapDelete("/{id:int}", [RequireIfMatch] (int id) => Result.Success().ToNoContent())
+            .RequirePermission(WritePermission);
+
+        // Both headers at once.
+        orders.MapPost("/{id:int}/refunds", (int id, IdempotencyKey idempotencyKey, IfMatch<long> ifMatch) => Result.Success().ToAccepted())
+            .RequirePermission(WritePermission);
+
         var admin = orders.MapGroup("/admin").RequirePermission(AdminPermission);
         admin.MapGet("/stats", () => "stats");
         admin.MapGet("/ping", () => "pong").AllowAnonymous();
@@ -55,10 +67,10 @@ public sealed class MvcOrdersController : ControllerBase
     [HttpGet]
     public IActionResult List() => Ok(Array.Empty<Order>());
 
-    /// <summary>Protected by an attribute.</summary>
+    /// <summary>Protected by an attribute; returns the typed results minimal APIs return.</summary>
     [HttpGet("{id:int}")]
     [RequirePermission(OrdersApi.ReadPermission)]
-    public IActionResult Get(int id) => Ok(new Order(id));
+    public Results<Ok<Order>, ErrorHttpResult> Get(int id) => Result<Order>.Success(new Order(id)).ToOk();
 
     /// <summary>Requires an idempotency key.</summary>
     [HttpPost]
