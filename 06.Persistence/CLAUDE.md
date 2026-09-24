@@ -247,7 +247,8 @@ transaction counter shared by the whole database, so it never leaves `Concurrenc
   either.
 - *Rotation* — sealed with the current key; opened with any key that was current earlier **in this process** (the 64
   most recent). Keys are never looked up by anything a client sends. A token under an unknown key (e.g. issued before a
-  restart that rotated the key) is a stale version: `ConflictException` → 412 on an `If-Match` endpoint, never a 500.
+  restart that rotated the key) is a stale version: `ConflictException` (`persistence.concurrency_conflict`), never a
+  500 — `14.Presentation` answers it 412 when the request carries `If-Match`/`If-None-Match` (R7), 409 otherwise.
 - *Failure semantics* — `ResolveExpected` opens the version **before** the repository attaches a detached aggregate, so
   a rejected version leaves the change tracker untouched; rejection is logged at Debug (6022, reason only, never the
   token). No key provider registered: `Get`/`SetExpected` throw `InvalidOperationException` naming what to register; the

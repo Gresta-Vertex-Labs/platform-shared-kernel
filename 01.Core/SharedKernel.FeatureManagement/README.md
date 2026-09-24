@@ -8,13 +8,15 @@
 ![Evaluation: never throws](https://img.shields.io/badge/evaluation-never%20throws-success)
 
 > **Feature flags on the OpenFeature standard. Declare a flag once as a typed constant, and every evaluation targets
-> the right user and tenant, stays the same for the whole request, never throws, and is checked at startup.**
+> the user and tenant your service reports, stays the same for the whole request, never throws, and is checked at
+> startup.**
 
 Services inject OpenFeature's `IFeatureClient`, the vendor-neutral API from the CNCF, and ask for a typed
 `FeatureFlag<T>` rather than a string. Behind it, `Microsoft.FeatureManagement` reads flags from configuration (or
 Azure App Configuration), with percentage rollouts, user, group and tenant targeting, time windows and A/B variants.
-The package adds what services need on top: the caller's identity applied to every evaluation, one answer per
-request, and startup that fails on a misspelled flag instead of silently turning a feature off.
+The package adds what services need on top: the caller's identity, from an `IFeatureTargetingContextAccessor` your
+service registers (there is none by default, and nothing is read from baggage), applied to every evaluation, one
+answer per request, and startup that fails on a misspelled flag instead of silently turning a feature off.
 
 ```csharp
 public static class Flags
@@ -23,7 +25,7 @@ public static class Flags
     public static readonly FeatureFlag<string> CheckoutTheme = FeatureFlag.String("CheckoutTheme", defaultValue: "classic");
 }
 
-if (await flags.IsEnabledAsync(Flags.NewCheckout, ct)) { ... }       // targets the current user and tenant
+if (await flags.IsEnabledAsync(Flags.NewCheckout, ct)) { ... }       // targets the user and tenant your accessor reports
 string theme = await flags.GetValueAsync(Flags.CheckoutTheme, ct);   // "dark" for the users in the experiment
 ```
 

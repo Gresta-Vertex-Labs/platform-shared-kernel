@@ -179,7 +179,7 @@ app.MapPut("/files/{**key}", async (string key, HttpRequest request,
         ContentType = request.ContentType,
         ContentLength = request.ContentLength,   // a request body cannot report its own length
     }, ct);
-    return saved.ToProblemDetailsResult(reference => Results.Created($"/files/{key}", reference));
+    return saved.ToCreated(_ => $"/files/{key}");   // SharedKernel.Presentation.WebApi: 201, or a problem response
 });
 ```
 
@@ -349,8 +349,8 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | --- | --- | --- |
 | `storage.not_found` | NotFound (404) | The object does not exist |
 | `storage.access_denied` | Forbidden (403) | The credentials may not do this |
-| `storage.already_exists` | Conflict (409) | A create-only write found an object |
-| `storage.precondition_failed` | Conflict (409) | An `If-Match` ETag no longer matches (also a conditional delete of a missing object) |
+| `storage.already_exists` | Conflict (409; 412 when the request carries `If-Match` or `If-None-Match`) | A create-only write found an object |
+| `storage.precondition_failed` | Conflict (409; 412 when the request carries `If-Match` or `If-None-Match`) | An `If-Match` ETag no longer matches (also a conditional delete of a missing object) |
 | `storage.invalid_key` | Validation (400) | The key or prefix breaks the key rules |
 | `storage.invalid_tenant` | Validation (400) | The tenant id breaks the tenant rules |
 | `storage.invalid_request` | Validation (400) | An option is invalid: metadata, tags, headers, page size, part number, missing `ContentLength` |
@@ -360,6 +360,12 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | `storage.not_supported` | Unexpected (500) | The store's provider lacks the feature; nothing was sent |
 | `storage.unavailable` | Unavailable (503) | Unreachable, throttled or failing after the provider SDK's retries — retry later |
 | `storage.provider_error` | Unexpected (500) | Any other rejection; details are logged, never returned |
+
+The HTTP statuses are the ones `SharedKernel.Presentation.WebApi` answers. The two conflicts become 412 Precondition
+Failed only on a request that itself carried `If-Match` or `If-None-Match` (both codes are in its default
+`Problems:PreconditionFailedErrorCodes`); the same conflict from a condition the service set itself, such as
+`WriteCondition.IfNotExists` on a plain `PUT`, stays 409. Outside Development, 500 and 503 responses keep their
+`errorCode` but carry a generic `detail`.
 
 ### Exceptions
 

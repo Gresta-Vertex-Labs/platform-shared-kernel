@@ -128,7 +128,10 @@ client is **not** registered as `IAmazonS3`, so it never collides with a client 
         "AccessKeyId": "…", "SecretAccessKey": "…" }
 ```
 
-Current MinIO releases support everything. For a service that lacks a feature, switch it off: a request that needs it
+Current MinIO releases support everything except conditional deletes: MinIO (`RELEASE.2025-09-07`) ignores `If-Match`
+on `DeleteObject`, so a stale conditional delete removes the current object; conditional writes are honored.
+`ConditionalWrites` switches off writes and deletes together, so there is no way yet to refuse only the delete (an open
+follow-up, P-562). For a service that lacks a feature, switch it off: a request that needs it
 then fails with `storage.not_supported` **before it is sent**, instead of being silently ignored.
 
 | `Compatibility` flag | Default | Switch off when the service… |

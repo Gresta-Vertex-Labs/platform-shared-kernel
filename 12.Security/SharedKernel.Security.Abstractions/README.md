@@ -256,6 +256,9 @@ public sealed class PlaceOrderHandler(IUserContext caller, ITenantProvider tenan
 ```
 
 `Error.Unauthorized` maps to HTTP 401 and `Error.Forbidden` to 403. Use 401 only when there is no authenticated caller.
+The one exception is at the HTTP boundary: `SharedKernel.Presentation.WebApi`'s step-up requirements
+(`[RequireAuthenticationMethod]`, `[RequireFreshAuthentication]`) answer an authenticated caller who must authenticate
+again with 401 `unauthorized.step_up_required` and an RFC 9470 challenge, which tells the client what to do.
 
 ### 2. Check permissions and roles
 
@@ -357,7 +360,13 @@ together with the time it was verified (an `amr_time` claim), and does not chang
 `GetAuthenticationMethodTime("otp")` against your clock:
 
 ```csharp
-if (caller.GetAuthenticationMethodTime("otp") is not { } verifiedAt || clock.UtcNow - verifiedAt > MaxStepUpAge)
+private static readonly TimeSpan MaxStepUpAge = TimeSpan.FromMinutes(5);
+
+// ...
+DateTimeOffset now = clock.UtcNow;
+if (caller.GetAuthenticationMethodTime("otp") is not { } verifiedAt
+    || verifiedAt - now > UserContext.MaxFutureAuthTime   // a far-future time is forged or badly skewed
+    || now - verifiedAt > MaxStepUpAge)
 {
     return Error.Forbidden("payouts.step_up_required", "Confirm with a one-time code to continue.");
 }
@@ -366,8 +375,10 @@ if (caller.GetAuthenticationMethodTime("otp") is not { } verifiedAt || clock.Utc
 The time check is what ends a step-up on a long-lived connection. A SignalR connection keeps the principal it opened
 with, and a gRPC streaming call the principal it started with, so `otp` stays on them after the freshness window;
 its time does not move. `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` from
-`SharedKernel.Presentation.WebApi` makes the same check on every hub method call; a gRPC streaming call is authorized
-only when it starts, so a stream that must stop with the step-up checks the time itself.
+`SharedKernel.Presentation.WebApi` makes the same check, with the same five-minute tolerance for a time ahead of the
+clock, on every call of a hub method it is on (on the hub class or on `MapHub<T>()` it is checked once, when the
+connection opens); a gRPC streaming call is authorized only when it starts, so a stream that must stop with the
+step-up checks the time itself.
 
 | Situation | `GetAuthenticationMethodTime(method)` |
 | --- | --- |
@@ -546,8 +557,11 @@ to anonymous.
 ### 6. Bridge to the application pipeline
 
 [`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application)
-authorizes and caches through its own `IRequestContext`, which does not reference this package. Implement it once at
-the composition root.
+authorizes and caches through its own `IRequestContext`, which does not reference this package. A web host normally
+registers it with `SharedKernel.ServiceDefaults.Security`'s `services.AddSharedKernelRequestContext()`, which also
+reports the actor kind, client and session that `05.Application` uses, for example to scope idempotency keys per caller.
+The hand-written bridge below leaves those at their defaults: every authenticated caller is `ActorKind.User`, with no
+client.
 
 ```csharp
 using SharedKernel.Application.Context;
@@ -849,18 +863,22 @@ CHECKS       HasPermission(scope), HasRole(role), WasAuthenticatedWith(amr): ord
              FindClaim(type) first value; FindClaims(type) all values. Use SecurityClaimTypes constants.
 STEP-UP      caller.WasAuthenticatedWith("mfa") && caller.IsAuthenticationFresherThan(maxAge, clock.UtcNow).
              Null AuthTime -> false; AuthTime > now + 5 min (UserContext.MaxFutureAuthTime) -> false.
-RECENT AMR   caller.GetAuthenticationMethodTime("otp") is { } at && clock.UtcNow - at <= maxAge: the method's own time
-             (amr_time, else AuthTime). Needed wherever the principal outlives the step-up (SignalR, gRPC streams).
+RECENT AMR   caller.GetAuthenticationMethodTime("otp") is { } at && at - now <= UserContext.MaxFutureAuthTime
+             && now - at <= maxAge: the method's own time (amr_time, else AuthTime). Needed wherever the principal
+             outlives the step-up (SignalR, gRPC streams). At the HTTP boundary:
+             [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)] (SharedKernel.Presentation.WebApi), on hub methods.
              Mappers set AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims); code that adds
              an amr value after sign-in adds AuthenticationMethodTimeClaim.Create(method, verifiedAt) with it.
 ERRORS       No caller -> Error.Unauthorized (401). Authenticated but not allowed -> Error.Forbidden (403).
+             (14.Presentation's step-up requirements answer an authenticated caller 401 unauthorized.step_up_required.)
 MAPPER       class : IUserContextMapper { AuthenticationType => scheme name; Map(identity) returns
              new UserContext(IdentityKind.User|ServicePrincipal, subjectId, identity.Claims) { ... }
              or AnonymousUserContext.Instance when the subject is missing }.
              Register: TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, TMapper>()).
              Handler identity: new ClaimsIdentity(claims, Scheme.Name).
 RESOLVE      UserContextResolver.Resolve(httpContext?.User, services.GetServices<IUserContextMapper>()).
-BRIDGE       IRequestContext (SharedKernel.Application.Context): IsAuthenticated, UserId = SubjectId,
+BRIDGE       Prefer services.AddSharedKernelRequestContext() (SharedKernel.ServiceDefaults.Security). By hand:
+             IRequestContext (SharedKernel.Application.Context): IsAuthenticated, UserId = SubjectId,
              TenantId from ITenantProvider (Guid.Empty -> null), HasPermissionAsync -> HasPermission.
 TESTS        new UserContext(IdentityKind.User, "subject") { Roles = [...], Permissions = [...], AuthTime = ... };
              AnonymousUserContext.Instance; SystemUserContext.Instance; new UserContextTenantProvider(context).

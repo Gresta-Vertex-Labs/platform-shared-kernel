@@ -66,7 +66,7 @@ fails to resolve against it instead of blocking a thread. Give those paths their
 
 | Rule | Why |
 | --- | --- |
-| Registering the provider does **not** make persistence use it | `06.Persistence`'s encryption is configured in its own builder chain, so it and this method can never silently collide on the one unkeyed `IEncryptionKeyProvider` slot. |
+| Registering the provider does **not** turn on persistence's field encryption | `06.Persistence`'s field encryption is configured in its own builder chain (`.UseFieldEncryption()`). Its ETags are the exception (P-562 X4): `AddSharedKernelPostgres` seals every `EntityVersion` with a subkey of the unkeyed `ISynchronousEncryptionKeyProvider`, else of the unkeyed `IEncryptionKeyProvider` — so this provider becomes the ETag root key unless a synchronous provider is registered. A hosted warm-up loads the key before the host takes traffic (up to 10 seconds) and it is refreshed every 5 minutes. |
 | **Never** point synchronous encryption — `06.Persistence` value converters, `07.Messaging` payload serializers — at this provider | Those paths are synchronous and need an `ISynchronousEncryptionKeyProvider`, which a Key Vault–backed provider never is. Keep them on a separately configured provider. |
 | Register the provider before the readiness check | `AddKeyVaultKeyProviderReadinessCheck()` resolves `IEncryptionKeyProviderProbe`, which `AddSharedKernelKeyVaultKeyProvider()` registers. |
 

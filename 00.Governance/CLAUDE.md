@@ -1279,8 +1279,13 @@ SK0032  CorsWildcardOriginWithCredentials
                 ASP.NET Core's CorsService only rejects it at request-handling time, so a
                 misconfigured policy fails silently per-request instead of failing fast at
                 startup.
-    Suppress  : Per-call-site via #pragma warning disable SK0032; no legitimate production case
-                is known — document the rationale inline if ever suppressed.
+    Suppress  : Per-call-site via #pragma warning disable SK0032 — document the rationale inline.
+                One known false positive (P-562 follow-up): 14.Presentation's internal
+                CorsPolicyConfiguration.Configure calls AllowAnyOrigin() and AllowCredentials() in one
+                AddPolicy lambda, a combination startup validation of SharedKernelWebApiOptions.Cors
+                makes impossible at runtime; no effect while analyzers do not run on the repo's own
+                code. Since P-562, CORS is configuration (SharedKernelWebApiOptions.Cors), validated at
+                startup by 14.Presentation's internal WebApiOptionsValidator; AddSharedKernelCors is gone.
     Limitation: The "unconditionally true" lambda-body detection is a SYNTACTIC pattern check
                 only (literal `true` / `return true;`), not full data-flow or constant-propagation
                 analysis — an indirect always-true path (e.g. a local `const bool always = true;
@@ -3157,8 +3162,9 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         since P-562 R5, no longer an IExceptionHandler — and any future ProblemDetails factory all
         legitimately construct the type).
         Failure message: "{TypeDefinition.FullName}.{method} directly constructs {ProblemDetails |
-        HttpValidationProblemDetails}. Use Error.ToProblemDetails() / ResultHttpExtensions from
-        SharedKernel.Presentation.WebApi instead."
+        HttpValidationProblemDetails}." The fix (P-562 API): return a typed result (result.ToOk(), …)
+        or error.ToErrorResult(); when the object itself is needed, error.ToProblemDetails(httpContext)
+        — all from SharedKernel.Presentation.WebApi.
         Rationale: hand-rolled ProblemDetails construction outside the WebApi package bypasses the
         platform's single error-shape mapping (ErrorTypeStatusCodeMap, traceId population,
         Detail-suppression-outside-Development) and reintroduces the inconsistent error-body problem
@@ -3277,11 +3283,18 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         - SharedKernel.Presentation.OpenApi — never passed to NoOpenApiStackDependencyOutsideOpenApiAddOn
           (it owns that stack).
 
-    Note: Introduced in WO-031 P-199. No new SK diagnostic ID assigned — both rules are pure
+    Note: Introduced in WO-031 P-199. No new SK diagnostic ID assigned — the class's rules are pure
     NetArchTest ConditionList predicates over Mono.Cecil IL inspection, following the same
     "boundary-mapping prohibition via architecture test, not Roslyn analyzer" precedent already
     established for SK-less rules in this domain (RedisTopologyRules, CompositionRootExclusivityRules,
     GrpcNeverReferencesContracts). Lives in SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs.
+    Since P-562 the class holds four rules: the two above (custom ICustomRule predicates, the caller
+    never passing SharedKernel.Presentation.WebApi), GrpcNeverReferencesContracts, and
+    NoOpenApiStackDependencyOutsideOpenApiAddOn (NotHaveDependencyOn Asp.Versioning,
+    Microsoft.AspNetCore.OpenApi, Microsoft.OpenApi, Scalar.AspNetCore; the caller passes WebApi,
+    SignalR and Grpc, never SharedKernel.Presentation.OpenApi). PresentationIdempotencyCodesTests and
+    PresentationPreconditionCodesTests pin 14's idempotency and precondition codes to 05's, 06's and
+    08's constants.
 
 NoDirectProblemDetailsConstructionPredicate  (class : ICustomRule — internal predicate)
     For each type (no namespace exemption — see PresentationLayeringRules note above), walks
@@ -4307,7 +4320,8 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         Throws the same single aggregate assertion-exception shape as the class's other five
         methods — naming the method, whether a matching Newobj-then-Throw sequence was found,
         and the expected exception type.
-        Caller-supplied everything, same discipline as the rest of this class: the consuming
+        [Original design, superseded by the two notes below — AddSharedKernelCors no longer exists,
+        and no real call site of this method exists.] Caller-supplied everything, same discipline as the rest of this class: the consuming
         test project supplies declaringType via the real AddSharedKernelCors-owning type
         (test-only ProjectReference, PrivateAssets="all", to SharedKernel.Presentation.WebApi)
         and expectedExceptionType from 14.Presentation's real, shipped guard-exception type — the
@@ -4388,7 +4402,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     hardened guard" family to genuinely add zero new production code to this class. The call site
     lives directly in ResolveCorrelationId's own IL body, not inside a lambda closure, so the
     closure-scanning extension is not exercised by this particular real call site (it remains
-    proven by T-318's/T-328's own real call sites).
+    proven by T-318's real call site; T-328's call sites are direct since the P-562 re-point).
 
     Real-assembly status: IMPLEMENTED (not deferred) — wired directly in SecureDefaultsAssertionTests
     as a GATING test (T-331) alongside contrived fire/pass-path fixture tests (T-329/T-330), rather
@@ -4422,7 +4436,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         declaringType's TypeDefinition, locates the single method matching methodName (throws a
         distinct setup exception, never a silent false pass/fail, on zero or more than one match),
         and scans its instruction body — plus, reusing AssertMethodBodyInvokesMethod's proven
-        closure-scanning extension (T-318/T-328), every method on every nested type whose name
+        closure-scanning extension (proven by T-318), every method on every nested type whose name
         starts with "<{methodName}>b__" — for a Call/Callvirt instruction whose resolved
         MethodReference.Name == "AddSingleton" and whose GenericInstanceMethod.GenericArguments
         equal [serviceType, implementationType] in that order. Fails if no matching instruction is
@@ -4460,7 +4474,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         call site (services.TryAddSingleton<IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator>())
         lives directly in AddSharedKernelWebhooks's own IL body, not inside a lambda closure, so no
         closure-scanning extension is exercised by this particular call site (that extension remains
-        proven by T-318/T-328/T-331's own real call sites).
+        proven by T-318's real call site).
 
     Technique B (the fail-closed IP-range-behavior half of this phase's acceptance criterion) is
     DELIBERATELY NOT a method on this class. Every method above proves a STRUCTURAL fact (a
@@ -5449,7 +5463,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `NoBareHealthCheckLiteralWhereConstantsExistPredicate` and `HealthCheckConstantsUsageRules` must **never** contain a concrete constants-class name (e.g. `"HealthCheckTags"`, `"HealthCheckNames"`) as a string literal anywhere in the implementation. This is the acceptance-critical generality requirement from WO-028 P-178 — the rule must generalize unmodified to any future domain's constants class. Code review must reject any PR that adds a name-specific check to this rule; if a domain needs name-specific enforcement, that belongs in a new, separately-scoped rule, not a special case bolted onto this one.
 - **Confirmed declaring-type names** (verified by direct Mono.Cecil inspection of the .NET 10 `Microsoft.AspNetCore.App.Ref` reference assemblies, package `Microsoft.Extensions.Diagnostics.HealthChecks` / `.Abstractions`): `Add(HealthCheckRegistration)` is declared on both the interface `Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder` and the concrete `Microsoft.Extensions.DependencyInjection.HealthChecksBuilder`. `AddCheck` overloads are declared across two extension-method host classes — `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderAddCheckExtensions` and `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderDelegateExtensions` — both matched by `NoBareHealthCheckLiteralWhereConstantsExistPredicate` via a `declaringTypeName.StartsWith("HealthChecksBuilder")` check rather than an exact-name list, so it also covers any future extension-method host class following the same naming convention. The `HealthCheckRegistration` constructor is `Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration::.ctor`. Verified against package version shipped with the .NET 10 SDK (`Microsoft.AspNetCore.App.Ref` 10.0.7) — re-verify if the platform ever pins an explicit `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet version that diverges from the SDK-bundled one.
 - `StringConstantsClassDetector` resolves literal *values*, not names — the predicate compares the bare literal's string value against the resolved constant value set, never against a field or class name. This is the design choice that lets the rule fire correctly regardless of what the constants class or its fields are named, and is what makes the rule catch the exact P-177 incident shape (a literal that happens to equal an existing constant's value) without requiring any naming convention from the consuming domain.
-- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — both rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. Neither predicate carries an internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. Document any future internal exemption here before adding one to either predicate.
+- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — its four rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. The two `ICustomRule` predicates carry no internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. `NoOpenApiStackDependencyOutsideOpenApiAddOn` (P-562) excludes `SharedKernel.Presentation.OpenApi` the same way, and `GrpcNeverReferencesContracts` takes only the gRPC assembly. Document any future internal exemption here before adding one to any of them.
 - `NoDirectProblemDetailsConstructionPredicate` matches on `MethodReference.DeclaringType.FullName` exact string equality against `"Microsoft.AspNetCore.Mvc.ProblemDetails"` and `"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"` — both are concrete framework types, so a `newobj` opcode is always the construction site (no factory-method indirection to account for, unlike `EncryptedValueConverter<T>`). Reuses the `Newobj`-walk pattern from `NoDirectEncryptedValueConverterInstantiationPredicate` — no new NuGet dependency.
 - `NoInlineResultBranchBeforeHttpResultPredicate` is a **method-level co-occurrence check, not a control-flow analysis**. It does not verify that the `IsSuccess`/`IsFailure` read occurs immediately before the HTTP result return — it only verifies that both signals appear somewhere in the same method body and that the body never maps through the WebApi core (a `ResultHttpExtensions`/`ErrorProblemDetailsExtensions` call or a `new ErrorHttpResult`; the `ToProblemDetailsResult` escape hatch was deleted by P-562). This is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique) — a method that reads `IsSuccess` for an unrelated logging decision and separately returns an `IResult` for an unrelated reason would also be flagged. If this produces real false positives in practice, narrow the check to control-flow adjacency in a follow-up phase; do not narrow it speculatively now.
 - `NoInlineResultBranchBeforeHttpResultPredicate`'s `Result`/`Result<T>` type-name match (`"Result"` exact or `"Result\`1"` prefix for the IL generic-arity-suffixed name) targets `SharedKernel.Primitives.Result`/`Result<T>` specifically. If a consuming assembly defines an unrelated type also named `Result` with its own `IsSuccess`/`IsFailure` properties, this predicate cannot distinguish them without a `DeclaringType.Namespace` check — add a namespace guard (`"SharedKernel.Primitives"`) if this false-positive risk is ever confirmed in practice; it is not added pre-emptively because no such collision is known to exist in this platform's codebase today.

@@ -64,6 +64,7 @@ builder.Services.AddSharedKernelApplication();
 ```csharp
 using MediatR;
 using SharedKernel.Application.Messaging;
+using SharedKernel.Presentation.WebApi;   // ToCreated (14.Presentation)
 using SharedKernel.Primitives.Results;
 
 // 1. The command: what the caller wants, and what it gets back on success.
@@ -84,9 +85,9 @@ public sealed class PlaceOrderHandler(IOrderRepository repository, IClock clock)
     }
 }
 
-// 3. The endpoint: map the Result to HTTP and stop thinking about it.
-app.MapPost("/orders", async (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
-    (await sender.Send(command, ct)).ToProblemDetailsResult());
+// 3. The endpoint: map the Result to HTTP and stop thinking about it (201 with Location, or a problem response).
+app.MapPost("/orders", (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
+    sender.Send(command, ct).ToCreated(id => $"/orders/{id}"));
 ```
 
 Three properties hold from here on, and they are what the rest of the platform builds on:

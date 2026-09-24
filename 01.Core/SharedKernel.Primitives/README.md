@@ -268,7 +268,7 @@ Three compile-time constant registries, so two packages cannot independently har
 
 | Registry | Holds | Call-site shape |
 | --- | --- | --- |
-| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id` | HTTP / gRPC metadata |
+| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key` | HTTP / gRPC metadata |
 | `WellKnownBaggageKeys` | correlation id, tenant id | `Activity.SetBaggage` / `AddBaggage` |
 | `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
 

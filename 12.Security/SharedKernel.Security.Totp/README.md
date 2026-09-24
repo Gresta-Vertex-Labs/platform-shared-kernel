@@ -54,7 +54,7 @@ dotnet add package SharedKernel.Security.Totp
 | Companion package | Adds |
 | --- | --- |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT bearer authentication; supplies the user's subject id, session id and `amr` claims |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireAuthenticationMethod]` and the endpoint filter that enforces it |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireAuthenticationMethod]` and `.RequireAuthenticationMethod(…)`, native ASP.NET Core authorization policies once `AddSharedKernelWebApi()`/`UseSharedKernelWebApi()` are in place; they also work on SignalR hub methods and gRPC methods |
 | [`SharedKernel.Cryptography.Argon2`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography.Argon2) | Argon2id as the hash algorithm for recovery codes |
 
 ## Quick start
@@ -65,14 +65,13 @@ dotnet add package SharedKernel.Security.Totp
 // Program.cs
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Totp;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Extensions;
 using SharedKernel.Security.Totp;
 
 builder.Services.AddOidcAuthentication(builder.Configuration);            // IUserContext with a session id
-builder.Services.AddAuthorization();
-builder.Services.AddSharedKernelAuthorizationFilters();
+builder.AddSharedKernelWebApi();                                          // error responses and [RequireAuthenticationMethod]
 
 builder.Services.AddSingleton<ITotpReplayGuard, RedisTotpReplayGuard>();      // shared by every replica
 builder.Services.AddSingleton<ITotpAttemptThrottle, RedisTotpAttemptThrottle>();
@@ -84,8 +83,7 @@ builder.Services.AddSharedKernelCryptography(builder.Configuration)
 
 var app = builder.Build();
 
-app.UseAuthentication(); // runs the step-up claims transformation
-app.UseAuthorization();
+app.UseSharedKernelWebApi(); // authentication (runs the step-up claims transformation), then authorization
 ```
 
 The store, replay guard and throttle types are yours; [recipe 5](#5-implement-the-stores) and
@@ -108,9 +106,7 @@ public sealed record TotpCodeRequest(string Code);
 
 ```csharp
 // Program.cs
-RouteGroupBuilder api = app.MapGroup("/api")
-    .RequireAuthorization()
-    .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
+RouteGroupBuilder api = app.MapGroup("/api").RequireAuthorization();
 
 api.MapPost("/step-up/totp", async (
     TotpCodeRequest request, IUserContext user, ITotpSecretSource secrets, TotpChallengeService challenges,
@@ -133,7 +129,7 @@ sessions of the same user do not.
 
 ```csharp
 api.MapPost("/payouts", () => Results.Accepted())
-    .RequireAuthenticationMethod("otp"); // 403 until this session completes a step-up
+    .RequireAuthenticationMethod("otp"); // 401 unauthorized.step_up_required until this session steps up
 ```
 
 > [!IMPORTANT]
@@ -146,7 +142,7 @@ api.MapPost("/payouts", () => Results.Accepted())
 | --- | --- | --- |
 | Let a user add an authenticator app | `TotpEnrollmentService.Create`, then `ConfirmAsync` | [Enroll](#1-enroll-an-authenticator-app) |
 | Keep the TOTP secret safe in the database | `ISymmetricEncryptionService` from `SharedKernel.Cryptography` | [Encrypt the secret](#2-encrypt-the-stored-secret) |
-| Ask for a code before a sensitive action | `TotpChallengeService.VerifyCodeAsync` + `[RequireAuthenticationMethod("otp")]` | [Step-up gate](#3-require-a-step-up-on-sensitive-endpoints) |
+| Ask for a code before a sensitive action | `TotpChallengeService.VerifyCodeAsync` + `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` | [Step-up gate](#3-gate-an-endpoint-on-a-fresh-otp-step-up) |
 | Let a user without their phone finish the second factor | `TotpChallengeService.RedeemRecoveryCodeAsync` | [Recovery codes](#4-complete-a-step-up-with-a-recovery-code) |
 | Persist step-ups, recovery codes and used time steps | `ITotpStepUpStore`, `IRecoveryCodeStore`, `ITotpReplayGuard` | [Stores](#5-implement-the-stores) |
 | Limit code guessing | `ITotpAttemptThrottle` | [Throttling](#6-throttle-attempts) |
@@ -191,12 +187,12 @@ a step-up. `ConfirmAsync` records no step-up.
 sequenceDiagram
     participant Client
     participant Auth as UseAuthentication
-    participant Filter as Endpoint filter
+    participant Authz as UseAuthorization
     participant StepUp as Step-up endpoint
     participant Challenge as TotpChallengeService
     participant Store as ITotpStepUpStore
-    Client->>Filter: POST payouts
-    Filter-->>Client: 403 Authorization.AuthenticationMethodNotSatisfied
+    Client->>Authz: POST payouts
+    Authz-->>Client: 401 unauthorized.step_up_required, WWW-Authenticate insufficient_user_authentication
     Client->>StepUp: POST step-up with code
     StepUp->>Challenge: VerifyCodeAsync(user, secret, code)
     Challenge->>Store: RecordAsync(subject, session, now, now + window)
@@ -206,8 +202,8 @@ sequenceDiagram
     Auth->>Store: GetLastVerifiedAsync(subject, session)
     Store-->>Auth: verified 20 seconds ago
     Note over Auth: TotpStepUpClaimsTransformation adds amr=otp and its time (amr_time)
-    Auth->>Filter: WasAuthenticatedWith(otp) is true
-    Filter-->>Client: 202 Accepted
+    Auth->>Authz: WasAuthenticatedWith(otp) is true
+    Authz-->>Client: 202 Accepted
 ```
 
 The claims transformation runs during authentication, so the step-up is visible from the **next** request, not in
@@ -245,16 +241,19 @@ flowchart TD
     B -->|No| Z["Principal unchanged"]
     B -->|Yes| C{"User with subject and session id?"}
     C -->|No| Z
-    C -->|Yes| D{"Already has amr=otp?"}
-    D -->|Yes| Z
-    D -->|No| E["GetLastVerifiedAsync(subject, session)"]
+    C -->|Yes| E["GetLastVerifiedAsync(subject, session)"]
     E --> F{"Within FreshnessWindow and not in the future?"}
     F -->|No| Z
-    F -->|Yes| G["Copy the identity and add amr=otp"]
+    F -->|Yes| D{"Already has amr=otp?"}
+    D -->|No| G["Copy the identity, add amr=otp and amr_time"]
+    D -->|Yes| H{"Already dated at or after the step-up?"}
+    H -->|Yes| Z
+    H -->|No| K["Copy the identity, add amr_time"]
 ```
 
 The original identity is never mutated, `AuthTime` never changes, and running the transformation twice adds the
-claim once.
+claims once. The `amr_time` value is the step-up's verification time from the store, in whole seconds, not the time of
+the request. An identity that already carries `otp` is dated by its latest `amr_time`, else by its sign-in (`AuthTime`).
 
 ### Recovery codes
 
@@ -389,7 +388,6 @@ One mapping from `TotpChallengeResult` to an HTTP response, shared by recipes 1,
 
 ```csharp
 using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.RateLimiting;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Totp;
 
@@ -398,7 +396,8 @@ public static class TotpHttpResults
     public static IResult ToHttpResult(this TotpChallengeResult result, HttpContext http) => result switch
     {
         TotpChallengeResult.Verified => Results.NoContent(),
-        TotpChallengeResult.Throttled => Results.Problem(RateLimitRejectionProblemDetails.Create(http)),
+        // An empty 429: UseSharedKernelWebApi() gives it the problem body, errorCode "http.429".
+        TotpChallengeResult.Throttled => Results.StatusCode(StatusCodes.Status429TooManyRequests),
         TotpChallengeResult.NoSession => Problem(Error.Forbidden("totp.no_session", "A user sign-in session is required."), http),
         TotpChallengeResult.Replayed => Problem(Error.Validation("totp.replayed", "This code was already used. Wait for the next one."), http),
         _ => Problem(Error.Validation("totp.invalid", "The code is not valid."), http),
@@ -456,28 +455,30 @@ builder.Services.AddSharedKernelCryptography(builder.Configuration)
 Key rotation, per-tenant keys and Key Vault-backed keys are covered in the
 [`SharedKernel.Cryptography` README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography#2-rotate-keys-without-downtime).
 
-### 3. Require a step-up on sensitive endpoints
+### 3. Gate an endpoint on a fresh OTP step-up
 
-Attach the requirement to the endpoint, and give the client an endpoint that checks the code.
+Require a step-up of this session, verified no more than five minutes ago, and give the client an endpoint that checks
+the code. The requirement comes from `SharedKernel.Presentation.WebApi`; the verification time it reads comes from this
+package.
 
 ```csharp
 // Program.cs
 using System.Security.Cryptography;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp;
 
-builder.Services.AddSharedKernelAuthorizationFilters();
+builder.AddSharedKernelWebApi(); // the authorization policies behind RequireAuthenticationMethod
 
-// ...after app.UseAuthentication() and app.UseAuthorization():
-RouteGroupBuilder api = app.MapGroup("/api")
-    .RequireAuthorization()
-    .AddEndpointFilter<AuthorizationRequirementEndpointFilter>(); // without it the requirement is not enforced
+// ...after builder.Build():
+app.UseSharedKernelWebApi();     // authentication (runs the step-up transformation), then authorization
+
+RouteGroupBuilder api = app.MapGroup("/api").RequireAuthorization();
 
 api.MapPost("/payouts", (PayoutRequest payout) => Results.Accepted())
-    .RequireAuthenticationMethod("otp");
+    .RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp");
 
 api.MapPost("/step-up/totp", async (
     TotpCodeRequest request, IUserContext user, HttpContext http, TotpChallengeService challenges,
@@ -504,25 +505,48 @@ api.MapPost("/step-up/totp", async (
 public sealed record PayoutRequest(decimal Amount, string Currency, string Iban);
 ```
 
-On a controller, use the attribute:
+On a controller, a SignalR hub method or a gRPC method, use the attribute:
 
 ```csharp
 [HttpPost("payouts")]
-[RequireAuthenticationMethod("otp")]
+[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]
 public IActionResult CreatePayout(PayoutRequest payout) => Accepted();
 ```
 
+What happens:
+
+1. `VerifyCodeAsync` checks the code and records the step-up for this subject and session:
+   `RecordAsync(subjectId, sessionId, now, now + FreshnessWindow)`.
+2. From the next request of that session on, and while the step-up is within `FreshnessWindow`,
+   `TotpStepUpClaimsTransformation` adds `amr=otp` and `amr_time` = `otp {unix seconds}`, the verification time
+   rounded down to whole seconds. `IUserContext.GetAuthenticationMethodTime("otp")` returns that time.
+3. The requirement holds while the caller has `otp` and its time is no more than 300 seconds before the clock
+   (`IClock`); exactly 300 seconds still passes.
+4. Otherwise a signed-in caller is refused with 401, problem `errorCode` `unauthorized.step_up_required`, and an
+   RFC 9470 challenge. `max_age` is there whether the step-up is missing or too old:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="A recent authentication with a stronger method is required", max_age="300"
+Content-Type: application/problem+json
+```
+
+The challenge names `DPoP` instead of `Bearer` when the request authenticated with DPoP. A caller who is not signed in
+gets a plain 401 `unauthorized.default` (sign in first), and a caller who also lacks a required role or permission gets
+403. A gRPC call gets the same status and header, which the client sees as `Unauthenticated`. A refused SignalR hub
+method fails with SignalR's own `HubException` ("… because user is unauthorized"), without the challenge.
+
 The client flow:
 
-1. Call the sensitive endpoint. Without a recent step-up it returns a 403 ProblemDetails whose `errorCode` is
-   `Authorization.AuthenticationMethodNotSatisfied`.
-2. Prompt for a code and `POST /api/step-up/totp`. On `204`, retry the original request in the same session.
+1. Call the sensitive endpoint. On a 401 whose `WWW-Authenticate` has `error="insufficient_user_authentication"`,
+   prompt for a code.
+2. `POST /api/step-up/totp`. On `204`, retry the original request in the same session.
 3. On `totp.replayed`, ask the user to wait for the next code. On `429`, stop prompting for a while.
 
 | Attribute | Checks | Satisfied by a TOTP step-up? |
 | --- | --- | --- |
 | `[RequireAuthenticationMethod("otp")]` | `IUserContext.WasAuthenticatedWith("otp")` | ✅ Yes, for `FreshnessWindow` on plain requests; on a SignalR connection for as long as it stays open |
-| `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` | The same, and `GetAuthenticationMethodTime("otp")` no older than 300 seconds | ✅ Yes, for the shorter of the two, on every transport |
+| `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` | The same, and `GetAuthenticationMethodTime("otp")` no older than 300 seconds | ✅ Yes: over HTTP and in unary gRPC calls for the shorter of the two; on a SignalR hub method for 300 seconds from the verification, checked on every call; a gRPC stream only when it starts |
 | `[RequireFreshAuthentication(maxAgeSeconds)]` | `IUserContext.AuthTime` from the identity provider | ❌ No, the step-up never changes `AuthTime` |
 
 Stack both only when you want a recent sign-in at the identity provider **and** a step-up.
@@ -950,7 +974,7 @@ returns the same builder. `TStepUpStore : class, ITotpStepUpStore`; `TRecoveryCo
 | `ITotpReplayGuard` | Singleton | Required by `ITotpVerifier`; must be shared by every replica |
 | An authentication package, such as `AddOidcAuthentication` | — | Registers the `IUserContextMapper` the transformation uses and the `IUserContext` your endpoints inject |
 | `ITotpAttemptThrottle` | Any | Optional, strongly recommended; RFC 4226 section 7.3 requires limiting attempts |
-| `app.UseAuthentication()` | — | Runs the claims transformation |
+| `app.UseAuthentication()` (added by `SharedKernel.Presentation.WebApi`'s `app.UseSharedKernelWebApi()`) | — | Runs the claims transformation |
 
 ### Options
 
@@ -972,7 +996,7 @@ Invalid options stop the host at startup with `OptionsValidationException`.
 | `TotpEnrollment` | Class | The unconfirmed enrollment returned by `Create` |
 | `TotpChallengeService` | Class | `VerifyCodeAsync` and `RedeemRecoveryCodeAsync`; records step-ups |
 | `TotpChallengeResult` | Enum | `Invalid`, `Verified`, `Replayed`, `Throttled`, `NoSession` |
-| `TotpStepUpClaimsTransformation` | Class | Adds `amr=otp` to a stepped-up session's identity |
+| `TotpStepUpClaimsTransformation` | Class | Adds `amr=otp` and its `amr_time` to a stepped-up session's identity |
 | `TotpStepUpOptions` | Class | Freshness window and the claim added |
 | `ITotpStepUpStore` | Interface, yours | Records and reads step-ups per subject and session |
 | `IRecoveryCodeStore` | Interface, yours | Reads unused recovery codes; marks one used atomically |
@@ -1122,7 +1146,7 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 | --- | --- | --- |
 | Gate step-up endpoints with `[RequireFreshAuthentication]` | Use `[RequireAuthenticationMethod("otp")]` | The step-up never changes `AuthTime` |
 | Gate a SignalR hub method with `[RequireAuthenticationMethod("otp")]` alone | Add `MaxAgeSeconds`, no longer than `FreshnessWindow` | The connection keeps its principal; without a maximum age the step-up lasts as long as the connection |
-| Forget `.AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` | Add it to the route group or `MapControllers()` | Without it the attribute is metadata nobody reads |
+| Skip `builder.AddSharedKernelWebApi()` (or `services.AddSharedKernelAuthorization()` in a host without it) | Call it, and `app.UseSharedKernelWebApi()` before mapping endpoints | The attribute's policy name resolves only through the platform's policy provider |
 | Register a claims transformation after `AddTotpStepUp` | Register it before | The last registration wins and replaces the step-up transformation |
 | Register `ITotpReplayGuard` as scoped | Register it as a singleton | `ITotpVerifier` is a singleton; scope validation fails |
 | Use in-memory stores with several replicas | Use Redis, SQL or another shared store | A step-up or used code on one replica is invisible to the others |
@@ -1145,7 +1169,9 @@ REGISTER     services.AddSharedKernelCryptography(configuration)
                  .AddTotpStepUp<TStepUpStore, TRecoveryCodeStore>(o => o.FreshnessWindow = ...);
              Also register: ITotpReplayGuard (singleton, shared store), an auth package that registers
              IUserContextMapper (services.AddOidcAuthentication(configuration)), ITotpAttemptThrottle (recommended).
-             Call app.UseAuthentication(). Register other IClaimsTransformation implementations BEFORE AddTotpStepUp.
+             With SharedKernel.Presentation.WebApi: builder.AddSharedKernelWebApi(); app.UseSharedKernelWebApi() before
+             mapping (it calls UseAuthentication/UseAuthorization). Otherwise call app.UseAuthentication().
+             Register other IClaimsTransformation implementations BEFORE AddTotpStepUp.
 ENROLL       TotpEnrollmentService.Create(issuer, accountName) -> TotpEnrollment. Show ProvisioningUri (QR) and
              RecoveryCodes once. Save pending: encrypted Secret, Parameters, StoredRecoveryCodes.
 CONFIRM      await ConfirmAsync(user, secret, code, parameters). Only on Verified: activate and replace recovery codes.
@@ -1153,8 +1179,10 @@ SECRET       Encrypt Secret with ISymmetricEncryptionService, associated data = 
 STEP UP      await TotpChallengeService.VerifyCodeAsync(user, secret, code, parameters) -> Verified records a
              step-up for (SubjectId, SessionId) lasting FreshnessWindow. Visible from the next request.
 RECOVERY     await RedeemRecoveryCodeAsync(user, code) -> Verified uses the code once and records a step-up.
-GATE         .RequireAuthenticationMethod("otp") or [RequireAuthenticationMethod("otp")] with
-             AuthorizationRequirementEndpointFilter. In code: user.WasAuthenticatedWith("otp").
+GATE         .RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp") or
+             [RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)] (SharedKernel.Presentation.WebApi; native policies,
+             no filter). Refusal: 401 unauthorized.step_up_required with WWW-Authenticate: Bearer
+             error="insufficient_user_authentication", ..., max_age="300". In code: user.WasAuthenticatedWith("otp").
              [RequireFreshAuthentication] checks AuthTime and is NOT satisfied by a step-up.
 LONG-LIVED   SignalR hub methods: [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)], n <= FreshnessWindow, on the
              method, never only on the hub class. The step-up time is the amr_time claim the transformation adds;
