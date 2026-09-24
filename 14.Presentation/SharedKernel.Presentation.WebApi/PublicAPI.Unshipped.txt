@@ -103,6 +103,8 @@ SharedKernel.Presentation.WebApi.Options.WebApiSecurityHeadersOptions.ReferrerPo
 SharedKernel.Presentation.WebApi.Options.WebApiSecurityHeadersOptions.WebApiSecurityHeadersOptions() -> void
 SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions
 SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.get -> int
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.set -> void
 SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Methods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Policy.get -> string!
 SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.RequireAuthenticationMethodAttribute(params string![]! methods) -> void
@@ -154,6 +156,7 @@ override SharedKernel.Presentation.WebApi.IdempotencyKey.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.IdempotencyKey.ToString() -> string!
 override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.ToString() -> string!
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, System.TimeSpan maxAge, params string![]! methods) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string![]! methods) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, System.TimeSpan maxAge) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder

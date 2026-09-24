@@ -102,11 +102,16 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapGet("/auth/fresh", () => "ok").RequireFreshAuthentication(300);
         app.MapGet("/auth/fresh-timespan", () => "ok").RequireFreshAuthentication(TimeSpan.FromMinutes(5));
         app.MapGet("/auth/mfa", () => "ok").RequireAuthenticationMethod("mfa", "hwk");
+        app.MapGet("/auth/otp-recent", () => "ok").RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp");
+        app.MapGet("/auth/otp-recent-and-fresh", () => "ok")
+            .RequireAuthenticationMethod(TimeSpan.FromMinutes(10), "otp")
+            .RequireFreshAuthentication(120);
         app.MapGet("/auth/perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
         app.MapGet("/auth/metadata-only", () => "ok").WithMetadata(new RequirePermissionAttribute("orders.read"));
         app.MapPost("/auth/grpc-like", () => "ok").RequirePermission("orders.read");
         app.MapPost("/auth/grpc-like-fresh", () => "ok").RequireFreshAuthentication(300);
         app.MapPost("/auth/grpc-like-mfa", () => "ok").RequireAuthenticationMethod("mfa", "hwk");
+        app.MapPost("/auth/grpc-like-otp-recent", () => "ok").RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp");
         app.MapPost("/auth/grpc-like-perm-and-fresh", () => "ok").RequirePermission("orders.read").RequireFreshAuthentication(300);
 
         var group = app.MapGroup("/auth/group").RequirePermission("orders.read");

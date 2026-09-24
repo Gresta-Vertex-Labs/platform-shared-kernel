@@ -48,4 +48,16 @@ public static class SecurityClaimTypes
 
     /// <summary>The tenant identifier used by SharedKernel services: <c>tenant_id</c>.</summary>
     public const string TenantId = "tenant_id";
+
+    /// <summary>
+    /// When an authentication method was verified, used by SharedKernel services: <c>amr_time</c>. One claim per
+    /// method, valued <c>{method} {seconds since the Unix epoch}</c>, such as <c>otp 1790000000</c>.
+    /// </summary>
+    /// <remarks>
+    /// Not a registered JWT claim. A step-up that adds a method after sign-in, such as the TOTP step-up, adds this claim
+    /// next to the <c>amr</c> value it dates, so <see cref="IUserContext.GetAuthenticationMethodTime"/> can tell how old
+    /// the method is. Write and read it with <see cref="AuthenticationMethodTimeClaim"/>. Like every claim the platform
+    /// trusts, an identity provider must not let users set it.
+    /// </remarks>
+    public const string AuthenticationMethodTime = "amr_time";
 }

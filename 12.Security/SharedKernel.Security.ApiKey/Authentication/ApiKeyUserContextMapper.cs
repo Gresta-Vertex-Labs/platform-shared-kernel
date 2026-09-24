@@ -22,6 +22,10 @@ internal sealed class ApiKeyUserContextMapper : IUserContextMapper
             TenantId = Guid.TryParse(identity.FindFirst(SecurityClaimTypes.TenantId)?.Value, out Guid tenantId) && tenantId != Guid.Empty ? tenantId : null,
             Roles = [.. identity.FindAll(SecurityClaimTypes.Roles).Select(claim => claim.Value)],
             Permissions = [.. identity.FindAll(SecurityClaimTypes.Scope).Select(claim => claim.Value)],
+
+            // The handler issues no authentication method; a claims transformation may add one, with its time.
+            AuthenticationMethods = [.. identity.FindAll(SecurityClaimTypes.AuthenticationMethod).Select(claim => claim.Value)],
+            AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
         };
     }
 }

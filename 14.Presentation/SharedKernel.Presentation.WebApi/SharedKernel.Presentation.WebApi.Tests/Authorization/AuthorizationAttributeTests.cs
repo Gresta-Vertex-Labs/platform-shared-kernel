@@ -21,6 +21,7 @@ public sealed class AuthorizationAttributeTests
         new RequireRoleAttribute("auditor"),
         new RequireFreshAuthenticationAttribute(300),
         new RequireAuthenticationMethodAttribute("mfa", "hwk"),
+        new RequireAuthenticationMethodAttribute("otp") { MaxAgeSeconds = 300 },
     };
 
     public static TheoryData<IAuthorizeData, string> EncodedPolicies => new()
@@ -29,6 +30,7 @@ public sealed class AuthorizationAttributeTests
         { new RequireRoleAttribute("auditor"), "SharedKernel:role:auditor" },
         { new RequireFreshAuthenticationAttribute(300), "SharedKernel:fresh:300" },
         { new RequireAuthenticationMethodAttribute("mfa", "hwk"), "SharedKernel:amr:mfa|hwk" },
+        { new RequireAuthenticationMethodAttribute("otp", "hwk") { MaxAgeSeconds = 300 }, "SharedKernel:amr-max-age:300|otp|hwk" },
     };
 
     [Theory]
@@ -159,6 +161,97 @@ public sealed class AuthorizationAttributeTests
         new RequirePermissionAttribute("p").Permissions.Should().Equal("p");
         new RequireFreshAuthenticationAttribute(90).MaxAge.Should().Be(TimeSpan.FromSeconds(90));
         new RequireAuthenticationMethodAttribute("mfa").Methods.Should().Equal("mfa");
+        new RequireAuthenticationMethodAttribute("mfa") { MaxAgeSeconds = 90 }.MaxAgeSeconds.Should().Be(90);
+    }
+
+    [Fact]
+    public void X1_MethodAttributeWithoutMaxAge_KeepsItsPolicy_AndHasNoMaxAge()
+    {
+        var attribute = new RequireAuthenticationMethodAttribute("mfa", "hwk");
+
+        attribute.MaxAgeSeconds.Should().Be(0);
+        SharedKernelPolicyNames.TryCreateRequirement(attribute.Policy, out var requirement).Should().BeTrue();
+        requirement.Should().BeOfType<AuthenticationMethodRequirement>().Which.MaxAge.Should().BeNull();
+        requirement!.StepUpMaxAge.Should().BeNull();
+    }
+
+    [Fact]
+    public void X1_MaxAge_RoundTripsThroughThePolicyName()
+    {
+        var attribute = new RequireAuthenticationMethodAttribute("otp", "hwk") { MaxAgeSeconds = 300 };
+
+        SharedKernelPolicyNames.TryCreateRequirement(((IAuthorizeData)attribute).Policy!, out var requirement).Should().BeTrue();
+
+        var method = requirement.Should().BeOfType<AuthenticationMethodRequirement>().Which;
+        method.Methods.Should().Equal("otp", "hwk");
+        method.MaxAge.Should().Be(TimeSpan.FromSeconds(300));
+        method.StepUpMaxAge.Should().Be(TimeSpan.FromSeconds(300));
+        method.IsStepUp.Should().BeTrue();
+    }
+
+    [Fact]
+    public void X1_MethodThatLooksLikeANumber_IsNeverReadAsTheMaxAge()
+    {
+        SharedKernelPolicyNames.TryCreateRequirement(new RequireAuthenticationMethodAttribute("300").Policy, out var withoutAge).Should().BeTrue();
+        SharedKernelPolicyNames.TryCreateRequirement(new RequireAuthenticationMethodAttribute("300") { MaxAgeSeconds = 60 }.Policy, out var withAge).Should().BeTrue();
+
+        withoutAge.Should().BeOfType<AuthenticationMethodRequirement>().Which.Methods.Should().Equal("300");
+        withoutAge.Should().BeOfType<AuthenticationMethodRequirement>().Which.MaxAge.Should().BeNull();
+        withAge.Should().BeOfType<AuthenticationMethodRequirement>().Which.Methods.Should().Equal("300");
+        withAge.Should().BeOfType<AuthenticationMethodRequirement>().Which.MaxAge.Should().Be(TimeSpan.FromSeconds(60));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void X1_MaxAgeSeconds_MustBePositive_AndARefusedValueLeavesThePolicy(int seconds)
+    {
+        var attribute = new RequireAuthenticationMethodAttribute("otp") { MaxAgeSeconds = 120 };
+
+        FluentActions.Invoking(() => attribute.MaxAgeSeconds = seconds).Should().Throw<ArgumentOutOfRangeException>();
+
+        attribute.MaxAgeSeconds.Should().Be(120);
+        attribute.Policy.Should().Be("SharedKernel:amr-max-age:120|otp");
+        ((AuthorizeAttribute)attribute).Policy.Should().Be("SharedKernel:amr-max-age:120|otp");
+    }
+
+    [Theory]
+    [InlineData("SharedKernel:amr-max-age:300")]
+    [InlineData("SharedKernel:amr-max-age:0|otp")]
+    [InlineData("SharedKernel:amr-max-age:-5|otp")]
+    [InlineData("SharedKernel:amr-max-age:+5|otp")]
+    [InlineData("SharedKernel:amr-max-age:5m|otp")]
+    [InlineData("SharedKernel:amr-max-age:|otp")]
+    [InlineData("SharedKernel:amr-max-age:300| ")]
+    [InlineData("SharedKernel:amr-max-age:99999999999|otp")]
+    public void X1_MalformedMaxAgePolicyName_IsNotAPlatformPolicy(string policyName)
+    {
+        SharedKernelPolicyNames.TryCreateRequirement(policyName, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void X1_TimeSpanMethodConvention_NeedsAtLeastOneSecond_AndFitsAnInt()
+    {
+        var builder = new TestConventionBuilder();
+
+        FluentActions.Invoking(() => builder.RequireAuthenticationMethod(TimeSpan.FromMilliseconds(500), "otp"))
+            .Should().Throw<ArgumentOutOfRangeException>();
+        FluentActions.Invoking(() => builder.RequireAuthenticationMethod(TimeSpan.FromSeconds(int.MaxValue + 1L), "otp"))
+            .Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void X1_TimeSpanMethodConvention_AddsTheAttribute_WithWholeSeconds()
+    {
+        var builder = new CapturingConventionBuilder();
+
+        builder.RequireAuthenticationMethod(TimeSpan.FromSeconds(90.9), "otp", "hwk");
+
+        var attribute = builder.Metadata.OfType<RequireAuthenticationMethodAttribute>().Should().ContainSingle().Which;
+        attribute.MaxAgeSeconds.Should().Be(90);
+        attribute.Methods.Should().Equal("otp", "hwk");
+        attribute.Policy.Should().Be("SharedKernel:amr-max-age:90|otp|hwk");
     }
 
     [Fact]
@@ -217,5 +310,18 @@ public sealed class AuthorizationAttributeTests
         public void Add(Action<Microsoft.AspNetCore.Builder.EndpointBuilder> convention)
         {
         }
+    }
+
+    // Applies each convention at once to an endpoint builder, so a test can read the metadata a convention adds.
+    private sealed class CapturingConventionBuilder : Microsoft.AspNetCore.Builder.IEndpointConventionBuilder
+    {
+        private readonly Microsoft.AspNetCore.Routing.RouteEndpointBuilder _endpoint = new(
+            _ => Task.CompletedTask,
+            Microsoft.AspNetCore.Routing.Patterns.RoutePatternFactory.Parse("/"),
+            order: 0);
+
+        public IList<object> Metadata => _endpoint.Metadata;
+
+        public void Add(Action<Microsoft.AspNetCore.Builder.EndpointBuilder> convention) => convention(_endpoint);
     }
 }

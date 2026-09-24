@@ -7,6 +7,7 @@ SharedKernel.Security.Abstractions.AnonymousUserContext.ClientId.get -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.Email.get -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.FindClaim(string! claimType) -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.FindClaims(string! claimType) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Security.Abstractions.AnonymousUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.AnonymousUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.AnonymousUserContext.HasRole(string! role) -> bool
 SharedKernel.Security.Abstractions.AnonymousUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
@@ -20,6 +21,7 @@ SharedKernel.Security.Abstractions.AnonymousUserContext.SessionId.get -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.SubjectId.get -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.TenantId.get -> System.Guid?
 SharedKernel.Security.Abstractions.AnonymousUserContext.WasAuthenticatedWith(string! method) -> bool
+SharedKernel.Security.Abstractions.AuthenticationMethodTimeClaim
 SharedKernel.Security.Abstractions.ITenantProvider
 SharedKernel.Security.Abstractions.ITenantProvider.TenantId.get -> System.Guid
 SharedKernel.Security.Abstractions.IUserContext
@@ -30,6 +32,7 @@ SharedKernel.Security.Abstractions.IUserContext.ClientId.get -> string?
 SharedKernel.Security.Abstractions.IUserContext.Email.get -> string?
 SharedKernel.Security.Abstractions.IUserContext.FindClaim(string! claimType) -> string?
 SharedKernel.Security.Abstractions.IUserContext.FindClaims(string! claimType) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Security.Abstractions.IUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.IUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.IUserContext.HasRole(string! role) -> bool
 SharedKernel.Security.Abstractions.IUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
@@ -60,6 +63,7 @@ SharedKernel.Security.Abstractions.SystemUserContext.ClientId.get -> string?
 SharedKernel.Security.Abstractions.SystemUserContext.Email.get -> string?
 SharedKernel.Security.Abstractions.SystemUserContext.FindClaim(string! claimType) -> string?
 SharedKernel.Security.Abstractions.SystemUserContext.FindClaims(string! claimType) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Security.Abstractions.SystemUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.SystemUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.SystemUserContext.HasRole(string! role) -> bool
 SharedKernel.Security.Abstractions.SystemUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
@@ -78,6 +82,8 @@ SharedKernel.Security.Abstractions.UserContext.AuthContextClassReference.get -> 
 SharedKernel.Security.Abstractions.UserContext.AuthContextClassReference.init -> void
 SharedKernel.Security.Abstractions.UserContext.AuthTime.get -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.UserContext.AuthTime.init -> void
+SharedKernel.Security.Abstractions.UserContext.AuthenticationMethodTimes.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.DateTimeOffset>!
+SharedKernel.Security.Abstractions.UserContext.AuthenticationMethodTimes.init -> void
 SharedKernel.Security.Abstractions.UserContext.AuthenticationMethods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.Abstractions.UserContext.AuthenticationMethods.init -> void
 SharedKernel.Security.Abstractions.UserContext.ClientId.get -> string?
@@ -86,6 +92,7 @@ SharedKernel.Security.Abstractions.UserContext.Email.get -> string?
 SharedKernel.Security.Abstractions.UserContext.Email.init -> void
 SharedKernel.Security.Abstractions.UserContext.FindClaim(string! claimType) -> string?
 SharedKernel.Security.Abstractions.UserContext.FindClaims(string! claimType) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Security.Abstractions.UserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.UserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.UserContext.HasRole(string! role) -> bool
 SharedKernel.Security.Abstractions.UserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
@@ -113,6 +120,7 @@ SharedKernel.Security.Abstractions.UserContextTenantProvider.UserContextTenantPr
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthContextClassReference = "acr" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthTime = "auth_time" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthenticationMethod = "amr" -> string!
+const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthenticationMethodTime = "amr_time" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthorizedParty = "azp" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.ClientId = "client_id" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.Confirmation = "cnf" -> string!
@@ -125,6 +133,8 @@ const SharedKernel.Security.Abstractions.SecurityClaimTypes.Subject = "sub" -> s
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.TenantId = "tenant_id" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.TokenId = "jti" -> string!
 static SharedKernel.Security.Abstractions.AnonymousUserContext.Instance.get -> SharedKernel.Security.Abstractions.AnonymousUserContext!
+static SharedKernel.Security.Abstractions.AuthenticationMethodTimeClaim.Create(string! method, System.DateTimeOffset verifiedAt) -> System.Security.Claims.Claim!
+static SharedKernel.Security.Abstractions.AuthenticationMethodTimeClaim.Read(System.Collections.Generic.IEnumerable<System.Security.Claims.Claim!>! claims) -> System.Collections.Generic.IReadOnlyDictionary<string!, System.DateTimeOffset>!
 static SharedKernel.Security.Abstractions.SystemUserContext.Instance.get -> SharedKernel.Security.Abstractions.SystemUserContext!
 static SharedKernel.Security.Abstractions.UserContext.MaxFutureAuthTime.get -> System.TimeSpan
 static SharedKernel.Security.Abstractions.UserContextResolver.Resolve(System.Security.Claims.ClaimsPrincipal? principal, System.Collections.Generic.IEnumerable<SharedKernel.Security.Abstractions.IUserContextMapper!>! mappers) -> SharedKernel.Security.Abstractions.IUserContext!

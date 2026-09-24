@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Localization;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -146,6 +147,9 @@ public sealed class MethodAuthorizationHub(InvocationCounter counter) : Hub
 
     [RequireAuthenticationMethod("mfa")]
     public string ChangePassword() => Run("changed");
+
+    [RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]
+    public string ApprovePayout() => Run("approved");
 
     public string Open() => Run("open");
 

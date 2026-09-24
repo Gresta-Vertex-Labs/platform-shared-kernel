@@ -19,6 +19,7 @@ public sealed class SecurityClaimTypesTests
     [InlineData(SecurityClaimTypes.Confirmation, "cnf")]
     [InlineData(SecurityClaimTypes.Roles, "roles")]
     [InlineData(SecurityClaimTypes.TenantId, "tenant_id")]
+    [InlineData(SecurityClaimTypes.AuthenticationMethodTime, "amr_time")]
     public void Constant_MatchesRegisteredWireName(string actual, string expected)
     {
         Assert.Equal(expected, actual);
@@ -33,7 +34,7 @@ public sealed class SecurityClaimTypesTests
             .Select(field => (string)field.GetRawConstantValue()!)
             .ToArray();
 
-        Assert.Equal(14, values.Length);
+        Assert.Equal(15, values.Length);
         Assert.Equal(values.Length, values.Distinct(StringComparer.Ordinal).Count());
     }
 }

@@ -73,6 +73,10 @@ public sealed class ApiTestController : ControllerBase
     [RequireAuthenticationMethod("mfa", "hwk")]
     public string Mfa() => "ok";
 
+    [HttpGet("auth/otp-recent")]
+    [RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]
+    public string RecentOtp() => "ok";
+
     [HttpPost("idempotent")]
     [RequireIdempotencyKey]
     public string Idempotent() => HttpContext.GetIdempotencyKey() ?? "none";

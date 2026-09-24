@@ -15,7 +15,8 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// <remarks>
 /// The caller is resolved with <see cref="UserContextResolver"/> over the registered <see cref="IUserContextMapper"/>s,
 /// so the authentication package decides which claims carry roles and permissions. The clock is resolved only when a
-/// freshness requirement is evaluated.
+/// freshness requirement, or an authentication-method requirement with a maximum age, is evaluated — on every SignalR
+/// hub method call as well, which is what ends a step-up on a connection that stays open.
 /// </remarks>
 internal sealed partial class SharedKernelRequirementHandler : IAuthorizationHandler
 {

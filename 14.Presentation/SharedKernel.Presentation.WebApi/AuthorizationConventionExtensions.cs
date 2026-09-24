@@ -79,11 +79,43 @@ public static class AuthorizationConventionExtensions
     /// <param name="builder">The endpoint, group or mapping.</param>
     /// <param name="methods">The authentication methods, any one of which is enough.</param>
     /// <returns>The same <paramref name="builder"/>.</returns>
+    /// <remarks>
+    /// A method counts for as long as the caller's principal carries it. For a step-up method such as <c>otp</c>, prefer
+    /// the overload with a maximum age.
+    /// </remarks>
     public static TBuilder RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string[] methods)
         where TBuilder : IEndpointConventionBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         return builder.RequireAuthorization(new RequireAuthenticationMethodAttribute(methods));
+    }
+
+    /// <summary>
+    /// Requires the caller to have verified at least one of <paramref name="methods"/> (<c>amr</c> values) no longer
+    /// than <paramref name="maxAge"/> ago; an older method, or one without a known time, is answered 401 with an
+    /// RFC 9470 step-up challenge carrying <c>max_age</c>.
+    /// </summary>
+    /// <typeparam name="TBuilder">The endpoint convention builder type.</typeparam>
+    /// <param name="builder">The endpoint, group or mapping.</param>
+    /// <param name="maxAge">
+    /// How long ago one of the methods may have been verified; at least one second. Fractions of a second are dropped.
+    /// </param>
+    /// <param name="methods">The authentication methods, any one of which is enough.</param>
+    /// <returns>The same <paramref name="builder"/>.</returns>
+    /// <remarks>
+    /// The method's time is compared with the clock each time the requirement is evaluated. On <c>MapHub&lt;T&gt;()</c>
+    /// a convention guards only opening the connection; to end a step-up on a connection that stays open, put
+    /// <see cref="RequireAuthenticationMethodAttribute"/> with <see cref="RequireAuthenticationMethodAttribute.MaxAgeSeconds"/>
+    /// on the hub method, which SignalR authorizes on every call.
+    /// </remarks>
+    public static TBuilder RequireAuthenticationMethod<TBuilder>(this TBuilder builder, TimeSpan maxAge, params string[] methods)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxAge, TimeSpan.FromSeconds(1));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxAge, TimeSpan.FromSeconds(int.MaxValue));
+
+        return builder.RequireAuthorization(new RequireAuthenticationMethodAttribute(methods) { MaxAgeSeconds = (int)maxAge.TotalSeconds });
     }
 }

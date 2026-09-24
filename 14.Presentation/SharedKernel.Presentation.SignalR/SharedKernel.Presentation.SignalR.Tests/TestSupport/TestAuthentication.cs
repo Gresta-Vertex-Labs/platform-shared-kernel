@@ -31,6 +31,8 @@ internal static class TestAuthentication
 
     public const string AuthTimeHeader = "X-Test-AuthTime";
 
+    public const string MethodTimesHeader = "X-Test-AmrTime";
+
     public const string Challenge = "Test realm=\"tests\"";
 
     public const string SubjectClaim = "sub";
@@ -52,19 +54,27 @@ internal static class TestAuthentication
         return builder;
     }
 
-    /// <summary>Returns the headers that sign a connection in as <paramref name="user"/>.</summary>
+    /// <summary>
+    /// Returns the headers that sign a connection in as <paramref name="user"/>. <paramref name="methodTimes"/> become
+    /// <c>amr_time</c> claims, as a step-up claims transformation adds them when the connection opens.
+    /// </summary>
     public static Dictionary<string, string> SignedIn(
         string user = "user-1",
         string? permissions = null,
         string? roles = null,
         string? methods = null,
-        DateTimeOffset? authTime = null)
+        DateTimeOffset? authTime = null,
+        (string Method, DateTimeOffset VerifiedAt)[]? methodTimes = null)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [UserHeader] = user };
         AddIfSet(headers, PermissionsHeader, permissions);
         AddIfSet(headers, RolesHeader, roles);
         AddIfSet(headers, MethodsHeader, methods);
         AddIfSet(headers, AuthTimeHeader, authTime?.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        AddIfSet(
+            headers,
+            MethodTimesHeader,
+            methodTimes is null ? null : string.Join(',', methodTimes.Select(time => AuthenticationMethodTimeClaim.Create(time.Method, time.VerifiedAt).Value)));
         return headers;
     }
 
@@ -97,6 +107,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         claims.AddRange(Values(TestAuthentication.RolesHeader).Select(value => new Claim(TestAuthentication.RoleClaim, value)));
         claims.AddRange(Values(TestAuthentication.MethodsHeader).Select(value => new Claim(TestAuthentication.MethodClaim, value)));
         claims.AddRange(Values(TestAuthentication.AuthTimeHeader).Select(value => new Claim(TestAuthentication.AuthTimeClaim, value)));
+        claims.AddRange(Values(TestAuthentication.MethodTimesHeader).Select(value => new Claim(SecurityClaimTypes.AuthenticationMethodTime, value)));
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, TestAuthentication.Scheme));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, TestAuthentication.Scheme)));
@@ -126,6 +137,7 @@ internal sealed class TestUserContextMapper : IUserContextMapper
             Permissions = [.. identity.FindAll(TestAuthentication.PermissionClaim).Select(claim => claim.Value)],
             Roles = [.. identity.FindAll(TestAuthentication.RoleClaim).Select(claim => claim.Value)],
             AuthenticationMethods = [.. identity.FindAll(TestAuthentication.MethodClaim).Select(claim => claim.Value)],
+            AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
             AuthTime = authTime is null ? null : DateTimeOffset.FromUnixTimeSeconds(long.Parse(authTime, CultureInfo.InvariantCulture)),
         };
     }

@@ -205,13 +205,18 @@ sequenceDiagram
     Client->>Auth: POST payouts again, same session
     Auth->>Store: GetLastVerifiedAsync(subject, session)
     Store-->>Auth: verified 20 seconds ago
-    Note over Auth: TotpStepUpClaimsTransformation adds amr=otp
+    Note over Auth: TotpStepUpClaimsTransformation adds amr=otp and its time (amr_time)
     Auth->>Filter: WasAuthenticatedWith(otp) is true
     Filter-->>Client: 202 Accepted
 ```
 
 The claims transformation runs during authentication, so the step-up is visible from the **next** request, not in
 the request that verified the code.
+
+Next to `amr=otp` it adds the step-up's verification time, so `IUserContext.GetAuthenticationMethodTime("otp")` returns
+it. That time is what ends a step-up on a SignalR connection: the connection authenticates once, when it opens, and
+keeps `amr=otp` for as long as it stays open, but `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` on a hub
+method compares the time with the clock on every call.
 
 ### Why a step-up is bound to one session
 
@@ -516,10 +521,17 @@ The client flow:
 
 | Attribute | Checks | Satisfied by a TOTP step-up? |
 | --- | --- | --- |
-| `[RequireAuthenticationMethod("otp")]` | `IUserContext.WasAuthenticatedWith("otp")` | ✅ Yes, for `FreshnessWindow` |
+| `[RequireAuthenticationMethod("otp")]` | `IUserContext.WasAuthenticatedWith("otp")` | ✅ Yes, for `FreshnessWindow` on plain requests; on a SignalR connection for as long as it stays open |
+| `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` | The same, and `GetAuthenticationMethodTime("otp")` no older than 300 seconds | ✅ Yes, for the shorter of the two, on every transport |
 | `[RequireFreshAuthentication(maxAgeSeconds)]` | `IUserContext.AuthTime` from the identity provider | ❌ No, the step-up never changes `AuthTime` |
 
 Stack both only when you want a recent sign-in at the identity provider **and** a step-up.
+
+> [!IMPORTANT]
+> On SignalR hub methods, always set `MaxAgeSeconds`, no longer than `FreshnessWindow`. A connection keeps the
+> principal it opened with, so without a maximum age a step-up lasts as long as the connection. Put the attribute on
+> the hub method: on the hub class it is checked once, when the connection opens. A gRPC streaming call is authorized
+> once, when it starts.
 
 ### 4. Complete a step-up with a recovery code
 
@@ -1028,12 +1040,17 @@ Checks run in this order: caller, throttle, code. A step-up is recorded as `Reco
 
 `TotpStepUpClaimsTransformation` runs inside `UseAuthentication`, after any transformation it wraps, and before
 `IUserContext` is resolved. It picks the first authenticated identity whose authentication type matches a registered
-`IUserContextMapper` (ordinal comparison), and adds `AuthenticationMethodClaimType = AuthenticationMethod` when:
+`IUserContextMapper` (ordinal comparison), and adds `AuthenticationMethodClaimType = AuthenticationMethod` together
+with an `amr_time` claim (`SecurityClaimTypes.AuthenticationMethodTime`) holding the step-up's verification time, in
+whole seconds rounded down, when:
 
 - the mapped caller is a `User` with a subject id and a session id,
-- the identity does not already carry that claim,
 - `ITotpStepUpStore` has a step-up for the pair that is not in the future and no older than `FreshnessWindow`
   (a step-up exactly `FreshnessWindow` old still counts).
+
+When the identity already carries the method (the identity provider signed the user in with `otp`), only the
+`amr_time` claim is added, and only when the step-up is more recent than what the identity already reports: its latest
+`amr_time`, otherwise its sign-in time (`AuthTime`). Applying the transformation twice adds nothing the second time.
 
 ASP.NET Core resolves a single `IClaimsTransformation`. Register any other transformation **before**
 `AddTotpStepUp`; it is wrapped with its original lifetime and runs first. One registered after replaces the step-up
@@ -1066,6 +1083,7 @@ A verified `ConfirmAsync` logs nothing.
 | Two requests redeeming the same recovery code | Redemption succeeds only when `TryMarkUsedAsync` returns `true`, which an atomic store gives to one call |
 | Timing attacks on codes | Codes are compared in fixed time across the drift window by `SharedKernel.Cryptography` |
 | A step-up that lasts too long | `FreshnessWindow` is capped at 24 hours; a stored time in the future is ignored |
+| A step-up that lasts as long as a SignalR connection | The step-up's time travels with `amr=otp` as an `amr_time` claim; `[RequireAuthenticationMethod("otp", MaxAgeSeconds = …)]` on the hub method compares it with the clock on every call |
 | Non-human callers treated as stepped up | API key, client certificate, system and anonymous callers get `NoSession` and no claim |
 | An identity from an unmapped scheme gaining `amr=otp` | Only identities whose authentication type has a registered mapper are considered |
 | Secrets and codes in logs | Never logged; `TotpEnrollment.ToString()` omits them |
@@ -1074,10 +1092,13 @@ A verified `ConfirmAsync` logs nothing.
 
 - **Real-time phishing.** A proxy that relays the user's code within its validity window succeeds. TOTP is not
   phishing-resistant; use passkeys (WebAuthn) where that matters.
-- **An `amr=otp` claim from the identity provider.** If the token already says `otp`, the transformation leaves it
-  alone and `[RequireAuthenticationMethod("otp")]` passes for the token's whole lifetime. To require a service-local,
-  time-bound step-up in that case, set `AuthenticationMethod` to a value your provider never issues and require that
-  value.
+- **An `amr=otp` claim from the identity provider.** If the token already says `otp`,
+  `[RequireAuthenticationMethod("otp")]` without a maximum age passes for the token's whole lifetime. With
+  `MaxAgeSeconds`, that `otp` dates from the sign-in (`auth_time`) unless a more recent step-up in this session dates
+  it. To require a service-local step-up regardless, set `AuthenticationMethod` to a value your provider never issues
+  and require that value.
+- **A gRPC streaming call.** gRPC authorizes a call once, when it starts; a stream opened during a step-up keeps
+  running after it. Check `IUserContext.GetAuthenticationMethodTime("otp")` inside the stream when that matters.
 - **Missing throttling.** Without an `ITotpAttemptThrottle`, attempts are unlimited.
 - **Lockout by a session holder.** Throttling is per subject, so someone holding one of the user's sessions can use up
   the attempt budget for all of them.
@@ -1100,6 +1121,7 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 | ❌ Don't | ✅ Do | Why |
 | --- | --- | --- |
 | Gate step-up endpoints with `[RequireFreshAuthentication]` | Use `[RequireAuthenticationMethod("otp")]` | The step-up never changes `AuthTime` |
+| Gate a SignalR hub method with `[RequireAuthenticationMethod("otp")]` alone | Add `MaxAgeSeconds`, no longer than `FreshnessWindow` | The connection keeps its principal; without a maximum age the step-up lasts as long as the connection |
 | Forget `.AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` | Add it to the route group or `MapControllers()` | Without it the attribute is metadata nobody reads |
 | Register a claims transformation after `AddTotpStepUp` | Register it before | The last registration wins and replaces the step-up transformation |
 | Register `ITotpReplayGuard` as scoped | Register it as a singleton | `ITotpVerifier` is a singleton; scope validation fails |
@@ -1134,6 +1156,9 @@ RECOVERY     await RedeemRecoveryCodeAsync(user, code) -> Verified uses the code
 GATE         .RequireAuthenticationMethod("otp") or [RequireAuthenticationMethod("otp")] with
              AuthorizationRequirementEndpointFilter. In code: user.WasAuthenticatedWith("otp").
              [RequireFreshAuthentication] checks AuthTime and is NOT satisfied by a step-up.
+LONG-LIVED   SignalR hub methods: [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)], n <= FreshnessWindow, on the
+             method, never only on the hub class. The step-up time is the amr_time claim the transformation adds;
+             in code: user.GetAuthenticationMethodTime("otp") against IClock. gRPC streams: authorized once at start.
 RESULTS      Invalid -> 400; Replayed -> 400 "wait for the next code"; Throttled -> 429; NoSession -> 403.
 STORES       ITotpStepUpStore keyed by (subjectId, sessionId), expire at expiresAt, fast reads.
              IRecoveryCodeStore.TryMarkUsedAsync = single UPDATE ... WHERE used_at IS NULL, true when 1 row.

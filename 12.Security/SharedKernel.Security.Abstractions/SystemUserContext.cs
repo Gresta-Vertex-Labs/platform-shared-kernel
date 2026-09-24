@@ -82,4 +82,7 @@ public sealed class SystemUserContext : IUserContext
 
     /// <inheritdoc/>
     public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
+
+    /// <inheritdoc/>
+    public DateTimeOffset? GetAuthenticationMethodTime(string method) => null;
 }

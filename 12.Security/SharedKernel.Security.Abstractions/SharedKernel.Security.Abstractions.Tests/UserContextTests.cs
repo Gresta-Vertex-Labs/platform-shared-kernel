@@ -91,6 +91,7 @@ public sealed class UserContextTests
             Roles = ["admin"],
             Permissions = ["orders:read", "orders:write"],
             AuthenticationMethods = ["pwd", "otp"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = authTime.AddMinutes(1) },
             AuthContextClassReference = "urn:acr:silver",
             AuthTime = authTime,
             IsSenderConstrained = true,
@@ -104,6 +105,7 @@ public sealed class UserContextTests
         Assert.Equal(["admin"], context.Roles);
         Assert.Equal(["orders:read", "orders:write"], context.Permissions);
         Assert.Equal(["pwd", "otp"], context.AuthenticationMethods);
+        Assert.Equal(authTime.AddMinutes(1), Assert.Single(context.AuthenticationMethodTimes, pair => pair.Key == "otp").Value);
         Assert.Equal("urn:acr:silver", context.AuthContextClassReference);
         Assert.Equal(authTime, context.AuthTime);
         Assert.True(context.IsSenderConstrained);
@@ -348,6 +350,170 @@ public sealed class UserContextTests
         Assert.False(context.HasRole("admin"));
     }
 
+    [Fact]
+    public void AuthenticationMethodTimes_NotSet_IsEmpty()
+    {
+        Assert.Empty(new UserContext(IdentityKind.User, "subject-1").AuthenticationMethodTimes);
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_RecordedMethod_ReturnsItsTime()
+    {
+        var context = new UserContext(IdentityKind.User, "subject-1")
+        {
+            AuthenticationMethods = ["pwd", "otp"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now.AddMinutes(-2) },
+            AuthTime = Now.AddHours(-3),
+        };
+
+        Assert.Equal(Now.AddMinutes(-2), context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_MethodWithoutRecordedTime_DatesFromTheSignIn()
+    {
+        // A method the credential carried was verified when the user signed in.
+        var context = new UserContext(IdentityKind.User, "subject-1")
+        {
+            AuthenticationMethods = ["pwd", "otp"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now.AddMinutes(-2) },
+            AuthTime = Now.AddHours(-3),
+        };
+
+        Assert.Equal(Now.AddHours(-3), context.GetAuthenticationMethodTime("pwd"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_MethodWithoutAnyTime_ReturnsNull()
+    {
+        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethods = ["otp"] };
+
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_TimeForAMethodTheCallerDoesNotHave_ReturnsNull()
+    {
+        // AuthenticationMethods decides which methods the caller has; a time alone proves nothing.
+        var context = new UserContext(IdentityKind.User, "subject-1")
+        {
+            AuthenticationMethods = ["pwd"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now },
+            AuthTime = Now,
+        };
+
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+        Assert.Null(context.GetAuthenticationMethodTime("hwk"));
+    }
+
+    [Theory]
+    [InlineData("OTP")]
+    [InlineData("Otp")]
+    public void GetAuthenticationMethodTime_CaseDiffers_ReturnsNull(string method)
+    {
+        var context = new UserContext(IdentityKind.User, "subject-1")
+        {
+            AuthenticationMethods = ["otp"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now },
+        };
+
+        Assert.Null(context.GetAuthenticationMethodTime(method));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_TimeOnlyAsRawClaim_IsNotRead()
+    {
+        // Like the other checks, it reads what the mapper mapped, never raw claims.
+        var context = new UserContext(
+            IdentityKind.User,
+            "subject-1",
+            [AuthenticationMethodTimeClaim.Create("otp", Now)])
+        {
+            AuthenticationMethods = ["otp"],
+        };
+
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_NullMethod_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new UserContext(IdentityKind.User, "subject-1").GetAuthenticationMethodTime(null!));
+    }
+
+    [Fact]
+    public void AuthenticationMethodTimes_IsACopyKeyedOrdinally_AndReadOnly()
+    {
+        var source = new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase) { ["otp"] = Now };
+        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethodTimes = source };
+
+        source["hwk"] = Now;
+
+        Assert.Equal(["otp"], context.AuthenticationMethodTimes.Keys);
+        Assert.False(context.AuthenticationMethodTimes.ContainsKey("OTP"));
+        Assert.True(((ICollection<KeyValuePair<string, DateTimeOffset>>)context.AuthenticationMethodTimes).IsReadOnly);
+    }
+
+    [Fact]
+    public void AuthenticationMethodTimes_SetToNull_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethodTimes = null! });
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_ImplementationWithoutIt_DefaultsToNull()
+    {
+        // Implementations written before the member keep compiling and report no time, so a maximum age refuses them.
+        IUserContext context = new ContextWithoutMethodTimes();
+
+        Assert.True(context.WasAuthenticatedWith("otp"));
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+    }
+
     private static UserContext WithClaims(params (string Type, string Value)[] claims) =>
         new(IdentityKind.User, "subject-1", claims.Select(claim => new Claim(claim.Type, claim.Value)));
+
+    // An IUserContext written before GetAuthenticationMethodTime existed: it does not implement the member.
+    private sealed class ContextWithoutMethodTimes : IUserContext
+    {
+        public IdentityKind IdentityKind => IdentityKind.User;
+
+        public bool IsAuthenticated => true;
+
+        public string? SubjectId => "subject-1";
+
+        public string? ClientId => null;
+
+        public Guid? TenantId => null;
+
+        public string? SessionId => null;
+
+        public string? Name => null;
+
+        public string? Email => null;
+
+        public IReadOnlyCollection<string> Roles => [];
+
+        public IReadOnlyCollection<string> Permissions => [];
+
+        public IReadOnlyCollection<string> AuthenticationMethods => ["otp"];
+
+        public string? AuthContextClassReference => null;
+
+        public DateTimeOffset? AuthTime => Now;
+
+        public bool IsSenderConstrained => false;
+
+        public string? FindClaim(string claimType) => null;
+
+        public IReadOnlyList<string> FindClaims(string claimType) => [];
+
+        public bool HasRole(string role) => false;
+
+        public bool HasPermission(string permission) => false;
+
+        public bool WasAuthenticatedWith(string method) => AuthenticationMethods.Contains(method, StringComparer.Ordinal);
+
+        public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
+    }
 }

@@ -24,7 +24,8 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 ///   <c>unauthorized.default</c>. With no authentication scheme registered at all: 401 with
 ///   <c>WWW-Authenticate: Bearer</c>.</item>
 ///   <item>Signed in, but the only unmet requirements are freshness or authentication-method ones: 401 with an RFC 9470
-///   <c>insufficient_user_authentication</c> challenge (plus <c>max_age</c> for freshness) and
+///   <c>insufficient_user_authentication</c> challenge (plus <c>max_age</c>, the smallest maximum age among them, when
+///   a freshness requirement or an authentication-method requirement with a maximum age is unmet) and
 ///   <c>unauthorized.step_up_required</c>. The challenge names <c>DPoP</c> when the request used that scheme, otherwise
 ///   <c>Bearer</c>.</item>
 ///   <item>Signed in but not permitted: 403 <c>forbidden.insufficient_permission</c>. The message never names the
@@ -53,6 +54,8 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
 
     private const string MethodDescription = "A stronger authentication method is required";
 
+    private const string RecentMethodDescription = "A recent authentication with a stronger method is required";
+
     private readonly IAuthorizationMiddlewareResultHandler _inner;
     private readonly ILogger<SharedKernelAuthorizationResultHandler> _logger;
 
@@ -77,9 +80,9 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
 
         var writeBody = !RequestFacts.IsGrpcRequest(context);
 
-        if (authorizeResult.Forbidden && TryGetStepUp(authorizeResult.AuthorizationFailure, out var maxAge))
+        if (authorizeResult.Forbidden && TryGetStepUp(authorizeResult.AuthorizationFailure, out var maxAge, out var needsMethod))
         {
-            await WriteStepUpAsync(context, maxAge, writeBody).ConfigureAwait(false);
+            await WriteStepUpAsync(context, maxAge, needsMethod, writeBody).ConfigureAwait(false);
             return;
         }
 
@@ -135,9 +138,10 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             .ConfigureAwait(false);
     }
 
-    private Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge, bool writeBody)
+    private Task WriteStepUpAsync(HttpContext context, TimeSpan? maxAge, bool needsMethod, bool writeBody)
     {
-        var challenge = $"{GetChallengeScheme(context)} error=\"insufficient_user_authentication\", error_description=\"{(maxAge is null ? MethodDescription : FreshnessDescription)}\"";
+        var description = !needsMethod ? FreshnessDescription : maxAge is null ? MethodDescription : RecentMethodDescription;
+        var challenge = $"{GetChallengeScheme(context)} error=\"insufficient_user_authentication\", error_description=\"{description}\"";
         if (maxAge is { } age)
         {
             challenge += string.Create(CultureInfo.InvariantCulture, $", max_age=\"{(long)age.TotalSeconds}\"");
@@ -185,10 +189,12 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
     }
 
     // Step-up applies when every unmet requirement is a freshness or authentication-method one. An explicit failure
-    // (a handler called Fail) or any other unmet requirement is a refusal instead.
-    private static bool TryGetStepUp(AuthorizationFailure? failure, out TimeSpan? maxAge)
+    // (a handler called Fail) or any other unmet requirement is a refusal instead. The challenge asks for the smallest
+    // maximum age among them, and says whether a method is missing.
+    private static bool TryGetStepUp(AuthorizationFailure? failure, out TimeSpan? maxAge, out bool needsMethod)
     {
         maxAge = null;
+        needsMethod = false;
 
         if (failure is null || failure.FailCalled)
         {
@@ -201,8 +207,15 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             return false;
         }
 
-        var ages = failed.OfType<FreshAuthenticationRequirement>().Select(requirement => requirement.MaxAge).ToArray();
-        maxAge = ages.Length == 0 ? null : ages.Min();
+        foreach (var requirement in failed.Cast<SharedKernelRequirement>())
+        {
+            needsMethod |= requirement is AuthenticationMethodRequirement;
+            if (requirement.StepUpMaxAge is { } age && (maxAge is null || age < maxAge))
+            {
+                maxAge = age;
+            }
+        }
+
         return true;
     }
 
