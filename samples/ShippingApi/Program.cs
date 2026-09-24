@@ -2,6 +2,7 @@ using SharedKernel.Application.Context;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
@@ -13,6 +14,9 @@ var builder = WebApplication.CreateBuilder(args);
 // 13.ServiceDefaults — OpenTelemetry and health endpoints; messaging spans and metrics.
 builder.AddServiceDefaults();
 builder.WithMessagingTelemetry();
+
+// 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
+builder.Services.AddSingleton<IClock, SystemClock>();
 
 // The sample's own state and its stand-in for an identity provider. The request context is
 // registered BEFORE the bus: WithInboundRequestContext() shadows whatever IRequestContext is

@@ -2,6 +2,7 @@ using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -53,13 +54,14 @@ public static class ShipmentEndpoints
         app.MapPost("/shipments", (
             DispatchRequest request,
             IEventPublisher publisher,
+            IClock clock,
             CancellationToken ct) =>
         {
             var shipmentId = Guid.CreateVersion7();
 
             var dispatched = new ShipmentDispatched(
                 EventId: Guid.CreateVersion7(),
-                OccurredOn: DateTimeOffset.UtcNow,
+                OccurredOn: clock.UtcNow,
                 ShipmentId: shipmentId,
                 Carrier: request.Carrier,
                 TrackingNumber: request.TrackingNumber);
@@ -92,11 +94,12 @@ public static class ShipmentEndpoints
             Guid id,
             ChaseRequest request,
             IMessageScheduler scheduler,
+            IClock clock,
             CancellationToken ct) =>
         {
             Guid token = await scheduler.ScheduleAsync(
                 new ChaseShipment(id),
-                DateTimeOffset.UtcNow.AddMilliseconds(request.DelayMilliseconds),
+                clock.UtcNow.AddMilliseconds(request.DelayMilliseconds),
                 ct);
 
             return TypedResults.Accepted($"/shipments/{id}", new { scheduleToken = token });
