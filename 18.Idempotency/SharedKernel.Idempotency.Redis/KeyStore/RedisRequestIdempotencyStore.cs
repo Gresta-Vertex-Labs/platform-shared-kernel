@@ -1,7 +1,8 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Idempotency.Redis.Internal;
 using SharedKernel.Idempotency.Redis.Logging;
 using SharedKernel.Idempotency.Redis.Options;

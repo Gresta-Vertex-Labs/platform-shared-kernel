@@ -6,7 +6,7 @@ namespace SharedKernel.ServiceDefaults.Persistence.Tests.TestFixtures;
 
 /// <summary>
 /// A minimal, domain-logic-free "business" row used only to prove that
-/// <c>SharedKernel.Application.Behaviors.Transaction.TransactionBehavior{TRequest,TResponse}</c>'s
+/// <c>SharedKernel.Application</c>'s <c>TransactionBehavior{TRequest,TResponse}</c>'s
 /// transactional capability genuinely makes a business write and a <c>Succeeded</c>-outcome audit
 /// record commit — or roll back — atomically together, through the real, unmodified production
 /// MediatR pipeline (never by hand-resolving <c>ITransactionalUnitOfWork</c> directly).

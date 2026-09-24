@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Context;
 using SharedKernel.Testing.Application;

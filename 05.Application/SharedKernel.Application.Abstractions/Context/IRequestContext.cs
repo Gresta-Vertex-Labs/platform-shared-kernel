@@ -6,7 +6,7 @@ namespace SharedKernel.Application.Context;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The single caller contract of the platform. <c>SharedKernel.Application.Behaviors</c> authorizes
+/// The single caller contract of the platform. <c>SharedKernel.Application</c> authorizes
 /// against it and scopes caches by it; <c>06.Persistence</c> stamps audit columns and audit records
 /// from it and filters tenant data by <see cref="TenantId"/>. A service implements it once, at its
 /// composition root, over its real identity source — typically <c>12.Security</c>'s

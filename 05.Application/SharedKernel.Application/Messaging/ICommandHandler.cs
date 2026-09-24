@@ -1,7 +1,7 @@
 using MediatR;
 using SharedKernel.Primitives.Results;
 
-namespace SharedKernel.Application.Messaging;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Handles a void-returning command of type <typeparamref name="TCommand"/>.

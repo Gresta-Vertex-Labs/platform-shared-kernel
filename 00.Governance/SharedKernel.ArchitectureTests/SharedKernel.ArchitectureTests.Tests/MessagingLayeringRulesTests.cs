@@ -57,7 +57,7 @@ public class MessagingLayeringRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             "the grant reaches SharedKernel.Application.Abstractions only — never MediatR, " +
-            "SharedKernel.Application or SharedKernel.Application.Behaviors");
+            "SharedKernel.Application or SharedKernel.Application.Caching");
     }
 
     /// <summary>

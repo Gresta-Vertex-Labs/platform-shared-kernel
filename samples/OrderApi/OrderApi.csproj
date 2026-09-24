@@ -18,7 +18,6 @@
     <PackageReference Include="SharedKernel.Primitives" />
     <PackageReference Include="SharedKernel.Domain" />
     <PackageReference Include="SharedKernel.Application" />
-    <PackageReference Include="SharedKernel.Application.Behaviors" />
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
     <PackageReference Include="SharedKernel.Presentation.OpenApi" />
     <PackageReference Include="SharedKernel.ServiceDefaults" />

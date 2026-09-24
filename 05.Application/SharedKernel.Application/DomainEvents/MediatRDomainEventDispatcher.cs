@@ -4,7 +4,7 @@ using MediatR;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Application.DomainEvents;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// MediatR-based implementation of <see cref="IDomainEventDispatcher"/>.
@@ -33,7 +33,7 @@ namespace SharedKernel.Application.DomainEvents;
 /// a delegate invocation on every subsequent dispatch of that event type.
 /// </para>
 /// </remarks>
-public sealed class MediatRDomainEventDispatcher(IPublisher publisher) : IDomainEventDispatcher
+internal sealed class MediatRDomainEventDispatcher(IPublisher publisher) : IDomainEventDispatcher
 {
     private static readonly ConcurrentDictionary<Type, Func<IDomainEvent, INotification>> NotificationFactories =
         new();

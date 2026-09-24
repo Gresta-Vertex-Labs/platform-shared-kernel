@@ -1,10 +1,7 @@
-using FluentValidation;
-using MediatR;
 using OrderApi.Api;
 using OrderApi.Application;
 using OrderApi.Infrastructure;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
+using SharedKernel.Application;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
@@ -20,18 +17,13 @@ builder.AddServiceDefaults();
 // 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// 05.Application — MediatR handler discovery, the domain-event dispatcher, and the
-// zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
-// them in the fixed pipeline order; nothing is registered without it. The behaviors that need
-// an infrastructure seam (authorization over IRequestContext, idempotency over
-// IRequestIdempotencyStore and IRequestContext — keys are reserved per tenant and caller —,
-// transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
-// caching from SharedKernel.Application.Behaviors.Caching) are deliberately not in the preset —
-// each is an explicit opt-in, and Build() throws if its seam is not registered.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
-builder.Services.AddSharedKernelApplication();
-builder.Services.AddScoped<IValidator<PlaceOrderCommand>, PlaceOrderCommandValidator>();
-builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
+// 05.Application — one call: MediatR with the handlers and FluentValidation validators of this assembly, the
+// domain-event dispatcher, and the always-on behaviors (tracing, logging, metrics, validation) in the fixed pipeline
+// order. The behaviors that need an infrastructure seam (WithAuthorization over IRequestContext, WithIdempotency over
+// IRequestIdempotencyStore and IRequestContext, WithTransactions over IUnitOfWork, WithAuditing over IAuditTrailWriter,
+// WithCaching from SharedKernel.Application.Caching) are explicit opt-ins; a missing seam fails the host start. This
+// API authenticates nobody, so it opts into none of them.
+builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly);
 
 // 14.Presentation — the HTTP boundary in one call, configured from SharedKernel:Presentation:WebApi. Every error
 // response — a failed Result, a thrown exception, the framework's own 404/405/415 — is RFC 9457

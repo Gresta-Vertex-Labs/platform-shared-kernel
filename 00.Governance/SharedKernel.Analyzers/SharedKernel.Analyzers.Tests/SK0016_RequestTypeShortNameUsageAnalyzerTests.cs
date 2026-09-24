@@ -20,7 +20,7 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-165: standalone <c>typeof(TRequest).Name</c> inside <c>SharedKernel.Application.Behaviors</c>
+    /// T-165: standalone <c>typeof(TRequest).Name</c> inside <c>SharedKernel.Application</c>
     /// must trigger SK0016.
     /// </summary>
     [Fact]
@@ -29,7 +29,7 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
         var test = new CSharpAnalyzerTest<RequestTypeShortNameUsageAnalyzer, DefaultVerifier>
         {
             TestCode = """
-                namespace SharedKernel.Application.Behaviors
+                namespace SharedKernel.Application.Pipeline
                 {
                     public sealed class MetricsBehavior<TRequest, TResponse>
                     {
@@ -83,7 +83,7 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
         var test = new CSharpAnalyzerTest<RequestTypeShortNameUsageAnalyzer, DefaultVerifier>
         {
             TestCode = """
-                namespace SharedKernel.Application.Behaviors
+                namespace SharedKernel.Application.Pipeline
                 {
                     public sealed class MetricsBehavior<TRequest, TResponse>
                     {
@@ -134,7 +134,7 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
         var test = new CSharpAnalyzerTest<RequestTypeShortNameUsageAnalyzer, DefaultVerifier>
         {
             TestCode = """
-                namespace SharedKernel.Application.Behaviors
+                namespace SharedKernel.Application.Pipeline
                 {
                     public sealed class MetricsBehavior<TRequest, TResponse>
                     {

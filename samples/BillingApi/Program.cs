@@ -2,8 +2,7 @@ using BillingApi.Api;
 using BillingApi.Application;
 using BillingApi.Infrastructure;
 using BillingApi.Security;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
+using SharedKernel.Application;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
@@ -59,16 +58,13 @@ builder.Services.AddSharedKernelDapper(builder.Configuration);
 // The audit sealer writes chain links as its own role (app_audit_sealer), so the application role cannot forge them.
 builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
 
-// 05.Application — MediatR with the platform pipeline. TransactionBehavior runs every command in one retry-safe
-// transaction; AuditingBehavior records Succeeded inside it and Failed after a rollback.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-builder.Services.AddSharedKernelApplication();
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()
-    .AddAuthorizationBehavior()
-    .AddTransactionBehavior()
-    .AddAuditingBehavior()
-    .Build();
+// 05.Application — MediatR with the platform pipeline, in one call: the handlers and validators of this assembly,
+// [RequirePermission] on every command and query, one retry-safe transaction per command, and an audit record —
+// Succeeded inside the transaction, Failed after a rollback.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+    .WithAuthorization()
+    .WithTransactions()
+    .WithAuditing());
 
 builder.Services.AddScoped<ICustomerDirectory, CustomerDirectory>();
 

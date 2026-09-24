@@ -1,4 +1,4 @@
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Scheduling.Jobs;
 
 namespace SharedKernel.Scheduling.Registry;

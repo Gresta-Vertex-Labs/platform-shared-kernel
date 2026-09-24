@@ -20,7 +20,7 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <para>
 /// Per the phase's Implementation Rule 5, this rule is designed and tested against CONTRIVED
 /// in-memory fixtures ONLY — it is expected to fail against the real (not-yet-retrofitted)
-/// <c>SharedKernel.Application.Behaviors</c> assembly until a companion <c>05.Application</c>
+/// <c>SharedKernel.Application</c> assembly until a companion <c>05.Application</c>
 /// phase retrofits <c>MetricsBehavior&lt;,&gt;</c> (P-217) to emit the <c>"outcome"</c> tag. The
 /// fixture stubs <c>System.Diagnostics.Metrics.Histogram&lt;T&gt;</c> locally rather than
 /// referencing the real BCL assembly — the predicate scans for method name <c>Record</c> on a type
@@ -51,7 +51,7 @@ public class MetricsInstrumentationRulesTests
                 }
             }
 
-            namespace Fixture.Application.Behaviors
+            namespace Fixture.Application.Pipeline
             {
                 using System.Diagnostics.Metrics;
 
@@ -77,7 +77,7 @@ public class MetricsInstrumentationRulesTests
             because: "Handle records RequestDuration with a \"status\" tag but no \"outcome\" tag");
 
         result.FailingTypeNames.Should().Contain(
-            "Fixture.Application.Behaviors.MetricsBehavior",
+            "Fixture.Application.Pipeline.MetricsBehavior",
             because: "the failure must name the offending type");
     }
 
@@ -103,7 +103,7 @@ public class MetricsInstrumentationRulesTests
                 }
             }
 
-            namespace Fixture.Application.Behaviors
+            namespace Fixture.Application.Pipeline
             {
                 using System.Diagnostics.Metrics;
 

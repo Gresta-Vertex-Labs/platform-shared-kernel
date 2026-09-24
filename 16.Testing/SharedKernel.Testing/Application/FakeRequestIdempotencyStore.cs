@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
 /// In-memory, thread-safe fake implementation of <see cref="IRequestIdempotencyStore"/>
-/// (<c>05.Application.Behaviors</c>) for use in unit tests.
+/// (<c>SharedKernel.Application</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -49,7 +50,7 @@ namespace SharedKernel.Testing.Application;
 /// <see cref="Calls"/> records that scoped key, not the command's raw <see cref="IIdempotentRequest.IdempotencyKey"/>.
 /// </para>
 /// <para>
-/// Local-seam-only scope: fakes <c>05.Application.Behaviors</c>' own <see cref="IRequestIdempotencyStore"/>
+/// Local-seam-only scope: fakes <c>SharedKernel.Application</c>' own <see cref="IRequestIdempotencyStore"/>
 /// exclusively and never references <c>18.Idempotency</c> or <c>07.Messaging.Abstractions.IIdempotencyStore</c>
 /// (consumer-side message deduplication, an unrelated contract that merely shares a naming pattern).
 /// </para>

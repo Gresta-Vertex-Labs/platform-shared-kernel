@@ -7,14 +7,15 @@ namespace SharedKernel.Analyzers.Tests;
 
 /// <summary>Tests for SK0040 <see cref="PipelineMarkerResponseShapeMismatchAnalyzer"/>.</summary>
 /// <remarks>
-/// Fire path: a type implementing <c>IAuthorizeRequest</c> or <c>IIdempotentRequest</c> plus
-/// <c>MediatR.IRequest&lt;TResponse&gt;</c> where <c>TResponse</c> is a plain DTO — the exact
-/// runtime shape that makes <c>FailureResponse.Create&lt;TResponse&gt;</c> throw
+/// Fire path: a type carrying <c>[RequirePermission]</c> (directly or on a base type) or implementing
+/// <c>IIdempotentRequest</c> plus <c>MediatR.IRequest&lt;TResponse&gt;</c> where <c>TResponse</c> is a
+/// plain DTO — the exact runtime shape that makes <c>FailureResponse.Create&lt;TResponse&gt;</c> throw
 /// <see cref="InvalidOperationException"/> the first time the behavior short-circuits.
 /// Pass path: a <c>Result</c>/closed <c>Result&lt;T&gt;</c> response, no <c>IRequest&lt;&gt;</c>
-/// at all, an open/generic response type, and — the two markers whose behaviors were read and
-/// found NOT to call <c>FailureResponse.Create</c> — <c>IAuditableRequest&lt;TResponse&gt;</c>
-/// and <c>ILoggableRequest&lt;TResponse&gt;</c>, which must never fire this rule.
+/// at all, an open/generic response type, <c>14.Presentation</c>'s endpoint attribute of the same
+/// name, and — the two markers whose behaviors were read and found NOT to call
+/// <c>FailureResponse.Create</c> — <c>IAuditableRequest&lt;TResponse&gt;</c> and
+/// <c>ILoggableRequest&lt;TResponse&gt;</c>, which must never fire this rule.
 /// </remarks>
 public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
 {
@@ -37,24 +38,28 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             }
         }
 
-        namespace SharedKernel.Application.Behaviors.Authorization
+        namespace SharedKernel.Application
         {
-            public interface IAuthorizeRequest { }
-        }
+            [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = true, Inherited = true)]
+            public sealed class RequirePermissionAttribute : System.Attribute
+            {
+                public RequirePermissionAttribute(params string[] permissions) { }
+            }
 
-        namespace SharedKernel.Application.Behaviors.Idempotency
-        {
             public interface IIdempotentRequest { }
-        }
 
-        namespace SharedKernel.Application.Behaviors.Auditing
-        {
             public interface IAuditableRequest<TResponse> { }
+
+            public interface ILoggableRequest<TResponse> { }
         }
 
-        namespace SharedKernel.Application.Behaviors.Logging
+        namespace SharedKernel.Presentation.WebApi
         {
-            public interface ILoggableRequest<TResponse> { }
+            [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method, AllowMultiple = true)]
+            public sealed class RequirePermissionAttribute : System.Attribute
+            {
+                public RequirePermissionAttribute(params string[] permissions) { }
+            }
         }
 
         """;
@@ -63,9 +68,9 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
     // Fire path
     // ---------------------------------------------------------------------------
 
-    /// <summary>A plain-DTO-response command implementing <c>IAuthorizeRequest</c> must fire.</summary>
+    /// <summary>A plain-DTO-response command carrying <c>[RequirePermission]</c> must fire.</summary>
     [Fact]
-    public async Task FirePath_AuthorizeRequestWithDtoResponse_ReportsDiagnostic()
+    public async Task FirePath_RequirePermissionWithDtoResponse_ReportsDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
@@ -73,11 +78,38 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Authorization;
+                    using SharedKernel.Application;
 
                     public sealed class OrderDto { }
 
-                    public sealed class {|SK0040:BadAuthorizeCommand|} : IAuthorizeRequest, IRequest<OrderDto>
+                    [RequirePermission("orders.write")]
+                    public sealed class {|SK0040:BadAuthorizeCommand|} : IRequest<OrderDto>
+                    {
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>The attribute is inherited, so one on a base type makes the derived request fire.</summary>
+    [Fact]
+    public async Task FirePath_RequirePermissionOnBaseTypeWithDtoResponse_ReportsDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
+        {
+            TestCode = Stubs + """
+                namespace Fixture.Requests
+                {
+                    using MediatR;
+                    using SharedKernel.Application;
+
+                    public sealed class OrderDto { }
+
+                    [RequirePermission("orders.write")]
+                    public abstract class ProtectedCommand : IRequest<OrderDto> { }
+
+                    public sealed class {|SK0040:DerivedCommand|} : ProtectedCommand
                     {
                     }
                 }
@@ -96,7 +128,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Idempotency;
+                    using SharedKernel.Application;
 
                     public sealed class OrderDto { }
 
@@ -110,11 +142,11 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
     }
 
     /// <summary>
-    /// A type implementing BOTH markers with a bad response must still fire exactly once, naming
-    /// both markers in the message.
+    /// A type with BOTH the attribute and the marker and a bad response must still fire exactly
+    /// once, naming both in the message.
     /// </summary>
     [Fact]
-    public async Task FirePath_BothMarkersWithDtoResponse_ReportsSingleDiagnostic()
+    public async Task FirePath_BothWithDtoResponse_ReportsSingleDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
@@ -122,17 +154,23 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Authorization;
-                    using SharedKernel.Application.Behaviors.Idempotency;
+                    using SharedKernel.Application;
 
                     public sealed class OrderDto { }
 
-                    public sealed class {|SK0040:BadBothMarkersCommand|}
-                        : IAuthorizeRequest, IIdempotentRequest, IRequest<OrderDto>
+                    [RequirePermission("orders.write")]
+                    public sealed class {|#0:BadBothMarkersCommand|}
+                        : IIdempotentRequest, IRequest<OrderDto>
                     {
                     }
                 }
                 """,
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(PipelineMarkerResponseShapeMismatchAnalyzer.Rule)
+                    .WithLocation(0)
+                    .WithArguments("BadBothMarkersCommand", "[RequirePermission] and IIdempotentRequest", "Fixture.Requests.OrderDto"),
+            },
         };
         await test.RunAsync();
     }
@@ -143,7 +181,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
 
     /// <summary>A non-generic <c>Result</c> response must NOT fire.</summary>
     [Fact]
-    public async Task PassPath_AuthorizeRequestWithResultResponse_NoDiagnostic()
+    public async Task PassPath_RequirePermissionWithResultResponse_NoDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
@@ -151,10 +189,11 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Authorization;
+                    using SharedKernel.Application;
                     using SharedKernel.Primitives.Results;
 
-                    public sealed class GoodAuthorizeCommand : IAuthorizeRequest, IRequest<Result>
+                    [RequirePermission("orders.write")]
+                    public sealed class GoodAuthorizeCommand : IRequest<Result>
                     {
                     }
                 }
@@ -173,7 +212,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Idempotency;
+                    using SharedKernel.Application;
                     using SharedKernel.Primitives.Results;
 
                     public sealed class GoodIdempotentCommand : IIdempotentRequest, IRequest<Result<int>>
@@ -186,20 +225,48 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
     }
 
     /// <summary>
-    /// A marker implemented with no <c>IRequest&lt;TResponse&gt;</c> at all — so no behavior can
+    /// The attribute on a type with no <c>IRequest&lt;TResponse&gt;</c> at all — so no behavior can
     /// ever resolve into its pipeline — must NOT fire.
     /// </summary>
     [Fact]
-    public async Task PassPath_AuthorizeRequestWithNoMediatRRequestInterface_NoDiagnostic()
+    public async Task PassPath_RequirePermissionWithNoMediatRRequestInterface_NoDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application.Behaviors.Authorization;
+                    using SharedKernel.Application;
 
-                    public sealed class NotEvenARequest : IAuthorizeRequest
+                    [RequirePermission("orders.write")]
+                    public sealed class NotEvenARequest
+                    {
+                    }
+                }
+                """,
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// <c>14.Presentation</c>'s endpoint attribute of the same name is not the pipeline's: it never
+    /// reaches <c>AuthorizationBehavior</c>, so it must NOT fire.
+    /// </summary>
+    [Fact]
+    public async Task PassPath_PresentationRequirePermissionWithDtoResponse_NoDiagnostic()
+    {
+        var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
+        {
+            TestCode = Stubs + """
+                namespace Fixture.Requests
+                {
+                    using MediatR;
+                    using SharedKernel.Presentation.WebApi;
+
+                    public sealed class OrderDto { }
+
+                    [RequirePermission("orders.write")]
+                    public sealed class EndpointLikeRequest : IRequest<OrderDto>
                     {
                     }
                 }
@@ -224,7 +291,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Auditing;
+                    using SharedKernel.Application;
 
                     public sealed class OrderDto { }
 
@@ -253,7 +320,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Logging;
+                    using SharedKernel.Application;
 
                     public sealed class OrderDto { }
 
@@ -279,9 +346,10 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Authorization;
+                    using SharedKernel.Application;
 
-                    public sealed class GenericCommand<TResult> : IAuthorizeRequest, IRequest<TResult>
+                    [RequirePermission("orders.write")]
+                    public sealed class GenericCommand<TResult> : IRequest<TResult>
                     {
                     }
                 }
@@ -303,7 +371,7 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
                 namespace Fixture.Requests
                 {
                     using MediatR;
-                    using SharedKernel.Application.Behaviors.Idempotency;
+                    using SharedKernel.Application;
                     using SharedKernel.Primitives.Results;
 
                     public sealed class GenericIdempotentCommand<T> : IIdempotentRequest, IRequest<Result<T>>

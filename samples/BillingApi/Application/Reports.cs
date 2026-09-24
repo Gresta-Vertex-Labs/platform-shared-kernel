@@ -1,7 +1,6 @@
 using BillingApi.Domain;
 using Dapper;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Persistence.EfCore.Auditing;
@@ -17,11 +16,8 @@ public sealed record TenantRevenueLine(Guid TenantId, string Currency, long Invo
 // The caller's own revenue: hand-written SQL, no tenant predicate — row-level security scopes it.
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record GetRevenue : IQuery<IReadOnlyList<RevenueLine>>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record GetRevenue : IQuery<IReadOnlyList<RevenueLine>>;
 
 public sealed class GetRevenueHandler(IDbSessionFactory sessions) : IQueryHandler<GetRevenue, IReadOnlyList<RevenueLine>>
 {
@@ -49,11 +45,8 @@ public sealed class GetRevenueHandler(IDbSessionFactory sessions) : IQueryHandle
 // Back office: every tenant. Entering the cross-tenant scope moves the Dapper session onto the cross-tenant role.
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record GetRevenueByTenant : IQuery<IReadOnlyList<TenantRevenueLine>>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Admin];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Admin)]
+public sealed record GetRevenueByTenant : IQuery<IReadOnlyList<TenantRevenueLine>>;
 
 public sealed class GetRevenueByTenantHandler(IDbSessionFactory sessions, ICrossTenantScope crossTenant)
     : IQueryHandler<GetRevenueByTenant, IReadOnlyList<TenantRevenueLine>>
@@ -83,11 +76,8 @@ public sealed class GetRevenueByTenantHandler(IDbSessionFactory sessions, ICross
 
 public sealed record AuditLine(Guid Id, string Action, string Outcome, string ActorId, string ActorKind, DateTimeOffset OccurredOn);
 
-public sealed record GetAuditHistory(string ResourceType, string ResourceId) : IQuery<IReadOnlyList<AuditLine>>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record GetAuditHistory(string ResourceType, string ResourceId) : IQuery<IReadOnlyList<AuditLine>>;
 
 public sealed class GetAuditHistoryHandler(IAuditQueryService audit) : IQueryHandler<GetAuditHistory, IReadOnlyList<AuditLine>>
 {
@@ -101,11 +91,8 @@ public sealed class GetAuditHistoryHandler(IAuditQueryService audit) : IQueryHan
 
 public sealed record AuditChainStatus(string ResourceType, string Status, long RecordsChecked, long? HeadSequence, string? FailureKind, string? Reason);
 
-public sealed record VerifyAuditChain(string ResourceType) : IQuery<AuditChainStatus>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record VerifyAuditChain(string ResourceType) : IQuery<AuditChainStatus>;
 
 public sealed class VerifyAuditChainHandler(IAuditQueryService audit) : IQueryHandler<VerifyAuditChain, AuditChainStatus>
 {

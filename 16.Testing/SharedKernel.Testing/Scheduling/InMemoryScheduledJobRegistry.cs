@@ -1,5 +1,5 @@
 using MediatR;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Scheduling.Jobs;
 using SharedKernel.Scheduling.Policies;
 using SharedKernel.Scheduling.Registry;
@@ -29,7 +29,7 @@ namespace SharedKernel.Testing.Scheduling;
 /// <see cref="ScheduledCommandJob{TCommand}"/>'s own already-real, already-pure logging wrapper.
 /// </para>
 /// <para>
-/// References only <c>SharedKernel.Scheduling</c> (plus <c>SharedKernel.Application.Messaging</c>
+/// References only <c>SharedKernel.Scheduling</c> (plus <c>SharedKernel.Application</c>
 /// for <see cref="ICommand"/>/<see cref="ISender"/>, which <c>SharedKernel.Scheduling</c> itself
 /// depends on for the identical reason — see that package's own reference-justification comment).
 /// </para>

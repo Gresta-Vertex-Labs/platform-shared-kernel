@@ -8,7 +8,7 @@
   <ItemGroup>
     <!--
       P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions or
-      SharedKernel.Application.Behaviors — identity reaches it only through IRequestContext
+      the SharedKernel.Application pipeline — identity reaches it only through IRequestContext
       (SharedKernel.Application.Abstractions). Field encryption lives in SharedKernel.Persistence.EfCore.Encryption.
     -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />

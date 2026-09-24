@@ -5,10 +5,10 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <!-- P-557/W1: the former P-228 05.Application.Behaviors dual-interface IUnitOfWork bridge (and
+    <!-- P-557/W1: the former P-228 05.Application pipeline dual-interface IUnitOfWork bridge (and
          its EfUnitOfWorkDualInterfaceTests.cs proof) moved to
          13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence, which is legally positioned to
-         reference both this package and 05.Application.Behaviors — this project no longer needs
+         reference both this package and the 05.Application pipeline — this project no longer needs
          that reference. -->
     <!-- P-558/W1b: Docker-free (unit lane). Everything that needs a real PostgreSQL container lives in the
          sibling SharedKernel.Persistence.EfCore.Integration.Tests project. -->

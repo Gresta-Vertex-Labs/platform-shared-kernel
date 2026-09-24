@@ -182,17 +182,17 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore — P-544
+    // ApplicationNeverReferencesCachingPollyHostingOrCore — P-544
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// Fire path: a Behaviors-shaped assembly that depends on <c>SharedKernel.Caching.Abstractions</c>
-    /// fails <see cref="SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore"/> —
-    /// that reference belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// fails <see cref="SharedKernelLayeringRules.ApplicationNeverReferencesCachingPollyHostingOrCore"/> —
+    /// that reference belongs exclusively to the sibling <c>SharedKernel.Application.Caching</c>
     /// package as of P-544.
     /// </summary>
     [Fact]
-    public void ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore_CachingAbstractionsDependency_RuleFails()
+    public void ApplicationNeverReferencesCachingPollyHostingOrCore_CachingAbstractionsDependency_RuleFails()
     {
         const string violationSource = """
             namespace SharedKernel.Caching.Abstractions
@@ -200,7 +200,7 @@ public class LayeringRulesTests
                 public interface ICacheService { }
             }
 
-            namespace SharedKernel.Application.Behaviors
+            namespace SharedKernel.Application.Pipeline
             {
                 public sealed class LeakyBehavior
                 {
@@ -212,23 +212,23 @@ public class LayeringRulesTests
         var violationAssembly = CompileInMemory("BehaviorsCachingViolation", violationSource);
 
         var result = SharedKernelLayeringRules
-            .ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(violationAssembly)
+            .ApplicationNeverReferencesCachingPollyHostingOrCore(violationAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
             because: "LeakyBehavior references SharedKernel.Caching.Abstractions, which now belongs " +
-                     "exclusively to SharedKernel.Application.Behaviors.Caching");
+                     "exclusively to SharedKernel.Application.Caching");
     }
 
     /// <summary>
     /// Pass path: a Behaviors-shaped assembly with no dependency on Caching, Polly, Hosting, or
-    /// Core passes <see cref="SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore"/>.
+    /// Core passes <see cref="SharedKernelLayeringRules.ApplicationNeverReferencesCachingPollyHostingOrCore"/>.
     /// </summary>
     [Fact]
-    public void ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore_CleanAssembly_RulePasses()
+    public void ApplicationNeverReferencesCachingPollyHostingOrCore_CleanAssembly_RulePasses()
     {
         const string cleanSource = """
-            namespace SharedKernel.Application.Behaviors
+            namespace SharedKernel.Application.Pipeline
             {
                 public sealed class CleanBehavior
                 {
@@ -240,7 +240,7 @@ public class LayeringRulesTests
         var cleanAssembly = CompileInMemory("BehaviorsCachingClean", cleanSource);
 
         var result = SharedKernelLayeringRules
-            .ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(cleanAssembly)
+            .ApplicationNeverReferencesCachingPollyHostingOrCore(cleanAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
@@ -248,16 +248,16 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure — P-544
+    // ApplicationCachingNeverReferencesConcreteInfrastructure — P-544
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// Fire path: a Behaviors.Caching-shaped assembly that depends on
     /// <c>SharedKernel.Caching.Redis</c> fails
-    /// <see cref="SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure"/>.
+    /// <see cref="SharedKernelLayeringRules.ApplicationCachingNeverReferencesConcreteInfrastructure"/>.
     /// </summary>
     [Fact]
-    public void ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure_RedisDependency_RuleFails()
+    public void ApplicationCachingNeverReferencesConcreteInfrastructure_RedisDependency_RuleFails()
     {
         const string violationSource = """
             namespace SharedKernel.Caching.Redis
@@ -265,7 +265,7 @@ public class LayeringRulesTests
                 public interface IConnectionMultiplexerAdapter { }
             }
 
-            namespace SharedKernel.Application.Behaviors.Caching
+            namespace SharedKernel.Application.Caching
             {
                 public sealed class LeakyCachingBehavior
                 {
@@ -277,7 +277,7 @@ public class LayeringRulesTests
         var violationAssembly = CompileInMemory("BehaviorsCachingRedisViolation", violationSource);
 
         var result = SharedKernelLayeringRules
-            .ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(violationAssembly)
+            .ApplicationCachingNeverReferencesConcreteInfrastructure(violationAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
@@ -287,10 +287,10 @@ public class LayeringRulesTests
     /// <summary>
     /// Pass path: a Behaviors.Caching-shaped assembly depending only on
     /// <c>SharedKernel.Caching.Abstractions</c> passes
-    /// <see cref="SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure"/>.
+    /// <see cref="SharedKernelLayeringRules.ApplicationCachingNeverReferencesConcreteInfrastructure"/>.
     /// </summary>
     [Fact]
-    public void ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure_AbstractionsOnly_RulePasses()
+    public void ApplicationCachingNeverReferencesConcreteInfrastructure_AbstractionsOnly_RulePasses()
     {
         const string cleanSource = """
             namespace SharedKernel.Caching.Abstractions
@@ -298,7 +298,7 @@ public class LayeringRulesTests
                 public interface ICacheService { }
             }
 
-            namespace SharedKernel.Application.Behaviors.Caching
+            namespace SharedKernel.Application.Caching
             {
                 public sealed class CleanCachingBehavior
                 {
@@ -310,7 +310,7 @@ public class LayeringRulesTests
         var cleanAssembly = CompileInMemory("BehaviorsCachingAbstractionsOnly", cleanSource);
 
         var result = SharedKernelLayeringRules
-            .ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(cleanAssembly)
+            .ApplicationCachingNeverReferencesConcreteInfrastructure(cleanAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(

@@ -1,7 +1,7 @@
 using MediatR;
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Application.DomainEvents;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Wraps a raw <see cref="IDomainEvent"/> so it can be published through MediatR's

@@ -4,20 +4,21 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application.Behaviors.Extensions;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// Reusable helper that wires a real <see cref="ServiceCollection"/> + MediatR + a caller-chosen
-/// subset of <c>SharedKernel.Application.Behaviors</c> pipeline behaviors via
-/// <see cref="ApplicationBehaviorsBuilder"/>, and exposes a minimal fluent surface to send a request
+/// Reusable helper that wires a real <see cref="ServiceCollection"/> through
+/// <c>AddSharedKernelApplication</c> with a caller-chosen set of opt-in behaviors
+/// (<see cref="Configure"/>), and exposes a minimal fluent surface to send a request
 /// and assert on response shape, thrown exceptions, recorded application-pipeline metrics, and
 /// recorded tracing spans.
 /// </summary>
 /// <remarks>
 /// Public promotion of the internal-only <c>PipelineTestHarness</c> already proven in
-/// <c>SharedKernel.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs</c> — same design,
+/// <c>SharedKernel.Application.Tests</c> — same design,
 /// renamed to avoid ambiguity with <c>07.Messaging</c>'s <c>TestHarnessFactory</c>/MassTransit
 /// <c>ITestHarness</c> in the sibling <c>Messaging/</c> folder. Implements its OWN local
 /// <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring (self-contained BCL
@@ -25,7 +26,7 @@ namespace SharedKernel.Testing.Application;
 /// rather than referencing <c>Communication/ActivityRecorder</c> — even though the two are
 /// functionally similar, the sibling-capability-folder-isolation hard rule forbids <c>Application/</c>
 /// from referencing <c>Communication/</c>. This is also the only option: the source Meter/ActivitySource
-/// pair (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application.Behaviors</c>) is declared
+/// pair (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application</c>) is declared
 /// <see langword="internal"/> to that assembly, so this harness cannot reference the instrument
 /// instances directly — it filters by the well-known name/version instead, exactly mirroring the
 /// internal harness's own approach.
@@ -33,7 +34,7 @@ namespace SharedKernel.Testing.Application;
 /// <remarks>
 /// Outstanding cross-domain follow-up (tracked, not performed by this package): the original
 /// <c>internal sealed class PipelineTestHarness</c> at
-/// <c>05.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs</c> still exists unchanged.
+/// <c>05.Application</c>'s test project still exists unchanged.
 /// A future <c>05.Application</c> implementer pass should repoint that project's call sites to this
 /// public <see cref="ApplicationPipelineTestHarness"/> and then retire (or thin-wrap) the internal
 /// type. <c>16.Testing</c> never edits another domain's <c>.Tests</c> project, so this package's
@@ -50,6 +51,7 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     private readonly List<(string InstrumentName, double Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> _capturedMeasurements = [];
     private ActivityListener? _activityListener;
     private ServiceProvider? _provider;
+    private Action<ApplicationPipelineBuilder> _configure = static _ => { };
 
     /// <summary>Initializes a new instance of <see cref="ApplicationPipelineTestHarness"/>.</summary>
     public ApplicationPipelineTestHarness()
@@ -74,9 +76,18 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     /// <summary>Exposes the underlying <see cref="ServiceCollection"/> for additional test-specific registration.</summary>
     public ServiceCollection Services => _services;
 
-    /// <summary>Begins building the opt-in behavior pipeline via <see cref="ApplicationBehaviorsBuilder"/>.</summary>
-    /// <remarks>Delegates to <c>Services.AddSharedKernelApplicationBehaviors()</c>.</remarks>
-    public ApplicationBehaviorsBuilder AddBehaviors() => _services.AddSharedKernelApplicationBehaviors();
+    /// <summary>
+    /// Chooses the opt-in behaviors (<c>WithAuthorization()</c>, <c>WithIdempotency()</c>, …) that
+    /// <see cref="Build{TMarker}"/> registers; tracing, logging, metrics and validation are always on.
+    /// </summary>
+    /// <param name="configure">The opt-in choice, as passed to <c>AddSharedKernelApplication</c>.</param>
+    /// <returns>This instance, for fluent chaining.</returns>
+    public ApplicationPipelineTestHarness Configure(Action<ApplicationPipelineBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _configure = configure;
+        return this;
+    }
 
     /// <summary>
     /// Registers an opt-in <see cref="ActivityListener"/> filtered to the
@@ -96,14 +107,18 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     }
 
     /// <summary>
-    /// Registers MediatR from the assembly containing <typeparamref name="TMarker"/> and builds the
-    /// <see cref="ServiceProvider"/>. Must be called after all behavior/handler registration.
+    /// Registers the application layer (<c>AddSharedKernelApplication</c>) over the assembly containing
+    /// <typeparamref name="TMarker"/> with the behaviors chosen by <see cref="Configure"/>, and builds the
+    /// <see cref="ServiceProvider"/>. Must be called after all test-specific registration.
+    /// Runs the start-time checks a host runs (<see cref="IStartupValidator"/>), so a missing seam fails
+    /// here with <see cref="OptionsValidationException"/>.
     /// </summary>
     /// <returns>This instance, for fluent chaining.</returns>
     public ApplicationPipelineTestHarness Build<TMarker>()
     {
-        _services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<TMarker>());
+        _services.AddSharedKernelApplication(typeof(TMarker).Assembly, _configure);
         _provider = _services.BuildServiceProvider();
+        _provider.GetService<IStartupValidator>()?.Validate();
         return this;
     }
 

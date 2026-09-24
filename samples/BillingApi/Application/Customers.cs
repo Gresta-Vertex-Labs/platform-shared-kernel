@@ -1,8 +1,6 @@
 using BillingApi.Domain;
-using SharedKernel.Application.Behaviors.Auditing;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
@@ -29,12 +27,10 @@ public interface ICustomerDirectory
 // Register
 // ---------------------------------------------------------------------------------------------------------------
 
+[RequirePermission(Permissions.Write)]
 public sealed record RegisterCustomer(CustomerId Id, string Name, string Email, string? TaxNumber)
-    : ICommand<CustomerId>, IAuthorizeRequest, IAuditableRequest<Result<CustomerId>>
+    : ICommand<CustomerId>, IAuditableRequest<Result<CustomerId>>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "customer.registered";
     public string ResourceType => nameof(Customer);
     public string ResourceId => Id.Value.ToString();
@@ -69,12 +65,10 @@ public sealed class RegisterCustomerHandler(
 // Rename — optimistic concurrency with the client's If-Match version
 // ---------------------------------------------------------------------------------------------------------------
 
+[RequirePermission(Permissions.Write)]
 public sealed record RenameCustomer(CustomerId Id, string Name, EntityVersion ExpectedVersion)
-    : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
+    : ICommand, IAuditableRequest<Result>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "customer.renamed";
     public string ResourceType => nameof(Customer);
     public string ResourceId => Id.Value.ToString();
@@ -104,11 +98,9 @@ public sealed class RenameCustomerHandler(IRepository<Customer, CustomerId> cust
 // Delete — soft delete (the row stays, filtered from every query), only of the version the client last read
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record DeleteCustomer(CustomerId Id, EntityVersion ExpectedVersion) : ICommand, IAuthorizeRequest, IAuditableRequest<Result>
+[RequirePermission(Permissions.Write)]
+public sealed record DeleteCustomer(CustomerId Id, EntityVersion ExpectedVersion) : ICommand, IAuditableRequest<Result>
 {
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Write];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-
     public string Action => "customer.deleted";
     public string ResourceType => nameof(Customer);
     public string ResourceId => Id.Value.ToString();
@@ -134,11 +126,8 @@ public sealed class DeleteCustomerHandler(IRepository<Customer, CustomerId> cust
 // Queries
 // ---------------------------------------------------------------------------------------------------------------
 
-public sealed record GetCustomerByEmail(string Email) : IQuery<CustomerView>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record GetCustomerByEmail(string Email) : IQuery<CustomerView>;
 
 public sealed class GetCustomerByEmailHandler(ICustomerDirectory directory) : IQueryHandler<GetCustomerByEmail, CustomerView>
 {

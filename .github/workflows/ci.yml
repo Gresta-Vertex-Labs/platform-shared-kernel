@@ -37,7 +37,7 @@ name: CI
 #     production libraries built through references; counts as of P-558, 2026-09-21). Every
 #     *.Tests/*SelfTests project lands in exactly one of the two filters. A verification step below (in unit-test) now fails the build if that identity ever drifts,
 #     so a new *.Tests/*SelfTests project added to the .slnx cannot silently miss both filters
-#     the way SharedKernel.Application.Behaviors.Caching(.Tests) did (found 2026-09-17, fixed
+#     the way SharedKernel.Application.Caching(.Tests), then named .Behaviors.Caching, did (found 2026-09-17, fixed
 #     alongside this comment).
 
 on:
@@ -146,7 +146,7 @@ jobs:
 
       # Cheap, build-free static check: every *.Tests/*SelfTests project declared in the .slnx
       # must appear in at least one of the two solution filters, or its tests silently never run
-      # anywhere in CI. This is exactly how SharedKernel.Application.Behaviors.Caching(.Tests)
+      # anywhere in CI. This is exactly how SharedKernel.Application.Caching(.Tests) (then .Behaviors.Caching)
       # went unexecuted for six days after commit 89b9056 added it to the .slnx but not to either
       # .slnf (found and fixed 2026-09-17) — this step exists so that class of gap fails loudly
       # the next time, instead of silently, on the very next push that adds a project.

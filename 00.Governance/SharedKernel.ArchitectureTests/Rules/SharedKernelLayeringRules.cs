@@ -186,15 +186,16 @@ public static class SharedKernelLayeringRules
         "SharedKernel.Application.Auditing",
     ];
 
-    // Every namespace of SharedKernel.Application and SharedKernel.Application.Behaviors(.Caching) —
+    // The namespaces of SharedKernel.Application and SharedKernel.Application.Caching below the root:
     // everything under SharedKernel.Application except the abstractions' three namespaces above.
+    // The root namespace itself (ICommand, IQuery, …) cannot be listed — a namespace here matches by
+    // prefix, so it would also forbid the three permitted ones; its types live in the
+    // SharedKernel.Application assembly, which PersistenceForbiddenAssemblyReferences forbids.
     private static readonly string[] PersistenceForbiddenNamespaces =
     [
-        "SharedKernel.Application.Behaviors",
-        "SharedKernel.Application.Messaging",
-        "SharedKernel.Application.DomainEvents",
-        "SharedKernel.Application.Extensions",
-        "SharedKernel.Application.Streaming",
+        "SharedKernel.Application.Pipeline",
+        "SharedKernel.Application.Idempotency",
+        "SharedKernel.Application.Caching",
         "MediatR",
         "SharedKernel.Security",
     ];
@@ -202,7 +203,7 @@ public static class SharedKernelLayeringRules
     /// <summary>
     /// 06.Persistence may reference <c>SharedKernel.Application.Abstractions</c> (the shared
     /// <c>IUnitOfWork</c>, <c>IRequestContext</c> and <c>IAuditTrailWriter</c>) and nothing else from
-    /// <c>05.Application</c> — never <c>SharedKernel.Application</c>, <c>.Behaviors</c>, MediatR, or
+    /// <c>05.Application</c> — never <c>SharedKernel.Application</c>, <c>.Caching</c>, MediatR, or
     /// <c>12.Security</c>.
     /// </summary>
     /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate.</param>
@@ -235,7 +236,7 @@ public static class SharedKernelLayeringRules
 
     /// <summary>
     /// Returns the names of every assembly <paramref name="assembly"/> references that 06.Persistence
-    /// must not: <c>SharedKernel.Application</c>, <c>SharedKernel.Application.Behaviors*</c>,
+    /// must not: <c>SharedKernel.Application</c>, <c>SharedKernel.Application.Caching</c>,
     /// <c>MediatR</c> and any <c>SharedKernel.Security*</c>. Empty when compliant.
     /// </summary>
     /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate.</param>
@@ -248,25 +249,25 @@ public static class SharedKernelLayeringRules
             .Select(reference => reference.Name ?? string.Empty)
             .Where(name =>
                 name is "SharedKernel.Application" or "MediatR"
-                || name.StartsWith("SharedKernel.Application.Behaviors", StringComparison.Ordinal)
+                || name.StartsWith("SharedKernel.Application.Caching", StringComparison.Ordinal)
                 || name.StartsWith("SharedKernel.Security", StringComparison.Ordinal))
             .ToList();
     }
 
     /// <summary>
-    /// Hard rule (P-544): <c>SharedKernel.Application.Behaviors</c> must never reference
+    /// Hard rule (P-544, P-563): <c>SharedKernel.Application</c> must never reference
     /// <c>SharedKernel.Caching</c> (bare prefix — including <c>.Abstractions</c>; that reference
-    /// belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// belongs exclusively to the sibling <c>SharedKernel.Application.Caching</c>
     /// package), Polly, <c>Microsoft.Extensions.Hosting</c>, or <c>SharedKernel.Core</c> (the
     /// guard-clause package, merged from the standalone <c>SharedKernel.Guards</c> by
     /// WO-082/P-505).
     /// </summary>
-    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors</c> assembly to evaluate.</param>
+    /// <param name="assembly">The <c>SharedKernel.Application</c> assembly to evaluate.</param>
     /// <returns>
-    /// A <see cref="ConditionList"/> asserting the Behaviors package stays free of these four
+    /// A <see cref="ConditionList"/> asserting the application package stays free of these four
     /// dependencies.
     /// </returns>
-    public static ConditionList ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
+    public static ConditionList ApplicationNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
         Types
             .InAssembly(assembly)
             .That()
@@ -281,17 +282,17 @@ public static class SharedKernelLayeringRules
             .NotHaveDependencyOn("SharedKernel.Core");
 
     /// <summary>
-    /// P-544: <c>SharedKernel.Application.Behaviors.Caching</c> — the sole package in
+    /// P-544, P-563: <c>SharedKernel.Application.Caching</c> — the sole package in
     /// <c>05.Application</c> permitted to reference <c>SharedKernel.Caching.Abstractions</c> — may
-    /// reference <c>SharedKernel.Application.Behaviors</c> and <c>SharedKernel.Caching.Abstractions</c>
+    /// reference <c>SharedKernel.Application</c> and <c>SharedKernel.Caching.Abstractions</c>
     /// only; it must never reach a concrete persistence, messaging, or caching-provider package.
     /// </summary>
-    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors.Caching</c> assembly to evaluate.</param>
+    /// <param name="assembly">The <c>SharedKernel.Application.Caching</c> assembly to evaluate.</param>
     /// <returns>
     /// A <see cref="ConditionList"/> asserting the Caching package never references concrete
     /// infrastructure.
     /// </returns>
-    public static ConditionList ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure(Assembly assembly) =>
+    public static ConditionList ApplicationCachingNeverReferencesConcreteInfrastructure(Assembly assembly) =>
         Types
             .InAssembly(assembly)
             .That()

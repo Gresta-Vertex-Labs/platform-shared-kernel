@@ -1,6 +1,6 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 
@@ -15,7 +15,7 @@ namespace SharedKernel.Workflows.Temporal.Authoring;
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Behaviors</c> stages the service
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application</c> pipeline stages the service
 /// registered apply unchanged. Validation and authorization failures arrive as a failed
 /// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
 /// <c>ErrorType.Forbidden</c>), never as a thrown exception, so they map to non-retryable Temporal

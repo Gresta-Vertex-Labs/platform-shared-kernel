@@ -21,7 +21,6 @@
     <PackageReference Include="SharedKernel.Persistence.Dapper" />
     <!-- 05.Application: MediatR pipeline with transaction, auditing and authorization -->
     <PackageReference Include="SharedKernel.Application" />
-    <PackageReference Include="SharedKernel.Application.Behaviors" />
     <!-- 13.ServiceDefaults: host, IRequestContext over 12.Security, persistence readiness -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <PackageReference Include="SharedKernel.ServiceDefaults.Security" />

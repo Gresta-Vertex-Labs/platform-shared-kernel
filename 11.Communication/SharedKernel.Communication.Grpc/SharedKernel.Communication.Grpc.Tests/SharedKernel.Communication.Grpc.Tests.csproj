@@ -9,7 +9,7 @@
       Test-project-only reference (T-28, WO-041 P-255) — never from the production .csproj.
       Used to invoke 00.Governance's LoggingEventIdIntegrityAssertion against the real, compiled
       SharedKernel.Communication.Grpc assembly, mirroring the established cross-domain precedent
-      (05.Application.Behaviors.Tests, SharedKernel.Messaging.MassTransit.Tests).
+      (05.Application's SharedKernel.Application.Tests, SharedKernel.Messaging.MassTransit.Tests).
     -->
     <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>

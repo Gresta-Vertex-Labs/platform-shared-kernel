@@ -1,6 +1,6 @@
 using MediatR;
 
-namespace SharedKernel.Application.Streaming;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Represents a streaming read that yields a sequence of <typeparamref name="TResponse"/> items.
@@ -27,7 +27,7 @@ namespace SharedKernel.Application.Streaming;
 /// </para>
 /// <para>
 /// <b>No pipeline behavior coverage (explicit, not an oversight):</b> none of
-/// <c>SharedKernel.Application.Behaviors</c>'s pipeline behaviors apply to
+/// <c>SharedKernel.Application</c>'s pipeline behaviors apply to
 /// <see cref="IStreamQuery{TResponse}"/> — MediatR treats unary and streaming requests as two
 /// separate generic hierarchies with no shared base. Extending any behavior to streaming is an
 /// explicit, deliberate future phase — never silently assumed to already work just because the

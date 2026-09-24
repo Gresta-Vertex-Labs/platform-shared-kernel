@@ -17,7 +17,7 @@ namespace SharedKernel.Analyzers.Tests;
 /// chain, explicit discard, and a non-<c>IHasSuccessFlag</c> baseline). T-266–T-269:
 /// real-pattern-audit pass-path fixtures, each modeled on (paraphrased from, never literally
 /// copy-pasted) an actual shipped consumption shape found in
-/// <c>05.Application.Behaviors</c>/<c>06.Persistence.EfCore</c>/
+/// <c>05.Application</c>/<c>06.Persistence.EfCore</c>/
 /// <c>07.Messaging.MassTransit</c>/<c>17.Workflows.Temporal</c>. T-270 is the real-source audit
 /// record — see its own XML doc below for the full catalog and the one genuine finding.
 /// </para>
@@ -494,7 +494,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-266 — Real-pattern audit, pass path: modeled on 05.Application.Behaviors's actual
+    // T-266 — Real-pattern audit, pass path: modeled on 05.Application's actual
     // pipeline-behavior shape (e.g. CacheInvalidationBehavior / ResponseOutcomeClassifier) —
     // "var result = await next(); if (result is IHasSuccessFlag f && !f.IsSuccess) { ... }
     // return result;"
@@ -665,7 +665,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// <summary>
     /// Real-source audit record (T-270) — a manual grep/read across the shipped production
     /// source (excluding <c>bin/</c>, <c>obj/</c>, and every <c>*.Tests</c> project/directory) of
-    /// <c>05.Application.Behaviors</c> (plus <c>05.Application</c> where it declares
+    /// <c>05.Application</c> (plus <c>05.Application</c> where it declares
     /// <c>Result</c>-returning contracts), <c>06.Persistence.EfCore</c>,
     /// <c>07.Messaging.MassTransit</c>, and <c>17.Workflows.Temporal</c> — all four already
     /// Published as of this phase's authoring (2026-07-27) — performed per this domain's own
@@ -681,7 +681,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// <c>17.Workflows.Temporal/Authoring/CommandActivity.cs</c>,
     /// <c>Dispatch/WorkflowDispatcher.cs</c>. Modeled by T-268/T-269.</item>
     /// <item>Returned directly as the tail of an async method (<c>return await next();</c>), no
-    /// local variable — <c>05.Application.Behaviors/Validation/ValidationBehavior.cs</c>,
+    /// local variable — <c>05.Application/SharedKernel.Application/Validation/ValidationBehavior.cs</c>,
     /// <c>Tracing/TracingBehavior.cs</c>. A <c>ReturnStatementSyntax</c>, structurally identical
     /// to T-261/T-269's pass path (never an <c>ExpressionStatementSyntax</c> regardless of the
     /// wrapped <c>await</c>).</item>
@@ -716,7 +716,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// </para>
     /// <para>
     /// <b>GENUINE FINDING — one confirmed bare-statement discard, T-270's core result.</b>
-    /// <c>05.Application.Behaviors/FireAndForget/FireAndForgetBackgroundConsumer.cs</c>, the
+    /// <c>05.Application/SharedKernel.Application/FireAndForget/FireAndForgetBackgroundConsumer.cs</c>, the
     /// statement <c>await sender.Send(command, stoppingToken).ConfigureAwait(false);</c> (as of
     /// this phase's authoring, line 57). <c>command</c> is statically typed
     /// <c>IFireAndForgetCommand</c>, which extends <c>ICommand : ICommandBase,

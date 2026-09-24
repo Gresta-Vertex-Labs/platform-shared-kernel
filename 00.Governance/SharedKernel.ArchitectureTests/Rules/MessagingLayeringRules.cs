@@ -28,7 +28,7 @@ public static class MessagingLayeringRules
     private const string MediatRAssemblyName = "MediatR";
     private const string MediatRContractsAssemblyName = "MediatR.Contracts";
     private const string ApplicationAssemblyName = "SharedKernel.Application";
-    private const string ApplicationBehaviorsAssemblyName = "SharedKernel.Application.Behaviors";
+    private const string ApplicationCachingAssemblyName = "SharedKernel.Application.Caching";
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type in the supplied
@@ -103,5 +103,5 @@ public static class MessagingLayeringRules
                 MediatRAssemblyName,
                 MediatRContractsAssemblyName,
                 ApplicationAssemblyName,
-                ApplicationBehaviorsAssemblyName));
+                ApplicationCachingAssemblyName));
 }

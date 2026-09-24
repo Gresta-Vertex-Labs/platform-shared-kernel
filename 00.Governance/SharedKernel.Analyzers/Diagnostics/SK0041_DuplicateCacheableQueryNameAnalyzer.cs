@@ -9,7 +9,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
 /// SK0041 — Fires when two or more non-abstract types implementing
-/// <c>SharedKernel.Application.Behaviors.Caching.ICacheableQuery&lt;TValue&gt;</c> share a simple
+/// <c>SharedKernel.Application.Caching.ICacheableQuery&lt;TValue&gt;</c> share a simple
 /// type name within one compilation.
 /// </summary>
 /// <remarks>
@@ -61,7 +61,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <c>TValue</c>.
 /// </para>
 /// <para>Introduced as a governance companion to <c>05.Application</c>'s pre-publish pass on
-/// <c>SharedKernel.Application.Behaviors.Caching</c>.</para>
+/// <c>SharedKernel.Application.Caching</c>.</para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class DuplicateCacheableQueryNameAnalyzer : AnalyzerBase

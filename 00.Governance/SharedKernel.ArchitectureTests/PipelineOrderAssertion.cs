@@ -8,11 +8,11 @@ namespace SharedKernel.ArchitectureTests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>ApplicationBehaviorsBuilder.Build()</c> registers behaviors
+/// <c>AddSharedKernelApplication</c> registers behaviors
 /// in a fixed, non-negotiable order (the ten-named-slot canonical sequence documented in
-/// <c>05.Application/CLAUDE.md</c>) regardless of <c>.AddXBehavior()</c> call order. Without a
-/// mechanical assertion, a future edit to <c>Build()</c> can silently reorder the sequence —
-/// this helper is the primitive <c>SharedKernel.Application.Behaviors.Tests</c> uses to pin
+/// <c>05.Application/CLAUDE.md</c>) regardless of <c>With…()</c> call order. Without a
+/// mechanical assertion, a future edit to the registration can silently reorder the sequence —
+/// this helper is the primitive <c>SharedKernel.Application.Tests</c> uses to pin
 /// that order permanently.
 /// </para>
 /// <para>

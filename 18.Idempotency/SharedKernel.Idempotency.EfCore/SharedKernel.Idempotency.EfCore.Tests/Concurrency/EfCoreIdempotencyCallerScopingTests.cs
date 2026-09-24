@@ -1,11 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using MsOptions = Microsoft.Extensions.Options.Options;
-using SharedKernel.Application.Behaviors.Commands;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Idempotency.EfCore.Context;
 using SharedKernel.Idempotency.EfCore.KeyStore;
 using SharedKernel.Idempotency.EfCore.Options;
@@ -44,17 +43,6 @@ public sealed class EfCoreIdempotencyCallerScopingTests : IAsyncLifetime
 
     private sealed record PlaceOrder(string IdempotencyKey, string Body) : ICommand<string>, IIdempotentRequest;
 
-    private sealed class OutermostCommandScope : ICommandScope
-    {
-        public bool IsActive => true;
-
-        public bool IsNested => false;
-
-        public void OnCompleted(Func<CancellationToken, Task> callback)
-        {
-        }
-    }
-
     private sealed class FixedTenantAccessor(Guid tenantId) : ITenantContextAccessor
     {
         public Guid? TenantId { get; } = tenantId;
@@ -80,11 +68,15 @@ public sealed class EfCoreIdempotencyCallerScopingTests : IAsyncLifetime
             new FakeClock(),
             MsOptions.Create(new EfCoreIdempotencyOptions()),
             new InMemoryLogger<EfCoreRequestIdempotencyStore>());
-        var behavior = new IdempotencyBehavior<PlaceOrder, Result<string>>(
-            store,
-            caller,
-            new OutermostCommandScope(),
-            NullLogger<IdempotencyBehavior<PlaceOrder, Result<string>>>.Instance);
+        // The behavior is internal to SharedKernel.Application: compose it the way a service does.
+        var services = new ServiceCollection();
+        services.AddSingleton<IRequestIdempotencyStore>(store);
+        services.AddSingleton<IRequestContext>(caller);
+        services.AddSharedKernelApplication(typeof(EfCoreIdempotencyCallerScopingTests).Assembly, app => app.WithIdempotency());
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var behavior = scope.ServiceProvider.GetServices<IPipelineBehavior<PlaceOrder, Result<string>>>()
+            .Single(b => b.GetType().Name.StartsWith("IdempotencyBehavior", StringComparison.Ordinal));
 
         return await behavior.Handle(command, handler, CancellationToken.None);
     }

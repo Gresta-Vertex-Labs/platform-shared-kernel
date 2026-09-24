@@ -12,7 +12,7 @@
     <PackageReference Include="Mono.Cecil" />
     <!-- Roslyn CSharpCompilation for in-memory fixture assembly generation in T-12 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <!-- MediatR pinned to match 05.Application/SharedKernel.Application.Behaviors's own pin
+    <!-- MediatR pinned to match 05.Application/SharedKernel.Application's own pin
          (see that project's version-pin note) — needed to reference MediatR.IStreamRequest<>/
          IPipelineBehavior<,> as extraReferences when compiling WO-036 P-225 fixture assemblies
          in ApplicationPipelineRulesTests. NuGet-only; 00.Governance never references
@@ -65,23 +65,17 @@
          compiled IL rather than a contrived fixture. Test-project-only ProjectReference — does not
          violate the "00.Governance references nothing" layering rule (production references only). -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
-    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Behaviors assembly,
-         required by root Phase Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's
-         T-337 "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only
-         structural check) to build the real ApplicationBehaviorsBuilder pipeline and prove
-         CacheInvalidationBehavior's eviction observably follows TransactionBehavior's commit. This
-         is an INDEPENDENT, cross-domain lock on top of 05.Application's own in-domain regression
-         test (CacheInvalidationTransactionOrderingTests, WO-080/P-488) — the whole point of P-489 is
-         that a future well-intentioned reorder inside ApplicationBehaviorsBuilder must fail a build
-         even if that domain's own tests were ever weakened or deleted. Test-project-only
-         ProjectReference — does not violate the "00.Governance references nothing" layering rule
-         (production references only). -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" PrivateAssets="all" />
-    <!-- P-544: CacheInvalidationBehavior/CachingBehavior/IInvalidatesCache/ICacheableQuery moved
-         out of SharedKernel.Application.Behaviors into this sibling package. Required so
-         ApplicationBehaviorsCacheInvalidationOrderingLockTests can call the real
-         AddCachingBehaviors() against the real compiled assembly. -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors.Caching\SharedKernel.Application.Behaviors.Caching.csproj" PrivateAssets="all" />
+    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Caching assembly (it brings
+         SharedKernel.Application, which carries the pipeline since P-563), required by root Phase
+         Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's T-337
+         "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only structural
+         check) to build the real pipeline with WithCaching() and prove CacheInvalidationBehavior's
+         eviction observably follows TransactionBehavior's commit. An INDEPENDENT, cross-domain lock
+         on top of 05.Application's own in-domain regression test: a future well-intentioned reorder
+         inside the registration must fail a build even if that domain's own tests were ever weakened
+         or deleted. Test-project-only ProjectReference — does not violate the "00.Governance
+         references nothing" layering rule (production references only). -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Caching\SharedKernel.Application.Caching.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
          StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
          P-267 all shipped) before this phase's implementation session, so real-assembly

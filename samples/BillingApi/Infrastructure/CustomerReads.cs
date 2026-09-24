@@ -1,8 +1,7 @@
 using BillingApi.Application;
 using BillingApi.Domain;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Concurrency;
@@ -24,11 +23,8 @@ public sealed class CustomerDirectory(BillingDbContext db) : ICustomerDirectory
 /// <summary>A customer with its version, sent as the ETag.</summary>
 public sealed record VersionedCustomer(CustomerView Customer, EntityVersion Version);
 
-public sealed record GetCustomer(CustomerId Id) : IQuery<VersionedCustomer>, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => [Permissions.Read];
-    public PermissionMatch PermissionMatch => PermissionMatch.All;
-}
+[RequirePermission(Permissions.Read)]
+public sealed record GetCustomer(CustomerId Id) : IQuery<VersionedCustomer>;
 
 /// <remarks>
 /// The version is PostgreSQL's <c>xmin</c>, kept by the change tracker — so this read goes through the tracking
