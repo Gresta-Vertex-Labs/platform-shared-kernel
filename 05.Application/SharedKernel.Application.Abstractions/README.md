@@ -5,12 +5,13 @@ commits, and how an audited action is recorded. No MediatR, no ORM.**
 
 | Contract | Consumed by | Implemented by |
 | --- | --- | --- |
-| `IRequestContext` (+ `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext`) | `AuthorizationBehavior`, the caching behaviors, persistence audit columns, tenant filters, the audit trail | your composition root — `13.ServiceDefaults` ships one over `12.Security`'s `IUserContext` |
-| `IUnitOfWork` | `TransactionBehavior`, your own code | `SharedKernel.Persistence.EfCore` (`EfUnitOfWork`) |
-| `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome` | `AuditingBehavior` | `SharedKernel.Persistence.EfCore.Auditing` |
+| `IRequestContext` (+ `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext`) | the pipeline's authorization, idempotency and caching; persistence audit columns, tenant filters and the audit trail; your handlers | your composition root — `13.ServiceDefaults`' `AddSharedKernelRequestContext()` over `12.Security`'s `IUserContext` |
+| `IUnitOfWork` | the pipeline's transaction (`WithTransactions()`), your own code | `SharedKernel.Persistence.EfCore` (`EfUnitOfWork`) |
+| `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome` | the pipeline's auditing (`WithAuditing()`) | `SharedKernel.Persistence.EfCore.Auditing` |
 
-Because persistence implements these interfaces directly, a service needs no adapter between
-`SharedKernel.Application.Behaviors` and `SharedKernel.Persistence.*`.
+A service does not reference this package itself: it comes with `SharedKernel.Application`, and the infrastructure
+that implements it references it directly. Because persistence implements these interfaces, a service needs no
+adapter between `SharedKernel.Application` and `SharedKernel.Persistence.*`.
 
 **Dependencies:** `SharedKernel.Primitives` only.
 
@@ -54,9 +55,8 @@ implementations, so an implementation written before they existed keeps compilin
 When nothing is registered, persistence falls back to `AnonymousRequestContext`: unauthenticated, no
 tenant. A `null` tenant matches no tenant-scoped row and rejects every tenant-scoped write.
 
-`IRequestContext`, `SystemRequestContext` and `AnonymousRequestContext` moved here from
-`SharedKernel.Application`, which type-forwards them; the namespace (`SharedKernel.Application.Context`)
-is unchanged.
+The namespaces are `SharedKernel.Application.Context`, `.Transactions` and `.Auditing`. `SharedKernel.Application`
+no longer type-forwards these types (P-563); it brings this assembly along, so `using` the namespace is enough.
 
 ## The audit writer
 

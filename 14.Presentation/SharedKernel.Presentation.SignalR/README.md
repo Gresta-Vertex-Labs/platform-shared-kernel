@@ -37,13 +37,13 @@ var app = builder.Build();
 
 app.UseSharedKernelWebApi();        // correlation ids, CORS, authentication, authorization
 app.MapHub<OrdersHub>("/hubs/orders", options => options.CloseOnAuthenticationExpiration = true)
-    .RequirePermission("orders.read");
+    .RequireEndpointPermission("orders.read");
 
 app.Run();
 ```
 
-- `AddSharedKernelSignalR()` calls `AddSignalR()`, `AddSharedKernelAuthorization()` and adds two global hub filters:
-  the error mapping, and inside it the invocation rate limit. It returns SignalR's own `ISignalRServerBuilder`, for
+- `AddSharedKernelSignalR()` calls `AddSignalR()`, registers the WebApi authorization policies and adds two global hub
+  filters: the error mapping, and inside it the invocation rate limit. It returns SignalR's own `ISignalRServerBuilder`, for
   protocols or a backplane (`AddStackExchangeRedis` comes from `Microsoft.AspNetCore.SignalR.StackExchangeRedis`).
 - It binds `SharedKernel:Presentation:SignalR` and validates it when the host starts; the `configure` callback runs
   after binding. It is idempotent.
@@ -54,7 +54,7 @@ app.Run();
 ## Errors
 
 Every error of a hub method invocation becomes a `HubException` whose message is `{code}: {message}`, presented by the
-same `ErrorPresentation` HTTP uses:
+same rules as an HTTP problem (the presentation packages share one internal implementation):
 
 | The hub method… | Error text |
 | --- | --- |
@@ -115,21 +115,23 @@ it uses the pattern above.
 ## Result hub methods
 
 ```csharp
-[RequirePermission("orders.read")]                  // checked when the connection opens: 401 or 403
-public sealed class OrdersHub(IOrderService orders) : Hub
+[RequireEndpointPermission("orders.read")]                // checked when the connection opens: 401 or 403
+public sealed class OrdersHub(ISender sender) : Hub
 {
     // A failure reaches the client as "{code}: {message}"; a success returns the order.
     public async Task<Result<OrderResponse>> GetOrder(Guid id) =>
-        (await orders.GetAsync(id, Context.ConnectionAborted)).Map(OrderResponse.From);
+        (await sender.Send(new GetOrderQuery(id), Context.ConnectionAborted)).Map(OrderResponse.From);
 
-    [RequirePermission("orders.refund")]
+    // The command carries its own [RequirePermission]; the hub adds what only the connection knows.
     [RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]   // checked at every invocation
-    public Task<Result> Refund(Guid id) => orders.RefundAsync(id, Context.ConnectionAborted);
+    public Task<Result> Refund(Guid id) => sender.Send(new RefundOrder(id), Context.ConnectionAborted);
 }
 ```
 
 A failure reaches the client as the coded error; a success returns the value (nothing for `Result`). `Map` and
-`GetValueOrThrow` are `SharedKernel.Core`'s (`SharedKernel.Core.Extensions`).
+`GetValueOrThrow` are `SharedKernel.Core`'s (`SharedKernel.Core.Extensions`). A hub method sends `05.Application`
+commands and queries through `ISender` like an endpoint, and a permission the command declares is checked by its
+pipeline on every call; the attributes on the hub guard the connection and add authentication strength.
 
 - A hub returning `Result` needs `AddSharedKernelSignalR()`: without the filter, SignalR serializes the `Result` itself
   and the connection fails. A `Result` is read only as the hub method's own return value; inside a stream item or a
@@ -139,7 +141,7 @@ A failure reaches the client as the coded error; a success returns the value (no
 
   ```csharp
   public async Task<OrderResponse> GetOrder(Guid id) =>
-      OrderResponse.From(await orders.GetAsync(id, Context.ConnectionAborted).GetValueOrThrow());
+      OrderResponse.From(await sender.Send(new GetOrderQuery(id), Context.ConnectionAborted).GetValueOrThrow());
   ```
 
 ### Streams

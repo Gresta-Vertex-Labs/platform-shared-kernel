@@ -5,10 +5,10 @@ Every setting of the four packages, read from the options classes and their vali
 
 | Section | Options class | Registered by |
 | --- | --- | --- |
-| [`SharedKernel:Presentation:WebApi`](#sharedkernelpresentationwebapi) | `SharedKernel.Presentation.WebApi.Options.SharedKernelWebApiOptions` | `builder.AddSharedKernelWebApi(configure)` |
-| [`SharedKernel:Presentation:OpenApi`](#sharedkernelpresentationopenapi) | `SharedKernel.Presentation.OpenApi.Options.SharedKernelOpenApiOptions` | `builder.AddSharedKernelOpenApi(configure)` |
-| [`SharedKernel:Presentation:SignalR`](#sharedkernelpresentationsignalr) | `SharedKernel.Presentation.SignalR.Options.SharedKernelSignalROptions` | `builder.AddSharedKernelSignalR(configure)` |
-| [`SharedKernel:Presentation:Grpc`](#sharedkernelpresentationgrpc) | `SharedKernel.Presentation.Grpc.Options.SharedKernelGrpcOptions` | `builder.AddSharedKernelGrpc(configure)` |
+| [`SharedKernel:Presentation:WebApi`](#sharedkernelpresentationwebapi) | `SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions` | `builder.AddSharedKernelWebApi(configure)` |
+| [`SharedKernel:Presentation:OpenApi`](#sharedkernelpresentationopenapi) | `SharedKernel.Presentation.OpenApi.SharedKernelOpenApiOptions` | `builder.AddSharedKernelOpenApi(configure)` |
+| [`SharedKernel:Presentation:SignalR`](#sharedkernelpresentationsignalr) | `SharedKernel.Presentation.SignalR.SharedKernelSignalROptions` | `builder.AddSharedKernelSignalR(configure)` |
+| [`SharedKernel:Presentation:Grpc`](#sharedkernelpresentationgrpc) | `SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions` | `builder.AddSharedKernelGrpc(configure)` |
 
 How every section behaves:
 
@@ -262,7 +262,7 @@ These are code, per endpoint or per host, and have no configuration key:
 | What | Where |
 | --- | --- |
 | Middleware inside the WebApi pipeline | `UseSharedKernelWebApi(pipeline => pipeline.AtStart(…).BeforeAuthentication(…).BeforeAuthorization(…))` |
-| Authorization requirements | `[RequirePermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` and their conventions |
+| Authorization requirements | `[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` and their conventions |
 | Required or accepted headers | `RequireIdempotencyKey()`, `AcceptIdempotencyKey()`, `RequireIfMatch()`, `AcceptIfMatch()`, their attributes, the `IdempotencyKey` and `IfMatch<TVersion>` parameters |
 | A body limit or CSP of one endpoint | `WithRequestSizeLimit(bytes)`, `DisableRequestSizeLimit()`, `WithContentSecurityPolicy(policy)` |
 | Rate limiting policies | ASP.NET Core `AddRateLimiter()`, or 13.ServiceDefaults' `AddSharedKernelRateLimiting()` |

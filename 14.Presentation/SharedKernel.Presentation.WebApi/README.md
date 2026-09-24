@@ -22,6 +22,7 @@ packages build on it.
 - [Authorization](#authorization)
 - [Idempotency-Key](#idempotency-key)
 - [ETag, If-None-Match and If-Match](#etag-if-none-match-and-if-match)
+- [Paging](#paging)
 - [Correlation ids](#correlation-ids)
 - [Security headers, CORS and request limits](#security-headers-cors-and-request-limits)
 - [Rate limiting](#rate-limiting)
@@ -40,12 +41,17 @@ dotnet add package SharedKernel.Presentation.WebApi
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Localization`, `SharedKernel.Security.Abstractions`, the ASP.NET Core shared framework |
+| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Localization`, `SharedKernel.Contracts` (paging), `SharedKernel.Security.Abstractions`, the ASP.NET Core shared framework |
 | Third-party packages | none |
+| Ships with it | the endpoint-module source generator, under `analyzers/dotnet/cs` |
 
-Everyday types live in the root namespace, so one `using SharedKernel.Presentation.WebApi;` covers endpoints,
-controllers, hubs and gRPC services. Settings are in `.Options`; `ErrorPresentation`, the status map and the code and
-member-name constants in `.Errors`; the endpoint-metadata interfaces in `.Http` and `.Idempotency`.
+Every public type is in one namespace, `SharedKernel.Presentation.WebApi`: setup, options, typed results, endpoint
+modules, attributes, header and paging parameters, error codes and problem member names. The plumbing the OpenApi,
+SignalR and gRPC add-ons share with this package (`ErrorPresentation`, the status map, the endpoint-metadata
+interfaces) is internal to the four packages, which version together.
+
+Handlers send `05.Application` commands and queries through MediatR's `ISender`; this package does not reference
+MediatR or `05.Application`, so any code that returns `Result`/`Result<T>` maps the same way.
 
 ## Setup
 
@@ -66,7 +72,7 @@ app.UseSharedKernelWebApi(pipeline => pipeline
     .AtStart(web => web.UseForwardedHeaders())
     .BeforeAuthorization(web => web.UseRequestLocalization()));
 
-app.MapOrderEndpoints();
+app.MapEndpoints();   // every IEndpointModule of this assembly
 
 app.Run();
 ```
@@ -77,7 +83,7 @@ runs the `configure` callback after binding, validates the result, and registers
 
 - problem details for every error source, and the platform's exception handling as the fallback of
   `UseExceptionHandler()`;
-- `AddSharedKernelAuthorization()`: the policies behind the four authorization attributes;
+- the authorization policies behind the four authorization attributes;
 - a CORS policy, only when `Cors:AllowedOrigins` lists origins;
 - the 429 problem body for rate limiting that has no `OnRejected` of its own;
 - Kestrel without the `Server` header and with a 4 MiB body limit, the JSON depth limit when set, HSTS settings;
@@ -95,7 +101,7 @@ runs the `configure` callback after binding, validates the result, and registers
 6. `UseRouting()`, then CORS and the WebSocket origin check (when origins are configured);
 7. the `BeforeAuthentication` hooks, then `UseAuthentication()` (when authentication is registered);
 8. the `BeforeAuthorization` hooks, then `UseRateLimiter()` (when rate limiting is registered);
-9. `UseAuthorization()`, then the `Idempotency-Key` and `If-Match` checks of the endpoint.
+9. `UseAuthorization()`, then the endpoint's `Idempotency-Key`, `If-Match` and paging checks.
 
 Call it first, then map endpoints; put other middleware after it. A middleware that must run inside it goes in a hook:
 
@@ -157,9 +163,8 @@ the interface.
 ## From Result to HTTP
 
 Every mapping returns a typed union, such as `Results<Ok<T>, ErrorHttpResult>`, so OpenAPI infers the success
-response without annotations. `ErrorHttpResult` writes the error as a problem. The examples call an application
-service, `IOrderService`, whose methods return `Task<Result<Order>>` or `Task<Result>`; a MediatR `sender.Send(…)`
-maps the same way.
+response without annotations. `ErrorHttpResult` writes the error as a problem. The examples send `05.Application`
+commands and queries with `sender.Send(…)`, which returns `Task<Result>` or `Task<Result<T>>`.
 
 | Method | On `Result<T>` | On `Result` | Success response |
 | --- | --- | --- | --- |
@@ -181,36 +186,29 @@ MVC controllers return the same typed results; there is no `ToActionResult`:
 ```csharp
 [ApiController]
 [Route("orders")]
-[RequirePermission("orders.read")]
-public sealed class OrdersController(IOrderService orders) : ControllerBase
+public sealed class OrdersController(ISender sender) : ControllerBase
 {
     [HttpGet("{id:guid}")]
     public Task<Results<OkWithETag<OrderResponse>, ErrorHttpResult>> Get(Guid id, CancellationToken ct) =>
-        orders.GetAsync(id, ct).ToOkWithETag(order => order.Version.ToString(), OrderResponse.From);
+        sender.Send(new GetOrder(id), ct).ToOkWithETag(order => order.Version.ToString(), OrderResponse.From);
 
     [HttpPost]
-    [RequirePermission("orders.write")]
     [RequireIdempotencyKey]
-    public Task<Results<Created<OrderResponse>, ErrorHttpResult>> Place(PlaceOrderRequest body, CancellationToken ct) =>
-        orders.PlaceAsync(body, HttpContext.GetIdempotencyKey()!, ct)
-            .ToCreated(order => $"/orders/{order.Id}", OrderResponse.From);
+    public Task<Results<Created<Guid>, ErrorHttpResult>> Place(PlaceOrderRequest body, CancellationToken ct) =>
+        sender.Send(new PlaceOrder(body.Customer, body.Amount, HttpContext.GetIdempotencyKey()!), ct)
+            .ToCreated(id => $"/orders/{id}");
 }
 ```
 
-A handler with a typed result is unit-tested on that result:
+A typed result is unit-tested on the result itself:
 
 ```csharp
-public static class OrderHandlers
-{
-    public static Task<Results<OkWithETag<OrderResponse>, ErrorHttpResult>> GetOrder(Guid id, IOrderService orders, CancellationToken ct) =>
-        orders.GetAsync(id, ct).ToOkWithETag(order => order.Version.ToString(), OrderResponse.From);
-}
-
 [Fact]
-public async Task Missing_order_is_a_not_found_problem()
+public void Missing_order_is_a_not_found_problem()
 {
-    // _orders: a fake IOrderService that finds no order.
-    var result = await OrderHandlers.GetOrder(Guid.NewGuid(), _orders, CancellationToken.None);
+    Result<Order> missing = Error.NotFound("order.not_found", "Order 42 was not found.");
+
+    var result = missing.ToOkWithETag(order => order.Version.ToString(), OrderResponse.From);
 
     var error = Assert.IsType<ErrorHttpResult>(result.Result);
     Assert.Equal("order.not_found", error.Error.Code);
@@ -277,8 +275,8 @@ into a `Result<T>`.
 | `Timeout` | 504 |
 | `None` or any other value | 500 |
 
-`ErrorTypeStatusCodeMap.Resolve(type)` is this table; `ErrorPresentation.GetStatusCode(error, httpContext)` adds the
-412 rule. Both are public, for code that writes a response itself.
+The mapping is internal to the presentation packages, so HTTP, SignalR and gRPC present an error identically. Code
+that writes a response itself returns `error.ToErrorResult()`, which applies this table and the 412 rule.
 
 ### Where each failure ends
 
@@ -301,8 +299,7 @@ in the gRPC status. A request whose `Accept` excludes JSON still gets `applicati
 
 ### Messages: translation and redaction
 
-- A server error (`ErrorPresentation.IsServerError`: `Unexpected`, `Unavailable`, `Timeout`, or any type whose status
-  is 500 or above) keeps its `errorCode`, but outside Development its `detail` is a generic sentence: "An unexpected
+- A server error (`Unexpected`, `Unavailable`, `Timeout`, or any type whose status is 500 or above) keeps its `errorCode`, but outside Development its `detail` is a generic sentence: "An unexpected
   error occurred.", "The service is temporarily unavailable. Try again later." or "The operation did not complete in
   time." Such messages describe internals, like a host name or a query. Server errors are logged at Error, client
   errors at Debug.
@@ -324,9 +321,16 @@ in the gRPC status. A request whose `Accept` excludes JSON still gets `applicati
 
 ## Authorization
 
+**Permissions go on the use case.** A command or query declares `[RequirePermission]` (`05.Application`) and the
+pipeline checks it on every path, HTTP or not; an endpoint that sends it does not repeat it.
+`[RequireEndpointPermission]` is only for what sends no command — SignalR hubs, gRPC services and methods, endpoints
+that do not call `ISender`. The step-up requirements (`RequireFreshAuthentication`, `RequireAuthenticationMethod`)
+stay on the endpoint, since only the HTTP request knows how the caller signed in. Both layers answer 401
+`unauthorized.default` and 403 `forbidden.insufficient_permission`.
+
 | Requirement | Attribute | Endpoint convention | A signed-in caller who fails it |
 | --- | --- | --- | --- |
-| Any of the permissions | `[RequirePermission("orders.write", "orders.admin")]` | `.RequirePermission(…)` | 403 `forbidden.insufficient_permission` |
+| Any of the permissions | `[RequireEndpointPermission("orders.write", "orders.admin")]` | `.RequireEndpointPermission(…)` | 403 `forbidden.insufficient_permission` |
 | Any of the roles | `[RequireRole("support")]` | `.RequireRole(…)` | 403 `forbidden.insufficient_permission` |
 | Signed in at most N seconds ago | `[RequireFreshAuthentication(300)]` | `.RequireFreshAuthentication(300)`, or a `TimeSpan` | 401 `unauthorized.step_up_required` |
 | Authenticated with any of the methods (`amr`), optionally within a maximum age | `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` | `.RequireAuthenticationMethod(TimeSpan.FromMinutes(5), "otp")` | 401 `unauthorized.step_up_required` |
@@ -336,7 +340,7 @@ An anonymous caller is answered 401 `unauthorized.default` by every requirement.
 ```csharp
 var admin = app.MapGroup("/admin").RequireRole("support");        // every endpoint of the group
 admin.MapPost("/payouts", () => TypedResults.Accepted("/admin/payouts/1"))
-    .RequirePermission("payouts.write", "payouts.admin")             // either permission
+    .RequireEndpointPermission("payouts.write", "payouts.admin")             // either permission
     .RequireFreshAuthentication(300);                                // and signed in in the last 5 minutes
 ```
 
@@ -366,8 +370,8 @@ Every refusal is logged at Warning (14002) with the endpoint and the code, never
   `AddSharedKernelWebApi()` is decorated and keeps working. One registered **after** it would replace the platform's,
   so the host refuses to start with an `InvalidOperationException` naming it.
 - `[AllowAnonymous]` switches off every requirement of the endpoint, these included (ASP.NET Core semantics).
-- A host that does not call `AddSharedKernelWebApi()`, such as a gRPC-only service, calls
-  `services.AddSharedKernelAuthorization()`; `AddSharedKernelSignalR()` and `AddSharedKernelGrpc()` call it themselves.
+- `AddSharedKernelWebApi()`, `AddSharedKernelSignalR()` and `AddSharedKernelGrpc()` each register the authorization
+  policies; there is nothing else to call.
 - On long-lived connections a step-up needs a maximum age: a SignalR hub method is authorized at every invocation
   against the principal the connection opened with, and a gRPC stream is authorized once, when it starts. See the
   SignalR and gRPC package READMEs.
@@ -421,9 +425,8 @@ ASCII except `"`; with 06.Persistence it is `EntityVersion.ToString()`, an opaqu
 `TVersion` is any `IParsable<TVersion>`, typically `EntityVersion`. The handler receives the parsed version:
 
 ```csharp
-orders.MapPut("/{id:guid}/address", (Guid id, ChangeAddressRequest body, IfMatch<EntityVersion> ifMatch, IOrderService service, CancellationToken ct) =>
-        service.ChangeAddressAsync(id, body, ifMatch.Version, ct).ToNoContent())
-    .RequirePermission("orders.write");
+orders.MapPut("/{id:guid}/address", (Guid id, ChangeAddressRequest body, IfMatch<EntityVersion> ifMatch, ISender sender, CancellationToken ct) =>
+    sender.Send(new ChangeAddress(id, body.Street, ifMatch.Version), ct).ToNoContent());
 ```
 
 | `If-Match` sent (RFC 9110 section 13.1.1) | Required | Accepted |
@@ -439,7 +442,6 @@ An accepted header is validated when it is sent and never read as missing: that 
 request into an unconditional one, and `*` would let a replace-only write create.
 
 - `HttpContext.GetIfMatch()` returns the one strong tag without quotes, `*`, or `null`.
-  `HttpContext.GetIfMatchTags()` returns every tag, parsed strictly, with its weakness.
 - MVC has no binder for `IfMatch<TVersion>`: the attributes check the header, and the action parses it, for example
   with `EntityVersion.TryParse(HttpContext.GetIfMatch(), out var version)`.
 - `new IfMatch<EntityVersion>(version)` builds one in a unit test.
@@ -459,6 +461,31 @@ headers the request carries.
 
 Add the codes of your own version conflicts to the list. The 412 carries no current `ETag`: the client reads the
 resource again.
+
+## Paging
+
+Declare the query parameters of a list as a handler parameter; the handler receives a validated `04.Contracts`
+request:
+
+```csharp
+invoices.MapGet("/", (Paging paging, ISender sender, CancellationToken ct) =>
+    sender.Send(new ListInvoices(paging.Request), ct).ToOk());            // page, pageSize → PageRequest
+
+invoices.MapGet("/browse", (CursorPaging paging, ISender sender, CancellationToken ct) =>
+    sender.Send(new BrowseInvoices(paging.Request), ct).ToOk());          // cursor, limit → CursorPageRequest
+```
+
+| Parameter | Query | Absent | Invalid (400 `validation.failed`, keyed by the parameter) |
+| --- | --- | --- | --- |
+| `Paging` | `page`, `pageSize` | page 1 of 20 (`PageRequest.First`) | out of range: `pagination.page.out_of_range`, `pagination.page_size.out_of_range` (at most 1000); not one whole number or sent twice: `validation.invalid_format` |
+| `CursorPaging` | `cursor`, `limit` | the first page of 20 (`CursorPageRequest.First`) | a blank cursor or one above 512 characters: `pagination.cursor.invalid`; limit out of range: `pagination.limit.out_of_range`; not one whole number or sent twice: `validation.invalid_format` |
+
+- `UseSharedKernelWebApi()` checks them after authorization, before the handler, like the headers; the OpenApi add-on
+  documents both parameters and the 400.
+- The cursor stays opaque here; decode it with `PageCursor.Decode<TKey, TId>` where the key types are known (06.Persistence's
+  `ListKeysetAsync` takes the request directly).
+- Minimal APIs only. An MVC action binds the values itself and calls `PageRequest.Create`/`CursorPageRequest.Create`.
+  In a unit test, construct one: `new Paging(PageRequest.First)`.
 
 ## Correlation ids
 
@@ -537,13 +564,14 @@ The package has no limiter of its own. Register one with ASP.NET Core's `AddRate
 ## Error codes
 
 The codes this package produces are constants on `PresentationErrorCodes`; the platform's are on `ErrorCodes`
-(01.Core).
+(01.Core), the paging ones on `PaginationErrorCodes` (04.Contracts).
 
 | Code | Status | When |
 | --- | --- | --- |
 | `request.too_large` | 413 | The body is larger than the endpoint accepts |
-| `idempotency.key_required` | 400 | A required `Idempotency-Key` is missing |
-| `idempotency.key_invalid` | 400 | An `Idempotency-Key` is not 1 to 256 visible ASCII characters |
+| `idempotency.key_required` | 400 | A required `Idempotency-Key` is missing (`ErrorCodes.Idempotency.KeyRequired`, also the pipeline's code for a blank key) |
+| `idempotency.key_invalid` | 400 | An `Idempotency-Key` is not 1 to 256 visible ASCII characters (`ErrorCodes.Idempotency.KeyInvalid`) |
+| `pagination.page.out_of_range`, `pagination.page_size.out_of_range`, `pagination.cursor.invalid`, `pagination.limit.out_of_range` | 400 (in `errorCodes`) | A paging parameter out of range ([Paging](#paging)) |
 | `precondition.required` | 428 | A required `If-Match` is missing or `*` |
 | `precondition.invalid` | 400 | An `If-Match` is malformed or names several tags; `*` where the header is only accepted |
 | `precondition.failed` | 412 | An `If-Match` tag is weak or not a version of the resource |
@@ -551,7 +579,7 @@ The codes this package produces are constants on `PresentationErrorCodes`; the p
 | `forbidden.origin_not_allowed` | 403 | A WebSocket request from an origin the CORS policy does not allow |
 | `rate_limit.exceeded` | 429 | Rate limiting refused the request |
 | `unauthorized.step_up_required` | 401 | A more recent or stronger sign-in is required |
-| `http.{status}` | Any | A response the framework produced without an error; `PresentationErrorCodes.ForStatus(status)` |
+| `http.{status}` | Any | A response the framework produced without an error, such as `http.404` for an unmatched route |
 | `unauthorized.default` | 401 | Not signed in (`ErrorCodes.Unauthorized.Default`) |
 | `forbidden.insufficient_permission` | 403 | Missing permission or role (`ErrorCodes.Forbidden.InsufficientPermission`) |
 | `validation.failed` | 400 | Several validation errors (`ErrorCodes.Validation.Failed`) |
@@ -625,18 +653,13 @@ EventIds 14000–14099.
 
 | Looking for | Use instead |
 | --- | --- |
+| The `.Errors`, `.Http`, `.Idempotency` and `.Options` namespaces | `SharedKernel.Presentation.WebApi` |
+| `ErrorPresentation`, `ErrorTypeStatusCodeMap`, `PresentationErrorCodes.ForStatus`, the endpoint-metadata interfaces | Internal to the presentation packages; `error.ToErrorResult()` or `error.ToProblemDetails(httpContext)` |
+| `services.AddSharedKernelAuthorization()` | Nothing: `AddSharedKernelWebApi()`, `AddSharedKernelSignalR()` and `AddSharedKernelGrpc()` register it |
+| `GetIfMatchTags()` | `GetIfMatch()`, or an `IfMatch<TVersion>` parameter |
+| Hand-written `MapXxxEndpoints()` extension methods | An `IEndpointModule`, mapped by `app.MapEndpoints()` |
+| Binding `page`/`pageSize` yourself | A `Paging` or `CursorPaging` parameter |
 | `ToActionResult` (MVC) | The same typed results (`ToOk()`, `ToCreated()`, …) returned from the action |
-| `ToProblemDetailsResult` | A typed result, or `error.ToErrorResult()` |
-| `AddSharedKernelAuthorizationFilters`, `AuthorizationRequirementEndpointFilter` | Nothing to register: the attributes are native policies |
-| `AddSharedKernelIdempotencyFilters`, `TryGetIdempotencyKey` | An `IdempotencyKey` parameter, `RequireIdempotencyKey()`, `GetIdempotencyKey()` |
-| `RowVersionETag`, `TryValidateIfMatch` | `ToOkWithETag(…)`, an `IfMatch<TVersion>` parameter, `RequireIfMatch()` |
-| `UseSharedKernelSecurityHeaders`, `SecurityHeadersOptions`, `CspBuilder` | `SecurityHeaders` settings, `WithContentSecurityPolicy(…)` |
-| `AddSharedKernelCors`, `CorsPolicyOptions` | `Cors` settings |
-| `AddSharedKernelPayloadLimits`, `PayloadLimitsOptions` | `Limits` settings, `WithRequestSizeLimit(…)` |
-| Upload validation (`RequireValidatedUpload`) | A presigned upload straight to storage (08.Storage), or `WithRequestSizeLimit(…)` |
-| `RateLimitRejectionProblemDetails` | Nothing: the 429 body is automatic |
-| `AddSharedKernelCorrelationId`, `CorrelationIdMiddleware` | `UseSharedKernelWebApi()`, `GetCorrelationId()` |
-| Registering `SharedKernelExceptionHandler` | Nothing: `AddSharedKernelWebApi()` installs it |
-| `ValidationProblemDetailsExtensions` | Nothing: `errors` and `errorCodes` are automatic |
+| A type removed by P-562 (`ToProblemDetailsResult`, `AddSharedKernelAuthorizationFilters`, `AddSharedKernelIdempotencyFilters`, `RowVersionETag`, `UseSharedKernelSecurityHeaders`, `AddSharedKernelCors`, `AddSharedKernelPayloadLimits`, `RequireValidatedUpload`, `RateLimitRejectionProblemDetails`, `AddSharedKernelCorrelationId`, `ValidationProblemDetailsExtensions`, …) | The one-call setup, the settings and the parameter types above; each replacement is listed in `14.Presentation/CLAUDE.history.md` |
 | API versioning, OpenAPI, Scalar, `Sunset` and `Deprecation` headers | `SharedKernel.Presentation.OpenApi` |
 | .NET 10 `AddValidation()` | Validation in the MediatR pipeline (05.Application's `ValidationBehavior`) |

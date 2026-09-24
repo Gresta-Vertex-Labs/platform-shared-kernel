@@ -16,11 +16,11 @@ package never references `SharedKernel.Contracts`.
 | One exception interceptor on every service and all four call shapes | No service method maps an error by hand |
 | A `google.rpc.Status` for every error: the status code from `ErrorType`, the client message, an `ErrorInfo` (error code, error domain, trace id, correlation id) and a `BadRequest` with the field violations | Clients read one error shape with `RpcException.GetRpcStatus()`, whatever the service |
 | The messages an HTTP client gets: translated into the request culture, server errors redacted outside Development | HTTP and gRPC callers of a service never see different texts |
-| Failed `Result`s ended with `SharedKernel.Core`'s `GetValueOrThrow()` or `ThrowIfFailure()` | A method's last line is `await service.GetAsync(id, ct).GetValueOrThrow()` |
+| Failed `Result`s ended with `SharedKernel.Core`'s `GetValueOrThrow()` or `ThrowIfFailure()` | A method's last line is `await sender.Send(query, ct).GetValueOrThrow()` |
 | An `RpcException` of the service, or from a call to another service, rebuilt with only its status code | Another service's error details, field paths and trace ids never reach your caller |
 | Field violations capped at 50 in about 3 KB, the rest summed up | A request with thousands of invalid fields still gets its status (many clients cap trailers at 8 KB) |
 | Any exception after the call is cancelled ending as `Cancelled`, logged at Debug | A client that goes away is not an error in your logs |
-| `[RequirePermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` on a service or method, and as `MapGrpcService<T>()` conventions | One authorization dialect for HTTP and gRPC |
+| `[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` on a service or method, and as `MapGrpcService<T>()` conventions | One authorization dialect for HTTP and gRPC |
 
 ## Install
 
@@ -50,7 +50,7 @@ builder.AddSharedKernelGrpc(options => options.ErrorDomain = "orders.example.com
 var app = builder.Build();
 app.UseSharedKernelWebApi();   // correlation ids, authentication, authorization — gRPC calls included
 
-app.MapGrpcService<OrderGrpcService>().RequirePermission("orders.read");
+app.MapGrpcService<OrderGrpcService>().RequireEndpointPermission("orders.read");
 
 app.Run();
 ```
@@ -78,34 +78,37 @@ the service reads:
 
 ```csharp
 using Grpc.Core;
+using MediatR;
 using SharedKernel.Core.Extensions;       // GetValueOrThrow, ThrowIfFailure
-using SharedKernel.Presentation.WebApi;   // RequirePermission, RequireFreshAuthentication
+using SharedKernel.Presentation.WebApi;   // RequireEndpointPermission, RequireFreshAuthentication
 
-[RequirePermission("orders.read")]
-public sealed class OrderGrpcService(IOrderService orders) : OrderService.OrderServiceBase
+[RequireEndpointPermission("orders.read")]      // guards every method of the service
+public sealed class OrderGrpcService(ISender sender) : OrderService.OrderServiceBase
 {
     public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
     {
-        var order = await orders.GetAsync(Guid.Parse(request.Id), context.CancellationToken).GetValueOrThrow();
+        var order = await sender.Send(new GetOrderQuery(Guid.Parse(request.Id)), context.CancellationToken).GetValueOrThrow();
         return new OrderReply { Id = order.Id.ToString(), Status = order.Status };
     }
 
-    [RequirePermission("orders.cancel")]
+    // CancelOrderCommand declares its own [RequirePermission]; the method adds authentication strength.
     [RequireFreshAuthentication(300)]
     public override async Task<CancelOrderReply> CancelOrder(CancelOrderRequest request, ServerCallContext context)
     {
-        await orders.CancelAsync(Guid.Parse(request.Id), context.CancellationToken).ThrowIfFailure();
+        await sender.Send(new CancelOrderCommand(Guid.Parse(request.Id)), context.CancellationToken).ThrowIfFailure();
         return new CancelOrderReply();
     }
 }
 ```
 
+A service method sends `05.Application` commands and queries through `ISender`, as an HTTP endpoint does.
+
 - `GetValueOrThrow()` and `ThrowIfFailure()` exist for `Result`, `Result<T>`, `Task<…>` and `ValueTask<…>`. They throw
   `Error.ToException()`: the `SharedKernelException` of the error's type (a `DomainException` for `Unavailable` and
   `Timeout`), carrying the error unchanged. This package has no result extensions of its own, so importing both
   namespaces never makes a call ambiguous.
-- `AddSharedKernelGrpc()` calls `AddGrpc()` with the exception interceptor and `AddSharedKernelAuthorization()`, and
-  returns `AddGrpc()`'s `IGrpcServerBuilder`. It binds `SharedKernel:Presentation:Grpc`, validates it when the host
+- `AddSharedKernelGrpc()` calls `AddGrpc()` with the exception interceptor, registers the WebApi authorization
+  policies, and returns `AddGrpc()`'s `IGrpcServerBuilder`. It binds `SharedKernel:Presentation:Grpc`, validates it when the host
   starts and is idempotent.
 - Global interceptors run in the order they are added, the first outermost: call it before adding your own, so the
   exceptions they throw are mapped too.
@@ -146,8 +149,8 @@ catch (RpcException exception) when (exception.GetRpcStatus() is { } status)
 | `Timeout` | `DeadlineExceeded` |
 | `None` or any other value | `Unknown` |
 
-`GrpcStatusCodeMap.Resolve(ErrorType)` is this table. It is a sibling of the HTTP core's `ErrorTypeStatusCodeMap`, not
-a merge: gRPC and HTTP status codes do not correspond one to one. HTTP's 412 rule has no gRPC counterpart; a version
+The table is internal to this package, a sibling of the HTTP core's status map rather than a merge: gRPC and HTTP
+status codes do not correspond one to one. HTTP's 412 rule has no gRPC counterpart; a version
 conflict is `Aborted`.
 
 ### What the interceptor does with each exception
@@ -185,7 +188,7 @@ Its description is translated under `grpc.more_field_violations` with a `{count}
 
 | Code | When |
 | --- | --- |
-| `grpc.{status}`, such as `grpc.resource_exhausted` or `grpc.unavailable` | `ErrorInfo.reason` of a rebuilt `RpcException`: `grpc.` and the status's canonical name in lower case (`GrpcErrorCodes.ForStatus`) |
+| `grpc.{status}`, such as `grpc.resource_exhausted` or `grpc.unavailable` | `ErrorInfo.reason` of a rebuilt `RpcException`: `grpc.` and the status's canonical name in lower case |
 | `grpc.more_field_violations` | The last violation of a capped `BadRequest` (`GrpcErrorCodes.MoreFieldViolations`) |
 | `timeout.default` | A `TimeoutException`, or a cancellation while the call is open |
 | `unexpected.exception` | An exception that is neither a `SharedKernelException` nor an `RpcException` |

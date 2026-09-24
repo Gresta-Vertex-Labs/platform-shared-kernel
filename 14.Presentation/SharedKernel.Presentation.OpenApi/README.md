@@ -35,6 +35,7 @@ dotnet add package SharedKernel.Presentation.OpenApi
 ## Use
 
 ```csharp
+using MediatR;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.WebApi;
 
@@ -46,19 +47,27 @@ builder.AddSharedKernelOpenApi(options => options.Title = "Orders API");
 var app = builder.Build();
 app.UseSharedKernelWebApi();
 
-var orders = app.NewVersionedApi("Orders")
-    .MapGroup("/v{version:apiVersion}/orders")
-    .HasApiVersion(1.0)
-    .HasApiVersion(2.0);
-
-orders.MapGet("/{id:guid}", (Guid id, IOrderService service, CancellationToken ct) =>
-        service.GetAsync(id, ct).ToOkWithETag(order => order.Version.ToString(), OrderResponse.From))
-    .RequirePermission("orders.read");
-
+app.MapEndpoints();
 app.MapSharedKernelOpenApi();   // before or after the API's endpoints
 
 app.Run();
+
+public sealed class OrderEndpoints : IEndpointModule
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        var orders = app.NewVersionedApi("Orders")
+            .MapGroup("/v{version:apiVersion}/orders")
+            .HasApiVersion(1.0)
+            .HasApiVersion(2.0);
+
+        orders.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetOrder(id), ct).ToOkWithETag(order => order.Version.ToString(), OrderResponse.From));
+    }
+}
 ```
+
+A versioned group is declared inside the module, like any other group.
 
 `AddSharedKernelOpenApi()` binds `SharedKernel:Presentation:OpenApi`, runs the `configure` callback after binding and
 validates the result when the host starts. It registers API versioning (1.0 by default and assumed when a request names
@@ -72,10 +81,10 @@ the URLs), one document per version, and the platform's problem shape for versio
 - Outside Development it maps nothing unless `ExposeInProduction` is set ("production" here means every environment
   but Development), and logs that at Information (14300).
 - It returns one convention builder for the documents and the reference:
-  `app.MapSharedKernelOpenApi().RequirePermission("docs.read")` protects both.
+  `app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")` protects both.
 - An endpoint that declares no version, such as `app.MapGet("/ping", …)`, appears in every version's document.
 - MVC controllers are documented the same way: `[ApiVersion(1.0)]`, the authorization and header attributes, and
-  conventions applied with `app.MapControllers().RequirePermission(…)`. Actions returning typed results document
+  conventions applied with `app.MapControllers().RequireEndpointPermission(…)`. Actions returning typed results document
   their success responses like minimal APIs.
 
 ## What every operation documents
@@ -83,12 +92,19 @@ the URLs), one document per version, and the platform's problem shape for versio
 | When the endpoint… | The operation documents |
 | --- | --- |
 | Always | A `default` response: `application/problem+json`, `#/components/schemas/ProblemDetails` |
-| Has authorization metadata (`RequirePermission`, `RequireRole`, `[Authorize]`, …), or no metadata while a fallback policy is set, and no `[AllowAnonymous]` | One security requirement per declared scheme (any one suffices), and 401 and 403 |
+| Has authorization metadata (`RequireEndpointPermission`, `RequireRole`, `[Authorize]`, …), or no metadata while a fallback policy is set, and no `[AllowAnonymous]` | One security requirement per declared scheme (any one suffices), and 401 and 403 |
 | Requires `Idempotency-Key` | A required header parameter whose pattern admits exactly what the server accepts, and 400 |
 | Accepts `Idempotency-Key` | An optional header parameter, and 400 |
 | Requires `If-Match` | A required header parameter, and 400, 412 and 428 |
 | Accepts `If-Match` | An optional header parameter, and 400 and 412 (never 428) |
 | Returns `OkWithETag<T>` (`ToOkWithETag`) | The `ETag` header on 200, and a 304 with its `ETag` when the endpoint answers `GET` or `HEAD` |
+| Takes a `Paging` or `CursorPaging` parameter | The optional `page`/`pageSize` or `cursor`/`limit` query parameters with their bounds and defaults, and 400 |
+
+**A permission declared on the command is invisible here.** The document reads endpoint metadata only, so an endpoint
+whose use case carries `[RequirePermission]` (05.Application) and declares nothing itself documents no security
+requirement and no 401/403. Give such endpoints authorization metadata — `.RequireAuthorization()` on the group, or a
+fallback policy (`AddAuthorizationBuilder().SetFallbackPolicy(...)`) — and the document shows that a caller is
+needed; the specific permission stays the use case's.
 
 The header rules come from endpoint metadata, so every way of declaring a header is documented identically: the
 convention (`RequireIdempotencyKey()`, `AcceptIfMatch()`, …), the attribute, or the `IdempotencyKey` and
