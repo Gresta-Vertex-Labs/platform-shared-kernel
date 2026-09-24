@@ -6,9 +6,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 

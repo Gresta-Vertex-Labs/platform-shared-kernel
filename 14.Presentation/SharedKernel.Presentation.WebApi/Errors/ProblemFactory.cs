@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Builds the one problem shape every error response of this package has.</summary>
 internal static class ProblemFactory

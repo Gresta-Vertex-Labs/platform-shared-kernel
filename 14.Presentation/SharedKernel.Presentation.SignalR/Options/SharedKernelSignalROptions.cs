@@ -1,6 +1,6 @@
 using SharedKernel.Configuration;
 
-namespace SharedKernel.Presentation.SignalR.Options;
+namespace SharedKernel.Presentation.SignalR;
 
 /// <summary>
 /// Settings for the SignalR conventions set up by <see cref="SignalRHostBuilderExtensions.AddSharedKernelSignalR"/>,

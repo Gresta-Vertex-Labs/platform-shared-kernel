@@ -24,9 +24,11 @@
       converts outcomes (Result, Error, exceptions) into HTTP responses; it never produces them,
       so it references no application or infrastructure layer. SharedKernel.Localization supplies
       the optional ILocalizationCatalog used to translate client messages; SharedKernel.Configuration
-      binds and validates SharedKernelWebApiOptions.
+      binds and validates SharedKernelWebApiOptions. SharedKernel.Contracts supplies PageRequest and
+      CursorPageRequest, which the Paging and CursorPaging parameters bind query input into.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
@@ -38,6 +40,16 @@
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The add-ons version in lockstep with this package and read its error presentation, status map, authorization
+         registration and header metadata (P-563 P3). -->
+    <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc.Tests" />
+    <!-- 16.Testing's self-tests authorize through the platform policies without a web host. -->
+    <InternalsVisibleTo Include="SharedKernel.Testing.SelfTests" />
   </ItemGroup>
 </Project>

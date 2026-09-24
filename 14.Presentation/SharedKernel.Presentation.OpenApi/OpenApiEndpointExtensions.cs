@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using SharedKernel.Presentation.OpenApi.Documents;
-using SharedKernel.Presentation.OpenApi.Options;
 using SharedKernel.Presentation.OpenApi.Routing;
 using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.WebApi;

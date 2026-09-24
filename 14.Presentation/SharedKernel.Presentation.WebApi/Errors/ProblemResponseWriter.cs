@@ -4,9 +4,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>The one way this package writes an error response.</summary>
 internal static class ProblemResponseWriter

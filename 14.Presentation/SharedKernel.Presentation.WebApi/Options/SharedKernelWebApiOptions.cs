@@ -1,6 +1,6 @@
 using SharedKernel.Configuration;
 
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Settings for the HTTP API boundary set up by

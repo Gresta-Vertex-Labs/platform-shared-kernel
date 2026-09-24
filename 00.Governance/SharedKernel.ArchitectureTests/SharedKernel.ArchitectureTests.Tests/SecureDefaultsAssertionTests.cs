@@ -1173,9 +1173,9 @@ public class SecureDefaultsAssertionTests
         var hostBuilderExtensions = typeof(SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions);
 
         var validatorType =
-            hostBuilderExtensions.Assembly.GetType("SharedKernel.Presentation.WebApi.Options.WebApiOptionsValidator")
+            hostBuilderExtensions.Assembly.GetType("SharedKernel.Presentation.WebApi.WebApiOptionsValidator")
             ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.Presentation.WebApi.Options.WebApiOptionsValidator " +
+                "Could not resolve SharedKernel.Presentation.WebApi.WebApiOptionsValidator " +
                 "via Assembly.GetType — has it been renamed or moved?");
 
         var registeredForStartupValidation = () =>

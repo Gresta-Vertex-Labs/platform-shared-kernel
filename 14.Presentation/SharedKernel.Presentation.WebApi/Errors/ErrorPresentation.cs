@@ -2,16 +2,15 @@ using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Localization;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Decides how an <see cref="Error"/> is shown to a caller: its status code and the message the client may see.
 /// The one place HTTP, SignalR and gRPC responses take both from, so the three protocols never disagree.
 /// </summary>
-public static class ErrorPresentation
+internal static class ErrorPresentation
 {
     private const string UnexpectedMessage = "An unexpected error occurred.";
 

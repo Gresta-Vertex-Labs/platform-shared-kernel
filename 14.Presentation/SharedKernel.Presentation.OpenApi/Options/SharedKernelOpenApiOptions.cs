@@ -1,7 +1,7 @@
 using Asp.Versioning;
 using SharedKernel.Configuration;
 
-namespace SharedKernel.Presentation.OpenApi.Options;
+namespace SharedKernel.Presentation.OpenApi;
 
 /// <summary>
 /// Settings for the API versioning and OpenAPI documents set up by

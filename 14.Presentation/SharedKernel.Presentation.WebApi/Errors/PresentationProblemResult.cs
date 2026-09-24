@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// An <see cref="IResult"/> for an outcome this package produces itself, such as a missing required header, with

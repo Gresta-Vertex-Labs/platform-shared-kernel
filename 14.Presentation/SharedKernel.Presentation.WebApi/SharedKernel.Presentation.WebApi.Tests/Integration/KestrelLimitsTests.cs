@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using Xunit;
 

@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Endpoint metadata that says whether an <c>If-Match</c> entity tag can be a version of the endpoint's resource at

@@ -4,9 +4,8 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.SignalR.Filters;
-using SharedKernel.Presentation.SignalR.Options;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Testing.Logging;
 using Xunit;
 

@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Options;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Request limits that protect the service from oversized or deeply nested payloads.</summary>
 /// <remarks>

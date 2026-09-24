@@ -1,6 +1,5 @@
 using System.Reflection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Presentation.OpenApi.Options;
 
 namespace SharedKernel.Presentation.OpenApi.Documents;
 

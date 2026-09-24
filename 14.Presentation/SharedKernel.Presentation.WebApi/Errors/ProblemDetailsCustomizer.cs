@@ -1,9 +1,8 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using SharedKernel.Presentation.WebApi.Http;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Completes every problem written in a request — this package's own and the framework's (an unmatched route, a

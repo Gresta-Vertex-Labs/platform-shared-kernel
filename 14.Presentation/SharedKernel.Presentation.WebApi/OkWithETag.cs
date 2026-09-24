@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
 
 namespace SharedKernel.Presentation.WebApi;
 

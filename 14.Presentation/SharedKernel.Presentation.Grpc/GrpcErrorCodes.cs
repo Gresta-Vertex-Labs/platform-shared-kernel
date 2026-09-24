@@ -1,7 +1,7 @@
 using System.Globalization;
 using Grpc.Core;
 
-namespace SharedKernel.Presentation.Grpc.Errors;
+namespace SharedKernel.Presentation.Grpc;
 
 /// <summary>
 /// The error codes this package itself puts in a status's <c>ErrorInfo</c> <c>reason</c> or a field violation's
@@ -42,7 +42,7 @@ public static class GrpcErrorCodes
     /// <c>grpc.internal</c>, <c>grpc.unavailable</c>, <c>grpc.data_loss</c>, <c>grpc.unauthenticated</c>);
     /// <c>grpc.{number}</c> for any other value.
     /// </returns>
-    public static string ForStatus(StatusCode statusCode) => statusCode switch
+    internal static string ForStatus(StatusCode statusCode) => statusCode switch
     {
         StatusCode.OK => "grpc.ok",
         StatusCode.Cancelled => "grpc.cancelled",

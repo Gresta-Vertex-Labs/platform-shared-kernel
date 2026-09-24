@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
 using SharedKernel.Presentation.OpenApi.Versioning;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Propagation;
 using Xunit;
 
@@ -127,7 +127,7 @@ public sealed class ApiVersioningTests
         problem.Extensions.Should().ContainKey(ApiVersioningProblems.CodeMember);
     }
 
-    private static Task<WebApplication> StartAsync(Action<Options.SharedKernelOpenApiOptions>? configure = null) =>
+    private static Task<WebApplication> StartAsync(Action<SharedKernelOpenApiOptions>? configure = null) =>
         OpenApiTestHost.StartAsync(MapItems, configure);
 
     private static void MapItems(WebApplication app) =>

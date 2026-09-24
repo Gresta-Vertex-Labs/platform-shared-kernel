@@ -1,15 +1,15 @@
 using System.Globalization;
 using System.Net.Mime;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi;
+using SharedKernel.Contracts.Pagination;
 using SharedKernel.Presentation.OpenApi.Routing;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.OpenApi.Documents;
@@ -17,8 +17,9 @@ namespace SharedKernel.Presentation.OpenApi.Documents;
 /// <summary>
 /// Documents on every operation what the WebApi core enforces for its endpoint: the problem response of any error,
 /// the security requirement and 401/403 of a protected endpoint, the <c>Idempotency-Key</c> and <c>If-Match</c>
-/// headers it requires or accepts, with the responses that refuse a request for them, and the <c>ETag</c> header of the
-/// responses that carry one.
+/// headers it requires or accepts, the paging query parameters of a <c>Paging</c> or <c>CursorPaging</c> handler
+/// parameter, with the responses that refuse a request for them, and the <c>ETag</c> header of the responses that carry
+/// one.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -98,6 +99,33 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         $"The Idempotency-Key header is sent but is not 1 to {IdempotencyKey.MaxLength} visible ASCII characters "
         + $"({PresentationErrorCodes.IdempotencyKeyInvalid}).");
 
+    private static readonly string PagingRefused =
+        $"A paging query parameter is invalid (errorCode {ErrorCodes.Validation.Failed}; errors and errorCodes keyed by "
+        + $"{PagingQuery.Page} and {PagingQuery.PageSize}): out of range ({PaginationErrorCodes.PageOutOfRange}, "
+        + $"{PaginationErrorCodes.PageSizeOutOfRange}) or not one whole number ({ErrorCodes.Validation.InvalidFormat}).";
+
+    private static readonly string CursorPagingRefused =
+        $"A paging query parameter is invalid (errorCode {ErrorCodes.Validation.Failed}; errors and errorCodes keyed by "
+        + $"{PagingQuery.Cursor} and {PagingQuery.Limit}): a cursor that is not one of this API's "
+        + $"({PaginationErrorCodes.CursorInvalid}), a limit out of range ({PaginationErrorCodes.LimitOutOfRange}), or a "
+        + $"limit that is not one whole number or a parameter sent twice ({ErrorCodes.Validation.InvalidFormat}).";
+
+    private const string PageDescription = "The 1-based page number. Optional: page 1 when absent.";
+
+    private static readonly string PageSizeDescription = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The number of items per page, 1 to {PageRequest.MaxPageSize}. Optional: {PageRequest.DefaultPageSize} when absent.");
+
+    private static readonly string CursorDescription = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The opaque cursor the previous page returned as nextCursor, at most {PageCursor.MaxLength} characters. "
+        + $"Optional: the first page when absent.");
+
+    private static readonly string LimitDescription = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The maximum number of items to return, 1 to {CursorPageRequest.MaxLimit}. Optional: "
+        + $"{CursorPageRequest.DefaultLimit} when absent.");
+
     private readonly SecuritySchemeSet _schemes;
 
     public PlatformOperationTransformer(SecuritySchemeSet schemes)
@@ -145,12 +173,18 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
                 new OpenApiSchema { Type = JsonSchemaType.String });
         }
 
+        var paging = metadata.OfType<PagingMetadata>().FirstOrDefault();
+        if (paging is not null)
+        {
+            AddPagingParameters(operation, paging);
+        }
+
         // The platform's responses follow the operation's own, in status order.
-        if (idempotencyKey != HeaderUse.None || ifMatch != HeaderUse.None)
+        if (idempotencyKey != HeaderUse.None || ifMatch != HeaderUse.None || paging is not null)
         {
             responses.TryAdd(
                 Key(StatusCodes.Status400BadRequest),
-                ProblemResponse(document, DescribeRefusedHeaders(idempotencyKey, ifMatch)));
+                ProblemResponse(document, DescribeRefusedInput(idempotencyKey, ifMatch, paging)));
         }
 
         if (EndpointAuthorization.IsAuthorized(metadata, services))
@@ -215,10 +249,13 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         });
     }
 
-    /// <summary>Describes the 400 the core answers when a required or accepted header is missing or malformed.</summary>
-    private static string DescribeRefusedHeaders(HeaderUse idempotencyKey, HeaderUse ifMatch)
+    /// <summary>
+    /// Describes the 400 the core answers when a required or accepted header is missing or malformed, or a paging
+    /// query parameter is invalid.
+    /// </summary>
+    private static string DescribeRefusedInput(HeaderUse idempotencyKey, HeaderUse ifMatch, PagingMetadata? paging)
     {
-        List<string> refusals = new(2);
+        List<string> refusals = new(3);
 
         if (idempotencyKey != HeaderUse.None)
         {
@@ -228,6 +265,11 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         if (ifMatch != HeaderUse.None)
         {
             refusals.Add(ifMatch == HeaderUse.Required ? IfMatchMalformed : OptionalIfMatchMalformed);
+        }
+
+        if (paging is not null)
+        {
+            refusals.Add(paging.IsCursor ? CursorPagingRefused : PagingRefused);
         }
 
         return string.Join(' ', refusals);
@@ -248,6 +290,56 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
                 [new OpenApiSecuritySchemeReference(name, document)] = [],
             }),
         ];
+    }
+
+    /// <summary>
+    /// Declares the optional query parameters a <c>Paging</c> (<c>page</c>, <c>pageSize</c>) or <c>CursorPaging</c>
+    /// (<c>cursor</c>, <c>limit</c>) handler parameter binds, with the ranges the core enforces.
+    /// </summary>
+    private static void AddPagingParameters(OpenApiOperation operation, PagingMetadata paging)
+    {
+        if (paging.IsCursor)
+        {
+            AddQuery(operation, PagingQuery.Cursor, CursorDescription, new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MaxLength = PageCursor.MaxLength,
+            });
+            AddQuery(operation, PagingQuery.Limit, LimitDescription, IntegerSchema(CursorPageRequest.MaxLimit, CursorPageRequest.DefaultLimit));
+            return;
+        }
+
+        AddQuery(operation, PagingQuery.Page, PageDescription, IntegerSchema(maximum: null, defaultValue: 1));
+        AddQuery(operation, PagingQuery.PageSize, PageSizeDescription, IntegerSchema(PageRequest.MaxPageSize, PageRequest.DefaultPageSize));
+    }
+
+    private static OpenApiSchema IntegerSchema(int? maximum, int defaultValue) => new()
+    {
+        Type = JsonSchemaType.Integer,
+        Format = "int32",
+        Minimum = "1",
+        Maximum = maximum?.ToString(CultureInfo.InvariantCulture),
+        Default = JsonValue.Create(defaultValue),
+    };
+
+    private static void AddQuery(OpenApiOperation operation, string name, string description, OpenApiSchema schema)
+    {
+        var parameters = operation.Parameters ??= [];
+
+        // A query parameter the endpoint declares itself, under the same name, is kept as it is.
+        if (parameters.Any(existing => existing.In == ParameterLocation.Query && string.Equals(existing.Name, name, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        parameters.Add(new OpenApiParameter
+        {
+            Name = name,
+            In = ParameterLocation.Query,
+            Required = false,
+            Description = description,
+            Schema = schema,
+        });
     }
 
     private static void AddHeader(OpenApiOperation operation, string name, bool required, string description, OpenApiSchema schema)

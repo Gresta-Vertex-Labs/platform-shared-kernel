@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
 
 namespace SharedKernel.Presentation.WebApi;
 

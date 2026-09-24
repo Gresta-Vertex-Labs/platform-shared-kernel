@@ -15,9 +15,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Presentation.WebApi.Correlation;
 using SharedKernel.Presentation.WebApi.Cors;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.RateLimiting;
 using SharedKernel.Presentation.WebApi.Startup;
 

@@ -2,8 +2,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Options;
 
 namespace SharedKernel.Presentation.WebApi.SecurityHeaders;
 

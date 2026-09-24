@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 

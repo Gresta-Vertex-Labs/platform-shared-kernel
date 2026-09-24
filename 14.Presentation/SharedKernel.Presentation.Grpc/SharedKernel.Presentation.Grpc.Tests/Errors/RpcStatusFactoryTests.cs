@@ -6,7 +6,7 @@ using Grpc.Core;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 

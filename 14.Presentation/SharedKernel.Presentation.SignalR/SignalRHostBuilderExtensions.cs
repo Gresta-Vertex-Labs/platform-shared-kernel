@@ -5,7 +5,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Presentation.SignalR.Filters;
-using SharedKernel.Presentation.SignalR.Options;
 using SharedKernel.Presentation.WebApi;
 
 namespace SharedKernel.Presentation.SignalR;

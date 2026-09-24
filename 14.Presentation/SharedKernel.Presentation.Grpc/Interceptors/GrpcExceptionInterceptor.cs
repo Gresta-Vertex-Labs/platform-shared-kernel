@@ -6,8 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Errors;
-using SharedKernel.Presentation.Grpc.Options;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 

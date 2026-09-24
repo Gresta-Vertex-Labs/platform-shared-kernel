@@ -4,9 +4,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
-using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
@@ -294,7 +291,7 @@ public sealed class OptionalHeaderTests : IClassFixture<FullStackHost>
     public async Task InvalidKey_IsLoggedAtWarning_WithoutTheKey_AndAMissingOneIsNotLogged()
     {
         const string SecretKey = "optional secret key";
-        var logger = _host.Logs.GetLogger("SharedKernel.Presentation.WebApi.Idempotency.IdempotencyKeyGuard");
+        var logger = _host.Logs.GetLogger("SharedKernel.Presentation.WebApi.IdempotencyKeyGuard");
 
         using (var missing = await _host.Client.PostAsync("/idempotent-optional", content: null))
         {

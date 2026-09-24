@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Presentation.Grpc.Options;
 using Xunit;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Setup;

@@ -3,7 +3,7 @@ using FluentAssertions;
 using Grpc.Core;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Propagation;
 using Xunit;
 

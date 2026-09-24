@@ -3,7 +3,6 @@ using BillingApi.Domain;
 using BillingApi.Infrastructure;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
-using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
@@ -98,15 +97,12 @@ public static class BillingEndpoints
         invoices.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
             sender.Send(new GetInvoice(new InvoiceId(id)), ct).ToOk());
 
-        invoices.MapGet("/", (int? page, int? pageSize, string? status, ISender sender, CancellationToken ct) =>
-            Validated(PageRequest.Create(page, pageSize))
-                .Bind(request => sender.Send(new ListInvoices(request, ParseStatus(status)), ct))
-                .ToOk());
+        // Paging and CursorPaging bind the query into validated requests; invalid input is 400 before the handler.
+        invoices.MapGet("/", (Paging paging, string? status, ISender sender, CancellationToken ct) =>
+            sender.Send(new ListInvoices(paging.Request, ParseStatus(status)), ct).ToOk());
 
-        invoices.MapGet("/browse", (string? cursor, int? limit, ISender sender, CancellationToken ct) =>
-            Validated(CursorPageRequest.Create(cursor, limit))
-                .Bind(request => sender.Send(new BrowseInvoices(request), ct))
-                .ToOk());
+        invoices.MapGet("/browse", (CursorPaging paging, ISender sender, CancellationToken ct) =>
+            sender.Send(new BrowseInvoices(paging.Request), ct).ToOk());
 
         invoices.MapPost("/{id:guid}/issue", (Guid id, ISender sender, CancellationToken ct) =>
             sender.Send(new IssueInvoice(new InvoiceId(id)), ct).ToNoContent());
@@ -144,10 +140,6 @@ public static class BillingEndpoints
             }
         });
     }
-
-    /// <summary>Paging input validated at the edge: the request, or every problem with it in one 400.</summary>
-    private static Result<T> Validated<T>(ValidationResult<T> input) =>
-        input.IsValid ? Result<T>.Success(input.Value) : Result<T>.Failure(Error.Validation(input.Errors));
 
     /// <summary>An unknown status filters nothing, as it always has.</summary>
     private static InvoiceStatus? ParseStatus(string? status) =>

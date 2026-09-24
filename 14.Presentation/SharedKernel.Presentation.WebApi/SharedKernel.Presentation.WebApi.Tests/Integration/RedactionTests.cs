@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -126,7 +125,7 @@ public sealed class RedactionTests
 
     private static Task<WebApplication> StartAsync(
         string environment,
-        Action<Options.SharedKernelWebApiOptions>? configureOptions = null,
+        Action<SharedKernelWebApiOptions>? configureOptions = null,
         Action<WebApplicationBuilder>? configureBuilder = null) =>
         WebApiTestHost.StartAsync(
             app =>

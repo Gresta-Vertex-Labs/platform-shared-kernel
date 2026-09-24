@@ -5,7 +5,6 @@ using Google.Rpc;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using RpcStatus = Google.Rpc.Status;
 

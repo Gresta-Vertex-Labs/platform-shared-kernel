@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// The names of the extension members every <c>application/problem+json</c> response of this platform may carry,

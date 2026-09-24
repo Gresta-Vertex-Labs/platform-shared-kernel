@@ -9,7 +9,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Presentation.OpenApi.Documents;
-using SharedKernel.Presentation.OpenApi.Options;
 using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.OpenApi.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;

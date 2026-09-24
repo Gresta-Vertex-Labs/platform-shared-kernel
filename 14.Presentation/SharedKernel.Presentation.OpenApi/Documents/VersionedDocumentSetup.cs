@@ -1,7 +1,6 @@
 using Asp.Versioning.OpenApi;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.OpenApi.Options;
 
 namespace SharedKernel.Presentation.OpenApi.Documents;
 

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace SharedKernel.Presentation.SignalR.Options;
+namespace SharedKernel.Presentation.SignalR;
 
 /// <summary>
 /// Validates <see cref="SharedKernelSignalROptions"/> at startup, so a misconfiguration stops the host instead of the

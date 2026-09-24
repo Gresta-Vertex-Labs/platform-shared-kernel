@@ -6,9 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using SharedKernel.Presentation.WebApi.Options;
 
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Facts about the current request that several parts of this package need to agree on.</summary>
 internal static class RequestFacts

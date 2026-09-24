@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// Endpoint metadata stating that responses of the endpoint carry an <c>ETag</c> header: the version of the resource
@@ -8,7 +8,7 @@ namespace SharedKernel.Presentation.WebApi.Http;
 /// Added by <see cref="OkWithETag{TValue}"/> for an endpoint that returns it: for 200, and for 304 when the endpoint
 /// answers <c>GET</c> or <c>HEAD</c>.
 /// </remarks>
-public interface IETagResponseMetadata
+internal interface IETagResponseMetadata
 {
     /// <summary>Gets the status codes of the responses that carry the <c>ETag</c> header.</summary>
     IReadOnlyList<int> StatusCodes { get; }

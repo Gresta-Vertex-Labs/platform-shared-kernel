@@ -1,6 +1,5 @@
 using System.Text.Json;
 using FluentAssertions;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;

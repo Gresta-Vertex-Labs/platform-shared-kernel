@@ -6,7 +6,7 @@ using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Presentation.Grpc.Interceptors;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Presentation.Grpc.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Testing.Logging;

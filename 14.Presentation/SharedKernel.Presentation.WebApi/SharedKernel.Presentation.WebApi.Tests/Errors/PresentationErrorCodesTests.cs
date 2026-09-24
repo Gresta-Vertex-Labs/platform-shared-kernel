@@ -1,5 +1,4 @@
 using FluentAssertions;
-using SharedKernel.Presentation.WebApi.Errors;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Errors;

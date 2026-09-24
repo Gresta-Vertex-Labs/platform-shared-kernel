@@ -10,8 +10,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -63,7 +61,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
                 app.MapPut("/orders/2", () => Result.Failure(Error.Conflict("orders.stale", "Stale.")).ToNoContent());
                 app.MapGet("/if-match", (HttpContext context) => context.GetIfMatch() ?? "(none)");
                 app.MapGet("/if-match-tags", (HttpContext context) =>
-                    string.Join(";", context.GetIfMatchTags().Select(tag => $"{tag.Tag}:{tag.IsWeak}")));
+                    string.Join(";", EntityTags.GetIfMatchTags(context.Request).Select(tag => $"{tag.Tag}:{tag.IsWeak}")));
                 app.MapGet("/etag", (HttpContext context) =>
                 {
                     context.Response.SetETag("7");
@@ -392,7 +390,7 @@ public sealed class ConditionalRequestTests : IClassFixture<FullStackHost>, IAsy
     [InlineData("\"a\", W/\"b\"", "\"a\":False;\"b\":True")]
     [InlineData("*", "*:False")]
     [InlineData("unquoted", "")]
-    public async Task R8_GetIfMatchTags_ListsEveryTag_WithItsWeakness(string header, string expected)
+    public async Task R8_IfMatchTags_ListEveryTag_WithItsWeakness(string header, string expected)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/if-match-tags");
         request.Headers.TryAddWithoutValidation(HeaderNames.IfMatch, header);

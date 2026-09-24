@@ -7,9 +7,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.SignalR.Options;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.Setup;

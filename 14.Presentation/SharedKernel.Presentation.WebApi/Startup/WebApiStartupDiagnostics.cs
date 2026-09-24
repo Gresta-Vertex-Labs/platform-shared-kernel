@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Startup;

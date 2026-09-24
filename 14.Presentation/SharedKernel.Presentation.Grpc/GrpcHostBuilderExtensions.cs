@@ -5,7 +5,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Presentation.Grpc.Options;
 using SharedKernel.Presentation.WebApi;
 
 namespace SharedKernel.Presentation.Grpc;
@@ -31,7 +30,7 @@ public static class GrpcHostBuilderExtensions
     ///   (<c>reason</c> = the error code, <c>domain</c> = <see cref="SharedKernelGrpcOptions.ErrorDomain"/>,
     ///   <c>metadata</c> = <c>traceId</c> and <c>correlationId</c>) and, for field errors, a <c>BadRequest</c> detail
     ///   with the field violations (at most 50, the rest summed up by a last one coded
-    ///   <see cref="Errors.GrpcErrorCodes.MoreFieldViolations"/>). Clients read it with
+    ///   <see cref="GrpcErrorCodes.MoreFieldViolations"/>). Clients read it with
     ///   <c>RpcException.GetRpcStatus()</c>. A method ends a failed <c>Result</c> with <c>SharedKernel.Core</c>'s
     ///   <c>GetValueOrThrow()</c> or <c>ThrowIfFailure()</c> (<c>SharedKernel.Core.Extensions</c>), whose exception
     ///   gets the same status. An <c>RpcException</c> the method throws itself, or receives from another service, keeps

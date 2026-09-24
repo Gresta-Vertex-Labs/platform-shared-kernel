@@ -10,7 +10,7 @@ using SharedKernel.Primitives.Clocks;
 namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Registers the authorization behind <see cref="RequirePermissionAttribute"/> and its siblings.</summary>
-public static class SharedKernelAuthorizationExtensions
+internal static class SharedKernelAuthorizationExtensions
 {
     /// <summary>
     /// Registers ASP.NET Core authorization with the policies behind <see cref="RequirePermissionAttribute"/>,

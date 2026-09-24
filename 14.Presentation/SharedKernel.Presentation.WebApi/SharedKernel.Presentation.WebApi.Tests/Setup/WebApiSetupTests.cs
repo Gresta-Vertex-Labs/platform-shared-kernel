@@ -14,7 +14,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
-using SharedKernel.Presentation.WebApi.Options;
 using SharedKernel.Presentation.WebApi.Startup;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;

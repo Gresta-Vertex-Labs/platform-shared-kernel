@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.SignalR.Options;
+namespace SharedKernel.Presentation.SignalR;
 
 /// <summary>Limits how often one connection may invoke hub methods.</summary>
 /// <remarks>

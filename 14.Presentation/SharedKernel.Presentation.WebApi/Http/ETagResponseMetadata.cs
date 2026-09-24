@@ -1,4 +1,4 @@
-namespace SharedKernel.Presentation.WebApi.Http;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>The <see cref="IETagResponseMetadata"/> an <see cref="OkWithETag{TValue}"/> endpoint carries.</summary>
 /// <param name="statusCodes">The status codes of the responses that carry the <c>ETag</c> header.</param>

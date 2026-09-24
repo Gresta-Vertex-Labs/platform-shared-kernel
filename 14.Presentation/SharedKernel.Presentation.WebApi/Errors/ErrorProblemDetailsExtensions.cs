@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>Converts an <see cref="Error"/> into the RFC 9457 <see cref="ProblemDetails"/> body of this platform.</summary>
 /// <remarks>

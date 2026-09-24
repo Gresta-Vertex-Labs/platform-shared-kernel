@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Presentation.Grpc.Options;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Testing.Logging;
 

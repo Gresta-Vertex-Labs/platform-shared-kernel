@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using SharedKernel.Configuration;
 
-namespace SharedKernel.Presentation.Grpc.Options;
+namespace SharedKernel.Presentation.Grpc;
 
 /// <summary>
 /// Settings for the gRPC services set up by <see cref="GrpcHostBuilderExtensions.AddSharedKernelGrpc"/>, bound from
