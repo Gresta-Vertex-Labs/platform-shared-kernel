@@ -14,8 +14,11 @@ from the P-562 branch at `824eb0da`.
 | Fix | One 401 code on every path: the pipeline's `authorization.unauthenticated` became `unauthorized.default`, the code the HTTP edge answers; `PresentationErrorCodes`' idempotency constants take their values from `ErrorCodes.Idempotency` | `7275b0da` |
 | Stream **C** | 14.Presentation P2: `IEndpointModule` and the `MapEndpoints()` source generator (`SharedKernel.Presentation.WebApi.Generators`, diagnostics SKEP001–SKEP004), packed under `analyzers/dotnet/cs` of the WebApi package; consumer-verify uses a module | `69f7f1be`, merged `4b2a8df3` |
 | Stream **S** | S1: all five samples use endpoint modules and send commands and queries through `ISender`; permissions on the use cases; `Features/` folders in vertical-slice shape | `906b78f3`, merged `a7dde581` |
-| Rename | Owner decision after the streams: 14.Presentation's endpoint attribute and convention renamed `RequireEndpointPermission`, so they no longer share a name (and a CS0104 clash) with 05.Application's `[RequirePermission]` on use cases | `52975eed` (on `main`) |
+| Rename | Owner decision after the streams: 14.Presentation's endpoint attribute and convention renamed `RequireEndpointPermission`, so they no longer share a name (and a CS0104 clash) with 05.Application's `[RequirePermission]` on use cases | `52975eed` |
 | Docs | **D1** 05.Application and 14.Presentation: READMEs, `CONFIGURATION.md`, `CLAUDE.md` rewritten as rules with the superseded brain archived, state maps, this record. **D2** the root brain and the other domains' docs | this pass |
+| Fix | Authorization fails closed: `AuthorizationBehavior` always registered, `WithAuthorization()` removed, a marked request with no `IRequestContext` refused and a marked request type in a scanned assembly checked at host start (the docs review found a service could mark its use cases and never enforce them) | `2848f827` |
+| Fix | SK0015 exempts no call site: the method-name exemption for `AddStreamingBehaviors` hid the bug it exists to catch | `ea7d854b` |
+| Verification | CI's three jobs on the finished branch: the Release build and unit lane (every unit test project, 8,732 tests) with both consumer-verify harnesses; the packaging job (86 packages at one version, every consumer harness, BillingApi 17/17, DocumentsApi 57/57, ShippingApi 9/9, the OrderApi smoke test); the container integration lane (21 projects; one RabbitMQ dead-letter test timed out under the parallel lane and passed 2/2 alone) | this record |
 
 ## How the work was run
 

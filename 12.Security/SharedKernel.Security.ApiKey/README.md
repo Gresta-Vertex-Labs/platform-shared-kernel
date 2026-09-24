@@ -50,7 +50,7 @@ dotnet add package SharedKernel.Security.ApiKey
 | --- | --- |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT bearer tokens from an OpenID Connect provider, accepted on the same endpoints as API keys |
 | [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate authentication for partners that must use mutual TLS |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequirePermission]` checks against `IUserContext`, with ProblemDetails responses |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` checks against `IUserContext`, with ProblemDetails responses |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution that reads the tenant of an API key caller through the registered mapper |
 
 ## Quick start
@@ -475,8 +475,8 @@ builder.AddSharedKernelWebApi();
 
 RouteGroupBuilder orders = app.MapGroup("/orders");
 
-orders.MapGet("/", ListOrders).RequirePermission("orders:read");     // ListOrders, CreateOrder: your handlers
-orders.MapPost("/", CreateOrder).RequirePermission("orders:write");
+orders.MapGet("/", ListOrders).RequireEndpointPermission("orders:read");     // ListOrders, CreateOrder: your handlers
+orders.MapPost("/", CreateOrder).RequireEndpointPermission("orders:write");
 ```
 
 Permissions and roles compare ordinally: `Orders:Read` does not grant `orders:read`. An API key caller has no

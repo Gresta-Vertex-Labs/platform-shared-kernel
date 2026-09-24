@@ -56,7 +56,7 @@ Reference this package from application code. Reference an authentication packag
 | [`SharedKernel.Security.ApiKey`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.ApiKey) | API key clients, as `ServicePrincipal` contexts |
 | [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate clients, as `ServicePrincipal` contexts |
 | [`SharedKernel.Security.Totp`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Totp) | Session step-up that adds `otp` to `AuthenticationMethods` |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution from claims, headers or a database, as its own `ITenantProvider` |
 
 ## Quick start
@@ -298,7 +298,7 @@ public sealed class RefundPolicy(IUserContext caller)
 ```
 
 The checks read the mapped `Permissions` and `Roles`, never raw claims: a `roles` claim the mapper did not map grants
-nothing. For HTTP endpoints, `[RequirePermission]` and `[RequireRole]` from `SharedKernel.Presentation.WebApi` run the
+nothing. For HTTP endpoints, `[RequireEndpointPermission]` and `[RequireRole]` from `SharedKernel.Presentation.WebApi` run the
 same checks declaratively. For a service-specific claim, read it with `FindClaim` or `FindClaims`:
 
 ```csharp

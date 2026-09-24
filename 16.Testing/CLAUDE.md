@@ -2840,7 +2840,7 @@ TestServerCallContext  (static class)
     under test resolves RequestServices and endpoint metadata as it would in a host.
     correlationId is sent as the inbound WellKnownHeaders.CorrelationId header; GetCorrelationId() returns
     null here, because only the HTTP pipeline's correlation middleware stores the id.
-    NOT SIMULATED: authorization ([RequirePermission] and its siblings are enforced by ASP.NET Core
+    NOT SIMULATED: authorization ([RequireEndpointPermission] and its siblings are enforced by ASP.NET Core
     authorization before a method runs — test them against an in-process host) and the platform's
     exception interceptor. A failed Result ended with SharedKernel.Core's GetValueOrThrow()/ThrowIfFailure()
     surfaces as Error.ToException() (the SharedKernelException of the error's type), never as an

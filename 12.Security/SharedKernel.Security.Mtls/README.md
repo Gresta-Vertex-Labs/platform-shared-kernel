@@ -50,7 +50,7 @@ dotnet add package SharedKernel.Security.Mtls
 | --- | --- |
 | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) | Kestrel client certificate negotiation, and certificates forwarded by a TLS-terminating proxy |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | Bearer tokens, including certificate-bound tokens (RFC 8705) |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequirePermission]` on endpoints |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` on endpoints |
 
 ## Quick start
 
@@ -615,7 +615,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOidcAuthentication(builder.Configuration);                // "Bearer", the default scheme
 builder.Services.AddMtlsAuthentication<OpenBankingCertificateValidator>();    // "Certificate", per endpoint
-builder.AddSharedKernelWebApi();                                              // RequirePermission and error responses
+builder.AddSharedKernelWebApi();                                              // RequireEndpointPermission and error responses
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("Partner", policy => policy
@@ -633,14 +633,14 @@ app.MapGroup("/api")
 // Partners: client certificates only.
 RouteGroupBuilder partner = app.MapGroup("/partner").RequireAuthorization("Partner");
 partner.MapPost("/payments", (IUserContext caller) => Results.Accepted())
-    .RequirePermission("payments:initiate");
+    .RequireEndpointPermission("payments:initiate");
 
 app.Run();
 ```
 
 With controllers, use `[Authorize(AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`, or
-`[RequirePermission("payments:initiate", AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`.
-`RequirePermission` checks the permissions your validator returned; `RequireRole` checks its roles. A named policy of
+`[RequireEndpointPermission("payments:initiate", AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`.
+`RequireEndpointPermission` checks the permissions your validator returned; `RequireRole` checks its roles. A named policy of
 your own, such as `Partner`, works next to the platform's.
 
 - **Do not list both schemes in one policy.** The request then has two identities, and `IUserContext` maps only one

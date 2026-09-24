@@ -49,7 +49,7 @@ dotnet add package SharedKernel.Security.Oidc
 | Companion package | Adds |
 | --- | --- |
 | [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions) | `IUserContext`, `ITenantProvider`, `SystemUserContext`, `SecurityClaimTypes` (installed with this package) |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` over `IUserContext` |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` over `IUserContext` |
 | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) | Client certificates from Kestrel or a TLS-terminating proxy, for certificate-bound tokens |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution middleware; its claim strategy reads the tenant this package maps |
 | [`SharedKernel.Security.Totp`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Totp) | Session-bound TOTP step-up (`amr` = `otp`) on top of an OIDC session |
@@ -840,7 +840,7 @@ app.UseSharedKernelWebApi();                                      // authenticat
 RouteGroupBuilder orders = app.MapGroup("/orders");
 
 orders.MapGet("/", () => Results.Ok())
-    .RequirePermission("orders.read", "orders.write");            // any one of them
+    .RequireEndpointPermission("orders.read", "orders.write");            // any one of them
 
 orders.MapPost("/{id:guid}/approve", (Guid id) => Results.NoContent())
     .RequireRole("approver")
@@ -853,12 +853,12 @@ app.Run();
 | Requirement | Reads | Configured by |
 | --- | --- | --- |
 | `RequireRole` | `IUserContext.HasRole` | `Claims:RoleClaimType` |
-| `RequirePermission` | `IUserContext.HasPermission` | `Claims:PermissionClaimTypes` |
+| `RequireEndpointPermission` | `IUserContext.HasPermission` | `Claims:PermissionClaimTypes` |
 | `RequireAuthenticationMethod` | `IUserContext.WasAuthenticatedWith`; with a maximum age (`MaxAgeSeconds`, or the `TimeSpan` overload) also `GetAuthenticationMethodTime` — an `amr_time` claim, else `auth_time` — against the registered `IClock` | `Claims:AuthenticationMethodClaimType`, `Claims:AuthTimeClaimType` |
 | `RequireFreshAuthentication` | `IUserContext.AuthTime` and the registered `IClock` | `Claims:AuthTimeClaimType` |
 
 Values within one requirement are alternatives; separate requirements must all pass. The same checks exist as
-`[RequireRole]`, `[RequirePermission]`, `[RequireAuthenticationMethod]` and `[RequireFreshAuthentication]` attributes,
+`[RequireRole]`, `[RequireEndpointPermission]`, `[RequireAuthenticationMethod]` and `[RequireFreshAuthentication]` attributes,
 which derive from `AuthorizeAttribute` and need no other wiring on MVC actions and controllers, SignalR hubs and hub
 methods, and gRPC services and methods.
 
@@ -1333,7 +1333,7 @@ REVOCATION   .AddTokenRevocation<TCheck>() with ITokenRevocationCheck.IsRevokedA
              Revocation:NotRevokedCacheDuration 0..5 min (default 30 s).
 WORKERS      Register services.AddScoped<IUserContext>(_ => SystemUserContext.Instance) BEFORE AddOidcAuthentication.
 AUTHORIZE    SharedKernel.Presentation.WebApi: builder.AddSharedKernelWebApi(); app.UseSharedKernelWebApi() before
-             mapping (replaces UseAuthentication/UseAuthorization); then .RequireRole / .RequirePermission /
+             mapping (replaces UseAuthentication/UseAuthorization); then .RequireRole / .RequireEndpointPermission /
              .RequireAuthenticationMethod([TimeSpan maxAge,] ...) / .RequireFreshAuthentication(...) or the same-named
              attributes. Anonymous 401, missing role or permission 403, step-up 401 with an RFC 9470 challenge.
 TEST         WebApplicationFactory; UseSetting Authority/Audiences:0; ConfigureTestServices PostConfigure JwtBearerOptions
